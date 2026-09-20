@@ -1,79 +1,222 @@
 # SoundStorm installer for Windows.
 #
+# Double-click SoundStorm-Setup.cmd, or from PowerShell:
+#
 #   irm https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.ps1 | iex
 #
-# It downloads one compose file, picks a free port, starts the stack and waits
-# until it answers. Everything it needs is Docker Desktop; everything it leaves
-# behind is a folder you can delete.
+# It is written for somebody who has never opened a terminal. That means it
+# installs Docker Desktop itself rather than sending them to a website, starts
+# it rather than telling them to, and leaves a Start Menu shortcut rather than
+# an address to remember. Every question it cannot answer becomes an
+# instruction, not an error code.
+#
+#   -Launch        start an existing install and open it (what the shortcut runs)
+#   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
+#   -NoAutoStart   install, but do not start with Windows
 
 #Requires -Version 5.1
+[CmdletBinding()]
+param(
+    [switch]$Launch,
+    [switch]$NoShortcuts,
+    [switch]$NoAutoStart,
+    [switch]$NoBrowser
+)
+
 $ErrorActionPreference = 'Stop'
 
 $Repo       = if ($env:SOUNDSTORM_REPO) { $env:SOUNDSTORM_REPO } else { 'gabehollberg/soundstorm' }
 $Branch     = if ($env:SOUNDSTORM_BRANCH) { $env:SOUNDSTORM_BRANCH } else { 'main' }
-$ComposeUrl = if ($env:SOUNDSTORM_COMPOSE_URL) { $env:SOUNDSTORM_COMPOSE_URL }
-              else { "https://raw.githubusercontent.com/$Repo/$Branch/docker-compose.yml" }
-$Dir        = if ($env:SOUNDSTORM_DIR) { $env:SOUNDSTORM_DIR } else { Join-Path $PWD 'soundstorm' }
-$FirstPort  = if ($env:SOUNDSTORM_PORT) { [int]$env:SOUNDSTORM_PORT } else { 8099 }
+$RawBase    = "https://raw.githubusercontent.com/$Repo/$Branch"
+$ComposeUrl = if ($env:SOUNDSTORM_COMPOSE_URL) { $env:SOUNDSTORM_COMPOSE_URL } else { "$RawBase/docker-compose.yml" }
+$ScriptUrl  = if ($env:SOUNDSTORM_SCRIPT_URL) { $env:SOUNDSTORM_SCRIPT_URL } else { "$RawBase/install.ps1" }
 
-function Step($text) { Write-Host "==> " -ForegroundColor White -NoNewline; Write-Host $text }
+# Under the user's own folder rather than Program Files: the media library
+# lives beside the compose file, and it has to be somewhere they can drop a
+# hard drive of music into without a permission prompt.
+$Dir       = if ($env:SOUNDSTORM_DIR) { $env:SOUNDSTORM_DIR } else { Join-Path $env:USERPROFILE 'SoundStorm' }
+$FirstPort = if ($env:SOUNDSTORM_PORT) { [int]$env:SOUNDSTORM_PORT } else { 8099 }
+
+function Step($text) { Write-Host ""; Write-Host "  $text" -ForegroundColor White }
 function Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
+function Good($text) { Write-Host "    $text" -ForegroundColor Green }
 
 # Stop says why it stopped and what to do about it. An installer that reports
 # "error: 1" has failed twice.
 function Stop-With($text) {
     Write-Host ""
-    Write-Host "SoundStorm could not start." -ForegroundColor Red
+    Write-Host "  SoundStorm could not finish." -ForegroundColor Red
     Write-Host ""
     Write-Host $text
     Write-Host ""
     exit 1
 }
 
-function Test-Docker {
+# Invoke-Docker runs docker with stderr made harmless.
+#
+# PowerShell 5.1 wraps every stderr line from a native program in an
+# ErrorRecord, and with $ErrorActionPreference = 'Stop' the first one throws.
+# docker compose writes its ordinary progress to stderr, so `compose up` failed
+# this script by succeeding noisily. Anything that shells out goes through here.
+function Invoke-Docker {
+    param([string[]]$Arguments, [switch]$Capture)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($Capture) {
+            $lines = & docker @Arguments 2>&1 | ForEach-Object { "$_" }
+            return [pscustomobject]@{
+                ExitCode = $LASTEXITCODE
+                Output   = ($lines -join [Environment]::NewLine)
+            }
+        }
+        # Piped through Write-Host rather than run bare: without this the
+        # stderr lines still arrive as ErrorRecords and print as a red
+        # NativeCommandError block, which looks like a crash to anybody who
+        # has not seen one before. docker compose reports its progress there.
+        & docker @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = '' }
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
+function Test-DockerRunning {
+    docker info *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Get-DockerDesktopPath {
+    foreach ($candidate in @(
+        (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Docker\Docker\Docker Desktop.exe')
+    )) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    return $null
+}
+
+# Install-Docker uses winget, which ships with Windows 10 1809 and later.
+#
+# The alternative is telling somebody to visit a website, pick the right
+# download and run an installer, which is the single step this script exists
+# to remove.
+function Install-Docker {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Stop-With @"
+  SoundStorm needs Docker Desktop, and this PC does not have the installer
+  tool (winget) that would fetch it automatically.
+
+  Install Docker Desktop from here, then run this again:
+
+    https://www.docker.com/products/docker-desktop/
+"@
+    }
+
+    Note "Docker Desktop is not installed. Getting it now."
+    Note "This is a big download and takes a few minutes."
+    winget install --exact --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent
+    # 0 is installed; -1978335189 is "already installed", which is not a
+    # failure however it reads.
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
+        Stop-With @"
+  Docker Desktop would not install automatically.
+
+  Install it by hand from here, then run this again:
+
+    https://www.docker.com/products/docker-desktop/
+"@
+    }
+    Good "Docker Desktop installed."
+
+    # winget does not refresh this session's PATH.
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                [Environment]::GetEnvironmentVariable('Path', 'User')
+}
+
+# Start-Docker launches Docker Desktop and waits for its engine.
+#
+# "Docker is installed but not running" is the most common failure on Windows
+# by a distance, and the old answer - go and open it yourself - is exactly the
+# kind of instruction this is trying not to give.
+function Start-Docker {
+    $exe = Get-DockerDesktopPath
+    if (-not $exe) {
+        Stop-With @"
+  Docker Desktop is installed but this script cannot find it to start it.
+
+  Open Docker Desktop from the Start menu, wait until it says Running, then
+  run this again.
+"@
+    }
+
+    Note "Starting Docker Desktop. This takes a minute on a cold start."
+    Start-Process -FilePath $exe | Out-Null
+
+    $waited = 0
+    while (-not (Test-DockerRunning)) {
+        Start-Sleep -Seconds 3
+        $waited += 3
+        if ($waited % 30 -eq 0) { Note "still starting... ($waited seconds)" }
+        if ($waited -gt 300) {
+            Stop-With @"
+  Docker Desktop was started but its engine never came up.
+
+  Open Docker Desktop from the Start menu and see what it says - the first
+  run sometimes asks a question or wants a restart. Then run this again.
+"@
+        }
+    }
+    Good "Docker is running."
+}
+
+function Initialize-Docker {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Install-Docker
+    }
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         Stop-With @"
-Docker Desktop is not installed.
+  Docker Desktop was installed but is not on this window's PATH yet.
 
-Docker runs the media servers SoundStorm sits on top of, so it is the one thing
-you have to install yourself. It is free for personal use.
-
-  https://www.docker.com/products/docker-desktop/
-
-Install it, start it, then run this again.
+  Close this window, open the setup again, and it should find it. If not,
+  restart the PC first - Docker usually asks for one anyway.
 "@
     }
-
-    # Installed is not running, and this is the single most common failure:
-    # somebody installs Docker Desktop, never opens it, and gets a wall of pipe
-    # errors that say nothing about which application to launch.
-    docker info *> $null
-    if ($LASTEXITCODE -ne 0) {
-        Stop-With @"
-Docker Desktop is installed but not running.
-
-Open Docker Desktop from the Start menu and wait until it says Running, then
-run this again. It can take a minute on a cold start.
-"@
-    }
-}
-
-function Get-ComposeCommand {
-    docker compose version *> $null
-    if ($LASTEXITCODE -eq 0) { return @('docker', 'compose') }
-    if (Get-Command docker-compose -ErrorAction SilentlyContinue) { return @('docker-compose') }
-    Stop-With "Docker is running but Docker Compose is missing. Reinstall Docker Desktop, which includes it."
-}
-
-function Invoke-Compose {
-    param([string[]]$Arguments)
-    & $script:Compose[0] @($script:Compose[1..($script:Compose.Count - 1)] + $Arguments)
-    return $LASTEXITCODE
+    if (-not (Test-DockerRunning)) { Start-Docker }
 }
 
 # Test-PortFree binds the port rather than listing connections: a listener with
-# no connection to it does not show up in Get-NetTCPConnection on every
-# Windows build, and binding is the question we actually care about.
+# no connection to it does not show up in Get-NetTCPConnection on every Windows
+# build, and binding is the question we actually care about.
+# Get-ExistingInstallPath reads where an existing install was launched from.
+#
+# Through ConvertFrom-Json rather than a --format template, because PowerShell
+# strips the inner double quotes out of
+# '{{index .Config.Labels "com.docker.compose..."}}' on the way to docker, and
+# docker then fails with `function "com" not defined`. That is invisible until
+# the script is actually run on Windows.
+function Get-ExistingInstallPath {
+    $found = ''
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $raw = docker inspect soundstorm 2>$null
+        if ($LASTEXITCODE -eq 0 -and $raw) {
+            $labels = ($raw | ConvertFrom-Json)[0].Config.Labels
+            if ($labels) {
+                $found = $labels.'com.docker.compose.project.working_dir'
+            }
+        }
+    } catch {
+        $found = ''
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if (-not $found) { return '' }
+    return $found
+}
+
 function Test-PortFree([int]$Port) {
     $listener = $null
     try {
@@ -87,137 +230,227 @@ function Test-PortFree([int]$Port) {
     }
 }
 
-Write-Host ""
-Write-Host "SoundStorm" -ForegroundColor White -NoNewline
-Write-Host " - one login and one search box over your media library"
-Write-Host ""
+function Wait-ForSoundStorm([string]$Url) {
+    $waited = 0
+    while ($true) {
+        try {
+            Invoke-WebRequest -Uri "$Url/healthz" -UseBasicParsing -TimeoutSec 5 | Out-Null
+            return
+        } catch {
+            Start-Sleep -Seconds 2
+            $waited += 2
+            if ($waited -gt 180) {
+                Stop-With "  SoundStorm started but never answered on $Url.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs soundstorm"
+            }
+        }
+    }
+}
 
-Step "Checking Docker"
-Test-Docker
-$script:Compose = Get-ComposeCommand
+function Get-InstalledPort {
+    $envFile = Join-Path $Dir '.env'
+    if (Test-Path $envFile) {
+        $line = Select-String -Path $envFile -Pattern '^SOUNDSTORM_PORT=(\d+)' -ErrorAction SilentlyContinue
+        if ($line) { return [int]$line.Matches[0].Groups[1].Value }
+    }
+    return $FirstPort
+}
+
+# New-Shortcut writes a .lnk. WScript.Shell is the only way to do that without
+# shipping a compiled helper, and it is on every Windows since XP.
+function New-Shortcut($Path, $Target, $Arguments, $WorkingDirectory, $Description, $Minimised) {
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $shell.CreateShortcut($Path)
+    $link.TargetPath = $Target
+    if ($Arguments) { $link.Arguments = $Arguments }
+    if ($WorkingDirectory) { $link.WorkingDirectory = $WorkingDirectory }
+    $link.Description = $Description
+    # 7 is minimised: the launcher makes sure Docker is up before opening a
+    # browser, and that is not work anybody wants to watch.
+    if ($Minimised) { $link.WindowStyle = 7 }
+    $link.Save()
+}
+
+function Install-Shortcuts {
+    $localScript = Join-Path $Dir 'soundstorm.ps1'
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Launch"
+
+    $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    New-Shortcut (Join-Path $startMenu 'SoundStorm.lnk') $powershell $arguments $Dir `
+        'Open your media library' $true
+    New-Shortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'SoundStorm.lnk') `
+        $powershell $arguments $Dir 'Open your media library' $true
+
+    # Somewhere to put files, one click away. The app takes a drag-and-drop
+    # too, but a folder is what people reach for with a hard drive of music.
+    New-Shortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'SoundStorm media.lnk') `
+        (Join-Path $Dir 'library') $null $null 'Put your music, films and books in here' $false
+
+    if (-not $NoAutoStart) {
+        $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+        New-Shortcut (Join-Path $startup 'SoundStorm.lnk') $powershell `
+            "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Launch -NoBrowser" $Dir `
+            'Start SoundStorm with Windows' $true
+    }
+    Good "Added SoundStorm to the Start menu and the desktop."
+}
+
+# --- opening an install that is already here ----------------------------------
+
+if ($Launch) {
+    if (-not (Test-Path (Join-Path $Dir 'docker-compose.yml'))) {
+        Stop-With "  SoundStorm is not installed in $Dir. Run the setup again."
+    }
+    Set-Location $Dir
+    Initialize-Docker
+    Invoke-Docker @('compose', 'up', '-d') -Capture | Out-Null
+    $port = Get-InstalledPort
+    $url = "http://localhost:$port"
+    Wait-ForSoundStorm $url
+    # At startup there is nobody watching yet, so the browser stays shut; the
+    # desktop icon is what opens it.
+    if (-not $NoBrowser) { Start-Process $url }
+    exit 0
+}
+
+# --- installing -----------------------------------------------------------------
+
+Write-Host ""
+Write-Host "  SoundStorm" -ForegroundColor White -NoNewline
+Write-Host " - all your music, films, books and audiobooks in one place"
+Write-Host "  -----------------------------------------------------------"
+
+Step "Checking for Docker"
+Initialize-Docker
 Note (docker --version)
 
 Step "Setting up $Dir"
 
 # The compose project name is fixed, so a second install in a second folder
-# does not get its own stack - it adopts the first one, ends up pointing at a
-# library folder nobody put anything in, and looks broken for no visible
-# reason. Compose records the directory it was launched from, so we can ask.
-$previous = (docker inspect soundstorm --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>$null)
-if ($LASTEXITCODE -ne 0) { $previous = '' }
-if ($previous -and $previous -ne $Dir -and -not (Test-Path (Join-Path $Dir 'docker-compose.yml'))
-    -and $env:SOUNDSTORM_FORCE -ne '1') {
+# adopts the first one's containers and then points at an empty library.
+$previous = Get-ExistingInstallPath
+# Split out rather than written as one long condition: PowerShell 5.1 will not
+# take a line break before an operator inside an if, and the one-line version
+# is unreadable.
+$installedHere = Test-Path (Join-Path $Dir 'docker-compose.yml')
+$elsewhere = $previous -and ($previous -ne $Dir) -and (-not $installedHere)
+if ($elsewhere -and $env:SOUNDSTORM_FORCE -ne '1') {
     Stop-With @"
-SoundStorm is already installed in another folder:
+  SoundStorm is already installed in another folder:
 
-  $previous
+    $previous
 
-Installing it here as well would not give you a second copy - both folders
-would drive the same containers, and this one would point at an empty library.
-
-To use the existing install:   cd "$previous"
-To move it here instead:       cd "$previous"; docker compose down, then run this again
-To install anyway:             `$env:SOUNDSTORM_FORCE=1; ./install.ps1
+  Installing it here as well would not give you a second copy - both folders
+  would drive the same containers, and this one would point at an empty
+  library. Use the one that is already there, or remove it first.
 "@
 }
 
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 Set-Location $Dir
 
-$upgrade = $false
-if ((Test-Path docker-compose.yml) -and $env:SOUNDSTORM_FORCE -ne '1') {
-    Note "already installed here - upgrading it instead"
-    $upgrade = $true
+$upgrade = (Test-Path 'docker-compose.yml') -and $env:SOUNDSTORM_FORCE -ne '1'
+if ($upgrade) {
+    Note "Already installed here - updating it instead."
 } else {
     try {
-        # Download to a temporary name so a failure cannot leave a working
-        # install with half a compose file in it.
+        # To a temporary name first, so a failed download cannot leave a
+        # working install with half a compose file in it.
         Invoke-WebRequest -Uri $ComposeUrl -OutFile 'docker-compose.yml.new' -UseBasicParsing
         Move-Item -Force 'docker-compose.yml.new' 'docker-compose.yml'
     } catch {
-        Stop-With "Could not download the compose file from`n`n  $ComposeUrl`n`nCheck your connection and try again."
+        Stop-With "  Could not download SoundStorm from`n`n    $ComposeUrl`n`n  Check the internet connection and try again."
     }
-    Note "downloaded docker-compose.yml"
+}
+
+# A copy of this script lives beside the install, so the desktop shortcut has
+# something to run and updating later needs no web address.
+try {
+    Invoke-WebRequest -Uri $ScriptUrl -OutFile 'soundstorm.ps1' -UseBasicParsing
+} catch {
+    if ($PSCommandPath -and (Test-Path $PSCommandPath)) {
+        Copy-Item $PSCommandPath 'soundstorm.ps1' -Force
+    }
 }
 
 foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks') {
     New-Item -ItemType Directory -Force -Path (Join-Path 'library' $folder) | Out-Null
 }
 
-if (-not $upgrade) {
-    Step "Choosing a port"
+if ($upgrade) {
+    $port = Get-InstalledPort
+} else {
     $port = $FirstPort
     while (-not (Test-PortFree $port)) {
         $port++
         if ($port -gt $FirstPort + 20) {
-            Stop-With "Ports $FirstPort to $port are all in use. Pick one yourself:`n`n  `$env:SOUNDSTORM_PORT=9000; ./install.ps1"
+            Stop-With "  Ports $FirstPort to $port are all in use on this PC.`n`n  Show this to whoever gave you the app."
         }
     }
-    if ($port -ne $FirstPort) { Note "$FirstPort was busy, using $port" } else { Note "using $port" }
-    # Compose reads .env from beside the compose file, so the choice sticks for
-    # every later `docker compose up` without anyone having to remember it.
+    if ($port -ne $FirstPort) { Note "Port $FirstPort was busy, using $port." }
+    # Compose reads .env from beside the compose file, so the choice sticks.
     "SOUNDSTORM_PORT=$port" | Out-File -FilePath '.env' -Encoding ascii
-} else {
-    $line = Select-String -Path '.env' -Pattern '^SOUNDSTORM_PORT=(\d+)' -ErrorAction SilentlyContinue
-    $port = if ($line) { [int]$line.Matches[0].Groups[1].Value } else { $FirstPort }
 }
 
 if ($upgrade) {
-    Step "Checking for newer versions"
+    Step "Checking for a newer version"
 } else {
     Step "Downloading the media servers"
-    Note "about 3GB the first time - Jellyfin is most of it"
+    Note "About 3GB the first time. This is the long part - leave it running."
 }
-if ((Invoke-Compose @('pull')) -ne 0) {
-    Stop-With "Could not download the images. That is almost always the network.`nCheck your connection and run this again - anything already downloaded is kept."
+# Shown rather than captured: this is the part that takes minutes, and a
+# silent window is how somebody decides it has hung.
+$pull = Invoke-Docker @('compose', 'pull')
+if ($pull.ExitCode -ne 0) {
+    Stop-With "  Could not download the media servers. That is almost always the`n  internet connection. Try again - anything already downloaded is kept."
 }
 
-Step "Starting"
-# Captured rather than streamed, so a failure can be read and explained instead
-# of leaving somebody to interpret a Docker error.
-$out = & $script:Compose[0] @($script:Compose[1..($script:Compose.Count - 1)] + @('up', '-d')) 2>&1
-if ($LASTEXITCODE -ne 0) {
-    $out | ForEach-Object { Write-Host $_ }
-    if ($out -match 'already allocated|address already in use|forbidden by its access permissions') {
-        Stop-With "Port $port is already being used by something else.`n`nPick another one and run this again:`n`n  `$env:SOUNDSTORM_PORT=9000; ./install.ps1"
+Step "Starting SoundStorm"
+$start = Invoke-Docker @('compose', 'up', '-d') -Capture
+if ($start.ExitCode -ne 0) {
+    Write-Host $start.Output
+    if ($start.Output -match 'already allocated|address already in use|forbidden by its access permissions') {
+        Stop-With "  Port $port is already being used by another program on this PC.`n`n  Show this to whoever gave you the app."
     }
-    Stop-With "The containers would not start. This usually says why:`n`n  cd $Dir; docker compose logs"
+    Stop-With "  SoundStorm would not start.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
 }
 
-Step "Waiting for SoundStorm to answer"
 $url = "http://localhost:$port"
-$waited = 0
-while ($true) {
+Wait-ForSoundStorm $url
+
+if (-not $NoShortcuts) {
+    Step "Adding shortcuts"
     try {
-        Invoke-WebRequest -Uri "$url/healthz" -UseBasicParsing -TimeoutSec 5 | Out-Null
-        break
+        Install-Shortcuts
     } catch {
-        $waited += 2
-        if ($waited -gt 120) {
-            Stop-With "SoundStorm started but never answered on $url.`n`n  cd $Dir; docker compose logs soundstorm"
-        }
-        Start-Sleep -Seconds 2
+        # Not worth failing an otherwise finished install over.
+        Note "Could not add shortcuts: $($_.Exception.Message)"
+        Note "SoundStorm still works at $url"
     }
 }
 
 Write-Host ""
+Write-Host "  -----------------------------------------------------------"
 if ($upgrade) {
-    Write-Host "Up to date." -ForegroundColor Green -NoNewline
-    Write-Host " SoundStorm is running at $url."
+    Write-Host "  Up to date." -ForegroundColor Green -NoNewline
+    Write-Host " SoundStorm is running."
 } else {
-    Write-Host "Ready." -ForegroundColor Green -NoNewline
-    Write-Host " Open $url and create your account."
+    Write-Host "  Done." -ForegroundColor Green -NoNewline
+    Write-Host " SoundStorm is running at $url"
 }
 Write-Host ""
-Write-Host "Your media goes in $Dir\library :"
-Write-Host "    music\  movies\  tv\  audiobooks\  ebooks\"
+Write-Host "  Opening it now. Pick a username and password on the first screen -"
+Write-Host "  that is your account, and nobody else can create one."
 Write-Host ""
-Note "The media servers are still setting themselves up in the background."
-Note "The app shows you when each one is ready - that takes a minute or two."
+Write-Host "  To add music, films or books: drag them onto the window, or put"
+Write-Host "  them in the 'SoundStorm media' folder on your desktop."
 Write-Host ""
-Note "stop:    cd $Dir; docker compose down"
-Note "logs:    cd $Dir; docker compose logs -f"
-Note "upgrade: run this installer again"
+if (-not $NoShortcuts) {
+    Write-Host "  Next time, click the SoundStorm icon on your desktop." -ForegroundColor DarkGray
+    if (-not $NoAutoStart) {
+        Write-Host "  It also starts by itself when you turn the PC on." -ForegroundColor DarkGray
+    }
+}
 Write-Host ""
 
 Start-Process $url

@@ -67,16 +67,29 @@ Then one command:
 curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.sh | sh
 ```
 
-**Windows** (PowerShell)
+**Windows** — download
+[SoundStorm-Setup.cmd](https://raw.githubusercontent.com/gabehollberg/soundstorm/main/SoundStorm-Setup.cmd)
+and double-click it. Nothing to install first and no terminal to find: if
+Docker is missing it installs that too, and if it is not running it starts it.
+
+<details>
+<summary>Windows, from PowerShell instead</summary>
 
 ```powershell
 irm https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.ps1 | iex
 ```
 
+</details>
+
 That downloads about 3GB of media servers, starts them, finds a free port if
 8099 is busy, and opens your browser when it is ready. Pick a username and
 password on the first screen and you are in. **You will never see an API key,
 a config file, or a second login.**
+
+On Windows it also leaves a **SoundStorm icon on the desktop** and starts with
+the PC, so after the first time it is one click — and a **SoundStorm media**
+folder shortcut for dropping files in. Windows may warn that the file is from
+an unknown publisher the first time: *More info → Run anyway*.
 
 <details>
 <summary>Prefer to do it by hand?</summary>
@@ -203,15 +216,23 @@ the session cookie is marked Secure.
 server directly on the open internet is a decision worth making deliberately. A
 VPN such as [Tailscale](https://tailscale.com) remains the easiest safe answer.
 
-### Running it on Windows
+### Windows, in more detail
 
-It already does. Docker Desktop runs the same Linux images on Windows that it
-runs everywhere else, and `install.ps1` is the Windows installer — this project
-is developed and tested on Windows.
+Windows is a first-class target — this project is developed and tested on it.
+Docker Desktop runs the same Linux images there that it runs everywhere else,
+and the setup file handles the parts people get stuck on:
+
+| | |
+| --- | --- |
+| Docker not installed | installs it with `winget`, no website visit |
+| Docker installed but not running | starts it and waits for it |
+| Port 8099 already taken | quietly uses the next free one |
+| Remembering the address | desktop and Start Menu shortcuts |
+| Turning the PC on | starts by itself |
 
 What is *not* supported is running the whole stack natively without Docker.
-SoundStorm's own binary does run natively on Windows, and on its own it will
-serve your ebooks; but films, music and audiobooks are Jellyfin, Navidrome and
+SoundStorm's own binary does run natively on Windows, and on its own it serves
+your ebooks; but films, music and audiobooks *are* Jellyfin, Navidrome and
 Audiobookshelf, and running those without containers would mean SoundStorm
 installing and supervising three third-party servers as Windows processes. That
 is a different project, and the one thing SoundStorm is careful not to become.

@@ -422,6 +422,34 @@ media servers are a Pi, a Synology or an Apple silicon Mac. The Dockerfile
 pins its *builder* to `$BUILDPLATFORM` and cross-compiles via
 `GOOS`/`GOARCH`, so the arm64 image does not run the Go toolchain under QEMU.
 
+`install.ps1` is aimed at somebody who has never opened a terminal, because
+that is who a self-hosted media server usually gets given to. It installs
+Docker Desktop itself with `winget` rather than sending them to a website,
+starts Docker rather than telling them to, and leaves desktop, Start Menu and
+startup shortcuts rather than an address to remember. `SoundStorm-Setup.cmd`
+exists only so the thing can be double-clicked out of the Downloads folder;
+asking somebody to open PowerShell and paste a command is the step that loses
+people.
+
+Three bugs in that script were found only by running it, and all three are
+PowerShell-specific traps worth knowing:
+
+- **A line break before an operator inside `if (...)` is a syntax error** in
+  5.1. The file had one for two commits and would not parse at all. It went
+  unnoticed because the syntax check discarded the error collection -
+  `PSParser::Tokenize` returns tokens and reports errors through a `[ref]`
+  parameter, so ignoring it means every file "parses clean".
+- **PowerShell strips the inner double quotes** out of
+  `--format '{{index .Config.Labels "com.docker..."}}'` on the way to a native
+  program, and docker then fails with `function "com" not defined`. Read the
+  labels with `ConvertFrom-Json` instead.
+- **Native stderr becomes an ErrorRecord**, so with
+  `$ErrorActionPreference = 'Stop'` a `docker compose up` fails the script by
+  printing its ordinary progress. Everything that shells out goes through
+  `Invoke-Docker`, which pins the preference to Continue and pipes stderr
+  through `Write-Host` so it prints as text rather than as a red block that
+  looks like a crash.
+
 `install.sh` is `/bin/sh`, not bash - a stock Debian's `/bin/sh` is dash, and
 that is exactly the cheap box this is aimed at. Every failure message says what
 to do next; "Docker is installed but not running" is the most common one by a
