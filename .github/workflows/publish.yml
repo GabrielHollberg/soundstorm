@@ -44,6 +44,22 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+      # SoundStorm-Setup.cmd is downloaded straight from raw.githubusercontent
+      # and run by cmd.exe, which does not reliably honour `goto` with LF line
+      # endings - and this file uses goto. A repo-wide `sed -i` has quietly
+      # stripped the carriage returns out of it once already, which is not
+      # something anybody would notice until the first person to try it got a
+      # batch file that ran half of itself.
+      - name: The Windows setup file still has CRLF
+        run: |
+          returns=$(tr -dc '' < SoundStorm-Setup.cmd | wc -c)
+          if [ "$returns" -eq 0 ]; then
+            echo "SoundStorm-Setup.cmd has lost its CRLF line endings."
+            echo "cmd.exe needs them. See the *.cmd rule in .gitattributes."
+            exit 1
+          fi
+          echo "$returns carriage returns, as required"
+
   publish:
     # Never publish something that does not pass. A broken :latest is worse
     # than no :latest, because it reaches people who did nothing wrong.
