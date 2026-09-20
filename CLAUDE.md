@@ -443,12 +443,30 @@ PowerShell-specific traps worth knowing:
   `--format '{{index .Config.Labels "com.docker..."}}'` on the way to a native
   program, and docker then fails with `function "com" not defined`. Read the
   labels with `ConvertFrom-Json` instead.
+- **`Start-Process -PassThru` hands back a Process with no cached handle**, and
+  without one `WaitForExit(timeout)` never observes the exit: it returns false
+  at the deadline for a program that finished in a second. Reading `.Handle`
+  once is what caches it. The symptom is every launch taking exactly the
+  timeout and then reporting failure while the containers run perfectly well
+  behind it.
 - **Native stderr becomes an ErrorRecord**, so with
   `$ErrorActionPreference = 'Stop'` a `docker compose up` fails the script by
   printing its ordinary progress. Everything that shells out goes through
   `Invoke-Docker`, which pins the preference to Continue and pipes stderr
   through `Write-Host` so it prints as text rather than as a red block that
   looks like a crash.
+
+The desktop shortcut runs the launcher **minimised**, which is right for the
+common case - clicking it when the stack is already up takes half a second -
+and wrong for every failure, because console text written into a minimised
+window is text nobody will ever see. So `-Launch` failures also open a dialog,
+and `compose up -d` gets a deadline: without one, an unreachable registry makes
+the icon do nothing at all, for minutes, with no way to tell that from a broken
+shortcut. The dialog dismisses itself after two minutes, because at startup
+there may be nobody there to click it.
+
+Measured on the development machine: 2.9 seconds from every container stopped,
+0.4 seconds when it is already running.
 
 `install.sh` is `/bin/sh`, not bash - a stock Debian's `/bin/sh` is dash, and
 that is exactly the cheap box this is aimed at. Every failure message says what

@@ -43,13 +43,56 @@ function Good($text) { Write-Host "    $text" -ForegroundColor Green }
 
 # Stop says why it stopped and what to do about it. An installer that reports
 # "error: 1" has failed twice.
+#
+# In -Launch mode it also puts the message in a dialog box. That path runs from
+# a desktop shortcut with a minimised window, so console text is written where
+# nobody will ever see it - the failure just looks like clicking the icon did
+# nothing at all.
 function Stop-With($text) {
     Write-Host ""
     Write-Host "  SoundStorm could not finish." -ForegroundColor Red
     Write-Host ""
     Write-Host $text
     Write-Host ""
+    if ($Launch) { Show-Problem $text }
     exit 1
+}
+
+function Show-Problem($text) {
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        # 120 seconds rather than 0: at startup there may be nobody to click
+        # it, and a modal box waiting forever would keep the process alive.
+        # 48 is the warning icon.
+        $shell.Popup($text, 120, 'SoundStorm', 48) | Out-Null
+    } catch {
+        # A dialog is a nicety; failing to show one must not become the error.
+    }
+}
+
+# Invoke-DockerBounded runs docker with a deadline.
+#
+# `compose up -d` normally takes seconds, but it will sit for a very long time
+# trying to reach a registry it cannot. From a minimised shortcut that is
+# indistinguishable from the icon doing nothing, so the launcher gives it a
+# limit and reports rather than waiting.
+function Invoke-DockerBounded {
+    param([string[]]$Arguments, [int]$TimeoutSeconds = 120)
+
+    $process = Start-Process -FilePath 'docker' -ArgumentList $Arguments `
+        -NoNewWindow -PassThru
+    # Reading .Handle is not a no-op and is not optional. Start-Process
+    # -PassThru hands back a Process object with no cached handle, and without
+    # one WaitForExit(timeout) never observes the exit - it returns false at
+    # the deadline for a program that finished in a second. The symptom is
+    # every launch taking exactly as long as the timeout and then reporting
+    # failure, with the containers running perfectly well behind it.
+    $null = $process.Handle
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        try { $process.Kill() } catch {}
+        return 1
+    }
+    return $process.ExitCode
 }
 
 # Invoke-Docker runs docker with stderr made harmless.
@@ -303,7 +346,9 @@ if ($Launch) {
     }
     Set-Location $Dir
     Initialize-Docker
-    Invoke-Docker @('compose', 'up', '-d') -Capture | Out-Null
+    if ((Invoke-DockerBounded @('compose', 'up', '-d')) -ne 0) {
+        Stop-With "  SoundStorm would not start.`n`n  Try turning the PC off and on again. If it keeps happening, show`n  this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
+    }
     $port = Get-InstalledPort
     $url = "http://localhost:$port"
     Wait-ForSoundStorm $url
