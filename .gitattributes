@@ -1,0 +1,19 @@
+# Shell scripts must be LF in the repository, whatever the checkout does.
+#
+# install.sh is served raw from GitHub and piped straight into sh. A single
+# carriage return at the end of the shebang makes the kernel look for an
+# interpreter called "/bin/sh\r", and the whole install dies with
+# "bad interpreter: no such file or directory" on the very first line.
+*.sh text eol=lf
+install.sh text eol=lf
+
+# The same trap, one layer down: these are copied into containers and run by
+# a Linux shell.
+Dockerfile text eol=lf
+*.yml text eol=lf
+
+# Media in the starter library and the screenshots are bytes, not text.
+*.png binary
+*.mp3 binary
+*.epub binary
+*.pdf binary
