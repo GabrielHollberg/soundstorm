@@ -121,6 +121,33 @@ One asymmetry worth knowing: only `localbooks` reports an indexed count, so the
 music, movie and audiobook rows show files-on-disk with no comparison. Navidrome
 and Jellyfin would each need a count call to fix that.
 
+## PDFs, and why there is no PDF parser
+
+`internal/pdf` does not parse PDF structure, deliberately. Doing it properly
+means the cross-reference table, then cross-reference streams, then object
+streams - hundreds of lines before the first title appears. Measured against
+five real PDFs from five producers (pdfTeX, Gutenberg, Adobe Designer,
+Ghostscript, PDFsam), all that machinery would have returned nothing: every one
+had an Info dictionary that was absent or literally empty, `/Title ()`.
+
+Two of the five carried an XMP packet - Dublin Core, plain XML, uncompressed -
+which a byte scan and `encoding/xml` reach for free, in the same vocabulary
+`internal/epub` already speaks. So the order is XMP, then the Info dictionary if
+it happens to be readable, then the filename.
+
+For PDFs the filename is a primary source, not a fallback. Most were never told
+anything about themselves and whoever saved the file put the only real
+information into its name.
+
+One trap worth knowing: XMP nests every value inside `rdf:Alt` or `rdf:Seq`
+containing `rdf:li`, so reading `dc:title` as a plain string yields an empty
+one. That is exactly how those five files first looked like they had no
+metadata at all.
+
+No covers: extracting one means rendering page one, which needs a PDF renderer
+this project is not carrying. No reading position either - PDFs go to the
+browser's own viewer in an iframe, and browser viewers do not expose position.
+
 ## The one media type SoundStorm owns, and why that is not a slippery slope
 
 Ebooks have no backend. Calibre-Web was removed: it needed a *database* rather

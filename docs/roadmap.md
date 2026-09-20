@@ -25,12 +25,13 @@ below is a feature; this one is the question of whether the features work.
 
 ## 2. More ebook formats
 
-The reader handles EPUB. foliate-js also ships MOBI, AZW3, FB2 and CBZ readers
-that were not vendored, and `internal/epub` only knows EPUB, so the library
-scan ignores everything else on disk.
+EPUB and PDF are handled. MOBI, AZW3, FB2 and CBZ are not, and neither the
+library scan nor the reader knows about them.
 
-PDF is the awkward one either way: weak embedded metadata, so the filename is
-often all there is to go on.
+foliate-js already ships readers for all of them - `mobi.js`, `fb2.js`,
+`comic-book.js` - and they were simply not vendored. The Go side would need
+metadata for each, which for MOBI means parsing the PalmDOC header and for CBZ
+means there is nothing to parse and the filename is all there is.
 
 ## 3. Reading position is per-account, not per-device
 

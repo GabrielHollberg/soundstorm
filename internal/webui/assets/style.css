@@ -502,3 +502,11 @@ code {
   font: inherit;
   font-size: 13px;
 }
+
+#reader-pdf {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: var(--surface-2);
+}

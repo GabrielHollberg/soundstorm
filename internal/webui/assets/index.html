@@ -115,6 +115,10 @@
     <div class="reader-body">
       <button id="reader-prev" class="page-turn" type="button" aria-label="Previous page">&lsaquo;</button>
       <div id="reader-host"></div>
+      <!-- PDFs go to the browser's own viewer. foliate-js cannot lay them out
+           without pdf.js, and every browser already ships something better
+           than we would vendor. -->
+      <iframe id="reader-pdf" class="hidden" title="PDF"></iframe>
       <button id="reader-next" class="page-turn" type="button" aria-label="Next page">&rsaquo;</button>
     </div>
   </div>

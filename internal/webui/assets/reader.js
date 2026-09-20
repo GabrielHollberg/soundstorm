@@ -117,6 +117,10 @@ async function flushProgress() {
 
 /* ------------------------------------------------------------------- reader */
 
+function isPDF(item) {
+  return ((item.extra && item.extra.format) || '').toLowerCase() === 'pdf';
+}
+
 export async function open(item) {
   const overlay = $('reader-overlay');
   const host = $('reader-host');
@@ -130,6 +134,24 @@ export async function open(item) {
   overlay.classList.remove('hidden');
 
   session.item = item;
+
+  // A PDF has no spine to walk and no CFI to remember: it goes to the
+  // browser's viewer whole. Reading position is lost, which is an honest gap
+  // rather than a hidden one - browser PDF viewers do not expose it.
+  if (isPDF(item)) {
+    show($('reader-host'), false);
+    for (const control of ['reader-prev', 'reader-next']) show($(control), false);
+    $('reader-progress').textContent = 'PDF';
+
+    const frame = $('reader-pdf');
+    frame.src = streamPath(item);
+    show(frame, true);
+    return;
+  }
+
+  show($('reader-host'), true);
+  for (const control of ['reader-prev', 'reader-next']) show($(control), true);
+  show($('reader-pdf'), false);
 
   try {
     await loadManifest(item);
@@ -189,6 +211,10 @@ function applyTheme(view) {
 
 export async function close() {
   await flushProgress();
+
+  const frame = $('reader-pdf');
+  frame.removeAttribute('src');
+  show(frame, false);
 
   session.view?.close?.();
   session.view = null;

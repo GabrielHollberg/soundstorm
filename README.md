@@ -24,7 +24,7 @@ credentials itself, and puts one interface on top:
 | **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
 | **Films and TV** | Jellyfin — metadata, artwork, season/episode structure |
 | **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
-| **Ebooks** | SoundStorm itself — an EPUB describes itself, so no backend is needed |
+| **Ebooks** | SoundStorm itself — EPUB and PDF, read in the browser |
 
 Using the real servers instead of reimplementing them is the whole trick. When
 you search "dune" and get a film back with a real poster and a real synopsis,
@@ -73,7 +73,7 @@ library/
   movies/      Arrival (2016)/Arrival (2016).mkv
   tv/          Severance (2022)/Season 01/Severance - S01E01.mkv
   audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
-  ebooks/      A Wizard of Earthsea.epub
+  ebooks/      A Wizard of Earthsea.epub, Some Paper - Author (2017).pdf
 ```
 
 Put a file in the matching folder and it appears in search. Navidrome and the
@@ -83,7 +83,7 @@ pretending the file is not there.
 
 ![The folder guide a new install opens on](docs/shots/1-library.png)
 
-`library/ebooks` is a plain folder of `.epub` files. It can also be an existing
+`library/ebooks` is a plain folder of `.epub` and `.pdf` files. It can also be an existing
 Calibre library — SoundStorm reads Calibre's `metadata.opf` sidecars, so a library
 you already curate keeps its series, tags and corrected authors, with no
 SQLite driver and no Calibre-Web container.
@@ -144,6 +144,7 @@ internal/source/     the Source interface, Target, Registry
 internal/source/*/   one package per backend (subsonic, jellyfin,
                      audiobookshelf, localbooks, opds)
 internal/epub/       EPUB metadata and resource reading
+internal/pdf/        PDF metadata, without parsing PDF structure
 internal/provision/  first-boot credential provisioning  ← the load-bearing part
 internal/state/      the little that must survive a restart
 internal/auth/       single-account login, PBKDF2, sessions

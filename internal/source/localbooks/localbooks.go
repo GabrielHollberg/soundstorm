@@ -32,6 +32,7 @@ import (
 
 	"github.com/gabehollberg/soundstorm/internal/epub"
 	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/pdf"
 	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
@@ -48,11 +49,24 @@ type Config struct {
 	RescanInterval time.Duration
 }
 
-// book is one indexed title.
+// book is one indexed title, in whatever format it arrived.
+//
+// Deliberately not epub.Metadata any more: a PDF describes itself far less
+// well, and pretending both formats have the same shape pushed format-specific
+// guessing into every caller.
 type book struct {
-	ID    string // stable: the path relative to Root
-	Path  string // absolute path to the book file
-	Meta  epub.Metadata
+	ID     string // stable: the path relative to Root
+	Path   string // absolute path to the book file
+	Format string // "epub" or "pdf"
+
+	Title       string
+	Creators    []string
+	Series      string
+	SeriesIndex string
+	Language    string
+	Subjects    []string
+	Year        int
+
 	Cover coverSource
 
 	size    int64
@@ -178,7 +192,7 @@ func (s *Source) scan(ctx context.Context) error {
 			}
 			return nil
 		}
-		if !strings.EqualFold(filepath.Ext(d.Name()), ".epub") {
+		if formatOf(d.Name()) == "" {
 			return nil
 		}
 
@@ -214,7 +228,7 @@ func (s *Source) scan(ctx context.Context) error {
 		return err
 	}
 
-	sort.Slice(found, func(i, j int) bool { return found[i].Meta.Title < found[j].Meta.Title })
+	sort.Slice(found, func(i, j int) bool { return found[i].Title < found[j].Title })
 	byID := make(map[string]book, len(found))
 	for _, b := range found {
 		byID[b.ID] = b
@@ -232,49 +246,122 @@ func (s *Source) scan(ctx context.Context) error {
 	return nil
 }
 
-// read builds one index entry, preferring Calibre's sidecar metadata.
-func (s *Source) read(bookPath, id string, size int64, modTime time.Time) (book, error) {
-	b := book{ID: id, Path: bookPath, size: size, modTime: modTime}
-	dir := filepath.Dir(bookPath)
+// formatOf reports the book format a filename implies, or "" if it is not one.
+func formatOf(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".epub":
+		return "epub"
+	case ".pdf":
+		return "pdf"
+	default:
+		return ""
+	}
+}
 
+// read builds one index entry.
+func (s *Source) read(bookPath, id string, size int64, modTime time.Time) (book, error) {
+	b := book{ID: id, Path: bookPath, Format: formatOf(bookPath), size: size, modTime: modTime}
+
+	var err error
+	switch b.Format {
+	case "pdf":
+		err = s.readPDF(&b)
+	default:
+		err = s.readEPUB(&b)
+	}
+	if err != nil {
+		return book{}, err
+	}
+
+	if b.Title == "" {
+		// Better a filename than an untitled row.
+		b.Title = strings.TrimSuffix(filepath.Base(bookPath), filepath.Ext(bookPath))
+	}
+	return b, nil
+}
+
+// readEPUB fills in a book from an EPUB, preferring Calibre's sidecar.
+func (s *Source) readEPUB(b *book) error {
+	dir := filepath.Dir(b.Path)
+
+	var meta epub.Metadata
 	// A Calibre library puts metadata.opf beside the book. It is the same
 	// format as the one inside the epub and it is better maintained, because
 	// it is what the user edited in Calibre.
 	if raw, err := os.ReadFile(filepath.Join(dir, "metadata.opf")); err == nil {
-		if meta, _, err := epub.ParseOPF(raw, ""); err == nil {
-			b.Meta = meta
+		if sidecar, _, err := epub.ParseOPF(raw, ""); err == nil {
+			meta = sidecar
 		}
 	}
 
-	if b.Meta.Title == "" {
-		opened, err := epub.Open(bookPath)
+	if meta.Title == "" {
+		opened, err := epub.Open(b.Path)
 		if err != nil {
-			return book{}, err
+			return err
 		}
-		b.Meta = opened.Meta
+		meta = opened.Meta
 		b.Cover.Href = opened.Meta.CoverHref
 		opened.Close()
-	} else if inner, err := epub.Open(bookPath); err == nil {
+	} else if inner, err := epub.Open(b.Path); err == nil {
 		// Sidecar metadata won, but the cover still has to come from somewhere.
 		b.Cover.Href = inner.Meta.CoverHref
 		inner.Close()
 	}
 
-	// Calibre also extracts the cover next to the book, which saves an unzip
-	// on every artwork request.
-	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png"} {
+	b.Title = meta.Title
+	b.Creators = meta.Creators
+	b.Series = meta.Series
+	b.SeriesIndex = meta.SeriesIndex
+	b.Language = meta.Language
+	b.Subjects = meta.Subjects
+	b.Year = meta.Year()
+	s.findSidecarCover(b)
+	return nil
+}
+
+// readPDF fills in a book from a PDF.
+//
+// The filename is merged in rather than used only as a last resort, because a
+// PDF that knows its title often does not know its author, and whoever saved
+// the file usually put both in its name.
+func (s *Source) readPDF(b *book) error {
+	meta, err := pdf.Open(b.Path)
+	if err != nil {
+		return err
+	}
+	meta = meta.Merge(pdf.FromFilename(filepath.Base(b.Path)))
+
+	b.Title = meta.Title
+	b.Creators = meta.Authors
+	b.Subjects = meta.Keywords
+	b.Year = meta.Year()
+
+	// No cover: extracting one means rendering page one, which needs a PDF
+	// renderer this project is not going to carry. A sidecar image beside the
+	// file is still honoured, because that is cheap and some people make them.
+	s.findSidecarCover(b)
+	return nil
+}
+
+// findSidecarCover looks for artwork sitting next to the book.
+//
+// Calibre extracts one there, which saves an unzip on every artwork request.
+func (s *Source) findSidecarCover(b *book) {
+	if b.Cover.SidecarPath != "" {
+		return
+	}
+	dir := filepath.Dir(b.Path)
+	stem := strings.TrimSuffix(filepath.Base(b.Path), filepath.Ext(b.Path))
+	for _, name := range []string{
+		"cover.jpg", "cover.jpeg", "cover.png",
+		stem + ".jpg", stem + ".jpeg", stem + ".png",
+	} {
 		candidate := filepath.Join(dir, name)
 		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
 			b.Cover.SidecarPath = candidate
-			break
+			return
 		}
 	}
-
-	if b.Meta.Title == "" {
-		// Fall back to the filename rather than showing an untitled row.
-		b.Meta.Title = strings.TrimSuffix(filepath.Base(bookPath), filepath.Ext(bookPath))
-	}
-	return b, nil
 }
 
 // Search matches the in-memory index. Ranking is left to internal/federate,
@@ -311,8 +398,8 @@ func (s *Source) Search(_ context.Context, q media.Query) ([]media.Item, error) 
 // all terms keeps "wizard earthsea" from returning every book with "the" in it.
 func matches(b book, terms []string) bool {
 	haystack := normalize(strings.Join(append([]string{
-		b.Meta.Title, b.Meta.Series, strings.Join(b.Meta.Subjects, " "),
-	}, b.Meta.Creators...), " "))
+		b.Title, b.Series, strings.Join(b.Subjects, " "),
+	}, b.Creators...), " "))
 	for _, t := range terms {
 		if !strings.Contains(haystack, t) {
 			return false
@@ -322,30 +409,34 @@ func matches(b book, terms []string) bool {
 }
 
 func (b book) item(sourceID string) media.Item {
+	format := b.Format
+	if format == "" {
+		format = "epub"
+	}
 	item := media.Item{
 		ID:       b.ID,
 		SourceID: sourceID,
 		Kind:     media.KindEbook,
-		Title:    b.Meta.Title,
-		Creators: b.Meta.Creators,
-		Year:     b.Meta.Year(),
-		Extra:    map[string]string{"format": "epub"},
+		Title:    b.Title,
+		Creators: b.Creators,
+		Year:     b.Year,
+		Extra:    map[string]string{"format": format},
 	}
 	if b.Cover.SidecarPath != "" || b.Cover.Href != "" {
 		item.ArtID = b.ID
 	}
-	if b.Meta.Series != "" {
-		item.Subtitle = b.Meta.Series
-		item.Extra["series"] = b.Meta.Series
-		if b.Meta.SeriesIndex != "" {
-			item.Extra["seriesIndex"] = b.Meta.SeriesIndex
+	if b.Series != "" {
+		item.Subtitle = b.Series
+		item.Extra["series"] = b.Series
+		if b.SeriesIndex != "" {
+			item.Extra["seriesIndex"] = b.SeriesIndex
 		}
 	}
-	if b.Meta.Language != "" {
-		item.Extra["language"] = b.Meta.Language
+	if b.Language != "" {
+		item.Extra["language"] = b.Language
 	}
-	if len(b.Meta.Subjects) > 0 {
-		item.Extra["tags"] = strings.Join(b.Meta.Subjects, ", ")
+	if len(b.Subjects) > 0 {
+		item.Extra["tags"] = strings.Join(b.Subjects, ", ")
 	}
 	return item
 }
@@ -356,9 +447,15 @@ func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, 
 	if !ok {
 		return source.Target{}, fmt.Errorf("localbooks %q: no book %q", s.id, itemID)
 	}
+	contentType := "application/epub+zip"
+	if b.Format == "pdf" {
+		// Browsers decide whether to render a PDF inline from this header, so
+		// getting it wrong turns "read the book" into "download the book".
+		contentType = "application/pdf"
+	}
 	return source.Target{
 		FilePath:    b.Path,
-		ContentType: "application/epub+zip",
+		ContentType: contentType,
 		Name:        filepath.Base(b.Path),
 	}, nil
 }
@@ -405,6 +502,12 @@ func (s *Source) OpenBook(_ context.Context, itemID string) (source.OpenBook, er
 	b, ok := s.lookup(itemID)
 	if !ok {
 		return nil, fmt.Errorf("localbooks %q: no book %q", s.id, itemID)
+	}
+	if b.Format == "pdf" {
+		// A PDF is one file with no parts worth serving separately, and the
+		// browser has its own viewer for it. Saying so plainly beats returning
+		// an empty manifest the reader would then fail to make sense of.
+		return nil, fmt.Errorf("localbooks %q: %q is a pdf and is read whole", s.id, itemID)
 	}
 	opened, err := epub.Open(b.Path)
 	if err != nil {
