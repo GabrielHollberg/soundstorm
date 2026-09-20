@@ -201,6 +201,17 @@ carries the display form, which is the one place the distinction is checked.
 
 It was called atrium until the rename. Nothing in the repo should say so.
 
+## Testing against real media
+
+`scripts/fetch-test-library.ps1` builds a library from Project Gutenberg,
+LibriVox, the Internet Archive etree collection and the Blender open movies -
+all public domain or CC, all resumable, about 750MB by default.
+
+It exists because synthetic files cannot find a whole class of bug: every one of
+them has exactly the metadata we chose to write. The first run against real
+files found three, none of which thirteen generated files could have surfaced.
+Run it before believing anything about how this behaves in the wild.
+
 ## Gotchas
 
 - **Provisioning is not idempotent across a volume reset.** If a backend's
@@ -294,6 +305,11 @@ It was called atrium until the rename. Nothing in the repo should say so.
   one failure the provisioners cannot recover from on their own. The fix is
   `docker compose down -v` and a fresh provision. Worth remembering if the
   project is ever renamed again.
+- **Navidrome's setting is `ND_SCANINTERVAL`, not `ND_SCANSCHEDULE`.** It
+  ignores unknown keys silently, so the wrong name looks like it works while no
+  periodic scan ever runs and new music appears only on restart. Verified
+  against 0.64.0. Check `--help` in the container before trusting any of these
+  env names.
 - **Dev on Windows, deploy to Linux.** Go lives at `C:\dev\tools\go` (installed
   from the zip, on the user PATH). Docker Desktop must be running.
 - **No `go.sum`** and that is correct. Zero third-party dependencies, including

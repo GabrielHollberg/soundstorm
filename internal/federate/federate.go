@@ -166,6 +166,16 @@ func Relevance(queryText string, item media.Item) float64 {
 		}
 	}
 
+	// Subtitle carries the album for music, the series for a book or a show.
+	// A backend that matched on one of those returns results we would
+	// otherwise score at the 0.05 floor and bury: searching a concert's venue
+	// finds every track on it, each of which looks irrelevant judged on its
+	// title alone. Found by pointing this at real live recordings, where
+	// almost nothing matches on the track title.
+	if item.Subtitle != "" && strings.Contains(normalize(item.Subtitle), q) {
+		return 0.45
+	}
+
 	// Fall back to how much of the query's vocabulary the title covers.
 	if overlap := tokenOverlap(q, title); overlap > 0 {
 		return 0.1 + 0.35*overlap

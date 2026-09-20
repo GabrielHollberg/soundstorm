@@ -51,7 +51,8 @@ Not built yet: multi-user and HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 
 ```sh
 git clone <this repo> && cd soundstorm
-pwsh scripts/make-sample-media.ps1   # optional: a tiny synthetic library
+pwsh scripts/make-sample-media.ps1    # optional: a tiny synthetic library
+pwsh scripts/fetch-test-library.ps1   # optional: ~750MB of real public-domain media
 docker compose up --build
 ```
 
@@ -69,9 +70,9 @@ library/
   ebooks/      A Wizard of Earthsea.epub
 ```
 
-Put a file in the matching folder and it appears in search. Navidrome rescans
-every minute; Jellyfin and Audiobookshelf watch for changes; ebooks are picked
-up within two minutes. Until a scan catches up the app says so, rather than
+Put a file in the matching folder and it appears in search. Navidrome and the
+ebook scanner sweep every couple of minutes; Jellyfin and Audiobookshelf watch
+for changes. Until a scan catches up the app says so, rather than
 pretending the file is not there.
 
 ![The folder guide a new install opens on](docs/shots/1-library.png)

@@ -13,8 +13,10 @@ package audiobookshelf
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gabehollberg/soundstorm/internal/httpx"
@@ -91,6 +93,19 @@ type audioFile struct {
 	Ino   string `json:"ino"`
 }
 
+// decodeEntities undoes HTML escaping that arrives in metadata as literal text.
+//
+// LibriVox catalogue entries carry titles like "Las F&aacute;bulas de Esopo",
+// and Audiobookshelf stores what it is given, so without this a reader sees the
+// entity rather than the accent. Normalization at the edge: only the adapter
+// knows its backend ships HTML in places that are not HTML.
+func decodeEntities(value string) string {
+	if !strings.Contains(value, "&") {
+		return value
+	}
+	return html.UnescapeString(value)
+}
+
 func (s *Source) searchPath() string {
 	return "/api/libraries/" + url.PathEscape(s.cfg.LibraryID) + "/search"
 }
@@ -114,13 +129,13 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 			ID:              li.ID,
 			SourceID:        s.id,
 			Kind:            media.KindAudiobook,
-			Title:           md.Title,
-			Subtitle:        md.Subtitle,
+			Title:           decodeEntities(md.Title),
+			Subtitle:        decodeEntities(md.Subtitle),
 			DurationSeconds: li.Media.Duration,
 			Extra:           map[string]string{},
 		}
 		if md.AuthorName != "" {
-			item.Creators = []string{md.AuthorName}
+			item.Creators = []string{decodeEntities(md.AuthorName)}
 		}
 		// Only claim artwork when the server actually has a cover file.
 		// Audiobookshelf answers /cover with a 404 otherwise, which would put a

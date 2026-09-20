@@ -66,7 +66,13 @@ services:
       ND_MUSICFOLDER: /music
       ND_DATAFOLDER: /data
       # Rescan often enough that dropping a file in feels immediate.
-      ND_SCANSCHEDULE: 1m
+      #
+      # ND_SCANINTERVAL, not ND_SCANSCHEDULE: Navidrome renamed this and
+      # ignores unknown keys in silence, so the old name looked like it was
+      # working while no periodic scan ever ran. New music only appeared when
+      # the container restarted. Verified against 0.64.0, whose --help lists
+      # --scaninterval and nothing called scanschedule.
+      ND_SCANINTERVAL: 1m
       ND_LOGLEVEL: info
       # Nothing here should phone home; SoundStorm is the only client.
       ND_ENABLEEXTERNALSERVICES: "false"

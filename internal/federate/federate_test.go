@@ -144,3 +144,29 @@ func TestSearchWithNoSources(t *testing.T) {
 		t.Errorf("an empty registry should yield an empty, non-degraded result, got %+v", res)
 	}
 }
+
+// Found by pointing this at real live concert recordings. Navidrome matches a
+// venue or album name, but the individual track titles contain none of the
+// query, so scoring on title and creator alone dropped every one of them to
+// the 0.05 floor - below an unrelated book that happened to contain the word.
+func TestSubtitleMatchOutranksTheFloor(t *testing.T) {
+	q := "salty turtle"
+
+	onTheAlbum := Relevance(q, media.Item{
+		Title:    "Bumper Sticker",
+		Subtitle: "2019-10-20 Live at Salty Turtle Beer Company",
+		Creators: []string{"Into The Fog"},
+	})
+	unrelated := Relevance(q, media.Item{Title: "The Pilgrim's Progress"})
+
+	if onTheAlbum <= unrelated {
+		t.Errorf("album match scored %v, no better than an unrelated title at %v", onTheAlbum, unrelated)
+	}
+	// It should still rank below a real title or artist match.
+	byTitle := Relevance(q, media.Item{Title: "Salty Turtle"})
+	byArtist := Relevance(q, media.Item{Title: "Something", Creators: []string{"Salty Turtle"}})
+	if onTheAlbum >= byTitle || onTheAlbum >= byArtist {
+		t.Errorf("album match (%v) should rank below title (%v) and artist (%v)",
+			onTheAlbum, byTitle, byArtist)
+	}
+}
