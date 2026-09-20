@@ -112,17 +112,18 @@ library/
 Drop a file in the matching folder and it shows up in search. Nothing to
 import, no library to configure.
 
-**Or just drag it onto the window.** SoundStorm works out what each file is and
-files it for you — a folder keeps its structure, subtitles and artwork travel
-with their film, and anything it cannot place is listed with the reason rather
-than dumped somewhere. If it guesses wrong, drop onto a shelf instead and it
-does what you said.
+**Or just drag it onto the window.** Anywhere — there is nothing to aim at.
+SoundStorm works out what each file is and files it for you: a folder keeps its
+structure, subtitles and artwork travel with their film, and anything it cannot
+place is listed with the reason rather than dumped somewhere.
 
 ![Dragging files onto the window](docs/shots/15-drop.png)
 
-The one genuinely ambiguous case is an mp3, which is a song or a chapter of an
-audiobook and nothing in the file says which. Loose mp3s go to Music; drop them
-on Audiobooks to say otherwise. Navidrome and the ebook scanner sweep every
+**When it genuinely cannot tell, it asks.** An mp3 is a song or a chapter of an
+audiobook and nothing in the file says which, so it asks — once for the whole
+folder, not once per chapter.
+
+![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png) Navidrome and the ebook scanner sweep every
 couple of minutes; Jellyfin and Audiobookshelf watch for changes. Until a scan
 catches up the app says so, rather than pretending the file is not there.
 
@@ -201,6 +202,19 @@ the session cookie is marked Secure.
 **Still true:** SoundStorm has not been audited, and putting any self-hosted
 server directly on the open internet is a decision worth making deliberately. A
 VPN such as [Tailscale](https://tailscale.com) remains the easiest safe answer.
+
+### Running it on Windows
+
+It already does. Docker Desktop runs the same Linux images on Windows that it
+runs everywhere else, and `install.ps1` is the Windows installer — this project
+is developed and tested on Windows.
+
+What is *not* supported is running the whole stack natively without Docker.
+SoundStorm's own binary does run natively on Windows, and on its own it will
+serve your ebooks; but films, music and audiobooks are Jellyfin, Navidrome and
+Audiobookshelf, and running those without containers would mean SoundStorm
+installing and supervising three third-party servers as Windows processes. That
+is a different project, and the one thing SoundStorm is careful not to become.
 
 ## For developers
 

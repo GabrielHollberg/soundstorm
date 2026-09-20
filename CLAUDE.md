@@ -123,12 +123,27 @@ decides for all of them, and companions - subtitles, artwork, .nfo, .opf - get
 no vote and inherit the answer. A folder of nothing but companions names no
 shelf and is skipped, which is right: a lone .srt has no home.
 
-Ambiguity is named rather than guessed at. `.m4b` is an audiobook and `.epub`
-is a book, but **an mp3 is a song or a chapter and nothing in the file says
-which**. The default is music because that is the common case, a path mentioning
-audiobooks is believed, and dropping onto the Audiobooks shelf settles it
-outright - which is the real reason the overlay offers shelves at all. Films and
-episodes are told apart by `S01E01`, `1x02`, or a `Season 01` folder.
+**When it cannot tell, it asks.** One drop zone, no shelf targets: guessing
+wrong costs somebody moving files on disk, so the bar for guessing is "there is
+real evidence", not "one of them is more likely". A question is asked per
+*group*, so a thirty-chapter audiobook is one decision, and the answer goes back
+to `/api/upload/plan` which re-plans - the destination shown is always the one
+the server will use rather than something worked out twice.
+
+The list of things worth asking about is deliberately short, because a question
+on every album drop would be worse than the occasional wrong guess:
+
+- **mp3, and only mp3.** flac, wav, aiff and alac are music in practice; m4a is
+  music because audiobooks in that family use m4b. Mp3 really is both - every
+  LibriVox recording is one.
+- **Three or more videos in one folder with no episode numbering.** One or two
+  unnumbered .mkv files is a film and its extras; six is a series somebody named
+  badly, and six episodes in the film library is worth a question.
+
+Everything else stays decisive: `.epub` is a book, `.m4b` is an audiobook, a
+path mentioning audiobooks is believed, and `S01E01`, `1x02` or a `Season 01`
+folder is television. A question only offers libraries the account actually
+has, and with one option left it stops being a question.
 
 **Nothing appears at its destination until all of it is there.** Navidrome and
 Audiobookshelf watch these folders and a half-written file is exactly what a
@@ -620,8 +635,18 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
-- **Dev on Windows, deploy to Linux.** Go lives at `C:\dev\tools\go` (installed
-  from the zip, on the user PATH). Docker Desktop must be running.
+- **Dev on Windows, deploy to Linux** - but Windows is a deployment target
+  too, and always has been: the whole stack runs on Docker Desktop, which is
+  what `install.ps1` sets up. Go lives at `C:\dev\tools\go` (installed from
+  the zip, on the user PATH). Docker Desktop must be running.
+- **The binary itself runs natively on Windows**, verified: a `GOOS=windows`
+  build produces a 37MB exe that serves, creates the library folders and
+  scans ebooks with no Docker and no WSL. That is not the same as the product
+  running natively - the other three media types are containers. Making those
+  native would mean SoundStorm installing and supervising Jellyfin, Navidrome
+  and Audiobookshelf as Windows processes, which is the "own the expensive
+  part" trap this project exists to avoid, and Audiobookshelf has no official
+  Windows build anyway.
 - **No `go.sum`** and that is correct. Zero third-party dependencies, including
   password hashing — `crypto/pbkdf2` has been stdlib since Go 1.24.
 - **Screenshots in `docs/shots/`** were captured with Playwright driving the
