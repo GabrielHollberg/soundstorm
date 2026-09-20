@@ -24,7 +24,12 @@ param(
   [int]$Audiobooks = 3,
   [int]$Concerts = 2,
   [switch]$SkipFilms,
-  [string]$Root = (Join-Path (Split-Path -Parent $PSScriptRoot) 'library')
+  [string]$Root = (Join-Path (Split-Path -Parent $PSScriptRoot) 'library'),
+
+  # A mirror, never gutenberg.org - see the ebooks section for why.
+  # Alternatives are listed at https://www.gutenberg.org/MIRRORS.ALL
+  [string]$GutenbergMirror = 'https://gutenberg.pglaf.org',
+  [int]$GutenbergDelayMs = 2000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -87,9 +92,17 @@ if (-not $SkipFilms) {
 }
 
 # --- Ebooks -----------------------------------------------------------------
-# Straight from Project Gutenberg by id. No catalogue API is involved on
-# purpose: the whole point is to feed our EPUB parser files whose metadata we
-# did not write, exactly as they come.
+# From a Project Gutenberg MIRROR, by id, deliberately.
+#
+# gutenberg.org itself says: "The Project Gutenberg website is intended for
+# human users only. Any perceived use of automated tools to access the Project
+# Gutenberg website will result in a temporary or permanent block of your IP
+# address." Their sanctioned routes for anything automated are the mirrors and
+# the /robot/harvest endpoint, and their own example throttles with `wget -w 2`.
+# The mirror serves byte-identical files, so this costs nothing but courtesy.
+#
+# No catalogue API is involved on purpose: the whole point is to feed our EPUB
+# parser files whose metadata we did not write, exactly as they come.
 if ($Ebooks -gt 0) {
   Write-Step "Ebooks (Project Gutenberg, up to $Ebooks)"
   $dir = Join-Path $Root 'ebooks'
@@ -103,7 +116,7 @@ if ($Ebooks -gt 0) {
     $dest = Join-Path $dir "pg$id.epub"
     if (Test-Path $dest) { $got++; $id++; continue }
 
-    if (Get-File -Url "https://www.gutenberg.org/cache/epub/$id/pg$id.epub" -Destination $dest) {
+    if (Get-File -Url "$GutenbergMirror/cache/epub/$id/pg$id.epub" -Destination $dest) {
       # Not every id has an EPUB, and a miss can still return a small HTML page.
       $size = (Get-Item $dest).Length
       if ($size -lt 2048) {
@@ -114,8 +127,10 @@ if ($Ebooks -gt 0) {
       }
     }
     $id++
-    # Gutenberg is a donated service. Do not hammer it.
-    Start-Sleep -Milliseconds 200
+    # Project Gutenberg is a donated service and their own guidance throttles
+    # at two seconds. A slow one-off build is a fair price for not being the
+    # reason they start blocking people.
+    Start-Sleep -Milliseconds $GutenbergDelayMs
   }
   Write-Item "$got books in $dir"
 }

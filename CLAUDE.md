@@ -212,6 +212,14 @@ them has exactly the metadata we chose to write. The first run against real
 files found three, none of which thirteen generated files could have surfaced.
 Run it before believing anything about how this behaves in the wild.
 
+**These are donated services. Do not hammer them.** Project Gutenberg states
+plainly that its website "is intended for human users only" and that automated
+access "will result in a temporary or permanent block of your IP address"; the
+sanctioned routes are the mirrors and /robot/harvest, throttled. The script uses
+gutenberg.pglaf.org at two second intervals for that reason, and the mirror
+serves byte-identical files. Check the equivalent policy before adding a source,
+and never point automated fetches at an origin site that has asked you not to.
+
 ## Gotchas
 
 - **Provisioning is not idempotent across a volume reset.** If a backend's
