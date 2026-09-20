@@ -32,6 +32,7 @@ import (
 	"github.com/gabehollberg/soundstorm/internal/library"
 	"github.com/gabehollberg/soundstorm/internal/media"
 	"github.com/gabehollberg/soundstorm/internal/provision"
+	"github.com/gabehollberg/soundstorm/internal/servetls"
 	"github.com/gabehollberg/soundstorm/internal/source"
 	"github.com/gabehollberg/soundstorm/internal/starter"
 	"github.com/gabehollberg/soundstorm/internal/state"
@@ -95,6 +96,21 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// TLS is set up before anything is served, and a bad setting is fatal:
+	// quietly falling back to plain HTTP when somebody asked for encryption is
+	// the worst available way to be wrong.
+	tlsServer, err := servetls.Load(servetls.Config{
+		Mode:     env("SOUNDSTORM_TLS", servetls.ModeOff),
+		CertFile: os.Getenv("SOUNDSTORM_TLS_CERT"),
+		KeyFile:  os.Getenv("SOUNDSTORM_TLS_KEY"),
+		Dir:      filepath.Join(stateDir, "tls"),
+		Hosts:    splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
+		Log:      log,
+	})
+	if err != nil {
+		return err
+	}
+
 	registry := source.NewRegistry()
 	setup := provision.New(store, registry, log, targets)
 
@@ -107,14 +123,25 @@ func run(log *slog.Logger) error {
 	// start. This is why the registry is populated asynchronously.
 	setup.Start(ctx)
 
+	authManager := auth.New(store)
+	// Only meaningful behind a proxy that sets the header and strips any
+	// incoming one; any client can send it, so it is off unless asked for.
+	authManager.TrustForwardedProto = env("SOUNDSTORM_TRUST_PROXY", "false") == "true"
+
+	var caPEM []byte
+	if tlsServer != nil {
+		caPEM = tlsServer.CAPEM
+	}
+
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
 		Store:            store,
 		Library:          lib,
-		Auth:             auth.New(store),
+		Auth:             authManager,
 		Setup:            setup,
 		PerSourceTimeout: perSourceTimeout,
 		Log:              log,
+		CAPEM:            caPEM,
 	})
 
 	srv := &http.Server{
@@ -123,13 +150,21 @@ func run(log *slog.Logger) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: it would cut off a film mid-playback.
 	}
+	if tlsServer != nil {
+		srv.TLSConfig = tlsServer.TLSConfig()
+	}
 
 	accountState := "an account exists"
 	if store.User() == nil {
 		accountState = "no account yet - first visit creates it"
 	}
+	scheme := "http"
+	if tlsServer != nil {
+		scheme = "https"
+	}
 	log.Info("SoundStorm starting",
 		"listen", listen,
+		"scheme", scheme,
 		"backends", len(targets),
 		"library", lib.Root(),
 		"state", stateDir,
@@ -138,7 +173,15 @@ func run(log *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if tlsServer != nil {
+			// Empty paths: the certificate comes from TLSConfig.GetCertificate,
+			// which mints one for whatever address the client actually dialled.
+			err = srv.ListenAndServeTLS("", "")
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
@@ -208,6 +251,17 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 		})
 	}
 	return targets, nil
+}
+
+// splitList reads a comma-separated environment variable.
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func env(key, def string) string {

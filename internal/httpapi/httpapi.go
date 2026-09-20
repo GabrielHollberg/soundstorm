@@ -6,6 +6,7 @@
 //
 //	GET  /                              the UI
 //	GET  /healthz                       liveness, no upstream calls
+//	GET  /ca.crt                        the local TLS authority, to install once
 //	GET  /api/session                   whether an account exists / we are signed in
 //	POST /api/signup                    create the one account (first boot only)
 //	POST /api/login
@@ -60,6 +61,7 @@ type Server struct {
 	proxy            *stream.Proxy
 	perSourceTimeout time.Duration
 	log              *slog.Logger
+	caPEM            []byte
 }
 
 // Config configures the server.
@@ -71,6 +73,11 @@ type Config struct {
 	Setup            *provision.Manager
 	PerSourceTimeout time.Duration
 	Log              *slog.Logger
+
+	// CAPEM is the local certificate authority to offer for download, when
+	// SoundStorm generated one. Nil when TLS is off or a real certificate was
+	// supplied, in which case there is nothing for anybody to install.
+	CAPEM []byte
 }
 
 // New builds the HTTP server.
@@ -88,6 +95,7 @@ func New(cfg Config) *Server {
 		proxy:            stream.New(cfg.Registry, cfg.Log),
 		perSourceTimeout: timeout,
 		log:              cfg.Log,
+		caPEM:            cfg.CAPEM,
 	}
 }
 
@@ -102,6 +110,9 @@ func (s *Server) Routes() http.Handler {
 	// ServeMux refuses to combine with the method-less "/api/" guard below.
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	// Unauthenticated on purpose: this is a public certificate, and you need
+	// it installed BEFORE the browser will let you reach a login page at all.
+	mux.HandleFunc("GET /ca.crt", s.handleCA)
 	mux.HandleFunc("GET /api/session", s.handleSession)
 	mux.HandleFunc("POST /api/signup", s.handleSignup)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
@@ -145,6 +156,25 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// One shell for every state. The page asks /api/session and renders the
 	// signup form, the login form or the search UI accordingly.
 	webui.ServeShell(w, r)
+}
+
+// handleCA hands over the local authority so a device can trust it.
+//
+// Downloaded and installed once per device, after which every certificate
+// SoundStorm issues is trusted - including ones minted later for an address it
+// had never seen. That is the difference between a local authority and a bare
+// self-signed certificate, and the reason for the chore being a one-off.
+func (s *Server) handleCA(w http.ResponseWriter, _ *http.Request) {
+	if len(s.caPEM) == 0 {
+		http.Error(w, "this server has no certificate authority to install", http.StatusNotFound)
+		return
+	}
+	// application/x-x509-ca-cert is what makes a phone offer to install it
+	// rather than showing it as text.
+	w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+	w.Header().Set("Content-Disposition", `attachment; filename="soundstorm-ca.crt"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(s.caPEM)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {

@@ -46,10 +46,32 @@ var ErrInvalidCredentials = errors.New("invalid username or password")
 // Manager owns account and session checks.
 type Manager struct {
 	store *state.Store
+
+	// TrustForwardedProto makes X-Forwarded-Proto decide whether the session
+	// cookie is marked Secure.
+	//
+	// Off by default, and it has to be: the header is a plain request header
+	// that any client can set, so trusting it unconditionally would let anyone
+	// claim their connection was encrypted. It is only meaningful when
+	// SoundStorm is behind a proxy that sets it and strips an incoming one.
+	TrustForwardedProto bool
 }
 
 // New builds a Manager over a state store.
 func New(store *state.Store) *Manager { return &Manager{store: store} }
+
+// overTLS reports whether this request reached SoundStorm encrypted.
+//
+// A Secure cookie on a plain HTTP connection is silently dropped by the
+// browser, which makes a login appear to succeed and do nothing - so getting
+// this wrong in the permissive direction is not a small bug.
+func (m *Manager) overTLS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return m.TrustForwardedProto &&
+		strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
 
 // HasAccount reports whether signup has already happened.
 func (m *Manager) HasAccount() bool { return m.store.User() != nil }
@@ -141,9 +163,7 @@ func (m *Manager) SetCookie(w http.ResponseWriter, r *http.Request, token string
 		Expires:  expiry,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		// Set only over TLS: a Secure cookie on plain HTTP is silently
-		// dropped, which would make login appear to succeed and do nothing.
-		Secure: r.TLS != nil,
+		Secure:   m.overTLS(r),
 	})
 }
 
@@ -156,7 +176,7 @@ func (m *Manager) ClearCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   m.overTLS(r),
 	})
 }
 

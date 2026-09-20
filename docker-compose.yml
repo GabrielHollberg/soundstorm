@@ -55,6 +55,27 @@ services:
       # How the same folder looks to whoever ran compose, for the UI to show.
       SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-./library}
       SOUNDSTORM_LOG_LEVEL: info
+
+      # TLS. Off by default, deliberately: on localhost there is nothing on the
+      # wire to protect, and a certificate warning is a poor first screen.
+      # Turn it on the moment this is reachable from another machine.
+      #
+      #   SOUNDSTORM_TLS=self-signed   SoundStorm runs its own certificate
+      #                                authority. Install http://host:8099/ca.crt
+      #                                once per device and there is no warning,
+      #                                at any address, forever.
+      #   SOUNDSTORM_TLS=file          bring your own, with _CERT and _KEY.
+      #
+      # SOUNDSTORM_TLS_HOSTS is optional - certificates are minted for whatever
+      # address a client actually dials, including a bare LAN IP.
+      SOUNDSTORM_TLS: ${SOUNDSTORM_TLS:-off}
+      SOUNDSTORM_TLS_CERT: ${SOUNDSTORM_TLS_CERT:-}
+      SOUNDSTORM_TLS_KEY: ${SOUNDSTORM_TLS_KEY:-}
+      SOUNDSTORM_TLS_HOSTS: ${SOUNDSTORM_TLS_HOSTS:-}
+      # Behind a reverse proxy that terminates TLS: lets X-Forwarded-Proto
+      # decide whether the session cookie is marked Secure. Any client can send
+      # that header, so only turn it on when a proxy is stripping incoming ones.
+      SOUNDSTORM_TRUST_PROXY: ${SOUNDSTORM_TRUST_PROXY:-false}
     volumes:
       - soundstorm-state:/var/lib/soundstorm
       # The whole library, writable: SoundStorm creates the folder structure on
@@ -65,7 +86,10 @@ services:
       - jellyfin
       - audiobookshelf
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      # Either scheme: the same container serves plain HTTP or TLS depending on
+      # SOUNDSTORM_TLS, and a healthcheck that only knew one would report the
+      # other as unhealthy forever.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || wget -qO- --no-check-certificate https://localhost:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
