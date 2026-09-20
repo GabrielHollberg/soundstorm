@@ -228,6 +228,44 @@ carries the display form, which is the one place the distinction is checked.
 
 It was called atrium until the rename. Nothing in the repo should say so.
 
+## How it gets installed
+
+The install is `docker-compose.yml` plus an installer script, and the split
+between them is the point: the compose file names a **published image** and
+contains no `build:` key, so it works alone in an empty folder for somebody who
+never cloned anything. `docker-compose.dev.yml` adds `build: .` back for us.
+A `build:` key in the main file would make it refer to a Dockerfile the user
+does not have.
+
+`.github/workflows/publish.yml` is what makes that true - without a published
+image the install instructions point at nothing. It gates publishing on
+gofmt/vet/test, and builds linux/amd64 and linux/arm64, because a lot of home
+media servers are a Pi, a Synology or an Apple silicon Mac. The Dockerfile
+pins its *builder* to `$BUILDPLATFORM` and cross-compiles via
+`GOOS`/`GOARCH`, so the arm64 image does not run the Go toolchain under QEMU.
+
+`install.sh` is `/bin/sh`, not bash - a stock Debian's `/bin/sh` is dash, and
+that is exactly the cheap box this is aimed at. Every failure message says what
+to do next; "Docker is installed but not running" is the most common one by a
+distance and is worth its own branch.
+
+Two things learned by testing the installer rather than reasoning about it:
+
+- **The compose project name is fixed (`name: soundstorm`), so a second install
+  in a second folder adopts the first one's containers** rather than getting its
+  own. It then points at an empty library folder and looks broken. Both
+  installers check `com.docker.compose.project.working_dir` on the running
+  container and refuse, naming the other folder. Keeping one install per machine
+  is right; silently hijacking is not.
+- **The POSIX port pre-check cannot always answer.** It asks `nc`, then `ss`,
+  then `lsof`, and a machine with none of them - Git Bash on Windows, for one -
+  falls through to "assume free". So the real backstop is parsing `compose up`'s
+  output for "already allocated" and saying which port and how to change it.
+
+Nothing here is a substitute for the two gaps that actually stop this being a
+product for other people: it is **single-user and has no HTTPS**. The README
+says so plainly next to the install instructions rather than burying it.
+
 ## The starter library
 
 A fresh install arrives with ~22MB of classics already in the library folders,

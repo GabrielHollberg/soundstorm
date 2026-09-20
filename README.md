@@ -34,7 +34,8 @@ that is Jellyfin's metadata work, not SoundStorm's.
 
 This is a **working vertical slice**, not a finished product. What runs today:
 
-- `docker compose up` brings up all four backends plus SoundStorm
+- one command installs it — published multi-arch images, no build step, no
+  repository to clone
 - SoundStorm provisions every one of them on first boot — **zero API keys typed**
 - one account, created on first visit, guarding everything
 - one search across all four, merged and ranked
@@ -47,25 +48,51 @@ This is a **working vertical slice**, not a finished product. What runs today:
 
 Not built yet: multi-user and HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 
-## Getting started
+## Install it
+
+You need [Docker](https://www.docker.com/products/docker-desktop/) — that is
+the only thing. It is free for personal use and installs like any other app.
+
+Then one command:
+
+**macOS / Linux**
 
 ```sh
-git clone <this repo> && cd soundstorm
-pwsh scripts/make-sample-media.ps1    # optional: a tiny synthetic library
-pwsh scripts/fetch-test-library.ps1   # optional: ~750MB of real public-domain media
-docker compose up --build
+curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.sh | sh
 ```
 
-Open <http://localhost:8099> and create your account. That is the entire setup.
+**Windows** (PowerShell)
 
-It arrives with a small library already in place — ten classics from Project
-Gutenberg, Bach's Goldberg Variations, and *As a Man Thinketh* as both an ebook
-and an audiobook. Bundled in the binary rather than downloaded, so the first run
-works with no network and nobody's bandwidth but yours is involved. Delete them
-whenever you like; they are ordinary files.
+```powershell
+irm https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.ps1 | iex
+```
 
-SoundStorm creates a `library/` folder on first run and the app's first screen shows
-you what goes where:
+That downloads about 3GB of media servers, starts them, finds a free port if
+8099 is busy, and opens your browser when it is ready. Pick a username and
+password on the first screen and you are in. **You will never see an API key,
+a config file, or a second login.**
+
+<details>
+<summary>Prefer to do it by hand?</summary>
+
+The installer is a convenience, not a requirement — it downloads one file and
+runs one command. You can do the same:
+
+```sh
+mkdir soundstorm && cd soundstorm
+curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+Then open <http://localhost:8099>. To run it on a different port, put
+`SOUNDSTORM_PORT=9000` in a `.env` file beside the compose file.
+
+</details>
+
+### Where your media goes
+
+SoundStorm makes a `library/` folder next to the compose file, and the app's
+first screen is a guide to it:
 
 ```
 library/
@@ -76,20 +103,60 @@ library/
   ebooks/      A Wizard of Earthsea.epub, Some Paper - Author (2017).pdf
 ```
 
-Put a file in the matching folder and it appears in search. Navidrome and the
-ebook scanner sweep every couple of minutes; Jellyfin and Audiobookshelf watch
-for changes. Until a scan catches up the app says so, rather than
-pretending the file is not there.
+Drop a file in the matching folder and it shows up in search. Nothing to
+import, no library to configure. Navidrome and the ebook scanner sweep every
+couple of minutes; Jellyfin and Audiobookshelf watch for changes. Until a scan
+catches up the app says so, rather than pretending the file is not there.
 
 ![The folder guide a new install opens on](docs/shots/1-library.png)
 
-`library/ebooks` is a plain folder of `.epub` and `.pdf` files. It can also be an existing
-Calibre library — SoundStorm reads Calibre's `metadata.opf` sidecars, so a library
-you already curate keeps its series, tags and corrected authors, with no
-SQLite driver and no Calibre-Web container.
+It arrives with a small library already in place — ten classics from Project
+Gutenberg, Bach's Goldberg Variations, and *As a Man Thinketh* as both an ebook
+and an audiobook — so there is something to search the moment it starts.
+Bundled in the binary rather than downloaded, so the first run works with no
+network and nobody's bandwidth but yours is involved. Delete them whenever you
+like; they are ordinary files.
 
-Port 8099 rather than 8080 because 8080 is crowded — a Calibre content server
-defaults to it. Override with `SOUNDSTORM_PORT`.
+`library/ebooks` is a plain folder of `.epub` and `.pdf` files. It can also be
+an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
+sidecars, so a library you already curate keeps its series, tags and corrected
+authors, with no SQLite driver and no Calibre-Web container.
+
+### Running it
+
+```sh
+cd soundstorm
+docker compose logs -f        # what is it doing
+docker compose down           # stop it; your library folder is untouched
+docker compose pull && docker compose up -d     # upgrade
+```
+
+Re-running the installer does the upgrade too.
+
+### One thing to know before you share it
+
+SoundStorm has **one account and no HTTPS yet**. On your own machine or your
+own network that is fine. Do not put it on the open internet as it stands —
+put it behind a VPN such as [Tailscale](https://tailscale.com), or a reverse
+proxy that terminates TLS. Multi-user and built-in HTTPS are on
+[the roadmap](docs/roadmap.md).
+
+## For developers
+
+```sh
+git clone https://github.com/gabehollberg/soundstorm && cd soundstorm
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+The compose split is deliberate: `docker-compose.yml` names a published image
+and nothing else, so it works on its own for somebody who never cloned
+anything. `docker-compose.dev.yml` adds `build: .` on top.
+
+```sh
+go test ./...
+pwsh scripts/make-sample-media.ps1     # a synthetic library, no downloads
+pwsh scripts/fetch-test-library.ps1    # ~750MB of real public-domain media
+```
 
 ## How it works
 
@@ -216,16 +283,6 @@ backend a human has to configure by hand defeats the point of the project.
   for a human to edit, and the goal is that a human edits nothing.
 - **Fail loudly at startup, degrade gracefully at runtime.**
 - `gofmt` clean, `go vet` clean, tests pass.
-
-## Commands
-
-```sh
-go test ./...
-docker compose up --build
-docker compose logs -f soundstorm          # watch provisioning
-pwsh scripts/make-sample-media.ps1     # a synthetic library, no downloads
-go run ./scripts/mkepub -out b.epub -title T -author A   # one test book
-```
 
 ## Notes
 

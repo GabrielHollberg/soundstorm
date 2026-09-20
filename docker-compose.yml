@@ -1,29 +1,42 @@
 # SoundStorm: one login and one search box over a self-hosted media library.
 #
-# The important line in this file is the one that is missing. Neither navidrome
-# nor jellyfin publishes a port. They are reachable only on the internal compose
-# network, by SoundStorm. That is what makes "one login" true rather than decorative:
-# their own login screens are not one URL away, because they are not reachable.
+# This file is the whole installation. It needs no repository, no build step and
+# no configuration - download it into an empty folder and run:
 #
-#   docker compose up --build   then open http://localhost:8099
+#   docker compose up -d        then open http://localhost:8099
 #
-# SoundStorm creates ./library on first run with one folder per media type. Put a
-# file in the matching folder and it appears. Nothing else to configure and no
-# API keys to fetch - SoundStorm provisions its own credentials on first boot.
+# SoundStorm creates ./library beside this file on first run, with one folder per
+# media type. Put a file in the matching folder and it appears. There are no API
+# keys to fetch: SoundStorm provisions its own credentials for every backend on
+# first boot.
 #
 #   library/
 #     music/   movies/   tv/   audiobooks/   ebooks/
+#
+# The important line in this file is the one that is missing. None of the three
+# backends publishes a port. They are reachable only on the internal compose
+# network, by SoundStorm. That is what makes "one login" true rather than
+# decorative: their own login screens are not one URL away, because they are not
+# reachable at all.
+#
+# To build from source instead of pulling a published image - which is what you
+# want if you are working on SoundStorm itself:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 name: soundstorm
 
 services:
   soundstorm:
-    build: .
+    # Pinned by tag rather than digest so an upgrade is `docker compose pull`.
+    # Set SOUNDSTORM_IMAGE to hold a specific version.
+    image: ${SOUNDSTORM_IMAGE:-ghcr.io/gabehollberg/soundstorm:latest}
     container_name: soundstorm
     restart: unless-stopped
     ports:
       # Host port is configurable because 8080 is a popular address - a Calibre
-      # content server defaults to it, for one. Override with SOUNDSTORM_PORT.
+      # content server defaults to it, for one. Override with SOUNDSTORM_PORT,
+      # which the installer writes into a .env file beside this one.
       - "${SOUNDSTORM_PORT:-8099}:8080"
     environment:
       # A backend exists if its URL is set, so this file decides the stack.
@@ -40,7 +53,7 @@ services:
       # three folders are handed to the server that indexes them.
       SOUNDSTORM_LIBRARY_DIR: /library
       # How the same folder looks to whoever ran compose, for the UI to show.
-      SOUNDSTORM_LIBRARY_HINT: ./library
+      SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-./library}
       SOUNDSTORM_LOG_LEVEL: info
     volumes:
       - soundstorm-state:/var/lib/soundstorm

@@ -1,0 +1,282 @@
+#!/bin/sh
+# SoundStorm installer for macOS and Linux.
+#
+#   curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.sh | sh
+#
+# It downloads one compose file, picks a free port, starts the stack and waits
+# until it answers. Everything it needs is Docker; everything it leaves behind
+# is a folder you can delete.
+#
+# Written for /bin/sh rather than bash, because a stock Debian's /bin/sh is dash
+# and an installer that only works under bash is an installer that fails on the
+# exact cheap home server this is aimed at.
+
+set -eu
+
+REPO="${SOUNDSTORM_REPO:-gabehollberg/soundstorm}"
+BRANCH="${SOUNDSTORM_BRANCH:-main}"
+COMPOSE_URL="${SOUNDSTORM_COMPOSE_URL:-https://raw.githubusercontent.com/$REPO/$BRANCH/docker-compose.yml}"
+DIR="${SOUNDSTORM_DIR:-$PWD/soundstorm}"
+FIRST_PORT="${SOUNDSTORM_PORT:-8099}"
+
+# --- saying things ----------------------------------------------------------
+
+# Colour only when stdout is a terminal. Piping this into a log should not
+# produce escape codes, and `curl | sh` is a very normal way to run it.
+if [ -t 1 ]; then
+	BOLD=$(printf '\033[1m'); DIM=$(printf '\033[2m')
+	RED=$(printf '\033[31m'); GREEN=$(printf '\033[32m'); OFF=$(printf '\033[0m')
+else
+	BOLD=''; DIM=''; RED=''; GREEN=''; OFF=''
+fi
+
+say()  { printf '%s\n' "$*"; }
+step() { printf '%s==>%s %s\n' "$BOLD" "$OFF" "$*"; }
+note() { printf '    %s%s%s\n' "$DIM" "$*" "$OFF"; }
+
+# die prints why it stopped and, more importantly, what to do about it. An
+# installer that says "error: 1" has failed twice.
+die() {
+	printf '\n%sSoundStorm could not start.%s\n\n%s\n\n' "$RED$BOLD" "$OFF" "$1" >&2
+	exit 1
+}
+
+# --- the things that have to be true ----------------------------------------
+
+need_docker() {
+	if ! command -v docker >/dev/null 2>&1; then
+		die "Docker is not installed.
+
+Docker runs the media servers SoundStorm sits on top of, so it is the one thing
+you have to install yourself. It is free for personal use.
+
+  macOS and Windows   https://www.docker.com/products/docker-desktop/
+  Linux               https://docs.docker.com/engine/install/
+
+Install it, then run this again."
+	fi
+
+	# Installed is not running, and this is the single most common failure:
+	# somebody installs Docker Desktop, never opens it, and gets a wall of
+	# socket errors that say nothing about which application to launch.
+	if ! docker info >/dev/null 2>&1; then
+		die "Docker is installed but not running.
+
+  macOS and Windows   open Docker Desktop and wait for it to say Running
+  Linux               sudo systemctl start docker
+
+Then run this again."
+	fi
+}
+
+# compose_cmd sets COMPOSE to whichever form of compose exists. v2 is a docker
+# subcommand; v1 was a separate binary and is still what some distributions
+# package.
+compose_cmd() {
+	if docker compose version >/dev/null 2>&1; then
+		COMPOSE="docker compose"
+	elif command -v docker-compose >/dev/null 2>&1; then
+		COMPOSE="docker-compose"
+	else
+		die "Docker is running but Docker Compose is missing.
+
+Docker Desktop includes it. On Linux:
+
+  sudo apt install docker-compose-plugin     # Debian, Ubuntu
+  sudo dnf install docker-compose-plugin     # Fedora
+
+Then run this again."
+	fi
+}
+
+# fetch downloads a url to a file using whatever the machine has.
+fetch() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL "$1" -o "$2"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -qO "$2" "$1"
+	else
+		die "Neither curl nor wget is installed, so this script cannot download
+anything. Install either one, or download the compose file by hand:
+
+  $COMPOSE_URL"
+	fi
+}
+
+# port_taken answers only when it can actually tell. Guessing "free" and letting
+# compose report the conflict is better than guessing "taken" and moving a
+# server off the port somebody expected it on.
+port_taken() {
+	if command -v nc >/dev/null 2>&1; then
+		nc -z 127.0.0.1 "$1" >/dev/null 2>&1
+	elif command -v ss >/dev/null 2>&1; then
+		ss -ltn 2>/dev/null | grep -q "[:.]$1[[:space:]]"
+	elif command -v lsof >/dev/null 2>&1; then
+		lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+	else
+		return 1
+	fi
+}
+
+pick_port() {
+	port="$FIRST_PORT"
+	attempts=0
+	while port_taken "$port"; do
+		attempts=$((attempts + 1))
+		if [ "$attempts" -gt 20 ]; then
+			die "Ports $FIRST_PORT to $port are all in use. Pick one yourself:
+
+  SOUNDSTORM_PORT=9000 sh install.sh"
+		fi
+		port=$((port + 1))
+	done
+	PORT="$port"
+}
+
+open_browser() {
+	# Never when piped: an installer run from a provisioning script should not
+	# try to launch a GUI on a headless box.
+	[ -t 1 ] || return 0
+	if command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 || true
+	elif command -v open >/dev/null 2>&1; then open "$1" >/dev/null 2>&1 || true
+	fi
+}
+
+# --- go ---------------------------------------------------------------------
+
+say ""
+say "${BOLD}SoundStorm${OFF} - one login and one search box over your media library"
+say ""
+
+step "Checking Docker"
+need_docker
+compose_cmd
+note "$(docker --version)"
+
+# existing_install prints where SoundStorm is already installed, if it is.
+#
+# The compose project name is fixed, so a second install in a second folder
+# does not get its own stack - it adopts the first one, ends up pointing at a
+# library folder nobody put anything in, and looks broken for no visible
+# reason. Compose records the directory it was launched from, so we can just
+# ask.
+existing_install() {
+	docker inspect soundstorm \
+		--format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' \
+		2>/dev/null || true
+}
+
+step "Setting up $DIR"
+
+previous=$(existing_install)
+if [ -n "$previous" ] && [ "$previous" != "$DIR" ] && [ ! -f "$DIR/docker-compose.yml" ]; then
+	die "SoundStorm is already installed in another folder:
+
+  $previous
+
+Installing it here as well would not give you a second copy - both folders
+would drive the same containers, and this one would point at an empty library.
+
+To use the existing install:   cd \"$previous\"
+To move it here instead:       cd \"$previous\" && $COMPOSE down, then run this again
+To install anyway:             SOUNDSTORM_FORCE=1 sh install.sh"
+fi
+
+mkdir -p "$DIR"
+cd "$DIR"
+
+if [ -f docker-compose.yml ] && [ "${SOUNDSTORM_FORCE:-}" != "1" ]; then
+	note "already installed here - upgrading it instead"
+	UPGRADE=1
+else
+	UPGRADE=0
+	fetch "$COMPOSE_URL" docker-compose.yml.new
+	# Only replace a working file once the download has actually succeeded.
+	mv docker-compose.yml.new docker-compose.yml
+	note "downloaded docker-compose.yml"
+fi
+
+# The library folders are made here rather than left to Docker. A bind mount to
+# a path that does not exist is created by the daemon as root, which on Linux
+# leaves somebody unable to copy files into their own media folder.
+mkdir -p library/music library/movies library/tv library/audiobooks library/ebooks
+
+if [ "$UPGRADE" = "0" ]; then
+	step "Choosing a port"
+	pick_port
+	if [ "$PORT" != "$FIRST_PORT" ]; then
+		note "$FIRST_PORT was busy, using $PORT"
+	else
+		note "using $PORT"
+	fi
+	# Compose reads .env from beside the compose file, so the choice sticks for
+	# every later `docker compose up` without anyone having to remember it.
+	printf 'SOUNDSTORM_PORT=%s\n' "$PORT" > .env
+else
+	PORT=$(sed -n 's/^SOUNDSTORM_PORT=//p' .env 2>/dev/null || true)
+	[ -n "$PORT" ] || PORT="$FIRST_PORT"
+fi
+
+if [ "$UPGRADE" = "1" ]; then
+	step "Checking for newer versions"
+else
+	step "Downloading the media servers"
+	note "about 3GB the first time - Jellyfin is most of it"
+fi
+if ! $COMPOSE pull; then
+	die "Could not download the images. That is almost always the network.
+Check your connection and run this again - anything already downloaded is kept."
+fi
+
+step "Starting"
+# Captured rather than streamed, so a failure can be read and explained instead
+# of leaving somebody to interpret a Docker error.
+if ! out=$($COMPOSE up -d 2>&1); then
+	printf '%s\n' "$out" >&2
+	# The pre-flight port check above cannot always tell - a machine with no
+	# nc, ss or lsof has nothing to ask - so this is where a busy port is
+	# usually discovered, and it deserves a better answer than the logs.
+	if printf '%s' "$out" | grep -qiE 'already allocated|address already in use|forbidden by its access permissions'; then
+		die "Port $PORT is already being used by something else.
+
+Pick another one and run this again:
+
+  SOUNDSTORM_PORT=9000 sh install.sh"
+	fi
+	die "The containers would not start. This usually says why:
+
+  cd $DIR && $COMPOSE logs"
+fi
+
+step "Waiting for SoundStorm to answer"
+URL="http://localhost:$PORT"
+waited=0
+until fetch "$URL/healthz" /dev/null 2>/dev/null; do
+	waited=$((waited + 2))
+	if [ "$waited" -gt 120 ]; then
+		die "SoundStorm started but never answered on $URL.
+
+  cd $DIR && $COMPOSE logs soundstorm"
+	fi
+	sleep 2
+done
+
+say ""
+if [ "$UPGRADE" = "1" ]; then
+	say "${GREEN}${BOLD}Up to date.${OFF} SoundStorm is running at ${BOLD}$URL${OFF}."
+else
+	say "${GREEN}${BOLD}Ready.${OFF} Open ${BOLD}$URL${OFF} and create your account."
+fi
+say ""
+say "Your media goes in ${BOLD}$DIR/library${OFF}:"
+say "    music/  movies/  tv/  audiobooks/  ebooks/"
+say ""
+note "The media servers are still setting themselves up in the background."
+note "The app shows you when each one is ready - that takes a minute or two."
+say ""
+say "${DIM}stop:    cd $DIR && $COMPOSE down${OFF}"
+say "${DIM}logs:    cd $DIR && $COMPOSE logs -f${OFF}"
+say "${DIM}upgrade: run this installer again${OFF}"
+say ""
+
+open_browser "$URL"

@@ -1,0 +1,14 @@
+# Build SoundStorm from this checkout instead of pulling the published image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# The split exists so the file an end user downloads contains nothing they do
+# not need. A `build:` key in the main file would make it useless on its own -
+# it would refer to a Dockerfile they never cloned.
+
+services:
+  soundstorm:
+    build: .
+    image: soundstorm:dev
+    environment:
+      SOUNDSTORM_LOG_LEVEL: debug

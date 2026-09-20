@@ -89,7 +89,7 @@ var layout = []Folder{
 	{
 		Kind:        media.KindEbook,
 		Name:        "ebooks",
-		Description: "EPUB files. An existing Calibre library works here too.",
+		Description: "EPUB and PDF files. An existing Calibre library works here too.",
 		Example:     "ebooks/A Wizard of Earthsea.epub",
 	},
 }
