@@ -171,11 +171,34 @@ func (l *Library) ensure() error {
 	var created []string
 	for _, f := range layout {
 		path := filepath.Join(l.root, f.Name)
-		if _, err := os.Stat(path); err == nil {
+
+		// Already there is the common case, and not only because we made it
+		// last time: compose bind-mounts library/music and library/movies into
+		// the backends, so Docker creates those directories before this ever
+		// runs.
+		if info, err := os.Stat(path); err == nil {
+			if !info.IsDir() {
+				l.log.Warn("library path is not a directory", "path", path)
+			}
+			continue
+		} else if !os.IsNotExist(err) {
+			// A stat that failed for any other reason is not evidence the
+			// folder is missing, and guessing that it is leads straight to
+			// mkdir reporting "file exists".
+			l.log.Warn("could not inspect library folder", "path", path, "err", err)
 			continue
 		}
+
 		if err := os.MkdirAll(path, 0o777); err != nil {
-			return fmt.Errorf("create %s: %w", path, err)
+			// Losing one folder must not stop the server. It used to: a
+			// fresh install where Docker had created the mount points first
+			// crash-looped on "mkdir: file exists", which is a spectacular
+			// way to fail at the one job this code has.
+			if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
+				continue // somebody else created it; that is a success
+			}
+			l.log.Warn("could not create library folder", "path", path, "err", err)
+			continue
 		}
 		// MkdirAll applies the process umask, which in a container usually
 		// clears group and other write. These folders exist to be written into
@@ -217,6 +240,27 @@ func (l *Library) Folders() []Folder {
 	l.cached = out
 	l.countedAt = time.Now()
 	return append([]Folder(nil), out...)
+}
+
+// FolderIsEmpty reports whether one folder has no media in it.
+//
+// "No media" rather than "no files": the folders ship with a README.txt, and a
+// folder containing only that is still one nobody has put anything in.
+func (l *Library) FolderIsEmpty(name string) bool {
+	for _, f := range l.Folders() {
+		if f.Name == name {
+			return f.Files == 0
+		}
+	}
+	return false
+}
+
+// Invalidate drops the cached counts, for when something has just written to
+// the library and the next read should see it.
+func (l *Library) Invalidate() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.countedAt = time.Time{}
 }
 
 // IsEmpty reports whether every folder is empty, which is the state a fresh

@@ -201,6 +201,32 @@ carries the display form, which is the one place the distinction is checked.
 
 It was called atrium until the rename. Nothing in the repo should say so.
 
+## The starter library
+
+A fresh install arrives with ~22MB of classics already in the library folders,
+embedded in the binary and unpacked on first run into folders that are empty.
+
+Bundled rather than downloaded, deliberately. Fetching on install means every
+installation spends somebody else's bandwidth, and Project Gutenberg states
+outright that automated access to its website earns an IP block. It also means
+the first run works air-gapped. The cost is binary size, and that is why there
+is no video: one film outweighs everything else combined, so the UI names
+Blender's open movies instead of shipping one.
+
+Two Windows-specific traps live in here, both of which cost real time:
+
+- `go:embed` rejects file names containing an apostrophe. The bundled files do
+  without; what a reader sees comes from metadata, not the file name.
+- `os.MkdirAll` is documented to succeed for an existing directory, and does on
+  a normal filesystem. On a Docker Desktop bind mount it can return EEXIST
+  instead - which made the starter library skip exactly the folders compose
+  mounts into backends (music, audiobooks) while succeeding for ebooks, which
+  nothing mounts. `ensureDir` treats an existing directory as success.
+
+Do not move `library/` while the stack is running. The backends hold bind mounts
+into its subfolders, and replacing the directory leaves them dangling in a state
+where stat and mkdir disagree about whether a path exists.
+
 ## Testing against real media
 
 `scripts/fetch-test-library.ps1` builds a library from Project Gutenberg,

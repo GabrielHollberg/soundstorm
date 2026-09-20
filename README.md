@@ -58,6 +58,12 @@ docker compose up --build
 
 Open <http://localhost:8099> and create your account. That is the entire setup.
 
+It arrives with a small library already in place — ten classics from Project
+Gutenberg, Bach's Goldberg Variations, and *As a Man Thinketh* as both an ebook
+and an audiobook. Bundled in the binary rather than downloaded, so the first run
+works with no network and nobody's bandwidth but yours is involved. Delete them
+whenever you like; they are ordinary files.
+
 SoundStorm creates a `library/` folder on first run and the app's first screen shows
 you what goes where:
 
@@ -194,6 +200,9 @@ backend a human has to configure by hand defeats the point of the project.
 - **Zero third-party Go dependencies.** Standard library only, including
   password hashing (`crypto/pbkdf2`, stdlib since Go 1.24). There is no
   `go.sum` and the container build downloads nothing.
+- **A ~22MB starter library** is embedded in the binary (`internal/starter`) and
+  unpacked into empty library folders on first run. Public domain and CC0
+  throughout. Set `SOUNDSTORM_STARTER_LIBRARY=false` to skip it.
 - **Two vendored browser libraries**, both under
   `internal/webui/assets/vendor/`: foliate-js (MIT) renders EPUB, and hls.js
   (Apache-2.0) plays transcoded video where the browser has no native HLS. Both

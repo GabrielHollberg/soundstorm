@@ -140,3 +140,59 @@ func TestEveryFolderIsDescribed(t *testing.T) {
 		}
 	}
 }
+
+// A fresh compose install crash-looped on this: Docker creates library/music
+// and library/movies as bind-mount points for the backends before SoundStorm
+// ever runs, so the folders already exist. Treating that as a failure to
+// create them took the whole server down, repeatedly, on the one path that
+// matters most - somebody installing it for the first time.
+func TestOpenToleratesFoldersSomebodyElseCreated(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "library")
+
+	// Exactly what Docker does for a bind mount.
+	for _, name := range []string{"music", "movies"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o777); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open failed on folders that already existed: %v", err)
+	}
+
+	// Every folder should be present, whoever made it.
+	for _, f := range lib.Folders() {
+		info, err := os.Stat(filepath.Join(root, f.Name))
+		if err != nil {
+			t.Errorf("%s missing: %v", f.Name, err)
+			continue
+		}
+		if !info.IsDir() {
+			t.Errorf("%s is not a directory", f.Name)
+		}
+	}
+}
+
+// One unusable folder is a degraded library, not a dead server.
+func TestOpenSurvivesAFolderItCannotCreate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "library")
+	if err := os.MkdirAll(root, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	// A plain file where a folder should go: mkdir cannot win here.
+	if err := os.WriteFile(filepath.Join(root, "music"), []byte("not a folder"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open should degrade, not fail: %v", err)
+	}
+	if got := lib.PathFor(media.KindEbook); got == "" {
+		t.Error("the other folders should still be usable")
+	}
+	if _, err := os.Stat(filepath.Join(root, "ebooks")); err != nil {
+		t.Errorf("ebooks should still have been created: %v", err)
+	}
+}

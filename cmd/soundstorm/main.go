@@ -33,6 +33,7 @@ import (
 	"github.com/gabehollberg/soundstorm/internal/media"
 	"github.com/gabehollberg/soundstorm/internal/provision"
 	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/starter"
 	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
@@ -66,6 +67,18 @@ func run(log *slog.Logger) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	// A media server with nothing in it cannot be evaluated, so the first run
+	// arrives with a small library of classics already in place. Only folders
+	// the user has not put anything in are touched.
+	if env("SOUNDSTORM_STARTER_LIBRARY", "true") != "false" {
+		if _, err := starter.Install(lib.Root(), lib.FolderIsEmpty, log); err != nil {
+			// Never fatal: a server that will not start because it could not
+			// unpack sample media has its priorities backwards.
+			log.Warn("could not install the starter library", "err", err)
+		}
+		lib.Invalidate()
 	}
 
 	targets, err := targetsFromEnv(lib)
