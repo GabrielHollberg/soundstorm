@@ -52,13 +52,13 @@ jobs:
       # batch file that ran half of itself.
       - name: The Windows setup file still has CRLF
         run: |
-          returns=$(tr -dc '' < SoundStorm-Setup.cmd | wc -c)
-          if [ "$returns" -eq 0 ]; then
+          if od -c SoundStorm-Setup.cmd | grep -q "\\r"; then
+            echo "SoundStorm-Setup.cmd has its carriage returns."
+          else
             echo "SoundStorm-Setup.cmd has lost its CRLF line endings."
-            echo "cmd.exe needs them. See the *.cmd rule in .gitattributes."
+            echo "cmd.exe needs them for goto. See .gitattributes."
             exit 1
           fi
-          echo "$returns carriage returns, as required"
 
   publish:
     # Never publish something that does not pass. A broken :latest is worse
