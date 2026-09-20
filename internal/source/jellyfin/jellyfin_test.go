@@ -223,3 +223,86 @@ func TestKindAndItemTypesAreConfigurable(t *testing.T) {
 		t.Errorf("kind = %q, want tv", shows.Kind())
 	}
 }
+
+// Bitmap subtitles cannot become WebVTT - they are pictures of text. Offering
+// one would attach a track that silently renders nothing, which is worse than
+// not offering it.
+func TestOnlyTextSubtitlesAreOffered(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{
+		"Id": "ms-1", "Container": "mkv",
+		"MediaStreams": []any{
+			map[string]any{"Index": 0, "Type": "Video", "Codec": "hevc"},
+			map[string]any{"Index": 1, "Type": "Audio", "Codec": "flac"},
+			map[string]any{"Index": 2, "Type": "Subtitle", "Codec": "subrip", "Language": "eng", "Title": "English"},
+			map[string]any{"Index": 3, "Type": "Subtitle", "Codec": "pgssub", "Language": "fra", "Title": "French"},
+			map[string]any{"Index": 4, "Type": "Subtitle", "Codec": "dvdsub", "Language": "deu"},
+		},
+	})
+
+	play, err := s.Playback(context.Background(), "item-1")
+	if err != nil {
+		t.Fatalf("Playback: %v", err)
+	}
+	if len(play.Subtitles) != 1 {
+		t.Fatalf("offered %d tracks, want only the text one: %+v", len(play.Subtitles), play.Subtitles)
+	}
+	got := play.Subtitles[0]
+	if got.Label != "English" {
+		t.Errorf("label = %q", got.Label)
+	}
+	// Browsers want BCP-47 in srclang; backends report ISO 639-2.
+	if got.Language != "en" {
+		t.Errorf("language = %q, want the two-letter tag", got.Language)
+	}
+	if got.ID != "item-1/ms-1/2" {
+		t.Errorf("id = %q, want item/source/index", got.ID)
+	}
+}
+
+// Subtitles belong to the file, not to how the video happens to be delivered.
+func TestSubtitlesAreOfferedForDirectPlayToo(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{
+		"Id": "ms-1", "Container": "mp4", "SupportsDirectPlay": true,
+		"MediaStreams": []any{
+			map[string]any{"Index": 0, "Type": "Subtitle", "Codec": "subrip",
+				"Language": "eng", "IsExternal": true, "DisplayTitle": "English - SUBRIP - External"},
+		},
+	})
+
+	play, err := s.Playback(context.Background(), "item-1")
+	if err != nil {
+		t.Fatalf("Playback: %v", err)
+	}
+	if play.Mode != source.PlaybackModeDirect {
+		t.Fatalf("mode = %q, want direct", play.Mode)
+	}
+	if len(play.Subtitles) != 1 {
+		t.Fatalf("a sidecar subtitle was dropped for a direct-played file")
+	}
+	// Jellyfin invents "English - SUBRIP - External" when a stream has no
+	// title; only the first part names the track.
+	if play.Subtitles[0].Label != "English" {
+		t.Errorf("label = %q, want the plumbing trimmed off", play.Subtitles[0].Label)
+	}
+}
+
+func TestSubtitleTargetBuildsAVTTURL(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
+
+	target, err := s.SubtitleTarget(context.Background(), "item-1/ms-1/2")
+	if err != nil {
+		t.Fatalf("SubtitleTarget: %v", err)
+	}
+	if !strings.Contains(target.URL, "/Videos/item-1/ms-1/Subtitles/2/Stream.vtt") {
+		t.Errorf("url = %q", target.URL)
+	}
+	if target.Headers["Authorization"] == "" {
+		t.Error("subtitles need the credential too")
+	}
+
+	for _, bad := range []string{"", "item-1", "item-1/ms-1", "item-1/ms-1/notanumber", "a/b/c/d"} {
+		if _, err := s.SubtitleTarget(context.Background(), bad); err == nil {
+			t.Errorf("SubtitleTarget(%q) should have been rejected", bad)
+		}
+	}
+}

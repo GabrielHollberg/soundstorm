@@ -106,16 +106,30 @@ foreach ($f in $films) {
   )
 }
 
+# Two subtitle paths worth exercising: one embedded in the MKV, one sitting
+# beside the mp4 as a sidecar. Jellyfin converts both to WebVTT on request.
+$srt = Join-Path $media 'subs.srt'
+@(
+  '1', '00:00:01,000 --> 00:00:05,000', 'The spice must flow.', '',
+  '2', '00:00:06,000 --> 00:00:11,000', 'Fear is the mind-killer.', '',
+  '3', '00:00:12,000 --> 00:00:14,500', 'I must not fear.', ''
+) | Set-Content -Encoding ascii $srt
+Copy-Item $srt (Join-Path $media 'movies/Dune (2021)/Dune (2021).en.srt') -Force
+
 Write-Host "  film   $(Split-Path -Leaf $hevcFilm) (HEVC/FLAC/MKV - forces a transcode)"
 $dir = Split-Path -Parent (Join-Path $media $hevcFilm)
 if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
 Invoke-Ffmpeg @(
   '-f', 'lavfi', '-i', 'testsrc=duration=20:size=640x360:rate=24',
   '-f', 'lavfi', '-i', 'sine=frequency=440:duration=20',
+  '-i', '/out/subs.srt',
+  '-map', '0:v', '-map', '1:a', '-map', '2:s',
   '-c:v', 'libx265', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
-  '-c:a', 'flac',
+  '-c:a', 'flac', '-c:s', 'srt',
+  '-metadata:s:s:0', 'language=eng', '-metadata:s:s:0', 'title=English',
   "/out/$hevcFilm"
 )
+Remove-Item $srt -Force -ErrorAction SilentlyContinue
 
 foreach ($e in $episodes) {
   Write-Host "  episode $(Split-Path -Leaf $e)"

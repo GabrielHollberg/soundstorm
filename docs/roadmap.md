@@ -4,16 +4,24 @@ The vertical slice works: one login, one search, two backends provisioned with
 zero keys, playback in place. What follows is ordered by what would most change
 whether this is usable, not by what is most interesting to build.
 
-## 1. Subtitles
+## 1. Real libraries, real scale
 
-Jellyfin has the subtitle tracks and hls.js can render them, but nothing in
-SoundStorm asks for either. For film and TV this is the most visible thing still
-missing.
+Everything so far has been proven against thirteen synthetic files. That is
+enough to show each mechanism works and nothing about whether it holds up.
 
-The pieces exist: PlaybackInfo reports the available `MediaStreams` of type
-Subtitle, Jellyfin can deliver them as WebVTT on a separate endpoint or burn
-them into the transcode, and the full hls.js build (already vendored, rather
-than the light one, for exactly this reason) handles them.
+Unknowns that only appear at size:
+
+- search latency with 100k tracks, and whether the merged ranking is still
+  sensible when every backend returns 25 hits
+- Jellyfin's first scan of a large library blocking provisioning
+- the ebook scan parses every EPUB on first boot; the mtime cache makes
+  rescans cheap but a cold start on thousands of books is untested
+- how often real files fall outside the conservative direct-play profile, and
+  therefore how much transcoding actually happens
+- whether one machine can transcode for more than one viewer at a time
+
+This is now the largest gap in the project by a wide margin. Every other item
+below is a feature; this one is the question of whether the features work.
 
 ## 2. More ebook formats
 
@@ -31,19 +39,16 @@ between browsers. What it does not do is merge sensibly if two devices read the
 same book at once - last writer wins. Fine for one account; revisit with
 multi-user.
 
-## 4. Real libraries, real scale
+## 4. Bitmap subtitles
 
-Everything so far has been tested against nine synthetic files. Unknowns that
-only show up at size:
+Only text subtitles are offered. PGS, VOBSUB and DVB are pictures of text, and
+attaching one as a track renders nothing at all - so they are filtered out
+rather than shown and silently broken.
 
-- search latency with 100k tracks
-- whether the merged ranking is still sane when every backend returns 25 hits
-- Jellyfin's first scan of a large library blocking provisioning
-- Audiobookshelf's one-extra-request-per-play cost when many people press play
-- the ebook scan parses every EPUB on first boot; the mtime cache makes
-  rescans cheap but a cold start on a big library is untested
-
-Do not optimize any of this before pointing it at an actual library.
+Making them work means burning them into the video, which turns a stream that
+might have been direct played into a mandatory re-encode. Jellyfin can do it;
+the work is deciding when to ask, since the cost is real and the user is the
+only one who knows whether they want those subtitles.
 
 ## 5. Multi-user
 

@@ -121,6 +121,7 @@ func (s *Server) Routes() http.Handler {
 	// playlist and its segments.
 	guarded.HandleFunc("GET /api/playback/{source}/{id...}", s.handlePlayback)
 	guarded.HandleFunc("GET /api/hls/{source}/{path...}", s.handleHLS)
+	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)
 
 	// The reader's endpoints take source/id/path as query parameters rather
 	// than path segments. Book ids and resource paths both contain slashes,
@@ -329,9 +330,10 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	directURL := "/api/stream/" + url.PathEscape(sourceID) + "/" + escapePath(itemID)
 	direct := map[string]any{
 		"mode": source.PlaybackModeDirect,
-		"url":  "/api/stream/" + url.PathEscape(sourceID) + "/" + escapePath(itemID),
+		"url":  directURL,
 	}
 
 	// A source that cannot transcode has nothing to decide: hand over the file.
@@ -351,19 +353,60 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if play.Mode != source.PlaybackModeHLS {
-		writeJSON(w, http.StatusOK, direct)
+	answer := direct
+	if play.Mode == source.PlaybackModeHLS {
+		playlist := "/api/hls/" + url.PathEscape(sourceID) + "/" + escapePath(play.Path)
+		if len(play.Query) > 0 {
+			playlist += "?" + play.Query.Encode()
+		}
+		answer = map[string]any{
+			"mode": source.PlaybackModeHLS,
+			"url":  playlist,
+		}
+	}
+
+	// Subtitles are independent of how the video itself is delivered.
+	if tracks := subtitleList(sourceID, play.Subtitles); len(tracks) > 0 {
+		answer["subtitles"] = tracks
+	}
+	writeJSON(w, http.StatusOK, answer)
+}
+
+// subtitleList turns a source's tracks into something the browser can attach.
+func subtitleList(sourceID string, tracks []source.SubtitleTrack) []map[string]any {
+	out := make([]map[string]any, 0, len(tracks))
+	for _, t := range tracks {
+		out = append(out, map[string]any{
+			"label":    t.Label,
+			"language": t.Language,
+			"forced":   t.Forced,
+			"url":      "/api/subtitle/" + url.PathEscape(sourceID) + "/" + escapePath(t.ID),
+		})
+	}
+	return out
+}
+
+// handleSubtitle proxies one subtitle track, converted upstream to WebVTT.
+func (s *Server) handleSubtitle(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("source")
+	src, ok := s.reg.ByID(sourceID)
+	if !ok {
+		http.Error(w, "unknown source", http.StatusNotFound)
+		return
+	}
+	provider, ok := src.(source.SubtitleProvider)
+	if !ok {
+		http.Error(w, "source has no subtitles", http.StatusNotImplemented)
 		return
 	}
 
-	playlist := "/api/hls/" + url.PathEscape(sourceID) + "/" + escapePath(play.Path)
-	if len(play.Query) > 0 {
-		playlist += "?" + play.Query.Encode()
+	target, err := provider.SubtitleTarget(r.Context(), r.PathValue("track"))
+	if err != nil {
+		s.log.Warn("subtitle target", "source", sourceID, "err", err)
+		http.Error(w, "could not build subtitle url", http.StatusBadGateway)
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"mode": source.PlaybackModeHLS,
-		"url":  playlist,
-	})
+	s.proxy.Serve(w, r, target, "subtitle "+sourceID)
 }
 
 // handleHLS proxies a playlist or one of its segments.

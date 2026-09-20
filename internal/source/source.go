@@ -124,6 +124,34 @@ type Playback struct {
 	// segment requests land.
 	Path  string     `json:"path,omitempty"`
 	Query url.Values `json:"-"`
+
+	// Subtitles are offered whichever mode applies: a direct-played file can
+	// still have a sidecar, and a transcode can still carry embedded tracks.
+	Subtitles []SubtitleTrack `json:"subtitles,omitempty"`
+}
+
+// SubtitleTrack is one selectable subtitle stream.
+type SubtitleTrack struct {
+	// ID is opaque and specific to the source; hand it back to SubtitleTarget.
+	ID string `json:"id"`
+
+	Label string `json:"label"`
+
+	// Language is a BCP-47 tag for the track element's srclang. Backends tend
+	// to report ISO 639-2 ("eng"), which browsers do not want.
+	Language string `json:"language,omitempty"`
+
+	Forced bool `json:"forced,omitempty"`
+}
+
+// SubtitleProvider serves a subtitle track as WebVTT.
+//
+// WebVTT because that is the only thing a browser will accept in a track
+// element. Backends store SRT and ASS far more often, so converting is the
+// backend's job - and Jellyfin does it on the fly, for embedded and sidecar
+// files alike.
+type SubtitleProvider interface {
+	SubtitleTarget(ctx context.Context, trackID string) (Target, error)
 }
 
 // PlaybackModeDirect and PlaybackModeHLS are the two answers.

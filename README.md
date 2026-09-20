@@ -41,6 +41,7 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - music, films, TV and audiobooks play **inside SoundStorm**
 - video a browser cannot decode is **transcoded by Jellyfin on the fly** and
   served as HLS, so HEVC, MKV and DTS play *and seek* like anything else
+- **subtitles**, embedded or sidecar, converted to WebVTT and selectable
 - ebooks are **read inside SoundStorm**, and remember where you stopped
 - no backend publishes a port; SoundStorm is the only door
 
@@ -156,6 +157,9 @@ internal/webui/      the embedded UI
 | POST | `/api/login` / `/api/logout` | — | |
 | GET | `/api/setup` | session | per-backend provisioning progress |
 | GET | `/api/library` | session | the folder layout and what is in it |
+| GET | `/api/playback/{source}/{id...}` | session | how to play an item, and its subtitles |
+| GET | `/api/hls/{source}/{path...}` | session | transcoded playlist and segments |
+| GET | `/api/subtitle/{source}/{track...}` | session | one subtitle track, as WebVTT |
 | GET | `/api/search?q=&kind=&limit=` | session | federated search |
 | GET | `/api/stream/{source}/{id...}` | session | media bytes |
 | GET | `/api/art/{source}/{id...}` | session | artwork |

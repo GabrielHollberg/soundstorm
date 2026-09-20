@@ -218,6 +218,14 @@ func deviceProfile() map[string]any {
 				"Context":    "Streaming",
 			},
 		},
+		// Text subtitles arrive as a separate WebVTT file rather than being
+		// burned into the video, so turning them on costs no re-encode.
+		"SubtitleProfiles": []map[string]any{
+			{"Format": "vtt", "Method": "External"},
+			{"Format": "subrip", "Method": "External"},
+			{"Format": "ass", "Method": "External"},
+			{"Format": "ssa", "Method": "External"},
+		},
 		"CodecProfiles": []map[string]any{
 			{
 				"Type":  "Video",
@@ -236,13 +244,124 @@ func deviceProfile() map[string]any {
 // playbackInfoResponse is the part of PlaybackInfo we act on.
 type playbackInfoResponse struct {
 	MediaSources []struct {
-		ID                   string `json:"Id"`
-		Container            string `json:"Container"`
-		SupportsDirectPlay   bool   `json:"SupportsDirectPlay"`
-		SupportsDirectStream bool   `json:"SupportsDirectStream"`
-		SupportsTranscoding  bool   `json:"SupportsTranscoding"`
+		ID                   string        `json:"Id"`
+		Container            string        `json:"Container"`
+		SupportsDirectPlay   bool          `json:"SupportsDirectPlay"`
+		SupportsDirectStream bool          `json:"SupportsDirectStream"`
+		SupportsTranscoding  bool          `json:"SupportsTranscoding"`
+		MediaStreams         []mediaStream `json:"MediaStreams"`
 	} `json:"MediaSources"`
 	PlaySessionID string `json:"PlaySessionId"`
+}
+
+type mediaStream struct {
+	Index                int    `json:"Index"`
+	Type                 string `json:"Type"`
+	Codec                string `json:"Codec"`
+	Language             string `json:"Language"`
+	DisplayTitle         string `json:"DisplayTitle"`
+	Title                string `json:"Title"`
+	IsForced             bool   `json:"IsForced"`
+	IsTextSubtitleStream bool   `json:"IsTextSubtitleStream"`
+}
+
+// textSubtitleCodecs are the ones that can become WebVTT.
+//
+// Everything else a file might carry - PGS, VOBSUB, DVB - is a picture of
+// text, not text, and the only way to show it in a browser is to burn it into
+// the video. Offering a track that silently renders nothing would be worse
+// than not offering it.
+var textSubtitleCodecs = map[string]bool{
+	"subrip": true, "srt": true, "ass": true, "ssa": true,
+	"webvtt": true, "vtt": true, "mov_text": true, "text": true,
+	"microdvd": true, "subviewer": true,
+}
+
+// iso639 maps the three-letter codes backends report onto the two-letter tags
+// a track element wants. Anything unlisted is passed through unchanged, which
+// is no worse than the alternative.
+var iso639 = map[string]string{
+	"eng": "en", "spa": "es", "fra": "fr", "fre": "fr", "deu": "de", "ger": "de",
+	"ita": "it", "por": "pt", "rus": "ru", "jpn": "ja", "kor": "ko",
+	"zho": "zh", "chi": "zh", "ara": "ar", "hin": "hi", "nld": "nl", "dut": "nl",
+	"swe": "sv", "nor": "no", "dan": "da", "fin": "fi", "pol": "pl",
+	"tur": "tr", "ces": "cs", "cze": "cs", "ell": "el", "gre": "el",
+	"heb": "he", "tha": "th", "vie": "vi", "ukr": "uk", "hun": "hu", "ron": "ro",
+}
+
+// subtitleTracks turns Jellyfin's stream list into offerable tracks.
+func (s *Source) subtitleTracks(itemID, mediaSourceID string, streams []mediaStream) []source.SubtitleTrack {
+	var tracks []source.SubtitleTrack
+	for _, st := range streams {
+		if !strings.EqualFold(st.Type, "Subtitle") {
+			continue
+		}
+		if !st.IsTextSubtitleStream && !textSubtitleCodecs[strings.ToLower(st.Codec)] {
+			continue
+		}
+
+		label := firstNonEmpty(st.Title, cleanDisplayTitle(st.DisplayTitle), st.Language, "Subtitles")
+		if st.IsForced && !strings.Contains(strings.ToLower(label), "forced") {
+			label += " (forced)"
+		}
+		language := strings.ToLower(st.Language)
+		if mapped, ok := iso639[language]; ok {
+			language = mapped
+		}
+
+		tracks = append(tracks, source.SubtitleTrack{
+			ID:       fmt.Sprintf("%s/%s/%d", itemID, mediaSourceID, st.Index),
+			Label:    label,
+			Language: language,
+			Forced:   st.IsForced,
+		})
+	}
+	return tracks
+}
+
+// SubtitleTarget fetches one track, converted to WebVTT by Jellyfin.
+//
+// The URL is built rather than taken from PlaybackInfo's DeliveryUrl, which
+// 12.1.0 leaves empty even when a subtitle profile is supplied. The endpoint
+// itself works for embedded and sidecar tracks alike.
+func (s *Source) SubtitleTarget(_ context.Context, trackID string) (source.Target, error) {
+	parts := strings.Split(trackID, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return source.Target{}, fmt.Errorf("jellyfin %q: bad subtitle track %q", s.id, trackID)
+	}
+	if _, err := strconv.Atoi(parts[2]); err != nil {
+		return source.Target{}, fmt.Errorf("jellyfin %q: subtitle index %q is not a number", s.id, parts[2])
+	}
+
+	ref := "/Videos/" + url.PathEscape(parts[0]) +
+		"/" + url.PathEscape(parts[1]) +
+		"/Subtitles/" + url.PathEscape(parts[2]) + "/Stream.vtt"
+
+	return source.Target{
+		URL:     s.http.URL(ref, nil),
+		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
+	}, nil
+}
+
+// cleanDisplayTitle trims the machinery off Jellyfin's generated label.
+//
+// When a stream has no title of its own Jellyfin invents one like
+// "English - SUBRIP - External", which describes the plumbing rather than the
+// track. The leading segment is the part a person wants.
+func cleanDisplayTitle(title string) string {
+	if before, _, found := strings.Cut(title, " - "); found {
+		return strings.TrimSpace(before)
+	}
+	return strings.TrimSpace(title)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 // Playback decides whether this item can be handed over as a file or has to be
@@ -291,14 +410,19 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 	}
 	ms := info.MediaSources[0]
 
+	// Offered in both modes: a direct-played file can have a sidecar, and a
+	// transcode can carry embedded tracks.
+	subtitles := s.subtitleTracks(itemID, ms.ID, ms.MediaStreams)
+
 	if (ms.SupportsDirectPlay || ms.SupportsDirectStream) && s.browserCanPlay(ms.Container) {
-		return source.Playback{Mode: source.PlaybackModeDirect}, nil
+		return source.Playback{Mode: source.PlaybackModeDirect, Subtitles: subtitles}, nil
 	}
 
 	return source.Playback{
-		Mode:  source.PlaybackModeHLS,
-		Path:  itemID + "/master.m3u8",
-		Query: s.hlsParams(itemID, ms.ID),
+		Mode:      source.PlaybackModeHLS,
+		Path:      itemID + "/master.m3u8",
+		Query:     s.hlsParams(itemID, ms.ID),
+		Subtitles: subtitles,
 	}, nil
 }
 

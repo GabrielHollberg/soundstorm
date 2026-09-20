@@ -500,6 +500,8 @@ async function playVideo(item) {
   const mode = ok && body ? body.mode : 'direct';
   const url = ok && body && body.url ? body.url : streamPath(item);
 
+  attachSubtitles(player, (ok && body && body.subtitles) || []);
+
   if (mode !== 'hls') {
     player.src = url;
     player.play().catch(() => {});
@@ -534,12 +536,67 @@ async function playVideo(item) {
   }
 }
 
+// Subtitles are attached as track elements, which works the same whether the
+// video is a plain file or an HLS stream: text tracks are independent of how
+// the media itself arrives.
+function attachSubtitles(player, tracks) {
+  for (const existing of [...player.querySelectorAll('track')]) existing.remove();
+
+  const picker = $('subtitle-picker');
+  const select = $('subtitle-select');
+  select.replaceChildren();
+
+  if (!tracks.length) {
+    show(picker, false);
+    return;
+  }
+
+  const off = document.createElement('option');
+  off.value = '';
+  off.textContent = 'Off';
+  select.append(off);
+
+  tracks.forEach((track, index) => {
+    const el = document.createElement('track');
+    el.kind = 'subtitles';
+    el.src = track.url;
+    el.label = track.label || `Track ${index + 1}`;
+    if (track.language) el.srclang = track.language;
+    player.append(el);
+
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = el.label;
+    select.append(option);
+  });
+
+  // Default to off. Turning subtitles on for someone who did not ask is more
+  // annoying than leaving them a control.
+  select.value = '';
+  applySubtitleChoice(player, '');
+  show(picker, true);
+}
+
+function applySubtitleChoice(player, value) {
+  const wanted = value === '' ? -1 : Number(value);
+  // textTracks is a live list in the same order the track elements were added.
+  for (let i = 0; i < player.textTracks.length; i++) {
+    player.textTracks[i].mode = i === wanted ? 'showing' : 'disabled';
+  }
+}
+
+$('subtitle-select').addEventListener('change', (event) => {
+  applySubtitleChoice($('video-player'), event.target.value);
+});
+
 function closeVideo() {
   detachHls();
   const player = $('video-player');
   player.pause();
   player.removeAttribute('src');
+  for (const track of [...player.querySelectorAll('track')]) track.remove();
   player.load();
+  show($('subtitle-picker'), false);
   show($('video-overlay'), false);
 }
 

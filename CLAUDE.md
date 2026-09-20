@@ -243,6 +243,18 @@ It was called atrium until the rename. Nothing in the repo should say so.
   `SupportsDirectPlay: true` for an MKV even when the device profile offers only
   mp4, so the container is checked a second time against the same list the
   profile advertises. Believing it reproduces the silent failure exactly.
+- **Subtitle URLs are built, not taken from PlaybackInfo.** 12.1.0 leaves
+  `DeliveryUrl` and `DeliveryMethod` empty even when the profile declares
+  subtitle support, but `/Videos/{item}/{mediaSource}/Subtitles/{index}/Stream.vtt`
+  works for embedded and sidecar tracks alike and converts SRT on the fly.
+  Same pattern as HLS: read the info, construct the URL.
+- **Only text subtitles are offered.** PGS, VOBSUB and DVB are pictures of
+  text; attaching one as a track renders nothing at all, which is worse than
+  offering nothing. Burning them in would need a re-encode.
+- **No `crossorigin` on the video element.** Every media and subtitle URL is
+  same-origin, so the cookie goes anyway; setting the attribute forces CORS
+  semantics and the media then fails to load for want of headers nobody needs
+  to send. Cost half an hour once.
 - **hls.js is loaded lazily and may never load at all.** Recent Chrome plays
   HLS natively, so the fallback went unexercised on the first test run - forcing
   it (stub `canPlayType` to reject mpegurl) is the only way to know it works.

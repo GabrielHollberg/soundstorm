@@ -474,3 +474,31 @@ header {
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+
+/* Subtitle picker ---------------------------------------------------------- */
+
+.overlay figcaption {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+#video-caption { flex: 1; min-width: 0; }
+
+#subtitle-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#subtitle-select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 13px;
+}

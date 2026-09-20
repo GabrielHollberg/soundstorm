@@ -78,8 +78,21 @@
   <div id="video-overlay" class="overlay hidden">
     <button id="video-close" class="close" type="button" aria-label="Close">&times;</button>
     <figure>
+      <!-- No crossorigin attribute: every media and subtitle URL is
+           same-origin, so the session cookie is sent anyway, and setting
+           it forces CORS semantics that then fail for want of headers
+           nobody needs to send. -->
       <video id="video-player" controls playsinline></video>
-      <figcaption id="video-caption"></figcaption>
+      <figcaption>
+        <span id="video-caption"></span>
+        <!-- An explicit picker rather than relying on the browser's own CC
+             button, which is placed differently in every browser and hidden
+             behind a menu in some. -->
+        <label id="subtitle-picker" class="hidden">
+          Subtitles
+          <select id="subtitle-select"></select>
+        </label>
+      </figcaption>
     </figure>
   </div>
 
