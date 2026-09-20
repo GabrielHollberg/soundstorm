@@ -681,6 +681,17 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **The owner is `GabrielHollberg`, checked against `gh api user` rather than
+  assumed.** It was `gabehollberg` for most of this project's life - guessed
+  from an email address, and not a GitHub account at all (`gh api
+  users/gabehollberg` answers 404). Every install URL in the README pointed at
+  a dead end, and the Go import path named nobody. That is worth re-checking if
+  it ever moves.
+- **A GitHub username may have capitals; a container registry path may not.**
+  `GabrielHollberg` is a fine account name and an invalid image reference, so
+  the publish workflow folds `GITHUB_REPOSITORY_OWNER` to lowercase and the
+  compose file names `ghcr.io/gabrielhollberg/soundstorm`. GitHub URLs keep
+  their capitals; only registry references are folded.
 - **Dev on Windows, deploy to Linux** - but Windows is a deployment target
   too, and always has been: the whole stack runs on Docker Desktop, which is
   what `install.ps1` sets up. Go lives at `C:\dev\tools\go` (installed from
