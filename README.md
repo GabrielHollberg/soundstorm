@@ -1,175 +1,176 @@
 # atrium
 
-One search across every media server you run.
+One login and one search box over your whole media library.
 
-atrium sits in front of Navidrome, Audiobookshelf, Calibre, Jellyfin and
-kiwix-serve and makes them answer a single query. It returns one merged,
-ranked list where a song, an audiobook, an epub, a film and a Wikipedia
-article all have the same shape.
+`docker compose up`, create an account, drop files into folders. Movies, music,
+audiobooks and ebooks all answer the same search and play in the same window.
+You never see an API key, and you never see a second login.
 
-## What it deliberately does not do
+![Search results from two different media servers in one list](docs/shots/2-search.png)
 
-It does not transcode, scrape metadata, manage libraries or store media.
-Those are solved problems owned by the servers it sits in front of, and
-solving them again badly is how this kind of project dies. atrium is the part
-that does not exist yet: the federating layer above them.
+## The idea
 
-## Why
+Installing self-hosted media servers is a solved problem — Umbrel, CasaOS,
+Unraid and a dozen compose stacks all do it. What none of them finish is the
+*integration*: you end up with four containers, four admin accounts to create,
+four API keys to mint, four web UIs and four search boxes.
 
-Self-hosting a media library means running several servers, because each one
-is best at exactly one thing. The cost is that finding something means
-remembering which server owns it and searching there. atrium removes that
-step without replacing any of the servers.
+atrium is that last mile. It runs the specialist servers, provisions their
+credentials itself, and puts one interface on top:
 
-## Design
+| | |
+| --- | --- |
+| **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
+| **Video** | Jellyfin — metadata, artwork, hardware transcoding |
+| **Audiobooks** | Audiobookshelf — *not yet wired up* |
+| **Ebooks** | Calibre / OPDS — *not yet wired up* |
 
-```
-                         ┌──────────┐
-   GET /api/search?q= ──▶│  atrium  │
-                         └────┬─────┘
-             fan out, in parallel, each with its own deadline
-        ┌────────────┬────────┼─────────┬────────────┐
-        ▼            ▼        ▼         ▼            ▼
-   Navidrome   Audiobookshelf  Calibre  Jellyfin   kiwix-serve
-   (Subsonic)    (REST)        (OPDS)   (REST)     (OpenSearch)
-        │            │            │        │            │
-        └────────────┴────────┬───┴────────┴────────────┘
-                     normalize ▼ merge, rank
-                      one list of media.Item
-```
+Using the real servers instead of reimplementing them is the whole trick. When
+you search "dune" and get a film back with a real poster and a real synopsis,
+that is Jellyfin's metadata work, not atrium's.
 
-Three rules hold the design together.
+## Status
 
-**A dead source must never take the search down.** Every backend gets its own
-deadline and its own error slot. If the music server is unreachable you still
-get your books, and the response says which source failed and why. This is
-not a theoretical concern: a box on a home connection goes away when a router
-is replaced, an IP changes, or the internet is on a schedule.
+This is a **working vertical slice**, not a finished product. What runs today:
 
-**Normalization happens at the edge.** Each adapter is the only code that
-knows its backend's vocabulary. Everything past the adapter speaks
-`media.Item`. Adding a media server means writing one file.
+- `docker compose up` brings up Navidrome, Jellyfin and atrium
+- atrium provisions both backends on first boot — **zero API keys typed**
+- one account, created on first visit, guarding everything
+- one search across both, merged and ranked
+- video and audio play **inside atrium**, with seeking
+- neither backend publishes a port; atrium is the only door
 
-**atrium does not proxy media bytes.** Results carry absolute URLs pointing at
-the upstream server. The client streams from the source directly, so atrium
-stays a small, stateless, low-traffic service you can restart without anyone
-noticing.
-
-## Endpoints
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/healthz` | Liveness. Makes no upstream calls. |
-| GET | `/api/sources` | Per-source health, with timings. |
-| GET | `/api/search?q=&kind=&limit=` | Federated search. |
-| GET | `/api/probe/{id}?q=` | A source's raw upstream response. Off by default. |
-
-`kind` is one of `music`, `audiobook`, `ebook`, `video`, `article`, and may
-repeat or be comma-separated. Filtering by kind skips non-matching backends
-entirely rather than querying and discarding.
-
-A search always returns 200. Check `degraded` and the `sources` array to see
-whether the answer is complete.
-
-```json
-{
-  "items": [
-    { "id": "300", "sourceId": "navidrome", "kind": "music",
-      "title": "Sleep Walk", "creators": ["Santo & Johnny"],
-      "year": 1959, "durationSeconds": 141, "score": 1,
-      "openUrl": "https://music.example.com/rest/stream.view?id=300&..." }
-  ],
-  "sources": [
-    { "sourceId": "navidrome", "kind": "music", "ok": true, "count": 1, "tookMs": 12 },
-    { "sourceId": "kiwix", "kind": "article", "ok": false,
-      "error": "dial tcp: connection refused", "tookMs": 0 }
-  ],
-  "degraded": true,
-  "tookMs": 13
-}
-```
+Not built yet: audiobooks, ebooks, transcoding for formats a browser cannot
+play, multi-user, HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Getting started
 
 ```sh
-cp configs/atrium.example.json configs/atrium.json
-cp .env.example .env
-# edit both, then:
-make check     # validate config and probe every source, without serving
-make run
-```
-
-`make check` is the fastest way to find a wrong URL, a bad token or a library
-id you guessed. It reports each source individually and exits non-zero if any
-fail.
-
-With Docker:
-
-```sh
+git clone <this repo> && cd atrium
+pwsh scripts/make-sample-media.ps1   # optional: a tiny synthetic library
 docker compose up --build
 ```
 
-## Configuration
+Open <http://localhost:8099> and create your account. That is the entire setup.
 
-The config file is JSON with comments, so it can be annotated in place. Any
-`${VAR}` is expanded from the environment at load time, which keeps secrets
-out of the file. Unknown keys are a hard error, so a typo fails at boot
-instead of being silently ignored.
+Drop your own files into:
 
-See `configs/atrium.example.json` for every field, commented.
-
-## Adding a source
-
-Implement `source.Source` in `internal/source/<name>/`:
-
-```go
-type Source interface {
-    ID() string
-    Kind() media.Kind
-    Search(ctx context.Context, q media.Query) ([]media.Item, error)
-    Health(ctx context.Context) error
-}
+```
+media/
+  music/     Artist/Album/01 - Track.mp3
+  movies/    Film Name (2021)/Film Name (2021).mkv
 ```
 
-Then add a case to the switch in `internal/config/config.go`. Nothing else
-changes. Implementing the optional `source.Prober` also gets you a
-`/api/probe/<id>` endpoint for free.
+Navidrome rescans every minute. Jellyfin watches for changes.
 
-## Correcting a field mapping
+Port 8099 rather than 8080 because 8080 is crowded — a Calibre content server
+defaults to it. Override with `ATRIUM_PORT`.
 
-The Subsonic and OPDS adapters follow published, stable specs. The
-Audiobookshelf and Kiwix adapters target response shapes that have moved
-between releases, and are marked `VERIFY:` in their source.
+## How it works
 
-If a source returns results with missing titles or covers, do not guess:
+```
+                    browser
+                       │  one origin, one cookie
+                 ┌─────▼─────┐
+                 │  atrium   │  auth · search · player · byte proxy
+                 └─────┬─────┘
+          ┌────────────┴────────────┐
+          ▼                         ▼
+    Navidrome:4533            Jellyfin:8096
+    (no published port)     (no published port)
+```
+
+Three rules hold it together.
+
+**A dead backend must never take the search down.** Every backend gets its own
+deadline and its own error slot. If Jellyfin is restarting you still get your
+music, and the response says which source failed and why.
+
+**Normalization happens at the edge.** Each adapter is the only code that knows
+its backend's vocabulary. Everything past it speaks `media.Item`.
+
+**Nothing upstream ever reaches the browser.** Results carry no upstream URLs.
+atrium fetches media server-side and pipes it through, which is what lets the
+backends stay off any published port — and therefore what makes "one login"
+true rather than decorative.
+
+That last rule reverses an earlier design decision, deliberately. See the
+package comment in `internal/stream` for the cost/benefit.
+
+## Layout
+
+```
+cmd/atrium/          main, env config, graceful shutdown
+internal/media/      Item, Query, Kind — the shared vocabulary
+internal/source/     the Source interface, Target, Registry
+internal/source/*/   one package per backend
+internal/provision/  first-boot credential provisioning  ← the load-bearing part
+internal/state/      the little that must survive a restart
+internal/auth/       single-account login, PBKDF2, sessions
+internal/federate/   parallel fan-out, per-source deadlines, merge, rank
+internal/stream/     media byte proxy with Range support
+internal/httpapi/    handlers
+internal/webui/      the embedded UI
+```
+
+## Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/` | — | the UI |
+| GET | `/healthz` | — | liveness |
+| GET | `/api/session` | — | does an account exist; am I signed in |
+| POST | `/api/signup` | — | create the one account (first boot only) |
+| POST | `/api/login` / `/api/logout` | — | |
+| GET | `/api/setup` | session | per-backend provisioning progress |
+| GET | `/api/search?q=&kind=&limit=` | session | federated search |
+| GET | `/api/stream/{source}/{id}` | session | media bytes |
+| GET | `/api/art/{source}/{id}` | session | artwork |
+
+`kind` is one of `music`, `audiobook`, `ebook`, `video`, and may repeat or be
+comma-separated. Filtering skips non-matching backends entirely.
+
+A search always returns 200. Check `degraded` and the `sources` array.
+
+## Adding a backend
+
+Two halves, because a backend needs both:
+
+1. **Search.** Implement `source.Source` in `internal/source/<name>/`, plus
+   `source.Streamer` and `source.ArtProvider` if it serves bytes.
+2. **Provisioning.** Add a function in `internal/provision/` that walks the
+   backend's first-run flow and returns credentials, then a case in the switch
+   in `provision.go` and a target in `targetsFromEnv`.
+
+The second half is the one people skip, and it is the one that matters — a
+backend a human has to configure by hand defeats the point of the project.
+
+## Conventions
+
+- **Zero third-party dependencies.** Standard library only, including password
+  hashing (`crypto/pbkdf2`, stdlib since Go 1.24). The container build
+  downloads nothing and there is no supply chain to audit.
+- **No config file.** Everything comes from environment variables set by
+  compose, plus state atrium provisions itself. A config file is one more thing
+  for a human to edit, and the goal is that a human edits nothing.
+- **Fail loudly at startup, degrade gracefully at runtime.**
+- `gofmt` clean, `go vet` clean, tests pass.
+
+## Commands
 
 ```sh
-# set "enableProbe": true in the config first
-curl 'http://localhost:8080/api/probe/audiobookshelf?q=test' | jq .
+go test ./...
+go run ./cmd/atrium           # needs the backends reachable; compose is easier
+docker compose up --build
+docker compose logs -f atrium # watch provisioning
 ```
-
-That is the literal upstream response. Adjust the structs in that adapter to
-match. Only that one file needs to change.
-
-## Testing
-
-```sh
-make test
-```
-
-The suite covers the behaviour that matters rather than the plumbing: that a
-failed source degrades instead of erroring, that a hung source is cut off at
-its deadline, that kind filtering skips backends, that relevance ordering is
-sane, that the Subsonic adapter never puts a plaintext password on the wire,
-and that a malformed config fails loudly.
 
 ## Notes
 
-- **Module path.** `go.mod` says `github.com/gabehollberg/atrium`. If your
-  repo lives elsewhere, change it there and run
+- **Module path** is `github.com/gabehollberg/atrium`. If the repo lives
+  elsewhere, fix `go.mod` and run
   `grep -rl gabehollberg/atrium . | xargs sed -i 's|gabehollberg/atrium|<you>/atrium|g'`.
-- **No dependencies.** The standard library only. The container downloads
-  nothing at build time and there is no supply chain to audit.
-- **Exposure.** Subsonic stream URLs carry credentials in the query string;
-  that is how the protocol works. Serve atrium over TLS or a private network
-  (Tailscale), not on the open internet.
+- **No `go.sum`** and that is correct, not an oversight.
+- **Serve over TLS or a private network.** Subsonic stream URLs carry
+  credentials in the query string — that is the protocol, and although those
+  URLs never leave atrium, the session cookie still crosses the wire.

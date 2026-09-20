@@ -1,9 +1,16 @@
-// Package subsonic adapts a Subsonic-API server (Navidrome, Airsonic, Gonic).
+// Package subsonic adapts a Subsonic-API music server, which for atrium means
+// Navidrome.
+//
+// Navidrome is here rather than letting Jellyfin handle music because it is
+// simply better at it: multi-value artist tags, album-artist vs artist,
+// compilations, ReplayGain, smart playlists, and a scanner that handles a large
+// library without complaint. atrium exists so you can have that without also
+// having a second app to log into.
 //
 // Protocol notes: authentication is the salted-token scheme from Subsonic
-// 1.13.0 - send the username, a random salt, and token=md5(password+salt).
-// The plaintext password never crosses the wire, but note that the server
-// must store it recoverably for this to work, so still use TLS.
+// 1.13.0 - send the username, a random salt, and token=md5(password+salt). The
+// plaintext password never crosses the wire. The server must store the password
+// recoverably for this to work, which Navidrome does on purpose.
 package subsonic
 
 import (
@@ -18,6 +25,7 @@ import (
 
 	"github.com/gabehollberg/atrium/internal/httpx"
 	"github.com/gabehollberg/atrium/internal/media"
+	"github.com/gabehollberg/atrium/internal/source"
 )
 
 const (
@@ -101,14 +109,26 @@ type song struct {
 	Suffix   string `json:"suffix"`
 }
 
+// check turns a Subsonic envelope into an error when the server reported one.
+// Subsonic signals failure with HTTP 200 and an error object, so the status
+// code alone is not enough.
+func (e *envelope) check() error {
+	if err := e.Response.Error; err != nil {
+		return fmt.Errorf("subsonic error %d: %s", err.Code, err.Message)
+	}
+	if e.Response.Status != "ok" {
+		return fmt.Errorf("subsonic status %q", e.Response.Status)
+	}
+	return nil
+}
+
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
 	params, err := s.auth()
 	if err != nil {
 		return nil, err
 	}
-	limit := q.LimitOr(25)
 	params.Set("query", q.Text)
-	params.Set("songCount", strconv.Itoa(limit))
+	params.Set("songCount", strconv.Itoa(q.LimitOr(25)))
 	params.Set("albumCount", "0")
 	params.Set("artistCount", "0")
 
@@ -116,11 +136,8 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 	if err := s.http.JSON(ctx, "/rest/search3.view", params, &env); err != nil {
 		return nil, err
 	}
-	if e := env.Response.Error; e != nil {
-		return nil, fmt.Errorf("subsonic error %d: %s", e.Code, e.Message)
-	}
-	if env.Response.Status != "ok" {
-		return nil, fmt.Errorf("subsonic status %q", env.Response.Status)
+	if err := env.check(); err != nil {
+		return nil, err
 	}
 
 	items := make([]media.Item, 0, len(env.Response.SearchResult3.Song))
@@ -132,8 +149,8 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 			Title:           sg.Title,
 			Subtitle:        sg.Album,
 			Year:            sg.Year,
+			ArtID:           sg.CoverArt,
 			DurationSeconds: float64(sg.Duration),
-			OpenURL:         s.mediaURL("/rest/stream.view", sg.ID),
 			Extra:           map[string]string{},
 		}
 		if sg.Artist != "" {
@@ -145,26 +162,35 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 		if sg.Suffix != "" {
 			item.Extra["format"] = sg.Suffix
 		}
-		if sg.CoverArt != "" {
-			item.CoverURL = s.mediaURL("/rest/getCoverArt.view", sg.CoverArt)
-		}
 		items = append(items, item)
 	}
 	return items, nil
 }
 
-// mediaURL builds an authenticated URL for streaming or cover art.
+// StreamTarget builds an authenticated upstream target for a track.
 //
-// These URLs embed credentials in the query string, which is how the Subsonic
-// protocol works. They are handed to the client, so only expose atrium over
-// TLS or a private network (Tailscale).
-func (s *Source) mediaURL(path, id string) string {
+// Subsonic carries credentials in the query string, which is how the protocol
+// works, so no headers are needed. They never reach the browser: atrium fetches
+// them itself and pipes the bytes through, so Navidrome needs no published port.
+func (s *Source) StreamTarget(itemID string) (source.Target, error) {
+	return s.mediaTarget("/rest/stream.view", itemID)
+}
+
+// ArtTarget builds an authenticated upstream target for cover art.
+func (s *Source) ArtTarget(artID string) (source.Target, error) {
+	return s.mediaTarget("/rest/getCoverArt.view", artID)
+}
+
+func (s *Source) mediaTarget(path, id string) (source.Target, error) {
+	if id == "" {
+		return source.Target{}, fmt.Errorf("subsonic %q: empty id", s.id)
+	}
 	params, err := s.auth()
 	if err != nil {
-		return ""
+		return source.Target{}, err
 	}
 	params.Set("id", id)
-	return s.http.URL(path, params)
+	return source.Target{URL: s.http.URL(path, params)}, nil
 }
 
 func (s *Source) Health(ctx context.Context) error {
@@ -176,21 +202,5 @@ func (s *Source) Health(ctx context.Context) error {
 	if err := s.http.JSON(ctx, "/rest/ping.view", params, &env); err != nil {
 		return err
 	}
-	if e := env.Response.Error; e != nil {
-		return fmt.Errorf("subsonic error %d: %s", e.Code, e.Message)
-	}
-	if env.Response.Status != "ok" {
-		return fmt.Errorf("subsonic status %q", env.Response.Status)
-	}
-	return nil
-}
-
-func (s *Source) Probe(ctx context.Context, q media.Query) ([]byte, string, error) {
-	params, err := s.auth()
-	if err != nil {
-		return nil, "", err
-	}
-	params.Set("query", q.Text)
-	params.Set("songCount", strconv.Itoa(q.LimitOr(5)))
-	return s.http.Raw(ctx, "/rest/search3.view", params)
+	return env.check()
 }

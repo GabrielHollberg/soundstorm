@@ -7,21 +7,28 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gabehollberg/atrium/internal/auth"
 	"github.com/gabehollberg/atrium/internal/federate"
 	"github.com/gabehollberg/atrium/internal/media"
+	"github.com/gabehollberg/atrium/internal/provision"
 	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/atrium/internal/state"
 )
 
+// stub is a Source that returns canned results and streams from a fake upstream.
 type stub struct {
-	id    string
-	kind  media.Kind
-	items []media.Item
-	err   error
-	raw   string
+	id        string
+	kind      media.Kind
+	items     []media.Item
+	err       error
+	streamURL string
 }
 
 func (s stub) ID() string       { return s.id }
@@ -29,41 +36,200 @@ func (s stub) Kind() media.Kind { return s.kind }
 func (s stub) Search(context.Context, media.Query) ([]media.Item, error) {
 	return s.items, s.err
 }
-func (s stub) Health(context.Context) error { return s.err }
-func (s stub) Probe(context.Context, media.Query) ([]byte, string, error) {
-	return []byte(s.raw), "application/json", nil
+func (s stub) Health(context.Context) error               { return s.err }
+func (s stub) StreamTarget(string) (source.Target, error) { return s.target() }
+func (s stub) ArtTarget(string) (source.Target, error)    { return s.target() }
+
+func (s stub) target() (source.Target, error) {
+	if s.streamURL == "" {
+		return source.Target{}, errors.New("no upstream configured")
+	}
+	return source.Target{URL: s.streamURL}, nil
 }
 
-func testServer(t *testing.T, enableProbe bool, sources ...source.Source) *httptest.Server {
+type harness struct {
+	srv    *httptest.Server
+	client *http.Client
+}
+
+func newHarness(t *testing.T, sources ...source.Source) *harness {
 	t.Helper()
+
+	store, err := state.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("state.Open: %v", err)
+	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	api := New(source.NewRegistry(sources...), time.Second, enableProbe, log)
+	reg := source.NewRegistry(sources...)
+
+	api := New(Config{
+		Registry:         reg,
+		Auth:             auth.New(store),
+		Setup:            provision.New(store, reg, log, nil),
+		PerSourceTimeout: time.Second,
+		Log:              log,
+	})
+
 	srv := httptest.NewServer(api.Routes())
 	t.Cleanup(srv.Close)
-	return srv
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	return &harness{srv: srv, client: &http.Client{Jar: jar}}
 }
 
-func get(t *testing.T, srv *httptest.Server, path string) (*http.Response, []byte) {
+func (h *harness) do(t *testing.T, method, path, body string) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := srv.Client().Get(srv.URL + path)
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, h.srv.URL+path, reader)
 	if err != nil {
-		t.Fatalf("GET %s: %v", path, err)
+		t.Fatalf("new request: %v", err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
 	}
 	t.Cleanup(func() { resp.Body.Close() })
-	body, err := io.ReadAll(resp.Body)
+	out, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	return resp, body
+	return resp, out
 }
 
-func TestSearchReturnsMergedResults(t *testing.T) {
-	srv := testServer(t, false,
-		stub{id: "books", kind: media.KindEbook, items: []media.Item{{ID: "1", Title: "Dune", Kind: media.KindEbook, SourceID: "books"}}},
-		stub{id: "video", kind: media.KindVideo, items: []media.Item{{ID: "2", Title: "Dune", Kind: media.KindVideo, SourceID: "video"}}},
-	)
+// signUp creates the account and leaves the harness signed in.
+func (h *harness) signUp(t *testing.T) {
+	t.Helper()
+	resp, body := h.do(t, http.MethodPost, "/api/signup", `{"username":"gabe","password":"correct horse"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("signup failed: %d %s", resp.StatusCode, body)
+	}
+}
 
-	resp, body := get(t, srv, "/api/search?q=dune")
+// The login has to actually gate something. If media bytes were reachable
+// without a session, the backends would be effectively public and the whole
+// single-login premise would be theatre.
+func TestEverythingInterestingRequiresASession(t *testing.T) {
+	h := newHarness(t, stub{id: "music", kind: media.KindMusic})
+
+	for _, path := range []string{
+		"/api/search?q=dune",
+		"/api/setup",
+		"/api/stream/music/1",
+		"/api/art/music/1",
+	} {
+		resp, _ := h.do(t, http.MethodGet, path, "")
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("GET %s without a session = %d, want 401", path, resp.StatusCode)
+		}
+	}
+}
+
+func TestSessionReportsWhetherSignupHasHappened(t *testing.T) {
+	h := newHarness(t)
+
+	var before struct {
+		HasAccount bool `json:"hasAccount"`
+		SignedIn   bool `json:"signedIn"`
+	}
+	_, body := h.do(t, http.MethodGet, "/api/session", "")
+	if err := json.Unmarshal(body, &before); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if before.HasAccount || before.SignedIn {
+		t.Errorf("fresh install should have no account and no session, got %+v", before)
+	}
+
+	h.signUp(t)
+
+	var after struct {
+		HasAccount bool `json:"hasAccount"`
+		SignedIn   bool `json:"signedIn"`
+	}
+	_, body = h.do(t, http.MethodGet, "/api/session", "")
+	if err := json.Unmarshal(body, &after); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !after.HasAccount || !after.SignedIn {
+		t.Errorf("after signup want account and session, got %+v", after)
+	}
+}
+
+// Signup is a first-boot action. A second one would be an account takeover by
+// anyone who finds the port.
+func TestSignupIsOnlyAvailableOnce(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+
+	resp, _ := h.do(t, http.MethodPost, "/api/signup", `{"username":"someone","password":"else entirely"}`)
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("second signup = %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestSignupRejectsWeakPassword(t *testing.T) {
+	h := newHarness(t)
+	resp, body := h.do(t, http.MethodPost, "/api/signup", `{"username":"gabe","password":"short"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (body %s)", resp.StatusCode, body)
+	}
+}
+
+func TestLoginAndLogout(t *testing.T) {
+	h := newHarness(t, stub{id: "music", kind: media.KindMusic})
+	h.signUp(t)
+
+	// Signed in after signup, so search is reachable.
+	resp, _ := h.do(t, http.MethodGet, "/api/search?q=x", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("search after signup = %d", resp.StatusCode)
+	}
+
+	if resp, _ := h.do(t, http.MethodPost, "/api/logout", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("logout = %d", resp.StatusCode)
+	}
+	resp, _ = h.do(t, http.MethodGet, "/api/search?q=x", "")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("search after logout = %d, want 401", resp.StatusCode)
+	}
+
+	// Wrong password stays out.
+	resp, _ = h.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"wrong password"}`)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("bad password = %d, want 401", resp.StatusCode)
+	}
+
+	// Right password gets back in.
+	resp, _ = h.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"correct horse"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("good password = %d, want 200", resp.StatusCode)
+	}
+	resp, _ = h.do(t, http.MethodGet, "/api/search?q=x", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("search after login = %d", resp.StatusCode)
+	}
+}
+
+func TestSearchMergesResultsFromEveryBackend(t *testing.T) {
+	h := newHarness(t,
+		stub{id: "navidrome", kind: media.KindMusic, items: []media.Item{
+			{ID: "1", Title: "Dune", Kind: media.KindMusic, SourceID: "navidrome"},
+		}},
+		stub{id: "jellyfin", kind: media.KindVideo, items: []media.Item{
+			{ID: "2", Title: "Dune", Kind: media.KindVideo, SourceID: "jellyfin"},
+		}},
+	)
+	h.signUp(t)
+
+	resp, body := h.do(t, http.MethodGet, "/api/search?q=dune", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
 	}
@@ -85,14 +251,17 @@ func TestSearchReturnsMergedResults(t *testing.T) {
 	}
 }
 
-// The behaviour that matters when the server at dad's house is offline.
-func TestSearchStillServesWhenOneSourceIsDown(t *testing.T) {
-	srv := testServer(t, false,
-		stub{id: "books", kind: media.KindEbook, items: []media.Item{{ID: "1", Title: "Dune", Kind: media.KindEbook}}},
-		stub{id: "music", kind: media.KindMusic, err: errors.New("dial tcp: connection refused")},
+// The behaviour that matters when one server is off: the search still answers.
+func TestSearchStillServesWhenOneBackendIsDown(t *testing.T) {
+	h := newHarness(t,
+		stub{id: "jellyfin", kind: media.KindVideo, items: []media.Item{
+			{ID: "1", Title: "Dune", Kind: media.KindVideo},
+		}},
+		stub{id: "navidrome", kind: media.KindMusic, err: errors.New("dial tcp: connection refused")},
 	)
+	h.signUp(t)
 
-	resp, body := get(t, srv, "/api/search?q=dune")
+	resp, body := h.do(t, http.MethodGet, "/api/search?q=dune", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("a degraded search must still be 200, got %d", resp.StatusCode)
 	}
@@ -102,31 +271,28 @@ func TestSearchStillServesWhenOneSourceIsDown(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	if len(got.Items) != 1 {
-		t.Errorf("want the surviving source's result, got %d items", len(got.Items))
+		t.Errorf("want the surviving backend's result, got %d items", len(got.Items))
 	}
 	if !got.Degraded {
-		t.Error("want Degraded=true so the client can say so")
+		t.Error("want Degraded=true so the UI can say so")
 	}
 }
 
-func TestSearchFiltersByKind(t *testing.T) {
-	srv := testServer(t, false,
-		stub{id: "books", kind: media.KindEbook, items: []media.Item{{ID: "1", Title: "Dune"}}},
-		stub{id: "music", kind: media.KindMusic, items: []media.Item{{ID: "2", Title: "Dune"}}},
-	)
+// An empty result must be [] and not null, or the UI's .map() breaks on the
+// most ordinary case there is: a search that found nothing.
+func TestEmptySearchReturnsAnArray(t *testing.T) {
+	h := newHarness(t, stub{id: "music", kind: media.KindMusic})
+	h.signUp(t)
 
-	_, body := get(t, srv, "/api/search?q=dune&kind=ebook")
-	var got federate.Result
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(got.Sources) != 1 || got.Sources[0].SourceID != "books" {
-		t.Errorf("kind filter did not apply: %+v", got.Sources)
+	_, body := h.do(t, http.MethodGet, "/api/search?q=nothing", "")
+	if !strings.Contains(string(body), `"items": []`) {
+		t.Errorf("want an empty array for items, got %s", body)
 	}
 }
 
 func TestSearchValidatesInput(t *testing.T) {
-	srv := testServer(t, false, stub{id: "books", kind: media.KindEbook})
+	h := newHarness(t, stub{id: "music", kind: media.KindMusic})
+	h.signUp(t)
 
 	for _, path := range []string{
 		"/api/search",              // no q
@@ -135,70 +301,102 @@ func TestSearchValidatesInput(t *testing.T) {
 		"/api/search?q=x&limit=999",
 		"/api/search?q=x&limit=abc",
 	} {
-		resp, body := get(t, srv, path)
+		resp, body := h.do(t, http.MethodGet, path, "")
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("GET %s: status = %d, want 400 (body %s)", path, resp.StatusCode, body)
 		}
 	}
 }
 
-func TestSourcesReportsPerSourceHealth(t *testing.T) {
-	srv := testServer(t, false,
-		stub{id: "books", kind: media.KindEbook},
-		stub{id: "music", kind: media.KindMusic, err: errors.New("unreachable")},
+func TestSearchFiltersByKind(t *testing.T) {
+	h := newHarness(t,
+		stub{id: "navidrome", kind: media.KindMusic, items: []media.Item{{ID: "1", Title: "Dune"}}},
+		stub{id: "jellyfin", kind: media.KindVideo, items: []media.Item{{ID: "2", Title: "Dune"}}},
 	)
+	h.signUp(t)
 
-	resp, body := get(t, srv, "/api/sources")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-
-	var got struct {
-		AllOK   bool                    `json:"allOk"`
-		Sources []federate.SourceStatus `json:"sources"`
-	}
+	_, body := h.do(t, http.MethodGet, "/api/search?q=dune&kind=video", "")
+	var got federate.Result
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.AllOK {
-		t.Error("allOk should be false when a source is down")
-	}
-	if len(got.Sources) != 2 {
-		t.Fatalf("want 2 statuses, got %d", len(got.Sources))
+	if len(got.Sources) != 1 || got.Sources[0].SourceID != "jellyfin" {
+		t.Errorf("kind filter did not apply: %+v", got.Sources)
 	}
 }
 
-func TestProbeIsOffByDefault(t *testing.T) {
-	srv := testServer(t, false, stub{id: "books", kind: media.KindEbook, raw: `{"hello":"world"}`})
-	resp, _ := get(t, srv, "/api/probe/books?q=x")
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d, want 404 when probing is disabled", resp.StatusCode)
-	}
-}
+// The proxy is what lets the backends stay off any published port, so it has to
+// actually move the bytes - and forward Range, or seeking a film breaks.
+func TestStreamProxiesUpstreamBytes(t *testing.T) {
+	const payload = "0123456789abcdef"
+	var sawRange string
 
-func TestProbeReturnsRawUpstreamBody(t *testing.T) {
-	srv := testServer(t, true, stub{id: "books", kind: media.KindEbook, raw: `{"hello":"world"}`})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawRange = r.Header.Get("Range")
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.Header().Set("Accept-Ranges", "bytes")
+		http.ServeContent(w, r, "track.mp3", time.Unix(0, 0), strings.NewReader(payload))
+	}))
+	defer upstream.Close()
 
-	resp, body := get(t, srv, "/api/probe/books?q=x")
+	h := newHarness(t, stub{
+		id:        "navidrome",
+		kind:      media.KindMusic,
+		streamURL: upstream.URL + "/rest/stream.view?id=300",
+	})
+	h.signUp(t)
+
+	resp, body := h.do(t, http.MethodGet, "/api/stream/navidrome/300", "")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
+		t.Fatalf("stream status = %d", resp.StatusCode)
 	}
-	if string(body) != `{"hello":"world"}` {
-		t.Errorf("body = %s", body)
+	if string(body) != payload {
+		t.Errorf("proxied body = %q, want %q", body, payload)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "audio/mpeg" {
+		t.Errorf("content type = %q, want audio/mpeg", got)
+	}
+
+	// Now a ranged request, which is what a player issues when you seek.
+	req, err := http.NewRequest(http.MethodGet, h.srv.URL+"/api/stream/navidrome/300", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Range", "bytes=4-7")
+	ranged, err := h.client.Do(req)
+	if err != nil {
+		t.Fatalf("ranged request: %v", err)
+	}
+	defer ranged.Body.Close()
+	rangedBody, _ := io.ReadAll(ranged.Body)
+
+	if sawRange != "bytes=4-7" {
+		t.Errorf("upstream saw Range %q, want bytes=4-7", sawRange)
+	}
+	if ranged.StatusCode != http.StatusPartialContent {
+		t.Errorf("ranged status = %d, want 206", ranged.StatusCode)
+	}
+	if string(rangedBody) != "4567" {
+		t.Errorf("ranged body = %q, want 4567", rangedBody)
+	}
+	if ranged.Header.Get("Content-Range") == "" {
+		t.Error("Content-Range must be forwarded or the player cannot seek")
 	}
 }
 
-func TestProbeUnknownSource(t *testing.T) {
-	srv := testServer(t, true, stub{id: "books", kind: media.KindEbook})
-	resp, _ := get(t, srv, "/api/probe/nope?q=x")
+func TestStreamUnknownSource(t *testing.T) {
+	h := newHarness(t, stub{id: "navidrome", kind: media.KindMusic})
+	h.signUp(t)
+
+	resp, _ := h.do(t, http.MethodGet, "/api/stream/nope/1", "")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
 	}
 }
 
-func TestHealthz(t *testing.T) {
-	srv := testServer(t, false, stub{id: "books", kind: media.KindEbook})
-	resp, body := get(t, srv, "/healthz")
+func TestHealthzNeedsNoSession(t *testing.T) {
+	h := newHarness(t, stub{id: "music", kind: media.KindMusic})
+	resp, body := h.do(t, http.MethodGet, "/healthz", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
@@ -211,5 +409,19 @@ func TestHealthz(t *testing.T) {
 	}
 	if got.Status != "ok" || got.Sources != 1 {
 		t.Errorf("unexpected healthz payload: %+v", got)
+	}
+}
+
+func TestUIShellIsServed(t *testing.T) {
+	h := newHarness(t)
+	resp, body := h.do(t, http.MethodGet, "/", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(body), "atrium") {
+		t.Error("shell does not look like the UI")
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("content type = %q", ct)
 	}
 }

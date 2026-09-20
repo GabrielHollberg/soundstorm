@@ -1,128 +1,124 @@
 # atrium — working notes for Claude
 
-Read this first. It carries decisions made before the code existed, and one
-important mismatch between what is on disk and what the project is now for.
+Read this first. It carries decisions that the code cannot tell you, including
+two reversals of earlier decisions that looked right and were not.
 
 ## What this is
 
-A federating gateway over self-hosted media servers. One search across music,
-audiobooks, ebooks, video and offline article archives, returning one merged,
-ranked list where every result has the same shape.
+A unified front end for a self-hosted media library. One login, one search box,
+one player over Navidrome and Jellyfin today; audiobooks and ebooks next.
 
-## The pivot (most important thing here)
+The user's words for what they wanted: *"an all-encompassing server that can do
+movies, audiobooks, ebooks, music all together... easy for users to install and
+then create a login... and put their library into organized folders."*
 
-The code on disk was written as a **personal** gateway over one specific
-stack. The project has since been re-aimed at a **product**: an easy option
-for people who want an all-encompassing media server.
+## The decision that shapes everything
 
-Nothing in the core needs rewriting for that, but the gaps are real:
+That request sounds like "build a media server". It is not, and the difference
+is the whole project.
 
-| On disk now | Needs to become |
-| --- | --- |
-| Hand-written JSON config with manually fetched API keys | Services provision and wire their own credentials; a human types nothing |
-| No UI, API only | A web UI. An API is not a product. |
-| No auth (assumes Tailscale) | Mandatory auth — other people are not behind your tailnet |
-| Owner's hostnames as examples | Sensible defaults, discovery |
+**Rejected: fork Jellyfin, or build a media server from scratch.** Either means
+owning the expensive part — scanning disks, identifying media, storing metadata
+and artwork, transcoding. That is years of work to arrive somewhere worse than
+what exists. Forking additionally buys a permanent merge tax against a large
+C# codebase, in exchange for the ability to change internals that none of the
+requirements touch.
 
-**Positioning, because it decides scope.** Installation is a solved and
-crowded problem: Umbrel, CasaOS, Unraid Community Applications, Runtipi,
-Yunohost, Saltbox, linuxserver.io compose stacks. Do not rebuild an app store.
-What every one of them leaves undone is *integration* — you finish setup with
-five containers, five web UIs, five logins and five search boxes.
-"All-encompassing" in that world means all-installed, never all-unified.
+**Chosen: own the layer above.** Each backend owns exactly one media type and
+one folder. Nothing scans the same folder twice. atrium owns login, search,
+playback and the bytes. From the user's seat this is indistinguishable from a
+single server — they never learn Jellyfin exists — but Jellyfin still does the
+transcoding and Navidrome still does the music scanning.
 
-atrium is the integration layer. That is the entire differentiator. Guard it.
+Navidrome rather than Jellyfin for music specifically: multi-value artist tags,
+album-artist vs artist, compilations, ReplayGain, smart playlists, fast scanner.
+Jellyfin's music support is a second-class citizen next to its video support,
+structurally. Getting Navidrome's music engine *for free* is exactly what the
+fork would have made you rebuild by hand.
 
-**Target v1:** one `docker compose up` brings up Jellyfin, Navidrome,
-Audiobookshelf, Calibre-Web and atrium, pre-wired, with one search box on top
-and zero API keys typed by a human. The zero-keys clause is the hard part and
-also the whole value proposition.
+**If the seams leak, the whole thing is pointless.** Guard this. A result that
+links out to a backend's web UI means a second login and a visibly different
+app, and at that point you have built a bookmark folder.
+
+## Two reversals from the first design
+
+The original code was an API-only federating gateway. Its instincts were good
+and two of them were wrong for this product:
+
+1. **"Never proxy media bytes; results carry absolute upstream URLs."** An
+   upstream URL only works if the browser can reach the upstream, which means
+   publishing Jellyfin and Navidrome on their own ports, which means their login
+   screens are one URL away. You cannot have "one login" and "never touch the
+   bytes" at once. atrium is now in the data path. See `internal/stream`.
+2. **"Stateless, restartable, no config writes."** Zero-keys provisioning means
+   atrium generates credentials, so it must remember them. One login means a
+   user and sessions. Both outlive a restart. See `internal/state` — note that
+   it holds *only* credentials and the account, never anything about the media.
 
 ## What atrium deliberately does not do
 
-Do not add these. Each one has killed a project like this before.
+Each of these has killed a project like this before.
 
-- **Transcoding.** ffmpeg wrapped badly. Jellyfin owns this.
+- **Transcoding.** Jellyfin owns this.
 - **Metadata scraping.** Each backend already owns its metadata.
-- **Client apps for TVs.** Roku, Fire TV, Android TV. This is the graveyard.
-- **Storing or proxying media bytes.** Results carry absolute upstream URLs;
-  the client streams from the source. This keeps atrium small, stateless and
-  restartable.
+- **Library scanning.** Same.
+- **Client apps for TVs.** The graveyard.
+- **Rebuilding an app store.** Installation is solved and crowded.
 
 ## Three rules the design rests on
 
-1. **A dead source must never take the search down.** Every backend gets its
-   own deadline and its own error slot. A search always returns 200; the
-   `degraded` flag and the `sources` array say what is missing and why. This is
-   load-bearing, not decorative — home-hosted boxes go offline routinely. The
-   tests in `internal/federate` and `internal/httpapi` exist to protect it.
+1. **A dead backend must never take the search down.** Per-source deadline,
+   per-source error slot, always 200, `degraded` says what is missing. Tests in
+   `internal/federate` and `internal/httpapi` protect this.
 2. **Normalization happens at the edge.** Only an adapter knows its backend's
    vocabulary. Everything past it speaks `media.Item`.
-3. **Adding a backend is one file.** Implement `source.Source`, add a case to
-   the switch in `internal/config`. Nothing else changes.
+3. **A backend is two halves: search and provisioning.** A backend a human must
+   configure by hand defeats the point. Both halves or it is not done.
 
-## Layout
+## Verified against live servers
 
-```
-cmd/atrium/          main, flags, graceful shutdown
-internal/media/      Item, Query, Kind — the shared vocabulary
-internal/source/     the Source interface, Registry, and one pkg per backend
-internal/federate/   parallel fan-out, per-source deadlines, merge, rank
-internal/httpapi/    handlers
-internal/httpx/      shared HTTP helper (URL joining, decode, body cap)
-internal/jsonc/      comment stripping for the config file
-```
+These were checked on a running stack, not inferred. Re-verify if versions move.
 
-## Conventions
+- **Jellyfin 12.1.0 rejects `X-Emby-Token` and `?api_key=` with 401.** The only
+  form it accepts is `Authorization: MediaBrowser ... Token="..."`. Most docs
+  and every older client still show the other two. This is why
+  `source.Target` carries headers rather than just a URL.
+- **Jellyfin's startup wizard is a plain REST API** (`/Startup/Configuration`,
+  `/Startup/User`, `/Startup/RemoteAccess`, `/Startup/Complete`) and stops
+  accepting calls once setup completes, which makes driving it safe.
+- **Navidrome's first-run admin form POSTs to `/auth/createAdmin`** and that
+  endpoint only works while no user exists. Same safety property.
+- Both backends need a few seconds to a minute after container start, so
+  provisioning retries with backoff in the background while atrium serves.
 
-- **Zero third-party dependencies.** Standard library only. This was partly
-  forced (a blocked module proxy) and partly kept on purpose: the container
-  build downloads nothing and there is no supply chain to audit. Think hard
-  before adding the first dep.
-- **Config is JSON with comments** (`internal/jsonc`), `${VAR}` expanded from
-  the environment at load, unknown keys are a hard error so typos fail at boot.
-- **Fail loudly at startup, degrade gracefully at runtime.** A bad config kills
-  the process. A dead backend does not.
-- `gofmt` clean, `go vet` clean, tests pass. Keep it that way.
+## Gotchas
 
-## Verify before trusting
-
-`internal/source/audiobookshelf` and `internal/source/kiwix` are marked
-`VERIFY:` in their source. Their response shapes were written against
-documented behaviour, not a live server, and both have moved between upstream
-releases. Results from those two are unconfirmed.
-
-To fix a mapping, do not guess — set `"enableProbe": true` and:
-
-```sh
-curl 'http://localhost:8080/api/probe/audiobookshelf?q=test' | jq .
-```
-
-That is the literal upstream response. Adjust the structs in that one file.
-
-Subsonic and OPDS follow stable published specs and are trusted.
+- **Provisioning is not idempotent across a volume reset.** If a backend's
+  volume is wiped but atrium's state survives (or vice versa), you get a
+  backend with an account whose password nobody holds. Both provisioners detect
+  this and say so rather than retrying forever. The fix is a human decision.
+- **Port 8099, not 8080.** A Calibre content server on this machine already
+  holds 8080. `ATRIUM_PORT` overrides.
+- **`static=true` streaming only.** Anything a browser cannot natively decode
+  (HEVC, DTS, MKV) will not play yet. Jellyfin's HLS endpoint with a device
+  profile is the fix and it is the top of the roadmap.
+- **Dev on Windows, deploy to Linux.** Go lives at `C:\dev\tools\go` (installed
+  from the zip, on the user PATH). Docker Desktop must be running.
+- **No `go.sum`** and that is correct. Zero third-party dependencies, including
+  password hashing — `crypto/pbkdf2` has been stdlib since Go 1.24.
+- **Screenshots in `docs/shots/`** were captured with Playwright driving the
+  system Chrome (`channel: 'chrome'`, no browser download). Note that Node on
+  Windows does not resolve MSYS-style `/c/...` paths — pass `C:\...`.
 
 ## Commands
 
 ```sh
-make check   # validate config + probe every source, without serving
-make test
-make run
+go test ./...
 docker compose up --build
+docker compose logs -f atrium          # watch provisioning
+docker compose down -v                 # reset everything, including credentials
+pwsh scripts/make-sample-media.ps1     # synthetic library, no downloads
 ```
 
-`make check` is the fastest way to find a wrong URL or a bad token.
-
-## Gotchas
-
-- **Module path** is `github.com/gabehollberg/atrium`, guessed from an email
-  address. If the repo lives elsewhere, fix `go.mod` and run
-  `grep -rl gabehollberg/atrium . | xargs sed -i 's|gabehollberg/atrium|<you>/atrium|g'`.
-- **Dev on Windows, deploy to Linux.** `go run ./cmd/atrium` natively; the
-  container is for deployment. Do not add a bind-mount dev loop — there is no
-  reason for one and it is slow across the Windows filesystem boundary.
-- **No `go.sum`** and that is correct, not an oversight. The Dockerfile has no
-  `go mod download` step for the same reason.
-- **Subsonic stream URLs carry credentials in the query string.** That is the
-  protocol, not a bug. It does mean atrium must not be served over plain HTTP
-  on an open network.
+`docker compose logs -f atrium` is the fastest way to see why a backend is not
+answering.

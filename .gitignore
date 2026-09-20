@@ -1,12 +1,16 @@
-# Secrets and the real config
-.env
-configs/atrium.json
+# Generated sample library. Real libraries also live here and must not be
+# committed, so the whole directory is ignored rather than individual files.
+/media/
 
 # Build output
 /atrium
 /atrium.exe
 /out/
 /dist/
+
+# Local state when running outside a container
+/state/
+state.json
 
 # Go
 *.test

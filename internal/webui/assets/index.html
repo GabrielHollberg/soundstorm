@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>atrium</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- One shell for every state. app.js swaps which panel is visible after it
+       asks /api/session, so there is no flash of the wrong screen. -->
+  <div id="boot" class="centered">
+    <div class="spinner" aria-label="Loading"></div>
+  </div>
+
+  <!-- Signup / login ---------------------------------------------------- -->
+  <main id="gate" class="centered hidden">
+    <form id="gate-form" class="card gate-card">
+      <h1 class="wordmark">atrium</h1>
+      <p id="gate-blurb" class="muted"></p>
+
+      <label for="gate-username">Username</label>
+      <input id="gate-username" name="username" autocomplete="username" required>
+
+      <label for="gate-password">Password</label>
+      <input id="gate-password" name="password" type="password" required>
+
+      <p id="gate-error" class="error hidden" role="alert"></p>
+
+      <button id="gate-submit" type="submit">Continue</button>
+    </form>
+  </main>
+
+  <!-- The app ----------------------------------------------------------- -->
+  <div id="app" class="hidden">
+    <header>
+      <span class="wordmark small">atrium</span>
+      <form id="search-form" role="search">
+        <input id="search-input" type="search" placeholder="Search everything&hellip;"
+               autocomplete="off" aria-label="Search your library">
+      </form>
+      <button id="logout" class="ghost" type="button">Sign out</button>
+    </header>
+
+    <nav id="filters" aria-label="Filter by kind">
+      <button class="chip active" data-kind="">Everything</button>
+      <button class="chip" data-kind="music">Music</button>
+      <button class="chip" data-kind="video">Video</button>
+    </nav>
+
+    <!-- Provisioning progress. Visible until every backend is ready, because
+         until then an empty search result is expected rather than broken. -->
+    <section id="setup" class="card hidden">
+      <h2>Setting up your library</h2>
+      <p class="muted">atrium is configuring your media servers. No API keys needed.</p>
+      <ul id="setup-list"></ul>
+    </section>
+
+    <p id="degraded" class="banner hidden" role="status"></p>
+    <p id="status" class="muted"></p>
+
+    <section id="results" class="grid"></section>
+  </div>
+
+  <!-- Video overlay ----------------------------------------------------- -->
+  <div id="video-overlay" class="overlay hidden">
+    <button id="video-close" class="close" type="button" aria-label="Close">&times;</button>
+    <figure>
+      <video id="video-player" controls playsinline></video>
+      <figcaption id="video-caption"></figcaption>
+    </figure>
+  </div>
+
+  <!-- Audio dock -------------------------------------------------------- -->
+  <div id="audio-dock" class="dock hidden">
+    <img id="audio-art" alt="">
+    <div class="dock-meta">
+      <strong id="audio-title"></strong>
+      <span id="audio-sub" class="muted"></span>
+    </div>
+    <audio id="audio-player" controls></audio>
+    <button id="audio-close" class="ghost" type="button" aria-label="Stop">&times;</button>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,52 +1,69 @@
 # Roadmap
 
-Re-ordered for the product target: an easy all-in-one for other people, not a
-bespoke gateway for one stack. See CLAUDE.md for the positioning behind this.
+The vertical slice works: one login, one search, two backends provisioned with
+zero keys, playback in place. What follows is ordered by what would most change
+whether this is usable, not by what is most interesting to build.
 
-## 0. The one-command stack
+## 1. Transcoding fallback for video
 
-A `docker compose` bundle that brings up Jellyfin, Navidrome, Audiobookshelf,
-Calibre-Web and atrium already wired to each other, with **zero API keys typed
-by a human**. Services share secrets through the compose environment or atrium
-provisions them on first boot.
+Today the player asks Jellyfin for `static=true` — the original file, no
+remuxing. That covers h264/aac in mp4 and nothing else. A real library is full
+of HEVC, DTS and MKV, which a browser will refuse, and the failure is silent:
+the video element just shows nothing.
 
-This is the whole product. Everything else is support for it. It is also the
-only thing Umbrel, CasaOS and Unraid will not do for you — they install the
-apps and leave you with five disconnected UIs.
+The fix is Jellyfin's HLS endpoint with a device profile describing what the
+browser can decode. Jellyfin does all the work; atrium has to ask correctly and
+proxy an HLS manifest plus segments rather than one file.
 
-## 1. A web client
+**This is the first thing to build.** Without it the product is "plays some of
+your films", which is worse than no claim at all.
 
-One search box, results grouped by kind, a visible banner when `degraded` is
-true. Serve it from the binary with `embed` so deployment stays a single
-artifact. An API is not a product.
+## 2. Audiobooks and ebooks
 
-## 2. Auth
+The two media types in the original ask that are still missing.
 
-Currently none, which was fine behind a tailnet and is not fine for anyone
-else. Smallest useful version is a single shared token. Better version proxies
-whatever the upstreams already use, so there is one login rather than six.
+- **Audiobookshelf** for audiobooks. Provisioning: it has an init endpoint for
+  the first root user, same pattern as the other two.
+- **Calibre / OPDS** for ebooks. Note there is already a Calibre content server
+  running on this machine on port 8080 — a real library to point at rather than
+  a synthetic one.
 
-Mandatory before anyone else runs this.
+Ebooks need more than a stream endpoint: an epub is read, not played. Either an
+in-browser reader or an honest download button. A download button is a seam, but
+a small one, and it beats shipping a bad reader.
 
-## 3. Verify the two uncertain adapters
+## 3. Verify the OPDS adapter before trusting it
 
-Audiobookshelf and Kiwix are marked `VERIFY:`. Point them at live servers, use
-`/api/probe/<id>`, correct the structs. Cheap, and it stops being optional the
-moment someone else depends on the results.
+The original OPDS adapter had a silent bug — double-encoded search paths meant
+any multi-word query returned nothing, never an error. It is fixed in
+`internal/httpx` and covered by tests, but the adapter itself was deleted rather
+than ported. When it comes back, port the regression test with it.
 
-## 4. Caching
+## 4. Real libraries, real scale
 
-Every search hits every backend. A short-lived cache keyed on (query, kinds)
-makes repeat searches instant and blunts a slow backend. Do this when you
-notice the latency, not before.
+Everything so far has been tested against five synthetic files. Unknowns that
+only show up at size:
 
-## 5. Better ranking
+- search latency with 100k tracks
+- whether the merged ranking is still sane when every backend returns 25 hits
+- Jellyfin's first scan of a large library blocking provisioning
 
-`federate.Relevance` is a readable heuristic: exact title match beats prefix
-beats substring beats creator match. The upgrade path is a local index scored
-with BM25 — but do not build it until you can point at a query it gets wrong.
+Do not optimize any of this before pointing it at an actual library.
+
+## 5. Multi-user
+
+Currently one account. Real multi-user means per-user libraries and per-user
+play state, which means mapping atrium accounts onto backend accounts — the
+provisioner would create a Navidrome and Jellyfin user per atrium user rather
+than one shared `atrium` account. That is a real feature, not a slice.
+
+## 6. HTTPS
+
+The session cookie currently crosses the wire in the clear on a LAN. The cookie
+is marked `Secure` automatically when served over TLS, so this is mostly a
+deployment story: a reverse proxy, or built-in ACME.
 
 ## Deliberately not planned
 
-Transcoding, metadata scraping, TV client apps, proxying media bytes. See
-CLAUDE.md for why each one is a trap.
+Transcoding *by atrium*, metadata scraping, library scanning, TV client apps,
+rebuilding an app store. See CLAUDE.md for why each is a trap.

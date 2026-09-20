@@ -1,69 +1,112 @@
-// Command atrium is a federating gateway over a pile of self-hosted media
-// servers: one search across music, audiobooks, ebooks, video and offline
-// article archives.
+// Command atrium is a unified front end for a self-hosted media library.
 //
-// It deliberately does not transcode, scrape metadata or store media. Those
-// are solved problems owned by the servers it sits in front of.
+// It runs in front of Navidrome (music) and Jellyfin (video), provisions their
+// credentials itself so nobody types an API key, and serves one login, one
+// search box and one player over all of them. The backends need no published
+// port: atrium is the only thing on one.
+//
+// It deliberately does not scan libraries, scrape metadata or transcode. Those
+// are the things the servers behind it are good at, and reimplementing them is
+// how a project like this dies.
+//
+// Configuration is entirely environment variables, set by docker compose. There
+// is no config file on purpose: a file is one more thing to hand-edit, and the
+// goal is that a human edits nothing.
 package main
 
 import (
 	"context"
 	"errors"
-	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/config"
-	"github.com/gabehollberg/atrium/internal/federate"
+	"github.com/gabehollberg/atrium/internal/auth"
 	"github.com/gabehollberg/atrium/internal/httpapi"
+	"github.com/gabehollberg/atrium/internal/provision"
 	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/atrium/internal/state"
 )
 
 func main() {
-	configPath := flag.String("config", "configs/atrium.yaml", "path to the configuration file")
-	checkOnly := flag.Bool("check", false, "validate the config, probe every source, and exit")
-	flag.Parse()
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel(env("ATRIUM_LOG_LEVEL", "info")),
+	}))
 
-	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	if err := run(*configPath, *checkOnly, log); err != nil {
+	if err := run(log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string, checkOnly bool, log *slog.Logger) error {
-	cfg, err := config.Load(configPath)
+func run(log *slog.Logger) error {
+	listen := env("ATRIUM_LISTEN", ":8080")
+	stateDir := env("ATRIUM_STATE_DIR", "/var/lib/atrium")
+
+	perSourceTimeout, err := time.ParseDuration(env("ATRIUM_PER_SOURCE_TIMEOUT", "5s"))
+	if err != nil {
+		return fmt.Errorf("ATRIUM_PER_SOURCE_TIMEOUT: %w", err)
+	}
+
+	targets, err := targetsFromEnv()
 	if err != nil {
 		return err
 	}
-	reg, err := cfg.BuildRegistry()
+	if len(targets) == 0 {
+		return errors.New("no backends configured; set ATRIUM_NAVIDROME_URL and/or ATRIUM_JELLYFIN_URL")
+	}
+
+	store, err := state.Open(filepath.Join(stateDir, "state.json"))
 	if err != nil {
 		return err
 	}
-	log.Info("configuration loaded", "sources", reg.Len(), "listen", cfg.Listen)
 
-	if checkOnly {
-		return check(reg, cfg.PerSourceTimeout.Std(), log)
-	}
-
-	srv := &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           httpapi.New(reg, cfg.PerSourceTimeout.Std(), cfg.EnableProbe, log).Routes(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	registry := source.NewRegistry()
+	setup := provision.New(store, registry, log, targets)
 
 	// Shut down cleanly on Ctrl-C or SIGTERM from the container runtime.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Provisioning runs in the background: a backend can take a minute to boot
+	// and atrium should be showing setup progress during it, not refusing to
+	// start. This is why the registry is populated asynchronously.
+	setup.Start(ctx)
+
+	api := httpapi.New(httpapi.Config{
+		Registry:         registry,
+		Auth:             auth.New(store),
+		Setup:            setup,
+		PerSourceTimeout: perSourceTimeout,
+		Log:              log,
+	})
+
+	srv := &http.Server{
+		Addr:              listen,
+		Handler:           api.Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		// No WriteTimeout: it would cut off a film mid-playback.
+	}
+
+	accountState := "an account exists"
+	if store.User() == nil {
+		accountState = "no account yet - first visit creates it"
+	}
+	log.Info("atrium starting",
+		"listen", listen,
+		"backends", len(targets),
+		"state", stateDir,
+		"account", accountState,
+	)
+
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.Listen)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -80,23 +123,47 @@ func run(configPath string, checkOnly bool, log *slog.Logger) error {
 	}
 }
 
-// check probes every source once and reports, so a misconfiguration surfaces
-// before you go looking for it in a search result that silently came back short.
-func check(reg *source.Registry, timeout time.Duration, log *slog.Logger) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
-	defer cancel()
+// targetsFromEnv reads which backends to manage. A backend is present if its URL
+// is set, so compose decides the stack and atrium adapts.
+func targetsFromEnv() ([]provision.Target, error) {
+	var targets []provision.Target
 
-	var failed int
-	for _, st := range federate.HealthAll(ctx, reg, timeout) {
-		if st.OK {
-			log.Info("source ok", "id", st.SourceID, "kind", string(st.Kind), "tookMs", st.TookMS)
-			continue
-		}
-		failed++
-		log.Error("source unreachable", "id", st.SourceID, "kind", string(st.Kind), "err", st.Error)
+	if url := strings.TrimSpace(os.Getenv("ATRIUM_NAVIDROME_URL")); url != "" {
+		targets = append(targets, provision.Target{
+			ID:      "navidrome",
+			Type:    "navidrome",
+			BaseURL: url,
+		})
 	}
-	if failed > 0 {
-		return errors.New("one or more sources failed their health check")
+	if url := strings.TrimSpace(os.Getenv("ATRIUM_JELLYFIN_URL")); url != "" {
+		targets = append(targets, provision.Target{
+			ID:      "jellyfin",
+			Type:    "jellyfin",
+			BaseURL: url,
+			// The path as Jellyfin's container sees it, which is what its
+			// library API needs - not atrium's view of the same folder.
+			MediaPath: env("ATRIUM_JELLYFIN_MEDIA_PATH", "/media/movies"),
+		})
 	}
-	return nil
+	return targets, nil
+}
+
+func env(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+func logLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

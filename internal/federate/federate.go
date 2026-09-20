@@ -1,10 +1,9 @@
-// Package federate fans a query out across every source and merges the
-// answers.
+// Package federate fans a query out across every source and merges the answers.
 //
 // The governing design rule: a slow or dead source must never take the search
-// down with it. Each source gets its own deadline and its own error slot. If
-// the music server is unreachable, you still get your books, the response
-// says so, and the client can show it.
+// down with it. Each source gets its own deadline and its own error slot. If the
+// music server is unreachable, you still get your films, the response says so,
+// and the UI can show a banner instead of an error page.
 package federate
 
 import (
@@ -21,6 +20,10 @@ import (
 // DefaultPerSourceTimeout bounds how long any single backend may hold up a
 // search.
 const DefaultPerSourceTimeout = 5 * time.Second
+
+// MaxResults caps the merged list. Per-source limits multiply by the number of
+// backends, and nobody scrolls past a hundred results.
+const MaxResults = 100
 
 // SourceStatus is the per-source outcome of one federated search.
 type SourceStatus struct {
@@ -45,9 +48,9 @@ type Result struct {
 
 // Search queries every source the registry says matches q, concurrently.
 //
-// It returns once every source has answered, failed, or hit perSourceTimeout.
-// It does not return an error: a total failure is expressed as a Result where
-// every SourceStatus is not OK.
+// It returns once every source has answered, failed, or hit perSourceTimeout. It
+// does not return an error: a total failure is expressed as a Result where every
+// SourceStatus is not OK.
 func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceTimeout time.Duration) Result {
 	if perSourceTimeout <= 0 {
 		perSourceTimeout = DefaultPerSourceTimeout
@@ -91,7 +94,13 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 	}
 	wg.Wait()
 
-	res := Result{Sources: make([]SourceStatus, 0, len(outcomes))}
+	// Items starts as an empty slice, not nil, so the JSON is always an array.
+	// A browser doing results.items.map() should not have to special-case
+	// "nothing matched".
+	res := Result{
+		Items:   []media.Item{},
+		Sources: make([]SourceStatus, 0, len(outcomes)),
+	}
 	for _, o := range outcomes {
 		res.Sources = append(res.Sources, o.status)
 		if !o.status.OK {
@@ -105,6 +114,9 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 	}
 
 	sortItems(res.Items)
+	if len(res.Items) > MaxResults {
+		res.Items = res.Items[:MaxResults]
+	}
 	res.TookMS = time.Since(started).Milliseconds()
 	return res
 }
@@ -125,10 +137,10 @@ func sortItems(items []media.Item) {
 
 // Relevance scores an item against the raw query text, 0..1.
 //
-// This is deliberately simple and readable rather than clever. Every backend
-// has already done its own matching; our job is only to decide whose hits
-// deserve to be near the top of a merged list. Upgrade this to BM25 over a
-// local index if and when the naive version visibly misranks things.
+// This is deliberately simple and readable rather than clever. Every backend has
+// already done its own matching; our job is only to decide whose hits deserve to
+// be near the top of a merged list. Upgrade to BM25 over a local index if and
+// when the naive version visibly misranks something.
 func Relevance(queryText string, item media.Item) float64 {
 	q := normalize(queryText)
 	if q == "" {
@@ -189,8 +201,6 @@ func normalize(s string) string {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			b.WriteRune(r)
-		case r == ' ' || r == '\t' || r == '\n':
-			b.WriteRune(' ')
 		default:
 			// Keep word boundaries where punctuation used to be.
 			b.WriteRune(' ')
