@@ -1136,6 +1136,307 @@ function stopAudio() {
 
 $('audio-close').addEventListener('click', stopAudio);
 
+/* ------------------------------------------------------- dropping in files
+ *
+ * The folders are the interface, so dragging a film onto the window should do
+ * what dragging it into the movies folder would have done - including working
+ * out that it was a film. The server decides that; this end collects the drop,
+ * asks, shows the answer, and then sends the bytes.
+ *
+ * Two things make it more than a file picker. Folders can be dropped, and the
+ * structure has to survive - Jellyfin needs "Arrival (2016)/Arrival.mkv" to be
+ * a folder. And the answer is worth showing before a gigabyte moves.
+ */
+
+const SHELVES = [
+  ['', 'Sort it for me', '✨'],
+  ['music', 'Music', '♪'],
+  ['video', 'Films', '▶'],
+  ['tv', 'TV', '📺'],
+  ['audiobook', 'Audiobooks', '🎧'],
+  ['ebook', 'Ebooks', '📖'],
+];
+
+// dragDepth counts enter/leave pairs. Moving the pointer between two elements
+// fires leave on one before enter on the other, so a naive handler flickers the
+// overlay on every mouse move.
+let dragDepth = 0;
+
+function draggingFiles(event) {
+  const types = event.dataTransfer && event.dataTransfer.types;
+  return Boolean(types) && [...types].includes('Files');
+}
+
+function buildShelves() {
+  const host = $('drop-shelves');
+  host.replaceChildren();
+
+  const mine = (state.me && state.me.libraries) || [];
+  const everything = !state.me || state.me.allLibraries;
+
+  for (const [kind, label, glyph] of SHELVES) {
+    if (kind && !everything && !mine.includes(kind)) continue;
+
+    const target = document.createElement('div');
+    target.className = 'drop-shelf';
+    target.dataset.kind = kind;
+
+    const icon = document.createElement('span');
+    icon.className = 'shelf-glyph';
+    icon.textContent = glyph;
+
+    const text = document.createElement('span');
+    text.textContent = label;
+
+    target.append(icon, text);
+    target.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      target.classList.add('over');
+    });
+    target.addEventListener('dragleave', () => target.classList.remove('over'));
+    target.addEventListener('drop', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      target.classList.remove('over');
+      hideDropOverlay();
+      intake(event.dataTransfer, kind);
+    });
+    host.append(target);
+  }
+}
+
+function showDropOverlay() {
+  buildShelves();
+  show($('drop-overlay'), true);
+}
+
+function hideDropOverlay() {
+  dragDepth = 0;
+  show($('drop-overlay'), false);
+  for (const el of document.querySelectorAll('.drop-shelf.over')) el.classList.remove('over');
+}
+
+window.addEventListener('dragenter', (event) => {
+  if (!draggingFiles(event) || $('app').classList.contains('hidden')) return;
+  dragDepth += 1;
+  showDropOverlay();
+});
+
+window.addEventListener('dragover', (event) => {
+  // Without this the browser navigates to the file, which loses the page.
+  if (draggingFiles(event)) event.preventDefault();
+});
+
+window.addEventListener('dragleave', () => {
+  dragDepth -= 1;
+  if (dragDepth <= 0) hideDropOverlay();
+});
+
+window.addEventListener('drop', (event) => {
+  if (!draggingFiles(event) || $('app').classList.contains('hidden')) return;
+  event.preventDefault();
+  hideDropOverlay();
+  intake(event.dataTransfer, '');
+});
+
+/* ---- reading what was dropped ---- */
+
+// collectFiles turns a drop into a flat list of {file, path}, walking into any
+// folders. The relative path is what preserves an album or a film folder.
+async function collectFiles(dataTransfer) {
+  const entries = [...(dataTransfer.items || [])]
+    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+
+  // Older browsers, and some drops, give no entries at all. A flat file list
+  // is worse than nothing only if we refuse it.
+  if (!entries.length) {
+    return [...(dataTransfer.files || [])].map((file) => ({ file, path: file.name }));
+  }
+
+  const out = [];
+  for (const entry of entries) await walkEntry(entry, '', out);
+  return out;
+}
+
+function walkEntry(entry, prefix, out) {
+  const here = prefix ? `${prefix}/${entry.name}` : entry.name;
+
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      entry.file((file) => { out.push({ file, path: here }); resolve(); }, resolve);
+    });
+  }
+
+  return new Promise((resolve) => {
+    const reader = entry.createReader();
+    const found = [];
+    // readEntries hands back at most a hundred at a time and has to be called
+    // until it returns none. Reading once silently truncates a big folder,
+    // which is the classic way to lose half an album.
+    const readMore = () => reader.readEntries(async (batch) => {
+      if (!batch.length) {
+        for (const child of found) await walkEntry(child, here, out);
+        resolve();
+        return;
+      }
+      found.push(...batch);
+      readMore();
+    }, resolve);
+    readMore();
+  });
+}
+
+/* ---- the drop itself ---- */
+
+let intakeBusy = false;
+
+async function intake(dataTransfer, kind) {
+  if (intakeBusy) return;
+  intakeBusy = true;
+  try {
+    await runIntake(dataTransfer, kind);
+  } finally {
+    intakeBusy = false;
+  }
+}
+
+async function runIntake(dataTransfer, kind) {
+  show($('intake'), true);
+  show($('intake-bar'), false);
+  $('intake-list').replaceChildren();
+  $('intake-title').textContent = 'Reading what you dropped…';
+
+  const dropped = await collectFiles(dataTransfer);
+  if (!dropped.length) {
+    $('intake-title').textContent = 'Nothing usable was dropped.';
+    return;
+  }
+
+  const { ok, body } = await api('/api/upload/plan', {
+    method: 'POST',
+    body: JSON.stringify({ paths: dropped.map((d) => d.path), kind }),
+  });
+  if (!ok || !body) {
+    $('intake-title').textContent = (body && body.error) || 'SoundStorm could not take those.';
+    return;
+  }
+
+  const plan = body.files || [];
+  // Line them up with the File objects by position, which is the order the
+  // server was given and the order it answers in.
+  const queue = [];
+  plan.forEach((placement, index) => {
+    renderIntakeRow(placement);
+    if (!placement.skipped) queue.push({ ...placement, file: dropped[index].file });
+  });
+
+  if (!queue.length) {
+    $('intake-title').textContent = 'Nothing here could be added.';
+    return;
+  }
+
+  const total = queue.reduce((sum, item) => sum + item.file.size, 0);
+  show($('intake-bar'), true);
+
+  let done = 0;
+  let sent = 0;
+  for (const item of queue) {
+    $('intake-title').textContent =
+      `Adding ${done + 1} of ${queue.length} — ${item.file.name}`;
+    const result = await uploadOne(item, (loaded) => {
+      setIntakeProgress(total ? (sent + loaded) / total : 0);
+    });
+    sent += item.file.size;
+    done += 1;
+    setIntakeProgress(total ? sent / total : 1);
+    markIntakeRow(item.path, result);
+  }
+
+  const failed = document.querySelectorAll('#intake-list .intake-failed').length;
+  const skipped = plan.filter((p) => p.skipped).length;
+  $('intake-title').textContent = summary(done - failed, skipped, failed);
+  show($('intake-bar'), false);
+
+  // Counts on the folder guide have moved, and a scan is probably running.
+  loadLibrary();
+}
+
+function summary(added, skipped, failed) {
+  const parts = [`Added ${added} file${added === 1 ? '' : 's'}`];
+  if (skipped) parts.push(`${skipped} skipped`);
+  if (failed) parts.push(`${failed} failed`);
+  return parts.join(' · ') + '. It may take a minute to appear in search.';
+}
+
+// uploadOne sends one file. XMLHttpRequest rather than fetch, only because
+// fetch cannot report upload progress, and a four gigabyte film with no
+// progress bar looks like a hang.
+function uploadOne(item, onProgress) {
+  return new Promise((resolve) => {
+    const params = new URLSearchParams({ path: item.path, kind: item.kind });
+    const request = new XMLHttpRequest();
+    request.open('PUT', `/api/upload?${params}`);
+    request.withCredentials = true;
+
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(event.loaded);
+    });
+    request.addEventListener('load', () => {
+      if (request.status === 200) {
+        resolve({ ok: true });
+        return;
+      }
+      let message = `failed (${request.status})`;
+      try {
+        message = JSON.parse(request.responseText).error || message;
+      } catch {
+        // A non-JSON error body is still an error; the status will do.
+      }
+      resolve({ ok: false, error: message });
+    });
+    request.addEventListener('error', () => resolve({ ok: false, error: 'connection lost' }));
+    request.addEventListener('abort', () => resolve({ ok: false, error: 'cancelled' }));
+    request.send(item.file);
+  });
+}
+
+function setIntakeProgress(fraction) {
+  $('intake-fill').style.width = `${Math.min(Math.max(fraction, 0), 1) * 100}%`;
+}
+
+function renderIntakeRow(placement) {
+  const li = document.createElement('li');
+  li.dataset.path = placement.path;
+
+  const name = document.createElement('span');
+  name.className = 'intake-name';
+  name.textContent = placement.path;
+  name.title = placement.path;
+
+  const dest = document.createElement('span');
+  dest.className = 'intake-dest';
+  dest.textContent = placement.skipped ? placement.reason : placement.dest;
+
+  if (placement.skipped) li.className = 'intake-skipped';
+  li.append(name, dest);
+  $('intake-list').append(li);
+}
+
+function markIntakeRow(path, result) {
+  const li = $('intake-list').querySelector(`li[data-path="${CSS.escape(path)}"]`);
+  if (!li) return;
+  const dest = li.querySelector('.intake-dest');
+  if (result.ok) {
+    dest.textContent = `${dest.textContent} ✓`;
+    return;
+  }
+  li.classList.add('intake-failed');
+  dest.textContent = result.error;
+}
+
+$('intake-close').addEventListener('click', () => show($('intake'), false));
+
 /* ------------------------------------------------------------------- boot */
 
 (async function boot() {

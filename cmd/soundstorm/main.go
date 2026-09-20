@@ -82,6 +82,11 @@ func run(log *slog.Logger) error {
 		lib.Invalidate()
 	}
 
+	// A crash mid-upload leaves bytes in the staging directory that nothing
+	// will ever finish, and they are invisible - the directory is hidden and
+	// no backend has it mounted.
+	lib.ClearStaging()
+
 	targets, err := targetsFromEnv(lib)
 	if err != nil {
 		return err

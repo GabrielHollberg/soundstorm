@@ -18,6 +18,8 @@
 //	POST /api/users/{id}/password       reset somebody's password     (owner)
 //	PUT  /api/users/{id}/libraries      which shelves they can see    (owner)
 //	POST /api/account/password          change your own
+//	POST /api/upload/plan               where would these dropped files go
+//	PUT  /api/upload?path=&kind=        one file, body is the file
 //	GET  /api/search?q=&kind=&limit=    federated search
 //	GET  /api/stream/{source}/{id}      media bytes, proxied
 //	GET  /api/art/{source}/{id}         artwork, proxied
@@ -129,6 +131,12 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
 	guarded.HandleFunc("GET /api/library", s.handleLibrary)
+	// Two steps rather than one multipart request. The plan is what lets the
+	// UI say "14 files, 2 skipped, all going to Films" before a gigabyte
+	// starts moving, and it is also what keeps a subtitle with its film: the
+	// grouping needs to see the whole list, which a streamed upload does not.
+	guarded.HandleFunc("POST /api/upload/plan", s.handleUploadPlan)
+	guarded.HandleFunc("PUT /api/upload", s.handleUpload)
 	guarded.HandleFunc("GET /api/search", s.handleSearch)
 	// {id...} rather than {id}: an OPDS acquisition reference is a path with
 	// slashes in it ("opds/download/1/epub/"), and that is the id the adapter
@@ -564,6 +572,142 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		"empty":   empty,
 		"folders": out,
 	})
+}
+
+// maxPlanBody caps a drop manifest. Five thousand paths of a hundred
+// characters is a fifth of this, and past that the browser gave up first.
+const maxPlanBody = 4 << 20
+
+// handleUploadPlan says where a set of dropped files would go.
+//
+// Nothing is written. This exists so somebody dropping a folder finds out what
+// SoundStorm made of it - which shelf, what it is skipping and why - before any
+// bytes move, and so that a mistake costs a glance rather than an upload.
+func (s *Server) handleUploadPlan(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Paths []string `json:"paths"`
+		// Kind is set when somebody dropped onto a particular shelf rather
+		// than onto the window. Then nothing is guessed.
+		Kind string `json:"kind"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxPlanBody))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with a list of paths")
+		return
+	}
+	if len(body.Paths) == 0 {
+		writeError(w, http.StatusBadRequest, "no files were dropped")
+		return
+	}
+
+	forced, err := s.uploadKind(r, body.Kind)
+	if err != nil {
+		writeError(w, statusForUpload(err), err.Error())
+		return
+	}
+
+	placements := s.library.Plan(body.Paths, forced)
+
+	// A shelf somebody may not see is not a shelf they may add to, and the
+	// automatic sorter has to be told so too - otherwise dropping a film on
+	// the window would be a way around a restriction.
+	access := source.AccessFrom(r.Context())
+	accepted := 0
+	for i, p := range placements {
+		if p.Skipped {
+			continue
+		}
+		if !access.Permits(p.Kind) {
+			placements[i] = library.Placement{
+				Path:    p.Path,
+				Skipped: true,
+				Reason:  "you do not have the " + string(p.Kind) + " library",
+			}
+			continue
+		}
+		accepted++
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files":    placements,
+		"accepted": accepted,
+	})
+}
+
+// handleUpload receives one file.
+//
+// One request per file, with the body being the file and nothing else. No
+// multipart: the destination is already known from the plan, so there is
+// nothing else to carry, and a plain body streams to disk without a parser in
+// between. It also gives the browser per-file progress for free.
+func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+
+	kind, err := s.uploadKind(r, r.URL.Query().Get("kind"))
+	if err != nil {
+		writeError(w, statusForUpload(err), err.Error())
+		return
+	}
+	if kind == "" {
+		writeError(w, http.StatusBadRequest, "kind is required")
+		return
+	}
+
+	dest, err := s.library.Save(kind, path, r.Body)
+	if err != nil {
+		if errors.Is(err, library.ErrAlreadyThere) {
+			// Not an error worth a stack trace in the log: re-dropping an
+			// album somebody already added is an ordinary thing to do.
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": err.Error(),
+				"path":  path,
+			})
+			return
+		}
+		s.log.Warn("upload failed", "path", path, "kind", kind, "err", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	user, _ := auth.FromContext(r.Context())
+	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"dest": dest})
+}
+
+// errNoSuchLibrary and errNotYourLibrary separate "that is not a shelf" from
+// "that is not your shelf", which are a 400 and a 403.
+var (
+	errNoSuchLibrary  = errors.New("there is no such library")
+	errNotYourLibrary = errors.New("you do not have that library")
+)
+
+// uploadKind validates a requested shelf against what this account may see.
+//
+// An empty name is allowed and means "work it out", which the plan does and a
+// single upload does not.
+func (s *Server) uploadKind(r *http.Request, name string) (media.Kind, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", nil
+	}
+	kind, ok := media.ParseKind(name)
+	if !ok {
+		return "", errNoSuchLibrary
+	}
+	if !source.AccessFrom(r.Context()).Permits(kind) {
+		return "", errNotYourLibrary
+	}
+	return kind, nil
+}
+
+func statusForUpload(err error) int {
+	if errors.Is(err, errNotYourLibrary) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {

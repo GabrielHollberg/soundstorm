@@ -52,6 +52,16 @@ func (s stub) target() (source.Target, error) {
 type harness struct {
 	srv    *httptest.Server
 	client *http.Client
+	root   string // the library on disk, for tests that check what landed there
+}
+
+// libraryRoot is where this harness put its library folders.
+func (h *harness) libraryRoot(t *testing.T) string {
+	t.Helper()
+	if h.root == "" {
+		t.Fatal("this harness has no library root")
+	}
+	return h.root
 }
 
 func newHarness(t *testing.T, sources ...source.Source) *harness {
@@ -67,7 +77,8 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 	// A real library on a temporary directory. Like the store, this was
 	// missing until a test finally asked for /api/library and found a nil
 	// pointer sitting behind it.
-	lib, err := library.Open(filepath.Join(t.TempDir(), "library"), "./library", log)
+	libRoot := filepath.Join(t.TempDir(), "library")
+	lib, err := library.Open(libRoot, "./library", log)
 	if err != nil {
 		t.Fatalf("library.Open: %v", err)
 	}
@@ -92,7 +103,7 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)
 	}
-	return &harness{srv: srv, client: &http.Client{Jar: jar}}
+	return &harness{srv: srv, client: &http.Client{Jar: jar}, root: libRoot}
 }
 
 func (h *harness) do(t *testing.T, method, path, body string) (*http.Response, []byte) {

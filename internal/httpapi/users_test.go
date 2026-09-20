@@ -21,7 +21,7 @@ func (h *harness) asUser(t *testing.T, name, password string) *harness {
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)
 	}
-	other := &harness{srv: h.srv, client: &http.Client{Jar: jar}}
+	other := &harness{srv: h.srv, client: &http.Client{Jar: jar}, root: h.root}
 	resp, body := other.do(t, http.MethodPost, "/api/login",
 		`{"username":"`+name+`","password":"`+password+`"}`)
 	if resp.StatusCode != http.StatusOK {

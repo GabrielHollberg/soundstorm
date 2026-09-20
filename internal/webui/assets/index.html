@@ -102,6 +102,15 @@
       <ul id="library-folders"></ul>
     </section>
 
+    <!-- What a drop is doing, and what it did. Stays up after an upload so
+         somebody can read what was skipped and why. -->
+    <section id="intake" class="card hidden">
+      <h2 id="intake-title"></h2>
+      <div id="intake-bar" class="hidden"><div id="intake-fill"></div></div>
+      <ul id="intake-list"></ul>
+      <button id="intake-close" class="ghost" type="button">Close</button>
+    </section>
+
     <p id="degraded" class="banner hidden" role="status"></p>
     <p id="status" class="muted"></p>
 
@@ -154,6 +163,18 @@
            than we would vendor. -->
       <iframe id="reader-pdf" class="hidden" title="PDF"></iframe>
       <button id="reader-next" class="page-turn" type="button" aria-label="Next page">&rsaquo;</button>
+    </div>
+  </div>
+
+  <!-- Drop target ---------------------------------------------------------
+       Covers the window while something is being dragged over it. Dropping on
+       the background sorts automatically; dropping on a shelf says where. -->
+  <div id="drop-overlay" class="drop hidden">
+    <div class="drop-inner">
+      <h2>Drop to add to your library</h2>
+      <p class="muted">Let go anywhere and SoundStorm will work out where each
+        file goes — or drop onto a shelf to say.</p>
+      <div id="drop-shelves" class="drop-shelves"></div>
     </div>
   </div>
 

@@ -37,6 +37,8 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - one command installs it — published multi-arch images, no build step, no
   repository to clone
 - SoundStorm provisions every one of them on first boot — **zero API keys typed**
+- **drag and drop**: files and folders dropped on the window are sorted into the
+  right library automatically
 - **accounts**: the first visit creates the owner, who adds everyone else; each
   person keeps their own place in every book and sees only the libraries they
   are given
@@ -108,7 +110,19 @@ library/
 ```
 
 Drop a file in the matching folder and it shows up in search. Nothing to
-import, no library to configure. Navidrome and the ebook scanner sweep every
+import, no library to configure.
+
+**Or just drag it onto the window.** SoundStorm works out what each file is and
+files it for you — a folder keeps its structure, subtitles and artwork travel
+with their film, and anything it cannot place is listed with the reason rather
+than dumped somewhere. If it guesses wrong, drop onto a shelf instead and it
+does what you said.
+
+![Dragging files onto the window](docs/shots/15-drop.png)
+
+The one genuinely ambiguous case is an mp3, which is a song or a chapter of an
+audiobook and nothing in the file says which. Loose mp3s go to Music; drop them
+on Audiobooks to say otherwise. Navidrome and the ebook scanner sweep every
 couple of minutes; Jellyfin and Audiobookshelf watch for changes. Until a scan
 catches up the app says so, rather than pretending the file is not there.
 

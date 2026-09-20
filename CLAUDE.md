@@ -103,6 +103,58 @@ sources", and that was not actually possible until `jellyfin.Config` grew a
 Kind and ItemTypes; the adapter hardcoded `KindVideo`. `provision.buildSources`
 now returns a slice for this reason.
 
+## Dropping files in
+
+Dragging onto the window does what dragging into the folder would have done,
+including working out which folder that was. `internal/library/intake.go` owns
+the decision; `internal/httpapi` owns the two endpoints.
+
+**Two steps, not one multipart request.** `POST /api/upload/plan` takes a list
+of paths and answers where each would go; `PUT /api/upload?path=&kind=` takes
+one file as the whole request body. The split buys three things a streamed
+multipart upload cannot have: the UI can say "14 files, 2 skipped, all going to
+Films" before a gigabyte moves, the grouping can see the whole list, and the
+body being nothing but the file means no parser between the socket and the disk.
+
+**Placement is per dropped item, not per file.** A film folder holds an .mkv, a
+.srt and a poster; the subtitle is useless in the ebook shelf and invisible
+anywhere but beside its film. So the first file in a group that can name a shelf
+decides for all of them, and companions - subtitles, artwork, .nfo, .opf - get
+no vote and inherit the answer. A folder of nothing but companions names no
+shelf and is skipped, which is right: a lone .srt has no home.
+
+Ambiguity is named rather than guessed at. `.m4b` is an audiobook and `.epub`
+is a book, but **an mp3 is a song or a chapter and nothing in the file says
+which**. The default is music because that is the common case, a path mentioning
+audiobooks is believed, and dropping onto the Audiobooks shelf settles it
+outright - which is the real reason the overlay offers shelves at all. Films and
+episodes are told apart by `S01E01`, `1x02`, or a `Season 01` folder.
+
+**Nothing appears at its destination until all of it is there.** Navidrome and
+Audiobookshelf watch these folders and a half-written file is exactly what a
+scanner indexes as a corrupt track. Bytes land in `<library>/.uploads` and are
+renamed into place, which is atomic because it is the same filesystem, and
+invisible to the backends because a top-level dot-directory is not mounted into
+any of them. `ClearStaging` sweeps it at boot for the crash case.
+
+**Every path is attacker-supplied.** One trap here cost a real bug, caught by
+its own test: `TrimRight(segment, ". ")` ran *before* the `..` check, so ".."
+became "" and was skipped - which quietly turned `../../etc/passwd.mp3` into
+`etc/passwd.mp3` and wrote it. No escape, but a strange file in somebody's music
+folder and no sign a path had been rewritten. Dot runs are now refused before
+anything is trimmed. `Save` also re-checks the joined path is still inside the
+folder, which is a thing worth doing twice.
+
+Uploading follows the same permission as reading: you can add to a shelf you can
+see. A restriction search honours and uploading does not is not a restriction,
+so the plan refuses forbidden kinds and so does the upload.
+
+On the browser side, `walkEntry` must call `readEntries` **until it returns an
+empty batch**. It hands back at most a hundred at a time, and reading once
+silently truncates a large folder - the classic way to lose half an album. There
+is a test for it that builds a fake entry tree, because a synthetic DataTransfer
+gets no filesystem entries and no automated drag can produce real ones.
+
 ## Accounts, and the one thing that is per person
 
 Two roles, and the gap between them is deliberately thin: the **owner** is

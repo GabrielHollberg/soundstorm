@@ -303,6 +303,104 @@ header {
   padding: 4px 10px;
 }
 
+/* Dropping files --------------------------------------------------------- */
+
+.drop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+.drop-inner {
+  width: min(760px, 100%);
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  padding: 36px 28px;
+  text-align: center;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  /* The overlay is one big drop target; nothing inside it should be able to
+     swallow a dragover and leave the drop landing on the document instead. */
+  pointer-events: none;
+}
+.drop-inner h2 { margin: 0 0 6px; font-size: 22px; }
+.drop-inner p { margin: 0 auto; max-width: 46ch; }
+
+.drop-shelves {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+.drop-shelf {
+  pointer-events: auto;
+  min-width: 118px;
+  padding: 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.drop-shelf .shelf-glyph { display: block; font-size: 20px; margin-bottom: 6px; opacity: 0.6; }
+.drop-shelf.over {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+/* Intake report ---------------------------------------------------------- */
+
+#intake { margin: 16px 20px; }
+#intake h2 { margin: 0 0 10px; font-size: 17px; }
+#intake-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+#intake-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+#intake-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+#intake-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13.5px;
+  background: var(--surface-2);
+  border-radius: 7px;
+  padding: 7px 10px;
+}
+.intake-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.intake-dest { color: var(--muted); font-size: 12.5px; }
+.intake-skipped .intake-name { color: var(--muted); text-decoration: line-through; }
+.intake-skipped .intake-dest { color: var(--warn); text-decoration: none; }
+.intake-failed .intake-dest { color: var(--error); }
+
 /* Accounts --------------------------------------------------------------- */
 
 #account { margin: 16px 20px; }
