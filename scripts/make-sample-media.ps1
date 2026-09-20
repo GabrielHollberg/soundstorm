@@ -13,7 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$media = Join-Path $root 'media'
+$media = Join-Path $root 'library'
 $image = 'jellyfin/jellyfin:latest'
 $ffmpeg = '/usr/lib/jellyfin-ffmpeg/ffmpeg'
 
@@ -41,8 +41,9 @@ $audiobooks = @(
 # Ebooks are built inside the calibre-web container, because they have to be
 # registered in a Calibre database rather than just dropped in a folder.
 $ebooks = @(
-  @{ Title = 'Dune';                 Author = 'Frank Herbert' }
-  @{ Title = 'A Wizard of Earthsea'; Author = 'Ursula K. Le Guin' }
+  @{ Title = 'Dune';                     Author = 'Frank Herbert';     Year = 1965 }
+  @{ Title = 'A Wizard of Earthsea';     Author = 'Ursula K. Le Guin'; Year = 1968 }
+  @{ Title = 'The Left Hand of Darkness'; Author = 'Ursula K. Le Guin'; Year = 1969 }
 )
 
 foreach ($item in @($tracks | ForEach-Object { $_.Path }) + $films + @($audiobooks | ForEach-Object { $_.Path })) {
@@ -108,20 +109,14 @@ foreach ($a in $audiobooks) {
   )
 }
 
-# Ebooks need calibredb, which lives in the running calibre-web container. Skip
-# rather than fail if the stack is not up - the rest of the library is still
-# useful, and this can be re-run later.
-$cwRunning = (& docker ps --filter 'name=atrium-calibreweb' --filter 'status=running' --format '{{.Names}}') -contains 'atrium-calibreweb'
-if (-not $cwRunning) {
-  Write-Host "  (skipping ebooks: start the stack first, then re-run this script)" -ForegroundColor Yellow
-} else {
-  foreach ($b in $ebooks) {
-    Write-Host "  ebook  $($b.Title)"
-    # One line, and no here-string: PowerShell here-strings carry CRLF, and a
-    # stray carriage return makes bash read a trailing CR as part of the command.
-    $cmd = "cd /tmp && { echo '$($b.Title)'; echo; echo 'Placeholder text for a synthetic test library.'; } > in.txt && ebook-convert in.txt out.epub --title '$($b.Title)' --authors '$($b.Author)' --language en >/dev/null 2>&1 && calibredb add --with-library /books out.epub >/dev/null 2>&1 && chown -R abc:abc /books"
-    & docker exec atrium-calibreweb bash -c $cmd
-  }
+# Ebooks are written directly by scripts/mkepub - an EPUB is a zip with two XML
+# files, so producing one needs no Calibre and no container.
+foreach ($b in $ebooks) {
+  Write-Host "  ebook  $($b.Title)"
+  $safe = ($b.Title -replace '[\/:*?"<>|]', '_')
+  $dest = Join-Path $media "ebooks/$safe - $($b.Author).epub"
+  & go run ./scripts/mkepub -out $dest -title $b.Title -author $b.Author -year $b.Year | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "mkepub failed for $($b.Title)" }
 }
 
 Write-Host "`nDone. Library:" -ForegroundColor Green

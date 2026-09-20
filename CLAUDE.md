@@ -76,6 +76,24 @@ Each of these has killed a project like this before.
 3. **A backend is two halves: search and provisioning.** A backend a human must
    configure by hand defeats the point. Both halves or it is not done.
 
+## The folders are the interface
+
+Installing atrium creates `library/` with four subfolders, and the app's first
+screen is a guide to them rather than an empty search grid. This is deliberate
+product surface, not convenience: the folders are the only part of atrium a user
+interacts with that has no UI, so they are created for you, named for what
+people call the thing ("movies", not "video"), and described in the app. A
+README nobody reads is not an interface.
+
+`internal/library` owns this. It reads the directory for exactly two reasons -
+creating it, and counting files so the UI can distinguish "you have not added
+anything" from "a scan is still running". It does not index. Do not let it grow
+into an indexer.
+
+One asymmetry worth knowing: only `localbooks` reports an indexed count, so the
+music, movie and audiobook rows show files-on-disk with no comparison. Navidrome
+and Jellyfin would each need a count call to fix that.
+
 ## The one media type atrium owns, and why that is not a slippery slope
 
 Ebooks have no backend. Calibre-Web was removed: it needed a *database* rather
@@ -177,6 +195,18 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
 - **PowerShell here-strings carry CRLF into `docker exec bash -c`**, and a
   trailing carriage return makes bash misread the command. `scripts/` passes
   single-line commands for that reason.
+- **Library folders are created 0777 on purpose.** They exist to be written
+  into by a person on the host whose uid atrium cannot know, and read by four
+  backends running as assorted other uids. Being unable to copy files into your
+  own media folder is a far worse failure than a permissive mode on a home
+  media directory. Revisit if atrium ever grows PUID/PGID support.
+- **The library skeleton is committed** (`library/*/README.txt`), so a fresh
+  clone already has somewhere to put media; `.gitignore` keeps the structure and
+  ignores the contents.
+- **`scripts/mkepub` generates test books.** The sample-media script used to
+  borrow Calibre's `ebook-convert` from the Calibre-Web container, which no
+  longer exists. An EPUB is a zip with two XML files, so producing one needs
+  neither Calibre nor a container.
 - **Dev on Windows, deploy to Linux.** Go lives at `C:\dev\tools\go` (installed
   from the zip, on the user PATH). Docker Desktop must be running.
 - **No `go.sum`** and that is correct. Zero third-party dependencies, including

@@ -16,6 +16,7 @@ const state = {
   query: '',
   searchSeq: 0,
   setupTimer: null,
+  libraryEmpty: true,
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -130,6 +131,78 @@ function showApp() {
   $('search-input').focus();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
+  loadLibrary();
+}
+
+/* ---------------------------------------------------------------- library */
+
+// The folder guide. Visible whenever nothing is being searched, which means a
+// brand new user's first screen explains where media goes instead of being an
+// empty grid with a search box above it.
+async function loadLibrary() {
+  const { ok, body } = await api('/api/library');
+  if (!ok || !body) return;
+
+  state.libraryEmpty = body.empty;
+
+  $('library-heading').textContent = body.empty
+    ? 'Put your media in these folders'
+    : 'Your library';
+  $('library-blurb').textContent = body.empty
+    ? 'atrium made these for you. Drop files in and they will show up here — nothing else to set up.'
+    : 'Drop files into any of these and they appear in search automatically.';
+
+  const list = $('library-folders');
+  list.replaceChildren();
+
+  for (const folder of body.folders || []) {
+    const li = document.createElement('li');
+    li.className = 'folder';
+
+    const glyph = document.createElement('span');
+    glyph.className = 'folder-glyph';
+    glyph.textContent = GLYPHS[folder.kind] || '●';
+
+    const text = document.createElement('div');
+    text.className = 'folder-text';
+
+    const path = document.createElement('code');
+    path.textContent = folder.path;
+
+    const desc = document.createElement('span');
+    desc.className = 'folder-desc';
+    desc.textContent = folder.description;
+
+    const example = document.createElement('code');
+    example.className = 'folder-example';
+    example.textContent = folder.example;
+
+    text.append(path, desc, example);
+
+    const count = document.createElement('span');
+    count.className = 'folder-count';
+    count.textContent = folderCount(folder);
+
+    li.append(glyph, text, count);
+    list.append(li);
+  }
+
+  updateLibraryVisibility();
+}
+
+// The gap between files on disk and files indexed is the useful number: it
+// tells "you have not added anything" apart from "a scan is still running".
+function folderCount(folder) {
+  if (!folder.files) return 'empty';
+  const files = `${folder.files} file${folder.files === 1 ? '' : 's'}`;
+  if (typeof folder.indexed === 'number' && folder.indexed < folder.files) {
+    return `${files} · indexing…`;
+  }
+  return files;
+}
+
+function updateLibraryVisibility() {
+  show($('library'), !state.query);
 }
 
 async function pollSetup() {
@@ -170,6 +243,7 @@ async function pollSetup() {
     // Backends that finished after the last search would otherwise be missing
     // from results until the user typed again.
     if (state.query) runSearch();
+    loadLibrary();
   }
 }
 
@@ -200,10 +274,14 @@ async function runSearch() {
   const query = $('search-input').value.trim();
   state.query = query;
 
+  updateLibraryVisibility();
+
   if (!query) {
     $('results').replaceChildren();
     $('status').textContent = '';
     show($('degraded'), false);
+    // Counts may have moved while the user was searching.
+    loadLibrary();
     return;
   }
 
@@ -241,9 +319,15 @@ function renderResults(result) {
   show($('degraded'), failed.length > 0);
 
   const n = result.items.length;
-  $('status').textContent = n
-    ? `${n} result${n === 1 ? '' : 's'} in ${result.tookMs} ms`
-    : 'Nothing matched.';
+  if (n) {
+    $('status').textContent = `${n} result${n === 1 ? '' : 's'} in ${result.tookMs} ms`;
+  } else if (state.libraryEmpty) {
+    // "Nothing matched" is a lie when there is nothing to match against.
+    $('status').textContent = 'Nothing to search yet — your library is empty.';
+    show($('library'), true);
+  } else {
+    $('status').textContent = 'Nothing matched.';
+  }
 }
 
 function renderItem(item) {

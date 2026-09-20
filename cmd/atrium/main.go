@@ -29,6 +29,8 @@ import (
 
 	"github.com/gabehollberg/atrium/internal/auth"
 	"github.com/gabehollberg/atrium/internal/httpapi"
+	"github.com/gabehollberg/atrium/internal/library"
+	"github.com/gabehollberg/atrium/internal/media"
 	"github.com/gabehollberg/atrium/internal/provision"
 	"github.com/gabehollberg/atrium/internal/source"
 	"github.com/gabehollberg/atrium/internal/state"
@@ -54,13 +56,25 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("ATRIUM_PER_SOURCE_TIMEOUT: %w", err)
 	}
 
-	targets, err := targetsFromEnv()
+	// Before anything else: make sure the folders a person is supposed to put
+	// media into actually exist. On a fresh install this is what turns "read
+	// the README to learn the layout" into "the folders are already there".
+	lib, err := library.Open(
+		env("ATRIUM_LIBRARY_DIR", "/library"),
+		env("ATRIUM_LIBRARY_HINT", "./library"),
+		log,
+	)
+	if err != nil {
+		return err
+	}
+
+	targets, err := targetsFromEnv(lib)
 	if err != nil {
 		return err
 	}
 	if len(targets) == 0 {
 		return errors.New("no backends configured; set at least one of ATRIUM_NAVIDROME_URL, " +
-			"ATRIUM_JELLYFIN_URL, ATRIUM_AUDIOBOOKSHELF_URL, ATRIUM_EBOOKS_DIR")
+			"ATRIUM_JELLYFIN_URL, ATRIUM_AUDIOBOOKSHELF_URL")
 	}
 
 	store, err := state.Open(filepath.Join(stateDir, "state.json"))
@@ -83,6 +97,7 @@ func run(log *slog.Logger) error {
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
 		Store:            store,
+		Library:          lib,
 		Auth:             auth.New(store),
 		Setup:            setup,
 		PerSourceTimeout: perSourceTimeout,
@@ -103,6 +118,7 @@ func run(log *slog.Logger) error {
 	log.Info("atrium starting",
 		"listen", listen,
 		"backends", len(targets),
+		"library", lib.Root(),
 		"state", stateDir,
 		"account", accountState,
 	)
@@ -127,7 +143,7 @@ func run(log *slog.Logger) error {
 
 // targetsFromEnv reads which backends to manage. A backend is present if its URL
 // is set, so compose decides the stack and atrium adapts.
-func targetsFromEnv() ([]provision.Target, error) {
+func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 	var targets []provision.Target
 
 	if url := strings.TrimSpace(os.Getenv("ATRIUM_NAVIDROME_URL")); url != "" {
@@ -156,8 +172,11 @@ func targetsFromEnv() ([]provision.Target, error) {
 		})
 	}
 	// Ebooks are served straight off the disk: an EPUB describes itself, so no
-	// backend has to stand between atrium and the folder.
-	if dir := strings.TrimSpace(os.Getenv("ATRIUM_EBOOKS_DIR")); dir != "" {
+	// backend has to stand between atrium and the folder. The path comes from
+	// the library layout rather than its own variable - there is one answer to
+	// "where do ebooks live" and it should not be configurable into disagreeing
+	// with the folder atrium just created.
+	if dir := lib.PathFor(media.KindEbook); dir != "" {
 		targets = append(targets, provision.Target{
 			ID:        "ebooks",
 			Type:      "localbooks",

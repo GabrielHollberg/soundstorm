@@ -7,8 +7,12 @@
 #
 #   docker compose up --build   then open http://localhost:8099
 #
-# Drop files into ./media/music and ./media/movies. Nothing else to configure and
-# no API keys to fetch - atrium provisions its own credentials on first boot.
+# atrium creates ./library on first run with one folder per media type. Put a
+# file in the matching folder and it appears. Nothing else to configure and no
+# API keys to fetch - atrium provisions its own credentials on first boot.
+#
+#   library/
+#     music/       movies/       audiobooks/       ebooks/
 
 name: atrium
 
@@ -30,13 +34,18 @@ services:
       ATRIUM_JELLYFIN_MEDIA_PATH: /media/movies
       ATRIUM_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
       ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
-      # Ebooks have no backend: atrium reads the folder directly. An EPUB
-      # describes itself, so nothing needs to stand in between.
-      ATRIUM_EBOOKS_DIR: /media/ebooks
+      # atrium creates and owns this folder. Ebooks are read straight out of
+      # it, since an EPUB describes itself and needs no backend; the other
+      # three folders are handed to the server that indexes them.
+      ATRIUM_LIBRARY_DIR: /library
+      # How the same folder looks to whoever ran compose, for the UI to show.
+      ATRIUM_LIBRARY_HINT: ./library
       ATRIUM_LOG_LEVEL: info
     volumes:
       - atrium-state:/var/lib/atrium
-      - ./media/ebooks:/media/ebooks:ro
+      # The whole library, writable: atrium creates the folder structure on
+      # first run so nobody has to read a README to learn the layout.
+      - ./library:/library
     depends_on:
       - navidrome
       - jellyfin
@@ -61,7 +70,7 @@ services:
       # Nothing here should phone home; atrium is the only client.
       ND_ENABLEEXTERNALSERVICES: "false"
     volumes:
-      - ./media/music:/music:ro
+      - ./library/music:/music:ro
       - navidrome-data:/data
     # Deliberately no ports. atrium reaches it at http://navidrome:4533.
 
@@ -72,7 +81,7 @@ services:
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
-      - ./media/movies:/media/movies:ro
+      - ./library/movies:/media/movies:ro
     # Deliberately no ports. atrium reaches it at http://jellyfin:8096.
 
   audiobookshelf:
@@ -80,7 +89,7 @@ services:
     container_name: atrium-audiobookshelf
     restart: unless-stopped
     volumes:
-      - ./media/audiobooks:/audiobooks
+      - ./library/audiobooks:/audiobooks
       - abs-config:/config
       - abs-metadata:/metadata
     # Deliberately no ports. atrium reaches it at http://audiobookshelf:80.

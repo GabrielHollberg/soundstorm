@@ -30,6 +30,7 @@ import (
 
 	"github.com/gabehollberg/atrium/internal/auth"
 	"github.com/gabehollberg/atrium/internal/federate"
+	"github.com/gabehollberg/atrium/internal/library"
 	"github.com/gabehollberg/atrium/internal/media"
 	"github.com/gabehollberg/atrium/internal/provision"
 	"github.com/gabehollberg/atrium/internal/source"
@@ -49,6 +50,7 @@ const maxProgressBody = 8 << 10
 type Server struct {
 	reg              *source.Registry
 	store            *state.Store
+	library          *library.Library
 	auth             *auth.Manager
 	setup            *provision.Manager
 	proxy            *stream.Proxy
@@ -60,6 +62,7 @@ type Server struct {
 type Config struct {
 	Registry         *source.Registry
 	Store            *state.Store
+	Library          *library.Library
 	Auth             *auth.Manager
 	Setup            *provision.Manager
 	PerSourceTimeout time.Duration
@@ -75,6 +78,7 @@ func New(cfg Config) *Server {
 	return &Server{
 		reg:              cfg.Registry,
 		store:            cfg.Store,
+		library:          cfg.Library,
 		auth:             cfg.Auth,
 		setup:            cfg.Setup,
 		proxy:            stream.New(cfg.Registry, cfg.Log),
@@ -102,6 +106,7 @@ func (s *Server) Routes() http.Handler {
 	// Everything past here needs a session, media bytes very much included.
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
+	guarded.HandleFunc("GET /api/library", s.handleLibrary)
 	guarded.HandleFunc("GET /api/search", s.handleSearch)
 	// {id...} rather than {id}: an OPDS acquisition reference is a path with
 	// slashes in it ("opds/download/1/epub/"), and that is the id the adapter
@@ -218,6 +223,50 @@ func (s *Server) handleSetup(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"allReady": s.setup.AllReady(),
 		"backends": statuses,
+	})
+}
+
+// handleLibrary describes where media goes and how much is there.
+//
+// This is what the UI shows instead of an empty grid. A new user's first screen
+// should tell them what to do next, and "your four folders are here and they
+// are empty" is more useful than nothing at all.
+func (s *Server) handleLibrary(w http.ResponseWriter, _ *http.Request) {
+	folders := s.library.Folders()
+
+	// Pair each folder with what its backend has actually indexed. The gap
+	// between the two is the interesting number: files on disk but nothing
+	// searchable means a scan is still running, not that anything is broken.
+	indexed := map[media.Kind]int{}
+	for _, src := range s.reg.All() {
+		if counter, ok := src.(interface{ Count() int }); ok {
+			indexed[src.Kind()] += counter.Count()
+		}
+	}
+
+	out := make([]map[string]any, 0, len(folders))
+	empty := true
+	for _, f := range folders {
+		if f.Files > 0 {
+			empty = false
+		}
+		entry := map[string]any{
+			"kind":        f.Kind,
+			"name":        f.Name,
+			"path":        f.Hint,
+			"description": f.Description,
+			"example":     f.Example,
+			"files":       f.Files,
+		}
+		if n, ok := indexed[f.Kind]; ok {
+			entry["indexed"] = n
+		}
+		out = append(out, entry)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"empty":   empty,
+		"folders": out,
 	})
 }
 

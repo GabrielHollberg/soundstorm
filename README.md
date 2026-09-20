@@ -2,9 +2,10 @@
 
 One login and one search box over your whole media library.
 
-`docker compose up`, create an account, drop files into folders. Movies, music,
-audiobooks and ebooks all answer the same search and play in the same window.
-You never see an API key, and you never see a second login.
+`docker compose up`, create an account, and put files in the folders atrium
+made for you. Movies, music, audiobooks and ebooks all answer the same search
+and play in the same window. You never see an API key, and you never see a
+second login.
 
 ![One search returning an ebook, a film, music and an audiobook in a single ranked list](docs/shots/2-search.png)
 
@@ -54,19 +55,25 @@ docker compose up --build
 
 Open <http://localhost:8099> and create your account. That is the entire setup.
 
-Drop your own files into:
+atrium creates a `library/` folder on first run and the app's first screen shows
+you what goes where:
 
 ```
-media/
-  music/       Artist/Album/01 - Track.mp3
-  movies/      Film Name (2021)/Film Name (2021).mkv
-  audiobooks/  Author Name/Book Title/book.m4b
-  ebooks/      a Calibre library (metadata.db + book folders)
+library/
+  music/       Talk Talk/Laughing Stock/01 Myrrhman.flac
+  movies/      Arrival (2016)/Arrival (2016).mkv
+  audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
+  ebooks/      A Wizard of Earthsea.epub
 ```
 
-Navidrome rescans every minute; Jellyfin and Audiobookshelf watch for changes.
+Put a file in the matching folder and it appears in search. Navidrome rescans
+every minute; Jellyfin and Audiobookshelf watch for changes; ebooks are picked
+up within two minutes. Until a scan catches up the app says so, rather than
+pretending the file is not there.
 
-`media/ebooks` is just a folder of `.epub` files. It can also be an existing
+![The folder guide a new install opens on](docs/shots/1-library.png)
+
+`library/ebooks` is a plain folder of `.epub` files. It can also be an existing
 Calibre library — atrium reads Calibre's `metadata.opf` sidecars, so a library
 you already curate keeps its series, tags and corrected authors, with no
 SQLite driver and no Calibre-Web container.
@@ -84,7 +91,7 @@ defaults to it. Override with `ATRIUM_PORT`.
                        └───────┬───────┘
       ┌──────────────┬─────────┴─────────┬──────────────┐
       ▼              ▼                   ▼              ▼
- Navidrome     Jellyfin        Audiobookshelf    media/ebooks
+ Navidrome     Jellyfin        Audiobookshelf   library/ebooks
    :4533         :8096              :80          (a folder)
         — none of the three publishes a port —
 ```
@@ -116,6 +123,7 @@ package comment in `internal/stream` for the cost/benefit.
 ```
 cmd/atrium/          main, env config, graceful shutdown
 internal/media/      Item, Query, Kind — the shared vocabulary
+internal/library/    the folder layout: creates it, counts it
 internal/source/     the Source interface, Target, Registry
 internal/source/*/   one package per backend (subsonic, jellyfin,
                      audiobookshelf, localbooks, opds)
@@ -139,6 +147,7 @@ internal/webui/      the embedded UI
 | POST | `/api/signup` | — | create the one account (first boot only) |
 | POST | `/api/login` / `/api/logout` | — | |
 | GET | `/api/setup` | session | per-backend provisioning progress |
+| GET | `/api/library` | session | the folder layout and what is in it |
 | GET | `/api/search?q=&kind=&limit=` | session | federated search |
 | GET | `/api/stream/{source}/{id...}` | session | media bytes |
 | GET | `/api/art/{source}/{id...}` | session | artwork |
@@ -187,9 +196,10 @@ backend a human has to configure by hand defeats the point of the project.
 
 ```sh
 go test ./...
-go run ./cmd/atrium           # needs the backends reachable; compose is easier
 docker compose up --build
-docker compose logs -f atrium # watch provisioning
+docker compose logs -f atrium          # watch provisioning
+pwsh scripts/make-sample-media.ps1     # a synthetic library, no downloads
+go run ./scripts/mkepub -out b.epub -title T -author A   # one test book
 ```
 
 ## Notes

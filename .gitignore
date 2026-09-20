@@ -1,5 +1,9 @@
-# Generated sample library. Real libraries also live here and must not be
-# committed, so the whole directory is ignored rather than individual files.
+# The library folder structure IS committed - a fresh clone should already
+# have somewhere to put media - but nothing anyone actually puts in it is.
+/library/*/*
+!/library/*/README.txt
+
+# The old name for the same thing.
 /media/
 
 # Build output
