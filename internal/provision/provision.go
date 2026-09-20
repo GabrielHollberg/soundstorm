@@ -30,15 +30,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/source"
-	"github.com/gabehollberg/soundstorm/internal/source/audiobookshelf"
-	"github.com/gabehollberg/soundstorm/internal/source/jellyfin"
-	"github.com/gabehollberg/soundstorm/internal/source/localbooks"
-	"github.com/gabehollberg/soundstorm/internal/source/opds"
-	"github.com/gabehollberg/soundstorm/internal/source/subsonic"
-	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/source/audiobookshelf"
+	"github.com/GabrielHollberg/soundstorm/internal/source/jellyfin"
+	"github.com/GabrielHollberg/soundstorm/internal/source/localbooks"
+	"github.com/GabrielHollberg/soundstorm/internal/source/opds"
+	"github.com/GabrielHollberg/soundstorm/internal/source/subsonic"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // Status is where a backend is in its setup.

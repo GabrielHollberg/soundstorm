@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
 
 // Source is one upstream media server.

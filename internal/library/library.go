@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
 
 // countCacheTTL bounds how stale a file count may be. Counting means walking

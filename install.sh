@@ -1,7 +1,7 @@
 #!/bin/sh
 # SoundStorm installer for macOS and Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh
 #
 # It downloads one compose file, picks a free port, starts the stack and waits
 # until it answers. Everything it needs is Docker; everything it leaves behind
@@ -13,7 +13,7 @@
 
 set -eu
 
-REPO="${SOUNDSTORM_REPO:-gabehollberg/soundstorm}"
+REPO="${SOUNDSTORM_REPO:-GabrielHollberg/soundstorm}"
 BRANCH="${SOUNDSTORM_BRANCH:-main}"
 COMPOSE_URL="${SOUNDSTORM_COMPOSE_URL:-https://raw.githubusercontent.com/$REPO/$BRANCH/docker-compose.yml}"
 DIR="${SOUNDSTORM_DIR:-$PWD/soundstorm}"

@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
-	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // jellyfinAuthHeader identifies SoundStorm to Jellyfin before we hold a token.

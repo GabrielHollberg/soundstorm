@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
-	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // provisionNavidrome creates SoundStorm's account on a fresh Navidrome.

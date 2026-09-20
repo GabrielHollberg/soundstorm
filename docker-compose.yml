@@ -30,7 +30,7 @@ services:
   soundstorm:
     # Pinned by tag rather than digest so an upgrade is `docker compose pull`.
     # Set SOUNDSTORM_IMAGE to hold a specific version.
-    image: ${SOUNDSTORM_IMAGE:-ghcr.io/gabehollberg/soundstorm:latest}
+    image: ${SOUNDSTORM_IMAGE:-ghcr.io/gabrielhollberg/soundstorm:latest}
     container_name: soundstorm
     restart: unless-stopped
     ports:

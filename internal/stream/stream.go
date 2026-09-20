@@ -28,7 +28,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
 // forwardedRequestHeaders are the client headers that must reach the upstream

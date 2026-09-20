@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
 // Config configures an Audiobookshelf source.

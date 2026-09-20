@@ -64,11 +64,11 @@ Then one command:
 **macOS / Linux**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh
 ```
 
 **Windows** — download
-[SoundStorm-Setup.cmd](https://raw.githubusercontent.com/gabehollberg/soundstorm/main/SoundStorm-Setup.cmd)
+[SoundStorm-Setup.cmd](https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/SoundStorm-Setup.cmd)
 and double-click it. Nothing to install first and no terminal to find: if
 Docker is missing it installs that too, and if it is not running it starts it.
 
@@ -76,7 +76,7 @@ Docker is missing it installs that too, and if it is not running it starts it.
 <summary>Windows, from PowerShell instead</summary>
 
 ```powershell
-irm https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 | iex
 ```
 
 </details>
@@ -99,7 +99,7 @@ runs one command. You can do the same:
 
 ```sh
 mkdir soundstorm && cd soundstorm
-curl -fsSL https://raw.githubusercontent.com/gabehollberg/soundstorm/main/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/docker-compose.yml -o docker-compose.yml
 docker compose up -d
 ```
 
@@ -240,7 +240,7 @@ is a different project, and the one thing SoundStorm is careful not to become.
 ## For developers
 
 ```sh
-git clone https://github.com/gabehollberg/soundstorm && cd soundstorm
+git clone https://github.com/GabrielHollberg/soundstorm && cd soundstorm
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
@@ -382,9 +382,9 @@ backend a human has to configure by hand defeats the point of the project.
 
 ## Notes
 
-- **Module path** is `github.com/gabehollberg/soundstorm`. If the repo lives
+- **Module path** is `github.com/GabrielHollberg/soundstorm`. If the repo lives
   elsewhere, fix `go.mod` and run
-  `grep -rl gabehollberg/soundstorm . | xargs sed -i 's|gabehollberg/soundstorm|<you>/soundstorm|g'`.
+  `grep -rl GabrielHollberg/soundstorm . | xargs sed -i 's|GabrielHollberg/soundstorm|<you>/soundstorm|g'`.
 - **No `go.sum`** and that is correct, not an oversight.
 - **Serve over TLS or a private network.** Subsonic stream URLs carry
   credentials in the query string — that is the protocol, and although those

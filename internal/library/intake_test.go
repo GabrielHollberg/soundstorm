@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
 
 func newLibrary(t *testing.T) *Library {

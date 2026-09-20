@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
 // DefaultPerSourceTimeout bounds how long any single backend may hold up a

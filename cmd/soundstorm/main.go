@@ -27,15 +27,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/auth"
-	"github.com/gabehollberg/soundstorm/internal/httpapi"
-	"github.com/gabehollberg/soundstorm/internal/library"
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/provision"
-	"github.com/gabehollberg/soundstorm/internal/servetls"
-	"github.com/gabehollberg/soundstorm/internal/source"
-	"github.com/gabehollberg/soundstorm/internal/starter"
-	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/auth"
+	"github.com/GabrielHollberg/soundstorm/internal/httpapi"
+	"github.com/GabrielHollberg/soundstorm/internal/library"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/provision"
+	"github.com/GabrielHollberg/soundstorm/internal/servetls"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/starter"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 func main() {

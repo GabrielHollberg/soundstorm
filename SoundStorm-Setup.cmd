@@ -16,7 +16,7 @@ set "SCRIPT=%~dp0install.ps1"
 if exist "%SCRIPT%" goto :local
 
 rem Downloaded on its own: fetch the installer it belongs to.
-if "%SOUNDSTORM_REPO%"=="" set "SOUNDSTORM_REPO=gabehollberg/soundstorm"
+if "%SOUNDSTORM_REPO%"=="" set "SOUNDSTORM_REPO=GabrielHollberg/soundstorm"
 if "%SOUNDSTORM_BRANCH%"=="" set "SOUNDSTORM_BRANCH=main"
 set "URL=https://raw.githubusercontent.com/%SOUNDSTORM_REPO%/%SOUNDSTORM_BRANCH%/install.ps1"
 

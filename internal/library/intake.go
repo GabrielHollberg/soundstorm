@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
 
 // Accepting dropped files.

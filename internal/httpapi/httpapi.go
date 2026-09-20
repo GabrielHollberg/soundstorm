@@ -41,15 +41,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/auth"
-	"github.com/gabehollberg/soundstorm/internal/federate"
-	"github.com/gabehollberg/soundstorm/internal/library"
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/provision"
-	"github.com/gabehollberg/soundstorm/internal/source"
-	"github.com/gabehollberg/soundstorm/internal/state"
-	"github.com/gabehollberg/soundstorm/internal/stream"
-	"github.com/gabehollberg/soundstorm/internal/webui"
+	"github.com/GabrielHollberg/soundstorm/internal/auth"
+	"github.com/GabrielHollberg/soundstorm/internal/federate"
+	"github.com/GabrielHollberg/soundstorm/internal/library"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/provision"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/stream"
+	"github.com/GabrielHollberg/soundstorm/internal/webui"
 )
 
 // maxCredentialBody caps a login or signup body. Credentials are short; this

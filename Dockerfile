@@ -30,7 +30,7 @@ COPY --from=build /out/soundstorm /usr/local/bin/soundstorm
 # installing this sees.
 LABEL org.opencontainers.image.title="SoundStorm" \
       org.opencontainers.image.description="One login and one search box over your whole media library." \
-      org.opencontainers.image.source="https://github.com/gabehollberg/soundstorm" \
+      org.opencontainers.image.source="https://github.com/GabrielHollberg/soundstorm" \
       org.opencontainers.image.licenses="MIT"
 
 USER soundstorm

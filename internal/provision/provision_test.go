@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
 )
 
 // This guards a bug that cost a working stack twice, in two different layers.

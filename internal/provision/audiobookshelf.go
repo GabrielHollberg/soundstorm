@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
-	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // provisionAudiobookshelf creates SoundStorm's root account on a fresh

@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/httpx"
-	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // Calibre-Web ships with a published default login. Everyone knows it, which is

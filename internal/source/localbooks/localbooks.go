@@ -30,10 +30,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/soundstorm/internal/epub"
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/pdf"
-	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/epub"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/pdf"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
 // DefaultRescanInterval is how often the library is re-walked. Cheap, because

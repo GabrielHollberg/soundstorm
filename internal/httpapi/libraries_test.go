@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
 // fullHouse is one source per media kind, each with something findable in it

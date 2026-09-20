@@ -2,7 +2,7 @@
 #
 # Double-click SoundStorm-Setup.cmd, or from PowerShell:
 #
-#   irm https://raw.githubusercontent.com/gabehollberg/soundstorm/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 | iex
 #
 # It is written for somebody who has never opened a terminal. That means it
 # installs Docker Desktop itself rather than sending them to a website, starts
@@ -25,7 +25,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Repo       = if ($env:SOUNDSTORM_REPO) { $env:SOUNDSTORM_REPO } else { 'gabehollberg/soundstorm' }
+$Repo       = if ($env:SOUNDSTORM_REPO) { $env:SOUNDSTORM_REPO } else { 'GabrielHollberg/soundstorm' }
 $Branch     = if ($env:SOUNDSTORM_BRANCH) { $env:SOUNDSTORM_BRANCH } else { 'main' }
 $RawBase    = "https://raw.githubusercontent.com/$Repo/$Branch"
 $ComposeUrl = if ($env:SOUNDSTORM_COMPOSE_URL) { $env:SOUNDSTORM_COMPOSE_URL } else { "$RawBase/docker-compose.yml" }

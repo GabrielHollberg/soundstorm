@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gabehollberg/soundstorm/internal/media"
-	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
 // fakeJellyfin answers PlaybackInfo with a canned MediaSource and records the

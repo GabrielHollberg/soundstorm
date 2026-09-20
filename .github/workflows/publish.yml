@@ -71,12 +71,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A GitHub username may have capitals in it; a registry path may not.
+      # github.repository_owner is the name as typed, so it has to be folded
+      # here - "GabrielHollberg" is a perfectly ordinary account name and an
+      # invalid image reference.
+      - id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          # Lowercased, because a GitHub username may have capitals in it and
-          # a registry path may not.
-          images: ghcr.io/${{ github.repository_owner }}/soundstorm
+          images: ghcr.io/${{ steps.owner.outputs.name }}/soundstorm
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
