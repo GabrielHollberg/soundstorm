@@ -60,9 +60,11 @@ other in a book. What is not built:
 - **Per-user Navidrome and Jellyfin accounts.** They share one. Nothing
   SoundStorm surfaces from them differs per person today, so this only matters
   when watched state, play counts or favourites reach the UI.
-- **Per-user libraries.** Everybody sees everything. There is no way to keep
-  one shelf away from a child account, which is the first thing a household
-  with children will ask for.
+- **Per-title or age-rating filtering.** Access is per whole library, so "no
+  films for the seven-year-old" works and "only these films" does not. Doing it
+  properly means per-user Jellyfin accounts and its parental ratings, which is
+  a second provisioning path for one feature - worth it only once somebody
+  actually asks.
 - **Rate limiting on the login.** The 600k-iteration derivation makes each
   attempt cost a few hundred milliseconds, and that is the only defence there
   is. Fine on a LAN; not enough facing the internet.

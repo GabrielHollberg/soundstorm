@@ -56,7 +56,7 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 		perSourceTimeout = DefaultPerSourceTimeout
 	}
 	started := time.Now()
-	sources := reg.Matching(q)
+	sources := reg.Matching(ctx, q)
 
 	type outcome struct {
 		status SourceStatus
@@ -224,7 +224,7 @@ func HealthAll(ctx context.Context, reg *source.Registry, timeout time.Duration)
 	if timeout <= 0 {
 		timeout = DefaultPerSourceTimeout
 	}
-	sources := reg.All()
+	sources := reg.All(ctx)
 	statuses := make([]SourceStatus, len(sources))
 
 	var wg sync.WaitGroup

@@ -38,7 +38,8 @@ This is a **working vertical slice**, not a finished product. What runs today:
   repository to clone
 - SoundStorm provisions every one of them on first boot — **zero API keys typed**
 - **accounts**: the first visit creates the owner, who adds everyone else; each
-  person keeps their own place in every book
+  person keeps their own place in every book and sees only the libraries they
+  are given
 - **HTTPS** on request, with a local certificate authority so there is one
   install per device and no warning afterwards
 - one search across all four, merged and ranked
@@ -143,11 +144,23 @@ everyone else: a name and a password, and that is the whole ceremony. There is
 no open registration and no invite link, deliberately — a server that might be
 reachable from outside a house should not let a stranger create an account.
 
-Everybody shares one library and keeps their own **place in every book**, both
-for reading and for listening. The audiobook side of that is real per-person
-state on the backend, not a note in a file: SoundStorm quietly gives each
-person their own Audiobookshelf account, and removing them takes it away again
-along with their sessions and bookmarks.
+Everybody keeps their own **place in every book**, both for reading and for
+listening. The audiobook side of that is real per-person state on the backend,
+not a note in a file: SoundStorm quietly gives each person their own
+Audiobookshelf account, and removing them takes it away again along with their
+sessions and bookmarks.
+
+**Each person sees only the shelves you tick.** Music, Films, TV, Audiobooks,
+Ebooks — untick Films for a child account and the tab disappears, the folder
+stops being listed, search stops returning films, and the film itself returns
+404 if anybody goes looking for the URL. The last one is the part that matters:
+hiding results is not a permission.
+
+![Ticking which libraries each person can see](docs/shots/14-libraries.png)
+
+What this is not: per-title or age-rating filtering. The unit is a whole
+library, so "no films for the seven-year-old" is answerable and "only these
+films" is not.
 
 ### Turning on HTTPS
 

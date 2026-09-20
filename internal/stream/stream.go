@@ -115,7 +115,7 @@ func New(reg *source.Registry, log *slog.Logger) *Proxy {
 
 // ServeMedia streams an item's bytes.
 func (p *Proxy) ServeMedia(w http.ResponseWriter, r *http.Request, sourceID, itemID string) {
-	src, ok := p.reg.ByID(sourceID)
+	src, ok := p.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		http.Error(w, "unknown source", http.StatusNotFound)
 		return
@@ -136,7 +136,7 @@ func (p *Proxy) ServeMedia(w http.ResponseWriter, r *http.Request, sourceID, ite
 
 // ServeArt streams an item's artwork.
 func (p *Proxy) ServeArt(w http.ResponseWriter, r *http.Request, sourceID, artID string) {
-	src, ok := p.reg.ByID(sourceID)
+	src, ok := p.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		http.Error(w, "unknown source", http.StatusNotFound)
 		return

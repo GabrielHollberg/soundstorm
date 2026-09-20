@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
@@ -165,6 +167,63 @@ func (m *Manager) DeleteUser(actor state.User, id string) error {
 		return errors.New("you cannot remove your own account")
 	}
 	return m.store.DeleteUser(id)
+}
+
+// Access is what an account is allowed to reach.
+//
+// The owner is always unrestricted, whatever is stored against them. They are
+// the only account that can change these, so an owner who locked themselves out
+// of a library would have no way back in.
+func Access(u state.User) source.Access {
+	if u.IsOwner() || u.Libraries == nil {
+		return source.Access{}
+	}
+	kinds := make([]media.Kind, 0, len(u.Libraries))
+	for _, name := range u.Libraries {
+		if k, ok := media.ParseKind(name); ok {
+			kinds = append(kinds, k)
+		}
+	}
+	// AccessTo of a non-nil empty slice permits nothing, which is the right
+	// reading of "this account is allowed no libraries".
+	return source.AccessTo(kinds)
+}
+
+// SetLibraries chooses which media kinds an account may see. Only an owner may
+// call it, and the owner's own access cannot be narrowed - nobody else could
+// widen it again.
+func (m *Manager) SetLibraries(actor state.User, id string, libraries []string) error {
+	if !actor.IsOwner() {
+		return ErrForbidden
+	}
+	target, ok := m.store.User(id)
+	if !ok {
+		return errors.New("no such account")
+	}
+	if target.IsOwner() {
+		return errors.New("the owner always sees every library")
+	}
+
+	// nil means everything. Anything else is normalised and checked here, so a
+	// typo becomes an error now rather than a library that silently never
+	// appears.
+	if libraries != nil {
+		cleaned := make([]string, 0, len(libraries))
+		seen := map[media.Kind]bool{}
+		for _, name := range libraries {
+			k, ok := media.ParseKind(name)
+			if !ok {
+				return fmt.Errorf("there is no library called %q", name)
+			}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			cleaned = append(cleaned, string(k))
+		}
+		libraries = cleaned
+	}
+	return m.store.SetLibraries(id, libraries)
 }
 
 // SetPassword changes a password.

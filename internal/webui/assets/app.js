@@ -139,6 +139,7 @@ function showApp(me) {
   show($('gate'), false);
   show($('app'), true);
   $('search-input').focus();
+  applyLibraryTabs();
   renderAccount();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
@@ -211,7 +212,19 @@ async function loadPeople() {
     const spacer = document.createElement('span');
     spacer.className = 'person-spacer';
 
-    li.append(name, role, spacer);
+    li.append(name, role);
+    // The owner always sees everything and cannot be narrowed, so there is
+    // nothing to offer - a row of ticked boxes that refuse to be unticked
+    // would be worse than none.
+    if (person.owner) {
+      const everything = document.createElement('span');
+      everything.className = 'person-everything muted';
+      everything.textContent = 'every library';
+      li.append(everything);
+    } else {
+      li.append(libraryPicker(person));
+    }
+    li.append(spacer);
 
     // The owner is not removable and neither are you: the server refuses both,
     // and offering a button that always fails is worse than offering none.
@@ -225,6 +238,68 @@ async function loadPeople() {
     }
     list.append(li);
   }
+}
+
+// libraryPicker is the five shelves, ticked for the ones this person can see.
+function libraryPicker(person) {
+  const wrap = document.createElement('div');
+  wrap.className = 'person-libraries';
+
+  for (const [kind, label] of LIBRARY_LABELS) {
+    const field = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = person.libraries.includes(kind);
+    field.classList.toggle('on', box.checked);
+
+    const text = document.createElement('span');
+    text.textContent = label;
+
+    box.addEventListener('change', () => {
+      const chosen = [...wrap.querySelectorAll('input')]
+        .filter((b) => b.checked)
+        .map((b) => b.dataset.kind);
+      saveLibraries(person, chosen, wrap);
+    });
+
+    box.dataset.kind = kind;
+    field.append(box, text);
+    wrap.append(field);
+  }
+  return wrap;
+}
+
+const LIBRARY_LABELS = [
+  ['music', 'Music'],
+  ['video', 'Films'],
+  ['tv', 'TV'],
+  ['audiobook', 'Audiobooks'],
+  ['ebook', 'Ebooks'],
+];
+
+async function saveLibraries(person, chosen, wrap) {
+  // Sending every kind and sending "everything" are different in the state
+  // file, and only the second keeps up if a sixth library is ever added.
+  const payload = chosen.length === LIBRARY_LABELS.length ? null : chosen;
+
+  for (const box of wrap.querySelectorAll('input')) box.disabled = true;
+  const { ok, body } = await api(`/api/users/${encodeURIComponent(person.id)}/libraries`, {
+    method: 'PUT',
+    body: JSON.stringify({ libraries: payload }),
+  });
+  for (const box of wrap.querySelectorAll('input')) box.disabled = false;
+
+  if (!ok) {
+    note($('people-note'), (body && body.error) || 'Could not change that.', true);
+    loadPeople();
+    return;
+  }
+  note($('people-note'),
+    chosen.length === 0
+      ? `${person.name} can no longer see any library.`
+      : `${person.name} can see ${chosen.length} of ${LIBRARY_LABELS.length} libraries.`,
+    false);
+  loadPeople();
 }
 
 async function removePerson(person) {
@@ -392,6 +467,29 @@ $('search-input').addEventListener('input', () => {
   clearTimeout(debounce);
   debounce = setTimeout(runSearch, 280);
 });
+
+// Hide the tabs for libraries this account cannot see. The server refuses them
+// either way - this is so a child account is not looking at a Films tab that
+// returns nothing and wondering what it did wrong.
+function applyLibraryTabs() {
+  const allowed = (state.me && state.me.libraries) || [];
+  const everything = !state.me || state.me.allLibraries;
+
+  for (const chip of document.querySelectorAll('.chip')) {
+    const kind = chip.dataset.kind;
+    const visible = everything || kind === '' || allowed.includes(kind);
+    show(chip, visible);
+    // If the active filter just became invisible, fall back to everything
+    // rather than leaving a search pinned to a library that is not there.
+    if (!visible && state.kind === kind) {
+      state.kind = '';
+      for (const other of document.querySelectorAll('.chip')) {
+        other.classList.toggle('active', other.dataset.kind === '');
+      }
+      if (state.query) runSearch();
+    }
+  }
+}
 
 for (const chip of document.querySelectorAll('.chip')) {
   chip.addEventListener('click', () => {

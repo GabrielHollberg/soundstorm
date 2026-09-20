@@ -16,6 +16,7 @@ import (
 
 	"github.com/gabehollberg/soundstorm/internal/auth"
 	"github.com/gabehollberg/soundstorm/internal/federate"
+	"github.com/gabehollberg/soundstorm/internal/library"
 	"github.com/gabehollberg/soundstorm/internal/media"
 	"github.com/gabehollberg/soundstorm/internal/provision"
 	"github.com/gabehollberg/soundstorm/internal/source"
@@ -63,12 +64,21 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg := source.NewRegistry(sources...)
 
+	// A real library on a temporary directory. Like the store, this was
+	// missing until a test finally asked for /api/library and found a nil
+	// pointer sitting behind it.
+	lib, err := library.Open(filepath.Join(t.TempDir(), "library"), "./library", log)
+	if err != nil {
+		t.Fatalf("library.Open: %v", err)
+	}
+
 	api := New(Config{
 		Registry: reg,
 		// The store was missing here until accounts needed it, which meant
 		// every handler that reads state was being exercised against a nil
 		// pointer that happened not to be dereferenced yet.
 		Store:            store,
+		Library:          lib,
 		Auth:             auth.New(store),
 		Setup:            provision.New(store, reg, log, nil),
 		PerSourceTimeout: time.Second,

@@ -117,9 +117,35 @@ server. After that only the owner adds accounts. There are no invite links and
 no open registration, because this thing is meant to be reachable from outside
 a house.
 
-**Almost nothing actually differs per person.** The library is the same, search
-returns the same results, and a film is the same bytes whoever asked. Exactly
-two things are personal:
+**Which shelves somebody can see is per account.** `User.Libraries` is a list
+of media kinds, and nil means all of them - which is what every account created
+before the field existed has, and the default for a new one. The owner is always
+unrestricted whatever is stored: they are the only account that can change
+these, so an owner who locked themselves out would have no way back in.
+
+The enforcement is the reason `Registry.All`, `Matching` and `ByID` take a
+context. The context carries `source.Access`, the middleware sets it once for
+every guarded route, and a handler physically cannot reach a source without
+passing the request's context - which is what applies the restriction. Changing
+those three signatures made the compiler find all ten call sites; remembering to
+check in each handler would not have.
+
+`AccessFrom` defaults to unrestricted, because provisioning, health checks and
+the library counter have no account and must see everything. That is a fail-open
+default, so `internal/httpapi/libraries_test.go` walks every endpoint that can
+hand over bytes, metadata or a playable URL and asserts a restricted account is
+refused - including `/api/stream`, because hiding search results is not a
+permission when the URL is guessable from an ordinary result.
+
+The granularity is **a whole media kind**, which is the same thing as a source,
+because a source serves exactly one kind. "No films for the seven-year-old" is
+answerable; "only these films" is not, and would mean per-user Jellyfin accounts
+and its parental ratings. Do not creep toward that without deciding it is worth
+a second provisioning path.
+
+**Beyond that, almost nothing differs per person.** Search returns the same
+results and a film is the same bytes whoever asked. Exactly two other things are
+personal:
 
 - **Reading position**, which is ours, and is keyed `userID/sourceID/itemID`.
 - **Listening position**, which is Audiobookshelf's, and is keyed by *its*
@@ -465,6 +491,12 @@ and never point automated fetches at an origin site that has asked you not to.
   iframe that inherits SoundStorm's origin - without `script-src 'self'`, opening a
   book would run a stranger's JavaScript against the session cookie. `blob:` IS
   allowed in style-src and font-src, or books render unstyled.
+- **An empty `libraries` list means nothing, and must never read back as nil.**
+  `User.Libraries` has no `omitempty` for exactly this reason: with it, an
+  account allowed no libraries would serialise to nothing, read back as nil,
+  and silently mean *every* library. The one mistake this field cannot make is
+  failing open, and there is a test that writes it, reads it back through the
+  accounts list, and checks.
 - **The state file has a schema version and a migration.** Version 1 had one
   `user`, sessions that were bare expiry timestamps, and bookmarks keyed by
   source and item alone; version 2 has accounts. The upgrade makes the existing

@@ -16,6 +16,7 @@
 //	POST /api/users                     add one                       (owner)
 //	DELETE /api/users/{id}              remove one                    (owner)
 //	POST /api/users/{id}/password       reset somebody's password     (owner)
+//	PUT  /api/users/{id}/libraries      which shelves they can see    (owner)
 //	POST /api/account/password          change your own
 //	GET  /api/search?q=&kind=&limit=    federated search
 //	GET  /api/stream/{source}/{id}      media bytes, proxied
@@ -160,6 +161,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("POST /api/users", s.handleCreateUser)
 	owner.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 	owner.HandleFunc("POST /api/users/{id}/password", s.handleSetUserPassword)
+	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
 	guarded.Handle("/api/users", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/users/", s.auth.RequireOwner(owner))
 
@@ -180,7 +182,12 @@ func (s *Server) withUserContext(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(source.WithUserID(r.Context(), user.ID)))
+		ctx := source.WithUserID(r.Context(), user.ID)
+		// And what they are allowed to reach. Set here, once, for every
+		// guarded route - the Registry refuses anything outside it, so a
+		// handler cannot forget to check.
+		ctx = source.WithAccess(ctx, auth.Access(user))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -232,12 +239,26 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 // and the iteration count are not in it, and must never be: this is returned to
 // whoever asks, including a member listing themselves.
 func publicUser(u state.User) map[string]any {
+	// libraries is always present and always concrete, never null: a client
+	// deciding which tabs to show should not have to know that nil means
+	// everything.
+	kinds := auth.Access(u).Kinds()
+	names := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		names = append(names, string(k))
+	}
 	return map[string]any{
 		"id":        u.ID,
 		"name":      u.Name,
 		"role":      u.Role,
 		"owner":     u.IsOwner(),
 		"createdAt": u.CreatedAt,
+		"libraries": names,
+		// Whether the stored value is a restriction at all, which is what an
+		// owner editing somebody needs in order to show "everything" rather
+		// than five ticked boxes that mean the same thing today and would stop
+		// meaning it if a sixth library were ever added.
+		"allLibraries": auth.Access(u).Unrestricted(),
 	}
 }
 
@@ -403,6 +424,42 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"removed": true})
 }
 
+func (s *Server) handleSetUserLibraries(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		// A pointer so that an absent key, an explicit null and an empty list
+		// are three different requests: leave alone, allow everything, allow
+		// nothing.
+		Libraries *[]string `json:"libraries"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxCredentialBody))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with a list of libraries")
+		return
+	}
+
+	var libraries []string
+	if body.Libraries != nil {
+		libraries = *body.Libraries
+		if libraries == nil {
+			libraries = []string{}
+		}
+	}
+	if err := s.auth.SetLibraries(actor, r.PathValue("id"), libraries); err != nil {
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+
+	updated, _ := s.store.User(r.PathValue("id"))
+	s.log.Info("libraries changed", "for", updated.Name, "by", actor.Name,
+		"libraries", updated.Libraries)
+	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(updated)})
+}
+
 func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.requireUser(w, r)
 	if !ok {
@@ -461,14 +518,23 @@ func (s *Server) handleSetup(w http.ResponseWriter, _ *http.Request) {
 // This is what the UI shows instead of an empty grid. A new user's first screen
 // should tell them what to do next, and "your four folders are here and they
 // are empty" is more useful than nothing at all.
-func (s *Server) handleLibrary(w http.ResponseWriter, _ *http.Request) {
-	folders := s.library.Folders()
+func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
+	// Folders for libraries this account cannot see are left out entirely.
+	// Listing a shelf somebody is not allowed to open, with a count of what is
+	// on it, would be a strange thing to show a child account.
+	access := source.AccessFrom(r.Context())
+	var folders []library.Folder
+	for _, f := range s.library.Folders() {
+		if access.Permits(f.Kind) {
+			folders = append(folders, f)
+		}
+	}
 
 	// Pair each folder with what its backend has actually indexed. The gap
 	// between the two is the interesting number: files on disk but nothing
 	// searchable means a scan is still running, not that anything is broken.
 	indexed := map[media.Kind]int{}
-	for _, src := range s.reg.All() {
+	for _, src := range s.reg.All(r.Context()) {
 		if counter, ok := src.(interface{ Count() int }); ok {
 			indexed[src.Kind()] += counter.Count()
 		}
@@ -547,7 +613,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 // thirty separate MP3s.
 func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 	sourceID, itemID := r.PathValue("source"), r.PathValue("id")
-	src, ok := s.reg.ByID(sourceID)
+	src, ok := s.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "unknown source "+strconv.Quote(sourceID))
 		return
@@ -623,7 +689,7 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 // every other client reads.
 func (s *Server) handleSetPosition(w http.ResponseWriter, r *http.Request) {
 	sourceID, itemID := r.PathValue("source"), r.PathValue("id")
-	src, ok := s.reg.ByID(sourceID)
+	src, ok := s.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "unknown source "+strconv.Quote(sourceID))
 		return
@@ -712,7 +778,7 @@ func trackList(sourceID string, tracks []source.Track) []map[string]any {
 // handleSubtitle proxies one subtitle track, converted upstream to WebVTT.
 func (s *Server) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("source")
-	src, ok := s.reg.ByID(sourceID)
+	src, ok := s.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		http.Error(w, "unknown source", http.StatusNotFound)
 		return
@@ -740,7 +806,7 @@ func (s *Server) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 // needs rewriting.
 func (s *Server) handleHLS(w http.ResponseWriter, r *http.Request) {
 	sourceID := r.PathValue("source")
-	src, ok := s.reg.ByID(sourceID)
+	src, ok := s.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		http.Error(w, "unknown source", http.StatusNotFound)
 		return
@@ -785,7 +851,7 @@ func (s *Server) openBook(r *http.Request) (source.OpenBook, error) {
 	if sourceID == "" || itemID == "" {
 		return nil, errors.New("source and id are required")
 	}
-	src, ok := s.reg.ByID(sourceID)
+	src, ok := s.reg.ByID(r.Context(), sourceID)
 	if !ok {
 		return nil, fmt.Errorf("unknown source %s", strconv.Quote(sourceID))
 	}

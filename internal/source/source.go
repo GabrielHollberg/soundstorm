@@ -289,6 +289,75 @@ func UserID(ctx context.Context) string {
 	return id
 }
 
+// --- what a request may see ----------------------------------------------------
+
+// Access is the set of media kinds one request is allowed to reach.
+//
+// The zero value permits everything, which is what a background scan, a health
+// check or a provisioning call gets. Restrictions only ever arrive from an HTTP
+// request carrying an account.
+type Access struct {
+	// kinds is nil for unrestricted access and non-nil otherwise, including
+	// when it is empty - an account allowed nothing is a real state, and it
+	// must not be mistaken for an account allowed everything.
+	kinds map[media.Kind]bool
+}
+
+// AccessTo builds a restricted Access. A nil slice means no restriction; an
+// empty non-nil slice means nothing at all.
+func AccessTo(kinds []media.Kind) Access {
+	if kinds == nil {
+		return Access{}
+	}
+	set := make(map[media.Kind]bool, len(kinds))
+	for _, k := range kinds {
+		set[k] = true
+	}
+	return Access{kinds: set}
+}
+
+// Unrestricted reports whether this Access permits every kind.
+func (a Access) Unrestricted() bool { return a.kinds == nil }
+
+// Permits reports whether this request may see the given kind.
+func (a Access) Permits(k media.Kind) bool {
+	return a.kinds == nil || a.kinds[k]
+}
+
+// Kinds returns the permitted kinds in SoundStorm's own order, or every kind
+// when unrestricted. Useful for telling a client what it may ask for.
+func (a Access) Kinds() []media.Kind {
+	if a.kinds == nil {
+		return media.AllKinds()
+	}
+	var out []media.Kind
+	for _, k := range media.AllKinds() {
+		if a.kinds[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+type accessKey struct{}
+
+// WithAccess records what a request is allowed to reach.
+func WithAccess(ctx context.Context, a Access) context.Context {
+	return context.WithValue(ctx, accessKey{}, a)
+}
+
+// AccessFrom returns a request's permissions, defaulting to unrestricted.
+//
+// Defaulting open is deliberate and is the reason the Registry's lookups take a
+// context at all: internal callers - provisioning, health checks, the library
+// counter - have no account and must see everything. Every path that serves a
+// person goes through a handler that sets this, and every one of those is
+// covered by a test that a restricted account is refused.
+func AccessFrom(ctx context.Context) Access {
+	a, _ := ctx.Value(accessKey{}).(Access)
+	return a
+}
+
 // Registry holds the live sources.
 //
 // Unlike the rest of SoundStorm this is mutable at runtime: sources appear as
@@ -324,34 +393,54 @@ func (r *Registry) Set(s Source) {
 	r.sources = append(r.sources, s)
 }
 
-// All returns every registered source.
-func (r *Registry) All() []Source {
+// All returns every source this request may see.
+//
+// These three take a context for one reason: it carries what the caller is
+// allowed to reach. Making the signature demand it is the enforcement - a new
+// handler cannot reach a source without passing the request's context, and
+// passing the request's context is exactly what applies the restriction.
+func (r *Registry) All(ctx context.Context) []Source {
+	access := AccessFrom(ctx)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]Source, len(r.sources))
-	copy(out, r.sources)
-	return out
-}
-
-// Matching returns the sources whose kind the query is interested in.
-func (r *Registry) Matching(q media.Query) []Source {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	var out []Source
+	out := make([]Source, 0, len(r.sources))
 	for _, s := range r.sources {
-		if q.WantsKind(s.Kind()) {
+		if access.Permits(s.Kind()) {
 			out = append(out, s)
 		}
 	}
 	return out
 }
 
-// ByID returns the source with the given id.
-func (r *Registry) ByID(id string) (Source, bool) {
+// Matching returns the sources whose kind the query is interested in and the
+// caller is allowed to see.
+func (r *Registry) Matching(ctx context.Context, q media.Query) []Source {
+	access := AccessFrom(ctx)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []Source
+	for _, s := range r.sources {
+		if q.WantsKind(s.Kind()) && access.Permits(s.Kind()) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// ByID returns the source with the given id, or false when there is no such
+// source or the caller may not see it.
+//
+// The two are deliberately the same answer. Telling somebody that a library
+// exists but is not for them is a worse thing to say than nothing.
+func (r *Registry) ByID(ctx context.Context, id string) (Source, bool) {
+	access := AccessFrom(ctx)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, s := range r.sources {
 		if s.ID() == id {
+			if !access.Permits(s.Kind()) {
+				return nil, false
+			}
 			return s, true
 		}
 	}

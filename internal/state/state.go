@@ -67,9 +67,20 @@ type User struct {
 	// ID is generated and never changes. Accounts are keyed by it rather than
 	// by name so that deleting somebody and creating a new account with the
 	// same name does not quietly hand over their listening history.
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Role       string    `json:"role"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Role string `json:"role"`
+
+	// Libraries is which media kinds this account may see. Nil means all of
+	// them, which is what every account created before this existed gets, and
+	// the default for a new one.
+	//
+	// No omitempty, deliberately. An account allowed nothing is a real state
+	// and it serialises as []; with omitempty that would vanish from the file
+	// and read back as nil, which means everything. The one mistake this field
+	// must not make is failing open.
+	Libraries []string `json:"libraries"`
+
 	Salt       []byte    `json:"salt"`
 	Hash       []byte    `json:"hash"`
 	Iterations int       `json:"iterations"`
@@ -360,6 +371,19 @@ func (s *Store) AddUser(u User) (User, error) {
 	}
 	s.d.Users[u.ID] = u
 	return u, s.save()
+}
+
+// SetLibraries records which media kinds an account may see. Nil means all.
+func (s *Store) SetLibraries(id string, libraries []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[id]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	u.Libraries = libraries
+	s.d.Users[id] = u
+	return s.save()
 }
 
 // SetPassword replaces an account's derived password material.
