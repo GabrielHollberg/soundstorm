@@ -107,6 +107,8 @@
     <section id="intake" class="card hidden">
       <h2 id="intake-title"></h2>
       <div id="intake-bar" class="hidden"><div id="intake-fill"></div></div>
+      <!-- One question per dropped folder, not per file. -->
+      <ul id="intake-questions"></ul>
       <ul id="intake-list"></ul>
       <button id="intake-close" class="ghost" type="button">Close</button>
     </section>
@@ -167,14 +169,14 @@
   </div>
 
   <!-- Drop target ---------------------------------------------------------
-       Covers the window while something is being dragged over it. Dropping on
-       the background sorts automatically; dropping on a shelf says where. -->
+       One zone covering the window. Anything it cannot place confidently is
+       asked about afterwards rather than guessed at, which is why there is
+       nothing to aim at here. -->
   <div id="drop-overlay" class="drop hidden">
     <div class="drop-inner">
-      <h2>Drop to add to your library</h2>
-      <p class="muted">Let go anywhere and SoundStorm will work out where each
-        file goes — or drop onto a shelf to say.</p>
-      <div id="drop-shelves" class="drop-shelves"></div>
+      <h2>Drop anywhere</h2>
+      <p class="muted">Files or whole folders. SoundStorm sorts them into your
+        library, and asks about anything it cannot tell.</p>
     </div>
   </div>
 

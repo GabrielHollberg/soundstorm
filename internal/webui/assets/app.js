@@ -1143,19 +1143,20 @@ $('audio-close').addEventListener('click', stopAudio);
  * out that it was a film. The server decides that; this end collects the drop,
  * asks, shows the answer, and then sends the bytes.
  *
- * Two things make it more than a file picker. Folders can be dropped, and the
+ * Three things make it more than a file picker. Folders can be dropped, and the
  * structure has to survive - Jellyfin needs "Arrival (2016)/Arrival.mkv" to be
- * a folder. And the answer is worth showing before a gigabyte moves.
+ * a folder. The answer is worth showing before a gigabyte moves. And some
+ * things genuinely cannot be worked out, in which case the server says so and
+ * this end asks - once per dropped folder, not once per file.
  */
 
-const SHELVES = [
-  ['', 'Sort it for me', '✨'],
-  ['music', 'Music', '♪'],
-  ['video', 'Films', '▶'],
-  ['tv', 'TV', '📺'],
-  ['audiobook', 'Audiobooks', '🎧'],
-  ['ebook', 'Ebooks', '📖'],
-];
+const LIBRARY_NAMES = {
+  music: 'Music',
+  video: 'Films',
+  tv: 'TV',
+  audiobook: 'Audiobooks',
+  ebook: 'Ebooks',
+};
 
 // dragDepth counts enter/leave pairs. Moving the pointer between two elements
 // fires leave on one before enter on the other, so a naive handler flickers the
@@ -1167,53 +1168,13 @@ function draggingFiles(event) {
   return Boolean(types) && [...types].includes('Files');
 }
 
-function buildShelves() {
-  const host = $('drop-shelves');
-  host.replaceChildren();
-
-  const mine = (state.me && state.me.libraries) || [];
-  const everything = !state.me || state.me.allLibraries;
-
-  for (const [kind, label, glyph] of SHELVES) {
-    if (kind && !everything && !mine.includes(kind)) continue;
-
-    const target = document.createElement('div');
-    target.className = 'drop-shelf';
-    target.dataset.kind = kind;
-
-    const icon = document.createElement('span');
-    icon.className = 'shelf-glyph';
-    icon.textContent = glyph;
-
-    const text = document.createElement('span');
-    text.textContent = label;
-
-    target.append(icon, text);
-    target.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      target.classList.add('over');
-    });
-    target.addEventListener('dragleave', () => target.classList.remove('over'));
-    target.addEventListener('drop', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      target.classList.remove('over');
-      hideDropOverlay();
-      intake(event.dataTransfer, kind);
-    });
-    host.append(target);
-  }
-}
-
 function showDropOverlay() {
-  buildShelves();
   show($('drop-overlay'), true);
 }
 
 function hideDropOverlay() {
   dragDepth = 0;
   show($('drop-overlay'), false);
-  for (const el of document.querySelectorAll('.drop-shelf.over')) el.classList.remove('over');
 }
 
 window.addEventListener('dragenter', (event) => {
@@ -1236,7 +1197,7 @@ window.addEventListener('drop', (event) => {
   if (!draggingFiles(event) || $('app').classList.contains('hidden')) return;
   event.preventDefault();
   hideDropOverlay();
-  intake(event.dataTransfer, '');
+  intake(event.dataTransfer);
 });
 
 /* ---- reading what was dropped ---- */
@@ -1291,20 +1252,21 @@ function walkEntry(entry, prefix, out) {
 
 let intakeBusy = false;
 
-async function intake(dataTransfer, kind) {
+async function intake(dataTransfer) {
   if (intakeBusy) return;
   intakeBusy = true;
   try {
-    await runIntake(dataTransfer, kind);
+    await runIntake(dataTransfer);
   } finally {
     intakeBusy = false;
   }
 }
 
-async function runIntake(dataTransfer, kind) {
+async function runIntake(dataTransfer) {
   show($('intake'), true);
   show($('intake-bar'), false);
   $('intake-list').replaceChildren();
+  $('intake-questions').replaceChildren();
   $('intake-title').textContent = 'Reading what you dropped…';
 
   const dropped = await collectFiles(dataTransfer);
@@ -1313,22 +1275,94 @@ async function runIntake(dataTransfer, kind) {
     return;
   }
 
-  const { ok, body } = await api('/api/upload/plan', {
-    method: 'POST',
-    body: JSON.stringify({ paths: dropped.map((d) => d.path), kind }),
-  });
-  if (!ok || !body) {
-    $('intake-title').textContent = (body && body.error) || 'SoundStorm could not take those.';
-    return;
-  }
+  const paths = dropped.map((d) => d.path);
+  const choices = {};
 
-  const plan = body.files || [];
-  // Line them up with the File objects by position, which is the order the
-  // server was given and the order it answers in.
+  // Ask until there is nothing left to ask. Each answer goes back to the
+  // server, which re-plans - so the destination shown is always the one the
+  // server will actually use, rather than something worked out twice.
+  for (;;) {
+    const { ok, body } = await api('/api/upload/plan', {
+      method: 'POST',
+      body: JSON.stringify({ paths, choices }),
+    });
+    if (!ok || !body) {
+      $('intake-title').textContent = (body && body.error) || 'SoundStorm could not take those.';
+      return;
+    }
+
+    const questions = body.questions || [];
+    if (!questions.length) {
+      await sendFiles(body.files || [], dropped);
+      return;
+    }
+
+    $('intake-title').textContent = questions.length === 1
+      ? 'One thing SoundStorm cannot tell'
+      : `${questions.length} things SoundStorm cannot tell`;
+    const answer = await askQuestion(questions[0]);
+    if (answer === null) {
+      $('intake-title').textContent = 'Cancelled — nothing was added.';
+      $('intake-questions').replaceChildren();
+      return;
+    }
+    choices[questions[0].group] = answer;
+  }
+}
+
+// askQuestion shows one question and resolves with the chosen library, or null
+// if the drop was abandoned.
+function askQuestion(question) {
+  return new Promise((resolve) => {
+    const host = $('intake-questions');
+    host.replaceChildren();
+
+    const li = document.createElement('li');
+
+    const text = document.createElement('span');
+    text.className = 'question-text';
+    const name = document.createElement('strong');
+    name.textContent = question.label;
+    text.append(
+      name,
+      document.createTextNode(
+        question.count === 1
+          ? ' — is this one of your…'
+          : ` — are these ${question.count} files…`),
+    );
+
+    const options = document.createElement('span');
+    options.className = 'question-options';
+    for (const kind of question.options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = LIBRARY_NAMES[kind] || kind;
+      button.addEventListener('click', () => { host.replaceChildren(); resolve(kind); });
+      options.append(button);
+    }
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'ghost';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => { host.replaceChildren(); resolve(null); });
+    options.append(cancel);
+
+    li.append(text, options);
+    host.append(li);
+  });
+}
+
+// sendFiles uploads everything the final plan accepted.
+async function sendFiles(plan, dropped) {
+  $('intake-list').replaceChildren();
+
   const queue = [];
   plan.forEach((placement, index) => {
     renderIntakeRow(placement);
-    if (!placement.skipped) queue.push({ ...placement, file: dropped[index].file });
+    if (!placement.skipped && !placement.waiting) {
+      queue.push({ ...placement, file: dropped[index].file });
+    }
   });
 
   if (!queue.length) {
@@ -1435,7 +1469,10 @@ function markIntakeRow(path, result) {
   dest.textContent = result.error;
 }
 
-$('intake-close').addEventListener('click', () => show($('intake'), false));
+$('intake-close').addEventListener('click', () => {
+  show($('intake'), false);
+  $('intake-questions').replaceChildren();
+});
 
 /* ------------------------------------------------------------------- boot */
 

@@ -24,6 +24,13 @@ import (
 // item - a folder and everything under it - rather than file by file, and
 // files that cannot name a shelf themselves inherit one.
 //
+// And some things genuinely cannot be worked out, in which case the answer is
+// to ask rather than to guess. An .mp3 is a song or a chapter of an audiobook
+// and nothing in the file says which; a folder of six .mkv files with no
+// episode numbering is a boxed set or a series. Asking costs one click and
+// being wrong costs somebody going and moving files on disk, so the bar for
+// guessing is "there is real evidence", not "one of them is more likely".
+//
 // The path a browser gives us is attacker-controlled. Every segment is
 // sanitised and the result is checked to still be inside the folder it claims
 // to be in, which is a thing worth doing twice.
@@ -56,6 +63,22 @@ var unambiguousAudiobook = map[string]bool{
 	".m4b": true, ".aax": true, ".aaxc": true,
 }
 
+// ambiguousAudio is the short list worth asking about.
+//
+// Only mp3, and that is the point of the list existing: flac, wav, aiff and
+// alac are music in practice, m4a is music because audiobooks in that family
+// use m4b, and asking about all of them would turn every album drop into a
+// question. Mp3 really is both - every LibriVox recording is one.
+var ambiguousAudio = map[string]bool{".mp3": true}
+
+// ambiguousVideoCount is how many video files in one dropped folder stop
+// looking like a film.
+//
+// One or two .mkv files with no episode numbering is a film and perhaps its
+// extras. Six is a series somebody named badly, and putting six episodes in
+// the film library is worth one question.
+const ambiguousVideoCount = 3
+
 var (
 	// episodePattern is how television is named, in the two forms people
 	// actually use.
@@ -77,6 +100,11 @@ type Placement struct {
 	// decision to the file it holds.
 	Path string `json:"path"`
 
+	// Group is the dropped item this file came in - a folder name, or the file
+	// itself. Everything sharing a group shares a shelf, and a question is
+	// asked about a group rather than about each of its files.
+	Group string `json:"group,omitempty"`
+
 	// Kind is the shelf. Empty when nothing will be done with this file.
 	Kind media.Kind `json:"kind,omitempty"`
 
@@ -87,14 +115,33 @@ type Placement struct {
 	// Skipped and Reason explain a file SoundStorm will not take.
 	Skipped bool   `json:"skipped,omitempty"`
 	Reason  string `json:"reason,omitempty"`
+
+	// Waiting marks a file whose group has a question outstanding. It is not
+	// skipped and not placed; it is waiting for an answer.
+	Waiting bool `json:"waiting,omitempty"`
+}
+
+// Question is a group SoundStorm will not guess about.
+type Question struct {
+	Group string `json:"group"`
+
+	// Label is what to put in front of the choice: the folder or file name,
+	// which is the thing the person just dragged and will recognise.
+	Label string `json:"label"`
+
+	// Count is how many files hang on the answer, so a question can say
+	// "these 30 files" rather than asking thirty times.
+	Count int `json:"count"`
+
+	Options []media.Kind `json:"options"`
 }
 
 // Plan decides where a set of dropped paths should go.
 //
-// forced names a shelf chosen by the person dropping - they dragged onto
-// "Audiobooks" rather than onto the window - in which case nothing is guessed
-// and only unusable files are skipped. An empty forced means work it out.
-func (l *Library) Plan(paths []string, forced media.Kind) []Placement {
+// choices answers questions a previous Plan asked, keyed by group. A group
+// with no answer and no way to work one out comes back as a Question and its
+// files come back waiting.
+func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placement, []Question) {
 	if len(paths) > maxFiles {
 		paths = paths[:maxFiles]
 	}
@@ -111,7 +158,8 @@ func (l *Library) Plan(paths []string, forced media.Kind) []Placement {
 		cleaned[i] = rel
 		// The group is the top-level thing that was dropped: a folder and
 		// everything under it, or a loose file on its own. Deciding one shelf
-		// per group is what keeps a subtitle with its film.
+		// per group is what keeps a subtitle with its film - and what makes a
+		// thirty-chapter audiobook one question instead of thirty.
 		key := rel
 		if idx := strings.Index(rel, "/"); idx >= 0 {
 			key = rel[:idx]
@@ -131,12 +179,31 @@ func (l *Library) Plan(paths []string, forced media.Kind) []Placement {
 		}
 	}
 
+	var questions []Question
 	for _, key := range order {
 		members := groups[key]
 
-		kind := forced
-		if kind == "" {
-			kind = kindForGroup(cleaned, members)
+		kind, options := decideGroup(cleaned, members)
+		if answer, ok := choices[key]; ok && permitted(answer, options, kind) {
+			kind, options = answer, nil
+		}
+
+		if len(options) > 1 {
+			// Only the files that would actually go somewhere are worth
+			// counting in the question; the .exe in the folder is skipped
+			// either way.
+			var waiting int
+			for _, i := range members {
+				if usable(cleaned[i]) {
+					waiting++
+				}
+			}
+			questions = append(questions, Question{
+				Group:   key,
+				Label:   key,
+				Count:   waiting,
+				Options: options,
+			})
 		}
 
 		for _, i := range members {
@@ -144,90 +211,127 @@ func (l *Library) Plan(paths []string, forced media.Kind) []Placement {
 			ext := strings.ToLower(path.Ext(rel))
 
 			switch {
+			case !usable(rel):
+				out[i] = Placement{
+					Path:    paths[i],
+					Group:   key,
+					Skipped: true,
+					Reason:  "SoundStorm does not know what " + ext + " files are",
+				}
+			case len(options) > 1:
+				out[i] = Placement{Path: paths[i], Group: key, Waiting: true}
 			case kind == "":
 				out[i] = Placement{
 					Path:    paths[i],
+					Group:   key,
 					Skipped: true,
-					Reason:  "SoundStorm does not know what " + ext + " files are",
-				}
-			case !knownExtension(ext) && !companionExtensions[ext]:
-				// Inside a folder that is going somewhere, an unrecognised file
-				// is still skipped: a 4GB .iso next to an album is not part of
-				// the album.
-				out[i] = Placement{
-					Path:    paths[i],
-					Skipped: true,
-					Reason:  "SoundStorm does not know what " + ext + " files are",
+					Reason:  "nothing here says which library this belongs in",
 				}
 			default:
 				out[i] = Placement{
-					Path: paths[i],
-					Kind: kind,
-					Dest: folderName(kind) + "/" + rel,
+					Path:  paths[i],
+					Group: key,
+					Kind:  kind,
+					Dest:  folderName(kind) + "/" + rel,
 				}
 			}
 		}
 	}
-	return out
+	return out, questions
 }
 
-// kindForGroup picks one shelf for everything dropped together.
-//
-// The first file that can name a shelf wins, and files that cannot - subtitles,
-// artwork - do not get a vote. A folder of nothing but companions names no
-// shelf and is skipped entirely, which is right: a lone subtitle has no home.
-func kindForGroup(cleaned []string, members []int) media.Kind {
-	for _, i := range members {
-		if k, ok := kindForPath(cleaned[i]); ok {
-			return k
+// usable reports whether a file is something SoundStorm would ever store.
+func usable(rel string) bool {
+	ext := strings.ToLower(path.Ext(rel))
+	return knownExtension(ext) || companionExtensions[ext]
+}
+
+// permitted checks an answer against what was actually asked, so a client
+// cannot send a group to a shelf the question never offered.
+func permitted(answer media.Kind, options []media.Kind, current media.Kind) bool {
+	if len(options) == 0 {
+		// Nothing was asked; an answer is only meaningful if it changes a
+		// group that had no shelf of its own.
+		return current == ""
+	}
+	for _, o := range options {
+		if o == answer {
+			return true
 		}
 	}
-	return ""
+	return false
 }
 
-// kindForPath decides a shelf from one path.
-func kindForPath(rel string) (media.Kind, bool) {
-	ext := strings.ToLower(path.Ext(rel))
-	if ext == "" || companionExtensions[ext] {
-		return "", false
-	}
+// decideGroup works out one shelf for everything dropped together, or returns
+// the choices worth offering when it genuinely cannot.
+func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
+	var (
+		videoFiles int
+		hasVideo   bool
+		hasAudio   bool
+		hasMP3     bool
+		episodes   bool
+	)
 
-	if mediaExtensions[media.KindEbook][ext] {
-		return media.KindEbook, true
-	}
-	if unambiguousAudiobook[ext] {
-		return media.KindAudiobook, true
-	}
+	for _, i := range members {
+		rel := cleaned[i]
+		ext := strings.ToLower(path.Ext(rel))
+		if ext == "" || companionExtensions[ext] {
+			continue
+		}
 
-	if mediaExtensions[media.KindVideo][ext] {
-		// Films and episodes share every container, so the name is the only
-		// evidence there is. A season folder counts as much as the file name:
-		// "Severance/Season 01/pilot.mkv" says television without S01E01 in it.
-		for _, segment := range strings.Split(rel, "/") {
-			if seasonFolder.MatchString(segment) {
-				return media.KindTV, true
+		// The decisive ones answer outright and stop the walk.
+		if mediaExtensions[media.KindEbook][ext] {
+			return media.KindEbook, nil
+		}
+		if unambiguousAudiobook[ext] {
+			return media.KindAudiobook, nil
+		}
+		if mentionsAudiobooks(rel) && (mediaExtensions[media.KindMusic][ext] ||
+			mediaExtensions[media.KindAudiobook][ext]) {
+			return media.KindAudiobook, nil
+		}
+
+		if mediaExtensions[media.KindVideo][ext] {
+			hasVideo = true
+			videoFiles++
+			if looksLikeEpisode(rel) {
+				episodes = true
+			}
+			continue
+		}
+		if mediaExtensions[media.KindMusic][ext] || mediaExtensions[media.KindAudiobook][ext] {
+			hasAudio = true
+			if ambiguousAudio[ext] {
+				hasMP3 = true
 			}
 		}
-		if episodePattern.MatchString(rel) {
-			return media.KindTV, true
-		}
-		return media.KindVideo, true
 	}
 
-	if mediaExtensions[media.KindMusic][ext] {
-		// An mp3 is a song or a chapter of a book and nothing in the file says
-		// which. Music is the common case, so it is the default; a folder that
-		// says otherwise is believed, and anybody who disagrees can drop onto
-		// the Audiobooks shelf instead of onto the window.
-		if mentionsAudiobooks(rel) {
-			return media.KindAudiobook, true
+	switch {
+	case hasVideo && episodes:
+		return media.KindTV, nil
+	case hasVideo && videoFiles >= ambiguousVideoCount:
+		return "", []media.Kind{media.KindVideo, media.KindTV}
+	case hasVideo:
+		return media.KindVideo, nil
+	case hasAudio && hasMP3:
+		return "", []media.Kind{media.KindMusic, media.KindAudiobook}
+	case hasAudio:
+		// flac, wav, m4a and the rest are music in practice.
+		return media.KindMusic, nil
+	}
+	return "", nil
+}
+
+// looksLikeEpisode reports whether a path names television.
+func looksLikeEpisode(rel string) bool {
+	for _, segment := range strings.Split(rel, "/") {
+		if seasonFolder.MatchString(segment) {
+			return true
 		}
-		return media.KindMusic, true
 	}
-	if mediaExtensions[media.KindAudiobook][ext] {
-		return media.KindAudiobook, true
-	}
-	return "", false
+	return episodePattern.MatchString(rel)
 }
 
 func mentionsAudiobooks(rel string) bool {

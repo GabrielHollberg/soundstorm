@@ -328,31 +328,31 @@ header {
 }
 .drop-inner h2 { margin: 0 0 6px; font-size: 22px; }
 .drop-inner p { margin: 0 auto; max-width: 46ch; }
+.drop-inner { pointer-events: none; }
 
-.drop-shelves {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+/* Questions -------------------------------------------------------------- */
+
+#intake-questions {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
   gap: 10px;
-  margin-top: 22px;
 }
-.drop-shelf {
-  pointer-events: auto;
-  min-width: 118px;
-  padding: 16px 14px;
-  border: 1px solid var(--border);
+#intake-questions li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-dim);
   border-radius: var(--radius);
-  background: var(--surface-2);
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.drop-shelf .shelf-glyph { display: block; font-size: 20px; margin-bottom: 6px; opacity: 0.6; }
-.drop-shelf.over {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-  color: var(--text);
-}
+.question-text { flex: 1; min-width: 220px; font-size: 14px; }
+.question-text strong { font-weight: 600; }
+.question-options { display: flex; gap: 8px; flex-wrap: wrap; }
+.question-options button { padding: 7px 14px; font-size: 13.5px; }
 
 /* Intake report ---------------------------------------------------------- */
 

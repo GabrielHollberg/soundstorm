@@ -12,15 +12,31 @@ import (
 
 type placement struct {
 	Path    string `json:"path"`
+	Group   string `json:"group"`
 	Kind    string `json:"kind"`
 	Dest    string `json:"dest"`
 	Skipped bool   `json:"skipped"`
+	Waiting bool   `json:"waiting"`
 	Reason  string `json:"reason"`
 }
 
-func (h *harness) plan(t *testing.T, kind string, paths ...string) []placement {
+type question struct {
+	Group   string   `json:"group"`
+	Label   string   `json:"label"`
+	Count   int      `json:"count"`
+	Options []string `json:"options"`
+}
+
+type planResult struct {
+	Files     []placement `json:"files"`
+	Questions []question  `json:"questions"`
+	Accepted  int         `json:"accepted"`
+	Waiting   int         `json:"waiting"`
+}
+
+func (h *harness) planWith(t *testing.T, choices map[string]string, paths ...string) planResult {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{"paths": paths, "kind": kind})
+	body, err := json.Marshal(map[string]any{"paths": paths, "choices": choices})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,13 +44,16 @@ func (h *harness) plan(t *testing.T, kind string, paths ...string) []placement {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("plan: %d %s", resp.StatusCode, out)
 	}
-	var decoded struct {
-		Files []placement `json:"files"`
-	}
+	var decoded planResult
 	if err := json.Unmarshal(out, &decoded); err != nil {
 		t.Fatalf("decode plan: %v", err)
 	}
-	return decoded.Files
+	return decoded
+}
+
+func (h *harness) plan(t *testing.T, paths ...string) []placement {
+	t.Helper()
+	return h.planWith(t, nil, paths...).Files
 }
 
 func (h *harness) upload(t *testing.T, kind, path, content string) (*http.Response, []byte) {
@@ -50,7 +69,7 @@ func TestDroppingAFolderPlansAndUploadsIt(t *testing.T) {
 	h := newHarness(t)
 	h.signUp(t)
 
-	files := h.plan(t, "",
+	files := h.plan(t,
 		"Arrival (2016)/Arrival (2016).mkv",
 		"Arrival (2016)/Arrival (2016).en.srt",
 		"Arrival (2016)/readme.exe",
@@ -86,25 +105,69 @@ func TestDroppingAFolderPlansAndUploadsIt(t *testing.T) {
 	}
 }
 
-// Dropping onto a shelf settles the cases nothing in the file can settle.
-func TestDroppingOntoAShelfOverridesTheGuess(t *testing.T) {
+// The whole shape of the feature: when it cannot tell, it asks, and the answer
+// settles the group.
+func TestWhatItCannotSortItAsksAbout(t *testing.T) {
 	h := newHarness(t)
 	h.signUp(t)
 
-	if got := h.plan(t, "", "chapter01.mp3")[0]; got.Kind != "music" {
-		t.Errorf("an mp3 dropped on the window went to %q", got.Kind)
+	first := h.planWith(t, nil, "Esopo/one.mp3", "Esopo/two.mp3")
+	if len(first.Questions) != 1 {
+		t.Fatalf("questions = %+v, want one", first.Questions)
 	}
-	got := h.plan(t, "audiobook", "chapter01.mp3")[0]
-	if got.Dest != "audiobooks/chapter01.mp3" {
-		t.Errorf("an mp3 dropped on Audiobooks went to %q", got.Dest)
+	q := first.Questions[0]
+	if q.Label != "Esopo" || q.Count != 2 {
+		t.Errorf("question = %+v", q)
+	}
+	if strings.Join(q.Options, ",") != "music,audiobook" {
+		t.Errorf("options = %v", q.Options)
+	}
+	if first.Accepted != 0 || first.Waiting != 2 {
+		t.Errorf("accepted %d, waiting %d", first.Accepted, first.Waiting)
+	}
+	for _, f := range first.Files {
+		if !f.Waiting {
+			t.Errorf("%s was not waiting: %+v", f.Path, f)
+		}
 	}
 
-	resp, out := h.upload(t, "audiobook", "chapter01.mp3", "listen")
+	answered := h.planWith(t, map[string]string{"Esopo": "audiobook"},
+		"Esopo/one.mp3", "Esopo/two.mp3")
+	if len(answered.Questions) != 0 {
+		t.Fatalf("still asking: %+v", answered.Questions)
+	}
+	if answered.Files[0].Dest != "audiobooks/Esopo/one.mp3" {
+		t.Errorf("after answering: %q", answered.Files[0].Dest)
+	}
+
+	resp, out := h.upload(t, "audiobook", "Esopo/one.mp3", "listen")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("upload: %d %s", resp.StatusCode, out)
 	}
-	if _, err := os.Stat(filepath.Join(h.libraryRoot(t), "audiobooks", "chapter01.mp3")); err != nil {
+	if _, err := os.Stat(filepath.Join(h.libraryRoot(t), "audiobooks", "Esopo", "one.mp3")); err != nil {
 		t.Errorf("not where it was asked to go: %v", err)
+	}
+}
+
+// A question that offers a library somebody does not have is not a question
+// they can answer. With one option left there is nothing to ask.
+func TestAQuestionOnlyOffersLibrariesYouHave(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	id := h.addMember(t, "sam", samPassword)
+	h.setLibraries(t, id, `{"libraries":["music","ebook"]}`)
+	sam := h.asUser(t, "sam", samPassword)
+
+	got := sam.planWith(t, nil, "Esopo/one.mp3")
+	if len(got.Questions) != 0 {
+		t.Errorf("asked music-or-audiobook of somebody without audiobooks: %+v", got.Questions)
+	}
+
+	// And an answer naming a library they do not have is refused outright.
+	resp, _ := sam.do(t, http.MethodPost, "/api/upload/plan",
+		`{"paths":["Esopo/one.mp3"],"choices":{"Esopo":"audiobook"}}`)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", resp.StatusCode)
 	}
 }
 
@@ -118,7 +181,7 @@ func TestARestrictedAccountCannotUploadToAForbiddenShelf(t *testing.T) {
 	sam := h.asUser(t, "sam", samPassword)
 
 	// Dropped on the window: the film is planned, then refused for them.
-	got := sam.plan(t, "", "Arrival (2016).mkv")[0]
+	got := sam.plan(t, "Arrival (2016).mkv")[0]
 	if !got.Skipped {
 		t.Errorf("a film was planned into %q for an account without films", got.Dest)
 	}
@@ -126,15 +189,8 @@ func TestARestrictedAccountCannotUploadToAForbiddenShelf(t *testing.T) {
 		t.Errorf("reason = %q", got.Reason)
 	}
 
-	// Dropped straight onto the Films shelf: refused outright.
-	resp, _ := sam.do(t, http.MethodPost, "/api/upload/plan",
-		`{"paths":["Arrival (2016).mkv"],"kind":"video"}`)
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("plan onto a forbidden shelf = %d, want 403", resp.StatusCode)
-	}
-
 	// And the upload itself, which is the one that actually moves bytes.
-	resp, _ = sam.upload(t, "video", "Arrival (2016).mkv", "a film")
+	resp, _ := sam.upload(t, "video", "Arrival (2016).mkv", "a film")
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("upload to a forbidden shelf = %d, want 403", resp.StatusCode)
 	}
@@ -212,7 +268,7 @@ func TestPlanningWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.signUp(t)
 
-	h.plan(t, "", "Arrival (2016).mkv", "song.mp3", "book.epub")
+	h.plan(t, "Arrival (2016).mkv", "song.flac", "book.epub")
 
 	var files int
 	_ = filepath.Walk(h.libraryRoot(t), func(_ string, info os.FileInfo, err error) error {

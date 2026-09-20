@@ -1,6 +1,7 @@
 package library
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -21,9 +22,16 @@ func newLibrary(t *testing.T) *Library {
 	return l
 }
 
-// plan is the common case: nothing forced, work it out.
+// plan is the common case: work it out, nothing answered.
 func plan(l *Library, paths ...string) []Placement {
-	return l.Plan(paths, "")
+	placements, _ := l.Plan(paths, nil)
+	return placements
+}
+
+// ask returns the questions a drop raises.
+func ask(l *Library, paths ...string) []Question {
+	_, questions := l.Plan(paths, nil)
+	return questions
 }
 
 func TestFilesGoToTheShelfTheirNameImplies(t *testing.T) {
@@ -71,11 +79,11 @@ func TestASeasonFolderMakesItTelevision(t *testing.T) {
 // is invisible.
 func TestSidecarsFollowTheirMedia(t *testing.T) {
 	l := newLibrary(t)
-	got := l.Plan([]string{
+	got := plan(l,
 		"Arrival (2016)/Arrival (2016).mkv",
 		"Arrival (2016)/Arrival (2016).en.srt",
 		"Arrival (2016)/poster.jpg",
-	}, "")
+	)
 
 	for _, p := range got {
 		if p.Skipped {
@@ -102,12 +110,12 @@ func TestALoneSubtitleIsSkipped(t *testing.T) {
 // together would put one of them in the wrong place.
 func TestEachDroppedItemIsDecidedSeparately(t *testing.T) {
 	l := newLibrary(t)
-	got := l.Plan([]string{
+	got := plan(l,
 		"Laughing Stock/01 Myrrhman.flac",
 		"Laughing Stock/cover.jpg",
 		"Arrival (2016)/Arrival (2016).mkv",
 		"Arrival (2016)/Arrival (2016).srt",
-	}, "")
+	)
 
 	want := []string{
 		"music/Laughing Stock/01 Myrrhman.flac",
@@ -122,31 +130,139 @@ func TestEachDroppedItemIsDecidedSeparately(t *testing.T) {
 	}
 }
 
-// An mp3 is a song or a chapter of a book and nothing in the file says which.
-// Music is the default; a folder that says otherwise is believed; and dropping
-// onto a shelf settles it outright.
-func TestAmbiguousAudioDefaultsToMusicAndCanBeOverridden(t *testing.T) {
+// An mp3 is a song or a chapter of a book and nothing in the file says which,
+// so it is asked about rather than guessed at. Being wrong costs somebody
+// moving files on disk; asking costs one click.
+func TestAnMP3IsAskedAbout(t *testing.T) {
 	l := newLibrary(t)
 
-	if got := plan(l, "track.mp3")[0]; got.Kind != media.KindMusic {
-		t.Errorf("a loose mp3 went to %q", got.Kind)
+	questions := ask(l, "chapter01.mp3")
+	if len(questions) != 1 {
+		t.Fatalf("questions = %+v, want one", questions)
 	}
-	if got := plan(l, "Audiobooks/James Allen/chapter01.mp3")[0]; got.Kind != media.KindAudiobook {
-		t.Errorf("an mp3 under a folder saying audiobooks went to %q", got.Kind)
+	if len(questions[0].Options) != 2 {
+		t.Errorf("options = %v", questions[0].Options)
 	}
 
-	forced := l.Plan([]string{"chapter01.mp3"}, media.KindAudiobook)[0]
-	if forced.Dest != "audiobooks/chapter01.mp3" {
-		t.Errorf("dropping onto a shelf gave %s", forced.Dest)
+	placements, _ := l.Plan([]string{"chapter01.mp3"}, nil)
+	if !placements[0].Waiting {
+		t.Errorf("the file was placed at %q instead of waiting", placements[0].Dest)
+	}
+	if placements[0].Skipped {
+		t.Error("an mp3 was skipped rather than asked about")
 	}
 }
 
-// Choosing a shelf does not mean anything at all is accepted into it.
-func TestAChosenShelfStillRefusesRubbish(t *testing.T) {
+// One question per dropped item, not per file. A thirty chapter audiobook is
+// one decision.
+func TestAThirtyPartBookIsOneQuestion(t *testing.T) {
 	l := newLibrary(t)
-	got := l.Plan([]string{"installer.exe"}, media.KindMusic)[0]
-	if !got.Skipped {
-		t.Errorf("an .exe was accepted into %s", got.Dest)
+
+	var paths []string
+	for i := 1; i <= 30; i++ {
+		paths = append(paths, fmt.Sprintf("Fabulas de Esopo/fabula_%02d.mp3", i))
+	}
+	questions := ask(l, paths...)
+	if len(questions) != 1 {
+		t.Fatalf("asked %d questions about one folder", len(questions))
+	}
+	if questions[0].Count != 30 {
+		t.Errorf("the question covers %d files, want 30", questions[0].Count)
+	}
+	if questions[0].Label != "Fabulas de Esopo" {
+		t.Errorf("label = %q; it should name what was dragged", questions[0].Label)
+	}
+}
+
+// Answering settles the whole group.
+func TestAnAnswerPlacesTheWholeGroup(t *testing.T) {
+	l := newLibrary(t)
+	paths := []string{"Esopo/one.mp3", "Esopo/two.mp3", "Esopo/cover.jpg"}
+
+	placements, questions := l.Plan(paths, map[string]media.Kind{"Esopo": media.KindAudiobook})
+	if len(questions) != 0 {
+		t.Fatalf("still asking after an answer: %+v", questions)
+	}
+	for i, p := range placements {
+		if p.Skipped || p.Waiting {
+			t.Errorf("%s was not placed: %+v", paths[i], p)
+			continue
+		}
+		if !strings.HasPrefix(p.Dest, "audiobooks/Esopo/") {
+			t.Errorf("%s -> %s", paths[i], p.Dest)
+		}
+	}
+}
+
+// A client must not be able to send a group somewhere the question never
+// offered, or the choice is decoration.
+func TestAnAnswerOutsideTheOptionsIsIgnored(t *testing.T) {
+	l := newLibrary(t)
+	_, questions := l.Plan([]string{"track.mp3"}, map[string]media.Kind{"track.mp3": media.KindVideo})
+	if len(questions) != 1 {
+		t.Errorf("an answer of \"video\" to a music-or-audiobook question was accepted")
+	}
+}
+
+// Most audio is not ambiguous at all, and asking about every album drop would
+// be worse than the occasional wrong guess.
+func TestUnambiguousAudioIsNotAskedAbout(t *testing.T) {
+	l := newLibrary(t)
+	for _, name := range []string{"song.flac", "song.wav", "song.m4a", "song.aiff"} {
+		if got := ask(l, name); len(got) != 0 {
+			t.Errorf("%s raised a question", name)
+		}
+		if got := plan(l, name)[0]; got.Kind != media.KindMusic {
+			t.Errorf("%s -> %q", name, got.Kind)
+		}
+	}
+	// And the containers only audiobooks use stay decisive.
+	if got := plan(l, "book.m4b")[0]; got.Kind != media.KindAudiobook {
+		t.Errorf("m4b -> %q", got.Kind)
+	}
+	// A path that says audiobooks is believed without asking.
+	if got := ask(l, "Audiobooks/James Allen/chapter01.mp3"); len(got) != 0 {
+		t.Errorf("a folder saying audiobooks still raised a question: %+v", got)
+	}
+}
+
+// A single film is a film. A folder of six videos with no episode numbering is
+// a series somebody named badly, and six episodes in the film library is worth
+// one question.
+func TestAPileOfVideosIsAskedAbout(t *testing.T) {
+	l := newLibrary(t)
+
+	if got := ask(l, "Arrival (2016)/Arrival (2016).mkv"); len(got) != 0 {
+		t.Errorf("one film raised a question: %+v", got)
+	}
+	if got := ask(l, "Boxset/a.mkv", "Boxset/b.mkv"); len(got) != 0 {
+		t.Errorf("two films raised a question: %+v", got)
+	}
+
+	got := ask(l, "Show/a.mkv", "Show/b.mkv", "Show/c.mkv", "Show/d.mkv")
+	if len(got) != 1 {
+		t.Fatalf("four unnumbered videos raised %d questions", len(got))
+	}
+	if len(got[0].Options) != 2 {
+		t.Errorf("options = %v, want films or tv", got[0].Options)
+	}
+
+	// Numbered episodes need no question at all.
+	if got := ask(l, "Show/S01E01.mkv", "Show/S01E02.mkv", "Show/S01E03.mkv"); len(got) != 0 {
+		t.Errorf("numbered episodes raised a question: %+v", got)
+	}
+}
+
+// Answering a question does not mean anything at all is accepted into it.
+func TestAnAnsweredGroupStillRefusesRubbish(t *testing.T) {
+	l := newLibrary(t)
+	placements, _ := l.Plan([]string{"Esopo/one.mp3", "Esopo/installer.exe"},
+		map[string]media.Kind{"Esopo": media.KindAudiobook})
+	if placements[1].Skipped != true {
+		t.Errorf("an .exe was accepted into %s", placements[1].Dest)
+	}
+	if placements[0].Skipped {
+		t.Error("the mp3 beside it was refused too")
 	}
 }
 
@@ -195,21 +311,23 @@ func TestPathsCannotEscapeTheLibrary(t *testing.T) {
 func TestAwkwardNamesAreNormalisedOrRefused(t *testing.T) {
 	l := newLibrary(t)
 
-	got := plan(l, "  spaced out .mp3  ")[0]
+	// A flac rather than an mp3: this is about the name, and an mp3 would be
+	// waiting on a question rather than placed.
+	got := plan(l, "  spaced out .flac  ")[0]
 	if got.Skipped {
 		t.Fatalf("a harmlessly spaced name was refused: %s", got.Reason)
 	}
-	if got.Dest != "music/spaced out .mp3" {
+	if got.Dest != "music/spaced out .flac" {
 		t.Errorf("dest = %q", got.Dest)
 	}
 
-	if got := plan(l, "CON.mp3")[0]; !got.Skipped {
+	if got := plan(l, "CON.flac")[0]; !got.Skipped {
 		t.Errorf("a reserved Windows name was accepted as %q", got.Dest)
 	}
-	if got := plan(l, strings.Repeat("a", 300)+".mp3")[0]; !got.Skipped {
+	if got := plan(l, strings.Repeat("a", 300)+".flac")[0]; !got.Skipped {
 		t.Error("an absurdly long name was accepted")
 	}
-	if got := plan(l, "a/b/c/d/e/f/g/h/i/j/deep.mp3")[0]; !got.Skipped {
+	if got := plan(l, "a/b/c/d/e/f/g/h/i/j/deep.flac")[0]; !got.Skipped {
 		t.Error("an absurdly deep path was accepted")
 	}
 }

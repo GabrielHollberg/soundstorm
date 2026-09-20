@@ -578,17 +578,17 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 // characters is a fifth of this, and past that the browser gave up first.
 const maxPlanBody = 4 << 20
 
-// handleUploadPlan says where a set of dropped files would go.
+// handleUploadPlan says where a set of dropped files would go, and asks about
+// the ones it will not guess at.
 //
 // Nothing is written. This exists so somebody dropping a folder finds out what
-// SoundStorm made of it - which shelf, what it is skipping and why - before any
-// bytes move, and so that a mistake costs a glance rather than an upload.
+// SoundStorm made of it - which shelf, what it is skipping, and what it needs
+// told - before any bytes move.
 func (s *Server) handleUploadPlan(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Paths []string `json:"paths"`
-		// Kind is set when somebody dropped onto a particular shelf rather
-		// than onto the window. Then nothing is guessed.
-		Kind string `json:"kind"`
+		// Choices answer questions a previous plan asked, keyed by group.
+		Choices map[string]string `json:"choices"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxPlanBody))
 	if err := dec.Decode(&body); err != nil {
@@ -600,38 +600,77 @@ func (s *Server) handleUploadPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	forced, err := s.uploadKind(r, body.Kind)
-	if err != nil {
-		writeError(w, statusForUpload(err), err.Error())
-		return
+	access := source.AccessFrom(r.Context())
+
+	choices := make(map[string]media.Kind, len(body.Choices))
+	for group, name := range body.Choices {
+		kind, ok := media.ParseKind(name)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "there is no library called "+strconv.Quote(name))
+			return
+		}
+		if !access.Permits(kind) {
+			writeError(w, http.StatusForbidden, "you do not have the "+name+" library")
+			return
+		}
+		choices[group] = kind
 	}
 
-	placements := s.library.Plan(body.Paths, forced)
+	placements, questions := s.library.Plan(body.Paths, choices)
 
 	// A shelf somebody may not see is not a shelf they may add to, and the
 	// automatic sorter has to be told so too - otherwise dropping a film on
 	// the window would be a way around a restriction.
-	access := source.AccessFrom(r.Context())
-	accepted := 0
+	accepted, waiting := 0, 0
 	for i, p := range placements {
-		if p.Skipped {
-			continue
-		}
-		if !access.Permits(p.Kind) {
+		switch {
+		case p.Skipped:
+		case p.Waiting:
+			waiting++
+		case !access.Permits(p.Kind):
 			placements[i] = library.Placement{
 				Path:    p.Path,
+				Group:   p.Group,
 				Skipped: true,
 				Reason:  "you do not have the " + string(p.Kind) + " library",
 			}
-			continue
+		default:
+			accepted++
 		}
-		accepted++
 	}
 
+	// And a question must not offer a shelf they cannot use. If that leaves
+	// one option it stops being a question and becomes the answer.
+	questions = narrowQuestions(questions, access)
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"files":    placements,
-		"accepted": accepted,
+		"files":     placements,
+		"questions": questions,
+		"accepted":  accepted,
+		"waiting":   waiting,
 	})
+}
+
+// narrowQuestions drops options an account may not use, and drops the question
+// entirely when nothing is left to choose between.
+func narrowQuestions(questions []library.Question, access source.Access) []library.Question {
+	out := make([]library.Question, 0, len(questions))
+	for _, q := range questions {
+		var options []media.Kind
+		for _, o := range q.Options {
+			if access.Permits(o) {
+				options = append(options, o)
+			}
+		}
+		if len(options) < 2 {
+			// One option is not a choice, and none means the files will be
+			// refused anyway - either way there is nothing to ask.
+			continue
+		}
+		q.Options = options
+		out = append(out, q)
+	}
+	return out
 }
 
 // handleUpload receives one file.
@@ -687,8 +726,8 @@ var (
 
 // uploadKind validates a requested shelf against what this account may see.
 //
-// An empty name is allowed and means "work it out", which the plan does and a
-// single upload does not.
+// An empty name is an error for an upload: by the time bytes are moving the
+// plan has already said where they go.
 func (s *Server) uploadKind(r *http.Request, name string) (media.Kind, error) {
 	if strings.TrimSpace(name) == "" {
 		return "", nil
