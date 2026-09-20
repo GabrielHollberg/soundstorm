@@ -610,24 +610,44 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
-/* Audio, and the chapters an audiobook is made of.
+/* Audio, the chapters an audiobook is made of, and where you left off.
  *
  * A LibriVox book is one MP3 per chapter - thirty of them for a volume of
  * Aesop - and a browser handed the first file plays it and goes quiet. So the
  * dock keeps a track list, advances through it, and offers it as a panel.
+ *
+ * Position is measured across the whole book rather than within a file,
+ * because that is the timeline the backend stores and its own apps read. A
+ * track's startSeconds converts between the two.
  */
 const audio = {
-  item: null,     // what is playing, and the guard for stale responses
-  tracks: [],     // empty for anything that is a single file
+  item: null,       // what is playing, and the guard for stale responses
+  tracks: [],       // empty for anything that is a single file
   index: 0,
+  resumable: false, // whether the backend will remember a position for this
+  duration: 0,      // the whole item's length, across every file
+  savedAt: 0,       // when a position was last sent
+  started: false,
 };
+
+// How often a position is sent while playing. Every timeupdate would be four
+// requests a second per listener; re-hearing a few seconds after a hard kill
+// is not worth that.
+const SAVE_EVERY_MS = 10000;
 
 function playAudio(item) {
   closeVideo();
+  // Whatever was playing is being abandoned; record where it got to before
+  // the state that describes it is overwritten.
+  savePosition();
 
   audio.item = item;
   audio.tracks = [];
   audio.index = 0;
+  audio.resumable = false;
+  audio.duration = item.durationSeconds || 0;
+  audio.savedAt = 0;
+  audio.started = false;
 
   $('audio-title').textContent = item.title;
   $('audio-sub').textContent = subtitleFor(item);
@@ -645,31 +665,87 @@ function playAudio(item) {
   renderTracks();
   show($('audio-dock'), true);
 
-  // Start immediately on the item's own stream url, which is the first file of
-  // however many there are. Waiting for the track list to arrive before making
-  // a sound would add a round trip to every song for the sake of the books.
-  const player = $('audio-player');
-  player.src = streamPath(item);
-  player.play().catch(() => {});
+  // A song starts now: a round trip before the first note is felt, and nothing
+  // about a four minute track needs the answer. An audiobook waits, because it
+  // may be resuming into chapter twelve, and starting chapter one first would
+  // play a second of the wrong thing before correcting itself.
+  if (item.kind !== 'audiobook') startAt(streamPath(item), 0);
 
-  loadTracks(item);
+  loadPlayback(item);
 }
 
-async function loadTracks(item) {
+async function loadPlayback(item) {
   const { ok, body } = await api(
     `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
 
   // Something else was started while this was in flight.
   if (audio.item !== item) return;
-  // Sent only for genuinely multi-file items, so anything else needs nothing.
-  if (!ok || !body || !Array.isArray(body.tracks) || body.tracks.length < 2) return;
 
-  audio.tracks = body.tracks;
-  // Track 0 is the same bytes the player is already playing, so it is marked
-  // as current rather than reloaded - reassigning src here would restart the
-  // audio a second after it began.
-  audio.index = 0;
-  renderTracks();
+  const info = (ok && body) || {};
+
+  // Sent only for genuinely multi-file items, so anything else needs nothing.
+  if (Array.isArray(info.tracks) && info.tracks.length > 1) {
+    audio.tracks = info.tracks;
+    const last = info.tracks[info.tracks.length - 1];
+    audio.duration = (last.startSeconds || 0) + (last.durationSeconds || 0);
+    renderTracks();
+  }
+
+  // The key being present is the capability: this source will remember a
+  // position, whether or not one has been recorded yet.
+  audio.resumable = Boolean(info.position);
+  if (info.position && info.position.duration > 0) audio.duration = info.position.duration;
+
+  if (!audio.started) {
+    // A book somebody finished starts again from the beginning rather than
+    // from its last second.
+    const resume = audio.resumable && !info.position.finished ? info.position.seconds : 0;
+    seekTo(resume, item);
+  }
+}
+
+// seekTo starts playing at a position on the whole item's timeline, picking
+// whichever file contains it.
+function seekTo(seconds, item) {
+  if (audio.tracks.length > 1) {
+    const index = trackContaining(seconds);
+    audio.index = index;
+    renderTracks();
+    startAt(audio.tracks[index].url, seconds - audio.tracks[index].startSeconds);
+    return;
+  }
+  startAt(streamPath(item), seconds);
+}
+
+function trackContaining(seconds) {
+  for (let i = audio.tracks.length - 1; i >= 0; i--) {
+    if (seconds >= audio.tracks[i].startSeconds) return i;
+  }
+  return 0;
+}
+
+// startAt loads a url and begins at an offset into it.
+//
+// currentTime cannot be set before the browser knows how long the file is, and
+// a media element silently ignores the assignment rather than queueing it.
+function startAt(url, offset) {
+  const player = $('audio-player');
+  audio.started = true;
+  // Start the clock now, or the first timeupdate is already older than the
+  // interval and every play begins by writing back the position it just read.
+  audio.savedAt = Date.now();
+  player.src = url;
+
+  const begin = () => player.play().catch(() => {});
+  if (offset > 0) {
+    player.addEventListener('loadedmetadata', () => {
+      // Landing exactly on the end would fire 'ended' and skip the chapter.
+      player.currentTime = Math.min(offset, Math.max(0, player.duration - 1));
+      begin();
+    }, { once: true });
+  } else {
+    begin();
+  }
 }
 
 function renderTracks() {
@@ -719,14 +795,15 @@ function renderTracks() {
   updateTrackCaption();
 }
 
-function selectTrack(index) {
+function selectTrack(index, offset = 0) {
   const track = audio.tracks[index];
   if (!track) return;
 
+  // Save where we were before leaving it, or skipping ahead loses the place.
+  if (audio.started) savePosition();
+
   audio.index = index;
-  const player = $('audio-player');
-  player.src = track.url;
-  player.play().catch(() => {});
+  startAt(track.url, offset);
   renderTracks();
 }
 
@@ -753,19 +830,81 @@ $('audio-tracks-toggle').addEventListener('click', () => {
   showTrackList($('audio-tracks').classList.contains('hidden'));
 });
 
-// The whole point: chapter 1 ending means chapter 2 starting, not silence.
-$('audio-player').addEventListener('ended', () => {
-  if (audio.index + 1 < audio.tracks.length) selectTrack(audio.index + 1);
+/* --------------------------------------------------------------- position */
+
+// elapsed is where we are on the whole item's timeline, which is what the
+// backend stores. Inside a file the player's own clock is the answer.
+function elapsed() {
+  const player = $('audio-player');
+  const offset = audio.tracks.length > 1 ? (audio.tracks[audio.index].startSeconds || 0) : 0;
+  return offset + (player.currentTime || 0);
+}
+
+// savePosition sends where we are, if there is anywhere to send it.
+//
+// keepalive, so the last save survives the page being closed - which is the
+// most important one of the session and exactly the one a normal fetch drops.
+function savePosition(options = {}) {
+  if (!audio.resumable || !audio.item || !audio.started) return;
+
+  const seconds = elapsed();
+  if (!Number.isFinite(seconds)) return;
+
+  audio.savedAt = Date.now();
+  const item = audio.item;
+  fetch(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      seconds,
+      duration: Number.isFinite(audio.duration) ? audio.duration : 0,
+      finished: Boolean(options.finished),
+    }),
+    keepalive: true,
+  }).catch(() => {
+    // Losing a position is not worth interrupting somebody's book over.
+  });
+}
+
+$('audio-player').addEventListener('timeupdate', () => {
+  if (Date.now() - audio.savedAt >= SAVE_EVERY_MS) savePosition();
 });
 
+// Pausing is the clearest "I am stopping here" a player ever gets.
+$('audio-player').addEventListener('pause', () => savePosition());
+
+// The whole point of a track list: chapter 1 ending means chapter 2 starting,
+// not silence.
+$('audio-player').addEventListener('ended', () => {
+  if (audio.index + 1 < audio.tracks.length) {
+    selectTrack(audio.index + 1);
+    return;
+  }
+  // The end of the last file is the end of the book.
+  savePosition({ finished: true });
+});
+
+// pagehide rather than unload: it is the one that fires on a phone when the
+// browser is backgrounded, which is how an audiobook session usually ends.
+window.addEventListener('pagehide', () => savePosition());
+
 function stopAudio() {
+  savePosition();
+
+  // Clear the state before touching the player, not after. load() resets
+  // currentTime to zero and pause() fires an event that saves again - so the
+  // position just recorded would be overwritten with the start of the file.
+  audio.item = null;
+  audio.tracks = [];
+  audio.index = 0;
+  audio.resumable = false;
+  audio.started = false;
+
   const player = $('audio-player');
   player.pause();
   player.removeAttribute('src');
   player.load();
-  audio.item = null;
-  audio.tracks = [];
-  audio.index = 0;
   showTrackList(false);
   renderTracks();
   show($('audio-dock'), false);

@@ -2,11 +2,14 @@ package audiobookshelf
 
 import (
 	"context"
+	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // LibriVox catalogue entries carry HTML entities in plain-text fields, and
@@ -217,5 +220,176 @@ func TestTracksSkipFilesWithNoHandle(t *testing.T) {
 	}
 	if tracks[1].ID != "bk1/333" {
 		t.Errorf("track 1 id = %q", tracks[1].ID)
+	}
+}
+
+// recorder answers /api/me/progress/{id} with status/body, and keeps whatever
+// was PATCHed so a test can read what actually went upstream.
+type recorder struct {
+	srv    *httptest.Server
+	sent   []map[string]any
+	status int
+	body   string
+}
+
+func newRecorder(t *testing.T, status int, body string) *recorder {
+	t.Helper()
+	rec := &recorder{status: status, body: body}
+	rec.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			rec.sent = append(rec.sent, payload)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`OK`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(rec.status)
+		_, _ = w.Write([]byte(rec.body))
+	}))
+	t.Cleanup(rec.srv.Close)
+	return rec
+}
+
+// Nobody having started a book is the normal case, not a failure, and it must
+// not look like one to a player deciding where to begin.
+func TestPositionOfAnUnstartedBookIsTheStart(t *testing.T) {
+	rec := newRecorder(t, http.StatusNotFound, `{"error":"no progress"}`)
+
+	pos, err := newTestSource(t, rec.srv.URL).Position(context.Background(), "bk1")
+	if err != nil {
+		t.Fatalf("Position: %v", err)
+	}
+	if pos.Seconds != 0 || pos.Finished {
+		t.Errorf("position = %+v, want the start", pos)
+	}
+}
+
+func TestPositionIsRead(t *testing.T) {
+	rec := newRecorder(t, http.StatusOK,
+		`{"currentTime":2500.5,"duration":4989.02,"progress":0.5,"isFinished":false}`)
+
+	pos, err := newTestSource(t, rec.srv.URL).Position(context.Background(), "bk1")
+	if err != nil {
+		t.Fatalf("Position: %v", err)
+	}
+	if pos.Seconds != 2500.5 || pos.Duration != 4989.02 {
+		t.Errorf("position = %+v", pos)
+	}
+}
+
+// Audiobookshelf 2.36.1 stores a progress record without validating it - a
+// PATCH carrying the string "x" as currentTime is accepted with a 200 - so a
+// record written by anything else can hold a value that is not a time.
+func TestPositionIgnoresAJunkRecord(t *testing.T) {
+	rec := newRecorder(t, http.StatusOK, `{"currentTime":"x","duration":4989}`)
+
+	pos, err := newTestSource(t, rec.srv.URL).Position(context.Background(), "bk1")
+	if err != nil {
+		t.Fatalf("Position: %v", err)
+	}
+	if pos.Seconds != 0 {
+		t.Errorf("seconds = %v, want the start", pos.Seconds)
+	}
+}
+
+// Audiobookshelf does not derive progress from currentTime: send one without
+// the other and its shelf and its "continue listening" row keep showing the
+// old percentage while the player resumes in the right place. Verified against
+// 2.36.1, where a PATCH of currentTime alone left progress untouched.
+func TestSetPositionSendsTheFractionItself(t *testing.T) {
+	rec := newRecorder(t, http.StatusOK, `{}`)
+
+	err := newTestSource(t, rec.srv.URL).SetPosition(context.Background(), "bk1",
+		source.Position{Seconds: 1200, Duration: 4800})
+	if err != nil {
+		t.Fatalf("SetPosition: %v", err)
+	}
+	if len(rec.sent) != 1 {
+		t.Fatalf("sent %d requests", len(rec.sent))
+	}
+	sent := rec.sent[0]
+	if sent["currentTime"] != float64(1200) {
+		t.Errorf("currentTime = %v", sent["currentTime"])
+	}
+	if sent["progress"] != 0.25 {
+		t.Errorf("progress = %v, want 0.25 computed here", sent["progress"])
+	}
+}
+
+// isFinished is one-way upstream. Sending false for a book already marked
+// finished does not just clear the flag - 2.36.1 resets currentTime and
+// progress to zero, which is what "mark as unfinished" means in its own UI. So
+// an ordinary save must not carry the flag at all, or scrubbing back after
+// reaching the end would throw the position away.
+func TestSetPositionNeverUnfinishesABook(t *testing.T) {
+	rec := newRecorder(t, http.StatusOK, `{}`)
+	s := newTestSource(t, rec.srv.URL)
+
+	if err := s.SetPosition(context.Background(), "bk1",
+		source.Position{Seconds: 1200, Duration: 4800}); err != nil {
+		t.Fatalf("SetPosition: %v", err)
+	}
+	if _, present := rec.sent[0]["isFinished"]; present {
+		t.Errorf("an ordinary save carried isFinished: %v", rec.sent[0])
+	}
+
+	if err := s.SetPosition(context.Background(), "bk1",
+		source.Position{Seconds: 4800, Duration: 4800, Finished: true}); err != nil {
+		t.Fatalf("SetPosition finished: %v", err)
+	}
+	if rec.sent[1]["isFinished"] != true {
+		t.Errorf("finishing did not say so: %v", rec.sent[1])
+	}
+}
+
+// A book whose length nobody knows can still have a position, and dividing by
+// it would send a NaN into a record Audiobookshelf's own apps read back.
+func TestSetPositionWithNoDurationSendsNoFraction(t *testing.T) {
+	rec := newRecorder(t, http.StatusOK, `{}`)
+
+	err := newTestSource(t, rec.srv.URL).SetPosition(context.Background(), "bk1",
+		source.Position{Seconds: 300})
+	if err != nil {
+		t.Fatalf("SetPosition: %v", err)
+	}
+	if _, present := rec.sent[0]["progress"]; present {
+		t.Errorf("sent a fraction of an unknown length: %v", rec.sent[0])
+	}
+}
+
+func TestSetPositionRefusesSomethingThatIsNotATime(t *testing.T) {
+	rec := newRecorder(t, http.StatusOK, `{}`)
+	s := newTestSource(t, rec.srv.URL)
+
+	for _, seconds := range []float64{math.NaN(), math.Inf(1), -5} {
+		if err := s.SetPosition(context.Background(), "bk1",
+			source.Position{Seconds: seconds, Duration: 4800}); err == nil {
+			t.Errorf("accepted %v as a position", seconds)
+		}
+	}
+	if len(rec.sent) != 0 {
+		t.Errorf("sent %d bad records upstream: %v", len(rec.sent), rec.sent)
+	}
+}
+
+// Position is measured across the whole book, so a track has to say where it
+// starts or "two hours in" cannot be turned into a file and an offset.
+func TestTracksCarryTheirOffsetIntoTheBook(t *testing.T) {
+	srv, _ := itemServer(t, `{"id":"bk1","media":{"audioFiles":[
+	  {"index":1,"ino":"111","duration":2206.5},
+	  {"index":2,"ino":"222","duration":1504.1},
+	  {"index":3,"ino":"333","duration":1278.4}]}}`)
+
+	tracks, err := newTestSource(t, srv.URL).Tracks(context.Background(), "bk1")
+	if err != nil {
+		t.Fatalf("Tracks: %v", err)
+	}
+	want := []float64{0, 2206.5, 3710.6}
+	for i, w := range want {
+		if math.Abs(tracks[i].StartSeconds-w) > 0.001 {
+			t.Errorf("track %d starts at %v, want %v", i, tracks[i].StartSeconds, w)
+		}
 	}
 }

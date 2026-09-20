@@ -15,6 +15,7 @@
 //	GET  /api/stream/{source}/{id}      media bytes, proxied
 //	GET  /api/art/{source}/{id}         artwork, proxied
 //	GET  /api/playback/{source}/{id}    how to play it: direct, HLS, or a track list
+//	PUT  /api/playback/{source}/{id}    where you are now, saved upstream
 //
 // Everything from /api/setup down requires a session.
 package httpapi
@@ -24,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -121,6 +123,9 @@ func (s *Server) Routes() http.Handler {
 	// instead of a file. /api/playback says which; /api/hls serves the
 	// playlist and its segments.
 	guarded.HandleFunc("GET /api/playback/{source}/{id...}", s.handlePlayback)
+	// The same resource the other way round: GET says how to play it and where
+	// you left off, PUT says where you are now.
+	guarded.HandleFunc("PUT /api/playback/{source}/{id...}", s.handleSetPosition)
 	guarded.HandleFunc("GET /api/hls/{source}/{path...}", s.handleHLS)
 	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)
 
@@ -376,7 +381,79 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Where they left off. The key being present is what tells a client this
+	// item is worth saving a position for at all - a four minute song is not,
+	// and a source with no backend to write it to could not anyway.
+	if tracker, ok := src.(source.PositionTracker); ok {
+		pos, err := tracker.Position(r.Context(), itemID)
+		if err != nil {
+			s.log.Warn("read position failed",
+				"source", sourceID, "item", itemID, "err", err)
+		}
+		// Reported even after a failure, and even at zero: losing a saved
+		// position is a small harm, but silently refusing to record new ones
+		// for the rest of the session is a larger one.
+		answer["position"] = pos
+	}
+
 	writeJSON(w, http.StatusOK, answer)
+}
+
+// handleSetPosition records how far into an item somebody got.
+//
+// It goes upstream rather than into SoundStorm's state. Audiobookshelf keeps
+// position per title and syncs it to its own apps, so a chapter finished in the
+// car is where a browser picks up. A private copy here would fork from the one
+// every other client reads.
+func (s *Server) handleSetPosition(w http.ResponseWriter, r *http.Request) {
+	sourceID, itemID := r.PathValue("source"), r.PathValue("id")
+	src, ok := s.reg.ByID(sourceID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown source "+strconv.Quote(sourceID))
+		return
+	}
+	tracker, ok := src.(source.PositionTracker)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "this source does not remember position")
+		return
+	}
+
+	var body struct {
+		Seconds  float64 `json:"seconds"`
+		Duration float64 `json:"duration"`
+		Finished bool    `json:"finished"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxProgressBody))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with seconds")
+		return
+	}
+	// Audiobookshelf stores what it is given without checking it, so a NaN from
+	// a confused player would land in a record its own apps then read back.
+	// Nothing leaves here that is not a time.
+	if !isTime(body.Seconds) || !isTime(body.Duration) {
+		writeError(w, http.StatusBadRequest, "seconds and duration must be positive numbers")
+		return
+	}
+
+	pos := source.Position{
+		Seconds:  body.Seconds,
+		Duration: body.Duration,
+		Finished: body.Finished,
+	}
+	if err := tracker.SetPosition(r.Context(), itemID, pos); err != nil {
+		s.log.Warn("save position failed",
+			"source", sourceID, "item", itemID, "err", err)
+		writeError(w, http.StatusBadGateway, "could not save your place")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"saved": true})
+}
+
+// isTime rejects anything a media element could not seek to. A JSON number is
+// never NaN, but "1e999" decodes to +Inf without complaint.
+func isTime(seconds float64) bool {
+	return !math.IsNaN(seconds) && !math.IsInf(seconds, 0) && seconds >= 0
 }
 
 // streamURL is where a client fetches an item's, or a track's, bytes.
@@ -404,8 +481,9 @@ func trackList(sourceID string, tracks []source.Track) []map[string]any {
 	out := make([]map[string]any, 0, len(tracks))
 	for _, t := range tracks {
 		entry := map[string]any{
-			"title": t.Title,
-			"url":   streamURL(sourceID, t.ID),
+			"title":        t.Title,
+			"url":          streamURL(sourceID, t.ID),
+			"startSeconds": t.StartSeconds,
 		}
 		if t.DurationSeconds > 0 {
 			entry["durationSeconds"] = t.DurationSeconds

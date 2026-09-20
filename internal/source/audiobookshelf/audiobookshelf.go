@@ -12,8 +12,12 @@ package audiobookshelf
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
+	"math"
+	"net/http"
 	"net/url"
 	"path"
 	"sort"
@@ -239,13 +243,19 @@ func (s *Source) Tracks(ctx context.Context, itemID string) ([]source.Track, err
 	files := orderedFiles(item)
 	titles := trackTitles(item, files)
 
+	// Offsets into the whole book, which is the timeline Audiobookshelf
+	// measures listening position on: its chapter list starts chapter two at
+	// the running total of file one, so the two agree by construction.
+	var start float64
 	tracks := make([]source.Track, 0, len(files))
 	for i, f := range files {
 		tracks = append(tracks, source.Track{
 			ID:              itemID + trackSeparator + f.Ino,
 			Title:           titles[i],
 			DurationSeconds: f.Duration,
+			StartSeconds:    start,
 		})
+		start += f.Duration
 	}
 	return tracks, nil
 }
@@ -325,6 +335,141 @@ func (s *Source) fileTarget(itemID, ino string) source.Target {
 			"/file/"+url.PathEscape(ino), nil),
 		Headers: map[string]string{"Authorization": "Bearer " + s.cfg.Token},
 	}
+}
+
+// --- listening position ------------------------------------------------------
+
+// progressPath is Audiobookshelf's per-user media progress for one item.
+func progressPath(itemID string) string {
+	return "/api/me/progress/" + url.PathEscape(itemID)
+}
+
+// mediaProgress is what GET /api/me/progress/{id} returns.
+//
+// Its fields are decoded leniently, because 2.36.1 stores a progress record
+// without validating it: PATCHing the string "x" as currentTime is accepted
+// with a 200 and read straight back. Strict decoding would turn one junk record
+// - written by any client, ours or otherwise - into a hard error, and resume
+// would then fail for that book forever while the log filled with warnings.
+// A value that is not a number means the same thing as no record at all.
+type mediaProgress struct {
+	CurrentTime looseFloat `json:"currentTime"`
+	Duration    looseFloat `json:"duration"`
+	IsFinished  looseBool  `json:"isFinished"`
+}
+
+// looseFloat is a number that tolerates not being one.
+type looseFloat float64
+
+func (v *looseFloat) UnmarshalJSON(raw []byte) error {
+	var f float64
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil
+	}
+	*v = looseFloat(f)
+	return nil
+}
+
+// looseBool is a flag that tolerates not being one.
+type looseBool bool
+
+func (v *looseBool) UnmarshalJSON(raw []byte) error {
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return nil
+	}
+	*v = looseBool(b)
+	return nil
+}
+
+// Position reads how far into a book somebody listened.
+//
+// A book nobody has started answers 404, which is not an error worth reporting:
+// "never opened" and "at the start" are the same instruction to a player.
+func (s *Source) Position(ctx context.Context, itemID string) (source.Position, error) {
+	if itemID == "" {
+		return source.Position{}, fmt.Errorf("audiobookshelf %q: empty item id", s.id)
+	}
+
+	var progress mediaProgress
+	err := s.http.JSON(ctx, progressPath(itemID), nil, &progress)
+	if err != nil {
+		var statusErr *httpx.StatusError
+		if errors.As(err, &statusErr) && statusErr.Status == http.StatusNotFound {
+			return source.Position{}, nil
+		}
+		return source.Position{}, fmt.Errorf("audiobookshelf %q: read position: %w", s.id, err)
+	}
+
+	seconds, duration := float64(progress.CurrentTime), float64(progress.Duration)
+	// A stored value can still be a number and not be a time - json decodes
+	// 1e999 to +Inf without complaint, and that reaches a browser as invalid
+	// JSON rather than as a position.
+	if !isPlayableTime(seconds) {
+		return source.Position{}, nil
+	}
+	if !isPlayableTime(duration) {
+		duration = 0
+	}
+	return source.Position{
+		Seconds:  seconds,
+		Duration: duration,
+		Finished: bool(progress.IsFinished),
+	}, nil
+}
+
+// SetPosition records how far into a book somebody listened.
+//
+// Two things about this endpoint are worth knowing, both established against
+// 2.36.1 rather than read anywhere:
+//
+// It does not derive progress from currentTime. Send one without the other and
+// the position moves while the percentage stays where it was, so Audiobookshelf's
+// own shelf and its "continue listening" row disagree with its player. The
+// fraction is computed here for that reason.
+//
+// isFinished is one-way. Sending false for a book already marked finished does
+// not merely clear the flag - it resets currentTime and progress to zero, which
+// is what "mark as unfinished" means in the Audiobookshelf UI. Somebody who
+// reached the end and then scrubbed back would lose their place. So the flag is
+// sent only when it is true; a later position on a finished book clears it as a
+// side effect anyway.
+func (s *Source) SetPosition(ctx context.Context, itemID string, pos source.Position) error {
+	if itemID == "" {
+		return fmt.Errorf("audiobookshelf %q: empty item id", s.id)
+	}
+	if !isPlayableTime(pos.Seconds) || !isPlayableTime(pos.Duration) {
+		return fmt.Errorf("audiobookshelf %q: position %v of %v is not a time",
+			s.id, pos.Seconds, pos.Duration)
+	}
+
+	payload := map[string]any{"currentTime": pos.Seconds}
+	if pos.Duration > 0 {
+		payload["duration"] = pos.Duration
+		payload["progress"] = math.Min(pos.Seconds/pos.Duration, 1)
+	}
+	if pos.Finished {
+		payload["isFinished"] = true
+		payload["progress"] = float64(1)
+	}
+
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Method: http.MethodPatch,
+		Path:   progressPath(itemID),
+		Body:   payload,
+	})
+	if err != nil {
+		return fmt.Errorf("audiobookshelf %q: save position: %w", s.id, err)
+	}
+	if err := resp.Err(); err != nil {
+		return fmt.Errorf("audiobookshelf %q: save position: %w", s.id, err)
+	}
+	return nil
+}
+
+// isPlayableTime rejects anything a media element could not seek to.
+func isPlayableTime(seconds float64) bool {
+	return !math.IsNaN(seconds) && !math.IsInf(seconds, 0) && seconds >= 0
 }
 
 // ArtTarget builds an authenticated upstream target for a cover.

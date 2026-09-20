@@ -534,3 +534,135 @@ func TestPlaybackStillPlaysWhenTheTrackListFails(t *testing.T) {
 		t.Errorf("mode = %q", got.Mode)
 	}
 }
+
+// resumable is a source that remembers where somebody got to.
+type resumable struct {
+	stub
+	pos     source.Position
+	readErr error
+	saved   []source.Position
+	saveErr error
+}
+
+func (r *resumable) Position(context.Context, string) (source.Position, error) {
+	return r.pos, r.readErr
+}
+
+func (r *resumable) SetPosition(_ context.Context, _ string, pos source.Position) error {
+	if r.saveErr != nil {
+		return r.saveErr
+	}
+	r.saved = append(r.saved, pos)
+	return nil
+}
+
+func TestPlaybackReportsWhereYouLeftOff(t *testing.T) {
+	src := &resumable{
+		stub: stub{id: "abs", kind: media.KindAudiobook},
+		pos:  source.Position{Seconds: 2500.5, Duration: 4989.02},
+	}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	_, body := h.do(t, http.MethodGet, "/api/playback/abs/bk1", "")
+	var got struct {
+		Position *struct {
+			Seconds  float64 `json:"seconds"`
+			Duration float64 `json:"duration"`
+		} `json:"position"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Position == nil {
+		t.Fatalf("no position reported: %s", body)
+	}
+	if got.Position.Seconds != 2500.5 || got.Position.Duration != 4989.02 {
+		t.Errorf("position = %+v", *got.Position)
+	}
+}
+
+// The key being present is what tells a client to save at all, so a source
+// that cannot remember must not appear to.
+func TestPlaybackOmitsPositionWhenNothingRemembersIt(t *testing.T) {
+	h := newHarness(t, stub{id: "nd", kind: media.KindMusic})
+	h.signUp(t)
+
+	_, body := h.do(t, http.MethodGet, "/api/playback/nd/song", "")
+	if strings.Contains(string(body), "position") {
+		t.Errorf("a source with no memory advertised one: %s", body)
+	}
+}
+
+// Failing to read a position must not stop one being written for the rest of
+// the session: losing a bookmark is small, refusing to make new ones is not.
+func TestPlaybackStillOffersToSaveWhenReadingFails(t *testing.T) {
+	src := &resumable{
+		stub:    stub{id: "abs", kind: media.KindAudiobook},
+		readErr: errors.New("upstream is having a moment"),
+	}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	resp, body := h.do(t, http.MethodGet, "/api/playback/abs/bk1", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "position") {
+		t.Errorf("stopped offering to save after one failed read: %s", body)
+	}
+}
+
+func TestPositionIsSavedUpstream(t *testing.T) {
+	src := &resumable{stub: stub{id: "abs", kind: media.KindAudiobook}}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	resp, body := h.do(t, http.MethodPut, "/api/playback/abs/bk1",
+		`{"seconds":1200.5,"duration":4989.02}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	if len(src.saved) != 1 {
+		t.Fatalf("saved %d positions", len(src.saved))
+	}
+	if src.saved[0].Seconds != 1200.5 || src.saved[0].Duration != 4989.02 {
+		t.Errorf("saved %+v", src.saved[0])
+	}
+	if src.saved[0].Finished {
+		t.Error("an ordinary save was marked finished")
+	}
+}
+
+// Audiobookshelf stores a progress record without validating it, so anything
+// that is not a time has to be stopped here - a JSON number is never NaN, but
+// 1e999 decodes to +Inf without complaint.
+func TestPositionRefusesSomethingThatIsNotATime(t *testing.T) {
+	src := &resumable{stub: stub{id: "abs", kind: media.KindAudiobook}}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	for _, body := range []string{
+		`{"seconds":1e999}`,
+		`{"seconds":-30}`,
+		`{"seconds":10,"duration":1e999}`,
+	} {
+		resp, out := h.do(t, http.MethodPut, "/api/playback/abs/bk1", body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s accepted with %d: %s", body, resp.StatusCode, out)
+		}
+	}
+	if len(src.saved) != 0 {
+		t.Errorf("passed %d bad positions upstream: %v", len(src.saved), src.saved)
+	}
+}
+
+func TestSavingAPositionToASourceThatCannotIsRefusedClearly(t *testing.T) {
+	h := newHarness(t, stub{id: "nd", kind: media.KindMusic})
+	h.signUp(t)
+
+	resp, _ := h.do(t, http.MethodPut, "/api/playback/nd/song", `{"seconds":30}`)
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Errorf("status = %d, want 501", resp.StatusCode)
+	}
+}

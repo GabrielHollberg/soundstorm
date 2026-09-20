@@ -349,10 +349,29 @@ and never point automated fetches at an origin site that has asked you not to.
   because seeking inside one file is a different problem from switching between
   several. Chapter *names* come from Audiobookshelf's chapter list when there is
   one per file, then the ID3 title tag, then the filename.
-- **Listening position is not saved.** Close the dock mid-book and you start
-  that chapter again. Audiobookshelf tracks position server-side per title, so
-  the fix is its playback-session API rather than anything of ours - and that is
-  also what would sync position with its own apps.
+- **Listening position lives upstream, not in `internal/state`.** It is written
+  to Audiobookshelf's own `PATCH /api/me/progress/{id}`, which is what makes a
+  chapter finished in its mobile app the place a browser picks up. A private
+  copy would quietly fork from the one every other client reads. Position is
+  measured across the whole book, so `Track.StartSeconds` converts between "two
+  hours in" and "a file and an offset".
+- **Audiobookshelf does not derive `progress` from `currentTime`.** Send one
+  without the other and the player resumes correctly while its own shelf and
+  "continue listening" row keep showing the old percentage. The fraction is
+  computed in the adapter for that reason. Verified on 2.36.1.
+- **`isFinished` is one-way, and sending `false` is destructive.** For a book
+  already marked finished it does not merely clear the flag - it resets
+  `currentTime` and `progress` to zero, which is what "mark as unfinished"
+  means in the Audiobookshelf UI. Someone who reached the end and scrubbed back
+  would lose their place. So the flag is only ever sent as `true`; a later
+  position clears it as a side effect anyway. Also note `progress: 1` alone is
+  enough to mark a book finished.
+- **Audiobookshelf stores a progress record without validating it.** PATCHing
+  the string `"x"` as `currentTime` is accepted with a 200 and read straight
+  back. So nothing leaves `handleSetPosition` that is not a time (a JSON number
+  is never NaN, but `1e999` decodes to `+Inf` without complaint), and
+  `mediaProgress` decodes leniently - strict decoding would turn one junk
+  record into a permanent error for that book.
 - **Some LibriVox MP3s ship mangled ID3 tags.** `fables_01_00_lafontaine` has
   double-encoded UTF-8 declared as latin-1, so its chapter reads
   "00 - ÃƒÂ€ Monseigneur le Dauphin". The damage is in the published file, not

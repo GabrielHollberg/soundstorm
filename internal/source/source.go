@@ -164,6 +164,45 @@ type Track struct {
 	Title string `json:"title"`
 
 	DurationSeconds float64 `json:"durationSeconds,omitempty"`
+
+	// StartSeconds is where this file begins on the whole item's timeline,
+	// which is what turns a position into a chapter and an offset. A backend
+	// that remembers listening position measures it across the whole book -
+	// "two hours in", not "twelve minutes into part four".
+	StartSeconds float64 `json:"startSeconds,omitempty"`
+}
+
+// Position is how far into an item somebody got.
+type Position struct {
+	// Seconds is an offset into the whole item, across all of its files.
+	Seconds float64 `json:"seconds"`
+
+	// Duration is the item's total length, where the backend knows it.
+	Duration float64 `json:"duration,omitempty"`
+
+	// Finished marks a book somebody listened to the end of. It is one-way
+	// here: see PositionTracker.
+	Finished bool `json:"finished,omitempty"`
+}
+
+// PositionTracker is an optional interface for sources that remember how far
+// into an item somebody listened.
+//
+// Position belongs upstream rather than in SoundStorm's own state, and not only
+// to avoid a second store: Audiobookshelf keeps it per title and syncs it to
+// its own mobile apps, so writing it there means finishing a chapter in the car
+// and picking it up in a browser. Keeping our own copy would quietly fork from
+// the copy every other client is reading.
+//
+// Position returns a zero value rather than an error when a backend has never
+// heard of the item. Nobody having started a book is not a failure, and "at the
+// start" and "never opened" mean the same thing to a player.
+type PositionTracker interface {
+	Position(ctx context.Context, itemID string) (Position, error)
+
+	// SetPosition records a position. Implementations must treat Finished as
+	// one-way - see the Audiobookshelf adapter for what un-finishing costs.
+	SetPosition(ctx context.Context, itemID string, pos Position) error
 }
 
 // TrackLister is an optional interface for sources whose items are made of more
