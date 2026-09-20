@@ -144,6 +144,43 @@ type SubtitleTrack struct {
 	Forced bool `json:"forced,omitempty"`
 }
 
+// Track is one file an item is made of, in the order it should be played.
+//
+// A LibriVox audiobook is typically one MP3 per chapter - thirty of them for a
+// volume of Aesop - and until a client is told about all of them it plays the
+// first file and stops, which looks exactly like a broken book.
+//
+// A track is a whole file rather than an arbitrary span of one, because a file
+// is both the unit a backend can address and the unit a browser can be handed
+// and told to play. Chapters that live inside a single file are a different
+// problem and not solved here: see TrackLister.
+type Track struct {
+	// ID is what to ask /api/stream for. It is the source's own handle and
+	// need not resemble the item's id.
+	ID string `json:"id"`
+
+	// Title is what belongs in a chapter list - a chapter name where the
+	// backend knows one, something derived from the file where it does not.
+	Title string `json:"title"`
+
+	DurationSeconds float64 `json:"durationSeconds,omitempty"`
+}
+
+// TrackLister is an optional interface for sources whose items are made of more
+// than one file.
+//
+// Only audiobooks have needed it. Music is already indexed a track at a time, a
+// film is one file, and a book is a container the reader opens for itself.
+//
+// It reports files, not chapters, and the two coincide for a per-chapter rip -
+// which is what a multi-file audiobook nearly always is. A single m4b carrying
+// twenty chapter marks still returns one track: that book plays through
+// correctly, it just has no chapter navigation, and adding that means seeking
+// within a file rather than switching between them.
+type TrackLister interface {
+	Tracks(ctx context.Context, itemID string) ([]Track, error)
+}
+
 // SubtitleProvider serves a subtitle track as WebVTT.
 //
 // WebVTT because that is the only thing a browser will accept in a track

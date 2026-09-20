@@ -428,3 +428,109 @@ func TestUIShellIsServed(t *testing.T) {
 		t.Errorf("content type = %q", ct)
 	}
 }
+
+// multiFile is a source whose items are several files each - which is what an
+// audiobook ripped one MP3 per chapter looks like.
+type multiFile struct {
+	stub
+	tracks []source.Track
+	err    error
+}
+
+func (m multiFile) Tracks(context.Context, string) ([]source.Track, error) {
+	return m.tracks, m.err
+}
+
+// Without this a client is told about one file and plays the first chapter of a
+// thirty-part book, which is indistinguishable from the book being broken.
+func TestPlaybackListsEveryFileOfAMultiPartBook(t *testing.T) {
+	src := multiFile{
+		stub: stub{id: "abs", kind: media.KindAudiobook},
+		tracks: []source.Track{
+			{ID: "bk1/111", Title: "Chapters 1 to 3", DurationSeconds: 2206.5},
+			{ID: "bk1/222", Title: "Chapters 4 to 5", DurationSeconds: 1504.1},
+		},
+	}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	resp, body := h.do(t, http.MethodGet, "/api/playback/abs/bk1", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+
+	var got struct {
+		Mode   string `json:"mode"`
+		URL    string `json:"url"`
+		Tracks []struct {
+			Title           string  `json:"title"`
+			URL             string  `json:"url"`
+			DurationSeconds float64 `json:"durationSeconds"`
+		} `json:"tracks"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Mode != source.PlaybackModeDirect {
+		t.Errorf("mode = %q: an audiobook is not transcoded", got.Mode)
+	}
+	if len(got.Tracks) != 2 {
+		t.Fatalf("want 2 tracks, got %d: %s", len(got.Tracks), body)
+	}
+	if got.Tracks[0].Title != "Chapters 1 to 3" {
+		t.Errorf("track 0 title = %q", got.Tracks[0].Title)
+	}
+	// The slash inside a track id has to survive to the stream route, which
+	// matches it with a trailing wildcard.
+	if want := "/api/stream/abs/bk1/222"; got.Tracks[1].URL != want {
+		t.Errorf("track 1 url = %q, want %q", got.Tracks[1].URL, want)
+	}
+	if got.Tracks[1].DurationSeconds != 1504.1 {
+		t.Errorf("track 1 duration = %v", got.Tracks[1].DurationSeconds)
+	}
+}
+
+// A song and a bought audiobook are both one file. Sending a chapter list of
+// one would put a Chapters button on every track in the library.
+func TestPlaybackOmitsATrackListOfOne(t *testing.T) {
+	src := multiFile{
+		stub:   stub{id: "abs", kind: media.KindAudiobook},
+		tracks: []source.Track{{ID: "bk1/111", Title: "As a Man Thinketh"}},
+	}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	_, body := h.do(t, http.MethodGet, "/api/playback/abs/bk1", "")
+	if strings.Contains(string(body), "tracks") {
+		t.Errorf("a single-file item was given a chapter list: %s", body)
+	}
+}
+
+// A backend that will not answer must not take playback down with it: the
+// direct url is still correct, and still plays the first file.
+func TestPlaybackStillPlaysWhenTheTrackListFails(t *testing.T) {
+	src := multiFile{
+		stub: stub{id: "abs", kind: media.KindAudiobook},
+		err:  errors.New("upstream is having a moment"),
+	}
+	h := newHarness(t, src)
+	h.signUp(t)
+
+	resp, body := h.do(t, http.MethodGet, "/api/playback/abs/bk1", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, body)
+	}
+	var got struct {
+		Mode string `json:"mode"`
+		URL  string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.URL != "/api/stream/abs/bk1" {
+		t.Errorf("url = %q", got.URL)
+	}
+	if got.Mode != source.PlaybackModeDirect {
+		t.Errorf("mode = %q", got.Mode)
+	}
+}

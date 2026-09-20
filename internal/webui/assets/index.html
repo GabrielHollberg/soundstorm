@@ -131,7 +131,15 @@
       <span id="audio-sub" class="muted"></span>
     </div>
     <audio id="audio-player" controls></audio>
+    <!-- Only shown for something made of more than one file, which in practice
+         means an audiobook ripped a chapter at a time. -->
+    <button id="audio-tracks-toggle" class="ghost hidden" type="button"
+            aria-expanded="false" aria-controls="audio-tracks">Chapters</button>
     <button id="audio-close" class="ghost" type="button" aria-label="Stop">&times;</button>
+
+    <!-- Inside the dock so it can be positioned against it. Thirty chapters
+         will not fit in a dock, so the list is a panel above it. -->
+    <ol id="audio-tracks" class="track-list hidden"></ol>
   </div>
 
   <script src="/static/app.js"></script>

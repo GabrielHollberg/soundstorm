@@ -610,10 +610,25 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+/* Audio, and the chapters an audiobook is made of.
+ *
+ * A LibriVox book is one MP3 per chapter - thirty of them for a volume of
+ * Aesop - and a browser handed the first file plays it and goes quiet. So the
+ * dock keeps a track list, advances through it, and offers it as a panel.
+ */
+const audio = {
+  item: null,     // what is playing, and the guard for stale responses
+  tracks: [],     // empty for anything that is a single file
+  index: 0,
+};
+
 function playAudio(item) {
   closeVideo();
-  const player = $('audio-player');
-  player.src = streamPath(item);
+
+  audio.item = item;
+  audio.tracks = [];
+  audio.index = 0;
+
   $('audio-title').textContent = item.title;
   $('audio-sub').textContent = subtitleFor(item);
 
@@ -627,15 +642,132 @@ function playAudio(item) {
     show(art, false);
   }
 
+  renderTracks();
   show($('audio-dock'), true);
+
+  // Start immediately on the item's own stream url, which is the first file of
+  // however many there are. Waiting for the track list to arrive before making
+  // a sound would add a round trip to every song for the sake of the books.
+  const player = $('audio-player');
+  player.src = streamPath(item);
   player.play().catch(() => {});
+
+  loadTracks(item);
 }
+
+async function loadTracks(item) {
+  const { ok, body } = await api(
+    `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+
+  // Something else was started while this was in flight.
+  if (audio.item !== item) return;
+  // Sent only for genuinely multi-file items, so anything else needs nothing.
+  if (!ok || !body || !Array.isArray(body.tracks) || body.tracks.length < 2) return;
+
+  audio.tracks = body.tracks;
+  // Track 0 is the same bytes the player is already playing, so it is marked
+  // as current rather than reloaded - reassigning src here would restart the
+  // audio a second after it began.
+  audio.index = 0;
+  renderTracks();
+}
+
+function renderTracks() {
+  const list = $('audio-tracks');
+  const toggle = $('audio-tracks-toggle');
+  list.replaceChildren();
+
+  if (audio.tracks.length < 2) {
+    show(list, false);
+    show(toggle, false);
+    toggle.setAttribute('aria-expanded', 'false');
+    return;
+  }
+
+  audio.tracks.forEach((track, index) => {
+    const li = document.createElement('li');
+    li.classList.toggle('current', index === audio.index);
+    if (index === audio.index) li.setAttribute('aria-current', 'true');
+
+    const button = document.createElement('button');
+    button.type = 'button';
+
+    const num = document.createElement('span');
+    num.className = 'track-num';
+    num.textContent = index + 1;
+
+    const name = document.createElement('span');
+    name.className = 'track-name';
+    name.textContent = track.title || `Part ${index + 1}`;
+    name.title = name.textContent;
+
+    const time = document.createElement('span');
+    time.className = 'track-time';
+    time.textContent = formatDuration(track.durationSeconds);
+
+    button.append(num, name, time);
+    button.addEventListener('click', () => {
+      selectTrack(index);
+      showTrackList(false);
+    });
+
+    li.append(button);
+    list.append(li);
+  });
+
+  show(toggle, true);
+  updateTrackCaption();
+}
+
+function selectTrack(index) {
+  const track = audio.tracks[index];
+  if (!track) return;
+
+  audio.index = index;
+  const player = $('audio-player');
+  player.src = track.url;
+  player.play().catch(() => {});
+  renderTracks();
+}
+
+// The dock's second line becomes the chapter, because "13 of 30" is the thing
+// somebody actually wants to know mid-book. The item's own subtitle is already
+// above it in the title line.
+function updateTrackCaption() {
+  const track = audio.tracks[audio.index];
+  if (!track) return;
+  $('audio-sub').textContent =
+    `${audio.index + 1} of ${audio.tracks.length} · ${track.title}`;
+}
+
+function showTrackList(visible) {
+  show($('audio-tracks'), visible);
+  $('audio-tracks-toggle').setAttribute('aria-expanded', String(visible));
+  if (visible) {
+    const current = $('audio-tracks').querySelector('.current');
+    if (current) current.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+$('audio-tracks-toggle').addEventListener('click', () => {
+  showTrackList($('audio-tracks').classList.contains('hidden'));
+});
+
+// The whole point: chapter 1 ending means chapter 2 starting, not silence.
+$('audio-player').addEventListener('ended', () => {
+  if (audio.index + 1 < audio.tracks.length) selectTrack(audio.index + 1);
+});
 
 function stopAudio() {
   const player = $('audio-player');
   player.pause();
   player.removeAttribute('src');
   player.load();
+  audio.item = null;
+  audio.tracks = [];
+  audio.index = 0;
+  showTrackList(false);
+  renderTracks();
   show($('audio-dock'), false);
 }
 

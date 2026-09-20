@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"html"
 	"net/url"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +78,7 @@ type libraryItem struct {
 		Duration   float64     `json:"duration"`
 		CoverPath  string      `json:"coverPath"`
 		AudioFiles []audioFile `json:"audioFiles"`
+		Chapters   []chapter   `json:"chapters"`
 		Metadata   struct {
 			Title         string `json:"title"`
 			Subtitle      string `json:"subtitle"`
@@ -89,8 +92,32 @@ type libraryItem struct {
 }
 
 type audioFile struct {
-	Index int    `json:"index"`
-	Ino   string `json:"ino"`
+	Index    int     `json:"index"`
+	Ino      string  `json:"ino"`
+	Duration float64 `json:"duration"`
+
+	Metadata struct {
+		Filename string `json:"filename"`
+	} `json:"metadata"`
+
+	// MetaTags is what was in the file's own ID3 tags. LibriVox puts the
+	// chapter name in the title tag, which is the best name available for a
+	// file whose own name is "fabula_01_001_esopo_64kb.mp3".
+	MetaTags struct {
+		Title string `json:"tagTitle"`
+	} `json:"metaTags"`
+}
+
+// chapter is one entry in Audiobookshelf's own chapter list.
+//
+// Start and End are offsets into the whole book, not into any one file, so a
+// chapter cannot be played by itself. They are read only to get at the titles,
+// which for a book assembled from an external source are better than anything
+// the files carry.
+type chapter struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Title string  `json:"title"`
 }
 
 // decodeEntities undoes HTML escaping that arrives in metadata as literal text.
@@ -160,45 +187,144 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 	return items, nil
 }
 
-// StreamTarget resolves an item to playable audio.
+// trackSeparator joins an item id to one of its file handles.
 //
-// Audiobookshelf addresses audio files by inode, not by item id, and the inode
-// is not derivable from anything we already hold - so this costs one extra
-// round trip per playback start. That is cheap next to the alternative of
-// smuggling the inode through media.Item.ID, which would make the id opaque
-// nonsense to every other layer.
+// Audiobookshelf item ids are uuids, or "li_" and a nanoid, and never contain a
+// slash - so "{itemID}/{ino}" is unambiguous, and a track id can be handed
+// straight to /api/stream/{source}/{id...} like any other id.
+const trackSeparator = "/"
+
+// fetchItem reads one library item in full, which is the only way to learn its
+// files. A search result does not carry them.
+func (s *Source) fetchItem(ctx context.Context, itemID string) (libraryItem, error) {
+	var item libraryItem
+	err := s.http.JSON(ctx, "/api/items/"+url.PathEscape(itemID), nil, &item)
+	if err != nil {
+		return item, fmt.Errorf("audiobookshelf %q: resolve item: %w", s.id, err)
+	}
+	return item, nil
+}
+
+// orderedFiles returns an item's audio files in playing order.
 //
-// Only the first audio file is served. A multi-file audiobook therefore plays
-// its first part only; real chapter navigation needs the playback-session API
-// and a player that understands a track list, which is the natural next step.
+// Audiobookshelf numbers them from 1 in the order it decided they belong, but
+// the array is not promised to arrive sorted, and for a thirty-part book getting
+// that wrong means chapter 10 following chapter 1.
+func orderedFiles(item libraryItem) []audioFile {
+	files := make([]audioFile, 0, len(item.Media.AudioFiles))
+	for _, f := range item.Media.AudioFiles {
+		if f.Ino != "" {
+			files = append(files, f)
+		}
+	}
+	sort.SliceStable(files, func(i, j int) bool { return files[i].Index < files[j].Index })
+	return files
+}
+
+// Tracks lists the files a book is made of.
+//
+// This is what stops a multi-part audiobook playing its first chapter and
+// going quiet. A LibriVox volume is one MP3 per chapter - thirty of them for
+// Aesop - and each is separately addressable, so the whole list is worth one
+// round trip at the moment somebody presses play.
+func (s *Source) Tracks(ctx context.Context, itemID string) ([]source.Track, error) {
+	if itemID == "" {
+		return nil, fmt.Errorf("audiobookshelf %q: empty item id", s.id)
+	}
+	item, err := s.fetchItem(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	files := orderedFiles(item)
+	titles := trackTitles(item, files)
+
+	tracks := make([]source.Track, 0, len(files))
+	for i, f := range files {
+		tracks = append(tracks, source.Track{
+			ID:              itemID + trackSeparator + f.Ino,
+			Title:           titles[i],
+			DurationSeconds: f.Duration,
+		})
+	}
+	return tracks, nil
+}
+
+// trackTitles names each file, best source first.
+//
+// Audiobookshelf's chapter list is preferred when there is exactly one chapter
+// per file, which is what a per-chapter rip looks like and what all three
+// multi-part books in the test library are. That equal-count test is a
+// heuristic rather than proof - chapter offsets are into the whole book, so
+// proving alignment means summing durations and picking a tolerance - but the
+// cost of it being wrong is a mislabelled chapter, not a misplayed one.
+//
+// Failing that: the file's own title tag, then its name, then its position.
+func trackTitles(item libraryItem, files []audioFile) []string {
+	chapters := item.Media.Chapters
+	aligned := len(chapters) == len(files) && len(files) > 0
+
+	titles := make([]string, len(files))
+	for i, f := range files {
+		var title string
+		if aligned {
+			title = chapters[i].Title
+		}
+		if title == "" {
+			title = f.MetaTags.Title
+		}
+		if title == "" {
+			title = strings.TrimSuffix(f.Metadata.Filename, path.Ext(f.Metadata.Filename))
+		}
+		// decodeEntities for the same reason search needs it: LibriVox metadata
+		// carries HTML entities into fields that are not HTML, and it reaches
+		// the tags and the chapter names as readily as the title.
+		title = strings.TrimSpace(decodeEntities(title))
+		if title == "" {
+			title = fmt.Sprintf("Part %d", i+1)
+		}
+		titles[i] = title
+	}
+	return titles
+}
+
+// StreamTarget resolves an item, or one file of it, to playable audio.
+//
+// Audiobookshelf addresses audio files by inode rather than by item id, and the
+// inode is not derivable from anything we already hold. A track id from Tracks
+// carries it, so playing a chapter list costs no extra round trips; asking for a
+// bare item id still works and still costs one, which is what the direct-play
+// fallback does when the track list has not arrived or was not wanted.
 func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target, error) {
 	if itemID == "" {
 		return source.Target{}, fmt.Errorf("audiobookshelf %q: empty item id", s.id)
 	}
 
-	var item libraryItem
-	path := "/api/items/" + url.PathEscape(itemID)
-	if err := s.http.JSON(ctx, path, nil, &item); err != nil {
-		return source.Target{}, fmt.Errorf("audiobookshelf %q: resolve item: %w", s.id, err)
+	if item, ino, ok := strings.Cut(itemID, trackSeparator); ok {
+		if item == "" || ino == "" {
+			return source.Target{}, fmt.Errorf("audiobookshelf %q: malformed track id %q", s.id, itemID)
+		}
+		return s.fileTarget(item, ino), nil
 	}
-	if len(item.Media.AudioFiles) == 0 {
+
+	item, err := s.fetchItem(ctx, itemID)
+	if err != nil {
+		return source.Target{}, err
+	}
+	files := orderedFiles(item)
+	if len(files) == 0 {
 		return source.Target{}, fmt.Errorf("audiobookshelf %q: item %q has no audio files", s.id, itemID)
 	}
+	return s.fileTarget(itemID, files[0].Ino), nil
+}
 
-	first := item.Media.AudioFiles[0]
-	for _, f := range item.Media.AudioFiles {
-		if f.Index < first.Index {
-			first = f
-		}
-	}
-	if first.Ino == "" {
-		return source.Target{}, fmt.Errorf("audiobookshelf %q: item %q has no file handle", s.id, itemID)
-	}
-
+// fileTarget builds the upstream URL for one file of one item.
+func (s *Source) fileTarget(itemID, ino string) source.Target {
 	return source.Target{
-		URL:     s.http.URL(path+"/file/"+url.PathEscape(first.Ino), nil),
+		URL: s.http.URL("/api/items/"+url.PathEscape(itemID)+
+			"/file/"+url.PathEscape(ino), nil),
 		Headers: map[string]string{"Authorization": "Bearer " + s.cfg.Token},
-	}, nil
+	}
 }
 
 // ArtTarget builds an authenticated upstream target for a cover.

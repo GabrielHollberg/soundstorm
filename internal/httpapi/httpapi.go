@@ -14,6 +14,7 @@
 //	GET  /api/search?q=&kind=&limit=    federated search
 //	GET  /api/stream/{source}/{id}      media bytes, proxied
 //	GET  /api/art/{source}/{id}         artwork, proxied
+//	GET  /api/playback/{source}/{id}    how to play it: direct, HLS, or a track list
 //
 // Everything from /api/setup down requires a session.
 package httpapi
@@ -320,8 +321,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 // handlePlayback answers "how do I play this".
 //
 // The client asks before touching a player, because the answer decides which
-// one to build: a plain <video src> for a file, or hls.js attached to a
-// playlist for anything the browser cannot decode.
+// one to build: a plain <video src> for a file, hls.js attached to a playlist
+// for anything the browser cannot decode, and a chapter list for a book that is
+// thirty separate MP3s.
 func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 	sourceID, itemID := r.PathValue("source"), r.PathValue("id")
 	src, ok := s.reg.ByID(sourceID)
@@ -330,46 +332,56 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	directURL := "/api/stream/" + url.PathEscape(sourceID) + "/" + escapePath(itemID)
-	direct := map[string]any{
+	// Direct play is the default and the fallback. If negotiation fails it is
+	// better to hand over the file than to refuse: a playable file plays, and
+	// an unplayable one gets a media error from the browser rather than
+	// silence from SoundStorm.
+	answer := map[string]any{
 		"mode": source.PlaybackModeDirect,
-		"url":  directURL,
+		"url":  streamURL(sourceID, itemID),
 	}
 
-	// A source that cannot transcode has nothing to decide: hand over the file.
-	negotiator, ok := src.(source.Negotiator)
-	if !ok {
-		writeJSON(w, http.StatusOK, direct)
-		return
-	}
-
-	play, err := negotiator.Playback(r.Context(), itemID)
-	if err != nil {
-		s.log.Warn("playback negotiation failed", "source", sourceID, "item", itemID, "err", err)
-		// Falling back to direct play is better than refusing to play at all:
-		// if the file happens to be playable, it works, and if it is not the
-		// browser reports a media error rather than SoundStorm reporting none.
-		writeJSON(w, http.StatusOK, direct)
-		return
-	}
-
-	answer := direct
-	if play.Mode == source.PlaybackModeHLS {
-		playlist := "/api/hls/" + url.PathEscape(sourceID) + "/" + escapePath(play.Path)
-		if len(play.Query) > 0 {
-			playlist += "?" + play.Query.Encode()
-		}
-		answer = map[string]any{
-			"mode": source.PlaybackModeHLS,
-			"url":  playlist,
+	// Only video negotiates. Everything else is handed over as it is.
+	if negotiator, ok := src.(source.Negotiator); ok {
+		play, err := negotiator.Playback(r.Context(), itemID)
+		if err != nil {
+			s.log.Warn("playback negotiation failed",
+				"source", sourceID, "item", itemID, "err", err)
+		} else {
+			if play.Mode == source.PlaybackModeHLS {
+				playlist := "/api/hls/" + url.PathEscape(sourceID) + "/" + escapePath(play.Path)
+				if len(play.Query) > 0 {
+					playlist += "?" + play.Query.Encode()
+				}
+				answer["mode"] = source.PlaybackModeHLS
+				answer["url"] = playlist
+			}
+			// Subtitles are independent of how the video itself is delivered.
+			if tracks := subtitleList(sourceID, play.Subtitles); len(tracks) > 0 {
+				answer["subtitles"] = tracks
+			}
 		}
 	}
 
-	// Subtitles are independent of how the video itself is delivered.
-	if tracks := subtitleList(sourceID, play.Subtitles); len(tracks) > 0 {
-		answer["subtitles"] = tracks
+	// A multi-file item has to say so, or a client plays the first file and
+	// stops. Sent only when there is more than one: a single file is what the
+	// direct url above already is, and a chapter list of one is noise.
+	if lister, ok := src.(source.TrackLister); ok {
+		tracks, err := lister.Tracks(r.Context(), itemID)
+		if err != nil {
+			s.log.Warn("track list failed",
+				"source", sourceID, "item", itemID, "err", err)
+		} else if len(tracks) > 1 {
+			answer["tracks"] = trackList(sourceID, tracks)
+		}
 	}
+
 	writeJSON(w, http.StatusOK, answer)
+}
+
+// streamURL is where a client fetches an item's, or a track's, bytes.
+func streamURL(sourceID, id string) string {
+	return "/api/stream/" + url.PathEscape(sourceID) + "/" + escapePath(id)
 }
 
 // subtitleList turns a source's tracks into something the browser can attach.
@@ -382,6 +394,23 @@ func subtitleList(sourceID string, tracks []source.SubtitleTrack) []map[string]a
 			"forced":   t.Forced,
 			"url":      "/api/subtitle/" + url.PathEscape(sourceID) + "/" + escapePath(t.ID),
 		})
+	}
+	return out
+}
+
+// trackList turns an item's files into a playable chapter list. The client
+// never sees a track id, only the url to fetch it from.
+func trackList(sourceID string, tracks []source.Track) []map[string]any {
+	out := make([]map[string]any, 0, len(tracks))
+	for _, t := range tracks {
+		entry := map[string]any{
+			"title": t.Title,
+			"url":   streamURL(sourceID, t.ID),
+		}
+		if t.DurationSeconds > 0 {
+			entry["durationSeconds"] = t.DurationSeconds
+		}
+		out = append(out, entry)
 	}
 	return out
 }

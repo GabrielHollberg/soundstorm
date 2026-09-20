@@ -342,8 +342,23 @@ and never point automated fetches at an origin site that has asked you not to.
   iframe that inherits SoundStorm's origin - without `script-src 'self'`, opening a
   book would run a stranger's JavaScript against the session cookie. `blob:` IS
   allowed in style-src and font-src, or books render unstyled.
-- **Audiobooks play their first file only.** Multi-file books need the playback
-  session API and a player that understands a track list.
+- **Audiobook chapters are files, not chapter marks.** `TrackLister` reports an
+  item's audio files and the dock plays through them, which covers a per-chapter
+  rip - the shape of every LibriVox book. A single m4b with twenty chapter marks
+  still returns one track: it plays through correctly but has no navigation,
+  because seeking inside one file is a different problem from switching between
+  several. Chapter *names* come from Audiobookshelf's chapter list when there is
+  one per file, then the ID3 title tag, then the filename.
+- **Listening position is not saved.** Close the dock mid-book and you start
+  that chapter again. Audiobookshelf tracks position server-side per title, so
+  the fix is its playback-session API rather than anything of ours - and that is
+  also what would sync position with its own apps.
+- **Some LibriVox MP3s ship mangled ID3 tags.** `fables_01_00_lafontaine` has
+  double-encoded UTF-8 declared as latin-1, so its chapter reads
+  "00 - ÃƒÂ€ Monseigneur le Dauphin". The damage is in the published file, not
+  in Audiobookshelf and not in us; repairing it means guessing at a chain of
+  mis-decodings that would corrupt any title legitimately containing those
+  characters. Left alone deliberately.
 - **PowerShell here-strings carry CRLF into `docker exec bash -c`**, and a
   trailing carriage return makes bash misread the command. `scripts/` passes
   single-line commands for that reason.

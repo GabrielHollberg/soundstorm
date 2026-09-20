@@ -337,6 +337,65 @@ header {
 }
 .dock audio { flex: 1; min-width: 180px; height: 38px; }
 
+/* Chapter list. A LibriVox book runs to thirty parts, so this scrolls rather
+   than growing, and sits above the dock rather than inside it. */
+.track-list {
+  position: absolute;
+  right: 18px;
+  bottom: calc(100% + 8px);
+  z-index: 1;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  width: min(440px, calc(100vw - 36px));
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 50%);
+}
+.track-list button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 9px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.track-list button:hover { background: var(--surface-2); }
+.track-list .current button {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+.track-num {
+  flex: 0 0 2.2em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.track-list .current .track-num { color: inherit; }
+.track-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.track-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 620px) {
   header { flex-wrap: wrap; }
   .dock img, .dock-meta { display: none; }
