@@ -12,6 +12,19 @@ install.sh text eol=lf
 Dockerfile text eol=lf
 *.yml text eol=lf
 
+# And the mirror image of it. SoundStorm-Setup.cmd is downloaded straight from
+# raw.githubusercontent, which serves whatever is in the repository - so the
+# repository has to hold CRLF. cmd.exe tolerates LF for simple lines but not
+# reliably for `goto`, which this file uses, and the failure is a batch script
+# that silently does the wrong half of itself.
+# -text, not eol=crlf. Git normalises every *text* file to LF in the
+# repository whatever the checkout rule says, and raw.githubusercontent serves
+# the repository - so eol=crlf would fix the checkout and change nothing about
+# the file people actually download. Marking it not-text stores the bytes
+# verbatim, and the bytes are CRLF.
+*.cmd -text
+*.bat -text
+
 # Media in the starter library and the screenshots are bytes, not text.
 *.png binary
 *.mp3 binary
