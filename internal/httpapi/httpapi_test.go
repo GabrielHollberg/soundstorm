@@ -64,7 +64,11 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 	reg := source.NewRegistry(sources...)
 
 	api := New(Config{
-		Registry:         reg,
+		Registry: reg,
+		// The store was missing here until accounts needed it, which meant
+		// every handler that reads state was being exercised against a nil
+		// pointer that happened not to be dereferenced yet.
+		Store:            store,
 		Auth:             auth.New(store),
 		Setup:            provision.New(store, reg, log, nil),
 		PerSourceTimeout: time.Second,

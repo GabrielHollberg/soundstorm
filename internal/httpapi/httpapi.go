@@ -12,6 +12,11 @@
 //	POST /api/login
 //	POST /api/logout
 //	GET  /api/setup                     per-backend provisioning progress
+//	GET  /api/users                     the accounts on this server   (owner)
+//	POST /api/users                     add one                       (owner)
+//	DELETE /api/users/{id}              remove one                    (owner)
+//	POST /api/users/{id}/password       reset somebody's password     (owner)
+//	POST /api/account/password          change your own
 //	GET  /api/search?q=&kind=&limit=    federated search
 //	GET  /api/stream/{source}/{id}      media bytes, proxied
 //	GET  /api/art/{source}/{id}         artwork, proxied
@@ -121,6 +126,7 @@ func (s *Server) Routes() http.Handler {
 	// Everything past here needs a session, media bytes very much included.
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
+	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
 	guarded.HandleFunc("GET /api/library", s.handleLibrary)
 	guarded.HandleFunc("GET /api/search", s.handleSearch)
 	// {id...} rather than {id}: an OPDS acquisition reference is a path with
@@ -147,9 +153,35 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/book/resource", s.handleBookResource)
 	guarded.HandleFunc("GET /api/book/progress", s.handleGetProgress)
 	guarded.HandleFunc("PUT /api/book/progress", s.handlePutProgress)
-	mux.Handle("/api/", s.auth.Require(guarded))
+	// Account management is the one thing the owner can do and a member
+	// cannot, so it gets its own guard rather than a check inside each handler.
+	owner := http.NewServeMux()
+	owner.HandleFunc("GET /api/users", s.handleListUsers)
+	owner.HandleFunc("POST /api/users", s.handleCreateUser)
+	owner.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
+	owner.HandleFunc("POST /api/users/{id}/password", s.handleSetUserPassword)
+	guarded.Handle("/api/users", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/users/", s.auth.RequireOwner(owner))
+
+	mux.Handle("/api/", s.auth.Require(s.withUserContext(guarded)))
 
 	return s.withLogging(mux)
+}
+
+// withUserContext hands the account id down to the adapters.
+//
+// Done once here rather than in each handler, and through internal/source
+// rather than internal/auth, so that an adapter can find out who is asking
+// without depending on how signing in works.
+func (s *Server) withUserContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := auth.FromContext(r.Context())
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(source.WithUserID(r.Context(), user.ID)))
+	})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -185,10 +217,28 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	answer := map[string]any{
 		"hasAccount": s.auth.HasAccount(),
-		"signedIn":   s.auth.Authenticated(r),
-	})
+		"signedIn":   false,
+	}
+	if user, ok := s.auth.UserFor(r); ok {
+		answer["signedIn"] = true
+		answer["user"] = publicUser(user)
+	}
+	writeJSON(w, http.StatusOK, answer)
+}
+
+// publicUser is what an account looks like over the wire. The salt, the hash
+// and the iteration count are not in it, and must never be: this is returned to
+// whoever asks, including a member listing themselves.
+func publicUser(u state.User) map[string]any {
+	return map[string]any{
+		"id":        u.ID,
+		"name":      u.Name,
+		"role":      u.Role,
+		"owner":     u.IsOwner(),
+		"createdAt": u.CreatedAt,
+	}
 }
 
 type credentials struct {
@@ -218,21 +268,28 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.auth.Signup(creds.Username, creds.Password); err != nil {
+	owner, err := s.auth.Signup(creds.Username, creds.Password)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.log.Info("account created", "username", creds.Username)
+	s.log.Info("owner account created", "username", creds.Username)
 
 	// Sign them straight in; making someone log in immediately after choosing a
 	// password is a pointless step.
-	token, expiry, err := s.auth.Login(creds.Username, creds.Password)
+	token, expiry, _, err := s.auth.Login(creds.Username, creds.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "account created but sign-in failed; try signing in")
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
-	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true})
+	// The account comes back here as well as from /api/login: the UI needs to
+	// know it is the owner straight away, and without this it would not find
+	// out until the page was reloaded.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"signedIn": true,
+		"user":     publicUser(owner),
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +298,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	token, expiry, err := s.auth.Login(creds.Username, creds.Password)
+	token, expiry, user, err := s.auth.Login(creds.Username, creds.Password)
 	if err != nil {
 		// The 600k-iteration key derivation makes each attempt cost a few
 		// hundred milliseconds, which is the only brute-force defence here.
@@ -251,7 +308,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
-	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"signedIn": true,
+		"user":     publicUser(user),
+	})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -260,6 +320,132 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auth.ClearCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{"signedIn": false})
+}
+
+// --- accounts ----------------------------------------------------------------
+
+// requireUser returns the account making this request. Everything behind
+// auth.Require has one; not finding it is a routing mistake, not a sign-in
+// problem, so it is reported as a server error rather than a 401.
+func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) (state.User, bool) {
+	user, ok := auth.FromContext(r.Context())
+	if !ok {
+		s.log.Error("a guarded handler ran without an account in its context",
+			"path", r.URL.Path)
+		writeError(w, http.StatusInternalServerError, "could not identify the signed-in account")
+		return state.User{}, false
+	}
+	return user, true
+}
+
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	users, err := s.auth.Users(user)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	out := make([]map[string]any, 0, len(users))
+	for _, u := range users {
+		out = append(out, publicUser(u))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": out})
+}
+
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	creds, err := decodeCredentials(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	created, err := s.auth.CreateUser(actor, creds.Username, creds.Password, state.RoleMember)
+	if err != nil {
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+	s.log.Info("account created", "username", created.Name, "by", actor.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(created)})
+}
+
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	if actor.ID == id {
+		writeError(w, http.StatusBadRequest, "you cannot remove your own account")
+		return
+	}
+	if _, exists := s.store.User(id); !exists {
+		writeError(w, http.StatusNotFound, "no such account")
+		return
+	}
+
+	// The backend accounts go first, on purpose. Deleting the SoundStorm
+	// account drops the record of which Audiobookshelf user belonged to it, and
+	// after that nothing knows what to clean up - the orphan would sit there
+	// with somebody's listening history in it.
+	s.setup.ForgetUser(r.Context(), id)
+
+	if err := s.auth.DeleteUser(actor, id); err != nil {
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+	s.log.Info("account removed", "id", id, "by", actor.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"removed": true})
+}
+
+func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	s.changePassword(w, r, actor, r.PathValue("id"))
+}
+
+// handleChangeOwnPassword lets anybody change their own, which is the only
+// account operation a member can perform.
+func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	s.changePassword(w, r, actor, actor.ID)
+}
+
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, actor state.User, id string) {
+	var body struct {
+		Password string `json:"password"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxCredentialBody))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with a password")
+		return
+	}
+	if err := s.auth.SetPassword(actor, id, body.Password); err != nil {
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+	s.log.Info("password changed", "id", id, "by", actor.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"changed": true})
+}
+
+// statusFor maps an account error onto a status code. Being refused for lack of
+// permission and being refused for a name already taken are different things,
+// and a client that shows the message either way still wants the distinction.
+func statusFor(err error) int {
+	if errors.Is(err, auth.ErrForbidden) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, _ *http.Request) {
@@ -593,31 +779,27 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 }
 
 // openBook resolves the source/id query pair to a readable book.
-func (s *Server) openBook(r *http.Request) (source.OpenBook, string, error) {
+func (s *Server) openBook(r *http.Request) (source.OpenBook, error) {
 	sourceID := r.URL.Query().Get("source")
 	itemID := r.URL.Query().Get("id")
 	if sourceID == "" || itemID == "" {
-		return nil, "", errors.New("source and id are required")
+		return nil, errors.New("source and id are required")
 	}
 	src, ok := s.reg.ByID(sourceID)
 	if !ok {
-		return nil, "", fmt.Errorf("unknown source %s", strconv.Quote(sourceID))
+		return nil, fmt.Errorf("unknown source %s", strconv.Quote(sourceID))
 	}
 	opener, ok := src.(source.BookOpener)
 	if !ok {
-		return nil, "", fmt.Errorf("source %s cannot be read in place", strconv.Quote(sourceID))
+		return nil, fmt.Errorf("source %s cannot be read in place", strconv.Quote(sourceID))
 	}
-	book, err := opener.OpenBook(r.Context(), itemID)
-	if err != nil {
-		return nil, "", err
-	}
-	return book, progressKey(sourceID, itemID), nil
+	return opener.OpenBook(r.Context(), itemID)
 }
 
 // handleBookManifest lists what is inside a book, which is what the reader's
 // resource loader needs before it can ask for anything.
 func (s *Server) handleBookManifest(w http.ResponseWriter, r *http.Request) {
-	book, _, err := s.openBook(r)
+	book, err := s.openBook(r)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -635,7 +817,7 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	book, _, err := s.openBook(r)
+	book, err := s.openBook(r)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -660,13 +842,17 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetProgress(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
 	sourceID := r.URL.Query().Get("source")
 	itemID := r.URL.Query().Get("id")
 	if sourceID == "" || itemID == "" {
 		writeError(w, http.StatusBadRequest, "source and id are required")
 		return
 	}
-	p, ok := s.store.Progress(progressKey(sourceID, itemID))
+	p, ok := s.store.Progress(progressKey(user.ID, sourceID, itemID))
 	if !ok {
 		writeJSON(w, http.StatusOK, map[string]any{"found": false})
 		return
@@ -680,6 +866,10 @@ func (s *Server) handleGetProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
 	sourceID := r.URL.Query().Get("source")
 	itemID := r.URL.Query().Get("id")
 	if sourceID == "" || itemID == "" {
@@ -701,7 +891,7 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.store.SetProgress(progressKey(sourceID, itemID), state.Progress{
+	err := s.store.SetProgress(progressKey(user.ID, sourceID, itemID), state.Progress{
 		Location:  body.Location,
 		Fraction:  body.Fraction,
 		UpdatedAt: time.Now().UTC(),
@@ -713,12 +903,13 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"saved": true})
 }
 
-// progressKey namespaces a book by its source, so two libraries holding the
-// same filename do not share a bookmark.
-func progressKey(sourceID, itemID string) string {
-	// Source ids are ours and never contain a slash, so this cannot be
-	// ambiguous however many slashes the item id has.
-	return sourceID + "/" + itemID
+// progressKey namespaces a bookmark by who it belongs to and which library it
+// came from, so two people reading the same book keep their own places and two
+// libraries holding the same filename do not collide.
+func progressKey(userID, sourceID, itemID string) string {
+	// Account ids and source ids are both ours and neither contains a slash,
+	// so this cannot be ambiguous however many slashes the item id has.
+	return userID + "/" + sourceID + "/" + itemID
 }
 
 func (s *Server) withLogging(next http.Handler) http.Handler {

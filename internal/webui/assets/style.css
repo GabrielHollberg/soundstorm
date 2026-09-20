@@ -303,6 +303,51 @@ header {
   padding: 4px 10px;
 }
 
+/* Accounts --------------------------------------------------------------- */
+
+#account { margin: 16px 20px; }
+#account h2 { margin: 0 0 4px; font-size: 17px; }
+#people-block h2 { margin-top: 26px; }
+
+.inline-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.inline-form label { font-size: 13px; color: var(--muted); }
+.inline-form input { width: auto; flex: 1 1 200px; max-width: 280px; }
+.inline-form button { flex: 0 0 auto; }
+
+#people-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+#people-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+.person-name { font-weight: 600; }
+.person-role {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.person-spacer { flex: 1; }
+
 /* Audio dock ------------------------------------------------------------ */
 
 .dock {

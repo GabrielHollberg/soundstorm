@@ -56,6 +56,11 @@ const (
 // able to tell which account is the gateway's.
 const accountName = "soundstorm"
 
+// backendTimeout bounds a call made while somebody is waiting - creating an
+// account on a backend, or removing one. Longer than a search's deadline,
+// because this is a write and retrying it would leave an orphan.
+const backendTimeout = 20 * time.Second
+
 // giveUpAfter bounds how long we keep retrying a backend that never comes up.
 // A backend can be genuinely absent (image failed to pull, wrong URL) and
 // SoundStorm must stay useful for the ones that did work.
@@ -424,6 +429,11 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			Token:     creds.Token,
 			LibraryID: creds.LibraryID,
 			Timeout:   15 * time.Second,
+			// Listening position is the one thing that differs per person, so
+			// it is the one thing that asks who is calling.
+			TokenFor: func(ctx context.Context, userID string) (string, error) {
+				return m.TokenFor(ctx, t.ID, userID)
+			},
 		})
 		return one(s, err)
 
@@ -470,4 +480,90 @@ func generatePassword() (string, error) {
 		return "", fmt.Errorf("generate password: %w", err)
 	}
 	return hex.EncodeToString(raw), nil
+}
+
+// --- per-user backend accounts -------------------------------------------------
+
+// backendUsername is what a SoundStorm account is called on a backend.
+//
+// Prefixed and keyed by id rather than by name, so that renaming or replacing
+// somebody cannot collide with an account already there, and so a human
+// looking at the backend can see where these came from.
+func backendUsername(userID string) string {
+	return accountName + "-" + userID
+}
+
+// TokenFor resolves a SoundStorm account to a credential on a backend, making
+// one if it does not exist yet.
+//
+// Lazily, on first use, rather than when the account is created: a backend can
+// be down or still provisioning when somebody is added, and an account that
+// could not be created then would have to be retried by something. First use
+// is the retry.
+//
+// The owner is special-cased to the shared administrator credential. They
+// provisioned the backend and already have an account on it; giving them a
+// second one would split their listening history in two.
+func (m *Manager) TokenFor(ctx context.Context, backendID, userID string) (string, error) {
+	creds, ok := m.store.Backend(backendID)
+	if !ok {
+		return "", fmt.Errorf("%s is not provisioned yet", backendID)
+	}
+
+	user, ok := m.store.User(userID)
+	if !ok {
+		return "", fmt.Errorf("no such account")
+	}
+	if user.IsOwner() {
+		return creds.Token, nil
+	}
+
+	if identity, ok := m.store.Identity(userID, backendID); ok && identity.Token != "" {
+		return identity.Token, nil
+	}
+
+	c, err := httpx.New(creds.BaseURL, backendTimeout)
+	if err != nil {
+		return "", err
+	}
+	identity, err := createAudiobookshelfUser(ctx, c, creds.Token, backendUsername(userID))
+	if err != nil {
+		return "", err
+	}
+	if err := m.store.SetIdentity(userID, backendID, identity); err != nil {
+		return "", err
+	}
+	m.log.Info("created a backend account",
+		"backend", backendID, "for", user.Name, "username", identity.Username)
+	return identity.Token, nil
+}
+
+// ForgetUser removes the accounts SoundStorm made for somebody on the backends.
+//
+// Best effort, and deliberately so: a backend that is down must not stop
+// somebody being removed from SoundStorm. What is left behind is an unused
+// account on a server nobody can reach, which is untidy rather than unsafe -
+// whereas refusing to remove a person because Audiobookshelf is restarting
+// would be a real problem.
+func (m *Manager) ForgetUser(ctx context.Context, userID string) {
+	for _, t := range m.targets {
+		identity, ok := m.store.Identity(userID, t.ID)
+		if !ok || identity.RemoteID == "" {
+			continue
+		}
+		creds, ok := m.store.Backend(t.ID)
+		if !ok {
+			continue
+		}
+		c, err := httpx.New(creds.BaseURL, backendTimeout)
+		if err != nil {
+			continue
+		}
+		if err := deleteAudiobookshelfUser(ctx, c, creds.Token, identity.RemoteID); err != nil {
+			m.log.Warn("could not remove a backend account",
+				"backend", t.ID, "username", identity.Username, "err", err)
+			continue
+		}
+		m.log.Info("removed a backend account", "backend", t.ID, "username", identity.Username)
+	}
 }

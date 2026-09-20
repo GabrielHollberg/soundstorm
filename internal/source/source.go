@@ -264,6 +264,31 @@ type Starter interface {
 	Start(ctx context.Context) error
 }
 
+// --- who is asking ------------------------------------------------------------
+
+type userKey struct{}
+
+// WithUserID records which SoundStorm account a request belongs to.
+//
+// Almost nothing needs it. A search returns the same library to everybody, and
+// a film is the same bytes whoever asked. It exists for the one thing that
+// genuinely differs per person: listening position, which Audiobookshelf keeps
+// per account, so two people sharing one account there would overwrite each
+// other's place in a book.
+//
+// It lives here rather than in internal/auth so that an adapter can read it
+// without depending on how logging in works.
+func WithUserID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, userKey{}, id)
+}
+
+// UserID returns the account a request belongs to, or "" when there is none -
+// a background scan or a provisioning call, which belong to nobody.
+func UserID(ctx context.Context) string {
+	id, _ := ctx.Value(userKey{}).(string)
+	return id
+}
+
 // Registry holds the live sources.
 //
 // Unlike the rest of SoundStorm this is mutable at runtime: sources appear as

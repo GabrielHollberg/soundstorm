@@ -17,6 +17,7 @@ const state = {
   searchSeq: 0,
   setupTimer: null,
   libraryEmpty: true,
+  me: null, // the signed-in account, from /api/session
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -118,10 +119,11 @@ $('gate-form').addEventListener('submit', async (event) => {
     return;
   }
   $('gate-password').value = '';
-  showApp();
+  showApp(body && body.user);
 });
 
 $('logout').addEventListener('click', async () => {
+  show($('account'), false);
   stopAudio();
   closeVideo();
   await api('/api/logout', { method: 'POST' });
@@ -131,15 +133,139 @@ $('logout').addEventListener('click', async () => {
 
 /* -------------------------------------------------------------- app shell */
 
-function showApp() {
+function showApp(me) {
+  state.me = me || null;
   show($('boot'), false);
   show($('gate'), false);
   show($('app'), true);
   $('search-input').focus();
+  renderAccount();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
   loadLibrary();
 }
+
+/* --------------------------------------------------------------- accounts */
+
+function renderAccount() {
+  const me = state.me;
+  if (!me) return;
+
+  $('account-who').textContent = me.owner
+    ? `Signed in as ${me.name}. You set this server up, so you can add and remove people.`
+    : `Signed in as ${me.name}.`;
+
+  // Hiding the controls is presentation, not permission - the server refuses
+  // these calls for a member whether or not the form is on screen.
+  show($('people-block'), Boolean(me.owner));
+  if (me.owner) loadPeople();
+}
+
+$('account-toggle').addEventListener('click', () => {
+  const opening = $('account').classList.contains('hidden');
+  show($('account'), opening);
+  $('account-toggle').setAttribute('aria-expanded', String(opening));
+  if (opening) renderAccount();
+});
+
+function note(el, message, isError) {
+  el.textContent = message;
+  el.classList.toggle('error', Boolean(isError));
+  el.classList.toggle('muted', !isError);
+  show(el, true);
+}
+
+$('password-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const field = $('new-password');
+  const { ok, body } = await api('/api/account/password', {
+    method: 'POST',
+    body: JSON.stringify({ password: field.value }),
+  });
+  if (!ok) {
+    note($('password-note'), (body && body.error) || 'Could not change it.', true);
+    return;
+  }
+  field.value = '';
+  note($('password-note'), 'Changed. Your other devices stay signed in.', false);
+});
+
+async function loadPeople() {
+  const { ok, body } = await api('/api/users');
+  if (!ok || !body) return;
+
+  const list = $('people-list');
+  list.replaceChildren();
+
+  for (const person of body.users || []) {
+    const li = document.createElement('li');
+
+    const name = document.createElement('span');
+    name.className = 'person-name';
+    name.textContent = person.name;
+
+    const role = document.createElement('span');
+    role.className = 'person-role';
+    role.textContent = person.owner ? 'owner' : 'member';
+
+    const spacer = document.createElement('span');
+    spacer.className = 'person-spacer';
+
+    li.append(name, role, spacer);
+
+    // The owner is not removable and neither are you: the server refuses both,
+    // and offering a button that always fails is worse than offering none.
+    if (!person.owner && person.id !== (state.me && state.me.id)) {
+      const remove = document.createElement('button');
+      remove.className = 'ghost';
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => removePerson(person));
+      li.append(remove);
+    }
+    list.append(li);
+  }
+}
+
+async function removePerson(person) {
+  // Removing somebody deletes their place in every book and the account they
+  // were given on the audiobook server, so it is worth one question.
+  if (!window.confirm(
+    `Remove ${person.name}? Their logins stop working immediately and their `
+    + 'reading and listening positions are deleted. Your media is untouched.')) {
+    return;
+  }
+  const { ok, body } = await api(`/api/users/${encodeURIComponent(person.id)}`,
+    { method: 'DELETE' });
+  if (!ok) {
+    note($('people-note'), (body && body.error) || 'Could not remove them.', true);
+    return;
+  }
+  note($('people-note'), `${person.name} was removed.`, false);
+  loadPeople();
+}
+
+$('add-person-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const name = $('new-username');
+  const password = $('new-person-password');
+
+  const { ok, body } = await api('/api/users', {
+    method: 'POST',
+    body: JSON.stringify({ username: name.value, password: password.value }),
+  });
+  if (!ok) {
+    note($('people-note'), (body && body.error) || 'Could not add them.', true);
+    return;
+  }
+  const added = body && body.user ? body.user.name : name.value;
+  name.value = '';
+  password.value = '';
+  note($('people-note'),
+    `${added} can sign in now. Tell them the password you just chose - they can change it themselves.`,
+    false);
+  loadPeople();
+});
 
 /* ---------------------------------------------------------------- library */
 
@@ -920,6 +1046,6 @@ $('audio-close').addEventListener('click', stopAudio);
     $('boot').textContent = 'soundstorm is not responding.';
     return;
   }
-  if (body.signedIn) showApp();
+  if (body.signedIn) showApp(body.user);
   else showGate(body.hasAccount);
 })();

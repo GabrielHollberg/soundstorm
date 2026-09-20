@@ -37,7 +37,10 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - one command installs it — published multi-arch images, no build step, no
   repository to clone
 - SoundStorm provisions every one of them on first boot — **zero API keys typed**
-- one account, created on first visit, guarding everything
+- **accounts**: the first visit creates the owner, who adds everyone else; each
+  person keeps their own place in every book
+- **HTTPS** on request, with a local certificate authority so there is one
+  install per device and no warning afterwards
 - one search across all four, merged and ranked
 - music, films, TV and audiobooks play **inside SoundStorm**
 - video a browser cannot decode is **transcoded by Jellyfin on the fly** and
@@ -46,7 +49,7 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - ebooks are **read inside SoundStorm**, and remember where you stopped
 - no backend publishes a port; SoundStorm is the only door
 
-Not built yet: multi-user and HTTPS. See [docs/roadmap.md](docs/roadmap.md).
+See [docs/roadmap.md](docs/roadmap.md) for what is not built yet.
 
 ## Install it
 
@@ -133,13 +136,44 @@ docker compose pull && docker compose up -d     # upgrade
 
 Re-running the installer does the upgrade too.
 
-### One thing to know before you share it
+### Giving other people a login
 
-SoundStorm has **one account and no HTTPS yet**. On your own machine or your
-own network that is fine. Do not put it on the open internet as it stands —
-put it behind a VPN such as [Tailscale](https://tailscale.com), or a reverse
-proxy that terminates TLS. Multi-user and built-in HTTPS are on
-[the roadmap](docs/roadmap.md).
+The first account is the owner. From **Account → People** the owner adds
+everyone else: a name and a password, and that is the whole ceremony. There is
+no open registration and no invite link, deliberately — a server that might be
+reachable from outside a house should not let a stranger create an account.
+
+Everybody shares one library and keeps their own **place in every book**, both
+for reading and for listening. The audiobook side of that is real per-person
+state on the backend, not a note in a file: SoundStorm quietly gives each
+person their own Audiobookshelf account, and removing them takes it away again
+along with their sessions and bookmarks.
+
+### Turning on HTTPS
+
+Off by default, because on `localhost` there is nothing on the wire to protect
+and a certificate warning is a poor first screen. The moment another machine
+can reach it, turn it on — put this in the `.env` file beside your
+`docker-compose.yml` and run `docker compose up -d`:
+
+```sh
+SOUNDSTORM_TLS=self-signed
+```
+
+SoundStorm then runs its own certificate authority. Visit
+`http://<server>:8099/ca.crt`, install that file once per device, and there is
+no warning again — at any address, including a bare LAN IP, including addresses
+the server has never seen. Certificates are minted from the connection itself,
+so there is nothing to configure and nothing to renew.
+
+Already have a real certificate? `SOUNDSTORM_TLS=file` with
+`SOUNDSTORM_TLS_CERT` and `SOUNDSTORM_TLS_KEY`. Behind a reverse proxy that
+terminates TLS for you? Leave TLS off and set `SOUNDSTORM_TRUST_PROXY=true` so
+the session cookie is marked Secure.
+
+**Still true:** SoundStorm has not been audited, and putting any self-hosted
+server directly on the open internet is a decision worth making deliberately. A
+VPN such as [Tailscale](https://tailscale.com) remains the easiest safe answer.
 
 ## For developers
 

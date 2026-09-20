@@ -206,3 +206,86 @@ func scanAudiobookshelfLibrary(ctx context.Context, c *httpx.Client, libraryID s
 	}
 	return nil
 }
+
+// --- per-user accounts --------------------------------------------------------
+
+// createAudiobookshelfUser makes an ordinary account on Audiobookshelf and
+// returns its id and a token for it.
+//
+// Two things about this were established against 2.36.1 rather than read
+// anywhere, and both are load-bearing:
+//
+// isActive must be sent. Without it an account is created inactive, POST
+// returns a perfectly ordinary 200 with a token in it, and that token answers
+// Unauthorized to everything. There is nothing in the response to suggest a
+// problem.
+//
+// The response carries a token, so there is no second login call and no reason
+// to keep the password. The one generated here is written once and never read
+// again - nobody signs in to Audiobookshelf, because nobody can reach it.
+func createAudiobookshelfUser(ctx context.Context, c *httpx.Client, adminToken, username string) (state.Identity, error) {
+	password, err := generatePassword()
+	if err != nil {
+		return state.Identity{}, err
+	}
+
+	resp, err := c.Do(ctx, httpx.Request{
+		Method:  http.MethodPost,
+		Path:    "/api/users",
+		Headers: map[string]string{"Authorization": "Bearer " + adminToken},
+		Body: map[string]any{
+			"username": username,
+			"password": password,
+			"type":     "user",
+			"isActive": true,
+		},
+	})
+	if err != nil {
+		return state.Identity{}, fmt.Errorf("create audiobookshelf user: %w", err)
+	}
+	if err := resp.Err(); err != nil {
+		return state.Identity{}, fmt.Errorf("create audiobookshelf user: %w", err)
+	}
+
+	var created struct {
+		User struct {
+			ID       string `json:"id"`
+			Token    string `json:"token"`
+			IsActive bool   `json:"isActive"`
+		} `json:"user"`
+	}
+	if err := resp.JSON(&created); err != nil {
+		return state.Identity{}, err
+	}
+	if created.User.ID == "" || created.User.Token == "" {
+		return state.Identity{}, fmt.Errorf("audiobookshelf created a user with no token")
+	}
+	if !created.User.IsActive {
+		// Refusing here rather than storing it: an inactive account's token is
+		// rejected by every endpoint, so keeping it would turn one silent
+		// failure into a permanent one.
+		return state.Identity{}, fmt.Errorf("audiobookshelf created %q inactive; its token would be refused", username)
+	}
+
+	return state.Identity{
+		Username:  username,
+		Password:  password,
+		Token:     created.User.Token,
+		RemoteID:  created.User.ID,
+		CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+// deleteAudiobookshelfUser removes an account and, with it, its listening
+// history. Deleting invalidates the token immediately.
+func deleteAudiobookshelfUser(ctx context.Context, c *httpx.Client, adminToken, remoteID string) error {
+	resp, err := c.Do(ctx, httpx.Request{
+		Method:  http.MethodDelete,
+		Path:    "/api/users/" + url.PathEscape(remoteID),
+		Headers: map[string]string{"Authorization": "Bearer " + adminToken},
+	})
+	if err != nil {
+		return err
+	}
+	return resp.Err()
+}

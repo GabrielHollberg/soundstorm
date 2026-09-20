@@ -40,6 +40,8 @@
         <input id="search-input" type="search" placeholder="Search everything&hellip;"
                autocomplete="off" aria-label="Search your library">
       </form>
+      <button id="account-toggle" class="ghost" type="button" aria-expanded="false"
+              aria-controls="account">Account</button>
       <button id="logout" class="ghost" type="button">Sign out</button>
     </header>
 
@@ -58,6 +60,38 @@
       <h2>Setting up your library</h2>
       <p class="muted">SoundStorm is configuring your media servers. No API keys needed.</p>
       <ul id="setup-list"></ul>
+    </section>
+
+    <!-- Accounts. Everyone gets the top half; only the owner sees the rest,
+         and only because the server refuses the calls either way - hiding a
+         control is presentation, not a permission. -->
+    <section id="account" class="card hidden">
+      <h2>Your account</h2>
+      <p id="account-who" class="muted"></p>
+
+      <form id="password-form" class="inline-form">
+        <label for="new-password">New password</label>
+        <input id="new-password" type="password" autocomplete="new-password"
+               minlength="8" required>
+        <button type="submit">Change it</button>
+      </form>
+      <p id="password-note" class="muted hidden" role="status"></p>
+
+      <div id="people-block" class="hidden">
+        <h2>People</h2>
+        <p class="muted">Everyone gets their own login, their own place in every
+          book, and the same library.</p>
+        <ul id="people-list"></ul>
+
+        <form id="add-person-form" class="inline-form">
+          <label for="new-username">Add someone</label>
+          <input id="new-username" placeholder="Name" autocomplete="off" required>
+          <input id="new-person-password" type="password" placeholder="Password"
+                 autocomplete="new-password" minlength="8" required>
+          <button type="submit">Add</button>
+        </form>
+        <p id="people-note" class="muted hidden" role="status"></p>
+      </div>
     </section>
 
     <!-- Shown when there is no search running. On a fresh install this is the

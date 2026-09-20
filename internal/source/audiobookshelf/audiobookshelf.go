@@ -37,6 +37,17 @@ type Config struct {
 	Token     string
 	LibraryID string
 	Timeout   time.Duration
+
+	// TokenFor resolves a SoundStorm account to an Audiobookshelf one.
+	//
+	// Only listening position uses it. Searching, artwork and audio bytes all
+	// go through the shared account, because they are the same for everybody
+	// and asking per person would cost an account on the backend for anyone
+	// who ever ran a search. Position is different: Audiobookshelf stores it
+	// per account, so without this two people lose each other's place.
+	//
+	// Nil means single-user: everything uses Token.
+	TokenFor func(ctx context.Context, userID string) (string, error)
 }
 
 // Source is an Audiobookshelf library.
@@ -382,6 +393,28 @@ func (v *looseBool) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
+// actAs returns the Authorization header to use for the caller's own data.
+//
+// An error rather than a fallback to the shared account: quietly writing one
+// person's position into another's record is worse than not saving it, and
+// "your place was not saved" is at least something a log can say.
+func (s *Source) actAs(ctx context.Context) (map[string]string, error) {
+	token := s.cfg.Token
+	if s.cfg.TokenFor != nil {
+		if userID := source.UserID(ctx); userID != "" {
+			resolved, err := s.cfg.TokenFor(ctx, userID)
+			if err != nil {
+				return nil, fmt.Errorf("audiobookshelf %q: no account for this user: %w", s.id, err)
+			}
+			token = resolved
+		}
+	}
+	if token == "" {
+		return nil, fmt.Errorf("audiobookshelf %q: no credentials for this request", s.id)
+	}
+	return map[string]string{"Authorization": "Bearer " + token}, nil
+}
+
 // Position reads how far into a book somebody listened.
 //
 // A book nobody has started answers 404, which is not an error worth reporting:
@@ -391,13 +424,24 @@ func (s *Source) Position(ctx context.Context, itemID string) (source.Position, 
 		return source.Position{}, fmt.Errorf("audiobookshelf %q: empty item id", s.id)
 	}
 
-	var progress mediaProgress
-	err := s.http.JSON(ctx, progressPath(itemID), nil, &progress)
+	headers, err := s.actAs(ctx)
 	if err != nil {
+		return source.Position{}, err
+	}
+
+	resp, err := s.http.Do(ctx, httpx.Request{Path: progressPath(itemID), Headers: headers})
+	if err != nil {
+		return source.Position{}, fmt.Errorf("audiobookshelf %q: read position: %w", s.id, err)
+	}
+	if err := resp.Err(); err != nil {
 		var statusErr *httpx.StatusError
 		if errors.As(err, &statusErr) && statusErr.Status == http.StatusNotFound {
 			return source.Position{}, nil
 		}
+		return source.Position{}, fmt.Errorf("audiobookshelf %q: read position: %w", s.id, err)
+	}
+	var progress mediaProgress
+	if err := resp.JSON(&progress); err != nil {
 		return source.Position{}, fmt.Errorf("audiobookshelf %q: read position: %w", s.id, err)
 	}
 
@@ -453,10 +497,15 @@ func (s *Source) SetPosition(ctx context.Context, itemID string, pos source.Posi
 		payload["progress"] = float64(1)
 	}
 
+	headers, err := s.actAs(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := s.http.Do(ctx, httpx.Request{
-		Method: http.MethodPatch,
-		Path:   progressPath(itemID),
-		Body:   payload,
+		Method:  http.MethodPatch,
+		Path:    progressPath(itemID),
+		Headers: headers,
+		Body:    payload,
 	})
 	if err != nil {
 		return fmt.Errorf("audiobookshelf %q: save position: %w", s.id, err)

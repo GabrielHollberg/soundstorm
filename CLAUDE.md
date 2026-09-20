@@ -103,6 +103,91 @@ sources", and that was not actually possible until `jellyfin.Config` grew a
 Kind and ItemTypes; the adapter hardcoded `KindVideo`. `provision.buildSources`
 now returns a slice for this reason.
 
+## Accounts, and the one thing that is per person
+
+Two roles, and the gap between them is deliberately thin: the **owner** is
+whoever installed the server and can add and remove people; everyone else is a
+**member**. That is the entire difference. A media server for a household does
+not need a permission matrix, and every role beyond these two is a decision
+somebody has to make about their family.
+
+Signup is a first-boot action and closes the moment an account exists - a
+second one would be a stranger who found the port claiming somebody else's
+server. After that only the owner adds accounts. There are no invite links and
+no open registration, because this thing is meant to be reachable from outside
+a house.
+
+**Almost nothing actually differs per person.** The library is the same, search
+returns the same results, and a film is the same bytes whoever asked. Exactly
+two things are personal:
+
+- **Reading position**, which is ours, and is keyed `userID/sourceID/itemID`.
+- **Listening position**, which is Audiobookshelf's, and is keyed by *its*
+  account - so two people sharing one account there overwrite each other.
+
+That second one is why `internal/state` grew `Identity` and why
+`provision.TokenFor` exists. A member gets their own Audiobookshelf account,
+created lazily on first use rather than when they are added: a backend can be
+down or still provisioning when somebody joins, and first use is a retry that
+costs nothing to write. The owner is special-cased to the shared administrator
+credential - they provisioned the backend and already have an account on it, so
+giving them a second one would split their own history in two.
+
+Navidrome and Jellyfin keep one shared account on purpose. Nothing SoundStorm
+surfaces from them differs per person, so an account each would be four times
+the provisioning for no visible gain. Revisit when watched-state or favourites
+reach the UI.
+
+`source.WithUserID` carries the account id to the adapters, and it lives in
+`internal/source` rather than `internal/auth` so an adapter can find out who is
+asking without depending on how signing in works.
+
+Two things verified against Audiobookshelf 2.36.1 rather than read anywhere:
+
+- **`isActive` must be sent when creating a user.** Without it the account is
+  created inactive, `POST /api/users` returns an ordinary 200 with a token in
+  it, and that token answers `Unauthorized` to everything. Nothing in the
+  response suggests a problem.
+- **The create response carries a token**, so there is no second login call and
+  no reason to keep the password. Deleting the user invalidates it at once.
+
+Removing somebody deletes their sessions, their bookmarks and their backend
+accounts. The backend accounts go **first**, because deleting the SoundStorm
+account drops the record of which Audiobookshelf user belonged to it and after
+that nothing knows what to clean up. It is best effort: a backend that is down
+must not stop somebody being removed.
+
+## TLS without anybody running openssl
+
+`internal/servetls`. A home server has no domain name and no route an ACME
+challenge can reach, so the certificate is made locally - but as a local
+*authority* rather than a bare self-signed certificate. Install `/ca.crt` once
+per device and everything SoundStorm issues afterwards is trusted, including
+certificates for addresses it had never seen. A self-signed leaf would have to
+be re-trusted on every renewal and every new address.
+
+**Certificates are minted from the handshake, not from configuration.**
+SoundStorm is in a container, so the addresses on its own interfaces are the
+container's - 172.18.0.5, never the 192.168.1.50 somebody types - and it cannot
+learn the real one. The handshake carries it: SNI for a hostname, and for a
+bare IP, which browsers send no SNI for, `ClientHelloInfo.Conn.LocalAddr()` is
+by definition the address the client dialled. `SOUNDSTORM_TLS_HOSTS` is
+therefore optional and only saves the first request a signature.
+
+One name per certificate. The first version pre-minted a single leaf covering
+every local address, and its SANs then enumerated the machine's Tailscale
+address, eight IPv6 prefixes and its Windows hostname to anybody who opened a
+connection.
+
+Off by default: on localhost there is nothing on the wire to protect and a
+certificate warning is a poor first screen. An unknown `SOUNDSTORM_TLS` value
+is **fatal** - quietly serving plain HTTP to somebody who asked for encryption
+is the worst available way to be wrong.
+
+`SOUNDSTORM_TRUST_PROXY` lets `X-Forwarded-Proto` decide whether the session
+cookie is Secure, for a reverse proxy that terminates TLS. Off unless asked
+for, because any client can send that header.
+
 ## The folders are the interface
 
 Installing SoundStorm creates `library/` with four subfolders, and the app's first
@@ -380,6 +465,14 @@ and never point automated fetches at an origin site that has asked you not to.
   iframe that inherits SoundStorm's origin - without `script-src 'self'`, opening a
   book would run a stranger's JavaScript against the session cookie. `blob:` IS
   allowed in style-src and font-src, or books render unstyled.
+- **The state file has a schema version and a migration.** Version 1 had one
+  `user`, sessions that were bare expiry timestamps, and bookmarks keyed by
+  source and item alone; version 2 has accounts. The upgrade makes the existing
+  account the owner, gives its sessions its id and its bookmarks its prefix, so
+  nobody is signed out and nobody loses their place. `Session.UnmarshalJSON`
+  accepts both shapes, which keeps the old one in a single place. Tested
+  against a real v1 file, on disk, both in `internal/state` and on a running
+  container.
 - **Audiobook chapters are files, not chapter marks.** `TrackLister` reports an
   item's audio files and the dock plays through them, which covers a per-chapter
   rip - the shape of every LibriVox book. A single m4b with twenty chapter marks

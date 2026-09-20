@@ -154,9 +154,9 @@ func run(log *slog.Logger) error {
 		srv.TLSConfig = tlsServer.TLSConfig()
 	}
 
-	accountState := "an account exists"
-	if store.User() == nil {
-		accountState = "no account yet - first visit creates it"
+	accountState := fmt.Sprintf("%d accounts", store.UserCount())
+	if store.UserCount() == 0 {
+		accountState = "no accounts yet - the first visit creates the owner"
 	}
 	scheme := "http"
 	if tlsServer != nil {

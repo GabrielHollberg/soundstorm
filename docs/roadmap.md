@@ -51,12 +51,24 @@ might have been direct played into a mandatory re-encode. Jellyfin can do it;
 the work is deciding when to ask, since the cost is real and the user is the
 only one who knows whether they want those subtitles.
 
-## 5. Multi-user
+## 5. Multi-user, the rest of it
 
-Currently one account. Real multi-user means per-user libraries and per-user
-play state, which means mapping SoundStorm accounts onto backend accounts — the
-provisioner would create a Navidrome and Jellyfin user per SoundStorm user rather
-than one shared `soundstorm` account. That is a real feature, not a slice.
+Accounts exist: an owner, members, per-person reading and listening position,
+and a per-person Audiobookshelf account so two people do not overwrite each
+other in a book. What is not built:
+
+- **Per-user Navidrome and Jellyfin accounts.** They share one. Nothing
+  SoundStorm surfaces from them differs per person today, so this only matters
+  when watched state, play counts or favourites reach the UI.
+- **Per-user libraries.** Everybody sees everything. There is no way to keep
+  one shelf away from a child account, which is the first thing a household
+  with children will ask for.
+- **Rate limiting on the login.** The 600k-iteration derivation makes each
+  attempt cost a few hundred milliseconds, and that is the only defence there
+  is. Fine on a LAN; not enough facing the internet.
+- **Sessions cannot be listed or revoked individually.** Changing a password
+  does not sign other devices out, which is the wrong default the moment a
+  password is changed *because* it leaked.
 
 ## 6. HTTPS
 

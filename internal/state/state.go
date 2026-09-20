@@ -6,7 +6,7 @@
 //
 //   - Nobody types an API key. SoundStorm provisions each backend's credentials on
 //     first boot, so it has to keep them somewhere it can read again.
-//   - There is one login. A user and their sessions have to outlive a restart.
+//   - There are logins. Accounts and their sessions have to outlive a restart.
 //
 // What is NOT here: anything about the media itself. No metadata, no library
 // index, no play counts. The backends own all of that, which is why this file
@@ -19,10 +19,14 @@
 package state
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -48,14 +52,74 @@ type Backend struct {
 	ProvisionedAt time.Time `json:"provisionedAt"`
 }
 
-// User is SoundStorm's single account. Password verification lives in
-// internal/auth; this package only stores the derived material.
+// Roles. There is exactly one owner - whoever installed the server - and any
+// number of members. The distinction is deliberately thin: an owner can manage
+// accounts, and that is the only thing they can do that a member cannot. A
+// media server for a household does not need a permission matrix.
+const (
+	RoleOwner  = "owner"
+	RoleMember = "member"
+)
+
+// User is one account. Password verification lives in internal/auth; this
+// package only stores the derived material.
 type User struct {
+	// ID is generated and never changes. Accounts are keyed by it rather than
+	// by name so that deleting somebody and creating a new account with the
+	// same name does not quietly hand over their listening history.
+	ID         string    `json:"id"`
 	Name       string    `json:"name"`
+	Role       string    `json:"role"`
 	Salt       []byte    `json:"salt"`
 	Hash       []byte    `json:"hash"`
 	Iterations int       `json:"iterations"`
 	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// IsOwner reports whether this account can manage other accounts.
+func (u User) IsOwner() bool { return u.Role == RoleOwner }
+
+// Session is a live sign-in.
+type Session struct {
+	UserID  string    `json:"userId"`
+	Expires time.Time `json:"expires"`
+}
+
+// UnmarshalJSON accepts both the current shape and the one that came before
+// it, when there was one account and a session was just an expiry timestamp.
+//
+// Doing it here rather than in a migration pass keeps the old shape's
+// existence in one place, and means an upgrade cannot sign everybody out. The
+// missing UserID is filled in by the migration, which is the only thing that
+// knows whose session it must have been.
+func (s *Session) UnmarshalJSON(raw []byte) error {
+	type shape Session
+	var current shape
+	if err := json.Unmarshal(raw, &current); err == nil {
+		*s = Session(current)
+		return nil
+	}
+	var expiry time.Time
+	if err := json.Unmarshal(raw, &expiry); err != nil {
+		return fmt.Errorf("parse session: %w", err)
+	}
+	s.Expires = expiry
+	return nil
+}
+
+// Identity is the account SoundStorm holds on a backend for one of its users.
+//
+// Most backends are used through a single shared account, because nothing
+// user-visible depends on who is asking. Audiobookshelf is the exception:
+// it tracks listening position per user, so two people sharing one account
+// there would overwrite each other's place in a book.
+type Identity struct {
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"`
+	RemoteID string `json:"remoteId,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // Progress is where the reader left off in one book.
@@ -68,12 +132,26 @@ type Progress struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// currentVersion is the state file's schema version. Version 1 had a single
+// `user` object; version 2 has a map of accounts.
+const currentVersion = 2
+
 type data struct {
-	Version  int                  `json:"version"`
-	User     *User                `json:"user"`
-	Sessions map[string]time.Time `json:"sessions"`
-	Backends map[string]Backend   `json:"backends"`
-	Progress map[string]Progress  `json:"progress"`
+	Version int `json:"version"`
+
+	// User is version 1's single account, read on upgrade and then dropped.
+	// It is never written: `omitempty` plus a nil pointer means the key
+	// disappears from the file the first time it is saved.
+	User *User `json:"user,omitempty"`
+
+	Users    map[string]User     `json:"users"`
+	Sessions map[string]Session  `json:"sessions"`
+	Backends map[string]Backend  `json:"backends"`
+	Progress map[string]Progress `json:"progress"`
+
+	// Identities are per-user accounts on a backend, keyed by user id and then
+	// by backend id.
+	Identities map[string]map[string]Identity `json:"identities,omitempty"`
 }
 
 // Store is the on-disk state, guarded for concurrent use.
@@ -88,10 +166,12 @@ func Open(path string) (*Store, error) {
 	s := &Store{
 		path: path,
 		d: data{
-			Version:  1,
-			Sessions: map[string]time.Time{},
-			Backends: map[string]Backend{},
-			Progress: map[string]Progress{},
+			Version:    currentVersion,
+			Users:      map[string]User{},
+			Sessions:   map[string]Session{},
+			Backends:   map[string]Backend{},
+			Progress:   map[string]Progress{},
+			Identities: map[string]map[string]Identity{},
 		},
 	}
 
@@ -115,8 +195,11 @@ func Open(path string) (*Store, error) {
 	if err := json.Unmarshal(raw, &s.d); err != nil {
 		return nil, fmt.Errorf("parse state %s: %w", path, err)
 	}
+	if s.d.Users == nil {
+		s.d.Users = map[string]User{}
+	}
 	if s.d.Sessions == nil {
-		s.d.Sessions = map[string]time.Time{}
+		s.d.Sessions = map[string]Session{}
 	}
 	if s.d.Backends == nil {
 		s.d.Backends = map[string]Backend{}
@@ -124,8 +207,61 @@ func Open(path string) (*Store, error) {
 	if s.d.Progress == nil {
 		s.d.Progress = map[string]Progress{}
 	}
+	if s.d.Identities == nil {
+		s.d.Identities = map[string]map[string]Identity{}
+	}
+	s.migrateLocked()
 	s.pruneLocked()
 	return s, s.save()
+}
+
+// migrateLocked brings a version 1 file up to date.
+//
+// Version 1 had one account, sessions that were bare expiry timestamps, and
+// reading positions keyed by source and item alone. All three become wrong the
+// moment there are two people, so the single account becomes the owner, its
+// sessions get its id, and its bookmarks get its prefix. Nobody is signed out
+// and nobody loses their place, which is the whole point of doing this rather
+// than starting the file again.
+func (s *Store) migrateLocked() {
+	if s.d.Version >= currentVersion {
+		s.d.Version = currentVersion
+		return
+	}
+
+	if s.d.User != nil {
+		owner := *s.d.User
+		owner.ID = newID()
+		owner.Role = RoleOwner
+		s.d.Users[owner.ID] = owner
+
+		for token, session := range s.d.Sessions {
+			if session.UserID == "" {
+				session.UserID = owner.ID
+				s.d.Sessions[token] = session
+			}
+		}
+
+		moved := make(map[string]Progress, len(s.d.Progress))
+		for key, p := range s.d.Progress {
+			moved[owner.ID+"/"+key] = p
+		}
+		s.d.Progress = moved
+	}
+
+	s.d.User = nil
+	s.d.Version = currentVersion
+}
+
+// newID generates an account identifier.
+func newID() string {
+	raw := make([]byte, 8)
+	if _, err := rand.Read(raw); err != nil {
+		// crypto/rand failing is not a condition a media server can do
+		// anything useful about, and a duplicate id would be worse.
+		panic("state: no randomness available: " + err.Error())
+	}
+	return hex.EncodeToString(raw)
 }
 
 // save writes the state file atomically. Callers must hold the mutex, except
@@ -148,26 +284,148 @@ func (s *Store) save() error {
 	return nil
 }
 
-// User returns the account, or nil when nobody has signed up yet.
-func (s *Store) User() *User {
+// UserCount reports how many accounts exist. Zero means nobody has signed up.
+func (s *Store) UserCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.d.User == nil {
-		return nil
-	}
-	u := *s.d.User
-	return &u
+	return len(s.d.Users)
 }
 
-// SetUser stores the account. It refuses to overwrite an existing one: signup
-// is a first-boot action, and a second signup would be an account takeover.
-func (s *Store) SetUser(u User) error {
+// Users returns every account, oldest first, so a list does not reshuffle
+// itself between page loads.
+func (s *Store) Users() []User {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.d.User != nil {
-		return fmt.Errorf("an account already exists")
+	out := make([]User, 0, len(s.d.Users))
+	for _, u := range s.d.Users {
+		out = append(out, u)
 	}
-	s.d.User = &u
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out
+}
+
+// User returns one account by id.
+func (s *Store) User(id string) (User, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[id]
+	return u, ok
+}
+
+// UserByName finds an account by name, case-insensitively.
+//
+// Names are matched loosely but stored as typed: somebody who signed up as
+// "Gabe" should not have to remember that when they sign in, and should not be
+// greeted as "gabe" either.
+func (s *Store) UserByName(name string) (User, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	want := strings.ToLower(strings.TrimSpace(name))
+	for _, u := range s.d.Users {
+		if strings.ToLower(u.Name) == want {
+			return u, true
+		}
+	}
+	return User{}, false
+}
+
+// AddUser stores a new account, generating its id.
+//
+// It refuses a name already in use, case-insensitively: two accounts that
+// differ only in capitalisation would make signing in ambiguous.
+func (s *Store) AddUser(u User) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	want := strings.ToLower(strings.TrimSpace(u.Name))
+	for _, existing := range s.d.Users {
+		if strings.ToLower(existing.Name) == want {
+			return User{}, fmt.Errorf("there is already an account called %q", existing.Name)
+		}
+	}
+
+	u.ID = newID()
+	if u.Role == "" {
+		u.Role = RoleMember
+	}
+	// The first account is always the owner, whatever it asked to be. There is
+	// no bootstrap without it.
+	if len(s.d.Users) == 0 {
+		u.Role = RoleOwner
+	}
+	s.d.Users[u.ID] = u
+	return u, s.save()
+}
+
+// SetPassword replaces an account's derived password material.
+func (s *Store) SetPassword(id string, salt, hash []byte, iterations int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[id]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	u.Salt, u.Hash, u.Iterations = salt, hash, iterations
+	s.d.Users[id] = u
+	return s.save()
+}
+
+// DeleteUser removes an account along with everything attached to it: its
+// sessions, its bookmarks, and the accounts SoundStorm made for it on the
+// backends.
+//
+// The owner cannot be deleted. Nothing could then manage accounts, and the
+// server would need its state file edited by hand to recover - which is
+// precisely the kind of thing this project exists to avoid.
+func (s *Store) DeleteUser(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	u, ok := s.d.Users[id]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	if u.IsOwner() {
+		return fmt.Errorf("the owner account cannot be removed")
+	}
+
+	delete(s.d.Users, id)
+	delete(s.d.Identities, id)
+	for token, session := range s.d.Sessions {
+		if session.UserID == id {
+			delete(s.d.Sessions, token)
+		}
+	}
+	prefix := id + "/"
+	for key := range s.d.Progress {
+		if strings.HasPrefix(key, prefix) {
+			delete(s.d.Progress, key)
+		}
+	}
+	return s.save()
+}
+
+// Identity returns the account SoundStorm holds for a user on one backend.
+func (s *Store) Identity(userID, backendID string) (Identity, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.d.Identities[userID][backendID]
+	return id, ok
+}
+
+// SetIdentity records an account SoundStorm created for a user on a backend.
+func (s *Store) SetIdentity(userID, backendID string, id Identity) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.Identities[userID] == nil {
+		s.d.Identities[userID] = map[string]Identity{}
+	}
+	s.d.Identities[userID][backendID] = id
 	return s.save()
 }
 
@@ -204,24 +462,33 @@ func (s *Store) SetProgress(key string, p Progress) error {
 	return s.save()
 }
 
-// AddSession records a session token and its expiry.
-func (s *Store) AddSession(token string, expiry time.Time) error {
+// AddSession records a session token, whose it is, and when it expires.
+func (s *Store) AddSession(token, userID string, expiry time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pruneLocked()
-	s.d.Sessions[token] = expiry
+	s.d.Sessions[token] = Session{UserID: userID, Expires: expiry}
 	return s.save()
 }
 
-// ValidSession reports whether the token names a live session.
-func (s *Store) ValidSession(token string) bool {
+// SessionUser returns the account a live session belongs to.
+//
+// A session whose account has been deleted is not live, which is what makes
+// removing somebody take effect immediately rather than whenever their cookie
+// happened to expire.
+func (s *Store) SessionUser(token string) (User, bool) {
 	if token == "" {
-		return false
+		return User{}, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	expiry, ok := s.d.Sessions[token]
-	return ok && time.Now().Before(expiry)
+
+	session, ok := s.d.Sessions[token]
+	if !ok || !time.Now().Before(session.Expires) {
+		return User{}, false
+	}
+	u, ok := s.d.Users[session.UserID]
+	return u, ok
 }
 
 // DeleteSession forgets a session (logout).
@@ -238,8 +505,8 @@ func (s *Store) DeleteSession(token string) error {
 // pruneLocked drops expired sessions. Callers must hold the mutex.
 func (s *Store) pruneLocked() {
 	now := time.Now()
-	for token, expiry := range s.d.Sessions {
-		if now.After(expiry) {
+	for token, session := range s.d.Sessions {
+		if now.After(session.Expires) {
 			delete(s.d.Sessions, token)
 		}
 	}
