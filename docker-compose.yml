@@ -1,0 +1,19 @@
+services:
+  atrium:
+    build: .
+    container_name: atrium
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # The real config is mounted read-only, never baked into the image.
+      - ./configs/atrium.json:/etc/atrium/atrium.json:ro
+    env_file:
+      # Secrets referenced as ${VAR} in the config file.
+      - .env
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

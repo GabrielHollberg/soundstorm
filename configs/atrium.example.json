@@ -1,0 +1,66 @@
+// atrium configuration.
+//
+// Copy to configs/atrium.json and fill in. Comments are allowed. Every ${VAR}
+// is expanded from the environment at load time, so no secret needs to live
+// in this file and it is safe to commit.
+//
+// Validate without starting the server:
+//   atrium -config configs/atrium.json -check
+{
+  "listen": ":8080",
+
+  // How long any single backend may hold up a search before it is cut off and
+  // the result is marked degraded. Keep this under a user's patience.
+  "perSourceTimeout": "5s",
+
+  // /api/probe/<id> returns a source's raw upstream response, which is how you
+  // correct a field mapping against a real server. Raw responses can contain
+  // credentials, so leave this off outside development.
+  "enableProbe": false,
+
+  "sources": [
+    // Navidrome, or any Subsonic-API server.
+    {
+      "id": "navidrome",
+      "type": "subsonic",
+      "baseUrl": "https://music.soundstorm.dev",
+      "username": "${NAVIDROME_USER}",
+      "password": "${NAVIDROME_PASSWORD}"
+    },
+
+    // Audiobookshelf. Find libraryId with: GET /api/libraries
+    {
+      "id": "audiobookshelf",
+      "type": "audiobookshelf",
+      "baseUrl": "https://books.soundstorm.dev",
+      "token": "${ABS_TOKEN}",
+      "libraryId": "${ABS_LIBRARY_ID}"
+    },
+
+    // Calibre content server over OPDS. Add username/password only if you
+    // turned on authentication. Reachable over Tailscale rather than a
+    // public hostname.
+    {
+      "id": "calibre",
+      "type": "opds",
+      "baseUrl": "http://100.100.100.100:8080",
+      "searchPath": "/opds/search/{query}"
+    },
+
+    // Jellyfin for video. Create an API key under
+    // Dashboard > Advanced > API Keys.
+    {
+      "id": "jellyfin",
+      "type": "jellyfin",
+      "baseUrl": "https://movies.soundstorm.dev",
+      "apiKey": "${JELLYFIN_API_KEY}"
+    },
+
+    // kiwix-serve. Set "book" to restrict to one ZIM, or omit to search all.
+    {
+      "id": "kiwix",
+      "type": "kiwix",
+      "baseUrl": "http://100.100.100.100:8090"
+    }
+  ]
+}

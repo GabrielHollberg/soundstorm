@@ -1,0 +1,17 @@
+# Secrets and the real config
+.env
+configs/atrium.json
+
+# Build output
+/atrium
+/atrium.exe
+/out/
+/dist/
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Editor and OS noise is covered by the global gitignore at
+# C:\dev\.gitignore_global
