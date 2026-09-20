@@ -1,9 +1,10 @@
-// Package state persists the little that atrium must remember across restarts.
+// Package state persists the little that SoundStorm must remember across
+// restarts.
 //
 // This is a deliberate departure from the original design, which was proudly
 // stateless. Two v1 requirements force it:
 //
-//   - Nobody types an API key. atrium provisions each backend's credentials on
+//   - Nobody types an API key. SoundStorm provisions each backend's credentials on
 //     first boot, so it has to keep them somewhere it can read again.
 //   - There is one login. A user and their sessions have to outlive a restart.
 //
@@ -12,9 +13,9 @@
 // stays a few kilobytes and why losing it costs a re-provision, not a library.
 //
 // One principled exception: reading position for ebooks. For music, film and
-// audiobooks the backend owns play state, so atrium does not. For ebooks there
-// IS no backend - atrium reads the folder itself - so if atrium does not
-// remember where you stopped reading, nothing does.
+// audiobooks the backend owns play state, so SoundStorm does not. For ebooks
+// there IS no backend - SoundStorm reads the folder itself - so if SoundStorm
+// does not remember where you stopped reading, nothing does.
 package state
 
 import (
@@ -26,7 +27,7 @@ import (
 	"time"
 )
 
-// Backend is one provisioned upstream server and the credentials atrium
+// Backend is one provisioned upstream server and the credentials SoundStorm
 // generated for itself on that server.
 type Backend struct {
 	Type    string `json:"type"`    // "navidrome", "jellyfin"
@@ -40,14 +41,14 @@ type Backend struct {
 	Token  string `json:"token,omitempty"`
 	UserID string `json:"userId,omitempty"`
 
-	// LibraryID names which library on the backend atrium should search, for
+	// LibraryID names which library on the backend SoundStorm should search, for
 	// backends that can hold several (Audiobookshelf).
 	LibraryID string `json:"libraryId,omitempty"`
 
 	ProvisionedAt time.Time `json:"provisionedAt"`
 }
 
-// User is atrium's single account. Password verification lives in
+// User is SoundStorm's single account. Password verification lives in
 // internal/auth; this package only stores the derived material.
 type User struct {
 	Name       string    `json:"name"`

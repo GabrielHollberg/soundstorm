@@ -1,4 +1,4 @@
-# atrium — working notes for Claude
+# SoundStorm — working notes for Claude
 
 Read this first. It carries decisions that the code cannot tell you, including
 two reversals of earlier decisions that looked right and were not.
@@ -26,7 +26,7 @@ C# codebase, in exchange for the ability to change internals that none of the
 requirements touch.
 
 **Chosen: own the layer above.** Each backend owns exactly one media type and
-one folder. Nothing scans the same folder twice. atrium owns login, search,
+one folder. Nothing scans the same folder twice. SoundStorm owns login, search,
 playback and the bytes. From the user's seat this is indistinguishable from a
 single server — they never learn Jellyfin exists — but Jellyfin still does the
 transcoding and Navidrome still does the music scanning.
@@ -50,13 +50,13 @@ and two of them were wrong for this product:
    upstream URL only works if the browser can reach the upstream, which means
    publishing Jellyfin and Navidrome on their own ports, which means their login
    screens are one URL away. You cannot have "one login" and "never touch the
-   bytes" at once. atrium is now in the data path. See `internal/stream`.
+   bytes" at once. SoundStorm is now in the data path. See `internal/stream`.
 2. **"Stateless, restartable, no config writes."** Zero-keys provisioning means
-   atrium generates credentials, so it must remember them. One login means a
+   SoundStorm generates credentials, so it must remember them. One login means a
    user and sessions. Both outlive a restart. See `internal/state` — note that
    it holds *only* credentials and the account, never anything about the media.
 
-## What atrium deliberately does not do
+## What SoundStorm deliberately does not do
 
 Each of these has killed a project like this before.
 
@@ -89,7 +89,7 @@ same rule that said drop Calibre-Web, so it is cutting both ways.
 
 The honest cost is API churn (Jellyfin 12 broke two documented auth methods
 under us) and a 2.5GB image next to Navidrome's 348MB. That trade only clearly
-pays off once atrium uses Jellyfin's transcoding, which it still does not.
+pays off once SoundStorm uses Jellyfin's transcoding, which it still does not.
 
 ## One backend, two sources
 
@@ -105,9 +105,9 @@ now returns a slice for this reason.
 
 ## The folders are the interface
 
-Installing atrium creates `library/` with four subfolders, and the app's first
+Installing SoundStorm creates `library/` with four subfolders, and the app's first
 screen is a guide to them rather than an empty search grid. This is deliberate
-product surface, not convenience: the folders are the only part of atrium a user
+product surface, not convenience: the folders are the only part of SoundStorm a user
 interacts with that has no UI, so they are created for you, named for what
 people call the thing ("movies", not "video"), and described in the app. A
 README nobody reads is not an interface.
@@ -121,18 +121,18 @@ One asymmetry worth knowing: only `localbooks` reports an indexed count, so the
 music, movie and audiobook rows show files-on-disk with no comparison. Navidrome
 and Jellyfin would each need a count call to fix that.
 
-## The one media type atrium owns, and why that is not a slippery slope
+## The one media type SoundStorm owns, and why that is not a slippery slope
 
 Ebooks have no backend. Calibre-Web was removed: it needed a *database* rather
 than a folder, its setup had no API (CSRF form-scraping), and its password could
-not be rotated. atrium reads the folder itself.
+not be rotated. SoundStorm reads the folder itself.
 
 The justification is narrow and should stay narrow: **an EPUB is
 self-describing.** The file contains its own title, author, language and cover
 in a documented XML format, and a book needs no transcoding. `Dune.2021.mkv`
 contains none of that, which is precisely the work Jellyfin exists to do.
 
-So the line is: atrium can own a media type when it is self-describing and needs
+So the line is: SoundStorm can own a media type when it is self-describing and needs
 no transcoding. EPUB qualifies. Video never will. Do not cite `internal/epub` as
 precedent for scanning anything else.
 
@@ -154,7 +154,7 @@ zero-dependency rule's intent: the files are checked in, pinned by content,
 embedded via go:embed, and fetched at no point during a build. The Go module
 still has no dependencies and no go.sum.
 
-What is ours: atrium unzips server-side (`/api/book/resource`), so no zip
+What is ours: SoundStorm unzips server-side (`/api/book/resource`), so no zip
 library runs in the browser, and it remembers reading position across devices.
 
 ## Verified against live servers
@@ -167,7 +167,7 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   `source.Target` carries headers rather than just a URL.
 - **Audiobookshelf 2.36.1 `/login` returns two tokens.** `user.accessToken`
   carries an `exp` one hour out; `user.token` is a legacy JWT with no `exp` at
-  all. atrium stores the legacy one on purpose - the other would strand the
+  all. SoundStorm stores the legacy one on purpose - the other would strand the
   backend an hour after provisioning without a refresh flow. If a release drops
   it, that is where the refresh dance goes.
 - **Audiobookshelf addresses audio by inode, not item id.** `/api/items/{id}`
@@ -181,23 +181,34 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   Kobo display options). 404 is the correct answer; those requests log at debug.
 - **Calibre-Web was removed** (see above). `internal/source/opds` and
   `internal/provision/calibreweb.go` remain as an opt-in for a Calibre server
-  running elsewhere, via `ATRIUM_CALIBREWEB_URL`.
+  running elsewhere, via `SOUNDSTORM_CALIBREWEB_URL`.
 - **Jellyfin's startup wizard is a plain REST API** (`/Startup/Configuration`,
   `/Startup/User`, `/Startup/RemoteAccess`, `/Startup/Complete`) and stops
   accepting calls once setup completes, which makes driving it safe.
 - **Navidrome's first-run admin form POSTs to `/auth/createAdmin`** and that
   endpoint only works while no user exists. Same safety property.
 - All four need anywhere from seconds to a minute after container start, so
-  provisioning retries with backoff in the background while atrium serves.
+  provisioning retries with backoff in the background while SoundStorm serves.
+
+## Naming
+
+The product is **SoundStorm**; every identifier is **soundstorm**. Module path,
+binary, container names, the `SOUNDSTORM_` env prefix, the session cookie, the
+account created on each backend, the client identity sent to Jellyfin and
+Subsonic - all lowercase. Prose, the page title, the wordmark and anything a
+person reads use the brand casing. `TestUIShellIsServed` asserts the shell
+carries the display form, which is the one place the distinction is checked.
+
+It was called atrium until the rename. Nothing in the repo should say so.
 
 ## Gotchas
 
 - **Provisioning is not idempotent across a volume reset.** If a backend's
-  volume is wiped but atrium's state survives (or vice versa), you get a
+  volume is wiped but SoundStorm's state survives (or vice versa), you get a
   backend with an account whose password nobody holds. The provisioners detect
   this and say so rather than retrying forever. The fix is a human decision.
 - **Reconnecting is not provisioning, and conflating them destroys credentials.**
-  On restart atrium beats the backends to listening. A failed health check then
+  On restart SoundStorm beats the backends to listening. A failed health check then
   looks like "wrong password" unless you check what kind of failure it was, and
   re-provisioning an already-configured backend can never succeed - so one
   unlucky restart used to brick a backend with its working token still on disk.
@@ -206,7 +217,7 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   distinction and `provision_test.go` guards it. Jellyfin in particular accepts
   the connection while loading and answers 503.
 - **Port 8099, not 8080.** A Calibre content server on this machine already
-  holds 8080. `ATRIUM_PORT` overrides.
+  holds 8080. `SOUNDSTORM_PORT` overrides.
 - **`static=true` streaming only.** Anything a browser cannot natively decode
   (HEVC, DTS, MKV) will not play yet. Jellyfin's HLS endpoint with a device
   profile is the fix and it is the top of the roadmap.
@@ -214,7 +225,7 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   reader only has foliate-js's EPUB modules vendored.
 - **A Content-Security-Policy on the shell is load-bearing, not hardening.**
   EPUBs can contain scripts, and the reader renders book content in a blob:
-  iframe that inherits atrium's origin - without `script-src 'self'`, opening a
+  iframe that inherits SoundStorm's origin - without `script-src 'self'`, opening a
   book would run a stranger's JavaScript against the session cookie. `blob:` IS
   allowed in style-src and font-src, or books render unstyled.
 - **Audiobooks play their first file only.** Multi-file books need the playback
@@ -223,10 +234,10 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   trailing carriage return makes bash misread the command. `scripts/` passes
   single-line commands for that reason.
 - **Library folders are created 0777 on purpose.** They exist to be written
-  into by a person on the host whose uid atrium cannot know, and read by four
+  into by a person on the host whose uid SoundStorm cannot know, and read by four
   backends running as assorted other uids. Being unable to copy files into your
   own media folder is a far worse failure than a permissive mode on a home
-  media directory. Revisit if atrium ever grows PUID/PGID support.
+  media directory. Revisit if SoundStorm ever grows PUID/PGID support.
 - **The library skeleton is committed** (`library/*/README.txt`), so a fresh
   clone already has somewhere to put media; `.gitignore` keeps the structure and
   ignores the contents.
@@ -234,6 +245,13 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   borrow Calibre's `ebook-convert` from the Calibre-Web container, which no
   longer exists. An EPUB is a zip with two XML files, so producing one needs
   neither Calibre nor a container.
+- **The rename invalidated every provisioned volume.** The account SoundStorm
+  creates on each backend is named after it, and the state file moved from
+  /var/lib/atrium to /var/lib/soundstorm - so an install from before the rename
+  finds backends already set up with credentials it does not hold, which is the
+  one failure the provisioners cannot recover from on their own. The fix is
+  `docker compose down -v` and a fresh provision. Worth remembering if the
+  project is ever renamed again.
 - **Dev on Windows, deploy to Linux.** Go lives at `C:\dev\tools\go` (installed
   from the zip, on the user PATH). Docker Desktop must be running.
 - **No `go.sum`** and that is correct. Zero third-party dependencies, including
@@ -247,10 +265,10 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
 ```sh
 go test ./...
 docker compose up --build
-docker compose logs -f atrium          # watch provisioning
+docker compose logs -f soundstorm          # watch provisioning
 docker compose down -v                 # reset everything, including credentials
 pwsh scripts/make-sample-media.ps1     # synthetic library, no downloads
 ```
 
-`docker compose logs -f atrium` is the fastest way to see why a backend is not
+`docker compose logs -f SoundStorm` is the fastest way to see why a backend is not
 answering.

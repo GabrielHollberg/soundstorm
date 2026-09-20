@@ -1,12 +1,12 @@
 // Package library owns the folder layout a user actually interacts with.
 //
-// This is the first thing anyone touches after installing atrium, and it is the
-// only part of the product with no UI: you put a file in a folder and it
+// This is the first thing anyone touches after installing SoundStorm, and it is
+// the only part of the product with no UI: you put a file in a folder and it
 // appears. That makes the folders themselves the interface, so they are created
 // for you, named unambiguously, and described in the app rather than only in a
 // README nobody reads.
 //
-// atrium reads this directory for two narrow purposes - creating it, and
+// SoundStorm reads this directory for two narrow purposes - creating it, and
 // counting what is in it so the UI can say "1,240 files, none searchable yet,
 // Navidrome is still scanning". It does NOT index it. Indexing is the backends'
 // job, except for ebooks, which have no backend (see internal/epub for why that
@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/media"
 )
 
 // countCacheTTL bounds how stale a file count may be. Counting means walking
@@ -40,7 +40,7 @@ type Folder struct {
 	Name string     `json:"name"`
 
 	// Hint is the path as the *user* sees it from where they ran compose,
-	// which is the only path worth showing them. atrium's own view is inside
+	// which is the only path worth showing them. SoundStorm's own view is inside
 	// a container and means nothing to a human.
 	Hint string `json:"hint"`
 
@@ -95,7 +95,7 @@ var layout = []Folder{
 }
 
 // mediaExtensions is what counts as a media file per folder. Deliberately
-// generous: the point is to tell a user "atrium can see your files", not to
+// generous: the point is to tell a user "SoundStorm can see your files", not to
 // predict what a backend will accept.
 var mediaExtensions = map[media.Kind]map[string]bool{
 	media.KindMusic: {
@@ -149,7 +149,7 @@ func Open(root, hint string, log *slog.Logger) (*Library, error) {
 	return l, nil
 }
 
-// Root returns the library root as atrium sees it.
+// Root returns the library root as SoundStorm sees it.
 func (l *Library) Root() string { return l.root }
 
 // PathFor returns the absolute path of one media kind's folder.

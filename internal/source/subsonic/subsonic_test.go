@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gabehollberg/atrium/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/media"
 )
 
 // A real search3.view response, trimmed to the fields the adapter reads.

@@ -1,8 +1,8 @@
-# atrium
+# SoundStorm
 
 One login and one search box over your whole media library.
 
-`docker compose up`, create an account, and put files in the folders atrium
+`docker compose up`, create an account, and put files in the folders SoundStorm
 made for you. Movies, music, audiobooks and ebooks all answer the same search
 and play in the same window. You never see an API key, and you never see a
 second login.
@@ -16,7 +16,7 @@ Unraid and a dozen compose stacks all do it. What none of them finish is the
 *integration*: you end up with four containers, four admin accounts to create,
 four API keys to mint, four web UIs and four search boxes.
 
-atrium is that last mile. It runs the specialist servers, provisions their
+SoundStorm is that last mile. It runs the specialist servers, provisions their
 credentials itself, and puts one interface on top:
 
 | | |
@@ -24,23 +24,23 @@ credentials itself, and puts one interface on top:
 | **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
 | **Films and TV** | Jellyfin — metadata, artwork, season/episode structure |
 | **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
-| **Ebooks** | atrium itself — an EPUB describes itself, so no backend is needed |
+| **Ebooks** | SoundStorm itself — an EPUB describes itself, so no backend is needed |
 
 Using the real servers instead of reimplementing them is the whole trick. When
 you search "dune" and get a film back with a real poster and a real synopsis,
-that is Jellyfin's metadata work, not atrium's.
+that is Jellyfin's metadata work, not SoundStorm's.
 
 ## Status
 
 This is a **working vertical slice**, not a finished product. What runs today:
 
-- `docker compose up` brings up all four backends plus atrium
-- atrium provisions every one of them on first boot — **zero API keys typed**
+- `docker compose up` brings up all four backends plus SoundStorm
+- SoundStorm provisions every one of them on first boot — **zero API keys typed**
 - one account, created on first visit, guarding everything
 - one search across all four, merged and ranked
-- music, video and audiobooks play **inside atrium**, with seeking
-- ebooks are **read inside atrium**, and remember where you stopped
-- no backend publishes a port; atrium is the only door
+- music, video and audiobooks play **inside SoundStorm**, with seeking
+- ebooks are **read inside SoundStorm**, and remember where you stopped
+- no backend publishes a port; SoundStorm is the only door
 
 Not built yet: transcoding for formats a browser cannot play, multi-user,
 HTTPS. See [docs/roadmap.md](docs/roadmap.md).
@@ -48,14 +48,14 @@ HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 ## Getting started
 
 ```sh
-git clone <this repo> && cd atrium
+git clone <this repo> && cd soundstorm
 pwsh scripts/make-sample-media.ps1   # optional: a tiny synthetic library
 docker compose up --build
 ```
 
 Open <http://localhost:8099> and create your account. That is the entire setup.
 
-atrium creates a `library/` folder on first run and the app's first screen shows
+SoundStorm creates a `library/` folder on first run and the app's first screen shows
 you what goes where:
 
 ```
@@ -75,12 +75,12 @@ pretending the file is not there.
 ![The folder guide a new install opens on](docs/shots/1-library.png)
 
 `library/ebooks` is a plain folder of `.epub` files. It can also be an existing
-Calibre library — atrium reads Calibre's `metadata.opf` sidecars, so a library
+Calibre library — SoundStorm reads Calibre's `metadata.opf` sidecars, so a library
 you already curate keeps its series, tags and corrected authors, with no
 SQLite driver and no Calibre-Web container.
 
 Port 8099 rather than 8080 because 8080 is crowded — a Calibre content server
-defaults to it. Override with `ATRIUM_PORT`.
+defaults to it. Override with `SOUNDSTORM_PORT`.
 
 ## How it works
 
@@ -88,7 +88,7 @@ defaults to it. Override with `ATRIUM_PORT`.
                             browser
                                │  one origin, one cookie
                        ┌───────▼───────┐
-                       │    atrium     │  auth · search · player · byte proxy
+                       │    soundstorm     │  auth · search · player · byte proxy
                        └───────┬───────┘
       ┌──────────────┬─────────┴─────────┬──────────────┐
       ▼              ▼                   ▼              ▼
@@ -99,13 +99,13 @@ defaults to it. Override with `ATRIUM_PORT`.
 ```
 
 Jellyfin appears twice: films and series are separate Jellyfin libraries, with
-different scrapers and different structure, so they are two atrium sources
+different scrapers and different structure, so they are two SoundStorm sources
 sharing one token. Searching a show name finds the show; searching an episode
 title finds the episode.
 
 Ebooks have no backend at all. An EPUB carries its own title, author and cover
-in a documented format, and needs no transcoding, so atrium reads the folder
-directly. That is the line: **atrium can own a media type when it is
+in a documented format, and needs no transcoding, so SoundStorm reads the folder
+directly. That is the line: **SoundStorm can own a media type when it is
 self-describing and needs no transcoding.** Video never will be.
 
 Three rules hold it together.
@@ -118,7 +118,7 @@ music, and the response says which source failed and why.
 its backend's vocabulary. Everything past it speaks `media.Item`.
 
 **Nothing upstream ever reaches the browser.** Results carry no upstream URLs.
-atrium fetches media server-side and pipes it through, which is what lets the
+SoundStorm fetches media server-side and pipes it through, which is what lets the
 backends stay off any published port — and therefore what makes "one login"
 true rather than decorative.
 
@@ -128,7 +128,7 @@ package comment in `internal/stream` for the cost/benefit.
 ## Layout
 
 ```
-cmd/atrium/          main, env config, graceful shutdown
+cmd/soundstorm/          main, env config, graceful shutdown
 internal/media/      Item, Query, Kind — the shared vocabulary
 internal/library/    the folder layout: creates it, counts it
 internal/source/     the Source interface, Target, Registry
@@ -194,7 +194,7 @@ backend a human has to configure by hand defeats the point of the project.
   zero-dependency rule protects all survive. Writing an EPUB renderer ourselves
   would be the ebook equivalent of rebuilding transcoding.
 - **No config file.** Everything comes from environment variables set by
-  compose, plus state atrium provisions itself. A config file is one more thing
+  compose, plus state SoundStorm provisions itself. A config file is one more thing
   for a human to edit, and the goal is that a human edits nothing.
 - **Fail loudly at startup, degrade gracefully at runtime.**
 - `gofmt` clean, `go vet` clean, tests pass.
@@ -204,17 +204,17 @@ backend a human has to configure by hand defeats the point of the project.
 ```sh
 go test ./...
 docker compose up --build
-docker compose logs -f atrium          # watch provisioning
+docker compose logs -f soundstorm          # watch provisioning
 pwsh scripts/make-sample-media.ps1     # a synthetic library, no downloads
 go run ./scripts/mkepub -out b.epub -title T -author A   # one test book
 ```
 
 ## Notes
 
-- **Module path** is `github.com/gabehollberg/atrium`. If the repo lives
+- **Module path** is `github.com/gabehollberg/soundstorm`. If the repo lives
   elsewhere, fix `go.mod` and run
-  `grep -rl gabehollberg/atrium . | xargs sed -i 's|gabehollberg/atrium|<you>/atrium|g'`.
+  `grep -rl gabehollberg/soundstorm . | xargs sed -i 's|gabehollberg/soundstorm|<you>/soundstorm|g'`.
 - **No `go.sum`** and that is correct, not an oversight.
 - **Serve over TLS or a private network.** Subsonic stream URLs carry
   credentials in the query string — that is the protocol, and although those
-  URLs never leave atrium, the session cookie still crosses the wire.
+  URLs never leave SoundStorm, the session cookie still crosses the wire.

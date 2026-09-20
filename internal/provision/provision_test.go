@@ -9,16 +9,16 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
 )
 
 // This guards a bug that cost a working stack twice, in two different layers.
 //
-// On restart atrium comes up before Jellyfin does. The health check fails, and
-// if that failure is read as "these credentials are wrong", atrium discards
-// good credentials and falls through to provisioning - which can never succeed
-// against a backend that is already set up. One unlucky restart and the backend
-// is permanently broken with its working token still sitting on disk.
+// On restart SoundStorm comes up before Jellyfin does. The health check fails,
+// and if that failure is read as "these credentials are wrong", SoundStorm
+// discards good credentials and falls through to provisioning - which can never
+// succeed against a backend that is already set up. One unlucky restart and the
+// backend is permanently broken with its working token still sitting on disk.
 //
 // The first fix caught only transport errors. Jellyfin accepts the connection
 // while it loads and answers 503, which sailed straight through.

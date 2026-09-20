@@ -11,9 +11,9 @@ import (
 
 // The bug this guards against: building a URL by assigning to url.URL.Path
 // re-escapes any %XX already in the reference, so "the%20hobbit" goes out as
-// "the%2520hobbit" and the upstream searches for the literal text "the%20hobbit".
-// It failed silently - an empty result set, never an error - which is exactly
-// why it survived in the original code.
+// "the%2520hobbit" and the upstream searches for the literal text
+// "the%20hobbit". It failed silently - an empty result set, never an error -
+// which is exactly why it survived in the original code.
 func TestURLDoesNotDoubleEncode(t *testing.T) {
 	c, err := New("http://books.example.com", time.Second)
 	if err != nil {

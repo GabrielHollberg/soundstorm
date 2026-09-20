@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // stub is a Source that returns canned results, an error, or hangs.

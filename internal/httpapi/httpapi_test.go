@@ -14,15 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/auth"
-	"github.com/gabehollberg/atrium/internal/federate"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/provision"
-	"github.com/gabehollberg/atrium/internal/source"
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/auth"
+	"github.com/gabehollberg/soundstorm/internal/federate"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/provision"
+	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
-// stub is a Source that returns canned results and streams from a fake upstream.
+// stub is a Source that returns canned results and streams from a fake
+// upstream.
 type stub struct {
 	id        string
 	kind      media.Kind
@@ -418,7 +419,9 @@ func TestUIShellIsServed(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
-	if !strings.Contains(string(body), "atrium") {
+	// The brand is displayed, so it is spelled the way a person reads it.
+	// Identifiers elsewhere are lowercase; this one is not.
+	if !strings.Contains(string(body), "SoundStorm") {
 		t.Error("shell does not look like the UI")
 	}
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {

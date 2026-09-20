@@ -12,7 +12,7 @@ of HEVC, DTS and MKV, which a browser will refuse, and the failure is silent:
 the video element just shows nothing.
 
 The fix is Jellyfin's HLS endpoint with a device profile describing what the
-browser can decode. Jellyfin does all the work; atrium has to ask correctly and
+browser can decode. Jellyfin does all the work; SoundStorm has to ask correctly and
 proxy an HLS manifest plus segments rather than one file.
 
 **This is the first thing to build.** Without it the product is "plays some of
@@ -29,7 +29,7 @@ often all there is to go on.
 
 ## 3. Reading position is per-account, not per-device
 
-Progress is stored as an EPUB CFI in atrium's state, so it already follows you
+Progress is stored as an EPUB CFI in SoundStorm's state, so it already follows you
 between browsers. What it does not do is merge sensibly if two devices read the
 same book at once - last writer wins. Fine for one account; revisit with
 multi-user.
@@ -51,9 +51,9 @@ Do not optimize any of this before pointing it at an actual library.
 ## 5. Multi-user
 
 Currently one account. Real multi-user means per-user libraries and per-user
-play state, which means mapping atrium accounts onto backend accounts — the
-provisioner would create a Navidrome and Jellyfin user per atrium user rather
-than one shared `atrium` account. That is a real feature, not a slice.
+play state, which means mapping SoundStorm accounts onto backend accounts — the
+provisioner would create a Navidrome and Jellyfin user per SoundStorm user rather
+than one shared `soundstorm` account. That is a real feature, not a slice.
 
 ## 6. HTTPS
 
@@ -63,5 +63,5 @@ deployment story: a reverse proxy, or built-in ACME.
 
 ## Deliberately not planned
 
-Transcoding *by atrium*, metadata scraping, library scanning, TV client apps,
+Transcoding *by SoundStorm*, metadata scraping, library scanning, TV client apps,
 rebuilding an app store. See CLAUDE.md for why each is a trap.

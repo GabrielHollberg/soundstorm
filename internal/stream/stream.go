@@ -1,19 +1,20 @@
 // Package stream pipes media bytes from a backend to the browser.
 //
-// This reverses an explicit decision in atrium's first design, which said
+// This reverses an explicit decision in SoundStorm's first design, which said
 // results carry absolute upstream URLs and the client streams from the source.
-// That kept atrium tiny and out of the data path. It also made the product
+// That kept SoundStorm tiny and out of the data path. It also made the product
 // impossible: an upstream URL only works if the browser can reach the upstream,
 // which means publishing Jellyfin and Navidrome on their own ports, which means
-// their own login screens are one URL away and atrium's single login is a
+// their own login screens are one URL away and SoundStorm's single login is a
 // decoration. You cannot have "one login" and "never touch the bytes" at once.
 //
-// So atrium is in the data path, and the backends need no published port. The
-// costs are real and worth naming: atrium's bandwidth is now the ceiling, and
-// restarting it interrupts playback. Both are acceptable on a home server where
-// atrium and the backends are the same machine; neither is acceptable at scale,
-// and the escape hatch if it ever matters is signed short-lived URLs plus a
-// path-based reverse proxy, which is the same idea with the proxy moved.
+// So SoundStorm is in the data path, and the backends need no published port.
+// The costs are real and worth naming: SoundStorm's bandwidth is now the
+// ceiling, and restarting it interrupts playback. Both are acceptable on a home
+// server where SoundStorm and the backends are the same machine; neither is
+// acceptable at scale, and the escape hatch if it ever matters is signed
+// short-lived URLs plus a path-based reverse proxy, which is the same idea with
+// the proxy moved.
 //
 // Range requests are forwarded intact, which is what makes seeking work.
 package stream
@@ -27,7 +28,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // forwardedRequestHeaders are the client headers that must reach the upstream
@@ -52,7 +53,7 @@ var forwardedResponseHeaders = []string{
 }
 
 // Proxy serves media and artwork from the registered sources.
-// serveFile delivers a file from atrium's own disk.
+// serveFile delivers a file from SoundStorm's own disk.
 func (p *Proxy) serveFile(w http.ResponseWriter, r *http.Request, target source.Target) {
 	f, err := os.Open(target.FilePath)
 	if err != nil {
@@ -72,7 +73,7 @@ func (p *Proxy) serveFile(w http.ResponseWriter, r *http.Request, target source.
 	http.ServeContent(w, r, target.Name, info.ModTime(), f)
 }
 
-// serveBytes delivers something atrium built in memory.
+// serveBytes delivers something SoundStorm built in memory.
 func (p *Proxy) serveBytes(w http.ResponseWriter, r *http.Request, target source.Target) {
 	setContentHeaders(w, target)
 	http.ServeContent(w, r, target.Name, target.ModTime, bytes.NewReader(target.Bytes))

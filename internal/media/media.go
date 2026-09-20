@@ -1,8 +1,9 @@
 // Package media defines the vocabulary every backend is translated into.
 //
-// The point of atrium is that a song from Navidrome and a film from Jellyfin
-// arrive at the browser as the same shape, from the same origin, behind the
-// same login. Nothing downstream of an adapter knows which server answered.
+// The point of SoundStorm is that a song from Navidrome and a film from
+// Jellyfin arrive at the browser as the same shape, from the same origin,
+// behind the same login. Nothing downstream of an adapter knows which server
+// answered.
 package media
 
 import "strings"
@@ -20,12 +21,12 @@ const (
 	KindTV        Kind = "tv"    // series and episodes
 )
 
-// AllKinds is the set of kinds atrium understands.
+// AllKinds is the set of kinds SoundStorm understands.
 func AllKinds() []Kind {
 	return []Kind{KindMusic, KindAudiobook, KindEbook, KindVideo, KindTV}
 }
 
-// Valid reports whether k is a kind atrium knows about.
+// Valid reports whether k is a kind SoundStorm knows about.
 func (k Kind) Valid() bool {
 	for _, known := range AllKinds() {
 		if k == known {
@@ -57,8 +58,8 @@ func (k Kind) Player() string {
 //
 // Deliberately absent: any URL pointing at an upstream server. The backends
 // are not reachable from the browser, so an Item carries the identifiers
-// atrium needs to fetch bytes on the client's behalf, and the UI builds
-// atrium-relative paths from SourceID/ID/ArtID.
+// SoundStorm needs to fetch bytes on the client's behalf, and the UI builds
+// SoundStorm-relative paths from SourceID/ID/ArtID.
 type Item struct {
 	// ID is unique within a source, not globally. Pair it with SourceID.
 	ID       string `json:"id"`

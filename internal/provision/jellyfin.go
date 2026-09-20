@@ -8,18 +8,18 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
-// jellyfinAuthHeader identifies atrium to Jellyfin before we hold a token.
+// jellyfinAuthHeader identifies SoundStorm to Jellyfin before we hold a token.
 // Jellyfin rejects authentication requests that carry no client identity.
-const jellyfinAuthHeader = `MediaBrowser Client="atrium", Device="atrium", DeviceId="atrium-gateway", Version="0.1.0"`
+const jellyfinAuthHeader = `MediaBrowser Client="soundstorm", Device="soundstorm", DeviceId="soundstorm-gateway", Version="0.1.0"`
 
 // jellyfinTokenHeader is the authenticated form. Jellyfin 12 accepts the token
 // only here - not in X-Emby-Token, and not in an api_key query parameter.
 func jellyfinTokenHeader(token string) string {
-	return `MediaBrowser Client="atrium", Device="atrium", DeviceId="atrium-gateway", Version="0.1.0", Token="` + token + `"`
+	return `MediaBrowser Client="soundstorm", Device="soundstorm", DeviceId="soundstorm-gateway", Version="0.1.0", Token="` + token + `"`
 }
 
 // provisionJellyfin walks Jellyfin's startup wizard, then logs in as the
@@ -65,8 +65,8 @@ func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, log *slog
 		// The wizard already ran, so the account exists with a password we do
 		// not have. Nothing to do but say so clearly.
 		return state.Backend{}, fmt.Errorf(
-			"jellyfin setup is already complete but atrium has no stored credentials for it; " +
-				"either restore atrium's state file or reset the jellyfin volume")
+			"jellyfin setup is already complete but SoundStorm has no stored credentials for it; " +
+				"either restore SoundStorm's state file or reset the jellyfin volume")
 	}
 
 	token, userID, err := jellyfinLogin(ctx, c, accountName, password)

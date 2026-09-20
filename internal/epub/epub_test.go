@@ -9,8 +9,8 @@ import (
 )
 
 // A Calibre metadata.opf sidecar, trimmed. This is the exact shape a real
-// Calibre library writes next to every book, and reading it is what lets atrium
-// serve an existing Calibre library without a SQLite driver.
+// Calibre library writes next to every book, and reading it is what lets
+// SoundStorm serve an existing Calibre library without a SQLite driver.
 const calibreSidecar = `<?xml version='1.0' encoding='utf-8'?>
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">

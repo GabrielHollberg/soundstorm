@@ -1,8 +1,8 @@
-// Package httpapi is atrium's only published surface.
+// Package httpapi is SoundStorm's only published surface.
 //
-// Everything a person touches comes through here: the UI, the login, the search,
-// and the media bytes. The backends are on the internal compose network with no
-// published ports, so this is the only door.
+// Everything a person touches comes through here: the UI, the login, the
+// search, and the media bytes. The backends are on the internal compose network
+// with no published ports, so this is the only door.
 //
 //	GET  /                              the UI
 //	GET  /healthz                       liveness, no upstream calls
@@ -28,15 +28,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/auth"
-	"github.com/gabehollberg/atrium/internal/federate"
-	"github.com/gabehollberg/atrium/internal/library"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/provision"
-	"github.com/gabehollberg/atrium/internal/source"
-	"github.com/gabehollberg/atrium/internal/state"
-	"github.com/gabehollberg/atrium/internal/stream"
-	"github.com/gabehollberg/atrium/internal/webui"
+	"github.com/gabehollberg/soundstorm/internal/auth"
+	"github.com/gabehollberg/soundstorm/internal/federate"
+	"github.com/gabehollberg/soundstorm/internal/library"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/provision"
+	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/stream"
+	"github.com/gabehollberg/soundstorm/internal/webui"
 )
 
 // maxCredentialBody caps a login or signup body. Credentials are short; this

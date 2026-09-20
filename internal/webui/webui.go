@@ -1,9 +1,9 @@
-// Package webui serves atrium's browser UI out of the binary.
+// Package webui serves SoundStorm's browser UI out of the binary.
 //
 // The assets are embedded rather than mounted so deployment stays one artifact
 // and there is no build step to forget. There is no framework and no bundler on
-// purpose: the UI is a search box, a grid and two players, and a toolchain would
-// be more code than the thing it builds.
+// purpose: the UI is a search box, a grid and two players, and a toolchain
+// would be more code than the thing it builds.
 package webui
 
 import (
@@ -30,11 +30,11 @@ func Assets() http.Handler {
 // EPUB files may contain scripts. The reader renders book content in an iframe
 // backed by a blob: URL, and a blob: document inherits the creating page's
 // origin - so without a policy, a book downloaded from anywhere could run
-// JavaScript with full access to atrium's session cookie and every API it
+// JavaScript with full access to SoundStorm's session cookie and every API it
 // guards. "Open this book" would be "run this stranger's code as me".
 //
-// script-src 'self' stops that: only atrium's own scripts execute. The cost is
-// that books relying on embedded scripting will not be interactive, which is
+// script-src 'self' stops that: only SoundStorm's own scripts execute. The cost
+// is that books relying on embedded scripting will not be interactive, which is
 // the trade foliate-js's own documentation recommends making.
 //
 // The rest is ordinary, with one deliberate allowance: a book's own

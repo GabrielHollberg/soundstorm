@@ -1,4 +1,4 @@
-// Package provision gets atrium credentials on each backend without a human
+// Package provision gets SoundStorm credentials on each backend without a human
 // typing anything.
 //
 // This is the load-bearing package of the whole product. Installing four media
@@ -13,7 +13,7 @@
 // write what we get to state. The human sees a progress list, not a form.
 //
 // Provisioning runs in the background and tolerates a backend that is still
-// booting, which is the normal case under `docker compose up`: atrium is
+// booting, which is the normal case under `docker compose up`: SoundStorm is
 // listening seconds after start, Jellyfin takes the better part of a minute.
 package provision
 
@@ -30,15 +30,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
-	"github.com/gabehollberg/atrium/internal/source/audiobookshelf"
-	"github.com/gabehollberg/atrium/internal/source/jellyfin"
-	"github.com/gabehollberg/atrium/internal/source/localbooks"
-	"github.com/gabehollberg/atrium/internal/source/opds"
-	"github.com/gabehollberg/atrium/internal/source/subsonic"
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/source/audiobookshelf"
+	"github.com/gabehollberg/soundstorm/internal/source/jellyfin"
+	"github.com/gabehollberg/soundstorm/internal/source/localbooks"
+	"github.com/gabehollberg/soundstorm/internal/source/opds"
+	"github.com/gabehollberg/soundstorm/internal/source/subsonic"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
 // Status is where a backend is in its setup.
@@ -48,20 +48,20 @@ const (
 	StatusWaiting      Status = "waiting"      // backend not reachable yet
 	StatusProvisioning Status = "provisioning" // walking its first-run flow
 	StatusReady        Status = "ready"        // searchable
-	StatusFailed       Status = "failed"       // gave up; atrium still serves
+	StatusFailed       Status = "failed"       // gave up; SoundStorm still serves
 )
 
-// accountName is the account atrium creates for itself on every backend. It is
-// deliberately recognizable: someone poking at Navidrome later should be able
-// to tell which account is the gateway's.
-const accountName = "atrium"
+// accountName is the account SoundStorm creates for itself on every backend. It
+// is deliberately recognizable: someone poking at Navidrome later should be
+// able to tell which account is the gateway's.
+const accountName = "soundstorm"
 
 // giveUpAfter bounds how long we keep retrying a backend that never comes up.
 // A backend can be genuinely absent (image failed to pull, wrong URL) and
-// atrium must stay useful for the ones that did work.
+// SoundStorm must stay useful for the ones that did work.
 const giveUpAfter = 10 * time.Minute
 
-// Target is a backend atrium should bring under its wing.
+// Target is a backend SoundStorm should bring under its wing.
 type Target struct {
 	ID      string // source id, appears in stream URLs: "navidrome"
 	Type    string // "navidrome" or "jellyfin"
@@ -117,7 +117,8 @@ func New(store *state.Store, reg *source.Registry, log *slog.Logger, targets []T
 }
 
 // Start kicks off provisioning for every target, one goroutine each, and
-// returns immediately. atrium serves (and shows setup progress) while this runs.
+// returns immediately. SoundStorm serves (and shows setup progress) while this
+// runs.
 func (m *Manager) Start(ctx context.Context) {
 	for _, t := range m.targets {
 		go m.run(ctx, t)
@@ -174,17 +175,18 @@ func (m *Manager) run(ctx context.Context, t Target) {
 
 // reconnect brings a backend back using credentials we already hold.
 //
-// The subtlety that cost a debugging session: on a restart, atrium is listening
-// seconds after the container starts and Jellyfin is not. A health check then
-// fails with "connection refused", which is emphatically NOT the same as "this
-// token is wrong" - but treating them alike meant throwing away good
-// credentials and falling through to provisioning, which can never succeed on a
-// backend that is already set up. One unlucky restart and the backend was
+// The subtlety that cost a debugging session: on a restart, SoundStorm is
+// listening seconds after the container starts and Jellyfin is not. A health
+// check then fails with "connection refused", which is emphatically NOT the
+// same as "this token is wrong" - but treating them alike meant throwing away
+// good credentials and falling through to provisioning, which can never succeed
+// on a backend that is already set up. One unlucky restart and the backend was
 // permanently broken with its working credentials still on disk.
 //
 // So: a transport failure means wait and try again. Only an answer from the
 // backend that rejects us justifies re-provisioning, and that path still exists
-// because wiping a backend's volume while keeping atrium's is a real thing to do.
+// because wiping a backend's volume while keeping SoundStorm's is a real thing
+// to do.
 func (m *Manager) reconnect(ctx context.Context, t Target, creds state.Backend, log *slog.Logger) {
 	deadline := time.Now().Add(giveUpAfter)
 	delay := 2 * time.Second
@@ -334,8 +336,8 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 //
 // One backend can produce more than one source. Jellyfin does: films and series
 // are separate Jellyfin libraries with separate scrapers, so they become two
-// atrium sources sharing one token - which is what the Source interface always
-// described and could not actually do until jellyfin.Config grew a Kind.
+// SoundStorm sources sharing one token - which is what the Source interface
+// always described and could not actually do until jellyfin.Config grew a Kind.
 func (m *Manager) register(ctx context.Context, t Target, creds state.Backend) error {
 	sources, err := m.buildSources(t, creds)
 	if err != nil {

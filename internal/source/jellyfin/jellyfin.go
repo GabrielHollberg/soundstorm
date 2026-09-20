@@ -1,9 +1,10 @@
 // Package jellyfin adapts a Jellyfin server for video.
 //
-// Jellyfin is here for what it is genuinely best at: video, hardware-accelerated
-// transcoding and metadata for film and television. atrium does not use its
-// music support - Navidrome is better at that - and never exposes its web UI,
-// because that would be the second login this project exists to remove.
+// Jellyfin is here for what it is genuinely best at: video,
+// hardware-accelerated transcoding and metadata for film and television.
+// SoundStorm does not use its music support - Navidrome is better at that - and
+// never exposes its web UI, because that would be the second login this project
+// exists to remove.
 //
 // Auth is an access token obtained by internal/provision logging in as the
 // account it created during Jellyfin's startup wizard. Nobody visits the
@@ -18,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // ticksPerSecond is Jellyfin's RunTimeTicks unit: 100-nanosecond intervals.
@@ -37,7 +38,7 @@ type Config struct {
 	ID      string
 	BaseURL string
 	Token   string // access token from provisioning
-	UserID  string // the account atrium created for itself
+	UserID  string // the account SoundStorm created for itself
 	Timeout time.Duration
 
 	// Kind is what this source reports its results as. Defaults to video.
@@ -163,8 +164,8 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 // known gap, not an oversight: it is the first thing to build after this slice
 // proves the shape is right.
 //
-// The credential goes in a header, not the query string. Jellyfin 12 removed the
-// api_key query parameter that most guides on the internet still show.
+// The credential goes in a header, not the query string. Jellyfin 12 removed
+// the api_key query parameter that most guides on the internet still show.
 func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
 	if itemID == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: empty item id", s.id)
@@ -221,8 +222,9 @@ func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 //
 // Verified against a live Jellyfin 12.1.0: X-Emby-Token returns 401, so does
 // ?api_key=. Both appear in most documentation and in every older client, which
-// is exactly why this is a named function with this comment attached rather than
-// an inline string - the next person to hit a 401 here should find the answer.
+// is exactly why this is a named function with this comment attached rather
+// than an inline string - the next person to hit a 401 here should find the
+// answer.
 func authHeader(token string) string {
-	return `MediaBrowser Client="atrium", Device="atrium", DeviceId="atrium-gateway", Version="0.1.0", Token="` + token + `"`
+	return `MediaBrowser Client="soundstorm", Device="soundstorm", DeviceId="soundstorm-gateway", Version="0.1.0", Token="` + token + `"`
 }

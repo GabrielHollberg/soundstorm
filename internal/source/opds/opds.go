@@ -1,4 +1,4 @@
-// Package opds adapts an OPDS catalog, which for atrium means Calibre-Web.
+// Package opds adapts an OPDS catalog, which for SoundStorm means Calibre-Web.
 //
 // OPDS is Atom with extra link relations, so this adapter is mostly XML
 // decoding. Calibre-Web serves its catalog at /opds and search at
@@ -23,9 +23,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // Config configures an OPDS source.
@@ -144,7 +144,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 			switch {
 			case strings.HasPrefix(l.Rel, "http://opds-spec.org/acquisition"):
 				if !strings.HasPrefix(item.ID, "dl:") { // keep the first only
-					// The acquisition href is what atrium must fetch to hand
+					// The acquisition href is what SoundStorm must fetch to hand
 					// over the book, so it becomes the streamable id. It
 					// contains slashes ("/opds/download/1/epub/"), which is why
 					// the stream route uses a trailing wildcard.

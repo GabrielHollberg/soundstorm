@@ -1,9 +1,9 @@
 // Package federate fans a query out across every source and merges the answers.
 //
 // The governing design rule: a slow or dead source must never take the search
-// down with it. Each source gets its own deadline and its own error slot. If the
-// music server is unreachable, you still get your films, the response says so,
-// and the UI can show a banner instead of an error page.
+// down with it. Each source gets its own deadline and its own error slot. If
+// the music server is unreachable, you still get your films, the response says
+// so, and the UI can show a banner instead of an error page.
 package federate
 
 import (
@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // DefaultPerSourceTimeout bounds how long any single backend may hold up a
@@ -48,9 +48,9 @@ type Result struct {
 
 // Search queries every source the registry says matches q, concurrently.
 //
-// It returns once every source has answered, failed, or hit perSourceTimeout. It
-// does not return an error: a total failure is expressed as a Result where every
-// SourceStatus is not OK.
+// It returns once every source has answered, failed, or hit perSourceTimeout.
+// It does not return an error: a total failure is expressed as a Result where
+// every SourceStatus is not OK.
 func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceTimeout time.Duration) Result {
 	if perSourceTimeout <= 0 {
 		perSourceTimeout = DefaultPerSourceTimeout
@@ -137,10 +137,10 @@ func sortItems(items []media.Item) {
 
 // Relevance scores an item against the raw query text, 0..1.
 //
-// This is deliberately simple and readable rather than clever. Every backend has
-// already done its own matching; our job is only to decide whose hits deserve to
-// be near the top of a merged list. Upgrade to BM25 over a local index if and
-// when the naive version visibly misranks something.
+// This is deliberately simple and readable rather than clever. Every backend
+// has already done its own matching; our job is only to decide whose hits
+// deserve to be near the top of a merged list. Upgrade to BM25 over a local
+// index if and when the naive version visibly misranks something.
 func Relevance(queryText string, item media.Item) float64 {
 	q := normalize(queryText)
 	if q == "" {

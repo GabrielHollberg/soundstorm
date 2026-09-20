@@ -1,6 +1,6 @@
 Put your movies here.
 
-atrium picks up new files automatically - there is nothing to import and no
+SoundStorm picks up new files automatically - there is nothing to import and no
 scan to trigger by hand. The app's home screen shows the folder layout and an
 example of how each one should be arranged.
 

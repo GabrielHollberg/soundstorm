@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
-// provisionNavidrome creates atrium's account on a fresh Navidrome.
+// provisionNavidrome creates SoundStorm's account on a fresh Navidrome.
 //
 // Navidrome has no "initial admin" environment variable: on first run its web
 // UI shows a create-admin form, which POSTs to /auth/createAdmin. We post the
@@ -47,14 +47,14 @@ func provisionNavidrome(ctx context.Context, c *httpx.Client, log *slog.Logger) 
 
 	if !resp.OK() {
 		// The most likely cause by far: this Navidrome already has users, but
-		// atrium's state file was wiped or never saved. Say so precisely,
+		// SoundStorm's state file was wiped or never saved. Say so precisely,
 		// because the fix is a human decision (reset which volume?) and no
 		// amount of retrying will help.
 		if resp.Status == http.StatusForbidden || resp.Status == http.StatusConflict ||
 			strings.Contains(strings.ToLower(string(resp.Body)), "already") {
 			return state.Backend{}, fmt.Errorf(
-				"navidrome already has an admin account but atrium has no stored credentials for it; " +
-					"either restore atrium's state file or reset the navidrome volume")
+				"navidrome already has an admin account but SoundStorm has no stored credentials for it; " +
+					"either restore SoundStorm's state file or reset the navidrome volume")
 		}
 		return state.Backend{}, fmt.Errorf("navidrome createAdmin returned %d: %s",
 			resp.Status, httpx.Snippet(resp.Body))

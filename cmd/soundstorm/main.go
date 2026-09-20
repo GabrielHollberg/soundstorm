@@ -1,9 +1,9 @@
-// Command atrium is a unified front end for a self-hosted media library.
+// Command SoundStorm is a unified front end for a self-hosted media library.
 //
 // It runs in front of Navidrome (music) and Jellyfin (video), provisions their
 // credentials itself so nobody types an API key, and serves one login, one
 // search box and one player over all of them. The backends need no published
-// port: atrium is the only thing on one.
+// port: SoundStorm is the only thing on one.
 //
 // It deliberately does not scan libraries, scrape metadata or transcode. Those
 // are the things the servers behind it are good at, and reimplementing them is
@@ -27,18 +27,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/auth"
-	"github.com/gabehollberg/atrium/internal/httpapi"
-	"github.com/gabehollberg/atrium/internal/library"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/provision"
-	"github.com/gabehollberg/atrium/internal/source"
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/auth"
+	"github.com/gabehollberg/soundstorm/internal/httpapi"
+	"github.com/gabehollberg/soundstorm/internal/library"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/provision"
+	"github.com/gabehollberg/soundstorm/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel(env("ATRIUM_LOG_LEVEL", "info")),
+		Level: logLevel(env("SOUNDSTORM_LOG_LEVEL", "info")),
 	}))
 
 	if err := run(log); err != nil {
@@ -48,20 +48,20 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
-	listen := env("ATRIUM_LISTEN", ":8080")
-	stateDir := env("ATRIUM_STATE_DIR", "/var/lib/atrium")
+	listen := env("SOUNDSTORM_LISTEN", ":8080")
+	stateDir := env("SOUNDSTORM_STATE_DIR", "/var/lib/soundstorm")
 
-	perSourceTimeout, err := time.ParseDuration(env("ATRIUM_PER_SOURCE_TIMEOUT", "5s"))
+	perSourceTimeout, err := time.ParseDuration(env("SOUNDSTORM_PER_SOURCE_TIMEOUT", "5s"))
 	if err != nil {
-		return fmt.Errorf("ATRIUM_PER_SOURCE_TIMEOUT: %w", err)
+		return fmt.Errorf("SOUNDSTORM_PER_SOURCE_TIMEOUT: %w", err)
 	}
 
 	// Before anything else: make sure the folders a person is supposed to put
 	// media into actually exist. On a fresh install this is what turns "read
 	// the README to learn the layout" into "the folders are already there".
 	lib, err := library.Open(
-		env("ATRIUM_LIBRARY_DIR", "/library"),
-		env("ATRIUM_LIBRARY_HINT", "./library"),
+		env("SOUNDSTORM_LIBRARY_DIR", "/library"),
+		env("SOUNDSTORM_LIBRARY_HINT", "./library"),
 		log,
 	)
 	if err != nil {
@@ -73,8 +73,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	if len(targets) == 0 {
-		return errors.New("no backends configured; set at least one of ATRIUM_NAVIDROME_URL, " +
-			"ATRIUM_JELLYFIN_URL, ATRIUM_AUDIOBOOKSHELF_URL")
+		return errors.New("no backends configured; set at least one of SOUNDSTORM_NAVIDROME_URL, " +
+			"SOUNDSTORM_JELLYFIN_URL, SOUNDSTORM_AUDIOBOOKSHELF_URL")
 	}
 
 	store, err := state.Open(filepath.Join(stateDir, "state.json"))
@@ -90,7 +90,7 @@ func run(log *slog.Logger) error {
 	defer stop()
 
 	// Provisioning runs in the background: a backend can take a minute to boot
-	// and atrium should be showing setup progress during it, not refusing to
+	// and SoundStorm should be showing setup progress during it, not refusing to
 	// start. This is why the registry is populated asynchronously.
 	setup.Start(ctx)
 
@@ -115,7 +115,7 @@ func run(log *slog.Logger) error {
 	if store.User() == nil {
 		accountState = "no account yet - first visit creates it"
 	}
-	log.Info("atrium starting",
+	log.Info("SoundStorm starting",
 		"listen", listen,
 		"backends", len(targets),
 		"library", lib.Root(),
@@ -141,42 +141,42 @@ func run(log *slog.Logger) error {
 	}
 }
 
-// targetsFromEnv reads which backends to manage. A backend is present if its URL
-// is set, so compose decides the stack and atrium adapts.
+// targetsFromEnv reads which backends to manage. A backend is present if its
+// URL is set, so compose decides the stack and SoundStorm adapts.
 func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 	var targets []provision.Target
 
-	if url := strings.TrimSpace(os.Getenv("ATRIUM_NAVIDROME_URL")); url != "" {
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_NAVIDROME_URL")); url != "" {
 		targets = append(targets, provision.Target{
 			ID:      "navidrome",
 			Type:    "navidrome",
 			BaseURL: url,
 		})
 	}
-	if url := strings.TrimSpace(os.Getenv("ATRIUM_JELLYFIN_URL")); url != "" {
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_JELLYFIN_URL")); url != "" {
 		targets = append(targets, provision.Target{
 			ID:      "jellyfin",
 			Type:    "jellyfin",
 			BaseURL: url,
 			// The paths as Jellyfin's container sees them, which is what its
-			// library API needs - not atrium's view of the same folders.
-			MediaPath: env("ATRIUM_JELLYFIN_MEDIA_PATH", "/media/movies"),
-			TVPath:    env("ATRIUM_JELLYFIN_TV_PATH", "/media/tv"),
+			// library API needs - not SoundStorm's view of the same folders.
+			MediaPath: env("SOUNDSTORM_JELLYFIN_MEDIA_PATH", "/media/movies"),
+			TVPath:    env("SOUNDSTORM_JELLYFIN_TV_PATH", "/media/tv"),
 		})
 	}
-	if url := strings.TrimSpace(os.Getenv("ATRIUM_AUDIOBOOKSHELF_URL")); url != "" {
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_AUDIOBOOKSHELF_URL")); url != "" {
 		targets = append(targets, provision.Target{
 			ID:        "audiobookshelf",
 			Type:      "audiobookshelf",
 			BaseURL:   url,
-			MediaPath: env("ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH", "/audiobooks"),
+			MediaPath: env("SOUNDSTORM_AUDIOBOOKSHELF_MEDIA_PATH", "/audiobooks"),
 		})
 	}
 	// Ebooks are served straight off the disk: an EPUB describes itself, so no
-	// backend has to stand between atrium and the folder. The path comes from
+	// backend has to stand between SoundStorm and the folder. The path comes from
 	// the library layout rather than its own variable - there is one answer to
 	// "where do ebooks live" and it should not be configurable into disagreeing
-	// with the folder atrium just created.
+	// with the folder SoundStorm just created.
 	if dir := lib.PathFor(media.KindEbook); dir != "" {
 		targets = append(targets, provision.Target{
 			ID:        "ebooks",
@@ -186,12 +186,12 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 	}
 	// Escape hatch for an existing Calibre server elsewhere on the network.
 	// This one does need credentials typed, which is why it is not the default.
-	if url := strings.TrimSpace(os.Getenv("ATRIUM_CALIBREWEB_URL")); url != "" {
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_CALIBREWEB_URL")); url != "" {
 		targets = append(targets, provision.Target{
 			ID:        "calibreweb",
 			Type:      "calibreweb",
 			BaseURL:   url,
-			MediaPath: env("ATRIUM_CALIBREWEB_MEDIA_PATH", "/books"),
+			MediaPath: env("SOUNDSTORM_CALIBREWEB_MEDIA_PATH", "/books"),
 		})
 	}
 	return targets, nil

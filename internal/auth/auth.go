@@ -1,9 +1,9 @@
-// Package auth is atrium's single-account login.
+// Package auth is SoundStorm's single-account login.
 //
 // The whole product claim is "one login". That means this package, not the four
 // backends, is what a person authenticates against - and it means the backends
 // must never be reachable from a browser, because their own logins still exist
-// and atrium is not in front of them if you can dial them directly.
+// and SoundStorm is not in front of them if you can dial them directly.
 //
 // Scope for now is deliberately one account. Multi-user needs per-user
 // libraries and per-user play state, which is a real feature and not a slice.
@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
 const (
@@ -36,7 +36,7 @@ const (
 	MinPasswordLength = 8
 
 	sessionTTL = 30 * 24 * time.Hour
-	CookieName = "atrium_session"
+	CookieName = "soundstorm_session"
 )
 
 // ErrInvalidCredentials is returned for both a wrong name and a wrong

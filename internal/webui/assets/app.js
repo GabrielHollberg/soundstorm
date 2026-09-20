@@ -1,4 +1,4 @@
-/* atrium UI.
+/* SoundStorm UI.
  *
  * Vanilla JS, no build step. Three jobs:
  *   1. gate on /api/session so there is exactly one login
@@ -156,7 +156,7 @@ async function loadLibrary() {
     ? 'Put your media in these folders'
     : 'Your library';
   $('library-blurb').textContent = body.empty
-    ? 'atrium made these for you. Drop files in and they will show up here — nothing else to set up.'
+    ? 'soundstorm made these for you. Drop files in and they will show up here — nothing else to set up.'
     : 'Drop files into any of these and they appear in search automatically.';
 
   const list = $('library-folders');
@@ -421,15 +421,15 @@ function play(item) {
   }
 }
 
-// Ebooks open in atrium's own reader. Downloading is still offered, but as a
-// choice rather than the only option - a result that leaves atrium is a seam,
+// Ebooks open in SoundStorm's own reader. Downloading is still offered, but as a
+// choice rather than the only option - a result that leaves SoundStorm is a seam,
 // and this was the last one.
 function readBook(item) {
   stopAudio();
   closeVideo();
 
-  if (window.atriumReader) {
-    window.atriumReader.open(item);
+  if (window.soundstormReader) {
+    window.soundstormReader.open(item);
     return;
   }
   // The reader is a module; if it failed to load, handing over the file still
@@ -455,7 +455,7 @@ function downloadBook(item) {
 }
 
 // The reader's download button needs the item it is showing.
-window.atriumDownloadBook = downloadBook;
+window.soundstormDownloadBook = downloadBook;
 
 function playVideo(item) {
   stopAudio();
@@ -524,7 +524,7 @@ $('audio-close').addEventListener('click', stopAudio);
 (async function boot() {
   const { ok, body } = await api('/api/session');
   if (!ok || !body) {
-    $('boot').textContent = 'atrium is not responding.';
+    $('boot').textContent = 'soundstorm is not responding.';
     return;
   }
   if (body.signedIn) showApp();

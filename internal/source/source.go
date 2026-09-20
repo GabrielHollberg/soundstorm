@@ -1,6 +1,6 @@
 // Package source defines the plug point for a backend.
 //
-// Adding a media server to atrium means implementing Source here and a
+// Adding a media server to SoundStorm means implementing Source here and a
 // provisioner in internal/provision. Those are the two halves of a backend: how
 // to search it, and how to get credentials for it without a human typing any.
 package source
@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/media"
 )
 
 // Source is one upstream media server.
@@ -19,7 +19,7 @@ import (
 // Search on every source at once.
 type Source interface {
 	// ID is the backend's name ("navidrome", "jellyfin"). It appears in
-	// results and in setup status, and it is part of atrium's stream URLs.
+	// results and in setup status, and it is part of SoundStorm's stream URLs.
 	ID() string
 
 	// Kind is what this source serves. A source serves exactly one kind.
@@ -35,25 +35,26 @@ type Source interface {
 
 // Target is an authenticated upstream location for media bytes.
 //
-// It is never given to the browser: atrium fetches it server-side and pipes the
-// bytes through, which is what lets the backends stay off any published port.
+// It is never given to the browser: SoundStorm fetches it server-side and pipes
+// the bytes through, which is what lets the backends stay off any published
+// port.
 //
 // Headers exist because backends disagree about where a credential goes.
 // Subsonic puts it in the query string. Jellyfin 12 accepts it only in an
 // Authorization header, having dropped both X-Emby-Token and the api_key query
-// parameter that older guides still recommend. The proxy should not have to know
-// which, so an adapter hands back both parts and the proxy replays them.
+// parameter that older guides still recommend. The proxy should not have to
+// know which, so an adapter hands back both parts and the proxy replays them.
 // Exactly one of URL, FilePath or Bytes is set.
 type Target struct {
 	// URL fetches the bytes from a backend over HTTP.
 	URL     string
 	Headers map[string]string
 
-	// FilePath serves a file from atrium's own disk. Used by sources that have
+	// FilePath serves a file from SoundStorm's own disk. Used by sources that have
 	// no backend at all - a folder of ebooks is just a folder.
 	FilePath string
 
-	// Bytes serves something atrium produced in memory, such as a cover image
+	// Bytes serves something SoundStorm produced in memory, such as a cover image
 	// extracted from inside an EPUB.
 	Bytes []byte
 
@@ -96,7 +97,7 @@ type OpenBook interface {
 // internal structure, which is what an in-browser reader needs.
 //
 // Only a source that holds the file itself can do this. A remote OPDS catalog
-// hands over a whole book and nothing smaller, which is exactly why atrium
+// hands over a whole book and nothing smaller, which is exactly why SoundStorm
 // reading the folder directly is what made a reader possible at all.
 type BookOpener interface {
 	OpenBook(ctx context.Context, itemID string) (OpenBook, error)
@@ -113,9 +114,9 @@ type Starter interface {
 
 // Registry holds the live sources.
 //
-// Unlike the rest of atrium this is mutable at runtime: sources appear as their
-// provisioners finish, which can be a minute or more after boot while a backend
-// starts up. Every method is safe for concurrent use.
+// Unlike the rest of SoundStorm this is mutable at runtime: sources appear as
+// their provisioners finish, which can be a minute or more after boot while a
+// backend starts up. Every method is safe for concurrent use.
 type Registry struct {
 	mu      sync.RWMutex
 	sources []Source

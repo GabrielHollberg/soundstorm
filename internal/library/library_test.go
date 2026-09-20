@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gabehollberg/atrium/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/media"
 )
 
 func testLog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// The whole point of this package: installing atrium should leave you with
+// The whole point of this package: installing SoundStorm should leave you with
 // folders to put media in, without reading anything first.
 func TestOpenCreatesTheFoldersFromNothing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "library")
@@ -51,7 +51,7 @@ func TestOpenIsIdempotentAndKeepsContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Restarting atrium must not disturb a library someone has filled in.
+	// Restarting SoundStorm must not disturb a library someone has filled in.
 	if _, err := Open(root, "", testLog()); err != nil {
 		t.Fatalf("second Open: %v", err)
 	}

@@ -1,50 +1,50 @@
-# atrium: one login and one search box over a self-hosted media library.
+# SoundStorm: one login and one search box over a self-hosted media library.
 #
 # The important line in this file is the one that is missing. Neither navidrome
 # nor jellyfin publishes a port. They are reachable only on the internal compose
-# network, by atrium. That is what makes "one login" true rather than decorative:
+# network, by SoundStorm. That is what makes "one login" true rather than decorative:
 # their own login screens are not one URL away, because they are not reachable.
 #
 #   docker compose up --build   then open http://localhost:8099
 #
-# atrium creates ./library on first run with one folder per media type. Put a
+# SoundStorm creates ./library on first run with one folder per media type. Put a
 # file in the matching folder and it appears. Nothing else to configure and no
-# API keys to fetch - atrium provisions its own credentials on first boot.
+# API keys to fetch - SoundStorm provisions its own credentials on first boot.
 #
 #   library/
 #     music/   movies/   tv/   audiobooks/   ebooks/
 
-name: atrium
+name: soundstorm
 
 services:
-  atrium:
+  soundstorm:
     build: .
-    container_name: atrium
+    container_name: soundstorm
     restart: unless-stopped
     ports:
       # Host port is configurable because 8080 is a popular address - a Calibre
-      # content server defaults to it, for one. Override with ATRIUM_PORT.
-      - "${ATRIUM_PORT:-8099}:8080"
+      # content server defaults to it, for one. Override with SOUNDSTORM_PORT.
+      - "${SOUNDSTORM_PORT:-8099}:8080"
     environment:
       # A backend exists if its URL is set, so this file decides the stack.
-      ATRIUM_NAVIDROME_URL: http://navidrome:4533
-      ATRIUM_JELLYFIN_URL: http://jellyfin:8096
+      SOUNDSTORM_NAVIDROME_URL: http://navidrome:4533
+      SOUNDSTORM_JELLYFIN_URL: http://jellyfin:8096
       # The movie folder as *jellyfin's* container sees it, which is what its
-      # library API wants - not atrium's view of the same directory.
-      ATRIUM_JELLYFIN_MEDIA_PATH: /media/movies
-      ATRIUM_JELLYFIN_TV_PATH: /media/tv
-      ATRIUM_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
-      ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
-      # atrium creates and owns this folder. Ebooks are read straight out of
+      # library API wants - not SoundStorm's view of the same directory.
+      SOUNDSTORM_JELLYFIN_MEDIA_PATH: /media/movies
+      SOUNDSTORM_JELLYFIN_TV_PATH: /media/tv
+      SOUNDSTORM_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
+      SOUNDSTORM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
+      # SoundStorm creates and owns this folder. Ebooks are read straight out of
       # it, since an EPUB describes itself and needs no backend; the other
       # three folders are handed to the server that indexes them.
-      ATRIUM_LIBRARY_DIR: /library
+      SOUNDSTORM_LIBRARY_DIR: /library
       # How the same folder looks to whoever ran compose, for the UI to show.
-      ATRIUM_LIBRARY_HINT: ./library
-      ATRIUM_LOG_LEVEL: info
+      SOUNDSTORM_LIBRARY_HINT: ./library
+      SOUNDSTORM_LOG_LEVEL: info
     volumes:
-      - atrium-state:/var/lib/atrium
-      # The whole library, writable: atrium creates the folder structure on
+      - soundstorm-state:/var/lib/soundstorm
+      # The whole library, writable: SoundStorm creates the folder structure on
       # first run so nobody has to read a README to learn the layout.
       - ./library:/library
     depends_on:
@@ -60,7 +60,7 @@ services:
 
   navidrome:
     image: deluan/navidrome:latest
-    container_name: atrium-navidrome
+    container_name: soundstorm-navidrome
     restart: unless-stopped
     environment:
       ND_MUSICFOLDER: /music
@@ -68,36 +68,36 @@ services:
       # Rescan often enough that dropping a file in feels immediate.
       ND_SCANSCHEDULE: 1m
       ND_LOGLEVEL: info
-      # Nothing here should phone home; atrium is the only client.
+      # Nothing here should phone home; SoundStorm is the only client.
       ND_ENABLEEXTERNALSERVICES: "false"
     volumes:
       - ./library/music:/music:ro
       - navidrome-data:/data
-    # Deliberately no ports. atrium reaches it at http://navidrome:4533.
+    # Deliberately no ports. SoundStorm reaches it at http://navidrome:4533.
 
   jellyfin:
     image: jellyfin/jellyfin:latest
-    container_name: atrium-jellyfin
+    container_name: soundstorm-jellyfin
     restart: unless-stopped
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
       - ./library/movies:/media/movies:ro
       - ./library/tv:/media/tv:ro
-    # Deliberately no ports. atrium reaches it at http://jellyfin:8096.
+    # Deliberately no ports. SoundStorm reaches it at http://jellyfin:8096.
 
   audiobookshelf:
     image: ghcr.io/advplyr/audiobookshelf:latest
-    container_name: atrium-audiobookshelf
+    container_name: soundstorm-audiobookshelf
     restart: unless-stopped
     volumes:
       - ./library/audiobooks:/audiobooks
       - abs-config:/config
       - abs-metadata:/metadata
-    # Deliberately no ports. atrium reaches it at http://audiobookshelf:80.
+    # Deliberately no ports. SoundStorm reaches it at http://audiobookshelf:80.
 
 volumes:
-  atrium-state:
+  soundstorm-state:
   navidrome-data:
   jellyfin-config:
   jellyfin-cache:

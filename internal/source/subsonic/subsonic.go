@@ -1,11 +1,11 @@
-// Package subsonic adapts a Subsonic-API music server, which for atrium means
-// Navidrome.
+// Package subsonic adapts a Subsonic-API music server, which for SoundStorm
+// means Navidrome.
 //
 // Navidrome is here rather than letting Jellyfin handle music because it is
 // simply better at it: multi-value artist tags, album-artist vs artist,
 // compilations, ReplayGain, smart playlists, and a scanner that handles a large
-// library without complaint. atrium exists so you can have that without also
-// having a second app to log into.
+// library without complaint. SoundStorm exists so you can have that without
+// also having a second app to log into.
 //
 // Protocol notes: authentication is the salted-token scheme from Subsonic
 // 1.13.0 - send the username, a random salt, and token=md5(password+salt). The
@@ -23,14 +23,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 const (
 	apiVersion = "1.16.1"
-	clientName = "atrium"
+	clientName = "soundstorm"
 )
 
 // Config configures a Subsonic source.
@@ -170,8 +170,9 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 // StreamTarget builds an authenticated upstream target for a track.
 //
 // Subsonic carries credentials in the query string, which is how the protocol
-// works, so no headers are needed. They never reach the browser: atrium fetches
-// them itself and pipes the bytes through, so Navidrome needs no published port.
+// works, so no headers are needed. They never reach the browser: SoundStorm
+// fetches them itself and pipes the bytes through, so Navidrome needs no
+// published port.
 func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
 	return s.mediaTarget("/rest/stream.view", itemID)
 }

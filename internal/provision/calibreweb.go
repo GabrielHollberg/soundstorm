@@ -9,12 +9,12 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/httpx"
-	"github.com/gabehollberg/atrium/internal/state"
+	"github.com/gabehollberg/soundstorm/internal/httpx"
+	"github.com/gabehollberg/soundstorm/internal/state"
 )
 
 // Calibre-Web ships with a published default login. Everyone knows it, which is
-// precisely why atrium can use it without a human being involved.
+// precisely why SoundStorm can use it without a human being involved.
 const (
 	calibreWebUser     = "admin"
 	calibreWebPassword = "admin123"
@@ -27,8 +27,8 @@ var csrfPattern = regexp.MustCompile(`name="csrf_token"[^>]*value="([^"]+)"`)
 //
 // This is the least pleasant of the four provisioners, and the reason is worth
 // recording: Calibre-Web has no configuration API. Its setup is a Flask form
-// with a session cookie and a CSRF token, so atrium has to drive it the way a
-// browser would - fetch the page, scrape the token, post the form. That is
+// with a session cookie and a CSRF token, so SoundStorm has to drive it the way
+// a browser would - fetch the page, scrape the token, post the form. That is
 // brittle across releases in a way the other three are not, and if this breaks
 // after an upgrade, a changed field name is the first thing to check.
 //
@@ -37,7 +37,8 @@ var csrfPattern = regexp.MustCompile(`name="csrf_token"[^>]*value="([^"]+)"`)
 // password unchanged - verified against calibre-web running under linuxserver's
 // image. Posting harder risks stripping the admin role, because the same form
 // carries every permission as a checkbox and a partial post clears them. The
-// mitigation is that Calibre-Web publishes no port: only atrium can reach it.
+// mitigation is that Calibre-Web publishes no port: only SoundStorm can reach
+// it.
 func provisionCalibreWeb(ctx context.Context, c *httpx.Client, t Target, log *slog.Logger) (state.Backend, error) {
 	if err := c.EnableCookies(); err != nil {
 		return state.Backend{}, err
@@ -52,7 +53,7 @@ func provisionCalibreWeb(ctx context.Context, c *httpx.Client, t Target, log *sl
 		return state.Backend{}, err
 	}
 
-	// The OPDS feed is what atrium actually consumes, and it authenticates
+	// The OPDS feed is what SoundStorm actually consumes, and it authenticates
 	// separately with HTTP Basic. Check it before declaring success, so a
 	// working login with a broken catalog is caught here rather than at the
 	// first search.
@@ -60,7 +61,7 @@ func provisionCalibreWeb(ctx context.Context, c *httpx.Client, t Target, log *sl
 		return state.Backend{}, err
 	}
 
-	log.Warn("calibre-web is using its default password; it is unreachable except through atrium, " +
+	log.Warn("calibre-web is using its default password; it is unreachable except through SoundStorm, " +
 		"but change it in the calibre-web UI if you ever publish its port")
 
 	return state.Backend{

@@ -1,16 +1,16 @@
 // Package localbooks serves ebooks straight off the disk, with no backend.
 //
-// Every other source in atrium wraps a media server. This one does not, and the
-// reason is that an ebook library does not need one: an EPUB carries its own
-// title, author and cover (see internal/epub), and a book needs no transcoding.
-// Everything Calibre-Web was doing for us - find the books, read their
-// metadata, answer a search, hand over the file - is a directory walk and an
-// XML parse.
+// Every other source in SoundStorm wraps a media server. This one does not, and
+// the reason is that an ebook library does not need one: an EPUB carries its
+// own title, author and cover (see internal/epub), and a book needs no
+// transcoding. Everything Calibre-Web was doing for us - find the books, read
+// their metadata, answer a search, hand over the file - is a directory walk and
+// an XML parse.
 //
 // What that buys: "drop files into a folder" becomes true for ebooks the way it
 // already was for music, film and audiobooks. Calibre-Web was the one backend
 // that needed a *database* rather than a folder, and the one whose credentials
-// atrium could not rotate.
+// SoundStorm could not rotate.
 //
 // Existing Calibre libraries still work, without a SQLite reader: Calibre
 // writes a metadata.opf sidecar next to every book in exactly the format an
@@ -30,9 +30,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gabehollberg/atrium/internal/epub"
-	"github.com/gabehollberg/atrium/internal/media"
-	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/soundstorm/internal/epub"
+	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
 // DefaultRescanInterval is how often the library is re-walked. Cheap, because
@@ -42,7 +42,7 @@ const DefaultRescanInterval = 2 * time.Minute
 // Config configures a local book library.
 type Config struct {
 	ID   string
-	Root string // directory atrium scans
+	Root string // directory SoundStorm scans
 	Log  *slog.Logger
 
 	RescanInterval time.Duration
@@ -458,7 +458,8 @@ func (s *Source) Count() int {
 	return len(s.books)
 }
 
-// normalize lowercases and strips punctuation so "Le Guin's" matches "le guins".
+// normalize lowercases and strips punctuation so "Le Guin's" matches "le
+// guins".
 func normalize(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))

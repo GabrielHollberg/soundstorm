@@ -1,14 +1,14 @@
 // Package epub reads metadata and resources out of EPUB files.
 //
-// This is the one place atrium reads a media format directly, and the reason is
-// worth stating because it looks like a violation of the rule that atrium never
-// owns a library: an EPUB is self-describing. The file contains its own title,
-// author, language and cover, in a documented XML format, inside a zip. A video
-// file does not - "Dune.2021.mkv" needs a scraper and a match against TMDB,
-// which is exactly the work Jellyfin exists to do.
+// This is the one place SoundStorm reads a media format directly, and the
+// reason is worth stating because it looks like a violation of the rule that
+// SoundStorm never owns a library: an EPUB is self-describing. The file
+// contains its own title, author, language and cover, in a documented XML
+// format, inside a zip. A video file does not - "Dune.2021.mkv" needs a scraper
+// and a match against TMDB, which is exactly the work Jellyfin exists to do.
 //
-// So the line is: atrium can own a media type when it is self-describing and
-// needs no transcoding. EPUB qualifies. Video never will. Do not use this
+// So the line is: SoundStorm can own a media type when it is self-describing
+// and needs no transcoding. EPUB qualifies. Video never will. Do not use this
 // package as precedent for scanning anything else.
 //
 // The format, briefly:
@@ -91,8 +91,8 @@ type Book struct {
 
 // Element names below are matched on local name only, deliberately: the Dublin
 // Core elements are namespaced, but real books disagree about which prefix and
-// which namespace URI they use, and Go's xml package matches local names when no
-// namespace is given.
+// which namespace URI they use, and Go's xml package matches local names when
+// no namespace is given.
 type opfPackage struct {
 	Metadata opfMetadata `xml:"metadata"`
 	Manifest struct {

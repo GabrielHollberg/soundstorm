@@ -4,8 +4,8 @@
 // ebook-convert, borrowed from the Calibre-Web container - and that container
 // is gone. Rather than reintroduce a 500MB image to produce a few kilobytes of
 // test data, this writes the format directly: an EPUB is a zip with two XML
-// files and some XHTML, which is the same reason atrium can read one without a
-// backend.
+// files and some XHTML, which is the same reason SoundStorm can read one
+// without a backend.
 //
 //	go run ./scripts/mkepub -out book.epub -title "Dune" -author "Frank Herbert"
 package main
@@ -114,7 +114,7 @@ const packageOPF = `<?xml version="1.0" encoding="UTF-8"?>
     <dc:title>%s</dc:title>
     <dc:creator>%s</dc:creator>
     <dc:language>en</dc:language>
-    <dc:identifier id="bookid">urn:atrium:sample</dc:identifier>%s
+    <dc:identifier id="bookid">urn:soundstorm:sample</dc:identifier>%s
   </metadata>
   <manifest>
     <item id="cover" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>%s

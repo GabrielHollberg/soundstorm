@@ -2,7 +2,7 @@
 # Create an empty Calibre library if /books does not already contain one.
 #
 # Calibre-Web cannot be configured without a metadata.db to point at, so on a
-# fresh install with no ebooks yet there is nothing for atrium's provisioner to
+# fresh install with no ebooks yet there is nothing for SoundStorm's provisioner to
 # do and setup would fail. calibredb creates a valid empty library from nothing,
 # which turns that dead end into a working (if empty) ebook backend.
 #
@@ -11,17 +11,17 @@
 set -e
 
 if [ -f /books/metadata.db ]; then
-    echo "[atrium-init] /books already holds a calibre library"
+    echo "[soundstorm-init] /books already holds a calibre library"
     exit 0
 fi
 
 if ! command -v calibredb >/dev/null 2>&1; then
-    echo "[atrium-init] calibredb not found; is DOCKER_MODS=linuxserver/mods:universal-calibre set?"
+    echo "[soundstorm-init] calibredb not found; is DOCKER_MODS=linuxserver/mods:universal-calibre set?"
     exit 0
 fi
 
-echo "[atrium-init] creating an empty calibre library in /books"
+echo "[soundstorm-init] creating an empty calibre library in /books"
 mkdir -p /books
 calibredb list --with-library /books >/dev/null 2>&1 || true
 chown -R "${PUID:-1000}:${PGID:-1000}" /books
-echo "[atrium-init] done"
+echo "[soundstorm-init] done"
