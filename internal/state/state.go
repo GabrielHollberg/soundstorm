@@ -35,6 +35,10 @@ type Backend struct {
 	Token  string `json:"token,omitempty"`
 	UserID string `json:"userId,omitempty"`
 
+	// LibraryID names which library on the backend atrium should search, for
+	// backends that can hold several (Audiobookshelf).
+	LibraryID string `json:"libraryId,omitempty"`
+
 	ProvisionedAt time.Time `json:"provisionedAt"`
 }
 

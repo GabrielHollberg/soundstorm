@@ -59,7 +59,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	if len(targets) == 0 {
-		return errors.New("no backends configured; set ATRIUM_NAVIDROME_URL and/or ATRIUM_JELLYFIN_URL")
+		return errors.New("no backends configured; set at least one of ATRIUM_NAVIDROME_URL, " +
+			"ATRIUM_JELLYFIN_URL, ATRIUM_AUDIOBOOKSHELF_URL, ATRIUM_CALIBREWEB_URL")
 	}
 
 	store, err := state.Open(filepath.Join(stateDir, "state.json"))
@@ -143,6 +144,22 @@ func targetsFromEnv() ([]provision.Target, error) {
 			// The path as Jellyfin's container sees it, which is what its
 			// library API needs - not atrium's view of the same folder.
 			MediaPath: env("ATRIUM_JELLYFIN_MEDIA_PATH", "/media/movies"),
+		})
+	}
+	if url := strings.TrimSpace(os.Getenv("ATRIUM_AUDIOBOOKSHELF_URL")); url != "" {
+		targets = append(targets, provision.Target{
+			ID:        "audiobookshelf",
+			Type:      "audiobookshelf",
+			BaseURL:   url,
+			MediaPath: env("ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH", "/audiobooks"),
+		})
+	}
+	if url := strings.TrimSpace(os.Getenv("ATRIUM_CALIBREWEB_URL")); url != "" {
+		targets = append(targets, provision.Target{
+			ID:        "calibreweb",
+			Type:      "calibreweb",
+			BaseURL:   url,
+			MediaPath: env("ATRIUM_CALIBREWEB_MEDIA_PATH", "/books"),
 		})
 	}
 	return targets, nil

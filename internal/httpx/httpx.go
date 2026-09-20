@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -55,6 +56,19 @@ func New(baseURL string, timeout time.Duration) (*Client, error) {
 // SetHeader sets a header sent on every request (auth tokens, mostly). Call it
 // during construction only; a Client is read-only once shared.
 func (c *Client) SetHeader(key, value string) { c.headers[key] = value }
+
+// EnableCookies gives the client a cookie jar.
+//
+// Needed for backends whose "API" is really a browser login form - Calibre-Web
+// authenticates with a session cookie and a CSRF token, not a bearer token.
+func (c *Client) EnableCookies() error {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return fmt.Errorf("create cookie jar: %w", err)
+	}
+	c.hc.Jar = jar
+	return nil
+}
 
 // BaseURL returns a copy of the client's base URL.
 func (c *Client) BaseURL() *url.URL {
@@ -113,6 +127,7 @@ type Request struct {
 	Path    string            // URI reference, resolved against the base URL
 	Params  url.Values        // query parameters
 	Body    any               // marshalled as JSON when non-nil
+	Form    url.Values        // form-encoded body; mutually exclusive with Body
 	Headers map[string]string // merged over the client's headers
 }
 
@@ -191,12 +206,17 @@ func (c *Client) request(ctx context.Context, r Request) (*http.Request, error) 
 	}
 
 	var body io.Reader
-	if r.Body != nil {
+	switch {
+	case r.Body != nil && r.Form != nil:
+		return nil, fmt.Errorf("request has both a JSON body and a form body")
+	case r.Body != nil:
 		encoded, err := json.Marshal(r.Body)
 		if err != nil {
 			return nil, fmt.Errorf("encode request body: %w", err)
 		}
 		body = bytes.NewReader(encoded)
+	case r.Form != nil:
+		body = strings.NewReader(r.Form.Encode())
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, c.URL(r.Path, r.Params), body)
@@ -209,8 +229,11 @@ func (c *Client) request(ctx context.Context, r Request) (*http.Request, error) 
 	for k, v := range r.Headers {
 		req.Header.Set(k, v)
 	}
-	if r.Body != nil {
+	switch {
+	case r.Body != nil:
 		req.Header.Set("Content-Type", "application/json")
+	case r.Form != nil:
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	return req, nil
 }

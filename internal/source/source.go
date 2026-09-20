@@ -48,14 +48,18 @@ type Target struct {
 }
 
 // Streamer builds an authenticated upstream target for an item's bytes.
+//
+// It takes a context because resolving a target is not always local arithmetic:
+// Audiobookshelf addresses audio by a per-file inode that only an API call can
+// tell you, so the adapter has to ask upstream before it can answer.
 type Streamer interface {
-	StreamTarget(itemID string) (Target, error)
+	StreamTarget(ctx context.Context, itemID string) (Target, error)
 }
 
 // ArtProvider builds an authenticated upstream target for artwork. artID is the
 // opaque handle the adapter put in media.Item.ArtID.
 type ArtProvider interface {
-	ArtTarget(artID string) (Target, error)
+	ArtTarget(ctx context.Context, artID string) (Target, error)
 }
 
 // Registry holds the live sources.

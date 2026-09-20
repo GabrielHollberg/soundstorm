@@ -6,7 +6,8 @@ two reversals of earlier decisions that looked right and were not.
 ## What this is
 
 A unified front end for a self-hosted media library. One login, one search box,
-one player over Navidrome and Jellyfin today; audiobooks and ebooks next.
+one player over Navidrome (music), Jellyfin (video), Audiobookshelf
+(audiobooks) and Calibre-Web (ebooks).
 
 The user's words for what they wanted: *"an all-encompassing server that can do
 movies, audiobooks, ebooks, music all together... easy for users to install and
@@ -83,12 +84,26 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   form it accepts is `Authorization: MediaBrowser ... Token="..."`. Most docs
   and every older client still show the other two. This is why
   `source.Target` carries headers rather than just a URL.
+- **Audiobookshelf 2.36.1 `/login` returns two tokens.** `user.accessToken`
+  carries an `exp` one hour out; `user.token` is a legacy JWT with no `exp` at
+  all. atrium stores the legacy one on purpose - the other would strand the
+  backend an hour after provisioning without a refresh flow. If a release drops
+  it, that is where the refresh dance goes.
+- **Audiobookshelf addresses audio by inode, not item id.** `/api/items/{id}`
+  has to be fetched to learn it, which is why `source.Streamer` takes a context.
+- **Calibre-Web has no configuration API.** Setup is a Flask form with a session
+  cookie and a CSRF token, driven the way a browser would. Brittle across
+  releases: if it breaks after an upgrade, check the form field names first.
+  Its password is NOT rotated - see the note in `internal/provision/calibreweb.go`.
+- **Calibre-Web needs a Calibre database, not a folder.** A compose init script
+  runs `calibredb` to create an empty library when `/books` has none, because
+  otherwise a fresh install with no ebooks fails provisioning outright.
 - **Jellyfin's startup wizard is a plain REST API** (`/Startup/Configuration`,
   `/Startup/User`, `/Startup/RemoteAccess`, `/Startup/Complete`) and stops
   accepting calls once setup completes, which makes driving it safe.
 - **Navidrome's first-run admin form POSTs to `/auth/createAdmin`** and that
   endpoint only works while no user exists. Same safety property.
-- Both backends need a few seconds to a minute after container start, so
+- All four need anywhere from seconds to a minute after container start, so
   provisioning retries with backoff in the background while atrium serves.
 
 ## Gotchas
@@ -102,6 +117,13 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
 - **`static=true` streaming only.** Anything a browser cannot natively decode
   (HEVC, DTS, MKV) will not play yet. Jellyfin's HLS endpoint with a device
   profile is the fix and it is the top of the roadmap.
+- **Ebooks download rather than open.** There is no reader. It is the only
+  result type that leaves atrium, and it is a visible seam.
+- **Audiobooks play their first file only.** Multi-file books need the playback
+  session API and a player that understands a track list.
+- **PowerShell here-strings carry CRLF into `docker exec bash -c`**, and a
+  trailing carriage return makes bash misread the command. `scripts/` passes
+  single-line commands for that reason.
 - **Dev on Windows, deploy to Linux.** Go lives at `C:\dev\tools\go` (installed
   from the zip, on the user PATH). Docker Desktop must be running.
 - **No `go.sum`** and that is correct. Zero third-party dependencies, including

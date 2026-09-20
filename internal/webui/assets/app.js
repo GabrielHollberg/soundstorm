@@ -57,10 +57,15 @@ function subtitleFor(item) {
   return parts.join(' · ');
 }
 
+// Ids are escaped per path segment, not as a whole: an OPDS acquisition
+// reference legitimately contains slashes, and the stream route matches them
+// with a trailing wildcard.
+const escapeId = (id) => String(id).split('/').map(encodeURIComponent).join('/');
+
 const artPath = (item) =>
-  item.artId ? `/api/art/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.artId)}` : '';
+  item.artId ? `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId)}` : '';
 const streamPath = (item) =>
-  `/api/stream/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`;
+  `/api/stream/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`;
 
 /* ------------------------------------------------------------------- gate */
 
@@ -294,18 +299,54 @@ function renderItem(item) {
   return card;
 }
 
+const GLYPHS = {
+  video: '▶',
+  music: '♪',
+  audiobook: '🎧',
+  ebook: '📖',
+};
+
 function fallbackArt(item) {
   const span = document.createElement('span');
   span.className = 'art-fallback';
-  span.textContent = item.kind === 'video' ? '▶' : '♪';
+  span.textContent = GLYPHS[item.kind] || '●';
   return span;
 }
 
 /* ---------------------------------------------------------------- players */
 
 function play(item) {
-  if (item.kind === 'video') playVideo(item);
-  else playAudio(item);
+  switch (item.kind) {
+    case 'video':
+      playVideo(item);
+      break;
+    case 'ebook':
+      openBook(item);
+      break;
+    default:
+      // Music and audiobooks are both just audio as far as a browser cares.
+      playAudio(item);
+  }
+}
+
+// An epub is read, not played, and there is no reader here yet. Handing the
+// file over is an honest seam rather than a bad built-in reader - but it IS a
+// seam, and the first thing to close when ebooks get real attention.
+function openBook(item) {
+  const format = (item.extra && item.extra.format) || 'epub';
+  const author = (item.creators && item.creators[0]) || '';
+
+  const link = document.createElement('a');
+  link.href = streamPath(item);
+  // Name the file after the book. Without this the browser derives a name from
+  // the URL, and every download is called "download.epub".
+  link.download = [item.title, author].filter(Boolean).join(' - ').replace(/[\/:*?"<>|]/g, '_') + '.' + format;
+  link.rel = 'noopener';
+  document.body.append(link);
+  link.click();
+  link.remove();
+
+  $('status').textContent = 'Downloading “' + item.title + '” as ' + format + '…';
 }
 
 function playVideo(item) {

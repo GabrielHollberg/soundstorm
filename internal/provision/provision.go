@@ -20,6 +20,7 @@ package provision
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -28,7 +29,9 @@ import (
 
 	"github.com/gabehollberg/atrium/internal/httpx"
 	"github.com/gabehollberg/atrium/internal/source"
+	"github.com/gabehollberg/atrium/internal/source/audiobookshelf"
 	"github.com/gabehollberg/atrium/internal/source/jellyfin"
+	"github.com/gabehollberg/atrium/internal/source/opds"
 	"github.com/gabehollberg/atrium/internal/source/subsonic"
 	"github.com/gabehollberg/atrium/internal/state"
 )
@@ -219,6 +222,12 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 	case "jellyfin":
 		m.set(t.ID, StatusProvisioning, "running Jellyfin setup", "")
 		return provisionJellyfin(ctx, c, t, log)
+	case "audiobookshelf":
+		m.set(t.ID, StatusProvisioning, "creating Audiobookshelf account", "")
+		return provisionAudiobookshelf(ctx, c, t, log)
+	case "calibreweb":
+		m.set(t.ID, StatusProvisioning, "configuring Calibre-Web", "")
+		return provisionCalibreWeb(ctx, c, t, log)
 	default:
 		return state.Backend{}, fmt.Errorf("unknown backend type %q", t.Type)
 	}
@@ -247,6 +256,22 @@ func (m *Manager) register(ctx context.Context, t Target, creds state.Backend) e
 			UserID:  creds.UserID,
 			Timeout: 15 * time.Second,
 		})
+	case "audiobookshelf":
+		s, err = audiobookshelf.New(audiobookshelf.Config{
+			ID:        t.ID,
+			BaseURL:   t.BaseURL,
+			Token:     creds.Token,
+			LibraryID: creds.LibraryID,
+			Timeout:   15 * time.Second,
+		})
+	case "calibreweb":
+		s, err = opds.New(opds.Config{
+			ID:       t.ID,
+			BaseURL:  t.BaseURL,
+			Username: creds.Username,
+			Password: creds.Password,
+			Timeout:  15 * time.Second,
+		})
 	default:
 		return fmt.Errorf("unknown backend type %q", t.Type)
 	}
@@ -265,6 +290,11 @@ func (m *Manager) register(ctx context.Context, t Target, creds state.Backend) e
 
 	m.reg.Set(s)
 	return nil
+}
+
+// basicAuth builds an HTTP Basic credential.
+func basicAuth(username, password string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 }
 
 // generatePassword returns a password no human will ever see or type.

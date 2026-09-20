@@ -87,7 +87,7 @@ func (p *Proxy) ServeMedia(w http.ResponseWriter, r *http.Request, sourceID, ite
 		http.Error(w, "source cannot stream", http.StatusNotImplemented)
 		return
 	}
-	target, err := streamer.StreamTarget(itemID)
+	target, err := streamer.StreamTarget(r.Context(), itemID)
 	if err != nil {
 		p.log.Error("build stream target", "source", sourceID, "item", itemID, "err", err)
 		http.Error(w, "could not build stream url", http.StatusBadGateway)
@@ -108,7 +108,7 @@ func (p *Proxy) ServeArt(w http.ResponseWriter, r *http.Request, sourceID, artID
 		http.Error(w, "source has no artwork", http.StatusNotImplemented)
 		return
 	}
-	target, err := provider.ArtTarget(artID)
+	target, err := provider.ArtTarget(r.Context(), artID)
 	if err != nil {
 		http.Error(w, "could not build artwork url", http.StatusBadGateway)
 		return

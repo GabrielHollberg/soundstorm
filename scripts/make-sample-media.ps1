@@ -32,7 +32,20 @@ $films = @(
   'movies/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mp4'
 )
 
-foreach ($item in @($tracks | ForEach-Object { $_.Path }) + $films) {
+# Audiobooks: Audiobookshelf reads Author/Title from the folder structure.
+$audiobooks = @(
+  @{ Path = 'audiobooks/Frank Herbert/Dune Messiah/Dune Messiah.mp3';                   Title = 'Dune Messiah';         Author = 'Frank Herbert';     Freq = 180; Year = 1969 }
+  @{ Path = 'audiobooks/Ursula K. Le Guin/A Wizard of Earthsea/A Wizard of Earthsea.mp3'; Title = 'A Wizard of Earthsea'; Author = 'Ursula K. Le Guin'; Freq = 260; Year = 1968 }
+)
+
+# Ebooks are built inside the calibre-web container, because they have to be
+# registered in a Calibre database rather than just dropped in a folder.
+$ebooks = @(
+  @{ Title = 'Dune';                 Author = 'Frank Herbert' }
+  @{ Title = 'A Wizard of Earthsea'; Author = 'Ursula K. Le Guin' }
+)
+
+foreach ($item in @($tracks | ForEach-Object { $_.Path }) + $films + @($audiobooks | ForEach-Object { $_.Path })) {
   $dir = Split-Path -Parent (Join-Path $media $item)
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
 }
@@ -79,6 +92,36 @@ foreach ($f in $films) {
     '-shortest', '-movflags', '+faststart',
     "/out/$f"
   )
+}
+
+foreach ($a in $audiobooks) {
+  Write-Host "  book   $($a.Title)"
+  Invoke-Ffmpeg @(
+    '-f', 'lavfi', '-i', "sine=frequency=$($a.Freq):duration=25",
+    '-metadata', "title=$($a.Title)",
+    '-metadata', "artist=$($a.Author)",
+    '-metadata', "album_artist=$($a.Author)",
+    '-metadata', "album=$($a.Title)",
+    '-metadata', "date=$($a.Year)",
+    '-c:a', 'libmp3lame', '-q:a', '7',
+    "/out/$($a.Path)"
+  )
+}
+
+# Ebooks need calibredb, which lives in the running calibre-web container. Skip
+# rather than fail if the stack is not up - the rest of the library is still
+# useful, and this can be re-run later.
+$cwRunning = (& docker ps --filter 'name=atrium-calibreweb' --filter 'status=running' --format '{{.Names}}') -contains 'atrium-calibreweb'
+if (-not $cwRunning) {
+  Write-Host "  (skipping ebooks: start the stack first, then re-run this script)" -ForegroundColor Yellow
+} else {
+  foreach ($b in $ebooks) {
+    Write-Host "  ebook  $($b.Title)"
+    # One line, and no here-string: PowerShell here-strings carry CRLF, and a
+    # stray carriage return makes bash read a trailing CR as part of the command.
+    $cmd = "cd /tmp && { echo '$($b.Title)'; echo; echo 'Placeholder text for a synthetic test library.'; } > in.txt && ebook-convert in.txt out.epub --title '$($b.Title)' --authors '$($b.Author)' --language en >/dev/null 2>&1 && calibredb add --with-library /books out.epub >/dev/null 2>&1 && chown -R abc:abc /books"
+    & docker exec atrium-calibreweb bash -c $cmd
+  }
 }
 
 Write-Host "`nDone. Library:" -ForegroundColor Green

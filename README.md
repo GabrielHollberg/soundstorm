@@ -6,7 +6,7 @@ One login and one search box over your whole media library.
 audiobooks and ebooks all answer the same search and play in the same window.
 You never see an API key, and you never see a second login.
 
-![Search results from two different media servers in one list](docs/shots/2-search.png)
+![One search returning an ebook, a film, music and an audiobook in a single ranked list](docs/shots/2-search.png)
 
 ## The idea
 
@@ -22,8 +22,8 @@ credentials itself, and puts one interface on top:
 | --- | --- |
 | **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
 | **Video** | Jellyfin — metadata, artwork, hardware transcoding |
-| **Audiobooks** | Audiobookshelf — *not yet wired up* |
-| **Ebooks** | Calibre / OPDS — *not yet wired up* |
+| **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
+| **Ebooks** | Calibre-Web — a real Calibre library over OPDS |
 
 Using the real servers instead of reimplementing them is the whole trick. When
 you search "dune" and get a film back with a real poster and a real synopsis,
@@ -33,15 +33,16 @@ that is Jellyfin's metadata work, not atrium's.
 
 This is a **working vertical slice**, not a finished product. What runs today:
 
-- `docker compose up` brings up Navidrome, Jellyfin and atrium
-- atrium provisions both backends on first boot — **zero API keys typed**
+- `docker compose up` brings up all four backends plus atrium
+- atrium provisions every one of them on first boot — **zero API keys typed**
 - one account, created on first visit, guarding everything
-- one search across both, merged and ranked
-- video and audio play **inside atrium**, with seeking
-- neither backend publishes a port; atrium is the only door
+- one search across all four, merged and ranked
+- music, video and audiobooks play **inside atrium**, with seeking
+- ebooks download as a named file (no in-browser reader yet)
+- no backend publishes a port; atrium is the only door
 
-Not built yet: audiobooks, ebooks, transcoding for formats a browser cannot
-play, multi-user, HTTPS. See [docs/roadmap.md](docs/roadmap.md).
+Not built yet: transcoding for formats a browser cannot play, an ebook reader,
+multi-user, HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Getting started
 
@@ -57,11 +58,17 @@ Drop your own files into:
 
 ```
 media/
-  music/     Artist/Album/01 - Track.mp3
-  movies/    Film Name (2021)/Film Name (2021).mkv
+  music/       Artist/Album/01 - Track.mp3
+  movies/      Film Name (2021)/Film Name (2021).mkv
+  audiobooks/  Author Name/Book Title/book.m4b
+  ebooks/      a Calibre library (metadata.db + book folders)
 ```
 
-Navidrome rescans every minute. Jellyfin watches for changes.
+Navidrome rescans every minute; Jellyfin and Audiobookshelf watch for changes.
+
+Ebooks are the exception: Calibre-Web reads a Calibre *database*, not a folder,
+so `media/ebooks` has to be a Calibre library. Point it at the one you already
+have, or let the stack create an empty one and add books through Calibre-Web.
 
 Port 8099 rather than 8080 because 8080 is crowded — a Calibre content server
 defaults to it. Override with `ATRIUM_PORT`.
@@ -69,15 +76,16 @@ defaults to it. Override with `ATRIUM_PORT`.
 ## How it works
 
 ```
-                    browser
-                       │  one origin, one cookie
-                 ┌─────▼─────┐
-                 │  atrium   │  auth · search · player · byte proxy
-                 └─────┬─────┘
-          ┌────────────┴────────────┐
-          ▼                         ▼
-    Navidrome:4533            Jellyfin:8096
-    (no published port)     (no published port)
+                            browser
+                               │  one origin, one cookie
+                       ┌───────▼───────┐
+                       │    atrium     │  auth · search · player · byte proxy
+                       └───────┬───────┘
+      ┌──────────────┬─────────┴─────────┬──────────────┐
+      ▼              ▼                   ▼              ▼
+ Navidrome     Jellyfin        Audiobookshelf     Calibre-Web
+   :4533         :8096              :80              :8083
+             — none of them publishes a port —
 ```
 
 Three rules hold it together.
@@ -103,7 +111,8 @@ package comment in `internal/stream` for the cost/benefit.
 cmd/atrium/          main, env config, graceful shutdown
 internal/media/      Item, Query, Kind — the shared vocabulary
 internal/source/     the Source interface, Target, Registry
-internal/source/*/   one package per backend
+internal/source/*/   one package per backend (subsonic, jellyfin,
+                     audiobookshelf, opds)
 internal/provision/  first-boot credential provisioning  ← the load-bearing part
 internal/state/      the little that must survive a restart
 internal/auth/       single-account login, PBKDF2, sessions
@@ -124,8 +133,11 @@ internal/webui/      the embedded UI
 | POST | `/api/login` / `/api/logout` | — | |
 | GET | `/api/setup` | session | per-backend provisioning progress |
 | GET | `/api/search?q=&kind=&limit=` | session | federated search |
-| GET | `/api/stream/{source}/{id}` | session | media bytes |
-| GET | `/api/art/{source}/{id}` | session | artwork |
+| GET | `/api/stream/{source}/{id...}` | session | media bytes |
+| GET | `/api/art/{source}/{id...}` | session | artwork |
+
+The trailing `...` is load-bearing: an OPDS acquisition reference is a path with
+slashes in it, and that is the id the adapter needs back.
 
 `kind` is one of `music`, `audiobook`, `ebook`, `video`, and may repeat or be
 comma-separated. Filtering skips non-matching backends entirely.

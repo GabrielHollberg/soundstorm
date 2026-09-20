@@ -95,9 +95,12 @@ func (s *Server) Routes() http.Handler {
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("GET /api/search", s.handleSearch)
-	guarded.HandleFunc("GET /api/stream/{source}/{id}", s.handleStream)
-	guarded.HandleFunc("HEAD /api/stream/{source}/{id}", s.handleStream)
-	guarded.HandleFunc("GET /api/art/{source}/{id}", s.handleArt)
+	// {id...} rather than {id}: an OPDS acquisition reference is a path with
+	// slashes in it ("opds/download/1/epub/"), and that is the id the adapter
+	// needs back to fetch the book.
+	guarded.HandleFunc("GET /api/stream/{source}/{id...}", s.handleStream)
+	guarded.HandleFunc("HEAD /api/stream/{source}/{id...}", s.handleStream)
+	guarded.HandleFunc("GET /api/art/{source}/{id...}", s.handleArt)
 	mux.Handle("/api/", s.auth.Require(guarded))
 
 	return s.withLogging(mux)

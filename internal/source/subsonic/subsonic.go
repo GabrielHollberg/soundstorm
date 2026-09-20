@@ -172,12 +172,12 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 // Subsonic carries credentials in the query string, which is how the protocol
 // works, so no headers are needed. They never reach the browser: atrium fetches
 // them itself and pipes the bytes through, so Navidrome needs no published port.
-func (s *Source) StreamTarget(itemID string) (source.Target, error) {
+func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
 	return s.mediaTarget("/rest/stream.view", itemID)
 }
 
 // ArtTarget builds an authenticated upstream target for cover art.
-func (s *Source) ArtTarget(artID string) (source.Target, error) {
+func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
 	return s.mediaTarget("/rest/getCoverArt.view", artID)
 }
 

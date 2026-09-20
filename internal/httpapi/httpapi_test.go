@@ -36,9 +36,9 @@ func (s stub) Kind() media.Kind { return s.kind }
 func (s stub) Search(context.Context, media.Query) ([]media.Item, error) {
 	return s.items, s.err
 }
-func (s stub) Health(context.Context) error               { return s.err }
-func (s stub) StreamTarget(string) (source.Target, error) { return s.target() }
-func (s stub) ArtTarget(string) (source.Target, error)    { return s.target() }
+func (s stub) Health(context.Context) error                                { return s.err }
+func (s stub) StreamTarget(context.Context, string) (source.Target, error) { return s.target() }
+func (s stub) ArtTarget(context.Context, string) (source.Target, error)    { return s.target() }
 
 func (s stub) target() (source.Target, error) {
 	if s.streamURL == "" {

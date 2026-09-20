@@ -135,7 +135,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 //
 // The credential goes in a header, not the query string. Jellyfin 12 removed the
 // api_key query parameter that most guides on the internet still show.
-func (s *Source) StreamTarget(itemID string) (source.Target, error) {
+func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
 	if itemID == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: empty item id", s.id)
 	}
@@ -146,7 +146,7 @@ func (s *Source) StreamTarget(itemID string) (source.Target, error) {
 }
 
 // ArtTarget builds an authenticated upstream target for a poster.
-func (s *Source) ArtTarget(artID string) (source.Target, error) {
+func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
 	if artID == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: empty art id", s.id)
 	}

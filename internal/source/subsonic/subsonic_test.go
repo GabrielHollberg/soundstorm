@@ -112,7 +112,7 @@ func TestItemsCarryNoUpstreamURLs(t *testing.T) {
 func TestStreamAndArtTargetsAreAuthenticated(t *testing.T) {
 	s := newTestSource(t, func(http.ResponseWriter, *http.Request) {})
 
-	streamTarget, err := s.StreamTarget("300")
+	streamTarget, err := s.StreamTarget(context.Background(), "300")
 	if err != nil {
 		t.Fatalf("StreamTarget: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestStreamAndArtTargetsAreAuthenticated(t *testing.T) {
 		t.Error("stream url must not carry a plaintext password")
 	}
 
-	artTarget, err := s.ArtTarget("al-42")
+	artTarget, err := s.ArtTarget(context.Background(), "al-42")
 	if err != nil {
 		t.Fatalf("ArtTarget: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestStreamAndArtTargetsAreAuthenticated(t *testing.T) {
 
 	// Each call re-salts, so two stream URLs for the same track must differ.
 	// A fixed token would be a replayable credential.
-	again, err := s.StreamTarget("300")
+	again, err := s.StreamTarget(context.Background(), "300")
 	if err != nil {
 		t.Fatalf("StreamTarget: %v", err)
 	}
@@ -157,10 +157,10 @@ func TestStreamAndArtTargetsAreAuthenticated(t *testing.T) {
 
 func TestStreamURLRejectsEmptyID(t *testing.T) {
 	s := newTestSource(t, func(http.ResponseWriter, *http.Request) {})
-	if _, err := s.StreamTarget(""); err == nil {
+	if _, err := s.StreamTarget(context.Background(), ""); err == nil {
 		t.Error("want an error for an empty item id")
 	}
-	if _, err := s.ArtTarget(""); err == nil {
+	if _, err := s.ArtTarget(context.Background(), ""); err == nil {
 		t.Error("want an error for an empty art id")
 	}
 }
