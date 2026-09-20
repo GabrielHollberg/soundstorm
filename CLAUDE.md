@@ -227,12 +227,26 @@ It was called atrium until the rename. Nothing in the repo should say so.
   video element shows nothing, no error anywhere. Claiming too little only
   costs an unnecessary transcode. So: h264/aac in mp4, VPx/AV1 in webm, and
   everything else transcodes.
-- **Transcoded streams cannot be seeked.** Measured, not assumed: Chrome
-  reports `seekable.end` of 0, a 20s file reports a duration of 9.9s that grows
-  as it buffers, and seeking to 15s snaps back. This is inherent to a
-  progressive transcode - the server cannot map a byte offset to a timestamp in
-  a live encode. HLS fixes it properly and needs hls.js vendored. Direct-played
-  video seeks normally because it is a real file with a real length.
+- **Transcoding is served as HLS, and the reason is seeking.** A progressive
+  transcode has no length until it has finished encoding, so the browser
+  reported `seekable.end` of 0, a 20s file showed a duration of 9.9s that grew
+  as it buffered, and seeking to 15s snapped back to 3s. Jellyfin's HLS output
+  is a VOD playlist listing every segment up front, which gives a real timeline:
+  the same file now reports 20.0s, `seekable.end` 20.0, and seeking to 15s
+  lands at 16.9s.
+- **Jellyfin's playlists reference their children relatively** ("main.m3u8",
+  "hls1/main/0.ts"), which is why `/api/hls/{source}/{path...}` mirrors
+  Jellyfin's own `/videos/` namespace. Get that mapping right and the browser
+  resolves every segment onto SoundStorm by itself; get it wrong and the only
+  alternative is rewriting playlists.
+- **Jellyfin's direct-play answer is not trusted on its own.** 12.1.0 reports
+  `SupportsDirectPlay: true` for an MKV even when the device profile offers only
+  mp4, so the container is checked a second time against the same list the
+  profile advertises. Believing it reproduces the silent failure exactly.
+- **hls.js is loaded lazily and may never load at all.** Recent Chrome plays
+  HLS natively, so the fallback went unexercised on the first test run - forcing
+  it (stub `canPlayType` to reject mpegurl) is the only way to know it works.
+  Do that whenever the video path changes.
 - **Transcodes must be stopped explicitly.** A Jellyfin transcode is an ffmpeg
   process that outlives the HTTP request, so `source.Target.OnDone` fires
   `DELETE /Videos/ActiveEncodings`. Verified that endpoint exists: it answers

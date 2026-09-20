@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -114,6 +115,12 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/stream/{source}/{id...}", s.handleStream)
 	guarded.HandleFunc("HEAD /api/stream/{source}/{id...}", s.handleStream)
 	guarded.HandleFunc("GET /api/art/{source}/{id...}", s.handleArt)
+
+	// Video may need transcoding, in which case the client loads a playlist
+	// instead of a file. /api/playback says which; /api/hls serves the
+	// playlist and its segments.
+	guarded.HandleFunc("GET /api/playback/{source}/{id...}", s.handlePlayback)
+	guarded.HandleFunc("GET /api/hls/{source}/{path...}", s.handleHLS)
 
 	// The reader's endpoints take source/id/path as query parameters rather
 	// than path segments. Book ids and resource paths both contain slashes,
@@ -307,6 +314,94 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	result := federate.Search(r.Context(), s.reg, query, s.perSourceTimeout)
 	writeJSON(w, http.StatusOK, result)
+}
+
+// handlePlayback answers "how do I play this".
+//
+// The client asks before touching a player, because the answer decides which
+// one to build: a plain <video src> for a file, or hls.js attached to a
+// playlist for anything the browser cannot decode.
+func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
+	sourceID, itemID := r.PathValue("source"), r.PathValue("id")
+	src, ok := s.reg.ByID(sourceID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown source "+strconv.Quote(sourceID))
+		return
+	}
+
+	direct := map[string]any{
+		"mode": source.PlaybackModeDirect,
+		"url":  "/api/stream/" + url.PathEscape(sourceID) + "/" + escapePath(itemID),
+	}
+
+	// A source that cannot transcode has nothing to decide: hand over the file.
+	negotiator, ok := src.(source.Negotiator)
+	if !ok {
+		writeJSON(w, http.StatusOK, direct)
+		return
+	}
+
+	play, err := negotiator.Playback(r.Context(), itemID)
+	if err != nil {
+		s.log.Warn("playback negotiation failed", "source", sourceID, "item", itemID, "err", err)
+		// Falling back to direct play is better than refusing to play at all:
+		// if the file happens to be playable, it works, and if it is not the
+		// browser reports a media error rather than SoundStorm reporting none.
+		writeJSON(w, http.StatusOK, direct)
+		return
+	}
+
+	if play.Mode != source.PlaybackModeHLS {
+		writeJSON(w, http.StatusOK, direct)
+		return
+	}
+
+	playlist := "/api/hls/" + url.PathEscape(sourceID) + "/" + escapePath(play.Path)
+	if len(play.Query) > 0 {
+		playlist += "?" + play.Query.Encode()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode": source.PlaybackModeHLS,
+		"url":  playlist,
+	})
+}
+
+// handleHLS proxies a playlist or one of its segments.
+//
+// The path is passed through untouched because the playlist refers to its
+// segments relatively: as long as this route mirrors the backend's own
+// namespace, the browser resolves them onto here by itself and no playlist
+// needs rewriting.
+func (s *Server) handleHLS(w http.ResponseWriter, r *http.Request) {
+	sourceID := r.PathValue("source")
+	src, ok := s.reg.ByID(sourceID)
+	if !ok {
+		http.Error(w, "unknown source", http.StatusNotFound)
+		return
+	}
+	provider, ok := src.(source.HLSProvider)
+	if !ok {
+		http.Error(w, "source does not serve playlists", http.StatusNotImplemented)
+		return
+	}
+
+	target, err := provider.HLSTarget(r.Context(), r.PathValue("path"), r.URL.Query())
+	if err != nil {
+		s.log.Warn("hls target", "source", sourceID, "err", err)
+		http.Error(w, "could not build playlist url", http.StatusBadGateway)
+		return
+	}
+	s.proxy.Serve(w, r, target, "hls "+sourceID)
+}
+
+// escapePath escapes each segment but keeps the separators, so an id or
+// playlist path containing slashes survives.
+func escapePath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {

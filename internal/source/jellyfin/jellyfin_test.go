@@ -6,15 +6,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/gabehollberg/soundstorm/internal/media"
+	"github.com/gabehollberg/soundstorm/internal/source"
 )
 
-// fakeJellyfin answers PlaybackInfo with a canned MediaSource and records what
+// fakeJellyfin answers PlaybackInfo with a canned MediaSource and records the
 // profile it was asked with.
-func fakeJellyfin(t *testing.T, mediaSource map[string]any, sessionID string) (*Source, *map[string]any) {
+func fakeJellyfin(t *testing.T, mediaSource map[string]any) (*Source, *map[string]any) {
 	t.Helper()
 
 	var sent map[string]any
@@ -26,7 +28,7 @@ func fakeJellyfin(t *testing.T, mediaSource map[string]any, sessionID string) (*
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"MediaSources":  []any{mediaSource},
-				"PlaySessionId": sessionID,
+				"PlaySessionId": "session-1",
 			})
 		default:
 			w.WriteHeader(http.StatusNoContent)
@@ -44,73 +46,92 @@ func fakeJellyfin(t *testing.T, mediaSource map[string]any, sessionID string) (*
 // A file the browser can already decode must not be transcoded. Sending a whole
 // film through ffmpeg when it would have played untouched is the expensive
 // mistake in the other direction.
-func TestDirectPlayIsUsedWhenOffered(t *testing.T) {
+func TestDirectPlayIsUsedForAPlayableFile(t *testing.T) {
 	s, _ := fakeJellyfin(t, map[string]any{
 		"Id":                 "ms-1",
 		"Container":          "mp4",
 		"SupportsDirectPlay": true,
-	}, "session-1")
+	})
 
-	target, err := s.StreamTarget(context.Background(), "item-1")
+	play, err := s.Playback(context.Background(), "item-1")
 	if err != nil {
-		t.Fatalf("StreamTarget: %v", err)
+		t.Fatalf("Playback: %v", err)
 	}
-	if !strings.Contains(target.URL, "/Videos/item-1/stream") {
-		t.Errorf("url = %q, want the direct stream endpoint", target.URL)
-	}
-	if !strings.Contains(target.URL, "static=true") {
-		t.Errorf("url = %q, want static=true", target.URL)
-	}
-	if target.OnDone != nil {
-		t.Error("direct play starts no transcode, so there is nothing to stop")
-	}
-	if target.Headers["Authorization"] == "" {
-		t.Error("the credential must travel in a header; Jellyfin 12 ignores api_key")
+	if play.Mode != source.PlaybackModeDirect {
+		t.Errorf("mode = %q, want direct", play.Mode)
 	}
 }
 
 // The bug this whole mechanism exists to fix: HEVC in MKV used to be handed
 // over untouched, and the video element displayed nothing at all.
-func TestTranscodeIsUsedWhenDirectPlayIsImpossible(t *testing.T) {
+func TestUnplayableContainerIsTranscodedToHLS(t *testing.T) {
 	s, _ := fakeJellyfin(t, map[string]any{
-		"Id":                     "ms-1",
-		"Container":              "mkv",
-		"SupportsDirectPlay":     false,
-		"SupportsDirectStream":   false,
-		"SupportsTranscoding":    true,
-		"TranscodingUrl":         "/videos/item-1/stream.mp4?VideoCodec=h264&AudioCodec=aac&PlaySessionId=session-2",
-		"TranscodingSubProtocol": "http",
-	}, "session-2")
+		"Id":                  "ms-9",
+		"Container":           "mkv",
+		"SupportsDirectPlay":  false,
+		"SupportsTranscoding": true,
+	})
 
-	target, err := s.StreamTarget(context.Background(), "item-1")
+	play, err := s.Playback(context.Background(), "item-1")
 	if err != nil {
-		t.Fatalf("StreamTarget: %v", err)
+		t.Fatalf("Playback: %v", err)
 	}
-	if !strings.Contains(target.URL, "/videos/item-1/stream.mp4") {
-		t.Errorf("url = %q, want the transcode endpoint", target.URL)
+	if play.Mode != source.PlaybackModeHLS {
+		t.Fatalf("mode = %q, want hls", play.Mode)
 	}
-	// The query Jellyfin built has to survive intact - it carries the codec
-	// decisions and the session id.
-	if !strings.Contains(target.URL, "VideoCodec=h264") ||
-		!strings.Contains(target.URL, "PlaySessionId=session-2") {
-		t.Errorf("url = %q, lost the parameters Jellyfin chose", target.URL)
+	// The path decides where the playlist's relative segment references land,
+	// so it has to mirror the backend's own namespace.
+	if play.Path != "item-1/master.m3u8" {
+		t.Errorf("path = %q, want item-1/master.m3u8", play.Path)
 	}
-	if target.OnDone == nil {
-		t.Error("a transcode leaves an ffmpeg process running and must be stoppable")
+	if got := play.Query.Get("mediaSourceId"); got != "ms-9" {
+		t.Errorf("mediaSourceId = %q, want the id Jellyfin chose", got)
+	}
+	for key, want := range map[string]string{
+		"transcodingProtocol": "hls",
+		"videoCodec":          "h264",
+		"audioCodec":          "aac",
+	} {
+		if got := play.Query.Get(key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
 	}
 }
 
-// The profile is the whole basis of Jellyfin's decision, so getting it wrong is
-// silent: claim a codec we cannot play and the video element shows nothing.
-func TestDeviceProfileIsConservative(t *testing.T) {
-	s, sent := fakeJellyfin(t, map[string]any{"Id": "ms-1", "SupportsDirectPlay": true}, "s")
+// Jellyfin 12.1.0 has been observed answering SupportsDirectPlay for an MKV
+// even when the profile offers only mp4. Believing it reproduces exactly the
+// silent failure this code exists to remove, so the container is checked again.
+func TestDirectPlayClaimIsNotTrustedForAnUnplayableContainer(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{
+		"Id":                   "ms-1",
+		"Container":            "mkv",
+		"SupportsDirectPlay":   true,
+		"SupportsDirectStream": true,
+		"SupportsTranscoding":  true,
+	})
 
-	if _, err := s.StreamTarget(context.Background(), "item-1"); err != nil {
-		t.Fatalf("StreamTarget: %v", err)
+	play, err := s.Playback(context.Background(), "item-1")
+	if err != nil {
+		t.Fatalf("Playback: %v", err)
+	}
+	if play.Mode != source.PlaybackModeHLS {
+		t.Errorf("mode = %q: an mkv was accepted as direct play on Jellyfin's word alone", play.Mode)
+	}
+}
+
+// The profile is the basis of Jellyfin's decision, so getting it wrong fails
+// silently: claim a codec we cannot play and the video element shows nothing.
+func TestDeviceProfileIsConservative(t *testing.T) {
+	s, sent := fakeJellyfin(t, map[string]any{
+		"Id": "ms-1", "Container": "mp4", "SupportsDirectPlay": true,
+	})
+
+	if _, err := s.Playback(context.Background(), "item-1"); err != nil {
+		t.Fatalf("Playback: %v", err)
 	}
 	profile, ok := (*sent)["DeviceProfile"].(map[string]any)
 	if !ok {
-		t.Fatal("no DeviceProfile was sent; Jellyfin would guess")
+		t.Fatal("no DeviceProfile was sent; Jellyfin would be guessing")
 	}
 
 	direct, _ := json.Marshal(profile["DirectPlayProfiles"])
@@ -124,46 +145,60 @@ func TestDeviceProfileIsConservative(t *testing.T) {
 	}
 
 	transcoding, _ := json.Marshal(profile["TranscodingProfiles"])
-	if !strings.Contains(string(transcoding), `"Protocol":"http"`) {
-		t.Errorf("transcoding profile = %s, want progressive http (HLS would need hls.js)", transcoding)
+	if !strings.Contains(string(transcoding), `"Protocol":"hls"`) {
+		t.Errorf("transcoding profile = %s, want hls (progressive cannot be seeked)", transcoding)
 	}
 }
 
-// If Jellyfin ever answers with HLS despite being asked for progressive, that
-// must be a legible error rather than a video element silently refusing a
-// playlist it cannot parse.
-func TestHLSAnswerIsRejectedLoudly(t *testing.T) {
-	s, _ := fakeJellyfin(t, map[string]any{
-		"Id":                     "ms-1",
-		"SupportsTranscoding":    true,
-		"TranscodingUrl":         "/videos/item-1/master.m3u8",
-		"TranscodingSubProtocol": "hls",
-	}, "s")
+// The playlist references its segments relatively, so this mapping is what
+// makes those references land back on the right Jellyfin path.
+func TestHLSTargetMapsOntoTheVideoNamespace(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
 
-	_, err := s.StreamTarget(context.Background(), "item-1")
-	if err == nil {
-		t.Fatal("want an error for an HLS answer")
+	target, err := s.HLSTarget(context.Background(), "item-1/hls1/main/3.ts",
+		url.Values{"mediaSourceId": {"ms-1"}})
+	if err != nil {
+		t.Fatalf("HLSTarget: %v", err)
 	}
-	if !strings.Contains(err.Error(), "HLS") {
-		t.Errorf("error should name the problem, got %v", err)
+	if !strings.Contains(target.URL, "/videos/item-1/hls1/main/3.ts") {
+		t.Errorf("url = %q, want the segment under /videos", target.URL)
+	}
+	if !strings.Contains(target.URL, "mediaSourceId=ms-1") {
+		t.Errorf("url = %q, dropped the query the playlist carried", target.URL)
+	}
+	if target.Headers["Authorization"] == "" {
+		t.Error("segments need the credential too; Jellyfin 12 ignores api_key")
 	}
 }
 
-func TestNoPlayableSourceIsAnError(t *testing.T) {
-	s, _ := fakeJellyfin(t, map[string]any{
-		"Id":        "ms-1",
-		"Container": "mkv",
-	}, "s")
+func TestHLSTargetRejectsTraversal(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
+	for _, bad := range []string{"", "../Users/admin", "item/../../secret"} {
+		if _, err := s.HLSTarget(context.Background(), bad, nil); err == nil {
+			t.Errorf("HLSTarget(%q) should have been rejected", bad)
+		}
+	}
+}
 
-	if _, err := s.StreamTarget(context.Background(), "item-1"); err == nil {
-		t.Error("want an error when a file can be neither direct played nor transcoded")
+func TestStreamTargetIsStillDirect(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
+
+	target, err := s.StreamTarget(context.Background(), "item-1")
+	if err != nil {
+		t.Fatalf("StreamTarget: %v", err)
+	}
+	if !strings.Contains(target.URL, "static=true") {
+		t.Errorf("url = %q, want the untouched file", target.URL)
+	}
+	if _, err := s.StreamTarget(context.Background(), ""); err == nil {
+		t.Error("want an error for an empty item id")
 	}
 }
 
 // One Jellyfin serves films and series as two sources; this is the part that
 // was hardcoded until TV support arrived.
 func TestKindAndItemTypesAreConfigurable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"Items":[],"TotalRecordCount":0}`))
 	}))

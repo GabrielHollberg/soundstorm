@@ -1,0 +1,6 @@
+hls.js 1.7.3
+https://github.com/video-dev/hls.js
+Apache-2.0 (see LICENSE)
+
+Vendored as a prebuilt UMD bundle: no build step, pinned by content.
+Loaded lazily, only when a video actually needs a transcoded HLS stream.

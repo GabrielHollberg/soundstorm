@@ -154,6 +154,12 @@ func (p *Proxy) ServeArt(w http.ResponseWriter, r *http.Request, sourceID, artID
 	p.pipe(w, r, target, fmt.Sprintf("art %s/%s", sourceID, artID))
 }
 
+// Serve delivers a target the caller has already resolved. Used by the HLS
+// route, where the path rather than an item id decides what to fetch.
+func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, target source.Target, what string) {
+	p.pipe(w, r, target, what)
+}
+
 // pipe delivers a target, whatever kind it is.
 func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Target, what string) {
 	// Local targets do not involve an upstream at all. http.ServeContent gives

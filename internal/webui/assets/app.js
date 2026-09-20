@@ -457,20 +457,85 @@ function downloadBook(item) {
 // The reader's download button needs the item it is showing.
 window.soundstormDownloadBook = downloadBook;
 
-function playVideo(item) {
+// hls.js is 620KB, so it is fetched the first time a video actually needs a
+// transcoded stream and never for music, books, or films that play directly.
+let hlsLoader = null;
+
+function loadHls() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (!hlsLoader) {
+    hlsLoader = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/static/vendor/hls.js/hls.min.js';
+      script.onload = () => resolve(window.Hls);
+      script.onerror = () => { hlsLoader = null; reject(new Error('could not load the video player')); };
+      document.head.append(script);
+    });
+  }
+  return hlsLoader;
+}
+
+let hls = null;
+
+function detachHls() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+}
+
+async function playVideo(item) {
   stopAudio();
+  detachHls();
+
   const player = $('video-player');
-  player.src = streamPath(item);
   $('video-caption').textContent = [item.title, subtitleFor(item)]
     .filter(Boolean)
     .join(' — ');
   show($('video-overlay'), true);
-  player.play().catch(() => {
-    /* The browser may require a gesture; the controls are right there. */
-  });
+
+  // Ask before building a player: the answer decides which one to build.
+  const { ok, body } = await api(
+    `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+  const mode = ok && body ? body.mode : 'direct';
+  const url = ok && body && body.url ? body.url : streamPath(item);
+
+  if (mode !== 'hls') {
+    player.src = url;
+    player.play().catch(() => {});
+    return;
+  }
+
+  // Safari plays HLS natively and does it better than any library can.
+  if (player.canPlayType('application/vnd.apple.mpegurl')) {
+    player.src = url;
+    player.play().catch(() => {});
+    return;
+  }
+
+  try {
+    const Hls = await loadHls();
+    if (!Hls || !Hls.isSupported()) throw new Error('this browser cannot play transcoded video');
+
+    hls = new Hls({ enableWorker: true });
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      // Only fatal errors are worth surfacing; hls.js recovers from the rest
+      // by itself and says so loudly in the console either way.
+      if (data && data.fatal) {
+        $('video-caption').textContent = `Could not play this video: ${data.details || 'stream error'}`;
+        detachHls();
+      }
+    });
+    hls.loadSource(url);
+    hls.attachMedia(player);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => player.play().catch(() => {}));
+  } catch (err) {
+    $('video-caption').textContent = err.message;
+  }
 }
 
 function closeVideo() {
+  detachHls();
   const player = $('video-player');
   player.pause();
   player.removeAttribute('src');

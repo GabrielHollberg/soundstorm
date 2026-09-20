@@ -7,6 +7,7 @@ package source
 
 import (
 	"context"
+	"net/url"
 	"sync"
 	"time"
 
@@ -109,6 +110,45 @@ type OpenBook interface {
 // reading the folder directly is what made a reader possible at all.
 type BookOpener interface {
 	OpenBook(ctx context.Context, itemID string) (OpenBook, error)
+}
+
+// Playback tells a client how to play an item.
+type Playback struct {
+	// Mode is "direct" when the bytes can be fetched straight from
+	// /api/stream, or "hls" when the client must load a playlist instead.
+	Mode string `json:"mode"`
+
+	// Path and Query locate the playlist under /api/hls/{sourceID}/ when Mode
+	// is "hls". The path matters: a playlist references its segments
+	// relatively, so the URL a client loads it from determines where those
+	// segment requests land.
+	Path  string     `json:"path,omitempty"`
+	Query url.Values `json:"-"`
+}
+
+// PlaybackModeDirect and PlaybackModeHLS are the two answers.
+const (
+	PlaybackModeDirect = "direct"
+	PlaybackModeHLS    = "hls"
+)
+
+// Negotiator is an optional interface for sources that cannot always hand over
+// a file as-is.
+//
+// Only video needs this. A song is a song, but a film may be in a container or
+// codec the browser cannot decode, in which case the backend has to re-encode
+// it and the client has to be told to expect a playlist rather than a file.
+// Sources that do not implement this are always played directly.
+type Negotiator interface {
+	Playback(ctx context.Context, itemID string) (Playback, error)
+}
+
+// HLSProvider serves the playlists and segments of a transcoded stream.
+//
+// path arrives relative to the source's own HLS namespace - "{itemID}/main.m3u8",
+// "{itemID}/hls1/main/3.ts" - because that is how the playlist refers to them.
+type HLSProvider interface {
+	HLSTarget(ctx context.Context, path string, query url.Values) (Target, error)
 }
 
 // Starter is an optional interface for sources that must do work before they

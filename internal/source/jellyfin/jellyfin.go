@@ -156,35 +156,25 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 	return items, nil
 }
 
-// StreamTarget builds an authenticated upstream target for a video.
+// StreamTarget hands over the original file.
 //
-// It asks Jellyfin what to do rather than assuming. Handing over the original
-// file works for h264/aac in mp4 and fails silently for everything else a real
-// library contains - HEVC, MKV, DTS, TrueHD - where the video element simply
-// displays nothing. Which of those applies depends on container, video codec,
-// audio codec, profile and level, and Jellyfin already knows all five.
+// This is only ever reached for video the browser can already decode, because
+// Playback decides that first and routes anything else to HLS. Direct play is
+// worth keeping: it is instant, costs the server nothing, and seeks by byte
+// range like any other file.
 //
 // The credential goes in a header, not the query string. Jellyfin 12 removed
 // the api_key query parameter that most guides on the internet still show.
-func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target, error) {
+func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
 	if itemID == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: empty item id", s.id)
 	}
-
-	play, err := s.negotiate(ctx, itemID)
-	if err != nil {
-		return source.Target{}, err
-	}
-
-	target := source.Target{
-		URL:     s.http.URL(play.Ref, nil),
+	return source.Target{
+		URL: s.http.URL("/Videos/"+url.PathEscape(itemID)+"/stream", url.Values{
+			"static": {"true"},
+		}),
 		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
-	}
-	if play.Transcoding {
-		session := play.PlaySessionID
-		target.OnDone = func() { s.stopTranscode(session) }
-	}
-	return target, nil
+	}, nil
 }
 
 // --- playback negotiation ----------------------------------------------------
@@ -202,7 +192,12 @@ const maxStreamingBitrate = 20_000_000
 // means an unnecessary transcode, which is slow but works.
 //
 // So: h264 in mp4 with aac or mp3, and the VPx/AV1 family in webm. Everything
-// else - HEVC, MKV, DTS, TrueHD, VC-1 - gets transcoded.
+// else - HEVC, MKV, DTS, TrueHD, VC-1 - gets transcoded to HLS.
+// directPlayContainers is the containers we claim to handle untouched. It is
+// referenced twice on purpose: once to tell Jellyfin, and once to check its
+// answer.
+const directPlayContainers = "mp4,m4v,webm"
+
 func deviceProfile() map[string]any {
 	return map[string]any{
 		"MaxStreamingBitrate": maxStreamingBitrate,
@@ -216,14 +211,11 @@ func deviceProfile() map[string]any {
 		"TranscodingProfiles": []map[string]any{
 			{
 				"Type":       "Video",
-				"Container":  "mp4",
+				"Container":  "ts",
 				"VideoCodec": "h264",
 				"AudioCodec": "aac",
-				// "http" rather than "hls": a progressive fragmented MP4 plays
-				// in a plain <video> element, where HLS would need hls.js
-				// vendored into the UI for every browser except Safari.
-				"Protocol": "http",
-				"Context":  "Streaming",
+				"Protocol":   "hls",
+				"Context":    "Streaming",
 			},
 		},
 		"CodecProfiles": []map[string]any{
@@ -241,39 +233,32 @@ func deviceProfile() map[string]any {
 	}
 }
 
-// playback is Jellyfin's answer to "how do I play this".
-type playback struct {
-	// Ref is the path and query to fetch, relative to the server root.
-	Ref string
-
-	// Transcoding is true when Jellyfin will re-encode rather than hand over
-	// the original file.
-	Transcoding bool
-
-	// PlaySessionID identifies the transcode so it can be stopped.
-	PlaySessionID string
-}
-
+// playbackInfoResponse is the part of PlaybackInfo we act on.
 type playbackInfoResponse struct {
 	MediaSources []struct {
-		ID                     string `json:"Id"`
-		Container              string `json:"Container"`
-		SupportsDirectPlay     bool   `json:"SupportsDirectPlay"`
-		SupportsDirectStream   bool   `json:"SupportsDirectStream"`
-		SupportsTranscoding    bool   `json:"SupportsTranscoding"`
-		TranscodingURL         string `json:"TranscodingUrl"`
-		TranscodingSubProtocol string `json:"TranscodingSubProtocol"`
+		ID                   string `json:"Id"`
+		Container            string `json:"Container"`
+		SupportsDirectPlay   bool   `json:"SupportsDirectPlay"`
+		SupportsDirectStream bool   `json:"SupportsDirectStream"`
+		SupportsTranscoding  bool   `json:"SupportsTranscoding"`
 	} `json:"MediaSources"`
 	PlaySessionID string `json:"PlaySessionId"`
 }
 
-// negotiate asks Jellyfin whether this item can be played as-is.
+// Playback decides whether this item can be handed over as a file or has to be
+// transcoded into a playlist.
 //
-// This is the difference between "plays some of your films" and "plays your
-// films". Guessing is not an option: whether a file needs transcoding depends
-// on its container, video codec, audio codec, profile and level, and Jellyfin
-// is the thing that already knows all five.
-func (s *Source) negotiate(ctx context.Context, itemID string) (playback, error) {
+// Transcoding is served as HLS rather than a progressive stream, and the reason
+// is seeking. A progressive transcode has no length until it has finished
+// encoding, so the browser reports seekable.end of 0 and the scrubber does
+// nothing - measured, not assumed. Jellyfin's HLS output is a VOD playlist: it
+// lists every segment and its duration up front, which gives the browser a real
+// timeline and makes seeking work the way it does for any other video.
+func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, error) {
+	if itemID == "" {
+		return source.Playback{}, fmt.Errorf("jellyfin %q: empty item id", s.id)
+	}
+
 	params := url.Values{}
 	if s.cfg.UserID != "" {
 		params.Set("userId", s.cfg.UserID)
@@ -291,47 +276,79 @@ func (s *Source) negotiate(ctx context.Context, itemID string) (playback, error)
 		},
 	})
 	if err != nil {
-		return playback{}, fmt.Errorf("jellyfin %q: playback info: %w", s.id, err)
+		return source.Playback{}, fmt.Errorf("jellyfin %q: playback info: %w", s.id, err)
 	}
 	if err := resp.Err(); err != nil {
-		return playback{}, fmt.Errorf("jellyfin %q: playback info: %w", s.id, err)
+		return source.Playback{}, fmt.Errorf("jellyfin %q: playback info: %w", s.id, err)
 	}
 
 	var info playbackInfoResponse
 	if err := resp.JSON(&info); err != nil {
-		return playback{}, err
+		return source.Playback{}, err
 	}
 	if len(info.MediaSources) == 0 {
-		return playback{}, fmt.Errorf("jellyfin %q: item %q has no media sources", s.id, itemID)
+		return source.Playback{}, fmt.Errorf("jellyfin %q: item %q has no media sources", s.id, itemID)
 	}
 	ms := info.MediaSources[0]
 
-	if ms.SupportsDirectPlay || ms.SupportsDirectStream {
-		return playback{
-			Ref: "/Videos/" + url.PathEscape(itemID) + "/stream?" + url.Values{
-				"static":        {"true"},
-				"mediaSourceId": {ms.ID},
-			}.Encode(),
-			PlaySessionID: info.PlaySessionID,
-		}, nil
+	if (ms.SupportsDirectPlay || ms.SupportsDirectStream) && s.browserCanPlay(ms.Container) {
+		return source.Playback{Mode: source.PlaybackModeDirect}, nil
 	}
 
-	if ms.TranscodingURL == "" {
-		return playback{}, fmt.Errorf(
-			"jellyfin %q: %s cannot be direct played and offers no transcode", s.id, ms.Container)
-	}
-	// A profile asking for Protocol "http" should never produce an HLS answer,
-	// but if Jellyfin ever decides otherwise the failure should be legible
-	// rather than a video element silently refusing a playlist.
-	if strings.EqualFold(ms.TranscodingSubProtocol, "hls") {
-		return playback{}, fmt.Errorf(
-			"jellyfin %q: returned an HLS stream, which this player cannot use", s.id)
-	}
+	return source.Playback{
+		Mode:  source.PlaybackModeHLS,
+		Path:  itemID + "/master.m3u8",
+		Query: s.hlsParams(itemID, ms.ID),
+	}, nil
+}
 
-	return playback{
-		Ref:           ms.TranscodingURL,
-		Transcoding:   true,
-		PlaySessionID: info.PlaySessionID,
+// browserCanPlay is a second opinion on Jellyfin's direct-play answer.
+//
+// Jellyfin has been observed reporting SupportsDirectPlay for an MKV even when
+// the device profile lists only mp4 - verified against 12.1.0. Trusting it
+// alone reproduces the silent failure this whole mechanism exists to remove, so
+// the container is checked against the same list the profile advertises.
+func (s *Source) browserCanPlay(container string) bool {
+	for _, ok := range strings.Split(directPlayContainers, ",") {
+		if strings.EqualFold(strings.TrimSpace(ok), container) {
+			return true
+		}
+	}
+	return false
+}
+
+// hlsParams builds the query Jellyfin needs to produce a playlist.
+func (s *Source) hlsParams(itemID, mediaSourceID string) url.Values {
+	if mediaSourceID == "" {
+		mediaSourceID = itemID
+	}
+	return url.Values{
+		"mediaSourceId":        {mediaSourceID},
+		"deviceId":             {deviceID},
+		"videoCodec":           {"h264"},
+		"audioCodec":           {"aac"},
+		"transcodingContainer": {"ts"},
+		"transcodingProtocol":  {"hls"},
+		"segmentContainer":     {"ts"},
+		"videoBitRate":         {strconv.Itoa(maxStreamingBitrate)},
+		"maxAudioChannels":     {"2"},
+	}
+}
+
+// HLSTarget maps a playlist or segment path onto Jellyfin's video namespace.
+//
+// Jellyfin's playlists reference their children relatively ("main.m3u8",
+// "hls1/main/0.ts"), so as long as the client loads the master from a URL whose
+// directory mirrors this namespace, every follow-up request lands here with the
+// right path and no playlist rewriting is needed.
+func (s *Source) HLSTarget(_ context.Context, path string, query url.Values) (source.Target, error) {
+	clean := strings.TrimPrefix(path, "/")
+	if clean == "" || strings.Contains(clean, "..") {
+		return source.Target{}, fmt.Errorf("jellyfin %q: bad hls path %q", s.id, path)
+	}
+	return source.Target{
+		URL:     s.http.URL("/videos/"+clean, query),
+		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
 	}, nil
 }
 

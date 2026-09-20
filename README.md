@@ -39,15 +39,12 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - one account, created on first visit, guarding everything
 - one search across all four, merged and ranked
 - music, films, TV and audiobooks play **inside SoundStorm**
-- video that a browser cannot decode is **transcoded by Jellyfin on the fly** -
-  HEVC, MKV, DTS and friends play rather than silently showing nothing
+- video a browser cannot decode is **transcoded by Jellyfin on the fly** and
+  served as HLS, so HEVC, MKV and DTS play *and seek* like anything else
 - ebooks are **read inside SoundStorm**, and remember where you stopped
 - no backend publishes a port; SoundStorm is the only door
 
-Known limitation: **transcoded video cannot be seeked** - it plays from the
-start and the scrubber does not work. Direct-played video seeks normally. The
-fix is HLS; see [docs/roadmap.md](docs/roadmap.md), along with multi-user and
-HTTPS.
+Not built yet: multi-user and HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Getting started
 
@@ -192,11 +189,13 @@ backend a human has to configure by hand defeats the point of the project.
 - **Zero third-party Go dependencies.** Standard library only, including
   password hashing (`crypto/pbkdf2`, stdlib since Go 1.24). There is no
   `go.sum` and the container build downloads nothing.
-- **One vendored browser library**: foliate-js (MIT) renders EPUB, checked in
-  under `internal/webui/assets/vendor/`. It is pinned by content, embedded in
-  the binary, and fetched at no point during a build — so the properties the
-  zero-dependency rule protects all survive. Writing an EPUB renderer ourselves
-  would be the ebook equivalent of rebuilding transcoding.
+- **Two vendored browser libraries**, both under
+  `internal/webui/assets/vendor/`: foliate-js (MIT) renders EPUB, and hls.js
+  (Apache-2.0) plays transcoded video where the browser has no native HLS. Both
+  are prebuilt, pinned by content, embedded in the binary and fetched at no
+  point during a build, so the properties the zero-dependency rule protects all
+  survive. hls.js is 620KB, so it is loaded lazily — only when a video actually
+  needs a transcoded stream, never for music, books or direct-play films.
 - **No config file.** Everything comes from environment variables set by
   compose, plus state SoundStorm provisions itself. A config file is one more thing
   for a human to edit, and the goal is that a human edits nothing.

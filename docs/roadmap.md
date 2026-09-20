@@ -4,35 +4,16 @@ The vertical slice works: one login, one search, two backends provisioned with
 zero keys, playback in place. What follows is ordered by what would most change
 whether this is usable, not by what is most interesting to build.
 
-## 1. Seeking in transcoded video
+## 1. Subtitles
 
-Transcoding works: a file the browser cannot decode is re-encoded by Jellyfin on
-the fly and plays. What it cannot do is seek. Measured in Chrome against an
-HEVC/FLAC/MKV file:
+Jellyfin has the subtitle tracks and hls.js can render them, but nothing in
+SoundStorm asks for either. For film and TV this is the most visible thing still
+missing.
 
-- `video.seekable.end(0)` is `0` - the browser considers the stream unseekable
-- a 20 second file reports `duration` of 9.9s, growing as it buffers
-- seeking to 15s snaps back to 3s
-
-This is inherent to progressive transcoding, not a bug to fix in place: the
-server cannot map a byte offset to a timestamp in an encode that has not
-happened yet. Direct-played video is unaffected - it is a real file.
-
-Two ways out:
-
-**HLS.** Jellyfin's best-tested transcode path and what its own web client uses.
-Segments give the browser a real duration and a real seekable range, so native
-controls work normally and adaptive bitrate comes free. Costs one vendored
-dependency: hls.js, MIT, ~150KB, ships a prebuilt UMD file so it needs no build
-step. The precedent for vendoring is already set by foliate-js.
-
-**Custom controls over progressive.** Keep the current stream, add `startTimeTicks`
-to restart the encode at a chosen point, and build a transport bar that tracks
-the offset. No new dependency, but it means owning a video scrubber and every
-seek costs a transcode restart.
-
-HLS is the better product outcome; the progressive path stays as the fallback
-for anything that cannot use it.
+The pieces exist: PlaybackInfo reports the available `MediaStreams` of type
+Subtitle, Jellyfin can deliver them as WebVTT on a separate endpoint or burn
+them into the transcode, and the full hls.js build (already vendored, rather
+than the light one, for exactly this reason) handles them.
 
 ## 2. More ebook formats
 

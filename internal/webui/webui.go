@@ -49,6 +49,8 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"media-src 'self' blob:; " +
 	"frame-src 'self' blob:; " +
 	"connect-src 'self' blob:; " +
+	// hls.js demuxes in a worker it creates from a blob.
+	"worker-src 'self' blob:; " +
 	"object-src 'none'; " +
 	"base-uri 'none'; " +
 	"form-action 'self'"
