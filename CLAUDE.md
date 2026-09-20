@@ -7,7 +7,7 @@ two reversals of earlier decisions that looked right and were not.
 
 A unified front end for a self-hosted media library. One login, one search box,
 one player over Navidrome (music), Jellyfin (video), Audiobookshelf
-(audiobooks) and Calibre-Web (ebooks).
+(audiobooks) and a plain folder of EPUBs (ebooks).
 
 The user's words for what they wanted: *"an all-encompassing server that can do
 movies, audiobooks, ebooks, music all together... easy for users to install and
@@ -76,6 +76,42 @@ Each of these has killed a project like this before.
 3. **A backend is two halves: search and provisioning.** A backend a human must
    configure by hand defeats the point. Both halves or it is not done.
 
+## The one media type atrium owns, and why that is not a slippery slope
+
+Ebooks have no backend. Calibre-Web was removed: it needed a *database* rather
+than a folder, its setup had no API (CSRF form-scraping), and its password could
+not be rotated. atrium reads the folder itself.
+
+The justification is narrow and should stay narrow: **an EPUB is
+self-describing.** The file contains its own title, author, language and cover
+in a documented XML format, and a book needs no transcoding. `Dune.2021.mkv`
+contains none of that, which is precisely the work Jellyfin exists to do.
+
+So the line is: atrium can own a media type when it is self-describing and needs
+no transcoding. EPUB qualifies. Video never will. Do not cite `internal/epub` as
+precedent for scanning anything else.
+
+Existing Calibre libraries still work, with no SQLite driver: Calibre writes a
+`metadata.opf` sidecar beside every book in exactly the format an EPUB carries
+internally, so one parser reads both.
+
+## The reader
+
+Rendering is foliate-js (MIT), vendored under `internal/webui/assets/vendor/`.
+Writing it ourselves was considered and rejected for the same reason as
+transcoding: `paginator.js` is 44KB and `epubcfi.js` is 13KB, and those are the
+two genuinely hard parts. Reflowable text means a page number is meaningless -
+change the font size and "page 47" is different words - so position has to be a
+content-anchored locator (an EPUB CFI).
+
+This is the only third-party code in the project. It does not break the
+zero-dependency rule's intent: the files are checked in, pinned by content,
+embedded via go:embed, and fetched at no point during a build. The Go module
+still has no dependencies and no go.sum.
+
+What is ours: atrium unzips server-side (`/api/book/resource`), so no zip
+library runs in the browser, and it remembers reading position across devices.
+
 ## Verified against live servers
 
 These were checked on a running stack, not inferred. Re-verify if versions move.
@@ -91,13 +127,16 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   it, that is where the refresh dance goes.
 - **Audiobookshelf addresses audio by inode, not item id.** `/api/items/{id}`
   has to be fetched to learn it, which is why `source.Streamer` takes a context.
-- **Calibre-Web has no configuration API.** Setup is a Flask form with a session
-  cookie and a CSRF token, driven the way a browser would. Brittle across
-  releases: if it breaks after an upgrade, check the form field names first.
-  Its password is NOT rotated - see the note in `internal/provision/calibreweb.go`.
-- **Calibre-Web needs a Calibre database, not a folder.** A compose init script
-  runs `calibredb` to create an empty library when `/books` has none, because
-  otherwise a fresh install with no ebooks fails provisioning outright.
+- **foliate-js `view.open(book)` renders nothing on its own.** You must call
+  `view.init({ lastLocation })` afterwards; that is what paints the first page
+  or resumes. Miss it and you get a blank reader with no error anywhere.
+- **foliate-view's shadow root is `mode: 'closed'`.** A browser test cannot
+  reach inside it - observe rendering through the `relocate` event instead.
+- **foliate-js probes for optional files** (`META-INF/encryption.xml`, Apple and
+  Kobo display options). 404 is the correct answer; those requests log at debug.
+- **Calibre-Web was removed** (see above). `internal/source/opds` and
+  `internal/provision/calibreweb.go` remain as an opt-in for a Calibre server
+  running elsewhere, via `ATRIUM_CALIBREWEB_URL`.
 - **Jellyfin's startup wizard is a plain REST API** (`/Startup/Configuration`,
   `/Startup/User`, `/Startup/RemoteAccess`, `/Startup/Complete`) and stops
   accepting calls once setup completes, which makes driving it safe.
@@ -110,15 +149,29 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
 
 - **Provisioning is not idempotent across a volume reset.** If a backend's
   volume is wiped but atrium's state survives (or vice versa), you get a
-  backend with an account whose password nobody holds. Both provisioners detect
+  backend with an account whose password nobody holds. The provisioners detect
   this and say so rather than retrying forever. The fix is a human decision.
+- **Reconnecting is not provisioning, and conflating them destroys credentials.**
+  On restart atrium beats the backends to listening. A failed health check then
+  looks like "wrong password" unless you check what kind of failure it was, and
+  re-provisioning an already-configured backend can never succeed - so one
+  unlucky restart used to brick a backend with its working token still on disk.
+  Only 401/403 means the credentials are wrong; 5xx, 429, dial errors and
+  timeouts all mean wait. `transient()` in `internal/provision` owns that
+  distinction and `provision_test.go` guards it. Jellyfin in particular accepts
+  the connection while loading and answers 503.
 - **Port 8099, not 8080.** A Calibre content server on this machine already
   holds 8080. `ATRIUM_PORT` overrides.
 - **`static=true` streaming only.** Anything a browser cannot natively decode
   (HEVC, DTS, MKV) will not play yet. Jellyfin's HLS endpoint with a device
   profile is the fix and it is the top of the roadmap.
-- **Ebooks download rather than open.** There is no reader. It is the only
-  result type that leaves atrium, and it is a visible seam.
+- **EPUB only.** The library scan ignores every other book format, and the
+  reader only has foliate-js's EPUB modules vendored.
+- **A Content-Security-Policy on the shell is load-bearing, not hardening.**
+  EPUBs can contain scripts, and the reader renders book content in a blob:
+  iframe that inherits atrium's origin - without `script-src 'self'`, opening a
+  book would run a stranger's JavaScript against the session cookie. `blob:` IS
+  allowed in style-src and font-src, or books render unstyled.
 - **Audiobooks play their first file only.** Multi-file books need the playback
   session API and a player that understands a track list.
 - **PowerShell here-strings carry CRLF into `docker exec bash -c`**, and a

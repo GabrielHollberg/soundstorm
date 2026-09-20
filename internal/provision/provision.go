@@ -22,15 +22,19 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gabehollberg/atrium/internal/httpx"
 	"github.com/gabehollberg/atrium/internal/source"
 	"github.com/gabehollberg/atrium/internal/source/audiobookshelf"
 	"github.com/gabehollberg/atrium/internal/source/jellyfin"
+	"github.com/gabehollberg/atrium/internal/source/localbooks"
 	"github.com/gabehollberg/atrium/internal/source/opds"
 	"github.com/gabehollberg/atrium/internal/source/subsonic"
 	"github.com/gabehollberg/atrium/internal/state"
@@ -155,18 +159,99 @@ func (m *Manager) set(id string, status Status, detail, errMsg string) {
 func (m *Manager) run(ctx context.Context, t Target) {
 	log := m.log.With("backend", t.ID)
 
-	// Already provisioned? Try those credentials first. They are only stale if
-	// someone reset the backend's volume without resetting atrium's.
 	if creds, ok := m.store.Backend(t.ID); ok {
-		if err := m.register(ctx, t, creds); err == nil {
-			log.Info("backend ready from stored credentials")
+		m.reconnect(ctx, t, creds, log)
+		return
+	}
+	m.provision(ctx, t, log)
+}
+
+// reconnect brings a backend back using credentials we already hold.
+//
+// The subtlety that cost a debugging session: on a restart, atrium is listening
+// seconds after the container starts and Jellyfin is not. A health check then
+// fails with "connection refused", which is emphatically NOT the same as "this
+// token is wrong" - but treating them alike meant throwing away good
+// credentials and falling through to provisioning, which can never succeed on a
+// backend that is already set up. One unlucky restart and the backend was
+// permanently broken with its working credentials still on disk.
+//
+// So: a transport failure means wait and try again. Only an answer from the
+// backend that rejects us justifies re-provisioning, and that path still exists
+// because wiping a backend's volume while keeping atrium's is a real thing to do.
+func (m *Manager) reconnect(ctx context.Context, t Target, creds state.Backend, log *slog.Logger) {
+	deadline := time.Now().Add(giveUpAfter)
+	delay := 2 * time.Second
+
+	for attempt := 1; ; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+
+		err := m.register(ctx, t, creds)
+		if err == nil {
+			log.Info("backend ready from stored credentials", "attempts", attempt)
 			m.set(t.ID, StatusReady, "using stored credentials", "")
 			return
-		} else {
-			log.Warn("stored credentials rejected, re-provisioning", "err", err)
+		}
+
+		if !transient(err) {
+			// The backend answered and refused us. Either its volume was reset
+			// (provisioning will work) or something else is wrong (provisioning
+			// will fail with a message naming the problem).
+			log.Warn("stored credentials rejected by the backend, re-provisioning", "err", err)
+			m.provision(ctx, t, log)
+			return
+		}
+
+		if time.Now().After(deadline) {
+			log.Error("backend never came up", "attempts", attempt, "err", err)
+			m.set(t.ID, StatusFailed, "", "not reachable: "+err.Error())
+			return
+		}
+
+		m.set(t.ID, StatusWaiting, fmt.Sprintf("waiting for %s to start (attempt %d)", t.Type, attempt), "")
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		if delay < 15*time.Second {
+			delay += 2 * time.Second
 		}
 	}
+}
 
+// transient reports whether err means "the backend is not up yet" rather than
+// "the backend said no". Getting this distinction wrong is what made a restart
+// destroy working credentials, and it bites at two separate layers:
+//
+//   - the transport layer, when nothing is listening yet: connection refused,
+//     DNS failure, timeout
+//   - the HTTP layer, when something IS listening but is not ready. Jellyfin
+//     answers "503 Jellyfin Server is loading. Please try again shortly." for
+//     several seconds after its port opens.
+//
+// Only an actual refusal - 401 or 403 - means the credentials are wrong.
+func transient(err error) bool {
+	var statusErr *httpx.StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Temporary()
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, syscall.ECONNREFUSED)
+}
+
+// provision walks a backend's first-run flow and registers the result.
+func (m *Manager) provision(ctx context.Context, t Target, log *slog.Logger) {
 	deadline := time.Now().Add(giveUpAfter)
 	delay := 2 * time.Second
 
@@ -210,6 +295,12 @@ func (m *Manager) run(ctx context.Context, t Target) {
 
 // provisionOnce runs the backend-specific first-run flow.
 func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger) (state.Backend, error) {
+	// A local folder has no host to talk to, so it never gets an HTTP client.
+	if t.Type == "localbooks" {
+		m.set(t.ID, StatusProvisioning, "reading the ebook folder", "")
+		return provisionLocalBooks(ctx, t, log)
+	}
+
 	c, err := httpx.New(t.BaseURL, 30*time.Second)
 	if err != nil {
 		return state.Backend{}, err
@@ -272,11 +363,27 @@ func (m *Manager) register(ctx context.Context, t Target, creds state.Backend) e
 			Password: creds.Password,
 			Timeout:  15 * time.Second,
 		})
+	case "localbooks":
+		s, err = localbooks.New(localbooks.Config{
+			ID:   t.ID,
+			Root: t.MediaPath,
+			Log:  m.log,
+		})
 	default:
 		return fmt.Errorf("unknown backend type %q", t.Type)
 	}
 	if err != nil {
 		return err
+	}
+
+	// Some sources have to do work before they can answer anything. A local
+	// book library reads the disk here, which on a big library is the slowest
+	// step in the whole startup - hence no timeout around it, and the status
+	// line saying what is happening.
+	if starter, ok := s.(source.Starter); ok {
+		if err := starter.Start(ctx); err != nil {
+			return fmt.Errorf("start source: %w", err)
+		}
 	}
 
 	// Health-check before publishing, so a source in the registry is a source

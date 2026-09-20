@@ -60,7 +60,7 @@ func run(log *slog.Logger) error {
 	}
 	if len(targets) == 0 {
 		return errors.New("no backends configured; set at least one of ATRIUM_NAVIDROME_URL, " +
-			"ATRIUM_JELLYFIN_URL, ATRIUM_AUDIOBOOKSHELF_URL, ATRIUM_CALIBREWEB_URL")
+			"ATRIUM_JELLYFIN_URL, ATRIUM_AUDIOBOOKSHELF_URL, ATRIUM_EBOOKS_DIR")
 	}
 
 	store, err := state.Open(filepath.Join(stateDir, "state.json"))
@@ -82,6 +82,7 @@ func run(log *slog.Logger) error {
 
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
+		Store:            store,
 		Auth:             auth.New(store),
 		Setup:            setup,
 		PerSourceTimeout: perSourceTimeout,
@@ -154,6 +155,17 @@ func targetsFromEnv() ([]provision.Target, error) {
 			MediaPath: env("ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH", "/audiobooks"),
 		})
 	}
+	// Ebooks are served straight off the disk: an EPUB describes itself, so no
+	// backend has to stand between atrium and the folder.
+	if dir := strings.TrimSpace(os.Getenv("ATRIUM_EBOOKS_DIR")); dir != "" {
+		targets = append(targets, provision.Target{
+			ID:        "ebooks",
+			Type:      "localbooks",
+			MediaPath: dir,
+		})
+	}
+	// Escape hatch for an existing Calibre server elsewhere on the network.
+	// This one does need credentials typed, which is why it is not the default.
 	if url := strings.TrimSpace(os.Getenv("ATRIUM_CALIBREWEB_URL")); url != "" {
 		targets = append(targets, provision.Target{
 			ID:        "calibreweb",

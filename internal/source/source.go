@@ -8,6 +8,7 @@ package source
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/gabehollberg/atrium/internal/media"
 )
@@ -42,9 +43,25 @@ type Source interface {
 // Authorization header, having dropped both X-Emby-Token and the api_key query
 // parameter that older guides still recommend. The proxy should not have to know
 // which, so an adapter hands back both parts and the proxy replays them.
+// Exactly one of URL, FilePath or Bytes is set.
 type Target struct {
+	// URL fetches the bytes from a backend over HTTP.
 	URL     string
 	Headers map[string]string
+
+	// FilePath serves a file from atrium's own disk. Used by sources that have
+	// no backend at all - a folder of ebooks is just a folder.
+	FilePath string
+
+	// Bytes serves something atrium produced in memory, such as a cover image
+	// extracted from inside an EPUB.
+	Bytes []byte
+
+	// ContentType, Name and ModTime describe FilePath and Bytes targets. They
+	// are ignored for URL targets, where the upstream response says.
+	ContentType string
+	Name        string
+	ModTime     time.Time
 }
 
 // Streamer builds an authenticated upstream target for an item's bytes.
@@ -60,6 +77,38 @@ type Streamer interface {
 // opaque handle the adapter put in media.Item.ArtID.
 type ArtProvider interface {
 	ArtTarget(ctx context.Context, artID string) (Target, error)
+}
+
+// BookEntry is one file inside a book container.
+type BookEntry struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
+// OpenBook is a handle on the inside of a book. Close it.
+type OpenBook interface {
+	Entries() []BookEntry
+	Resource(name string) (data []byte, contentType string, err error)
+	Close() error
+}
+
+// BookOpener is an optional interface for sources that can serve a book's
+// internal structure, which is what an in-browser reader needs.
+//
+// Only a source that holds the file itself can do this. A remote OPDS catalog
+// hands over a whole book and nothing smaller, which is exactly why atrium
+// reading the folder directly is what made a reader possible at all.
+type BookOpener interface {
+	OpenBook(ctx context.Context, itemID string) (OpenBook, error)
+}
+
+// Starter is an optional interface for sources that must do work before they
+// can answer anything - a local library has to read the disk first.
+//
+// Provisioning calls it before health-checking, so a source only reaches the
+// registry once it is genuinely searchable.
+type Starter interface {
+	Start(ctx context.Context) error
 }
 
 // Registry holds the live sources.

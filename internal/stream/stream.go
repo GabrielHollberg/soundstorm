@@ -19,10 +19,12 @@
 package stream
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gabehollberg/atrium/internal/source"
@@ -50,6 +52,41 @@ var forwardedResponseHeaders = []string{
 }
 
 // Proxy serves media and artwork from the registered sources.
+// serveFile delivers a file from atrium's own disk.
+func (p *Proxy) serveFile(w http.ResponseWriter, r *http.Request, target source.Target) {
+	f, err := os.Open(target.FilePath)
+	if err != nil {
+		p.log.Warn("could not open local file", "path", target.FilePath, "err", err)
+		http.Error(w, "file unavailable", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, "file unavailable", http.StatusNotFound)
+		return
+	}
+
+	setContentHeaders(w, target)
+	http.ServeContent(w, r, target.Name, info.ModTime(), f)
+}
+
+// serveBytes delivers something atrium built in memory.
+func (p *Proxy) serveBytes(w http.ResponseWriter, r *http.Request, target source.Target) {
+	setContentHeaders(w, target)
+	http.ServeContent(w, r, target.Name, target.ModTime, bytes.NewReader(target.Bytes))
+}
+
+func setContentHeaders(w http.ResponseWriter, target source.Target) {
+	if target.ContentType != "" {
+		// Set it explicitly so ServeContent does not sniff, and so an EPUB is
+		// labelled as one rather than as a zip.
+		w.Header().Set("Content-Type", target.ContentType)
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+}
+
 type Proxy struct {
 	reg *source.Registry
 	log *slog.Logger
@@ -116,8 +153,23 @@ func (p *Proxy) ServeArt(w http.ResponseWriter, r *http.Request, sourceID, artID
 	p.pipe(w, r, target, fmt.Sprintf("art %s/%s", sourceID, artID))
 }
 
-// pipe forwards one request upstream and copies the response back.
+// pipe delivers a target, whatever kind it is.
 func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Target, what string) {
+	// Local targets do not involve an upstream at all. http.ServeContent gives
+	// Range, ETag and If-Modified-Since handling for free, which is strictly
+	// better than what the proxy path below reimplements.
+	switch {
+	case target.FilePath != "":
+		p.serveFile(w, r, target)
+		return
+	case target.Bytes != nil:
+		p.serveBytes(w, r, target)
+		return
+	case target.URL == "":
+		http.Error(w, "source produced an empty target", http.StatusBadGateway)
+		return
+	}
+
 	method := r.Method
 	if method != http.MethodHead {
 		method = http.MethodGet

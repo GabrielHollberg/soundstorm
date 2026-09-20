@@ -321,7 +321,7 @@ function play(item) {
       playVideo(item);
       break;
     case 'ebook':
-      openBook(item);
+      readBook(item);
       break;
     default:
       // Music and audiobooks are both just audio as far as a browser cares.
@@ -329,10 +329,23 @@ function play(item) {
   }
 }
 
-// An epub is read, not played, and there is no reader here yet. Handing the
-// file over is an honest seam rather than a bad built-in reader - but it IS a
-// seam, and the first thing to close when ebooks get real attention.
-function openBook(item) {
+// Ebooks open in atrium's own reader. Downloading is still offered, but as a
+// choice rather than the only option - a result that leaves atrium is a seam,
+// and this was the last one.
+function readBook(item) {
+  stopAudio();
+  closeVideo();
+
+  if (window.atriumReader) {
+    window.atriumReader.open(item);
+    return;
+  }
+  // The reader is a module; if it failed to load, handing over the file still
+  // beats doing nothing.
+  downloadBook(item);
+}
+
+function downloadBook(item) {
   const format = (item.extra && item.extra.format) || 'epub';
   const author = (item.creators && item.creators[0]) || '';
 
@@ -348,6 +361,9 @@ function openBook(item) {
 
   $('status').textContent = 'Downloading “' + item.title + '” as ' + format + '…';
 }
+
+// The reader's download button needs the item it is showing.
+window.atriumDownloadBook = downloadBook;
 
 function playVideo(item) {
   stopAudio();

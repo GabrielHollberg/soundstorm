@@ -23,7 +23,7 @@ credentials itself, and puts one interface on top:
 | **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
 | **Video** | Jellyfin — metadata, artwork, hardware transcoding |
 | **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
-| **Ebooks** | Calibre-Web — a real Calibre library over OPDS |
+| **Ebooks** | atrium itself — an EPUB describes itself, so no backend is needed |
 
 Using the real servers instead of reimplementing them is the whole trick. When
 you search "dune" and get a film back with a real poster and a real synopsis,
@@ -38,11 +38,11 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - one account, created on first visit, guarding everything
 - one search across all four, merged and ranked
 - music, video and audiobooks play **inside atrium**, with seeking
-- ebooks download as a named file (no in-browser reader yet)
+- ebooks are **read inside atrium**, and remember where you stopped
 - no backend publishes a port; atrium is the only door
 
-Not built yet: transcoding for formats a browser cannot play, an ebook reader,
-multi-user, HTTPS. See [docs/roadmap.md](docs/roadmap.md).
+Not built yet: transcoding for formats a browser cannot play, multi-user,
+HTTPS. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Getting started
 
@@ -66,9 +66,10 @@ media/
 
 Navidrome rescans every minute; Jellyfin and Audiobookshelf watch for changes.
 
-Ebooks are the exception: Calibre-Web reads a Calibre *database*, not a folder,
-so `media/ebooks` has to be a Calibre library. Point it at the one you already
-have, or let the stack create an empty one and add books through Calibre-Web.
+`media/ebooks` is just a folder of `.epub` files. It can also be an existing
+Calibre library — atrium reads Calibre's `metadata.opf` sidecars, so a library
+you already curate keeps its series, tags and corrected authors, with no
+SQLite driver and no Calibre-Web container.
 
 Port 8099 rather than 8080 because 8080 is crowded — a Calibre content server
 defaults to it. Override with `ATRIUM_PORT`.
@@ -83,10 +84,15 @@ defaults to it. Override with `ATRIUM_PORT`.
                        └───────┬───────┘
       ┌──────────────┬─────────┴─────────┬──────────────┐
       ▼              ▼                   ▼              ▼
- Navidrome     Jellyfin        Audiobookshelf     Calibre-Web
-   :4533         :8096              :80              :8083
-             — none of them publishes a port —
+ Navidrome     Jellyfin        Audiobookshelf    media/ebooks
+   :4533         :8096              :80          (a folder)
+        — none of the three publishes a port —
 ```
+
+Ebooks have no backend at all. An EPUB carries its own title, author and cover
+in a documented format, and needs no transcoding, so atrium reads the folder
+directly. That is the line: **atrium can own a media type when it is
+self-describing and needs no transcoding.** Video never will be.
 
 Three rules hold it together.
 
@@ -112,7 +118,8 @@ cmd/atrium/          main, env config, graceful shutdown
 internal/media/      Item, Query, Kind — the shared vocabulary
 internal/source/     the Source interface, Target, Registry
 internal/source/*/   one package per backend (subsonic, jellyfin,
-                     audiobookshelf, opds)
+                     audiobookshelf, localbooks, opds)
+internal/epub/       EPUB metadata and resource reading
 internal/provision/  first-boot credential provisioning  ← the load-bearing part
 internal/state/      the little that must survive a restart
 internal/auth/       single-account login, PBKDF2, sessions
@@ -135,6 +142,9 @@ internal/webui/      the embedded UI
 | GET | `/api/search?q=&kind=&limit=` | session | federated search |
 | GET | `/api/stream/{source}/{id...}` | session | media bytes |
 | GET | `/api/art/{source}/{id...}` | session | artwork |
+| GET | `/api/book/manifest?source=&id=` | session | what is inside a book |
+| GET | `/api/book/resource?source=&id=&path=` | session | one file from inside a book |
+| GET/PUT | `/api/book/progress?source=&id=` | session | reading position |
 
 The trailing `...` is load-bearing: an OPDS acquisition reference is a path with
 slashes in it, and that is the id the adapter needs back.
@@ -159,9 +169,14 @@ backend a human has to configure by hand defeats the point of the project.
 
 ## Conventions
 
-- **Zero third-party dependencies.** Standard library only, including password
-  hashing (`crypto/pbkdf2`, stdlib since Go 1.24). The container build
-  downloads nothing and there is no supply chain to audit.
+- **Zero third-party Go dependencies.** Standard library only, including
+  password hashing (`crypto/pbkdf2`, stdlib since Go 1.24). There is no
+  `go.sum` and the container build downloads nothing.
+- **One vendored browser library**: foliate-js (MIT) renders EPUB, checked in
+  under `internal/webui/assets/vendor/`. It is pinned by content, embedded in
+  the binary, and fetched at no point during a build — so the properties the
+  zero-dependency rule protects all survive. Writing an EPUB renderer ourselves
+  would be the ebook equivalent of rebuilding transcoding.
 - **No config file.** Everything comes from environment variables set by
   compose, plus state atrium provisions itself. A config file is one more thing
   for a human to edit, and the goal is that a human edits nothing.

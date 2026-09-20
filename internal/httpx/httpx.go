@@ -149,12 +149,33 @@ func (r *Response) JSON(out any) error {
 	return nil
 }
 
+// StatusError is a non-2xx response, carrying the status so callers can tell
+// "you are not authorised" from "I am still starting up".
+//
+// That distinction is load-bearing. A backend that answers 503 while it boots
+// is not rejecting our credentials, and treating it as though it were means
+// throwing away working credentials on every restart.
+type StatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("upstream returned %d: %s", e.Status, e.Body)
+}
+
+// Temporary reports whether the status is one a backend returns while it is
+// coming up or under load, rather than a refusal.
+func (e *StatusError) Temporary() bool {
+	return e.Status >= 500 || e.Status == http.StatusTooManyRequests
+}
+
 // Err returns a descriptive error when the status was not 2xx, else nil.
 func (r *Response) Err() error {
 	if r.OK() {
 		return nil
 	}
-	return fmt.Errorf("upstream returned %d: %s", r.Status, Snippet(r.Body))
+	return &StatusError{Status: r.Status, Body: Snippet(r.Body)}
 }
 
 // Do performs a request and buffers the response.

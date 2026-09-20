@@ -30,16 +30,17 @@ services:
       ATRIUM_JELLYFIN_MEDIA_PATH: /media/movies
       ATRIUM_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
       ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
-      ATRIUM_CALIBREWEB_URL: http://calibreweb:8083
-      ATRIUM_CALIBREWEB_MEDIA_PATH: /books
+      # Ebooks have no backend: atrium reads the folder directly. An EPUB
+      # describes itself, so nothing needs to stand in between.
+      ATRIUM_EBOOKS_DIR: /media/ebooks
       ATRIUM_LOG_LEVEL: info
     volumes:
       - atrium-state:/var/lib/atrium
+      - ./media/ebooks:/media/ebooks:ro
     depends_on:
       - navidrome
       - jellyfin
       - audiobookshelf
-      - calibreweb
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 30s
@@ -84,25 +85,6 @@ services:
       - abs-metadata:/metadata
     # Deliberately no ports. atrium reaches it at http://audiobookshelf:80.
 
-  calibreweb:
-    image: lscr.io/linuxserver/calibre-web:latest
-    container_name: atrium-calibreweb
-    restart: unless-stopped
-    environment:
-      PUID: "1000"
-      PGID: "1000"
-      TZ: Etc/UTC
-      # Brings calibredb into the image, which is what lets a library be
-      # created and books added without a human opening the Calibre desktop app.
-      DOCKER_MODS: linuxserver/mods:universal-calibre
-    volumes:
-      - calibreweb-config:/config
-      - ./media/ebooks:/books
-      # Bootstraps an empty calibre library so a fresh install with no ebooks
-      # still produces a working backend rather than a failed one.
-      - ./scripts/calibreweb-init:/custom-cont-init.d:ro
-    # Deliberately no ports. atrium reaches it at http://calibreweb:8083.
-
 volumes:
   atrium-state:
   navidrome-data:
@@ -110,4 +92,3 @@ volumes:
   jellyfin-cache:
   abs-config:
   abs-metadata:
-  calibreweb-config:

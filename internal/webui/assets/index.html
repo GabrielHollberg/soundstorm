@@ -74,6 +74,29 @@
     </figure>
   </div>
 
+  <!-- Reader -------------------------------------------------------------
+       foliate-js renders the book into this host. Page turning and position
+       are ours; pagination and CFI are not. -->
+  <div id="reader-overlay" class="reader hidden">
+    <header class="reader-bar">
+      <div class="reader-meta">
+        <strong id="reader-title"></strong>
+        <span id="reader-sub" class="muted"></span>
+      </div>
+      <span id="reader-progress" class="muted"></span>
+      <button id="reader-download" class="ghost" type="button">Download</button>
+      <button id="reader-close" class="ghost" type="button" aria-label="Close reader">&times;</button>
+    </header>
+
+    <p id="reader-error" class="error hidden" role="alert"></p>
+
+    <div class="reader-body">
+      <button id="reader-prev" class="page-turn" type="button" aria-label="Previous page">&lsaquo;</button>
+      <div id="reader-host"></div>
+      <button id="reader-next" class="page-turn" type="button" aria-label="Next page">&rsaquo;</button>
+    </div>
+  </div>
+
   <!-- Audio dock -------------------------------------------------------- -->
   <div id="audio-dock" class="dock hidden">
     <img id="audio-art" alt="">
@@ -86,5 +109,6 @@
   </div>
 
   <script src="/static/app.js"></script>
+  <script type="module" src="/static/reader.js"></script>
 </body>
 </html>

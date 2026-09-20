@@ -10,6 +10,11 @@
 // What is NOT here: anything about the media itself. No metadata, no library
 // index, no play counts. The backends own all of that, which is why this file
 // stays a few kilobytes and why losing it costs a re-provision, not a library.
+//
+// One principled exception: reading position for ebooks. For music, film and
+// audiobooks the backend owns play state, so atrium does not. For ebooks there
+// IS no backend - atrium reads the folder itself - so if atrium does not
+// remember where you stopped reading, nothing does.
 package state
 
 import (
@@ -52,11 +57,22 @@ type User struct {
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
+// Progress is where the reader left off in one book.
+type Progress struct {
+	// Location is an EPUB CFI - a content-anchored pointer, not a page number.
+	// Page numbers are meaningless in reflowable text: change the font size and
+	// "page 47" is different words.
+	Location  string    `json:"location"`
+	Fraction  float64   `json:"fraction"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 type data struct {
 	Version  int                  `json:"version"`
 	User     *User                `json:"user"`
 	Sessions map[string]time.Time `json:"sessions"`
 	Backends map[string]Backend   `json:"backends"`
+	Progress map[string]Progress  `json:"progress"`
 }
 
 // Store is the on-disk state, guarded for concurrent use.
@@ -74,6 +90,7 @@ func Open(path string) (*Store, error) {
 			Version:  1,
 			Sessions: map[string]time.Time{},
 			Backends: map[string]Backend{},
+			Progress: map[string]Progress{},
 		},
 	}
 
@@ -102,6 +119,9 @@ func Open(path string) (*Store, error) {
 	}
 	if s.d.Backends == nil {
 		s.d.Backends = map[string]Backend{}
+	}
+	if s.d.Progress == nil {
+		s.d.Progress = map[string]Progress{}
 	}
 	s.pruneLocked()
 	return s, s.save()
@@ -163,6 +183,23 @@ func (s *Store) SetBackend(id string, b Backend) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.d.Backends[id] = b
+	return s.save()
+}
+
+// Progress returns where the reader left off, if anywhere.
+func (s *Store) Progress(key string) (Progress, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.d.Progress[key]
+	return p, ok
+}
+
+// SetProgress records a reading position. Callers should throttle: this writes
+// the state file, and a reader emits a location on every page turn.
+func (s *Store) SetProgress(key string, p Progress) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.d.Progress[key] = p
 	return s.save()
 }
 
