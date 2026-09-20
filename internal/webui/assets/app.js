@@ -52,7 +52,14 @@ function formatDuration(seconds) {
 
 function subtitleFor(item) {
   const parts = [];
-  if (item.creators && item.creators.length) parts.push(item.creators.join(', '));
+  // An episode's series name and number matter more than anything else on the
+  // card, so they win over the creator line rather than being dropped.
+  if (item.kind === 'tv') {
+    const episode = item.extra && item.extra.episode;
+    if (item.subtitle && episode) parts.push(`${item.subtitle} · ${episode}`);
+    else if (item.subtitle) parts.push(item.subtitle);
+    else if (episode) parts.push(episode);
+  } else if (item.creators && item.creators.length) parts.push(item.creators.join(', '));
   else if (item.subtitle) parts.push(item.subtitle);
   if (item.year) parts.push(item.year);
   return parts.join(' · ');
@@ -385,6 +392,7 @@ function renderItem(item) {
 
 const GLYPHS = {
   video: '▶',
+  tv: '📺',
   music: '♪',
   audiobook: '🎧',
   ebook: '📖',

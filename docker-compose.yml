@@ -12,7 +12,7 @@
 # API keys to fetch - atrium provisions its own credentials on first boot.
 #
 #   library/
-#     music/       movies/       audiobooks/       ebooks/
+#     music/   movies/   tv/   audiobooks/   ebooks/
 
 name: atrium
 
@@ -32,6 +32,7 @@ services:
       # The movie folder as *jellyfin's* container sees it, which is what its
       # library API wants - not atrium's view of the same directory.
       ATRIUM_JELLYFIN_MEDIA_PATH: /media/movies
+      ATRIUM_JELLYFIN_TV_PATH: /media/tv
       ATRIUM_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
       ATRIUM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
       # atrium creates and owns this folder. Ebooks are read straight out of
@@ -82,6 +83,7 @@ services:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
       - ./library/movies:/media/movies:ro
+      - ./library/tv:/media/tv:ro
     # Deliberately no ports. atrium reaches it at http://jellyfin:8096.
 
   audiobookshelf:

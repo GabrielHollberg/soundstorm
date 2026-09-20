@@ -6,7 +6,7 @@ two reversals of earlier decisions that looked right and were not.
 ## What this is
 
 A unified front end for a self-hosted media library. One login, one search box,
-one player over Navidrome (music), Jellyfin (video), Audiobookshelf
+one player over Navidrome (music), Jellyfin (films and TV), Audiobookshelf
 (audiobooks) and a plain folder of EPUBs (ebooks).
 
 The user's words for what they wanted: *"an all-encompassing server that can do
@@ -75,6 +75,33 @@ Each of these has killed a project like this before.
    vocabulary. Everything past it speaks `media.Item`.
 3. **A backend is two halves: search and provisioning.** A backend a human must
    configure by hand defeats the point. Both halves or it is not done.
+
+## Why Jellyfin, specifically
+
+Asked and answered rather than assumed. Plex requires a plex.tv account, so it
+cannot be provisioned without a human logging into a cloud service - which is
+fatal to the zero-keys claim, not merely inconvenient. Emby went closed-source.
+Everything else in that space is too thin to bet a stack on.
+
+The rule in the next section predicts it independently: video is not
+self-describing and does need transcoding, so it stays delegated. That is the
+same rule that said drop Calibre-Web, so it is cutting both ways.
+
+The honest cost is API churn (Jellyfin 12 broke two documented auth methods
+under us) and a 2.5GB image next to Navidrome's 348MB. That trade only clearly
+pays off once atrium uses Jellyfin's transcoding, which it still does not.
+
+## One backend, two sources
+
+Films and series are separate Jellyfin libraries - different collection types,
+different scrapers, seasons and episodes only for the latter - so Jellyfin is
+provisioned once and registered as two sources sharing one token: `jellyfin`
+(Movie) and `jellyfin-tv` (Series,Episode).
+
+`source.Source` always said "a server that serves two kinds is configured as two
+sources", and that was not actually possible until `jellyfin.Config` grew a
+Kind and ItemTypes; the adapter hardcoded `KindVideo`. `provision.buildSources`
+now returns a slice for this reason.
 
 ## The folders are the interface
 

@@ -34,17 +34,7 @@ between browsers. What it does not do is merge sensibly if two devices read the
 same book at once - last writer wins. Fine for one account; revisit with
 multi-user.
 
-## 4. TV shows have nowhere to go
-
-There are four folders and none of them is for series. Jellyfin models TV
-differently from film - season and episode structure, different metadata
-providers - so it is a fifth folder and a second Jellyfin library, not a corner
-of `movies/`.
-
-Worth doing before anyone points a real library at this, because the folder
-layout is the hardest thing to change once people have filled it in.
-
-## 5. Real libraries, real scale
+## 4. Real libraries, real scale
 
 Everything so far has been tested against nine synthetic files. Unknowns that
 only show up at size:
@@ -58,14 +48,14 @@ only show up at size:
 
 Do not optimize any of this before pointing it at an actual library.
 
-## 6. Multi-user
+## 5. Multi-user
 
 Currently one account. Real multi-user means per-user libraries and per-user
 play state, which means mapping atrium accounts onto backend accounts — the
 provisioner would create a Navidrome and Jellyfin user per atrium user rather
 than one shared `atrium` account. That is a real feature, not a slice.
 
-## 7. HTTPS
+## 6. HTTPS
 
 The session cookie currently crosses the wire in the clear on a LAN. The cookie
 is marked `Secure` automatically when served over TLS, so this is mostly a

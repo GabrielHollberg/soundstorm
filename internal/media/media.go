@@ -16,12 +16,13 @@ const (
 	KindMusic     Kind = "music"
 	KindAudiobook Kind = "audiobook"
 	KindEbook     Kind = "ebook"
-	KindVideo     Kind = "video"
+	KindVideo     Kind = "video" // films
+	KindTV        Kind = "tv"    // series and episodes
 )
 
 // AllKinds is the set of kinds atrium understands.
 func AllKinds() []Kind {
-	return []Kind{KindMusic, KindAudiobook, KindEbook, KindVideo}
+	return []Kind{KindMusic, KindAudiobook, KindEbook, KindVideo, KindTV}
 }
 
 // Valid reports whether k is a kind atrium knows about.
@@ -45,7 +46,7 @@ func (k Kind) Player() string {
 	switch k {
 	case KindMusic, KindAudiobook:
 		return "audio"
-	case KindVideo:
+	case KindVideo, KindTV:
 		return "video"
 	default:
 		return "none"

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/gabehollberg/atrium/internal/httpx"
+	"github.com/gabehollberg/atrium/internal/media"
 	"github.com/gabehollberg/atrium/internal/source"
 	"github.com/gabehollberg/atrium/internal/source/audiobookshelf"
 	"github.com/gabehollberg/atrium/internal/source/jellyfin"
@@ -70,6 +71,11 @@ type Target struct {
 	// backend should serve. Only used by backends that need an API call to
 	// register a library; Navidrome takes it as an env var instead.
 	MediaPath string
+
+	// TVPath is the series folder, for backends that hold two libraries.
+	// Jellyfin is the only one: films and series need separate libraries
+	// because it scrapes and models them differently.
+	TVPath string
 }
 
 // BackendStatus is one backend's setup state, for the UI.
@@ -324,79 +330,130 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 	}
 }
 
-// register builds the adapter, checks it actually works, and publishes it.
+// register builds a backend's adapters, checks they work, and publishes them.
+//
+// One backend can produce more than one source. Jellyfin does: films and series
+// are separate Jellyfin libraries with separate scrapers, so they become two
+// atrium sources sharing one token - which is what the Source interface always
+// described and could not actually do until jellyfin.Config grew a Kind.
 func (m *Manager) register(ctx context.Context, t Target, creds state.Backend) error {
-	var (
-		s   source.Source
-		err error
-	)
+	sources, err := m.buildSources(t, creds)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range sources {
+		// Some sources have to do work before they can answer anything. A local
+		// book library reads the disk here, which on a big library is the
+		// slowest step in the whole startup - hence no timeout around it, and
+		// the status line saying what is happening.
+		if starter, ok := s.(source.Starter); ok {
+			if err := starter.Start(ctx); err != nil {
+				return fmt.Errorf("start %s: %w", s.ID(), err)
+			}
+		}
+
+		// Health-check before publishing, so a source in the registry is a
+		// source that answers. Otherwise the first search after boot reports a
+		// failure the user can do nothing about.
+		hctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err := s.Health(hctx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("health check %s: %w", s.ID(), err)
+		}
+	}
+
+	for _, s := range sources {
+		m.reg.Set(s)
+	}
+	return nil
+}
+
+// buildSources turns stored credentials into live adapters.
+func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, error) {
 	switch t.Type {
 	case "navidrome":
-		s, err = subsonic.New(subsonic.Config{
+		s, err := subsonic.New(subsonic.Config{
 			ID:       t.ID,
 			BaseURL:  t.BaseURL,
 			Username: creds.Username,
 			Password: creds.Password,
 			Timeout:  15 * time.Second,
 		})
+		return one(s, err)
+
 	case "jellyfin":
-		s, err = jellyfin.New(jellyfin.Config{
-			ID:      t.ID,
-			BaseURL: t.BaseURL,
-			Token:   creds.Token,
-			UserID:  creds.UserID,
-			Timeout: 15 * time.Second,
+		films, err := jellyfin.New(jellyfin.Config{
+			ID:        t.ID,
+			BaseURL:   t.BaseURL,
+			Token:     creds.Token,
+			UserID:    creds.UserID,
+			Kind:      media.KindVideo,
+			ItemTypes: "Movie",
+			Timeout:   15 * time.Second,
 		})
+		if err != nil {
+			return nil, err
+		}
+		if t.TVPath == "" {
+			return []source.Source{films}, nil
+		}
+		// Series and episodes both, so searching a show name finds the show and
+		// searching an episode title finds the episode.
+		shows, err := jellyfin.New(jellyfin.Config{
+			ID:        t.ID + "-tv",
+			BaseURL:   t.BaseURL,
+			Token:     creds.Token,
+			UserID:    creds.UserID,
+			Kind:      media.KindTV,
+			ItemTypes: "Series,Episode",
+			Timeout:   15 * time.Second,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return []source.Source{films, shows}, nil
+
 	case "audiobookshelf":
-		s, err = audiobookshelf.New(audiobookshelf.Config{
+		s, err := audiobookshelf.New(audiobookshelf.Config{
 			ID:        t.ID,
 			BaseURL:   t.BaseURL,
 			Token:     creds.Token,
 			LibraryID: creds.LibraryID,
 			Timeout:   15 * time.Second,
 		})
+		return one(s, err)
+
 	case "calibreweb":
-		s, err = opds.New(opds.Config{
+		s, err := opds.New(opds.Config{
 			ID:       t.ID,
 			BaseURL:  t.BaseURL,
 			Username: creds.Username,
 			Password: creds.Password,
 			Timeout:  15 * time.Second,
 		})
+		return one(s, err)
+
 	case "localbooks":
-		s, err = localbooks.New(localbooks.Config{
+		s, err := localbooks.New(localbooks.Config{
 			ID:   t.ID,
 			Root: t.MediaPath,
 			Log:  m.log,
 		})
+		return one(s, err)
+
 	default:
-		return fmt.Errorf("unknown backend type %q", t.Type)
+		return nil, fmt.Errorf("unknown backend type %q", t.Type)
 	}
+}
+
+// one wraps the common single-source case.
+func one[T source.Source](s T, err error) ([]source.Source, error) {
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	// Some sources have to do work before they can answer anything. A local
-	// book library reads the disk here, which on a big library is the slowest
-	// step in the whole startup - hence no timeout around it, and the status
-	// line saying what is happening.
-	if starter, ok := s.(source.Starter); ok {
-		if err := starter.Start(ctx); err != nil {
-			return fmt.Errorf("start source: %w", err)
-		}
-	}
-
-	// Health-check before publishing, so a source in the registry is a source
-	// that answers. Otherwise the first search after boot reports a failure the
-	// user can do nothing about.
-	hctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	if err := s.Health(hctx); err != nil {
-		return fmt.Errorf("health check: %w", err)
-	}
-
-	m.reg.Set(s)
-	return nil
+	return []source.Source{s}, nil
 }
 
 // basicAuth builds an HTTP Basic credential.

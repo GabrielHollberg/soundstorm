@@ -57,9 +57,10 @@ type Folder struct {
 
 // layout is the folder set, in the order the UI should show them.
 //
-// Four folders, named for what people call the thing rather than for how the
-// backends model it. "movies" not "video", because nobody has a folder called
-// video.
+// Named for what people call the thing rather than for how the backends model
+// it: "movies" not "video", because nobody has a folder called video, and
+// "tv" separate from movies because Jellyfin models series differently and
+// because that is how people already arrange their drives.
 var layout = []Folder{
 	{
 		Kind:        media.KindMusic,
@@ -72,6 +73,12 @@ var layout = []Folder{
 		Name:        "movies",
 		Description: "Films. One folder per film, with the year in the name.",
 		Example:     "movies/Arrival (2016)/Arrival (2016).mkv",
+	},
+	{
+		Kind:        media.KindTV,
+		Name:        "tv",
+		Description: "Series. One folder per show, then one per season.",
+		Example:     "tv/Severance (2022)/Season 01/Severance - S01E01.mkv",
 	},
 	{
 		Kind:        media.KindAudiobook,
@@ -96,6 +103,10 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 		".wav": true, ".aac": true, ".wma": true, ".aiff": true, ".alac": true,
 	},
 	media.KindVideo: {
+		".mkv": true, ".mp4": true, ".avi": true, ".mov": true, ".m4v": true,
+		".wmv": true, ".webm": true, ".mpg": true, ".mpeg": true, ".ts": true,
+	},
+	media.KindTV: {
 		".mkv": true, ".mp4": true, ".avi": true, ".mov": true, ".m4v": true,
 		".wmv": true, ".webm": true, ".mpg": true, ".mpeg": true, ".ts": true,
 	},
@@ -151,7 +162,7 @@ func (l *Library) PathFor(kind media.Kind) string {
 	return ""
 }
 
-// ensure creates the root and its four folders if they are missing.
+// ensure creates the root and its folders if they are missing.
 func (l *Library) ensure() error {
 	if err := os.MkdirAll(l.root, 0o777); err != nil {
 		return fmt.Errorf("create library root %s: %w", l.root, err)

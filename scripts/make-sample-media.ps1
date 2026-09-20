@@ -32,6 +32,12 @@ $films = @(
   'movies/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mp4'
 )
 
+# TV: Jellyfin reads show, season and episode from this exact folder shape.
+$episodes = @(
+  'tv/Sandworms (2021)/Season 01/Sandworms - S01E01 - The Deep Desert.mp4'
+  'tv/Sandworms (2021)/Season 01/Sandworms - S01E02 - Spice Must Flow.mp4'
+)
+
 # Audiobooks: Audiobookshelf reads Author/Title from the folder structure.
 $audiobooks = @(
   @{ Path = 'audiobooks/Frank Herbert/Dune Messiah/Dune Messiah.mp3';                   Title = 'Dune Messiah';         Author = 'Frank Herbert';     Freq = 180; Year = 1969 }
@@ -46,7 +52,7 @@ $ebooks = @(
   @{ Title = 'The Left Hand of Darkness'; Author = 'Ursula K. Le Guin'; Year = 1969 }
 )
 
-foreach ($item in @($tracks | ForEach-Object { $_.Path }) + $films + @($audiobooks | ForEach-Object { $_.Path })) {
+foreach ($item in @($tracks | ForEach-Object { $_.Path }) + $films + $episodes + @($audiobooks | ForEach-Object { $_.Path })) {
   $dir = Split-Path -Parent (Join-Path $media $item)
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
 }
@@ -92,6 +98,18 @@ foreach ($f in $films) {
     '-c:a', 'aac', '-b:a', '96k',
     '-shortest', '-movflags', '+faststart',
     "/out/$f"
+  )
+}
+
+foreach ($e in $episodes) {
+  Write-Host "  episode $(Split-Path -Leaf $e)"
+  Invoke-Ffmpeg @(
+    '-f', 'lavfi', '-i', 'testsrc=duration=10:size=640x360:rate=24',
+    '-f', 'lavfi', '-i', 'sine=frequency=300:duration=10',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '96k',
+    '-shortest', '-movflags', '+faststart',
+    "/out/$e"
   )
 }
 

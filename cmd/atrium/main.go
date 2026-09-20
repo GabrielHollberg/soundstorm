@@ -158,9 +158,10 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 			ID:      "jellyfin",
 			Type:    "jellyfin",
 			BaseURL: url,
-			// The path as Jellyfin's container sees it, which is what its
-			// library API needs - not atrium's view of the same folder.
+			// The paths as Jellyfin's container sees them, which is what its
+			// library API needs - not atrium's view of the same folders.
 			MediaPath: env("ATRIUM_JELLYFIN_MEDIA_PATH", "/media/movies"),
+			TVPath:    env("ATRIUM_JELLYFIN_TV_PATH", "/media/tv"),
 		})
 	}
 	if url := strings.TrimSpace(os.Getenv("ATRIUM_AUDIOBOOKSHELF_URL")); url != "" {

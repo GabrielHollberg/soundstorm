@@ -75,13 +75,22 @@ func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, log *slog
 	}
 	log.Info("authenticated to jellyfin", "userId", userID)
 
-	// Now that we hold a token, point Jellyfin at the movie folder.
-	if t.MediaPath != "" {
-		if err := ensureJellyfinLibrary(ctx, c, token, t.MediaPath, log); err != nil {
+	// Now that we hold a token, point Jellyfin at the media folders. Films and
+	// series are separate libraries on purpose: Jellyfin scrapes them from
+	// different providers and models seasons and episodes only for the latter.
+	libraries := []struct{ name, collection, path string }{
+		{"Movies", "movies", t.MediaPath},
+		{"TV", "tvshows", t.TVPath},
+	}
+	for _, lib := range libraries {
+		if lib.path == "" {
+			continue
+		}
+		if err := ensureJellyfinLibrary(ctx, c, token, lib.name, lib.collection, lib.path, log); err != nil {
 			// A missing library is not fatal to provisioning: the credentials
 			// are good and someone can add the folder by hand. Searches will
 			// just come back empty until then.
-			log.Warn("could not register jellyfin library", "err", err)
+			log.Warn("could not register jellyfin library", "name", lib.name, "err", err)
 		}
 	}
 
@@ -179,9 +188,9 @@ func jellyfinLogin(ctx context.Context, c *httpx.Client, username, password stri
 	return out.AccessToken, out.User.ID, nil
 }
 
-// ensureJellyfinLibrary adds a movie library at path, unless one already covers
-// it, then asks for a scan.
-func ensureJellyfinLibrary(ctx context.Context, c *httpx.Client, token, path string, log *slog.Logger) error {
+// ensureJellyfinLibrary adds a library of the given collection type at path,
+// unless one already covers it, then asks for a scan.
+func ensureJellyfinLibrary(ctx context.Context, c *httpx.Client, token, name, collection, path string, log *slog.Logger) error {
 	authed := map[string]string{"Authorization": jellyfinTokenHeader(token)}
 
 	var existing []struct {
@@ -209,8 +218,8 @@ func ensureJellyfinLibrary(ctx context.Context, c *httpx.Client, token, path str
 		Method: http.MethodPost,
 		Path:   "/Library/VirtualFolders",
 		Params: url.Values{
-			"name":           {"Movies"},
-			"collectionType": {"movies"},
+			"name":           {name},
+			"collectionType": {collection},
 			"refreshLibrary": {"true"},
 		},
 		Headers: authed,
@@ -227,7 +236,7 @@ func ensureJellyfinLibrary(ctx context.Context, c *httpx.Client, token, path str
 	if !resp.OK() {
 		return fmt.Errorf("add library returned %d: %s", resp.Status, httpx.Snippet(resp.Body))
 	}
-	log.Info("registered jellyfin movie library", "path", path)
+	log.Info("registered jellyfin library", "name", name, "collectionType", collection, "path", path)
 	return triggerJellyfinScan(ctx, c, authed)
 }
 

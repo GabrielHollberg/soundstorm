@@ -22,7 +22,7 @@ credentials itself, and puts one interface on top:
 | | |
 | --- | --- |
 | **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
-| **Video** | Jellyfin — metadata, artwork, hardware transcoding |
+| **Films and TV** | Jellyfin — metadata, artwork, season/episode structure |
 | **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
 | **Ebooks** | atrium itself — an EPUB describes itself, so no backend is needed |
 
@@ -62,6 +62,7 @@ you what goes where:
 library/
   music/       Talk Talk/Laughing Stock/01 Myrrhman.flac
   movies/      Arrival (2016)/Arrival (2016).mkv
+  tv/          Severance (2022)/Season 01/Severance - S01E01.mkv
   audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
   ebooks/      A Wizard of Earthsea.epub
 ```
@@ -93,8 +94,14 @@ defaults to it. Override with `ATRIUM_PORT`.
       ▼              ▼                   ▼              ▼
  Navidrome     Jellyfin        Audiobookshelf   library/ebooks
    :4533         :8096              :80          (a folder)
+              films + TV
         — none of the three publishes a port —
 ```
+
+Jellyfin appears twice: films and series are separate Jellyfin libraries, with
+different scrapers and different structure, so they are two atrium sources
+sharing one token. Searching a show name finds the show; searching an episode
+title finds the episode.
 
 Ebooks have no backend at all. An EPUB carries its own title, author and cover
 in a documented format, and needs no transcoding, so atrium reads the folder
@@ -158,8 +165,8 @@ internal/webui/      the embedded UI
 The trailing `...` is load-bearing: an OPDS acquisition reference is a path with
 slashes in it, and that is the id the adapter needs back.
 
-`kind` is one of `music`, `audiobook`, `ebook`, `video`, and may repeat or be
-comma-separated. Filtering skips non-matching backends entirely.
+`kind` is one of `music`, `video` (films), `tv`, `audiobook`, `ebook`, and may
+repeat or be comma-separated. Filtering skips non-matching backends entirely.
 
 A search always returns 200. Check `degraded` and the `sources` array.
 

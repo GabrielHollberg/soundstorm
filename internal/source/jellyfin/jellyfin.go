@@ -27,19 +27,33 @@ import (
 const ticksPerSecond = 10_000_000
 
 // Config configures a Jellyfin source.
+//
+// Kind and ItemTypes are what let one Jellyfin server appear as two sources:
+// films and series live in separate folders, separate Jellyfin libraries and
+// separate result kinds, but share one set of credentials. The Source interface
+// has always said "a server that serves two kinds is configured as two
+// sources"; until this existed, that was not actually possible.
 type Config struct {
 	ID      string
 	BaseURL string
 	Token   string // access token from provisioning
 	UserID  string // the account atrium created for itself
 	Timeout time.Duration
+
+	// Kind is what this source reports its results as. Defaults to video.
+	Kind media.Kind
+
+	// ItemTypes is Jellyfin's IncludeItemTypes filter. Defaults to films.
+	ItemTypes string
 }
 
 // Source is a Jellyfin server serving video.
 type Source struct {
-	id   string
-	cfg  Config
-	http *httpx.Client
+	id        string
+	cfg       Config
+	kind      media.Kind
+	itemTypes string
+	http      *httpx.Client
 }
 
 // New builds a Jellyfin source.
@@ -53,11 +67,20 @@ func New(cfg Config) (*Source, error) {
 	}
 	c.SetHeader("Authorization", authHeader(cfg.Token))
 	c.SetHeader("Accept", "application/json")
-	return &Source{id: cfg.ID, cfg: cfg, http: c}, nil
+
+	kind := cfg.Kind
+	if kind == "" {
+		kind = media.KindVideo
+	}
+	itemTypes := cfg.ItemTypes
+	if itemTypes == "" {
+		itemTypes = "Movie"
+	}
+	return &Source{id: cfg.ID, cfg: cfg, kind: kind, itemTypes: itemTypes, http: c}, nil
 }
 
 func (s *Source) ID() string       { return s.id }
-func (s *Source) Kind() media.Kind { return media.KindVideo }
+func (s *Source) Kind() media.Kind { return s.kind }
 
 type itemsResponse struct {
 	Items            []jfItem `json:"Items"`
@@ -65,24 +88,26 @@ type itemsResponse struct {
 }
 
 type jfItem struct {
-	ID              string            `json:"Id"`
-	Name            string            `json:"Name"`
-	Type            string            `json:"Type"`
-	Overview        string            `json:"Overview"`
-	ProductionYear  int               `json:"ProductionYear"`
-	RunTimeTicks    int64             `json:"RunTimeTicks"`
-	SeriesName      string            `json:"SeriesName"`
-	ImageTags       map[string]string `json:"ImageTags"`
-	CommunityRating float64           `json:"CommunityRating"`
+	ID                string            `json:"Id"`
+	Name              string            `json:"Name"`
+	Type              string            `json:"Type"`
+	Overview          string            `json:"Overview"`
+	ProductionYear    int               `json:"ProductionYear"`
+	RunTimeTicks      int64             `json:"RunTimeTicks"`
+	SeriesName        string            `json:"SeriesName"`
+	IndexNumber       *int              `json:"IndexNumber"`       // episode within season
+	ParentIndexNumber *int              `json:"ParentIndexNumber"` // season
+	ImageTags         map[string]string `json:"ImageTags"`
+	CommunityRating   float64           `json:"CommunityRating"`
 }
 
 func (s *Source) searchParams(q media.Query) url.Values {
 	p := url.Values{
 		"searchTerm":       {q.Text},
 		"Recursive":        {"true"},
-		"IncludeItemTypes": {"Movie,Series,Episode"},
+		"IncludeItemTypes": {s.itemTypes},
 		"Limit":            {strconv.Itoa(q.LimitOr(25))},
-		"Fields":           {"Overview,ProductionYear"},
+		"Fields":           {"Overview,ProductionYear,ParentIndexNumber,IndexNumber"},
 	}
 	if s.cfg.UserID != "" {
 		p.Set("userId", s.cfg.UserID)
@@ -101,7 +126,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 		item := media.Item{
 			ID:       it.ID,
 			SourceID: s.id,
-			Kind:     media.KindVideo,
+			Kind:     s.kind,
 			Title:    it.Name,
 			Subtitle: it.SeriesName,
 			Year:     it.ProductionYear,
@@ -118,6 +143,11 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 		}
 		if tag, ok := it.ImageTags["Primary"]; ok && tag != "" {
 			item.ArtID = it.ID
+		}
+		// "S01E04" is how people refer to an episode, and without it an episode
+		// row is just a filename. Jellyfin only fills these in for episodes.
+		if it.ParentIndexNumber != nil && it.IndexNumber != nil {
+			item.Extra["episode"] = fmt.Sprintf("S%02dE%02d", *it.ParentIndexNumber, *it.IndexNumber)
 		}
 		items = append(items, item)
 	}
