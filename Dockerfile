@@ -18,10 +18,17 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 
 # Run stage: the binary, CA certificates, and nothing else.
 FROM alpine:3.20
+# /library is created here, owned by the account the server runs as.
+#
+# Compose bind-mounts a host folder over it, so this changes nothing there -
+# but without it a plain `docker run` dies with "mkdir /library: permission
+# denied", because a non-root process cannot create a directory at the
+# filesystem root. An image that will not start by itself is a poor first
+# impression for anybody trying the project out.
 RUN apk add --no-cache ca-certificates wget \
     && adduser -D -u 10001 soundstorm \
-    && mkdir -p /var/lib/soundstorm \
-    && chown soundstorm:soundstorm /var/lib/soundstorm
+    && mkdir -p /var/lib/soundstorm /library \
+    && chown soundstorm:soundstorm /var/lib/soundstorm /library
 
 COPY --from=build /out/soundstorm /usr/local/bin/soundstorm
 

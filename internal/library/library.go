@@ -165,7 +165,11 @@ func (l *Library) PathFor(kind media.Kind) string {
 // ensure creates the root and its folders if they are missing.
 func (l *Library) ensure() error {
 	if err := os.MkdirAll(l.root, 0o777); err != nil {
-		return fmt.Errorf("create library root %s: %w", l.root, err)
+		// Almost always a container started without its library mounted, and
+		// "permission denied" on its own sends people looking at file modes
+		// rather than at the missing volume.
+		return fmt.Errorf("create library root %s: %w "+
+			"(if this is a container, mount a writable folder there)", l.root, err)
 	}
 
 	var created []string
