@@ -171,6 +171,12 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 		return
 	}
 
+	// Whatever the target started on our behalf gets stopped, on every exit
+	// path: a finished stream, a client that navigated away, a failure here.
+	if target.OnDone != nil {
+		defer target.OnDone()
+	}
+
 	method := r.Method
 	if method != http.MethodHead {
 		method = http.MethodGet

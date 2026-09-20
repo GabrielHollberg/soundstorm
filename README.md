@@ -38,12 +38,16 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - SoundStorm provisions every one of them on first boot — **zero API keys typed**
 - one account, created on first visit, guarding everything
 - one search across all four, merged and ranked
-- music, video and audiobooks play **inside SoundStorm**, with seeking
+- music, films, TV and audiobooks play **inside SoundStorm**
+- video that a browser cannot decode is **transcoded by Jellyfin on the fly** -
+  HEVC, MKV, DTS and friends play rather than silently showing nothing
 - ebooks are **read inside SoundStorm**, and remember where you stopped
 - no backend publishes a port; SoundStorm is the only door
 
-Not built yet: transcoding for formats a browser cannot play, multi-user,
-HTTPS. See [docs/roadmap.md](docs/roadmap.md).
+Known limitation: **transcoded video cannot be seeked** - it plays from the
+start and the scrubber does not work. Direct-played video seeks normally. The
+fix is HLS; see [docs/roadmap.md](docs/roadmap.md), along with multi-user and
+HTTPS.
 
 ## Getting started
 

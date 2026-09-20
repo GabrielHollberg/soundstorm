@@ -218,9 +218,25 @@ It was called atrium until the rename. Nothing in the repo should say so.
   the connection while loading and answers 503.
 - **Port 8099, not 8080.** A Calibre content server on this machine already
   holds 8080. `SOUNDSTORM_PORT` overrides.
-- **`static=true` streaming only.** Anything a browser cannot natively decode
-  (HEVC, DTS, MKV) will not play yet. Jellyfin's HLS endpoint with a device
-  profile is the fix and it is the top of the roadmap.
+- **Playback is negotiated, never assumed.** `StreamTarget` POSTs a device
+  profile to Jellyfin's `/Items/{id}/PlaybackInfo` and does what it is told.
+  Whether a file needs transcoding depends on container, video codec, audio
+  codec, profile AND level; Jellyfin knows all five and we know none of them.
+- **The device profile errs conservative on purpose.** Claiming a codec we
+  cannot decode is the silent failure - Jellyfin hands over the original, the
+  video element shows nothing, no error anywhere. Claiming too little only
+  costs an unnecessary transcode. So: h264/aac in mp4, VPx/AV1 in webm, and
+  everything else transcodes.
+- **Transcoded streams cannot be seeked.** Measured, not assumed: Chrome
+  reports `seekable.end` of 0, a 20s file reports a duration of 9.9s that grows
+  as it buffers, and seeking to 15s snaps back. This is inherent to a
+  progressive transcode - the server cannot map a byte offset to a timestamp in
+  a live encode. HLS fixes it properly and needs hls.js vendored. Direct-played
+  video seeks normally because it is a real file with a real length.
+- **Transcodes must be stopped explicitly.** A Jellyfin transcode is an ffmpeg
+  process that outlives the HTTP request, so `source.Target.OnDone` fires
+  `DELETE /Videos/ActiveEncodings`. Verified that endpoint exists: it answers
+  204, where a made-up path answers 404.
 - **EPUB only.** The library scan ignores every other book format, and the
   reader only has foliate-js's EPUB modules vendored.
 - **A Content-Security-Policy on the shell is load-bearing, not hardening.**

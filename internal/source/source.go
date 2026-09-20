@@ -63,6 +63,14 @@ type Target struct {
 	ContentType string
 	Name        string
 	ModTime     time.Time
+
+	// OnDone, if set, is called once the client has stopped reading.
+	//
+	// Some backends start work on our behalf that outlives the request: a
+	// Jellyfin transcode is an ffmpeg process that keeps running until it is
+	// told otherwise, so every abandoned playback would leave one burning CPU
+	// until the server times it out.
+	OnDone func()
 }
 
 // Streamer builds an authenticated upstream target for an item's bytes.

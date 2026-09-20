@@ -4,19 +4,35 @@ The vertical slice works: one login, one search, two backends provisioned with
 zero keys, playback in place. What follows is ordered by what would most change
 whether this is usable, not by what is most interesting to build.
 
-## 1. Transcoding fallback for video
+## 1. Seeking in transcoded video
 
-Today the player asks Jellyfin for `static=true` — the original file, no
-remuxing. That covers h264/aac in mp4 and nothing else. A real library is full
-of HEVC, DTS and MKV, which a browser will refuse, and the failure is silent:
-the video element just shows nothing.
+Transcoding works: a file the browser cannot decode is re-encoded by Jellyfin on
+the fly and plays. What it cannot do is seek. Measured in Chrome against an
+HEVC/FLAC/MKV file:
 
-The fix is Jellyfin's HLS endpoint with a device profile describing what the
-browser can decode. Jellyfin does all the work; SoundStorm has to ask correctly and
-proxy an HLS manifest plus segments rather than one file.
+- `video.seekable.end(0)` is `0` - the browser considers the stream unseekable
+- a 20 second file reports `duration` of 9.9s, growing as it buffers
+- seeking to 15s snaps back to 3s
 
-**This is the first thing to build.** Without it the product is "plays some of
-your films", which is worse than no claim at all.
+This is inherent to progressive transcoding, not a bug to fix in place: the
+server cannot map a byte offset to a timestamp in an encode that has not
+happened yet. Direct-played video is unaffected - it is a real file.
+
+Two ways out:
+
+**HLS.** Jellyfin's best-tested transcode path and what its own web client uses.
+Segments give the browser a real duration and a real seekable range, so native
+controls work normally and adaptive bitrate comes free. Costs one vendored
+dependency: hls.js, MIT, ~150KB, ships a prebuilt UMD file so it needs no build
+step. The precedent for vendoring is already set by foliate-js.
+
+**Custom controls over progressive.** Keep the current stream, add `startTimeTicks`
+to restart the encode at a chosen point, and build a transport bar that tracks
+the offset. No new dependency, but it means owning a video scrubber and every
+seek costs a transcode restart.
+
+HLS is the better product outcome; the progressive path stays as the fallback
+for anything that cannot use it.
 
 ## 2. More ebook formats
 

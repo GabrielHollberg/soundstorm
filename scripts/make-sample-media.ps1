@@ -32,6 +32,11 @@ $films = @(
   'movies/Blade Runner 2049 (2017)/Blade Runner 2049 (2017).mp4'
 )
 
+# One film the browser genuinely cannot decode: HEVC video, FLAC audio, MKV
+# container - none of the three plays in Chrome. It exists so the transcoding
+# path is exercised by the sample library rather than only in theory.
+$hevcFilm = 'movies/Nightfall (2019)/Nightfall (2019).mkv'
+
 # TV: Jellyfin reads show, season and episode from this exact folder shape.
 $episodes = @(
   'tv/Sandworms (2021)/Season 01/Sandworms - S01E01 - The Deep Desert.mp4'
@@ -100,6 +105,17 @@ foreach ($f in $films) {
     "/out/$f"
   )
 }
+
+Write-Host "  film   $(Split-Path -Leaf $hevcFilm) (HEVC/FLAC/MKV - forces a transcode)"
+$dir = Split-Path -Parent (Join-Path $media $hevcFilm)
+if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
+Invoke-Ffmpeg @(
+  '-f', 'lavfi', '-i', 'testsrc=duration=20:size=640x360:rate=24',
+  '-f', 'lavfi', '-i', 'sine=frequency=440:duration=20',
+  '-c:v', 'libx265', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
+  '-c:a', 'flac',
+  "/out/$hevcFilm"
+)
 
 foreach ($e in $episodes) {
   Write-Host "  episode $(Split-Path -Leaf $e)"
