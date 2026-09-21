@@ -681,6 +681,13 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **The Windows setup file is linked from a release, not from raw.** Clicking a
+  `raw.githubusercontent` link opens the file in the browser rather than saving
+  it: raw serves `text/plain` with no `Content-Disposition`, so a `.cmd` is
+  displayed as text. A release asset serves `application/octet-stream` with
+  `Content-Disposition: attachment`, which is an actual download. The stable
+  link is `/releases/latest/download/SoundStorm-Setup.cmd`, so it follows the
+  newest release without the README changing. Attach the file to every release.
 - **The owner is `GabrielHollberg`, checked against `gh api user` rather than
   assumed.** It was `gabehollberg` for most of this project's life - guessed
   from an email address, and not a GitHub account at all (`gh api

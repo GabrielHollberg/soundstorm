@@ -8,7 +8,7 @@ window. No API keys, no second login, nothing to configure.
 
 ### 🪟&nbsp; Windows
 
-**[⬇ Download SoundStorm-Setup.cmd](https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/SoundStorm-Setup.cmd)** — then double-click it.
+**[⬇ Download SoundStorm-Setup.cmd](https://github.com/GabrielHollberg/soundstorm/releases/latest/download/SoundStorm-Setup.cmd)** — then double-click it.
 
 That is the whole thing. It installs Docker for you if you do not have it,
 starts it if it is not running, and leaves a SoundStorm icon on your desktop.
