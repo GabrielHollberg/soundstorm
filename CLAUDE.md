@@ -681,6 +681,16 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **Never pipe a downloaded script into PowerShell from the setup file.**
+  `powershell -Command "iex ((New-Object Net.WebClient).DownloadString(...))"`
+  is the canonical malware download cradle, and Windows Defender blocks it on
+  sight - "Access is denied", no explanation, on the very first thing a new
+  user touches. It survived testing because `install.ps1` sat beside the .cmd
+  in this checkout, so every run took the local branch and never fetched
+  anything; the failure only appears when the file is downloaded on its own,
+  which is exactly how everybody gets it. Fetch to a file with `curl.exe`
+  (shipped with Windows since 10 build 1803) and run it with `-File`.
+  Confirmed in `Get-MpThreatDetection`, and confirmed fixed by the same.
 - **The Windows setup file is linked from a release, not from raw.** Clicking a
   `raw.githubusercontent` link opens the file in the browser rather than saving
   it: raw serves `text/plain` with no `Content-Disposition`, so a `.cmd` is
