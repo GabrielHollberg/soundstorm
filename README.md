@@ -174,6 +174,39 @@ an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
 sidecars, so a library you already curate keeps its series, tags and corrected
 authors, with no SQLite driver and no Calibre-Web container.
 
+### Using it from your phone, TV or another computer
+
+It already works — nothing to enable. SoundStorm listens on every network
+interface, so any device on the same network can reach it at **this computer's
+address**, on the same port:
+
+```
+http://192.168.1.50:8099        <- your number will differ
+```
+
+The installer prints the exact address when it finishes. To find it again:
+
+| | |
+| --- | --- |
+| Windows | `ipconfig` — the IPv4 Address of your main adapter |
+| macOS | `ipconfig getifaddr en0` |
+| Linux | `hostname -I` |
+
+Same account, same library, same everything. If it does not load, the firewall
+on the server machine is blocking it — on Windows, allow it through for
+**private** networks when asked.
+
+> **Turn on HTTPS before you do this.** Over plain HTTP on a shared network,
+> your session cookie and the music stream URLs — which carry credentials in
+> the query string, because that is how the Subsonic protocol works — are
+> readable by anything else on the wire. It is one setting: see
+> [Turning on HTTPS](#turning-on-https).
+
+**From outside the house** is a different question, and the answer is not
+"forward a port". Use a VPN such as [Tailscale](https://tailscale.com): install
+it on the server and on your phone, and SoundStorm is reachable at the server's
+Tailscale address from anywhere, with nothing exposed to the internet.
+
 ### Updating
 
 **Windows:** Start menu → **Update SoundStorm**.

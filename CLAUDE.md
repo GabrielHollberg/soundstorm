@@ -170,6 +170,26 @@ silently truncates a large folder - the classic way to lose half an album. There
 is a test for it that builds a fake entry tree, because a synthetic DataTransfer
 gets no filesystem entries and no automated drag can produce real ones.
 
+## Reaching it from another device
+
+Nothing had to be built for this - compose publishes `0.0.0.0:8099`, so it has
+always been reachable at the host's LAN address. What was missing was anybody
+being told: the installer only ever printed `http://localhost:8099`, which is
+the one address that does not work from a phone.
+
+The container cannot work its own LAN address out - inside Docker the only
+addresses visible are the container's - so the *installer* does it, on the
+host, and prints it. It prefers `192.168.` then `10.` then `172.`, because the
+last range is also where Docker and WSL put virtual adapters that reach
+nothing. On this machine that correctly picks the Ethernet address over the
+Tailscale and WSL ones.
+
+**This is the moment HTTPS stops being optional.** On localhost there is
+nothing on the wire to protect; on a shared network the session cookie and the
+Subsonic stream URLs - which carry credentials in the query string, because
+that is the protocol - are readable by anything else on it. The README says so
+where somebody is deciding to do it, not in a security section nobody reads.
+
 ## Installing, updating, removing
 
 **Updating is installing again.** The installer pulls newer images and

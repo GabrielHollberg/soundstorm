@@ -222,6 +222,35 @@ function Hide-DockerDashboard {
     }
 }
 
+# Get-LanAddress is this machine's address on the local network.
+#
+# Needed because the container cannot work this out for itself - inside Docker
+# the only addresses visible are the container's own - and because telling
+# somebody their media server is at "localhost" is useless the moment they pick
+# up a phone.
+#
+# 192.168 first, then 10., then the 172.16-31 range, because that last one is
+# also where Docker and WSL put their virtual adapters and those reach nothing.
+function Get-LanAddress {
+    try {
+        $addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object {
+                $_.IPAddress -notlike '127.*' -and
+                $_.IPAddress -notlike '169.254.*' -and
+                $_.PrefixOrigin -ne 'WellKnown'
+            } | Sort-Object InterfaceMetric
+
+        foreach ($pattern in @('192.168.*', '10.*', '172.*')) {
+            $match = $addresses | Where-Object { $_.IPAddress -like $pattern } | Select-Object -First 1
+            if ($match) { return $match.IPAddress }
+        }
+        if ($addresses) { return ($addresses | Select-Object -First 1).IPAddress }
+    } catch {
+        # Not worth a failed install.
+    }
+    return $null
+}
+
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     return (New-Object Security.Principal.WindowsPrincipal $identity).IsInRole(
@@ -767,6 +796,17 @@ Write-Host ""
 Write-Host "  To add music, films or books: drag them onto the window, or put"
 Write-Host "  them in the 'SoundStorm media' folder on your desktop."
 Write-Host ""
+
+$lan = Get-LanAddress
+if ($lan) {
+    Write-Host "  On your phone, TV or another computer on this network:"
+    Write-Host ""
+    Write-Host "    http://${lan}:$port" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Same account. If it does not load, allow SoundStorm through" -ForegroundColor DarkGray
+    Write-Host "  the Windows firewall when asked." -ForegroundColor DarkGray
+    Write-Host ""
+}
 if (-not $NoShortcuts) {
     Write-Host "  Next time, click the SoundStorm icon on your desktop." -ForegroundColor DarkGray
     if (-not $NoAutoStart) {

@@ -133,6 +133,32 @@ pick_port() {
 	PORT="$port"
 }
 
+# lan_address is this machine's address on the local network.
+#
+# The container cannot work this out for itself - inside Docker the only
+# addresses visible are the container's own - and "localhost" is useless the
+# moment somebody picks up a phone.
+lan_address() {
+	if command -v ip >/dev/null 2>&1; then
+		# The source address the kernel would use to reach the internet, which
+		# is the one other machines on the network can reach back on.
+		ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+		return
+	fi
+	if command -v ipconfig >/dev/null 2>&1; then
+		for interface in en0 en1 eth0; do
+			addr=$(ipconfig getifaddr "$interface" 2>/dev/null) || true
+			if [ -n "$addr" ]; then
+				printf '%s' "$addr"
+				return
+			fi
+		done
+	fi
+	if command -v hostname >/dev/null 2>&1; then
+		hostname -I 2>/dev/null | awk '{print $1}'
+	fi
+}
+
 open_browser() {
 	# Never when piped: an installer run from a provisioning script should not
 	# try to launch a GUI on a headless box.
@@ -341,6 +367,16 @@ say ""
 note "The media servers are still setting themselves up in the background."
 note "The app shows you when each one is ready - that takes a minute or two."
 say ""
+lan=$(lan_address)
+if [ -n "$lan" ]; then
+	say "On your phone, TV or another computer on this network:"
+	say ""
+	say "    ${BOLD}http://$lan:$PORT${OFF}"
+	say ""
+	note "Same account. Open the port on the firewall if it does not load."
+	say ""
+fi
+
 say "${DIM}stop:    cd $DIR && $COMPOSE down${OFF}"
 say "${DIM}logs:    cd $DIR && $COMPOSE logs -f${OFF}"
 say "${DIM}upgrade: run this installer again${OFF}"
