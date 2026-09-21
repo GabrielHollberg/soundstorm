@@ -133,9 +133,11 @@ place is listed with the reason rather than dumped somewhere.
 audiobook and nothing in the file says which, so it asks — once for the whole
 folder, not once per chapter.
 
-![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png) Navidrome and the ebook scanner sweep every
-couple of minutes; Jellyfin and Audiobookshelf watch for changes. Until a scan
-catches up the app says so, rather than pretending the file is not there.
+![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png)
+
+Navidrome and the ebook scanner sweep every couple of minutes; Jellyfin and
+Audiobookshelf watch for changes. Until a scan catches up the app says so,
+rather than pretending the file is not there.
 
 ![The folder guide a new install opens on](docs/shots/1-library.png)
 
