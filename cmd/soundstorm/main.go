@@ -39,6 +39,13 @@ import (
 )
 
 func main() {
+	// One subcommand, and it is deliberately the only one. Recovery has to
+	// live wherever the server lives - somebody locked out of their own
+	// install should not also have to fetch a second tool.
+	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
+		os.Exit(resetPassword(os.Args[2:]))
+	}
+
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel(env("SOUNDSTORM_LOG_LEVEL", "info")),
 	}))

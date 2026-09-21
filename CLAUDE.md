@@ -290,6 +290,36 @@ Subsonic stream URLs - which carry credentials in the query string, because
 that is the protocol - are readable by anything else on it. The README says so
 where somebody is deciding to do it, not in a security section nobody reads.
 
+## Getting back in
+
+Signup closes permanently once the first account exists, so a forgotten owner
+password used to mean hand-editing `state.json` inside a container - a file
+with no documented shape holding the credentials for all four backends.
+`soundstorm reset-password` is the supported path, and it lives in the main
+binary rather than a second one so that it is wherever the server is.
+
+**`state.Open` writes the file every time, even when nothing changed.** It
+migrates and then `return s, s.save()` unconditionally. Two consequences:
+
+- Any process that opens the state as a different user takes ownership of the
+  file. Run the reset as root against a volume owned by uid 10001 and
+  SoundStorm then crash-loops on `read state: permission denied` at startup.
+  Confirmed by doing it to a live install.
+- So the reset stats the file **before** calling `state.Open`, not after, and
+  hands the ownership back. Statting afterwards captures the ownership Open
+  has already replaced, which looks correct and fixes nothing.
+
+`docker compose run --rm soundstorm reset-password` runs as the image's own
+user and never had the problem. The tool defends itself anyway, because the
+documented invocation should not be the thing standing between somebody and a
+working server.
+
+The server has to be stopped first: a running SoundStorm holds the state in
+memory and rewrites the whole file on its next change, silently undoing the
+reset. Sessions are left alone on purpose - recovering your own password is
+not evidence of a compromise, and signing every device in the house out would
+be its own small disaster.
+
 ## Installing, updating, removing
 
 **Updating is installing again.** The installer pulls newer images and

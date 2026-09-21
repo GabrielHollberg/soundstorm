@@ -263,6 +263,25 @@ docker compose pull && docker compose up -d
 
 </details>
 
+### Forgotten your password
+
+Signup closes for good once the first account exists, so there is no “register again” to fall back on. From the install folder:
+
+```sh
+docker compose down
+docker compose run --rm soundstorm reset-password
+docker compose up -d
+```
+
+It prints a new password for the account and you change it under **Account**
+once you are in. With more than one account, add the name:
+`reset-password gabe`.
+
+Stopping first is not optional — a running SoundStorm keeps the state in
+memory and writes its own copy back, which would quietly undo the reset.
+Nothing else is touched: your media, your libraries and everyone else's
+accounts all survive, and devices already signed in stay signed in.
+
 ### Removing it
 
 **Windows:** Settings → Apps → **SoundStorm** → Uninstall, like any other
