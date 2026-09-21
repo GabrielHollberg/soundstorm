@@ -251,6 +251,36 @@ function Get-LanAddress {
     return $null
 }
 
+# Get-MdnsName is the name other devices can use instead of an IP address.
+#
+# Windows runs an mDNS responder, so "<computer>.local" resolves on the local
+# network with nothing installed on the phone or tablet doing the asking -
+# Apple devices, Android 12 and later and Windows all resolve .local natively.
+# It is also the only option here that survives the DHCP lease changing.
+#
+# Returned only when it actually resolves and something is answering on the
+# mDNS port, because printing an address that does not work is worse than
+# printing an ugly one that does.
+function Get-MdnsName {
+    $name = $env:COMPUTERNAME
+    if (-not $name) { return $null }
+
+    try {
+        if (-not (Get-NetUDPEndpoint -LocalPort 5353 -ErrorAction Stop)) { return $null }
+    } catch {
+        return $null
+    }
+
+    $candidate = "$name.local"
+    try {
+        $answers = Resolve-DnsName $candidate -ErrorAction Stop | Where-Object { $_.IPAddress }
+        if ($answers) { return $candidate }
+    } catch {
+        # No responder, or a name it will not answer for.
+    }
+    return $null
+}
+
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     return (New-Object Security.Principal.WindowsPrincipal $identity).IsInRole(
@@ -807,13 +837,26 @@ Write-Host "  them in the 'SoundStorm media' folder on your desktop."
 Write-Host ""
 
 $lan = Get-LanAddress
-if ($lan) {
+$mdns = Get-MdnsName
+if ($lan -or $mdns) {
     Write-Host "  On your phone, TV or another computer on this network:"
     Write-Host ""
-    Write-Host "    http://${lan}:$port" -ForegroundColor White
+    if ($mdns) {
+        Write-Host "    http://${mdns}:$port" -ForegroundColor White
+        if ($lan) {
+            Write-Host "    http://${lan}:$port    (if the name does not work)" -ForegroundColor DarkGray
+        }
+        if ($mdns -match '_') {
+            Write-Host ""
+            Write-Host "  That name has an underscore in it, which some devices refuse." -ForegroundColor DarkGray
+            Write-Host "  Renaming this PC in Settings gives you a nicer address." -ForegroundColor DarkGray
+        }
+    } else {
+        Write-Host "    http://${lan}:$port" -ForegroundColor White
+    }
     Write-Host ""
-    Write-Host "  Same account. If it does not load, allow SoundStorm through" -ForegroundColor DarkGray
-    Write-Host "  the Windows firewall when asked." -ForegroundColor DarkGray
+    Write-Host "  Same account. If nothing loads, allow SoundStorm through the" -ForegroundColor DarkGray
+    Write-Host "  Windows firewall for private networks." -ForegroundColor DarkGray
     Write-Host ""
 }
 if (-not $NoShortcuts) {

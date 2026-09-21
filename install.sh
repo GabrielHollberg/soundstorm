@@ -159,6 +159,30 @@ lan_address() {
 	fi
 }
 
+# mdns_name is the name other devices can use instead of an IP address.
+#
+# macOS always answers for "<hostname>.local"; Linux does when avahi is
+# running. Printed only when it actually resolves, because an address that
+# does not work is worse than an ugly one that does.
+mdns_name() {
+	name=$(hostname -s 2>/dev/null || hostname 2>/dev/null) || return
+	[ -n "$name" ] || return
+	candidate="$name.local"
+
+	if command -v getent >/dev/null 2>&1 && getent hosts "$candidate" >/dev/null 2>&1; then
+		printf '%s' "$candidate"
+		return
+	fi
+	if command -v dscacheutil >/dev/null 2>&1 &&
+		dscacheutil -q host -a name "$candidate" 2>/dev/null | grep -q 'ip_address'; then
+		printf '%s' "$candidate"
+		return
+	fi
+	if ping -c 1 -W 1 "$candidate" >/dev/null 2>&1; then
+		printf '%s' "$candidate"
+	fi
+}
+
 open_browser() {
 	# Never when piped: an installer run from a provisioning script should not
 	# try to launch a GUI on a headless box.
@@ -377,12 +401,20 @@ note "The media servers are still setting themselves up in the background."
 note "The app shows you when each one is ready - that takes a minute or two."
 say ""
 lan=$(lan_address)
-if [ -n "$lan" ]; then
+mdns=$(mdns_name)
+if [ -n "$lan" ] || [ -n "$mdns" ]; then
 	say "On your phone, TV or another computer on this network:"
 	say ""
-	say "    ${BOLD}http://$lan:$PORT${OFF}"
+	if [ -n "$mdns" ]; then
+		say "    ${BOLD}http://$mdns:$PORT${OFF}"
+		if [ -n "$lan" ]; then
+			note "http://$lan:$PORT    (if the name does not work)"
+		fi
+	else
+		say "    ${BOLD}http://$lan:$PORT${OFF}"
+	fi
 	say ""
-	note "Same account. Open the port on the firewall if it does not load."
+	note "Same account. Open the port on the firewall if nothing loads."
 	say ""
 fi
 

@@ -177,6 +177,17 @@ always been reachable at the host's LAN address. What was missing was anybody
 being told: the installer only ever printed `http://localhost:8099`, which is
 the one address that does not work from a phone.
 
+**The address printed first is `<computer>.local`, not a number.** Windows runs
+an mDNS responder and macOS always has, so that name resolves on the network
+with nothing installed on the device asking - and unlike an IP it survives the
+DHCP lease changing. The installer only prints it when it has checked that
+something is answering on port 5353 *and* the name resolves, because an address
+that does not work is worse than an ugly one that does. The IP is printed
+underneath as the fallback.
+
+Nothing needs configuring for the certificate to match: a `.local` name arrives
+as SNI and is minted on demand. Only bare IP addresses have to be listed.
+
 The container cannot work its own LAN address out - inside Docker the only
 addresses visible are the container's - so the *installer* does it, on the
 host, and prints it. It prefers `192.168.` then `10.` then `172.`, because the
