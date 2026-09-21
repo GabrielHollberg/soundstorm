@@ -681,6 +681,17 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **Docker Desktop's installer needs administrator rights**, and a setup file
+  run by double-clicking does not have them - so winget fails and the whole
+  install stops on its first action with a bare exit code 1. `Install-Docker`
+  asks for elevation with `Start-Process -Verb RunAs` for that one step rather
+  than demanding the whole setup be run as administrator, which would put the
+  library in whichever profile did the elevating.
+- **Do not decode winget exit codes; look at whether docker is there.** The
+  "already installed" code is `-1978335135` (0x8A150061), not the
+  `-1978335189` that was hardcoded here for several commits, and there are
+  more of them - a reboot-required result is a success that reads like a
+  failure. Asking `Get-Command docker` afterwards is both simpler and right.
 - **Smart App Control blocks any script downloaded from the web, by extension.**
   Double-clicking the downloaded `SoundStorm-Setup.cmd` gives "An Application
   Control policy has blocked this file. Dangerous file extension from the web",

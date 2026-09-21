@@ -140,11 +140,32 @@ function Get-DockerDesktopPath {
     return $null
 }
 
+function Test-Administrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return (New-Object Security.Principal.WindowsPrincipal $identity).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Refresh-Path picks up what an installer just added.
+#
+# winget does not update the PATH of the session that called it, so `docker`
+# stays unresolvable until a new window is opened - which looks exactly like
+# the install having failed.
+function Refresh-Path {
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                [Environment]::GetEnvironmentVariable('Path', 'User')
+}
+
 # Install-Docker uses winget, which ships with Windows 10 1809 and later.
 #
 # The alternative is telling somebody to visit a website, pick the right
 # download and run an installer, which is the single step this script exists
 # to remove.
+#
+# Docker Desktop's installer needs administrator rights, and a setup file run
+# by double-clicking does not have them - so this step asks for them, once,
+# with a UAC prompt. Without that winget fails and the whole install stops on
+# its very first action.
 function Install-Docker {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Stop-With @"
@@ -159,23 +180,62 @@ function Install-Docker {
 
     Note "Docker Desktop is not installed. Getting it now."
     Note "This is a big download and takes a few minutes."
-    winget install --exact --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent
-    # 0 is installed; -1978335189 is "already installed", which is not a
-    # failure however it reads.
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
-        Stop-With @"
-  Docker Desktop would not install automatically.
 
-  Install it by hand from here, then run this again:
+    $wingetArgs = @(
+        'install', '--exact', '--id', 'Docker.DockerDesktop',
+        '--accept-source-agreements', '--accept-package-agreements', '--silent'
+    )
+
+    if (Test-Administrator) {
+        & winget @wingetArgs
+        $code = $LASTEXITCODE
+    } else {
+        Note "Windows will ask for permission to install it - say yes."
+        try {
+            $process = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs `
+                -Verb RunAs -PassThru -Wait -ErrorAction Stop
+            # Reading .Handle caches it; without one ExitCode is unreliable on
+            # a process started this way.
+            $null = $process.Handle
+            $code = $process.ExitCode
+        } catch {
+            Stop-With @"
+  Installing Docker Desktop needs permission, and that was refused or
+  cancelled.
+
+  Run the setup again and choose Yes when Windows asks - or install Docker
+  Desktop yourself from here and then run the setup again:
 
     https://www.docker.com/products/docker-desktop/
 "@
+        }
     }
-    Good "Docker Desktop installed."
 
-    # winget does not refresh this session's PATH.
-    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
-                [Environment]::GetEnvironmentVariable('Path', 'User')
+    Refresh-Path
+
+    # Whether it worked is better answered by looking than by decoding an exit
+    # code. winget has a family of them - 0 is installed, 0x8A150061 is already
+    # installed, and a reboot-required result is a success that reads like a
+    # failure - so the question asked here is simply whether docker is there
+    # now.
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        Good "Docker Desktop installed."
+        return
+    }
+
+    Stop-With @"
+  Docker Desktop did not finish installing. (winget exit code: $code)
+
+  This is usually one of two things:
+
+    * it needs a restart to finish - restart the PC, then run this again
+    * Windows features for virtualisation are off - Docker Desktop will say
+      so if you open it from the Start menu
+
+  Or install it yourself from here and run the setup again:
+
+    https://www.docker.com/products/docker-desktop/
+"@
 }
 
 # Start-Docker launches Docker Desktop and waits for its engine.
@@ -218,12 +278,14 @@ function Initialize-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         Install-Docker
     }
+    Refresh-Path
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         Stop-With @"
-  Docker Desktop was installed but is not on this window's PATH yet.
+  Docker Desktop is installed but Windows has not picked it up in this
+  window yet.
 
-  Close this window, open the setup again, and it should find it. If not,
-  restart the PC first - Docker usually asks for one anyway.
+  Restart the PC and run the setup again - a fresh Docker install usually
+  wants one anyway.
 "@
     }
     if (-not (Test-DockerRunning)) { Start-Docker }
