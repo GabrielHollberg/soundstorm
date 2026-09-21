@@ -209,3 +209,41 @@ func TestShellHasNoInlineScript(t *testing.T) {
 		t.Error("sw-register.js does not register anything")
 	}
 }
+
+// The library screen names the one folder everything lives under, so the API
+// has to send it - and it has to be the hint, not the path SoundStorm sees.
+// Inside a container the root is /library, which is a path that exists on
+// nobody's computer; the hint is "./library", which is where it actually is
+// from where they ran compose.
+func TestLibraryReportsTheRootTheUserSees(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+
+	_, body := h.do(t, http.MethodGet, "/api/library", "")
+	var out struct {
+		Root    string `json:"root"`
+		Folders []struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+		} `json:"folders"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// The harness opens its library with this hint, standing in for what
+	// compose passes.
+	if out.Root != "./library" {
+		t.Errorf("root = %q, want the hint ./library rather than the container path", out.Root)
+	}
+	if len(out.Folders) == 0 {
+		t.Fatal("no folders, so the screen would have nothing to summarise")
+	}
+	// Every folder needs a kind, because the UI looks up what to call a shelf
+	// in a sentence by kind - "tv" reads like a typo mid-sentence, "TV" does
+	// not - and falls back to the raw folder name when it cannot.
+	for _, f := range out.Folders {
+		if f.Kind == "" {
+			t.Errorf("folder %q has no kind", f.Name)
+		}
+	}
+}

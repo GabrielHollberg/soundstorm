@@ -123,8 +123,22 @@ something in it to search.
 
 ### Where your media goes
 
-SoundStorm makes a `library/` folder next to the compose file, and the app's
-first screen is a guide to it:
+**Drag it onto the window.** Anywhere — there is nothing to aim at.
+SoundStorm works out what each file is and files it for you: a folder keeps its
+structure, subtitles and artwork travel with their film, and anything it cannot
+place is listed with the reason rather than dumped somewhere.
+
+![Dragging files onto the window](docs/shots/15-drop.png)
+
+That is what the app opens on before you have searched for anything, so there
+is nothing to go looking for in a menu. On a phone, where nothing can be
+dragged, the same screen has a **Choose files** button that does the same job.
+
+![The screen a new install opens on](docs/shots/1-library.png)
+
+**Or put the files in the folders yourself**, which is the better route for a
+whole drive copied over the network. SoundStorm makes a `library/` folder next
+to the compose file:
 
 ```
 library/
@@ -135,15 +149,7 @@ library/
   ebooks/      A Wizard of Earthsea.epub, Some Paper - Author (2017).pdf
 ```
 
-Drop a file in the matching folder and it shows up in search. Nothing to
-import, no library to configure.
-
-**Or just drag it onto the window.** Anywhere — there is nothing to aim at.
-SoundStorm works out what each file is and files it for you: a folder keeps its
-structure, subtitles and artwork travel with their film, and anything it cannot
-place is listed with the reason rather than dumped somewhere.
-
-![Dragging files onto the window](docs/shots/15-drop.png)
+Nothing to import, no library to configure.
 
 **When it genuinely cannot tell, it asks.** An mp3 is a song or a chapter of an
 audiobook and nothing in the file says which, so it asks — once for the whole
@@ -159,8 +165,6 @@ Files you copy into the folders yourself are found on the next sweep instead:
 every minute for music, every two for ebooks, and as the watchers notice for
 films and audiobooks. Until then the app says "indexing…" rather than
 pretending the file is not there.
-
-![The folder guide a new install opens on](docs/shots/1-library.png)
 
 It arrives with a small library already in place — ten classics from Project
 Gutenberg, Bach's Goldberg Variations, and *As a Man Thinketh* as both an ebook

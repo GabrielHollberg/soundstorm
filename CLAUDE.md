@@ -392,23 +392,51 @@ is the worst available way to be wrong.
 cookie is Secure, for a reverse proxy that terminates TLS. Off unless asked
 for, because any client can send that header.
 
-## The folders are the interface
+## The folders were the interface
 
-Installing SoundStorm creates `library/` with four subfolders, and the app's first
-screen is a guide to them rather than an empty search grid. This is deliberate
-product surface, not convenience: the folders are the only part of SoundStorm a user
-interacts with that has no UI, so they are created for you, named for what
-people call the thing ("movies", not "video"), and described in the app. A
-README nobody reads is not an interface.
+Installing SoundStorm creates `library/` with five subfolders, and they are
+still the only part of SoundStorm a user interacts with that has no UI - so
+they are created for you and named for what people call the thing ("movies",
+not "video"). A README nobody reads is not an interface.
 
-`internal/library` owns this. It reads the directory for exactly two reasons -
-creating it, and counting files so the UI can distinguish "you have not added
-anything" from "a scan is still running". It does not index. Do not let it grow
-into an indexer.
+**What changed: they are no longer the first screen.** That screen used to be
+a guide to them - five boxes, each with a path, a description and an example
+filename. That was right when putting a file in a folder was the only way to
+add media. It stopped being right when dropping onto the window started
+sorting files by itself, at which point the first screen of a media server was
+a reference manual for the fallback route.
 
-One asymmetry worth knowing: only `localbooks` reports an indexed count, so the
-music, movie and audiobook rows show files-on-disk with no comparison. Navidrome
-and Jellyfin would each need a count call to fix that.
+It is now one card: drag here, a Choose files button, and one line each for
+what is in the library and where it lives on disk. The folders are named once,
+at the bottom, as the other way to do it. The user asked for this in exactly
+those terms - "one box about the entire library, telling people to drag and
+drop files there" - and the old design's own reasoning agreed once drag and
+drop existed.
+
+**Choose files is not decoration.** A phone cannot drag anything, and this is
+the screen whose whole job is to ask for media. It goes through the same
+intake as a drop, because `collectFiles` already falls back to a flat file
+list when a DataTransfer carries no directory entries - which is exactly the
+shape a file input gives. Verified end to end: the picked file arrives in
+`library/ebooks`, not merely accepted by the UI.
+
+`internal/library` owns the folders. It reads the directory for exactly two
+reasons - creating it, and counting files so the UI can distinguish "you have
+not added anything" from "a scan is still running". It does not index. Do not
+let it grow into an indexer.
+
+`Hint()` is the path to show a person and `Root()` is the path SoundStorm
+sees; inside a container those are `./library` and `/library`, and only the
+first exists on anybody's computer. `/api/library` sends the hint as `root`.
+
+Two things worth knowing:
+
+- Only `localbooks` reports an indexed count, so the "indexing…" suffix can
+  only ever come from the ebook shelf. Navidrome and Jellyfin would each need
+  a count call to fix that.
+- What a shelf is called in a sentence comes from `KIND_WORDS` in `app.js`,
+  not from the folder name. The folder is `tv`, and "music, films, tv and
+  ebooks" reads like a typo halfway through a sentence.
 
 ## PDFs, and why there is no PDF parser
 
@@ -493,6 +521,26 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   or resumes. Miss it and you get a blank reader with no error anywhere.
 - **foliate-view's shadow root is `mode: 'closed'`.** A browser test cannot
   reach inside it - observe rendering through the `relocate` event instead.
+- **The page-turn arrows are hidden on touch, and swipe is why.** Measured,
+  not assumed: `scripts/reader-swipe-check.js` swipes the reader and watches
+  the fraction on the relocate event, and swiping reached exactly the
+  positions the arrows reach, three times out of three in both directions.
+  Two 56px arrows were 29% of a 390px screen.
+
+  A relocate firing is **not** a page turn - it fires on resize too, and the
+  first version of that check passed a tap that moved nothing because it only
+  counted events. The fraction has to change, and change back.
+
+  The exception is not optional: `paginator.js` handles touch, and
+  `fixed-layout.js` contains no touch handling whatsoever. For a comic or an
+  illustrated book the arrows are the only way to turn a page on a phone, so
+  `reader.js` sets `.fixed-layout` from `view.isFixedLayout` after `open()`
+  and the CSS keeps the arrows for those. The rule is `pointer: coarse` rather
+  than a width, because a narrow desktop window still has a mouse and cannot
+  swipe at all.
+
+  Re-run that script if foliate-js is ever updated. It is vendored third-party
+  code and this is a behaviour of theirs we are now depending on.
 - **foliate-js probes for optional files** (`META-INF/encryption.xml`, Apple and
   Kobo display options). 404 is the correct answer; those requests log at debug.
 - **Calibre-Web was removed** (see above). `internal/source/opds` and

@@ -172,6 +172,17 @@ export async function open(item) {
 
     await view.open(book);
 
+    // Which renderer foliate picked decides whether a finger can turn the
+    // page, and the arrows are hidden on touch only where it can.
+    //
+    // paginator.js - the reflowable one, which is almost every EPUB - handles
+    // touch itself, and swiping was measured turning the page to exactly the
+    // positions the arrows reach. fixed-layout.js contains no touch handling
+    // at all, so for a comic or an illustrated book the arrows are the only
+    // way forward on a phone. view.isFixedLayout is set by open(), which is
+    // why this reads it here rather than before.
+    overlay.classList.toggle('fixed-layout', view.isFixedLayout === true);
+
     // open() parses the book and builds the renderer but paints nothing. init()
     // is what puts a page on screen - either the one we left off on, or the
     // first. Missing this is a blank reader with no error anywhere.

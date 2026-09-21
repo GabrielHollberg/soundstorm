@@ -152,6 +152,12 @@ func Open(root, hint string, log *slog.Logger) (*Library, error) {
 // Root returns the library root as SoundStorm sees it.
 func (l *Library) Root() string { return l.root }
 
+// Hint returns the library root as the person running it sees it, which is
+// almost never the same path - SoundStorm is in a container and sees
+// /library, while compose passes "./library" because that is what is beside
+// their docker-compose.yml. Only the hint is ever worth showing.
+func (l *Library) Hint() string { return l.hint }
+
 // PathFor returns the absolute path of one media kind's folder.
 func (l *Library) PathFor(kind media.Kind) string {
 	for _, f := range layout {

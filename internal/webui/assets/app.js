@@ -353,60 +353,74 @@ async function loadLibrary() {
 
   state.libraryEmpty = body.empty;
 
-  $('library-heading').textContent = body.empty
-    ? 'Put your media in these folders'
-    : 'Your library';
-  $('library-blurb').textContent = body.empty
-    ? 'soundstorm made these for you. Drop files in and they will show up here — nothing else to set up.'
-    : 'Drop files into any of these and they appear in search automatically.';
+  const folders = body.folders || [];
+  const kinds = folders.map(kindLabel);
 
-  const list = $('library-folders');
-  list.replaceChildren();
+  // The heading does not vary, so it stays in the shell rather than being
+  // rewritten here on every load.
+  //
+  // The list of what it takes is the useful half of this sentence: "media" is
+  // vague, and somebody with a folder of .m4b files wants to see the word
+  // audiobooks before they trust it with them.
+  $('library-blurb').textContent = kinds.length
+    ? `${sentenceList(kinds)} — anywhere on this window. Whole folders work too, and SoundStorm files them for you.`
+    : 'Drop files anywhere on this window and SoundStorm files them for you.';
 
-  for (const folder of body.folders || []) {
-    const li = document.createElement('li');
-    li.className = 'folder';
-
-    const glyph = document.createElement('span');
-    glyph.className = 'folder-glyph';
-    glyph.textContent = GLYPHS[folder.kind] || '●';
-
-    const text = document.createElement('div');
-    text.className = 'folder-text';
-
-    const path = document.createElement('code');
-    path.textContent = folder.path;
-
-    const desc = document.createElement('span');
-    desc.className = 'folder-desc';
-    desc.textContent = folder.description;
-
-    const example = document.createElement('code');
-    example.className = 'folder-example';
-    example.textContent = folder.example;
-
-    text.append(path, desc, example);
-
-    const count = document.createElement('span');
-    count.className = 'folder-count';
-    count.textContent = folderCount(folder);
-
-    li.append(glyph, text, count);
-    list.append(li);
+  // One line of counts rather than five boxes of them. The per-kind numbers
+  // are still worth having - "did my music actually land" is a real question -
+  // but as a summary, not as the subject of the screen.
+  const summary = $('library-summary');
+  const total = folders.reduce((n, f) => n + (f.files || 0), 0);
+  if (!total) {
+    summary.textContent = 'Nothing in it yet.';
+  } else {
+    const parts = folders
+      .filter((f) => f.files > 0)
+      .map((f) => `${f.files} ${kindLabel(f)}`);
+    summary.textContent = `${total} file${total === 1 ? '' : 's'} — ${parts.join(', ')}`;
   }
+  // The gap between files on disk and files indexed is what tells "you have
+  // not added anything" apart from "a scan is still running".
+  const indexing = folders.some(
+    (f) => typeof f.indexed === 'number' && f.indexed < f.files);
+  if (indexing) summary.textContent += ' · indexing…';
+
+  // The folders still exist and still matter - copying a drive in over the
+  // network is not a drag and drop - so they get named. Once, at the bottom,
+  // rather than being the screen.
+  $('library-where').textContent = body.root
+    ? `They go in ${body.root} on the server. You can put them there yourself instead.`
+    : '';
 
   updateLibraryVisibility();
 }
 
-// The gap between files on disk and files indexed is the useful number: it
-// tells "you have not added anything" apart from "a scan is still running".
-function folderCount(folder) {
-  if (!folder.files) return 'empty';
-  const files = `${folder.files} file${folder.files === 1 ? '' : 's'}`;
-  if (typeof folder.indexed === 'number' && folder.indexed < folder.files) {
-    return `${files} · indexing…`;
-  }
-  return files;
+// What to call a shelf in a sentence.
+//
+// Not folder.name, which is the name on disk: that is "tv", and "music,
+// movies, tv and ebooks" reads like a typo in the middle of a sentence. These
+// match the filter chips, so the same shelf is called the same thing whichever
+// screen somebody is looking at, and it falls through to the folder name for
+// a kind added later.
+const KIND_WORDS = {
+  music: 'music',
+  video: 'films',
+  tv: 'TV',
+  audiobook: 'audiobooks',
+  ebook: 'ebooks',
+};
+
+function kindLabel(folder) {
+  return KIND_WORDS[folder.kind] || folder.name || folder.kind;
+}
+
+// "music, films and ebooks" rather than "music, films, ebooks".
+//
+// Takes the words as given rather than lowercasing them, or KIND_WORDS' "TV"
+// comes back out as "tv" - which is the whole thing that map exists to stop.
+function sentenceList(words) {
+  if (words.length < 2) return words.join('');
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
 // The scan button. Dropping files on the window already triggers this, so it
@@ -439,6 +453,24 @@ $('rescan').addEventListener('click', async () => {
   // The counts move as each backend gets through it, so look again shortly.
   setTimeout(loadLibrary, 4000);
   setTimeout(loadLibrary, 15000);
+});
+
+// Choose files, for every device that cannot drag one.
+//
+// A phone has no drag and drop at all, so on the screen whose entire job is
+// to ask for media, "drag it here" is an instruction half the devices cannot
+// follow. This goes through exactly the same intake as a drop: collectFiles
+// already falls back to a flat file list when a DataTransfer carries no
+// directory entries, which is precisely the shape a file input gives.
+$('choose-files').addEventListener('click', () => $('file-picker').click());
+
+$('file-picker').addEventListener('change', (event) => {
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
+  // Reset first: picking the same file twice in a row fires no change event
+  // otherwise, which reads as the button having stopped working.
+  event.target.value = '';
+  intake({ items: [], files });
 });
 
 function updateLibraryVisibility() {

@@ -107,18 +107,33 @@
     </section>
 
     <!-- Shown when there is no search running. On a fresh install this is the
-         first thing anyone sees, so it has to answer "what do I do now". -->
+         first thing anyone sees, so it has to answer "what do I do now".
+
+         One card about the whole library, not one per folder. Five boxes of
+         paths and example filenames was a reference manual on a screen whose
+         job is to say "put something in". Dropping onto the window sorts
+         files by itself now, so the folders are the fallback rather than the
+         instruction, and they read as one line at the bottom. -->
     <section id="library" class="hidden">
-      <div class="library-head">
-        <h2 id="library-heading">Your library</h2>
-        <!-- Anything dropped on the window is picked up by itself. This is for
-             files copied into the folders some other way, which nothing here
-             can know about. -->
-        <button id="rescan" class="ghost" type="button">Check for new files</button>
+      <div id="library-card" class="card drop-card">
+        <span class="drop-card-glyph" aria-hidden="true">&#8681;</span>
+        <h2 id="library-heading">Drag your media here</h2>
+        <p id="library-blurb" class="muted"></p>
+
+        <!-- A phone cannot drag anything, and this is the screen that asks
+             for files. Same code path as a drop: collectFiles falls back to a
+             flat file list when there are no directory entries. -->
+        <div class="drop-card-actions">
+          <button id="choose-files" type="button">Choose files</button>
+          <button id="rescan" class="ghost" type="button">Check for new files</button>
+        </div>
+        <input id="file-picker" type="file" multiple hidden>
+
+        <p id="rescan-note" class="muted hidden" role="status"></p>
+
+        <p id="library-summary" class="library-summary"></p>
+        <p id="library-where" class="muted library-where"></p>
       </div>
-      <p id="library-blurb" class="muted"></p>
-      <p id="rescan-note" class="muted hidden" role="status"></p>
-      <ul id="library-folders"></ul>
     </section>
 
     <!-- What a drop is doing, and what it did. Stays up after an upload so

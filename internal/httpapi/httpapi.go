@@ -585,7 +585,11 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"empty":   empty,
+		"empty": empty,
+		// The root as the user sees it, so the UI can name the one folder
+		// everything lives under without stitching it back together from the
+		// five paths below.
+		"root":    s.library.Hint(),
 		"folders": out,
 	})
 }

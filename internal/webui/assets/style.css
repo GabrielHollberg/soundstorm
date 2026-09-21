@@ -303,18 +303,6 @@ header {
   padding: 4px 10px;
 }
 
-/* Library heading -------------------------------------------------------- */
-
-.library-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.library-head h2 { margin: 0; }
-.library-head button { font-size: 13px; padding: 6px 12px; }
-#rescan-note { margin: 6px 0 0; font-size: 13px; }
-
 /* Dropping files --------------------------------------------------------- */
 
 .drop {
@@ -734,11 +722,6 @@ header {
 }
 .page-turn:hover { color: var(--text); background: var(--surface-2); }
 
-/* Narrowed rather than hidden. Two 56px arrows take 29% of a 390px screen,
-   but they are also the only page navigation we are certain of - foliate-js
-   handles its own swipes inside a closed shadow root, so removing them on
-   touch would be betting the reader on behaviour that cannot be asserted
-   from outside. 30px each is the cheap, safe half of that trade. */
 @media (max-width: 620px) {
   .page-turn { flex-basis: 30px; font-size: 22px; }
   .reader-bar { gap: 8px; padding: 8px 12px; }
@@ -748,70 +731,75 @@ header {
   #reader-download { padding: 9px 10px; font-size: 13px; }
 }
 
+/* Two 56px arrows take 29% of a 390px screen, and on touch a swipe does the
+   same job - measured, not assumed: swiping relocated the book to exactly the
+   fractions the arrows reach, three times out of three in both directions.
+   scripts/reader-swipe-check.js is that measurement, kept so the claim can be
+   re-run rather than believed.
+
+   The exception is not optional. paginator.js handles touch; fixed-layout.js
+   contains no touch handling whatsoever, so for a comic or an illustrated
+   book the arrows are the only way to turn a page on a phone. reader.js sets
+   .fixed-layout from view.isFixedLayout for exactly this rule.
+
+   pointer: coarse rather than a width, because a narrow desktop window still
+   has a mouse and cannot swipe at all. */
+@media (pointer: coarse) {
+  .reader:not(.fixed-layout) .page-turn { display: none; }
+}
+
 /* Library folder guide ---------------------------------------------------- */
 
-#library { padding: 8px 20px 32px; max-width: 820px; }
-#library h2 { margin: 8px 0 4px; font-size: 19px; }
-#library p { margin: 0 0 16px; font-size: 14px; }
+#library { padding: 8px 20px 32px; max-width: 700px; }
 
-/* minmax(0, 1fr) rather than the default 1fr, and that is a real fix rather
-   than tidying. A grid item's min-width is auto, which resolves to its
-   min-content - and .folder-example is white-space: nowrap, so its min-content
-   is the width of a whole example path. The row therefore refused to shrink
-   below it and pushed the page to 531px on a 390px phone, giving the first
-   screen a new user ever sees a horizontal scrollbar. The ellipsis was there
-   all along and could never fire. */
-#library-folders {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+/* The one card. Centred and roomy on purpose: this is the screen a new
+   install opens on, and its entire job is to say "put something in". The
+   previous version listed five folders with their paths and an example
+   filename each, which is a reference manual in the place an invitation
+   belongs - and a reference manual for the fallback route at that, now that
+   dropping onto the window sorts files by itself. */
+.drop-card {
+  text-align: center;
+  padding: 32px 24px 24px;
+  border-style: dashed;
+  border-width: 2px;
 }
 
-.folder {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-}
-.folder-glyph { font-size: 20px; opacity: 0.75; line-height: 1.3; }
-
-.folder-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-.folder-text > code:first-child {
-  font-size: 14px;
-  font-weight: 600;
+.drop-card-glyph {
+  display: block;
+  font-size: 34px;
+  line-height: 1;
   color: var(--accent);
-}
-.folder-desc { font-size: 13px; color: var(--muted); }
-
-/* The example path is the actually useful part - it shows the nesting the
-   backends expect, which is the one thing a folder name cannot convey. */
-.folder-example {
-  font-size: 12px;
-  color: var(--muted);
-  opacity: 0.7;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  opacity: 0.8;
+  margin-bottom: 10px;
 }
 
-.folder-count {
-  font-size: 12.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  padding-top: 2px;
+#library h2 { margin: 0 0 6px; font-size: 20px; }
+#library-blurb { margin: 0 auto 20px; font-size: 14px; max-width: 46ch; }
+
+.drop-card-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#rescan-note { margin: 12px 0 0; font-size: 13px; }
+
+/* Below a divider rather than in the flow: these answer "did it work" and
+   "where did it go", which are questions asked after the fact. */
+.library-summary {
+  margin: 22px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
   font-variant-numeric: tabular-nums;
+}
+
+.library-where {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  opacity: 0.8;
 }
 
 code {
