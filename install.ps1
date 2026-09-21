@@ -173,6 +173,50 @@ function Get-DockerDesktopPath {
     return $null
 }
 
+# Hide-DockerDashboard stops Docker Desktop opening its window on every start.
+#
+# Only called immediately after installing it, so this sets a default on a
+# fresh install rather than overriding a choice somebody made. Nobody who
+# installs SoundStorm wants a Docker dashboard in their face at every login -
+# the whole premise is that they never learn Docker is there.
+#
+# Written without a byte order mark: PowerShell 5.1's Set-Content -Encoding
+# utf8 adds one, and a BOM in front of a JSON document is a good way to find
+# out whether the reader is strict.
+function Hide-DockerDashboard {
+    param([switch]$Quiet)
+
+    try {
+        $dir = Join-Path $env:APPDATA 'Docker'
+        $file = Join-Path $dir 'settings-store.json'
+        if (-not (Test-Path $file)) {
+            $legacy = Join-Path $dir 'settings.json'
+            if (Test-Path $legacy) { $file = $legacy }
+        }
+
+        if (Test-Path $file) {
+            $settings = Get-Content $file -Raw | ConvertFrom-Json
+        } else {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $settings = New-Object psobject
+        }
+
+        # -Force so this works whether or not the key is already there. Docker
+        # only writes settings that differ from its defaults, so on a fresh
+        # install it will be absent.
+        $settings | Add-Member -NotePropertyName 'OpenUIOnStartupDisabled' `
+            -NotePropertyValue $true -Force
+
+        $json = $settings | ConvertTo-Json -Depth 20
+        [IO.File]::WriteAllText($file, $json, (New-Object Text.UTF8Encoding $false))
+        if (-not $Quiet) {
+            Note "Docker Desktop will stay out of the way in the system tray."
+        }
+    } catch {
+        # Cosmetic. Never worth failing an install over.
+    }
+}
+
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     return (New-Object Security.Principal.WindowsPrincipal $identity).IsInRole(
@@ -214,6 +258,13 @@ function Install-Docker {
     Note "Docker Desktop is not installed. Getting it now."
     Note "This is a big download and takes a few minutes."
 
+    # Written before the install as well as after it. Docker Desktop launches
+    # itself the moment its installer finishes, which is too early for anything
+    # this script does afterwards to prevent - but it reads this file on that
+    # first launch, so putting the setting there first is the only way to stop
+    # the window ever appearing.
+    Hide-DockerDashboard -Quiet
+
     $wingetArgs = @(
         'install', '--exact', '--id', 'Docker.DockerDesktop',
         '--accept-source-agreements', '--accept-package-agreements', '--silent'
@@ -252,6 +303,7 @@ function Install-Docker {
     # now.
     if (Get-Command docker -ErrorAction SilentlyContinue) {
         Good "Docker Desktop installed."
+        Hide-DockerDashboard
         return
     }
 

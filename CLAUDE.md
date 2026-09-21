@@ -681,6 +681,22 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **Docker Desktop opens its dashboard on every start, and that has to be
+  turned off before it first runs.** `OpenUIOnStartupDisabled` in
+  `%APPDATA%\Docker\settings-store.json` does it - confirmed as a real key by
+  finding the string inside Docker's own binary rather than by trusting a
+  blog. Docker only stores settings that differ from its defaults, so on a
+  fresh machine the key is absent and has to be added.
+
+  It is written **before** the winget install as well as after, because Docker
+  Desktop launches itself the moment its installer finishes - too early for
+  anything the script does afterwards to prevent. Writing the file first is
+  the only way the window never appears at all.
+
+  Written without a byte order mark: `Set-Content -Encoding utf8` adds one in
+  PowerShell 5.1, and a BOM in front of JSON is a good way to discover whether
+  the reader is strict. Only ever called on the fresh-install path, so it sets
+  a default rather than overriding somebody's choice.
 - **Every external call in `install.ps1` must go through `Invoke-Native` or
   `Invoke-Docker`.** With `$ErrorActionPreference = 'Stop'`, a bare native
   call throws on its first line of stderr. `Test-DockerRunning` was written as
