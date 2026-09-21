@@ -376,11 +376,10 @@ func (s *Source) Rescan(ctx context.Context) error {
 }
 
 func (s *Source) Search(_ context.Context, q media.Query) ([]media.Item, error) {
-	needle := normalize(q.Text)
-	if needle == "" {
-		return nil, nil
-	}
-	terms := strings.Fields(needle)
+	// An empty query lists the shelf rather than matching nothing. terms is
+	// then empty, and matches() with no terms accepts every book - so the
+	// loop below needs no second path.
+	terms := strings.Fields(normalize(q.Text))
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -87,6 +87,12 @@ type searchResponse struct {
 	} `json:"book"`
 }
 
+// listResponse is what /api/libraries/{id}/items answers with: the same
+// library items as a search, one wrapper shallower.
+type listResponse struct {
+	Results []libraryItem `json:"results"`
+}
+
 type libraryItem struct {
 	ID    string `json:"id"`
 	Media struct {
@@ -152,19 +158,45 @@ func (s *Source) searchPath() string {
 	return "/api/libraries/" + url.PathEscape(s.cfg.LibraryID) + "/search"
 }
 
+func (s *Source) itemsPath() string {
+	return "/api/libraries/" + url.PathEscape(s.cfg.LibraryID) + "/items"
+}
+
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
-	params := url.Values{
-		"q":     {q.Text},
-		"limit": {strconv.Itoa(q.LimitOr(25))},
-	}
-	var resp searchResponse
-	if err := s.http.JSON(ctx, s.searchPath(), params, &resp); err != nil {
-		return nil, err
+	limit := q.LimitOr(25)
+
+	// Two endpoints, because Audiobookshelf's search does not answer the
+	// question "what is on this shelf" - asked with an empty q it matches
+	// nothing at all. /items is its listing call, and returns the same
+	// library items one wrapper shallower.
+	var found []libraryItem
+	if q.Text == "" {
+		var resp listResponse
+		params := url.Values{
+			"limit": {strconv.Itoa(limit)},
+			"sort":  {"media.metadata.title"},
+		}
+		if err := s.http.JSON(ctx, s.itemsPath(), params, &resp); err != nil {
+			return nil, err
+		}
+		found = resp.Results
+	} else {
+		var resp searchResponse
+		params := url.Values{
+			"q":     {q.Text},
+			"limit": {strconv.Itoa(limit)},
+		}
+		if err := s.http.JSON(ctx, s.searchPath(), params, &resp); err != nil {
+			return nil, err
+		}
+		found = make([]libraryItem, 0, len(resp.Book))
+		for _, b := range resp.Book {
+			found = append(found, b.LibraryItem)
+		}
 	}
 
-	items := make([]media.Item, 0, len(resp.Book))
-	for _, b := range resp.Book {
-		li := b.LibraryItem
+	items := make([]media.Item, 0, len(found))
+	for _, li := range found {
 		md := li.Media.Metadata
 
 		item := media.Item{

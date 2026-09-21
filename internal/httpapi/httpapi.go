@@ -944,11 +944,15 @@ func statusForUpload(err error) int {
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	// An empty q is a browse, not a mistake: it means "everything on this
+	// shelf", which is what the UI shows the moment somebody picks a filter
+	// and before they have typed anything. Each adapter turns it into
+	// whichever call its backend offers for listing rather than searching,
+	// and federate.Relevance already scores every item 0 for an empty query -
+	// so the merged list falls through to its title tiebreak and comes back
+	// alphabetical, which is the right order for a list nobody asked a
+	// question of.
 	text := strings.TrimSpace(q.Get("q"))
-	if text == "" {
-		writeError(w, http.StatusBadRequest, "query parameter q is required")
-		return
-	}
 
 	query := media.Query{Text: text}
 

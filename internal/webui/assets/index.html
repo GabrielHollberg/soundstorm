@@ -81,6 +81,15 @@
       <h2>Your account</h2>
       <p id="account-who" class="muted"></p>
 
+      <!-- The address for other devices lives here as well as on the first
+           screen, because that screen goes away the moment the library has
+           something in it - and this is the question somebody asks long
+           after that. Hidden when the server has no honest answer. -->
+      <p id="account-share" class="library-share hidden">
+        <span class="muted">On another device on this network:</span>
+        <a id="account-share-url" href="#"></a>
+      </p>
+
       <form id="password-form" class="inline-form">
         <label for="new-password">New password</label>
         <input id="new-password" type="password" autocomplete="new-password"

@@ -105,11 +105,22 @@ type jfItem struct {
 
 func (s *Source) searchParams(q media.Query) url.Values {
 	p := url.Values{
-		"searchTerm":       {q.Text},
 		"Recursive":        {"true"},
 		"IncludeItemTypes": {s.itemTypes},
 		"Limit":            {strconv.Itoa(q.LimitOr(25))},
 		"Fields":           {"Overview,ProductionYear,ParentIndexNumber,IndexNumber"},
+	}
+	// Omitted entirely rather than sent empty. /Items with no searchTerm is
+	// Jellyfin's own browse: it returns the library in order. Sending
+	// searchTerm= would be asking it to match the empty string, which is a
+	// different question and not one it answers usefully.
+	if q.Text != "" {
+		p.Set("searchTerm", q.Text)
+	} else {
+		// Nothing to rank a browse by, so name order - and SortName is the
+		// field Jellyfin itself sorts on, which strips a leading "The".
+		p.Set("SortBy", "SortName")
+		p.Set("SortOrder", "Ascending")
 	}
 	if s.cfg.UserID != "" {
 		p.Set("userId", s.cfg.UserID)

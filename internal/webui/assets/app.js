@@ -133,7 +133,7 @@ $('logout').addEventListener('click', async () => {
 
 /* -------------------------------------------------------------- app shell */
 
-function showApp(me) {
+async function showApp(me) {
   state.me = me || null;
   show($('boot'), false);
   show($('gate'), false);
@@ -143,7 +143,11 @@ function showApp(me) {
   renderAccount();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
-  loadLibrary();
+  // Awaited before the first browse so that libraryEmpty is known by the time
+  // anything decides what to show. Without it a fresh signed-in load flashes
+  // the drop card for one frame before the grid replaces it.
+  await loadLibrary();
+  runSearch();
 }
 
 /* --------------------------------------------------------------- accounts */
@@ -395,13 +399,19 @@ async function loadLibrary() {
   // The address for everybody else in the house. The server works out whether
   // it has one worth printing; an address that does not work is worse than no
   // address, so there is no client-side fallback guess here either.
-  const share = $('library-share');
-  const link = $('library-share-url');
-  if (body.shareURL) {
-    link.textContent = body.shareURL;
-    link.href = body.shareURL;
+  // Two places, one answer: the first screen, and the account panel that
+  // outlives it once the library fills up.
+  for (const [row, anchor] of [
+    ['library-share', 'library-share-url'],
+    ['account-share', 'account-share-url'],
+  ]) {
+    const link = $(anchor);
+    if (body.shareURL) {
+      link.textContent = body.shareURL;
+      link.href = body.shareURL;
+    }
+    show($(row), Boolean(body.shareURL));
   }
-  show(share, Boolean(body.shareURL));
 
   updateLibraryVisibility();
 }
@@ -485,14 +495,18 @@ $('file-picker').addEventListener('change', (event) => {
 });
 
 function updateLibraryVisibility() {
-  const searching = Boolean(state.query);
-  show($('library'), !searching);
-  // The results grid and the count line are empty before a search, but not
-  // free: the grid still contributes 48px of padding and the status line its
-  // margins. That is invisible furniture at the best of times, and it also
-  // pushed the library card off centre by exactly that much.
-  show($('results'), searching);
-  show($('status'), searching);
+  // Shown whenever nothing is typed, but in two very different sizes.
+  //
+  // On a fresh install it is the whole screen, because "what do I do now" is
+  // the only question there is. Once there is something to browse it shrinks
+  // to a strip above the grid - it still carries Choose files, the rescan
+  // button and the address for other devices, and hiding it outright would
+  // take all three away from everybody who actually has a library.
+  const browsing = !state.query;
+  show($('library'), browsing);
+  $('library-card').classList.toggle('compact', !state.libraryEmpty);
+  show($('results'), true);
+  show($('status'), true);
 }
 
 async function pollSetup() {
@@ -532,7 +546,7 @@ async function pollSetup() {
     state.setupTimer = null;
     // Backends that finished after the last search would otherwise be missing
     // from results until the user typed again.
-    if (state.query) runSearch();
+    runSearch();
     loadLibrary();
   }
 }
@@ -568,7 +582,7 @@ function applyLibraryTabs() {
       for (const other of document.querySelectorAll('.chip')) {
         other.classList.toggle('active', other.dataset.kind === '');
       }
-      if (state.query) runSearch();
+      runSearch();
     }
   }
 }
@@ -583,6 +597,13 @@ for (const chip of document.querySelectorAll('.chip')) {
   });
 }
 
+// runSearch also runs with nothing typed, and that is the point.
+//
+// An empty box is a request to see the shelf, not a request for nothing:
+// picking Audiobooks lists every audiobook, and typing narrows from there.
+// Every adapter turns an empty query into its backend's own listing call, and
+// the merged list comes back alphabetical because relevance scores everything
+// 0 when there is no question for it to be relevant to.
 async function runSearch() {
   const query = $('search-input').value.trim();
   state.query = query;
@@ -590,21 +611,22 @@ async function runSearch() {
   updateLibraryVisibility();
 
   if (!query) {
-    $('results').replaceChildren();
-    $('status').textContent = '';
-    show($('degraded'), false);
-    // Counts may have moved while the user was searching.
+    // Counts may have moved while the user was searching, and the shelf about
+    // to be listed is the thing they describe.
     loadLibrary();
-    return;
   }
 
   // Keep only the newest response: debounced typing means several can be in
   // flight and they do not necessarily come back in order.
   const seq = ++state.searchSeq;
-  $('status').textContent = 'Searching…';
+  $('status').textContent = query ? 'Searching…' : 'Loading…';
 
   const params = new URLSearchParams({ q: query });
   if (state.kind) params.set('kind', state.kind);
+  // A browse wants the shelf, not a top-25 of it. Only when browsing: asking
+  // for four times as much on every keystroke would slow typing down for a
+  // list nobody reads past the top of anyway.
+  if (!query) params.set('limit', '100');
 
   const { ok, body } = await api(`/api/search?${params}`);
   if (seq !== state.searchSeq) return;
@@ -632,12 +654,21 @@ function renderResults(result) {
   show($('degraded'), failed.length > 0);
 
   const n = result.items.length;
+  const browsing = !state.query;
   if (n) {
-    $('status').textContent = `${n} result${n === 1 ? '' : 's'} in ${result.tookMs} ms`;
+    // A browse is a list, not an answer: "25 results" for a shelf nobody
+    // asked a question of reads like a search that went wrong.
+    $('status').textContent = browsing
+      ? `${n} item${n === 1 ? '' : 's'}${n >= 100 ? ' — type to narrow' : ''}`
+      : `${n} result${n === 1 ? '' : 's'} in ${result.tookMs} ms`;
   } else if (state.libraryEmpty) {
     // "Nothing matched" is a lie when there is nothing to match against.
     $('status').textContent = 'Nothing to search yet — your library is empty.';
     show($('library'), true);
+  } else if (browsing) {
+    // Empty shelf, full library: they filtered to a kind they have none of,
+    // or its backend is still doing its first scan.
+    $('status').textContent = 'Nothing on this shelf yet.';
   } else {
     $('status').textContent = 'Nothing matched.';
   }

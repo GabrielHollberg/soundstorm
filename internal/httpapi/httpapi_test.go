@@ -320,8 +320,11 @@ func TestSearchValidatesInput(t *testing.T) {
 	h := newHarness(t, stub{id: "music", kind: media.KindMusic})
 	h.signUp(t)
 
+	// "/api/search" with no q is deliberately absent from this list. It used
+	// to be a 400 and is now a browse - "everything on this shelf" - which is
+	// what the UI asks for the moment somebody picks a filter without typing.
+	// TestBrowseWithNoQueryParameterAtAll pins the new behaviour down.
 	for _, path := range []string{
-		"/api/search",              // no q
 		"/api/search?q=x&kind=vhs", // unknown kind
 		"/api/search?q=x&limit=0",  // out of range
 		"/api/search?q=x&limit=999",

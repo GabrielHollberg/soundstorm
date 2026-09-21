@@ -170,6 +170,52 @@ silently truncates a large folder - the classic way to lose half an album. There
 is a test for it that builds a fake entry tree, because a synthetic DataTransfer
 gets no filesystem entries and no automated drag can produce real ones.
 
+## Browsing, which is searching for nothing
+
+An empty query is a request to see the shelf, not a request for nothing.
+Picking Audiobooks with nothing typed lists every audiobook; typing narrows
+from there. `/api/search?q=` used to be a 400, which made that impossible to
+ask for.
+
+**Normalization at the edge again**: each adapter turns an empty query into
+whichever call its backend offers for listing, and none of them agree.
+Verified against a real provisioned stack rather than reasoned about:
+
+- **Navidrome** answers `search3.view?query=` with everything. No change was
+  needed, which is the opposite of what was expected going in.
+- **Jellyfin** needs `searchTerm` *omitted*, not blank. `/Items` without it is
+  its own browse. It also gets `SortBy=SortName`, which is the field Jellyfin
+  sorts on and ignores a leading "The" - and that sort is only sent when
+  browsing, or it would override Jellyfin's relevance ordering on a search.
+- **Audiobookshelf** search matches nothing for an empty `q`, so browsing uses
+  `/api/libraries/{id}/items` instead. Same `libraryItem` shape, one wrapper
+  shallower - decoding the listing with the search struct yields an empty list
+  and looks like an empty library rather than a bug.
+- **localbooks** needed only for `matches()` to be reached with no terms,
+  which already accepts everything.
+
+Nothing in `federate` changed: `Relevance` scores every item 0 for an empty
+query, so `sortItems` falls through to its title tiebreak and a browse comes
+back alphabetical for free.
+
+The drop card did not go away when this landed. It carries Choose files, the
+rescan button and the address for other devices, and none of those have
+anywhere else to live - so it stays visible while browsing and goes
+`compact`: a strip above the grid on a library with content, the whole screen
+on one without. Hiding it outright was the obvious move and would have taken
+all three away from everybody past their first five minutes.
+
+The browse asks for `limit=100` and a search does not. A browse wants the
+shelf; asking for four times as much on every keystroke would slow typing
+down for a list nobody reads past the top of.
+
+**Testing this needs a second stack, and `-p` is not enough.** The compose
+file pins `container_name` on every service, which a project name does not
+namespace - so a second stack collides by name and refuses to start. It fails
+safely rather than hijacking, which is the same protection
+`Get-ExistingInstallPath` provides on the install side. An override file
+renaming all four containers is what makes an isolated stack possible.
+
 ## Reaching it from another device
 
 Nothing had to be built for this - compose publishes `0.0.0.0:8099`, so it has
