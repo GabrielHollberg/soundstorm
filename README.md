@@ -1,13 +1,59 @@
 # SoundStorm
 
-One login and one search box over your whole media library.
+**One login and one search box over your whole media library.** Films, music,
+audiobooks and ebooks, all answering the same search and playing in the same
+window. No API keys, no second login, nothing to configure.
 
-`docker compose up`, create an account, and put files in the folders SoundStorm
-made for you. Movies, music, audiobooks and ebooks all answer the same search
-and play in the same window. You never see an API key, and you never see a
-second login.
+## Install
+
+### 🪟&nbsp; Windows
+
+**[⬇ Download SoundStorm-Setup.cmd](https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/SoundStorm-Setup.cmd)** — then double-click it.
+
+That is the whole thing. It installs Docker for you if you do not have it,
+starts it if it is not running, and leaves a SoundStorm icon on your desktop.
+
+<sub>Windows will warn that the file is from an unknown publisher the first
+time: **More info → Run anyway**. It is not signed.</sub>
+
+### 🐧&nbsp; Linux &nbsp;·&nbsp; 🍎&nbsp; macOS
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh
+```
+
+Needs [Docker](https://docs.docker.com/engine/install/) already installed.
+
+---
+
+**Either way**, it downloads about 3GB of media servers, sets them all up, and
+opens your browser. Pick a username and password on the first screen and you
+are in.
 
 ![One search returning an ebook, a film, music and an audiobook in a single ranked list](docs/shots/2-search.png)
+
+<details>
+<summary>Other ways to install it</summary>
+
+**Windows, from PowerShell:**
+
+```powershell
+irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 | iex
+```
+
+**By hand, anywhere.** The installer is a convenience, not a requirement — it
+downloads one file and runs one command, and so can you:
+
+```sh
+mkdir soundstorm && cd soundstorm
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+Then open <http://localhost:8099>. To use a different port, put
+`SOUNDSTORM_PORT=9000` in a `.env` file beside the compose file.
+
+</details>
 
 ## The idea
 
@@ -54,59 +100,10 @@ This is a **working vertical slice**, not a finished product. What runs today:
 
 See [docs/roadmap.md](docs/roadmap.md) for what is not built yet.
 
-## Install it
+## Using it
 
-You need [Docker](https://www.docker.com/products/docker-desktop/) — that is
-the only thing. It is free for personal use and installs like any other app.
-
-Then one command:
-
-**macOS / Linux**
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh
-```
-
-**Windows** — download
-[SoundStorm-Setup.cmd](https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/SoundStorm-Setup.cmd)
-and double-click it. Nothing to install first and no terminal to find: if
-Docker is missing it installs that too, and if it is not running it starts it.
-
-<details>
-<summary>Windows, from PowerShell instead</summary>
-
-```powershell
-irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 | iex
-```
-
-</details>
-
-That downloads about 3GB of media servers, starts them, finds a free port if
-8099 is busy, and opens your browser when it is ready. Pick a username and
-password on the first screen and you are in. **You will never see an API key,
-a config file, or a second login.**
-
-On Windows it also leaves a **SoundStorm icon on the desktop** and starts with
-the PC, so after the first time it is one click — and a **SoundStorm media**
-folder shortcut for dropping files in. Windows may warn that the file is from
-an unknown publisher the first time: *More info → Run anyway*.
-
-<details>
-<summary>Prefer to do it by hand?</summary>
-
-The installer is a convenience, not a requirement — it downloads one file and
-runs one command. You can do the same:
-
-```sh
-mkdir soundstorm && cd soundstorm
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/docker-compose.yml -o docker-compose.yml
-docker compose up -d
-```
-
-Then open <http://localhost:8099>. To run it on a different port, put
-`SOUNDSTORM_PORT=9000` in a `.env` file beside the compose file.
-
-</details>
+Everything below is optional. A fresh install already works and already has
+something in it to search.
 
 ### Where your media goes
 
