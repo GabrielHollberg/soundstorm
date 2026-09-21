@@ -572,9 +572,99 @@ header {
   font-variant-numeric: tabular-nums;
 }
 
+/* Phones ------------------------------------------------------------------
+   Everything below here is layout, not decoration: at 390px the desktop
+   layout put one result card on the screen at a time, wrapped the header onto
+   two ragged rows, and truncated the search placeholder to "Search everyth".
+   Measured on an iPhone viewport rather than guessed at. */
 @media (max-width: 620px) {
-  header { flex-wrap: wrap; }
+  /* Two rows on purpose: wordmark and buttons, then a full-width search box.
+     Letting it wrap on its own put "Sign out" alone on row two and left the
+     search box too narrow to read its own placeholder. */
+  header {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  #search-form {
+    order: 3;
+    flex: 1 0 100%;
+  }
+  #search-input { max-width: none; }
+  .wordmark.small { margin-right: auto; }
+
+  /* One row that scrolls sideways, rather than two rows of wrapped chips.
+     Six filters wrapping cost 88px of a 844px screen before any result. */
+  #filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 10px 14px 4px;
+    scroll-padding-left: 14px;
+  }
+  #filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto;
+    padding: 9px 15px;
+    font-size: 14px;
+  }
+
+  /* Two columns. auto-fill with a 168px floor resolves to a single column
+     below about 390px, so one cover filled the entire phone screen and
+     twenty-five results meant twenty-five screens of scrolling. */
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 8px 14px 40px;
+  }
+
+  .dock {
+    gap: 8px;
+    padding: 8px 12px;
+  }
   .dock img, .dock-meta { display: none; }
+  .dock audio { min-width: 0; }
+
+  #library { padding: 8px 14px 32px; }
+  #status, #degraded { margin-left: 14px; margin-right: 14px; }
+}
+
+/* iOS Safari zooms the whole page in when a focused input's text is smaller
+   than 16px, and never zooms back out. Inputs inherit the 15px body font, so
+   tapping the search box moved the layout sideways under the user's thumb. */
+@media (max-width: 620px) {
+  input, select, textarea { font-size: 16px; }
+}
+
+/* Installed to the home screen there is no browser chrome to keep content
+   clear of the notch and the home indicator, so the app has to do it. Paired
+   with viewport-fit=cover on the viewport meta, without which env() is 0. */
+@supports (padding: env(safe-area-inset-bottom)) {
+  header { padding-top: max(14px, env(safe-area-inset-top)); }
+  .dock { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .reader-bar { padding-top: max(10px, env(safe-area-inset-top)); }
+  header, #filters, .grid, #library {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+}
+
+/* A finger is not a mouse pointer. Controls here ranged from 31px to 34px
+   tall, under every published minimum.
+
+   Every control rather than a list of the ones that were wrong when this was
+   written: naming them individually is how #rescan, #video-close and
+   #subtitle-select were missed on the first pass, and the next control added
+   would have been missed the same way. scripts/mobile-check.js reports
+   anything under 40px, which is what caught them. */
+@media (pointer: coarse) {
+  button, select, input[type="submit"], input[type="button"] {
+    min-height: 40px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+  }
 }
 
 /* Reader ----------------------------------------------------------------- */
@@ -644,8 +734,18 @@ header {
 }
 .page-turn:hover { color: var(--text); background: var(--surface-2); }
 
+/* Narrowed rather than hidden. Two 56px arrows take 29% of a 390px screen,
+   but they are also the only page navigation we are certain of - foliate-js
+   handles its own swipes inside a closed shadow root, so removing them on
+   touch would be betting the reader on behaviour that cannot be asserted
+   from outside. 30px each is the cheap, safe half of that trade. */
 @media (max-width: 620px) {
-  .page-turn { flex-basis: 34px; font-size: 24px; }
+  .page-turn { flex-basis: 30px; font-size: 22px; }
+  .reader-bar { gap: 8px; padding: 8px 12px; }
+  /* Kept, not hidden. It is the only way to get a book off the server and
+     onto something else, and a cramped bar is not a reason to take a
+     capability away from exactly one kind of device. */
+  #reader-download { padding: 9px 10px; font-size: 13px; }
 }
 
 /* Library folder guide ---------------------------------------------------- */
@@ -654,11 +754,19 @@ header {
 #library h2 { margin: 8px 0 4px; font-size: 19px; }
 #library p { margin: 0 0 16px; font-size: 14px; }
 
+/* minmax(0, 1fr) rather than the default 1fr, and that is a real fix rather
+   than tidying. A grid item's min-width is auto, which resolves to its
+   min-content - and .folder-example is white-space: nowrap, so its min-content
+   is the width of a whole example path. The row therefore refused to shrink
+   below it and pushed the page to 531px on a 390px phone, giving the first
+   screen a new user ever sees a horizontal scrollbar. The ellipsis was there
+   all along and could never fire. */
 #library-folders {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 

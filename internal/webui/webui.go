@@ -55,6 +55,44 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"base-uri 'none'; " +
 	"form-action 'self'"
 
+// ServeServiceWorker writes the worker that makes SoundStorm installable.
+//
+// Served from "/" because a service worker's default scope is its own
+// directory: from /static/ it could never control the page at "/", which is
+// the only page there is.
+//
+// No-store on purpose. A stale worker is the one cached file that can pin
+// somebody to an old build permanently, since it is the thing that decides
+// what else gets cached. Browsers already bypass the HTTP cache for worker
+// updates, but saying so costs one header and removes the question.
+func ServeServiceWorker(w http.ResponseWriter, r *http.Request) {
+	body, err := assetsFS.ReadFile("assets/sw.js")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(body)
+}
+
+// ServeManifest writes the web app manifest.
+//
+// Explicitly rather than through the file server because Go's mime table has
+// no entry for .webmanifest, so it would be sniffed or sent as octet-stream,
+// and Chrome ignores a manifest it is not handed as JSON.
+func ServeManifest(w http.ResponseWriter, r *http.Request) {
+	body, err := assetsFS.ReadFile("assets/manifest.webmanifest")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(body)
+}
+
 // ServeShell writes the single-page shell. The page decides for itself whether
 // to show signup, login or the search UI, by asking /api/session.
 func ServeShell(w http.ResponseWriter, r *http.Request) {

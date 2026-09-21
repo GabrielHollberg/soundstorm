@@ -194,8 +194,17 @@ actually set rather than leaving you to try both. To find the address again:
 | Linux | `hostname -I` |
 
 Same account, same library, same everything. Type it once per device and then
-**add it to the home screen** or bookmark it — nobody types their media server
-address twice.
+**add it to the home screen** — nobody types their media server address twice.
+
+SoundStorm is a progressive web app, so that gives you a real app rather than a
+bookmark: its own icon, its own window, and no address bar eating the top of
+the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
+→ Install app.
+
+> Android only offers this over **https**, because a service worker will not
+> register outside a secure context — so turn on [HTTPS](#turning-on-https)
+> first. iPhone will add it either way. Nothing else about SoundStorm depends
+> on this; over plain http it simply runs in the browser as before.
 
 Two things worth doing:
 

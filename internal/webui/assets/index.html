@@ -2,9 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- viewport-fit=cover is what makes env(safe-area-inset-*) report anything
+       other than zero, and without it an installed app draws its header under
+       the notch and its player under the home indicator. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>SoundStorm</title>
+  <meta name="description" content="One login and one search box over your music, films, TV, audiobooks and ebooks.">
+  <meta name="theme-color" content="#0e1116">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <!-- iOS reads none of the manifest. Home-screen launch, the status bar and
+       the icon are all still these three tags, and only these three. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SoundStorm">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -208,5 +220,10 @@
 
   <script src="/static/app.js"></script>
   <script type="module" src="/static/reader.js"></script>
+
+  <!-- External, not inline: script-src 'self' blocks inline scripts, and that
+       policy is what stops an EPUB running its own code against the session.
+       See sw-register.js. -->
+  <script src="/static/sw-register.js"></script>
 </body>
 </html>

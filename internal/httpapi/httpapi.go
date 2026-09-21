@@ -124,6 +124,14 @@ func (s *Server) Routes() http.Handler {
 	// {$} anchors this to exactly "/". A bare "GET /" would be a catch-all that
 	// ServeMux refuses to combine with the method-less "/api/" guard below.
 	mux.HandleFunc("GET /{$}", s.handleIndex)
+	// Both of these are served from the root rather than /static/, and the
+	// reason is scope, not tidiness: a service worker may only control paths
+	// at or below its own URL, so /static/sw.js could never intercept "/" -
+	// the one request that has to work for the app to open offline. The
+	// manifest sits beside it so start_url and scope read as the same origin
+	// root they actually are.
+	mux.HandleFunc("GET /sw.js", webui.ServeServiceWorker)
+	mux.HandleFunc("GET /manifest.webmanifest", webui.ServeManifest)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	// Unauthenticated on purpose: this is a public certificate, and you need
 	// it installed BEFORE the browser will let you reach a login page at all.

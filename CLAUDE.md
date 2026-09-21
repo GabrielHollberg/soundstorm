@@ -715,6 +715,52 @@ and never point automated fetches at an origin site that has asked you not to.
   iframe that inherits SoundStorm's origin - without `script-src 'self'`, opening a
   book would run a stranger's JavaScript against the session cookie. `blob:` IS
   allowed in style-src and font-src, or books render unstyled.
+- **That CSP also forbids inline `<script>`, and says so only in the console.**
+  The service-worker registration shipped inline first. It was refused
+  silently: the app worked, nothing looked wrong, and "Add to Home Screen"
+  produced a bookmark instead of an app. The fix is never to relax the policy -
+  that is what protects the session from an EPUB - but to put the script in a
+  file. `assets/sw-register.js` is that file, and
+  `TestShellHasNoInlineScript` walks the shell so the next one cannot slip in.
+- **The PWA needs a secure context, so installing to a home screen needs
+  `--https`.** `navigator.serviceWorker` is undefined over plain http to a LAN
+  address, so registration quietly does nothing and Chrome on Android never
+  offers to install. iOS adds to the home screen regardless, because Safari
+  reads none of the manifest - the three `apple-mobile-web-app-*` tags and
+  `apple-touch-icon` are the whole of what it looks at. localhost counts as
+  secure, which is why this all works in development with TLS off and is
+  exactly the way to fool yourself about it.
+- **A service worker is served from `/`, not `/static/`.** Its scope is its own
+  directory, so from `/static/sw.js` it could never control `/` - the only page
+  there is. It would register, report success and intercept nothing. Same for
+  the manifest's content type: Go's mime table has no `.webmanifest`, and
+  Chrome ignores a manifest not handed to it as JSON, so both are served by
+  hand in `internal/webui` rather than by the file server.
+- **The service worker must never answer a range request or anything under
+  `/api/`.** Caching a search result serves stale state; answering a range
+  request without honouring `Range` breaks seeking in a way indistinguishable
+  from a corrupt file. Requests it does not handle are left alone entirely -
+  it never calls `respondWith`, so the browser behaves as if no worker existed.
+  It is network-first throughout, so a `docker compose pull` cannot pin anybody
+  to an old build.
+- **`grid-template-columns: minmax(0, 1fr)`, not `1fr`.** A grid item's
+  min-width is `auto`, which resolves to its min-content - so one
+  `white-space: nowrap` example path inside the folder guide made the row
+  refuse to shrink and pushed the page to 531px on a 390px phone. The
+  `text-overflow: ellipsis` was there the whole time and could never fire. The
+  first screen a new user sees had a horizontal scrollbar.
+- **`repeat(auto-fill, minmax(168px, 1fr))` is one column on a phone.** With
+  padding, 390px cannot fit two 168px tracks, so every result filled the entire
+  screen and twenty-five of them meant twenty-five screens of scrolling. Phones
+  get an explicit two columns.
+- **iOS Safari zooms in on any input whose text is under 16px, and does not
+  zoom back out.** Inputs inherit the 15px body font, so tapping the search box
+  shoved the layout sideways. One rule at the mobile breakpoint fixes it.
+- **Mobile layout is measured, not eyeballed.** The screenshot script asserts
+  `document.scrollWidth <= clientWidth` per screen and lists anything sticking
+  out, which is what found all of the above. Elements inside a deliberately
+  side-scrolling container (the filter chips) have to be excluded or every
+  screen reports a false positive.
 - **An empty `libraries` list means nothing, and must never read back as nil.**
   `User.Libraries` has no `omitempty` for exactly this reason: with it, an
   account allowed no libraries would serialise to nothing, read back as nil,
