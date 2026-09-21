@@ -8,13 +8,35 @@ window. No API keys, no second login, nothing to configure.
 
 ### 🪟&nbsp; Windows
 
-**[⬇ Download SoundStorm-Setup.cmd](https://github.com/GabrielHollberg/soundstorm/releases/latest/download/SoundStorm-Setup.cmd)** — then double-click it.
+**[⬇ Download SoundStorm-Setup.cmd](https://github.com/GabrielHollberg/soundstorm/releases/latest/download/SoundStorm-Setup.cmd)**, then:
 
-That is the whole thing. It installs Docker for you if you do not have it,
-starts it if it is not running, and leaves a SoundStorm icon on your desktop.
+1. **Right-click the downloaded file → Properties**
+2. Tick **Unblock** at the bottom → **OK**
+3. **Double-click it**
 
-<sub>Windows will warn that the file is from an unknown publisher the first
-time: **More info → Run anyway**. It is not signed.</sub>
+It installs Docker for you if you do not have it, starts it if it is not
+running, and leaves a SoundStorm icon on your desktop.
+
+> **Why the Unblock step?** Windows Smart App Control refuses to run *any*
+> script downloaded from the web — you get "An Application Control policy has
+> blocked this file" with no way to continue. That is about the file extension,
+> not about SoundStorm, and unblocking is how Windows expects you to say you
+> trust it. Skipping it is the number one reason nothing happens when you
+> double-click.
+
+<details>
+<summary>Rather paste a command than click through Properties?</summary>
+
+Open PowerShell and paste this. It saves the installer and runs it — two
+steps on purpose, because piping a downloaded script straight into PowerShell
+is the pattern Windows Defender blocks as malware:
+
+```powershell
+irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 -OutFile "$env:TEMP\soundstorm.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\soundstorm.ps1"
+```
+
+</details>
 
 ### 🐧&nbsp; Linux &nbsp;·&nbsp; 🍎&nbsp; macOS
 
@@ -34,12 +56,6 @@ are in.
 
 <details>
 <summary>Other ways to install it</summary>
-
-**Windows, from PowerShell:**
-
-```powershell
-irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 | iex
-```
 
 **By hand, anywhere.** The installer is a convenience, not a requirement — it
 downloads one file and runs one command, and so can you:

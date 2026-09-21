@@ -681,6 +681,20 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **Smart App Control blocks any script downloaded from the web, by extension.**
+  Double-clicking the downloaded `SoundStorm-Setup.cmd` gives "An Application
+  Control policy has blocked this file. Dangerous file extension from the web",
+  with no Run anyway. It has nothing to do with the contents - a two-line
+  hello-world .cmd with mark-of-the-web is blocked identically - and it cannot
+  be fixed in the file. Right-click, Properties, Unblock clears the mark and it
+  then runs, which is why that is step one in the README.
+
+  This hid behind a testing mistake worth remembering: `cmd /c script.cmd`
+  does **not** go through the shell's reputation check, so every test passed.
+  A double-click does. Reproduce it with `Start-Process`, which uses
+  ShellExecute, not with `cmd /c`.
+
+  The real fixes are a signed binary or a winget package; both are open.
 - **Never pipe a downloaded script into PowerShell from the setup file.**
   `powershell -Command "iex ((New-Object Net.WebClient).DownloadString(...))"`
   is the canonical malware download cradle, and Windows Defender blocks it on
