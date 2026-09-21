@@ -251,6 +251,14 @@ pwsh scripts/make-sample-media.ps1     # a synthetic library, no downloads
 pwsh scripts/fetch-test-library.ps1    # ~750MB of real public-domain media
 ```
 
+On Windows, Smart App Control refuses to run freshly built test binaries, so
+`go test` fails on a different handful of packages each time. Run the suite in
+a container instead — no Windows binary is executed, and it is what CI does:
+
+```sh
+docker run --rm -v "//c/dev/atrium:/src" -w /src golang:1.24-alpine go test ./...
+```
+
 ## How it works
 
 ```

@@ -699,6 +699,21 @@ and never point automated fetches at an origin site that has asked you not to.
   the publish workflow folds `GITHUB_REPOSITORY_OWNER` to lowercase and the
   compose file names `ghcr.io/gabrielhollberg/soundstorm`. GitHub URLs keep
   their capitals; only registry references are folded.
+- **Smart App Control blocks `go test` at random, and must not be turned off.**
+  It refuses to exec freshly built, unsigned test binaries, so a run dies with
+  "An Application Control policy has blocked this file" for a handful of
+  packages that varies with every rebuild. Disabling it is **one-way**: Windows
+  will not let it be re-enabled without a reset or reinstall, and it has no
+  exclusion list. So work around it instead - run the suite in a container,
+  which executes no Windows binary at all and is what CI does anyway:
+
+  ```sh
+  docker run --rm -v "//c/dev/atrium:/src" -w /src golang:1.24-alpine go test ./...
+  ```
+
+  The doubled slash is for MSYS, which otherwise rewrites `/src` into a Windows
+  path. `go test -c -o` and then running the binary also usually works, but
+  only usually - the container is the one that always does.
 - **Dev on Windows, deploy to Linux** - but Windows is a deployment target
   too, and always has been: the whole stack runs on Docker Desktop, which is
   what `install.ps1` sets up. Go lives at `C:\dev\tools\go` (installed from
