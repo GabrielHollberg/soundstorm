@@ -116,3 +116,37 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # The Windows setup file has to be a release asset rather than a link into
+  # the repository: raw.githubusercontent serves text/plain with no
+  # Content-Disposition, so clicking a link to a .cmd opens it in the browser
+  # instead of saving it. A release asset is served as an attachment, which is
+  # an actual download.
+  #
+  # The README points at /releases/latest/download/, so a release without this
+  # file attached does not merely lack an asset - it breaks the download link
+  # on the front page. Hence doing it here rather than remembering to.
+  release:
+    needs: [test, publish]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Attach the Windows setup file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A tag can arrive with a release already made by hand, or on its
+          # own from `git push --tags`. Both have to end up with the asset.
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "No release for $GITHUB_REF_NAME yet - creating one."
+            gh release create "$GITHUB_REF_NAME" \
+              --title "SoundStorm $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" SoundStorm-Setup.cmd --clobber
+          echo "Attached SoundStorm-Setup.cmd to $GITHUB_REF_NAME"
