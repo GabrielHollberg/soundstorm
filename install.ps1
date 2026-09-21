@@ -784,13 +784,32 @@ function Wait-ForSoundStorm([string]$Url) {
     }
 }
 
-function Get-EnvSetting([string]$Name) {
-    $envFile = Join-Path $Dir '.env'
+# Takes the folder, because the one thing this has to read is sometimes
+# somebody else's install: when the setup refuses because SoundStorm is
+# already installed elsewhere, the useful half of that message is the address
+# of the install it found.
+function Get-EnvSettingIn([string]$Folder, [string]$Name) {
+    $envFile = Join-Path $Folder '.env'
     if (-not (Test-Path $envFile)) { return $null }
     foreach ($line in (Get-Content $envFile)) {
         if ($line -match "^\s*$([regex]::Escape($Name))=(.*)$") { return $Matches[1].Trim() }
     }
     return $null
+}
+
+function Get-EnvSetting([string]$Name) {
+    return Get-EnvSettingIn $Dir $Name
+}
+
+# Get-InstalledURL is where an install answers, read from its own .env rather
+# than assumed. Falls back to the first port and plain http, which is what a
+# .env too old to carry either of them meant.
+function Get-InstalledURL([string]$Folder) {
+    $port = Get-EnvSettingIn $Folder 'SOUNDSTORM_PORT'
+    if ($port -notmatch '^\d+$') { $port = "$FirstPort" }
+    $tls = Get-EnvSettingIn $Folder 'SOUNDSTORM_TLS'
+    $scheme = if ($tls -and $tls -ne 'off') { 'https' } else { 'http' }
+    return "${scheme}://localhost:$port"
 }
 
 # Set-EnvSetting rewrites one line of .env and leaves the rest alone, because
@@ -1021,14 +1040,30 @@ $previous = Get-ExistingInstallPath
 $installedHere = Test-Path (Join-Path $Dir 'docker-compose.yml')
 $elsewhere = $previous -and ($previous -ne $Dir) -and (-not $installedHere)
 if ($elsewhere -and $env:SOUNDSTORM_FORCE -ne '1') {
+    # The address as well as the folder. "Use the one that is already there"
+    # is not an instruction if it does not say how, and somebody who ran this
+    # a second time is quite likely to have run it because they could not
+    # remember where it was.
+    $existing = Get-InstalledURL $previous
     Stop-With @"
-  SoundStorm is already installed in another folder:
+  SoundStorm is already installed, in another folder:
 
     $previous
 
+  It should be running. Open it here:
+
+    $existing
+
   Installing it here as well would not give you a second copy - both folders
-  would drive the same containers, and this one would point at an empty
-  library. Use the one that is already there, or remove it first.
+  drive the same containers, and this one would point at an empty library, so
+  your media would look like it had vanished.
+
+  To move it here instead, remove the old one first: open a terminal in the
+  folder above and run
+
+    docker compose down
+
+  then run this setup again.
 "@
 }
 
