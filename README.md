@@ -134,6 +134,10 @@ That is what the app opens on before you have searched for anything, so there
 is nothing to go looking for in a menu. On a phone, where nothing can be
 dragged, the same screen has a **Choose files** button that does the same job.
 
+It also prints the address to give everybody else in the house, so you do not
+have to go and find it — see
+[using it from another device](#using-it-from-your-phone-tv-or-another-computer).
+
 ![The screen a new install opens on](docs/shots/1-library.png)
 
 **Or put the files in the folders yourself**, which is the better route for a

@@ -147,6 +147,10 @@ func run(log *slog.Logger) error {
 		PerSourceTimeout: perSourceTimeout,
 		Log:              log,
 		CAPEM:            caPEM,
+		// The same list the certificate covers, for the same reason: it is
+		// the machine's LAN address, and only the installer - which ran on
+		// the host - was ever in a position to find it out.
+		LANHosts: splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
 	})
 
 	srv := &http.Server{

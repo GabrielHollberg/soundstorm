@@ -429,6 +429,27 @@ let it grow into an indexer.
 sees; inside a container those are `./library` and `/library`, and only the
 first exists on anybody's computer. `/api/library` sends the hint as `root`.
 
+**The card also prints the address to give everybody else in the house**, and
+that address is assembled from three places because not one of them knows all
+of it:
+
+- the **host** from `SOUNDSTORM_TLS_HOSTS`, written by the installer, which
+  ran on the host and could see its LAN address. This process cannot - inside
+  Docker the only addresses visible are the container's own.
+- the **port** from the `Host` header of the request. Compose's port mapping
+  is `${SOUNDSTORM_PORT}:8080` and the host side is never passed into the
+  container, so the only thing that knows it is the browser that just used it.
+- the **scheme** from `auth.OverTLS`, the same function that decides whether
+  the session cookie is Secure. Two answers to "are we on https" is one more
+  than this needs.
+
+It returns `""` rather than a guess, and the UI hides the line. That is the
+`.local` lesson applied: a printed address that does not work costs more than
+printing none. The fallback when nothing is configured is the request's own
+host, but only if it is not loopback - if this request reached us on
+192.168.1.50 then that address demonstrably works for at least one other
+machine, which is better evidence than anything derivable in here.
+
 Two things worth knowing:
 
 - Only `localbooks` reports an indexed count, so the "indexing…" suffix can
@@ -437,6 +458,14 @@ Two things worth knowing:
 - What a shelf is called in a sentence comes from `KIND_WORDS` in `app.js`,
   not from the folder name. The folder is `tv`, and "music, films, tv and
   ebooks" reads like a typo halfway through a sentence.
+- The card is centred by making `#app` a flex column of full viewport height
+  and giving `#library` `flex: 1` with `place-items: center`, so the header
+  and filter row never have their heights named in CSS. Two things had to move
+  for that to look right: the empty results grid and status line are now
+  hidden until there is a query (an empty grid still contributed 48px of
+  padding), and the audio dock's 96px of bottom padding is applied only while
+  something is playing, via a `dock-open` class on the body. Both were dead
+  space pushing the card off centre.
 
 ## PDFs, and why there is no PDF parser
 

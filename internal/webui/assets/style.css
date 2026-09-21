@@ -18,6 +18,9 @@
   --warn: #ffb648;
   --error: #ff6b6b;
   --radius: 10px;
+  /* Room kept clear at the bottom of the page for the audio dock, which is
+     position: fixed and would otherwise cover the last row of results. */
+  --dock-space: 96px;
 }
 
 * { box-sizing: border-box; }
@@ -27,8 +30,12 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  padding-bottom: 96px; /* room for the audio dock */
 }
+/* Only while something is playing. The dock is position: fixed, so the page
+   needs a clear strip under it - but reserving that strip permanently is 96px
+   of dead space on every screen for the majority of the time when nothing is
+   playing at all. app.js sets this alongside showing the dock. */
+body.dock-open { padding-bottom: var(--dock-space); }
 
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
@@ -613,7 +620,6 @@ header {
   .dock img, .dock-meta { display: none; }
   .dock audio { min-width: 0; }
 
-  #library { padding: 8px 14px 32px; }
   #status, #degraded { margin-left: 14px; margin-right: 14px; }
 }
 
@@ -631,7 +637,7 @@ header {
   header { padding-top: max(14px, env(safe-area-inset-top)); }
   .dock { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .reader-bar { padding-top: max(10px, env(safe-area-inset-top)); }
-  header, #filters, .grid, #library {
+  header, #filters, .grid {
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
   }
@@ -750,7 +756,32 @@ header {
 
 /* Library folder guide ---------------------------------------------------- */
 
-#library { padding: 8px 20px 32px; max-width: 700px; }
+/* The card sits in the middle of whatever room is left under the header,
+   rather than tucked into the top-left corner. It is the only thing on the
+   screen at this point, and the screen's whole job is to ask for files.
+
+   #app becomes the flex column so "whatever room is left" is a thing the
+   browser can work out - the header and the filter row are its other
+   children, so their heights never have to be named here. */
+#app {
+  display: flex;
+  flex-direction: column;
+  /* The full viewport; the dock's strip is body padding outside this, and
+     only exists while something is playing. */
+  min-height: 100dvh;
+}
+
+#library {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  /* The insets are taken here rather than in the @supports block above,
+     because this shorthand comes later in the file and would overwrite a
+     padding-left set there. One rule owning all four sides is the only way
+     that cannot go wrong. */
+  padding: 20px max(20px, env(safe-area-inset-right)) 20px max(20px, env(safe-area-inset-left));
+}
+#library-card { width: min(700px, 100%); }
 
 /* The one card. Centred and roomy on purpose: this is the screen a new
    install opens on, and its entire job is to say "put something in". The
@@ -800,6 +831,41 @@ header {
   margin: 4px 0 0;
   font-size: 12.5px;
   opacity: 0.8;
+}
+
+/* The address for everybody else. It is meant to be read off a screen and
+   typed into a phone, so it gets the monospace treatment and enough size to
+   tell a 1 from an l. */
+.library-share {
+  margin: 14px 0 0;
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+}
+/* A pill rather than bare underlined text: it is a real link, and 21px of
+   line box is under every tap-target minimum there is. The padding is what
+   makes it reachable with a thumb, and the border is what makes it look like
+   something you are meant to reach for. */
+#library-share-url {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  color: var(--accent);
+  text-decoration: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  /* An address is read a character at a time, so it must never be broken
+     across a line in the middle. */
+  white-space: nowrap;
+}
+#library-share-url:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
 }
 
 code {

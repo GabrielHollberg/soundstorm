@@ -339,12 +339,16 @@ func (m *Manager) Authenticated(r *http.Request) bool {
 
 // --- cookies -------------------------------------------------------------------
 
-// overTLS reports whether this request reached SoundStorm encrypted.
+// OverTLS reports whether this request reached SoundStorm encrypted.
 //
 // A Secure cookie on a plain HTTP connection is silently dropped by the
 // browser, which makes a login appear to succeed and do nothing - so getting
 // this wrong in the permissive direction is not a small bug.
-func (m *Manager) overTLS(r *http.Request) bool {
+//
+// Exported because the UI also has to name a scheme, when it prints the
+// address to give somebody else on the network. Two answers to "are we on
+// https" that could drift apart is one more than this needs.
+func (m *Manager) OverTLS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
@@ -361,7 +365,7 @@ func (m *Manager) SetCookie(w http.ResponseWriter, r *http.Request, token string
 		Expires:  expiry,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   m.overTLS(r),
+		Secure:   m.OverTLS(r),
 	})
 }
 
@@ -374,7 +378,7 @@ func (m *Manager) ClearCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   m.overTLS(r),
+		Secure:   m.OverTLS(r),
 	})
 }
 

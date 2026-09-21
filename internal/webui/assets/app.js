@@ -392,6 +392,17 @@ async function loadLibrary() {
     ? `They go in ${body.root} on the server. You can put them there yourself instead.`
     : '';
 
+  // The address for everybody else in the house. The server works out whether
+  // it has one worth printing; an address that does not work is worse than no
+  // address, so there is no client-side fallback guess here either.
+  const share = $('library-share');
+  const link = $('library-share-url');
+  if (body.shareURL) {
+    link.textContent = body.shareURL;
+    link.href = body.shareURL;
+  }
+  show(share, Boolean(body.shareURL));
+
   updateLibraryVisibility();
 }
 
@@ -474,7 +485,14 @@ $('file-picker').addEventListener('change', (event) => {
 });
 
 function updateLibraryVisibility() {
-  show($('library'), !state.query);
+  const searching = Boolean(state.query);
+  show($('library'), !searching);
+  // The results grid and the count line are empty before a search, but not
+  // free: the grid still contributes 48px of padding and the status line its
+  // margins. That is invisible furniture at the best of times, and it also
+  // pushed the library card off centre by exactly that much.
+  show($('results'), searching);
+  show($('status'), searching);
 }
 
 async function pollSetup() {
@@ -951,7 +969,7 @@ function playAudio(item) {
   }
 
   renderTracks();
-  show($('audio-dock'), true);
+  showDock(true);
 
   // A song starts now: a round trip before the first note is felt, and nothing
   // about a four minute track needs the answer. An audiobook waits, because it
@@ -1195,7 +1213,19 @@ function stopAudio() {
   player.load();
   showTrackList(false);
   renderTracks();
-  show($('audio-dock'), false);
+  showDock(false);
+}
+
+// showDock also marks the body, because the dock is position: fixed and the
+// page has to keep a strip clear underneath it so the last row of results is
+// not permanently hidden behind a player.
+//
+// Conditional rather than always reserved: 96px of dead space at the bottom
+// of every screen is what stopped the library card looking vertically centred
+// when nothing was playing, which is most of the time.
+function showDock(visible) {
+  show($('audio-dock'), visible);
+  document.body.classList.toggle('dock-open', visible);
 }
 
 $('audio-close').addEventListener('click', stopAudio);

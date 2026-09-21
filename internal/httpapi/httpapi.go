@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -72,6 +73,7 @@ type Server struct {
 	perSourceTimeout time.Duration
 	log              *slog.Logger
 	caPEM            []byte
+	lanHosts         []string
 
 	// rescans coalesces "look at your folder now" requests, keyed by kind.
 	rescanMu     sync.Mutex
@@ -92,6 +94,15 @@ type Config struct {
 	// SoundStorm generated one. Nil when TLS is off or a real certificate was
 	// supplied, in which case there is nothing for anybody to install.
 	CAPEM []byte
+
+	// LANHosts is what to tell somebody else on the network to type.
+	//
+	// It comes from SOUNDSTORM_TLS_HOSTS, which the installer fills in with
+	// the machine's LAN address at install time. That is not a reuse of
+	// convenience: the container genuinely cannot work this out, because
+	// inside Docker the only addresses it can see are the container's own.
+	// Whoever ran the installer was on the host and could.
+	LANHosts []string
 }
 
 // New builds the HTTP server.
@@ -110,6 +121,7 @@ func New(cfg Config) *Server {
 		perSourceTimeout: timeout,
 		log:              cfg.Log,
 		caPEM:            cfg.CAPEM,
+		lanHosts:         cfg.LANHosts,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 	}
 }
@@ -586,12 +598,84 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"empty": empty,
+		// What to tell everyone else in the house to type. Behind the session
+		// guard like the rest of this endpoint, and omitted rather than
+		// guessed when nothing here knows it.
+		"shareURL": s.shareURL(r),
 		// The root as the user sees it, so the UI can name the one folder
 		// everything lives under without stitching it back together from the
 		// five paths below.
 		"root":    s.library.Hint(),
 		"folders": out,
 	})
+}
+
+// shareURL is the address to hand somebody else on this network, or "" when
+// there is nothing honest to say.
+//
+// Three parts from three places, because not one of them knows all of it:
+//
+//   - The host comes from SOUNDSTORM_TLS_HOSTS, written by the installer,
+//     which ran on the host and could see its LAN address. This process
+//     cannot: inside Docker the only addresses visible are the container's.
+//   - The port comes from the Host header of this very request. The published
+//     port lives in compose's port mapping and is never passed into the
+//     container, so the only thing that knows it is the browser that just
+//     used it.
+//   - The scheme comes from whether this request arrived over TLS, asked of
+//     the same code that decides whether the session cookie is Secure.
+//
+// Empty rather than a guess. The project has already shipped one address that
+// resolved on the machine under test and nowhere else, and a printed URL that
+// does not work costs more than printing none.
+func (s *Server) shareURL(r *http.Request) string {
+	scheme := "http"
+	if s.auth.OverTLS(r) {
+		scheme = "https"
+	}
+
+	// r.Host may or may not carry a port. SplitHostPort errors when it does
+	// not, which is the ordinary case behind a proxy on 443.
+	reqHost, port, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		reqHost, port = r.Host, ""
+	}
+
+	host := ""
+	for _, candidate := range s.lanHosts {
+		if candidate = strings.TrimSpace(candidate); candidate != "" {
+			host = candidate
+			break
+		}
+	}
+	if host == "" {
+		// Nothing configured. If this request did not arrive on loopback then
+		// whatever the browser typed is reachable from at least one other
+		// machine, which is better evidence than anything this process could
+		// derive on its own.
+		if reqHost == "" || isLoopbackHost(reqHost) {
+			return ""
+		}
+		host = reqHost
+	}
+
+	if port == "" {
+		return scheme + "://" + host
+	}
+	return scheme + "://" + net.JoinHostPort(host, port)
+}
+
+// isLoopbackHost covers the names and addresses that mean "this machine", and
+// are therefore useless to anybody else.
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsUnspecified()
+	}
+	return false
 }
 
 // handleRescan asks every library this account can see to look at its folder.
