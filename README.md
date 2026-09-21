@@ -176,39 +176,44 @@ authors, with no SQLite driver and no Calibre-Web container.
 
 ### Using it from your phone, TV or another computer
 
-It already works — nothing to enable. Use the server computer's **name**:
-
-```
-http://the-pcs-name.local:8099
-```
-
-The installer prints the exact address when it finishes. `.local` names resolve
-with nothing installed on the phone or tablet doing the asking — iPhones, iPads
-and Macs have always done it, Android 12 and later does, Windows does. It also
-keeps working when your router hands the server a different IP address, which a
-number does not.
-
-If the name does not work, fall back to the address:
+It already works — nothing to enable. Use the server computer's address, on the
+same port:
 
 ```
 http://192.168.1.50:8099        <- your number will differ
 ```
 
-| Finding it again | |
+The installer prints the exact address when it finishes. To find it again:
+
+| | |
 | --- | --- |
 | Windows | `ipconfig` — the IPv4 Address of your main adapter |
 | macOS | `ipconfig getifaddr en0` |
 | Linux | `hostname -I` |
 
-Same account, same library, same everything. If nothing loads at all, the
-firewall on the server machine is blocking it — on Windows, allow it through
-for **private** networks.
+Same account, same library, same everything. Type it once per device and then
+**add it to the home screen** or bookmark it — nobody types their media server
+address twice.
 
-> **A tidy name is worth thirty seconds.** The `.local` address is your
-> computer's name, so `Settings → System → About → Rename this PC` to
-> `soundstorm` gets you `http://soundstorm.local:8099`. Underscores in a
-> computer name are worth removing while you are there — they are not legal in
-> a hostname and some devices refuse them.
+Two things worth doing:
+
+- **Give the server a fixed address** in your router (a DHCP reservation), or
+  that number will change one day and every bookmark breaks.
+- **If nothing loads at all**, the firewall is blocking it. On Windows, set the
+  network to **Private** in Settings → Network & Internet, and allow SoundStorm
+  through.
+
+> **On macOS and Linux** the installer offers `http://<hostname>.local:8099`
+> instead, which survives the address changing. That is not offered on Windows:
+> Windows does not reliably advertise its name over mDNS, so the name resolves
+> on the server itself and nowhere else — which is a worse thing to be handed
+> than a number.
+
+**From outside the house** is a different question, and the answer is not
+"forward a port". Use a VPN such as [Tailscale](https://tailscale.com): install
+it on the server and on your phone, and SoundStorm is reachable from anywhere
+with nothing exposed to the internet. With MagicDNS the address is just the
+machine's name.
 
 > **Turn on HTTPS before you do this.** Over plain HTTP on a shared network,
 > your session cookie and the music stream URLs — which carry credentials in

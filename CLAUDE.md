@@ -177,16 +177,24 @@ always been reachable at the host's LAN address. What was missing was anybody
 being told: the installer only ever printed `http://localhost:8099`, which is
 the one address that does not work from a phone.
 
-**The address printed first is `<computer>.local`, not a number.** Windows runs
-an mDNS responder and macOS always has, so that name resolves on the network
-with nothing installed on the device asking - and unlike an IP it survives the
-DHCP lease changing. The installer only prints it when it has checked that
-something is answering on port 5353 *and* the name resolves, because an address
-that does not work is worse than an ugly one that does. The IP is printed
-underneath as the fallback.
+**Windows prints an IP address, not a `.local` name, and that is deliberate.**
 
-Nothing needs configuring for the certificate to match: a `.local` name arrives
-as SNI and is minted on demand. Only bare IP addresses have to be listed.
+An earlier version led with `<computer>.local`, "verified" by resolving it. The
+check ran *on the machine itself*, where Windows answers for its own hostname
+regardless - so it proved nothing about whether a phone could resolve it. The
+risk was noticed while writing it and shipped anyway. It passed here and failed
+on the first other PC it was tried on.
+
+Windows does not reliably advertise its hostname over mDNS. What was answering
+on port 5353 on the development machine turned out to be `calibre-server` and
+`steamwebhelper`, unrelated applications that happen to run a responder, with
+no Bonjour service installed at all. macOS and Linux with avahi genuinely do
+advertise, so `install.sh` still offers the name there.
+
+The lesson is narrower than "test more": **a check that runs on the machine
+under test cannot answer a question about what another machine sees.** Resolving
+your own name, reading your own local address - both were wrong here, in the
+same way, a day apart.
 
 The container cannot work its own LAN address out - inside Docker the only
 addresses visible are the container's - so the *installer* does it, on the

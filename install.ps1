@@ -251,35 +251,22 @@ function Get-LanAddress {
     return $null
 }
 
-# Get-MdnsName is the name other devices can use instead of an IP address.
+# There is deliberately no ".local" name printed on Windows.
 #
-# Windows runs an mDNS responder, so "<computer>.local" resolves on the local
-# network with nothing installed on the phone or tablet doing the asking -
-# Apple devices, Android 12 and later and Windows all resolve .local natively.
-# It is also the only option here that survives the DHCP lease changing.
+# An earlier version printed "<computer>.local" as the address to use, having
+# checked that it resolved. That check was worthless: it ran on the machine
+# itself, where Windows answers for its own hostname regardless, so it proved
+# nothing about whether a phone could resolve it. It passed on the development
+# machine and failed on the first other PC it was tried on.
 #
-# Returned only when it actually resolves and something is answering on the
-# mDNS port, because printing an address that does not work is worse than
-# printing an ugly one that does.
-function Get-MdnsName {
-    $name = $env:COMPUTERNAME
-    if (-not $name) { return $null }
-
-    try {
-        if (-not (Get-NetUDPEndpoint -LocalPort 5353 -ErrorAction Stop)) { return $null }
-    } catch {
-        return $null
-    }
-
-    $candidate = "$name.local"
-    try {
-        $answers = Resolve-DnsName $candidate -ErrorAction Stop | Where-Object { $_.IPAddress }
-        if ($answers) { return $candidate }
-    } catch {
-        # No responder, or a name it will not answer for.
-    }
-    return $null
-}
+# The reason is that Windows does not reliably advertise its hostname over
+# mDNS. What was answering on port 5353 here turned out to be calibre-server
+# and steamwebhelper - unrelated applications that happen to run a responder -
+# with no Bonjour service installed at all. macOS and Linux with avahi do
+# advertise properly, which is why install.sh still offers it there.
+#
+# An address that works everywhere beats a nicer one that works on the machine
+# that printed it.
 
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -837,26 +824,15 @@ Write-Host "  them in the 'SoundStorm media' folder on your desktop."
 Write-Host ""
 
 $lan = Get-LanAddress
-$mdns = Get-MdnsName
-if ($lan -or $mdns) {
+if ($lan) {
     Write-Host "  On your phone, TV or another computer on this network:"
     Write-Host ""
-    if ($mdns) {
-        Write-Host "    http://${mdns}:$port" -ForegroundColor White
-        if ($lan) {
-            Write-Host "    http://${lan}:$port    (if the name does not work)" -ForegroundColor DarkGray
-        }
-        if ($mdns -match '_') {
-            Write-Host ""
-            Write-Host "  That name has an underscore in it, which some devices refuse." -ForegroundColor DarkGray
-            Write-Host "  Renaming this PC in Settings gives you a nicer address." -ForegroundColor DarkGray
-        }
-    } else {
-        Write-Host "    http://${lan}:$port" -ForegroundColor White
-    }
+    Write-Host "    http://${lan}:$port" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Same account. If nothing loads, allow SoundStorm through the" -ForegroundColor DarkGray
-    Write-Host "  Windows firewall for private networks." -ForegroundColor DarkGray
+    Write-Host "  Same account. Worth saving as a bookmark - and worth giving this" -ForegroundColor DarkGray
+    Write-Host "  PC a fixed address in your router, or that number will change." -ForegroundColor DarkGray
+    Write-Host "  If nothing loads, allow SoundStorm through the Windows firewall" -ForegroundColor DarkGray
+    Write-Host "  for private networks." -ForegroundColor DarkGray
     Write-Host ""
 }
 if (-not $NoShortcuts) {
