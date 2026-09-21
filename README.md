@@ -151,9 +151,14 @@ folder, not once per chapter.
 
 ![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png)
 
-Navidrome and the ebook scanner sweep every couple of minutes; Jellyfin and
-Audiobookshelf watch for changes. Until a scan catches up the app says so,
-rather than pretending the file is not there.
+Anything you drop on the window is searchable within a few seconds — SoundStorm
+tells whichever server owns that shelf to look, rather than leaving the file
+sitting there until its next sweep.
+
+Files you copy into the folders yourself are found on the next sweep instead:
+every minute for music, every two for ebooks, and as the watchers notice for
+films and audiobooks. Until then the app says "indexing…" rather than
+pretending the file is not there.
 
 ![The folder guide a new install opens on](docs/shots/1-library.png)
 

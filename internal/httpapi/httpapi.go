@@ -30,6 +30,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
@@ -70,6 +72,10 @@ type Server struct {
 	perSourceTimeout time.Duration
 	log              *slog.Logger
 	caPEM            []byte
+
+	// rescans coalesces "look at your folder now" requests, keyed by kind.
+	rescanMu     sync.Mutex
+	rescanTimers map[media.Kind]*time.Timer
 }
 
 // Config configures the server.
@@ -104,6 +110,7 @@ func New(cfg Config) *Server {
 		perSourceTimeout: timeout,
 		log:              cfg.Log,
 		caPEM:            cfg.CAPEM,
+		rescanTimers:     map[media.Kind]*time.Timer{},
 	}
 }
 
@@ -714,7 +721,70 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	user, _ := auth.FromContext(r.Context())
 	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
+
+	// Ask whoever indexes that shelf to look, rather than leaving the file
+	// sitting there unsearchable until their next sweep.
+	s.scheduleRescan(kind)
+
 	writeJSON(w, http.StatusOK, map[string]any{"dest": dest})
+}
+
+// rescanDelay is how long to wait for more files before asking a backend to
+// scan.
+//
+// A dropped folder arrives as one upload per file, so triggering on each would
+// ask Navidrome to scan thirty times for one album. Waiting a moment and
+// coalescing turns that into one scan, and two seconds is far below the
+// minute somebody would otherwise be waiting.
+const rescanDelay = 2 * time.Second
+
+// scheduleRescan asks the backends that own a kind to look at their folder,
+// shortly, once.
+//
+// Every backend indexes on a timer - Navidrome every minute, the ebook scanner
+// every two - so without this a file is on disk and unsearchable for up to two
+// minutes after somebody watched it upload. Each of them has a "scan now"
+// call; this is simply using it.
+func (s *Server) scheduleRescan(kind media.Kind) {
+	s.rescanMu.Lock()
+	defer s.rescanMu.Unlock()
+
+	if timer, ok := s.rescanTimers[kind]; ok {
+		// Still waiting: push the moment back rather than adding a second one,
+		// so a long upload results in one scan after the last file.
+		timer.Reset(rescanDelay)
+		return
+	}
+	s.rescanTimers[kind] = time.AfterFunc(rescanDelay, func() {
+		s.rescanMu.Lock()
+		delete(s.rescanTimers, kind)
+		s.rescanMu.Unlock()
+		s.rescanNow(kind)
+	})
+}
+
+// rescanNow tells every source of a kind to scan. Best effort: a backend that
+// will not scan is not a reason to have failed an upload that already worked,
+// and its own timer will find the file anyway.
+func (s *Server) rescanNow(kind media.Kind) {
+	// A fresh context: the request that triggered this finished long ago.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for _, src := range s.reg.All(ctx) {
+		if src.Kind() != kind {
+			continue
+		}
+		rescanner, ok := src.(source.Rescanner)
+		if !ok {
+			continue
+		}
+		if err := rescanner.Rescan(ctx); err != nil {
+			s.log.Warn("could not ask for a scan", "source", src.ID(), "err", err)
+			continue
+		}
+		s.log.Info("asked for a scan", "source", src.ID())
+	}
 }
 
 // errNoSuchLibrary and errNotYourLibrary separate "that is not a shelf" from

@@ -532,6 +532,22 @@ func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, erro
 	}, nil
 }
 
+// Rescan asks Audiobookshelf to look at the audiobook folder now.
+//
+// It watches the folder too, so this is belt and braces rather than the only
+// way a new book is noticed - but a watcher can miss a file copied in by
+// something it did not expect, and asking costs one call.
+func (s *Source) Rescan(ctx context.Context) error {
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Method: http.MethodPost,
+		Path:   "/api/libraries/" + url.PathEscape(s.cfg.LibraryID) + "/scan",
+	})
+	if err != nil {
+		return fmt.Errorf("audiobookshelf %q: scan: %w", s.id, err)
+	}
+	return resp.Err()
+}
+
 func (s *Source) Health(ctx context.Context) error {
 	var resp struct {
 		Libraries []struct {

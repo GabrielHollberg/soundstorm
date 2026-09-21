@@ -324,6 +324,25 @@ func (s *Source) subtitleTracks(itemID, mediaSourceID string, streams []mediaStr
 // The URL is built rather than taken from PlaybackInfo's DeliveryUrl, which
 // 12.1.0 leaves empty even when a subtitle profile is supplied. The endpoint
 // itself works for embedded and sidecar tracks alike.
+// Rescan asks Jellyfin to look at its libraries now.
+//
+// POST /Library/Refresh answers 204 and refreshes every library, not just the
+// one this source reads - Jellyfin has no per-library trigger that does not
+// need the library's own id, and the two Jellyfin sources share a server
+// anyway. Verified against 12.1.0, where a made-up path under /Library answers
+// 404, so the 204 means something.
+func (s *Source) Rescan(ctx context.Context) error {
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Method:  http.MethodPost,
+		Path:    "/Library/Refresh",
+		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
+	})
+	if err != nil {
+		return fmt.Errorf("jellyfin %q: refresh: %w", s.id, err)
+	}
+	return resp.Err()
+}
+
 func (s *Source) SubtitleTarget(_ context.Context, trackID string) (source.Target, error) {
 	parts := strings.Split(trackID, "/")
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {

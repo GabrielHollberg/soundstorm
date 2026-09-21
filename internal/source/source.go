@@ -255,6 +255,22 @@ type HLSProvider interface {
 	HLSTarget(ctx context.Context, path string, query url.Values) (Target, error)
 }
 
+// Rescanner is an optional interface for a source that can be told to look at
+// its folder now rather than at its next sweep.
+//
+// Every backend indexes on a timer - Navidrome every minute, the ebook scanner
+// every two - so a file that is already on disk is not searchable for up to
+// that long. That is a strange thing to explain to somebody who just watched
+// the upload finish, and every one of these servers has a "scan now" call, so
+// there is no reason to make them wait for it.
+//
+// Rescan asks and returns; it does not wait for the scan to finish. A scan of
+// a large library takes minutes, and the caller only wants the file to start
+// being noticed.
+type Rescanner interface {
+	Rescan(ctx context.Context) error
+}
+
 // Starter is an optional interface for sources that must do work before they
 // can answer anything - a local library has to read the disk first.
 //

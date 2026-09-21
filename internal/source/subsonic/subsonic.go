@@ -194,6 +194,24 @@ func (s *Source) mediaTarget(path, id string) (source.Target, error) {
 	return source.Target{URL: s.http.URL(path, params)}, nil
 }
 
+// Rescan asks Navidrome to look at the music folder now.
+//
+// Verified against 0.64.0: /rest/startScan answers with a scanStatus saying
+// scanning is true, and the scan it starts is the quick kind - it looks at
+// what changed rather than re-reading every tag, which is what makes it cheap
+// enough to fire after an upload.
+func (s *Source) Rescan(ctx context.Context) error {
+	params, err := s.auth()
+	if err != nil {
+		return err
+	}
+	var env envelope
+	if err := s.http.JSON(ctx, "/rest/startScan.view", params, &env); err != nil {
+		return fmt.Errorf("subsonic %q: start scan: %w", s.id, err)
+	}
+	return env.check()
+}
+
 func (s *Source) Health(ctx context.Context) error {
 	params, err := s.auth()
 	if err != nil {

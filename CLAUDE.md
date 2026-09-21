@@ -170,6 +170,41 @@ silently truncates a large folder - the classic way to lose half an album. There
 is a test for it that builds a fake entry tree, because a synthetic DataTransfer
 gets no filesystem entries and no automated drag can produce real ones.
 
+## Telling the backends to look
+
+Every backend indexes on its own timer - Navidrome every minute, the ebook
+scanner every two, Jellyfin and Audiobookshelf when their watchers notice. So a
+file could sit on disk, already uploaded, unsearchable, for up to two minutes
+after somebody watched the progress bar finish. The folder guide said
+"indexing..." and the drop panel said "it may take a minute", which was honest
+and unsatisfying.
+
+`source.Rescanner` is the optional "look now" call, and `handleUpload`
+schedules one. All four were checked against the running servers rather than
+taken from documentation:
+
+- **Navidrome** `/rest/startScan.view` answers with `scanning: true`, and the
+  scan it starts is the *quick* kind - it looks at what changed rather than
+  re-reading every tag, which is what makes it cheap enough to fire per upload.
+- **Jellyfin** `POST /Library/Refresh` answers 204, and a made-up path under
+  `/Library` answers 404, so the 204 means something. It refreshes every
+  library rather than one; there is no per-library trigger that does not need
+  the library's own id, and the two Jellyfin sources share a server anyway.
+- **Audiobookshelf** `POST /api/libraries/{id}/scan`, which provisioning
+  already used.
+- **Ebooks** have no backend - it is simply the scan the ticker would have run.
+
+**The debounce is the load-bearing part.** A dropped folder arrives as one
+upload per file, so triggering per file would ask Navidrome to scan thirty
+times for one album. `scheduleRescan` keeps one timer per kind and pushes it
+back on each upload, so a long upload produces one scan after the last file.
+Two seconds, which is nothing against the minute it replaces.
+
+Failing to start a scan is logged and dropped: the upload already succeeded,
+and the backend's own timer will find the file regardless. Measured end to end
+after this: an uploaded ebook was searchable in **5 seconds**, and Navidrome's
+`lastScan` moved three seconds after being asked.
+
 ## Accounts, and the one thing that is per person
 
 Two roles, and the gap between them is deliberately thin: the **owner** is

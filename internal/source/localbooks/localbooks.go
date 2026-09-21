@@ -366,6 +366,15 @@ func (s *Source) findSidecarCover(b *book) {
 
 // Search matches the in-memory index. Ranking is left to internal/federate,
 // which scores every source's hits on the same scale.
+// Rescan re-walks the ebook folder now rather than at the next sweep.
+//
+// There is no backend to ask here - SoundStorm is the one that indexes this
+// folder - so this is simply the scan the ticker would have run in up to two
+// minutes' time.
+func (s *Source) Rescan(ctx context.Context) error {
+	return s.scan(ctx)
+}
+
 func (s *Source) Search(_ context.Context, q media.Query) ([]media.Item, error) {
 	needle := normalize(q.Text)
 	if needle == "" {
