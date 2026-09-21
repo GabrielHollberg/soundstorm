@@ -407,6 +407,70 @@ function Install-Docker {
 "@
 }
 
+# Test-Virtualization answers whether this PC can run Docker at all.
+#
+# Docker on Windows runs Linux in a lightweight virtual machine, so hardware
+# virtualization is not optional. Essentially every CPU since 2008 has it and
+# a great many prebuilt desktops ship with it switched off in the firmware,
+# which is a thing only a trip into the BIOS can change.
+#
+# Asked before the download rather than after, because the alternative is what
+# happened to the first person who ran this: 500MB of Docker Desktop
+# installed, and only then "virtualization support wasn't detected" - leaving
+# a program they cannot use, on a machine they now have to go and fix anyway,
+# with nothing on screen explaining which of those two things went wrong.
+#
+# True when it cannot tell. Refusing to install on a machine that is actually
+# fine is a worse failure than the check never firing, and this is a guess
+# about firmware read through two layers of Windows.
+function Test-Virtualization {
+    try {
+        $system = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+    } catch {
+        return $true
+    }
+    if (-not $system) { return $true }
+
+    # A running hypervisor settles it: Hyper-V or WSL2 is already up, and
+    # neither can be without virtualization. This has to be asked first,
+    # because once a hypervisor is present Windows reports
+    # VirtualizationFirmwareEnabled as false regardless - it can no longer see
+    # the firmware to ask. Checking the other property first would read a
+    # perfectly working PC as a broken one.
+    if ($system.HypervisorPresent) { return $true }
+
+    # Explicitly false, not merely missing. An older Windows may not populate
+    # this at all, and absent means unknown rather than off.
+    $property = $system.PSObject.Properties['VirtualizationFirmwareEnabled']
+    if ($property -and $system.VirtualizationFirmwareEnabled -eq $false) {
+        return $false
+    }
+    return $true
+}
+
+# The one failure this script cannot work around, so it gets the whole recipe
+# rather than a line saying to go and look it up.
+function Stop-ForVirtualization {
+    Stop-With @"
+  This PC has hardware virtualization turned off, and Docker cannot run
+  without it. Nothing has been installed.
+
+  It is switched off rather than missing, on almost every PC this happens
+  to, and turning it on means a trip into the BIOS:
+
+    1. Restart the PC and press the setup key as it starts - usually Del or
+       F2. (Dell: F2.  HP: F10.  Lenovo: F1.)
+    2. Find "Intel Virtualization Technology", "Intel VT-x", or on an AMD
+       machine "SVM Mode". It is usually under Advanced, CPU Configuration
+       or Security.
+    3. Set it to Enabled, then Save and Exit.
+    4. Run this setup again.
+
+  To check it worked: Ctrl+Shift+Esc, the Performance tab, click CPU, and
+  read the Virtualization line on the right.
+"@
+}
+
 # Start-Docker launches Docker Desktop and waits for its engine.
 #
 # "Docker is installed but not running" is the most common failure on Windows
@@ -434,6 +498,11 @@ function Start-Docker {
         $waited += 3
         if ($waited % 30 -eq 0) { Note "still starting... ($waited seconds)" }
         if ($waited -gt 420) {
+            # Docker was already installed when this run started, so the
+            # check above never ran. It is worth asking now: an engine that
+            # never comes up is exactly what a firmware setting being off
+            # looks like from here.
+            if (-not (Test-Virtualization)) { Stop-ForVirtualization }
             Stop-With @"
   Docker Desktop was started but its engine never came up.
 
@@ -453,6 +522,9 @@ function Start-Docker {
 
 function Initialize-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        # Before the download, not after. Docker Desktop is half a gigabyte
+        # and installing it on a machine that cannot run it helps nobody.
+        if (-not (Test-Virtualization)) { Stop-ForVirtualization }
         Install-Docker
     }
     Refresh-Path

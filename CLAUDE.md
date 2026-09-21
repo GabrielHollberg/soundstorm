@@ -967,6 +967,24 @@ and never point automated fetches at an origin site that has asked you not to.
   immediately after installing Docker Desktop. It had been fixed once for
   `docker compose` and missed here, so the rule is now the helper, not
   vigilance.
+- **Check virtualization before installing Docker, and ask
+  `HypervisorPresent` first.** Docker on Windows runs Linux in a VM, so a PC
+  with VT-x/SVM switched off in its firmware cannot run any of this - and the
+  first person to try the installer found that out only after half a gigabyte
+  of Docker Desktop had installed itself, from a Docker error that offers to
+  fix it by signing in. Signing in fixes nothing; it is the BIOS.
+
+  The order of the two `Win32_ComputerSystem` properties is the whole trick.
+  Once a hypervisor is running, Windows can no longer see the firmware to ask,
+  and reports `VirtualizationFirmwareEnabled` as false - or blank, which is
+  what this development machine returns while happily running Docker. Testing
+  that property first would tell a perfectly working PC it cannot run the app.
+  So: `HypervisorPresent` is proof and settles it, and only in its absence is
+  the firmware flag worth reading. Both are readable without administrator.
+
+  It returns true whenever it cannot tell, including when the CIM query throws.
+  Refusing to install on a machine that is actually fine is a worse failure
+  than the check never firing.
 - **Docker Desktop's installer needs administrator rights**, and a setup file
   run by double-clicking does not have them - so winget fails and the whole
   install stops on its first action with a bare exit code 1. `Install-Docker`
