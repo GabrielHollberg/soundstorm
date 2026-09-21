@@ -11,13 +11,18 @@
 # instruction, not an error code.
 #
 #   -Launch        start an existing install and open it (what the shortcut runs)
+#   -Uninstall     remove SoundStorm, keeping the media library
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
 #   -NoAutoStart   install, but do not start with Windows
+#
+# Updating is the same as installing: run it again. It pulls newer images and
+# restarts, and leaves everything else alone.
 
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
     [switch]$Launch,
+    [switch]$Uninstall,
     [switch]$NoShortcuts,
     [switch]$NoAutoStart,
     [switch]$NoBrowser
@@ -483,13 +488,131 @@ function Install-Shortcuts {
     New-Shortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'SoundStorm media.lnk') `
         (Join-Path $Dir 'library') $null $null 'Put your music, films and books in here' $false
 
+    # Updating is re-running the installer, so the shortcut is the installer.
+    New-Shortcut (Join-Path $startMenu 'Update SoundStorm.lnk') $powershell `
+        "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`"" $Dir `
+        'Get the newest version of SoundStorm' $false
+
     if (-not $NoAutoStart) {
         $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
         New-Shortcut (Join-Path $startup 'SoundStorm.lnk') $powershell `
             "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Launch -NoBrowser" $Dir `
             'Start SoundStorm with Windows' $true
     }
+    Register-Uninstaller
     Good "Added SoundStorm to the Start menu and the desktop."
+}
+
+# uninstallKey is where Windows looks for what can be removed.
+#
+# Under HKCU rather than HKLM because SoundStorm installs per-user, into the
+# user's own folder, without administrator rights. It shows up in Settings,
+# Apps, where people actually go to remove something - a program that can only
+# be uninstalled by finding instructions on a web page is not really
+# uninstallable.
+$uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\SoundStorm'
+
+function Register-Uninstaller {
+    try {
+        $localScript = Join-Path $Dir 'soundstorm.ps1'
+        $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
+        New-Item -Path $uninstallKey -Force | Out-Null
+
+        # Split by type rather than choosing one inline: PowerShell 5.1 will
+        # not take an `if` as an argument expression, and a tokenizer check
+        # does not catch that.
+        $strings = @{
+            DisplayName     = 'SoundStorm'
+            DisplayVersion  = '0.1'
+            Publisher       = 'SoundStorm'
+            InstallLocation = $Dir
+            URLInfoAbout    = 'https://github.com/GabrielHollberg/soundstorm'
+            UninstallString = "`"$powershell`" -NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Uninstall"
+        }
+        foreach ($name in $strings.Keys) {
+            New-ItemProperty -Path $uninstallKey -Name $name -Value $strings[$name] `
+                -PropertyType String -Force | Out-Null
+        }
+        foreach ($name in @('NoModify', 'NoRepair')) {
+            New-ItemProperty -Path $uninstallKey -Name $name -Value 1 `
+                -PropertyType DWord -Force | Out-Null
+        }
+    } catch {
+        # Being absent from the app list is untidy, not broken.
+        Note "Could not register the uninstaller: $($_.Exception.Message)"
+    }
+}
+
+function Remove-Shortcuts {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    foreach ($path in @(
+        (Join-Path $desktop 'SoundStorm.lnk'),
+        (Join-Path $desktop 'SoundStorm media.lnk'),
+        (Join-Path $programs 'SoundStorm.lnk'),
+        (Join-Path $programs 'Update SoundStorm.lnk'),
+        (Join-Path $programs 'Startup\SoundStorm.lnk')
+    )) {
+        Remove-Item $path -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- removing it ---------------------------------------------------------------
+
+if ($Uninstall) {
+    Write-Host ""
+    Write-Host "  Removing SoundStorm" -ForegroundColor White
+    Write-Host "  -----------------------------------------------------------"
+
+    $library = Join-Path $Dir 'library'
+    $hasLibrary = Test-Path $library
+
+    if (-not (Test-Path (Join-Path $Dir 'docker-compose.yml'))) {
+        Note "Nothing installed in $Dir - tidying up shortcuts anyway."
+    } else {
+        Set-Location $Dir
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+            Step "Stopping it and removing its data"
+            Note "Accounts and the servers' own settings go; your media does not."
+            # down -v takes the named volumes with it: SoundStorm's accounts,
+            # and Jellyfin's and Navidrome's own databases. The library is a
+            # bind mount from the folder and is not touched by this.
+            Invoke-Docker @('compose', 'down', '-v') -Capture | Out-Null
+        } else {
+            Note "Docker is not available, so the containers were left alone."
+        }
+    }
+
+    Step "Removing shortcuts"
+    Remove-Shortcuts
+    Remove-Item $uninstallKey -Recurse -Force -ErrorAction SilentlyContinue
+    Good "Shortcuts removed."
+
+    Step "Cleaning up the folder"
+    foreach ($leftover in @('docker-compose.yml', '.env', 'soundstorm.ps1')) {
+        Remove-Item (Join-Path $Dir $leftover) -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host ""
+    Write-Host "  -----------------------------------------------------------"
+    Write-Host "  Done." -ForegroundColor Green -NoNewline
+    Write-Host " SoundStorm is gone."
+    Write-Host ""
+    if ($hasLibrary) {
+        Write-Host "  Your media has been left exactly where it was:"
+        Write-Host ""
+        Write-Host "    $library"
+        Write-Host ""
+        Write-Host "  Delete that folder yourself if you want it gone. Nothing else"
+        Write-Host "  will touch it."
+    } else {
+        Write-Host "  There was no media library to keep."
+    }
+    Write-Host ""
+    Write-Host "  Docker Desktop was left installed - other things may be using it."
+    Write-Host ""
+    exit 0
 }
 
 # --- opening an install that is already here ----------------------------------

@@ -174,16 +174,50 @@ an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
 sidecars, so a library you already curate keeps its series, tags and corrected
 authors, with no SQLite driver and no Calibre-Web container.
 
-### Running it
+### Updating
+
+**Windows:** Start menu → **Update SoundStorm**.
+
+**Everywhere:** run the installer again — the same command you installed with.
+It pulls the newer images, restarts, and leaves your library, your accounts and
+your settings alone.
+
+<details>
+<summary>By hand</summary>
+
+```sh
+cd soundstorm
+docker compose pull && docker compose up -d
+```
+
+</details>
+
+### Removing it
+
+**Windows:** Settings → Apps → **SoundStorm** → Uninstall, like any other
+program.
+
+**Linux / macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --uninstall
+```
+
+Either one stops the servers and deletes their data — accounts, and the
+databases Jellyfin and Navidrome built. **Your media is never touched.** The
+`library` folder is left exactly where it was, and the uninstaller tells you
+where, so you can delete it yourself if you want to.
+
+Docker is left installed, since other things may be using it.
+
+### Other things
 
 ```sh
 cd soundstorm
 docker compose logs -f        # what is it doing
-docker compose down           # stop it; your library folder is untouched
-docker compose pull && docker compose up -d     # upgrade
+docker compose down           # stop it; nothing is lost
+docker compose up -d          # start it again
 ```
-
-Re-running the installer does the upgrade too.
 
 ### Giving other people a login
 

@@ -409,6 +409,38 @@ function folderCount(folder) {
   return files;
 }
 
+// The scan button. Dropping files on the window already triggers this, so it
+// is here for media that arrived some other way - copied in from a file
+// manager, or synced from another machine.
+$('rescan').addEventListener('click', async () => {
+  const button = $('rescan');
+  const note = $('rescan-note');
+
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Checking…';
+
+  const { ok, body } = await api('/api/library/rescan', { method: 'POST' });
+
+  button.disabled = false;
+  button.textContent = original;
+
+  if (!ok) {
+    note.textContent = (body && body.error) || 'Could not start a scan.';
+    note.classList.add('error');
+    show(note, true);
+    return;
+  }
+  note.classList.remove('error');
+  note.textContent =
+    'Looking for new files. Anything found appears in search within a minute.';
+  show(note, true);
+
+  // The counts move as each backend gets through it, so look again shortly.
+  setTimeout(loadLibrary, 4000);
+  setTimeout(loadLibrary, 15000);
+});
+
 function updateLibraryVisibility() {
   show($('library'), !state.query);
 }

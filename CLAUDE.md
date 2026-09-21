@@ -170,6 +170,32 @@ silently truncates a large folder - the classic way to lose half an album. There
 is a test for it that builds a fake entry tree, because a synthetic DataTransfer
 gets no filesystem entries and no automated drag can produce real ones.
 
+## Installing, updating, removing
+
+**Updating is installing again.** The installer pulls newer images and
+restarts, so there is no separate update path to keep working. Windows gets an
+"Update SoundStorm" Start menu shortcut that runs exactly that.
+
+SoundStorm **cannot update itself, and should not learn how**: it has no access
+to the Docker socket, which is the whole reason compromising it cannot reach
+the host. An in-app update button would mean handing it that socket.
+
+**Uninstalling has one rule: never touch `library/`.** `docker compose down -v`
+removes the named volumes - accounts, and Jellyfin's and Navidrome's own
+databases - while the library is a bind mount from the install folder and
+survives untouched. The uninstaller removes the compose file, the `.env`, the
+saved script, the shortcuts and the registry entry, then prints where the media
+was left. Deleting the install folder wholesale would take somebody's media
+with it, which is why the folder itself is never removed. There is a test for
+this: a marker file in `library/music` has to still be readable afterwards.
+
+On Windows it registers under `HKCU\...\CurrentVersion\Uninstall\SoundStorm`, so it
+appears in Settings, Apps like anything else - HKCU rather than HKLM because
+the install is per-user and needs no administrator. `UninstallString` points at
+the copy of the script saved in the install folder, which means **an install
+can only be removed by a version of the script that knows how**; anything
+installed before this existed needs the current installer run over it first.
+
 ## Telling the backends to look
 
 Every backend indexes on its own timer - Navidrome every minute, the ebook

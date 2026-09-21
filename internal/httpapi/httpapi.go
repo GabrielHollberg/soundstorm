@@ -138,6 +138,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
 	guarded.HandleFunc("GET /api/library", s.handleLibrary)
+	guarded.HandleFunc("POST /api/library/rescan", s.handleRescan)
 	// Two steps rather than one multipart request. The plan is what lets the
 	// UI say "14 files, 2 skipped, all going to Films" before a gigabyte
 	// starts moving, and it is also what keeps a subtitle with its film: the
@@ -579,6 +580,32 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		"empty":   empty,
 		"folders": out,
 	})
+}
+
+// handleRescan asks every library this account can see to look at its folder.
+//
+// Uploads already trigger this by themselves. The button exists for the other
+// way media arrives - copied into the folder from a file manager, or from
+// another machine over the network - which nothing here can know about, and
+// which otherwise waits for the backend's own sweep.
+func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
+	access := source.AccessFrom(r.Context())
+
+	asked := make([]string, 0, len(media.AllKinds()))
+	for _, kind := range media.AllKinds() {
+		if !access.Permits(kind) {
+			continue
+		}
+		// Through the same debounce as an upload, which doubles as the rate
+		// limit: leaning on the button pushes one scan back rather than
+		// starting twenty.
+		s.scheduleRescan(kind)
+		asked = append(asked, string(kind))
+	}
+
+	user, _ := auth.FromContext(r.Context())
+	s.log.Info("scan requested by hand", "by", user.Name, "libraries", asked)
+	writeJSON(w, http.StatusOK, map[string]any{"libraries": asked})
 }
 
 // maxPlanBody caps a drop manifest. Five thousand paths of a hundred

@@ -97,8 +97,15 @@
     <!-- Shown when there is no search running. On a fresh install this is the
          first thing anyone sees, so it has to answer "what do I do now". -->
     <section id="library" class="hidden">
-      <h2 id="library-heading">Your library</h2>
+      <div class="library-head">
+        <h2 id="library-heading">Your library</h2>
+        <!-- Anything dropped on the window is picked up by itself. This is for
+             files copied into the folders some other way, which nothing here
+             can know about. -->
+        <button id="rescan" class="ghost" type="button">Check for new files</button>
+      </div>
       <p id="library-blurb" class="muted"></p>
+      <p id="rescan-note" class="muted hidden" role="status"></p>
       <ul id="library-folders"></ul>
     </section>
 

@@ -303,6 +303,18 @@ header {
   padding: 4px 10px;
 }
 
+/* Library heading -------------------------------------------------------- */
+
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.library-head h2 { margin: 0; }
+.library-head button { font-size: 13px; padding: 6px 12px; }
+#rescan-note { margin: 6px 0 0; font-size: 13px; }
+
 /* Dropping files --------------------------------------------------------- */
 
 .drop {

@@ -142,7 +142,74 @@ open_browser() {
 	fi
 }
 
+# --- removing it -------------------------------------------------------------
+
+uninstall() {
+	say ""
+	say "${BOLD}Removing SoundStorm${OFF}"
+	say ""
+
+	library="$DIR/library"
+
+	if [ -f "$DIR/docker-compose.yml" ]; then
+		cd "$DIR"
+		if command -v docker >/dev/null 2>&1; then
+			step "Stopping it and removing its data"
+			note "accounts and the servers own settings go; your media does not"
+			# down -v takes the named volumes with it - SoundStorm accounts,
+			# and Jellyfin and Navidrome own databases. The library is a bind
+			# mount from the folder and is untouched by this.
+			$COMPOSE down -v >/dev/null 2>&1 || true
+		else
+			note "docker is not available, so the containers were left alone"
+		fi
+		step "Cleaning up"
+		rm -f "$DIR/docker-compose.yml" "$DIR/.env"
+	else
+		note "nothing installed in $DIR"
+	fi
+
+	say ""
+	say "${GREEN}${BOLD}Done.${OFF} SoundStorm is gone."
+	say ""
+	if [ -d "$library" ]; then
+		say "Your media has been left exactly where it was:"
+		say ""
+		say "    $library"
+		say ""
+		say "Delete that folder yourself if you want it gone."
+	fi
+	say ""
+	note "Docker was left installed - other things may be using it."
+	say ""
+	exit 0
+}
+
 # --- go ---------------------------------------------------------------------
+
+case "${1:-}" in
+	--uninstall|-u)
+		need_docker
+		compose_cmd
+		uninstall
+		;;
+	--help|-h)
+		say "SoundStorm installer"
+		say ""
+		say "  (no arguments)   install, or update an existing install"
+		say "  --uninstall      remove it, keeping your media library"
+		say ""
+		exit 0
+		;;
+	"")
+		;;
+	*)
+		die "Unknown option: $1
+
+Run with --help to see what this accepts."
+		;;
+esac
+
 
 say ""
 say "${BOLD}SoundStorm${OFF} - one login and one search box over your media library"
