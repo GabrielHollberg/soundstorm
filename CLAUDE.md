@@ -967,6 +967,41 @@ and never point automated fetches at an origin site that has asked you not to.
   immediately after installing Docker Desktop. It had been fixed once for
   `docker compose` and missed here, so the rule is now the helper, not
   vigilance.
+- **Install WSL before Docker, not after Docker complains.** Docker Desktop
+  runs its engine inside WSL2. On a machine that has never had it, Docker
+  installs and launches perfectly and *then* puts up a dialog asking the user
+  to install or update WSL by hand - as administrator, followed by a restart.
+  That is three steps past where an installer should have stopped asking, and
+  it is exactly where the first person to use this got stuck after the BIOS.
+  `Install-WSL` runs `wsl --install --no-distribution` elevated first.
+
+  `--no-distribution` matters: without it Windows also fetches Ubuntu, which
+  is a gigabyte, several more minutes, and a first-run prompt asking for a
+  Linux username nobody here will ever use again. Docker brings its own.
+
+  Detection is `wsl --version`, not `Get-Command wsl`. wsl.exe ships in
+  System32 on every Windows 10 and 11 whether or not WSL is installed, so
+  finding the command proves nothing; `--version` answers only where the real
+  thing is present, and the exit code is the whole answer - the text it prints
+  is UTF-16 and arrives full of null bytes through a pipe.
+
+  Skipped entirely on the `-Launch` path. That runs minimised from a desktop
+  shortcut at startup, where a UAC prompt with no visible window behind it is
+  worse than the failure it would be fixing.
+- **Docker's progress output is filtered, and the filter must not require a
+  colon.** Without a terminal docker cannot redraw in place, so it prints a
+  whole line per progress tick: a 3GB pull becomes many hundreds of lines of
+  hex and megabytes scrolling past, which reads far more like a fault than
+  like progress. The pipe is not the thing to remove - it is what stops
+  docker's stderr arriving as ErrorRecords and printing as a red block that
+  looks like a crash - so `Invoke-Docker -Calm` drops the churn instead and
+  beats every 30 seconds so the window never looks hung.
+
+  `docker pull` writes `5c3b447848a9: Extracting`; **`docker compose pull`
+  writes `f5be9333d3a8 Extracting` with no colon**, and compose is what this
+  script runs. The first version of that regexp required the colon and would
+  have filtered precisely nothing on the only command it exists for. Test it
+  against real output, not against what the format looks like it should be.
 - **Check virtualization before installing Docker, and ask
   `HypervisorPresent` first.** Docker on Windows runs Linux in a VM, so a PC
   with VT-x/SVM switched off in its firmware cannot run any of this - and the

@@ -141,7 +141,7 @@ function Invoke-DockerBounded {
 # docker compose writes its ordinary progress to stderr, so `compose up` failed
 # this script by succeeding noisily. Anything that shells out goes through here.
 function Invoke-Docker {
-    param([string[]]$Arguments, [switch]$Capture)
+    param([string[]]$Arguments, [switch]$Capture, [switch]$Calm)
 
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -153,15 +153,55 @@ function Invoke-Docker {
                 Output   = ($lines -join [Environment]::NewLine)
             }
         }
-        # Piped through Write-Host rather than run bare: without this the
-        # stderr lines still arrive as ErrorRecords and print as a red
-        # NativeCommandError block, which looks like a crash to anybody who
-        # has not seen one before. docker compose reports its progress there.
-        & docker @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+        if ($Calm) {
+            $lastBeat = Get-Date
+            & docker @Arguments 2>&1 | ForEach-Object {
+                $line = "$_"
+                if (Test-DockerChurn $line) {
+                    # Swallowed, but not silently: a download this long with
+                    # nothing on screen is how somebody decides it has hung
+                    # and closes the window.
+                    if (((Get-Date) - $lastBeat).TotalSeconds -ge 30) {
+                        Note "still downloading..."
+                        $lastBeat = Get-Date
+                    }
+                    return
+                }
+                Write-Host $line
+                $lastBeat = Get-Date
+            }
+        } else {
+            # Piped through Write-Host rather than run bare: without this the
+            # stderr lines still arrive as ErrorRecords and print as a red
+            # NativeCommandError block, which looks like a crash to anybody
+            # who has not seen one before. docker reports progress there.
+            & docker @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+        }
         return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = '' }
     } finally {
         $ErrorActionPreference = $previousPreference
     }
+}
+
+# Test-DockerChurn picks out the lines docker prints over and over.
+#
+# Given a terminal, docker redraws one progress block in place. Given a pipe
+# it cannot, and falls back to printing a whole line per progress tick - so a
+# 3GB pull becomes many hundreds of lines of hex and megabytes scrolling past.
+# The first person to install this watched that for ten minutes, which reads
+# far more like a fault than like progress.
+#
+# The pipe is not the thing to remove: it is what stops docker's stderr
+# arriving as ErrorRecords and printing as a red block that looks like a
+# crash. So the churn is dropped here instead, and the milestones - what is
+# being pulled, what finished, anything that went wrong - are kept.
+function Test-DockerChurn([string]$Line) {
+    # The colon is optional and that is the whole point: `docker pull` writes
+    # "5c3b447848a9: Extracting", `docker compose pull` writes
+    # "f5be9333d3a8 Extracting" with no colon at all - and compose is what
+    # this script runs. A first version of this regexp required the colon and
+    # would have filtered nothing whatsoever on the one command it is for.
+    return $Line -match '^\s*[0-9a-f]{8,}:?\s+(Extracting|Downloading|Download complete|Waiting|Pulling fs layer|Verifying Checksum|Already exists|Pull complete)\b'
 }
 
 # Invoke-Native runs an external program without its stderr becoming fatal.
@@ -328,6 +368,102 @@ function Refresh-Path {
 # by double-clicking does not have them - so this step asks for them, once,
 # with a UAC prompt. Without that winget fails and the whole install stops on
 # its very first action.
+# Invoke-Elevated runs one command as administrator.
+#
+# Returns its exit code, or $null when the prompt was refused or never
+# appeared - which is a different failure from the command running and
+# failing, and gets a different message.
+function Invoke-Elevated([string]$File, [string[]]$Arguments) {
+    if (Test-Administrator) {
+        return (Invoke-Native $File $Arguments -Show).ExitCode
+    }
+    try {
+        $process = Start-Process -FilePath $File -ArgumentList $Arguments `
+            -Verb RunAs -PassThru -Wait -ErrorAction Stop
+        # Reading .Handle caches it; without one ExitCode is unreliable on a
+        # process started this way. Same trap as Invoke-DockerBounded.
+        $null = $process.Handle
+        return $process.ExitCode
+    } catch {
+        return $null
+    }
+}
+
+# Test-WSL reports whether Windows Subsystem for Linux is there and modern
+# enough for Docker's engine to run on.
+#
+# wsl.exe ships in System32 on every Windows 10 and 11 whether or not WSL is
+# actually installed, so finding the command proves nothing. `--version` is
+# the question that answers only where the real thing is present, and its exit
+# code is the whole answer - the text it prints is UTF-16 and arrives full of
+# null bytes through a pipe.
+function Test-WSL {
+    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) { return $false }
+    return ((Invoke-Native 'wsl.exe' @('--version')).ExitCode -eq 0)
+}
+
+# Install-WSL is the second thing a new PC needs, and the second thing nobody
+# is told about until Docker refuses to start.
+#
+# Docker Desktop runs its engine inside WSL2. On a machine that has never had
+# it, Docker installs happily, launches, and then puts up a dialog asking for
+# WSL to be installed or updated - a command the user now has to find, run as
+# administrator, and follow with a restart. That is three steps past where an
+# installer should have stopped asking, and it is where the first person to
+# use this got stuck after the BIOS.
+function Install-WSL {
+    if (Test-WSL) { return }
+
+    Step "Setting up Windows Subsystem for Linux"
+    Note "Docker runs on this, and it is missing or out of date."
+    if (-not (Test-Administrator)) {
+        Note "Windows will ask for permission - say yes."
+    }
+
+    # --no-distribution because Docker brings its own. Without it Windows also
+    # fetches Ubuntu: a gigabyte, several more minutes, and a first-run prompt
+    # asking for a Linux username that nobody here will ever use again.
+    $code = Invoke-Elevated 'wsl.exe' @('--install', '--no-distribution')
+
+    if ($null -eq $code) {
+        Stop-With @"
+  Installing Windows Subsystem for Linux needs permission, and that was
+  refused or dismissed. Docker cannot run without it.
+
+  Run this setup again and choose Yes when Windows asks.
+"@
+    }
+
+    if ($code -ne 0) {
+        # A Windows too old to know --no-distribution, or a WSL that is
+        # present but stale and wants updating rather than installing.
+        $null = Invoke-Elevated 'wsl.exe' @('--update')
+    }
+
+    Refresh-Path
+    if (Test-WSL) {
+        Good "Windows Subsystem for Linux is ready."
+        return
+    }
+
+    Stop-With @"
+  Windows Subsystem for Linux has to be there before Docker can run, and it
+  is not finished yet.
+
+  This nearly always just needs a restart:
+
+    1. Restart the PC.
+    2. Run this setup again - it picks up where it left off, and nothing
+       you have already downloaded is lost.
+
+  If it stops here a second time, open PowerShell as Administrator, run
+
+    wsl --install --no-distribution
+
+  then restart and run this setup again.
+"@
+}
+
 function Install-Docker {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Stop-With @"
@@ -510,6 +646,8 @@ function Start-Docker {
 
     * its terms accepted - open Docker Desktop from the Start menu and
       see whether it is waiting on a window
+    * Windows Subsystem for Linux - if Docker is asking you to install or
+      update WSL, run this setup again and it will do it for you
     * a restart of the PC
 
   Do whichever it asks for, then run this setup again. Nothing is lost -
@@ -521,10 +659,23 @@ function Start-Docker {
 }
 
 function Initialize-Docker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    $installed = [bool](Get-Command docker -ErrorAction SilentlyContinue)
+
+    # Only where somebody is sitting in front of it. The desktop shortcut runs
+    # this minimised at startup, and a permission prompt with no visible
+    # window behind it is worse than the failure it would be fixing.
+    if (-not $Launch) {
         # Before the download, not after. Docker Desktop is half a gigabyte
         # and installing it on a machine that cannot run it helps nobody.
-        if (-not (Test-Virtualization)) { Stop-ForVirtualization }
+        if (-not $installed -and -not (Test-Virtualization)) { Stop-ForVirtualization }
+        # And before Docker rather than after, because Docker's installer
+        # assumes WSL is already there. Checked even when Docker is present:
+        # "installed but will not start" is most often a stale WSL, which is
+        # exactly what Docker's own dialog asks you to go and fix by hand.
+        Install-WSL
+    }
+
+    if (-not $installed) {
         Install-Docker
     }
     Refresh-Path
@@ -962,7 +1113,7 @@ if ($upgrade) {
 }
 # Shown rather than captured: this is the part that takes minutes, and a
 # silent window is how somebody decides it has hung.
-$pull = Invoke-Docker @('compose', 'pull')
+$pull = Invoke-Docker @('compose', 'pull') -Calm
 if ($pull.ExitCode -ne 0) {
     Stop-With "  Could not download the media servers. That is almost always the`n  internet connection. Try again - anything already downloaded is kept."
 }
