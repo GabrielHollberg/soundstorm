@@ -23,3 +23,7 @@ coverage.*
 
 # Editor and OS noise is covered by the global gitignore at
 # C:\dev\.gitignore_global
+
+# Per-install settings written by the installer: the chosen port, the TLS
+# mode, an image override. Belongs to one machine, never to the repository.
+.env

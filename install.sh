@@ -302,9 +302,18 @@ if [ "$UPGRADE" = "0" ]; then
 	else
 		note "using $PORT"
 	fi
-	# Compose reads .env from beside the compose file, so the choice sticks for
-	# every later `docker compose up` without anyone having to remember it.
+	# Compose reads .env from beside the compose file, so these stick for every
+	# later `docker compose up` without anyone having to remember them.
+	#
+	# The LAN address is recorded even though TLS is off, because it is needed
+	# the moment somebody turns TLS on and cannot be worked out then: the
+	# server is in a container and sees only the container's own addresses.
+	# Better written now, by the machine that knows.
 	printf 'SOUNDSTORM_PORT=%s\n' "$PORT" > .env
+	lan=$(lan_address)
+	if [ -n "$lan" ]; then
+		printf 'SOUNDSTORM_TLS_HOSTS=%s\n' "$lan" >> .env
+	fi
 else
 	PORT=$(sed -n 's/^SOUNDSTORM_PORT=//p' .env 2>/dev/null || true)
 	[ -n "$PORT" ] || PORT="$FIRST_PORT"

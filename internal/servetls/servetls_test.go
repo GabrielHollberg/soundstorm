@@ -109,32 +109,72 @@ func TestAClientThatDoesNotTrustItIsRejected(t *testing.T) {
 	}
 }
 
-// SoundStorm runs in a container, so the addresses on its own interfaces are
-// the container's - never the 192.168.1.50 somebody actually types. The
-// handshake carries the real one, and this is the case with no SNI at all:
-// browsers send none when you dial an IP.
-func TestACertificateIsMintedForTheAddressThatWasDialled(t *testing.T) {
-	s := selfSigned(t, t.TempDir())
+// Browsers send no SNI when you dial a bare IP address, so nothing in the
+// handshake says which address was asked for. The local address of the
+// connection looks like the answer and is not: behind Docker's published port
+// it is the container's own, not the one the client dialled. So the addresses
+// to answer for are configured, and they go in one certificate used whenever
+// the handshake names nothing.
+func TestAConnectionWithNoSNIGetsTheConfiguredNames(t *testing.T) {
+	s := selfSigned(t, t.TempDir(), "192.168.0.19", "media.lan")
 
-	// A handshake with no ServerName, arriving on an address the config was
-	// never told about.
-	conn := &fakeConn{local: &net.TCPAddr{IP: net.ParseIP("192.168.1.50"), Port: 8099}}
+	// A handshake carrying no ServerName at all, which is what dialling an IP
+	// produces, and arriving on an address that means nothing to anybody.
+	conn := &fakeConn{local: &net.TCPAddr{IP: net.ParseIP("172.20.0.5"), Port: 8080}}
 	cert, err := s.TLSConfig().GetCertificate(&tls.ClientHelloInfo{Conn: conn})
 	if err != nil {
 		t.Fatalf("GetCertificate: %v", err)
 	}
 
-	found := false
-	for _, ip := range cert.Leaf.IPAddresses {
-		if ip.String() == "192.168.1.50" {
-			found = true
-		}
+	if !covers(cert, "192.168.0.19") {
+		t.Errorf("certificate covers %v, not the configured LAN address", cert.Leaf.IPAddresses)
 	}
-	if !found {
-		t.Errorf("certificate covers %v, not the address it was reached on", cert.Leaf.IPAddresses)
+	if !covers(cert, "localhost") || !covers(cert, "127.0.0.1") {
+		t.Errorf("certificate stopped covering localhost: %v %v",
+			cert.Leaf.DNSNames, cert.Leaf.IPAddresses)
+	}
+	// And it must not be answering for the container's own address, which is
+	// the thing that looked right and was not.
+	if covers(cert, "172.20.0.5") {
+		t.Error("the certificate is built from the connection rather than the configuration")
 	}
 	if len(cert.Certificate) != 2 {
 		t.Errorf("chain has %d certificates, want the leaf and its authority", len(cert.Certificate))
+	}
+}
+
+// The whole point of configuring an address: a client dialling it, trusting
+// only the published authority, must not see a warning.
+func TestAConfiguredAddressVerifies(t *testing.T) {
+	s := selfSigned(t, t.TempDir(), "192.168.0.19")
+
+	cert, err := s.TLSConfig().GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("GetCertificate: %v", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(s.CAPEM) {
+		t.Fatal("unusable authority")
+	}
+	if _, err := cert.Leaf.Verify(x509.VerifyOptions{
+		DNSName: "192.168.0.19",
+		Roots:   pool,
+	}); err != nil {
+		t.Errorf("a client dialling the configured address would see a warning: %v", err)
+	}
+}
+
+// An address nobody configured cannot be answered for, and saying so here is
+// the reason the installer writes SOUNDSTORM_TLS_HOSTS.
+func TestAnUnconfiguredAddressIsNotCovered(t *testing.T) {
+	s := selfSigned(t, t.TempDir())
+
+	cert, err := s.TLSConfig().GetCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("GetCertificate: %v", err)
+	}
+	if covers(cert, "192.168.0.19") {
+		t.Error("an address that was never configured is somehow covered")
 	}
 }
 

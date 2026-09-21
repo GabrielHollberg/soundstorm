@@ -340,18 +340,29 @@ per device and everything SoundStorm issues afterwards is trusted, including
 certificates for addresses it had never seen. A self-signed leaf would have to
 be re-trusted on every renewal and every new address.
 
-**Certificates are minted from the handshake, not from configuration.**
-SoundStorm is in a container, so the addresses on its own interfaces are the
-container's - 172.18.0.5, never the 192.168.1.50 somebody types - and it cannot
-learn the real one. The handshake carries it: SNI for a hostname, and for a
-bare IP, which browsers send no SNI for, `ClientHelloInfo.Conn.LocalAddr()` is
-by definition the address the client dialled. `SOUNDSTORM_TLS_HOSTS` is
-therefore optional and only saves the first request a signature.
+**A hostname comes from the handshake; a bare IP has to be configured.** SNI
+carries a hostname, so those are minted on demand and need no setup. An IP does
+not, because browsers send no SNI for one.
 
-One name per certificate. The first version pre-minted a single leaf covering
-every local address, and its SANs then enumerated the machine's Tailscale
-address, eight IPv6 prefixes and its Windows hostname to anybody who opened a
-connection.
+`ClientHelloInfo.Conn.LocalAddr()` looks like the answer and is not, and this
+shipped wrong first. Docker NATs the published port, so inside the container
+the local address is the container's own `172.20.0.5`, never the
+`192.168.0.19` the client dialled. That reads correctly in a unit test with a
+synthetic connection, and correctly for a binary run directly on the host -
+the only two ways it had been tested - and never once in the way it actually
+ships. It was caught by asking a client that trusts only the published
+authority to fetch `https://192.168.0.19:8099`, which is the exact thing the
+feature exists to make work.
+
+So `SOUNDSTORM_TLS_HOSTS` is **required** to reach it by IP, and the installer
+writes the machine's LAN address into `.env` at install time - whether or not
+TLS is on, because by the time somebody turns it on there is nothing left that
+knows the answer.
+
+The SANs are exactly what was configured, plus localhost - not every address
+the machine has. An early version enumerated the machine's Tailscale address,
+eight IPv6 prefixes and its Windows hostname to anybody who opened a
+connection, which is a poor trade for saving somebody one setting.
 
 Off by default: on localhost there is nothing on the wire to protect and a
 certificate warning is a poor first screen. An unknown `SOUNDSTORM_TLS` value

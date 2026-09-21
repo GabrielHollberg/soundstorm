@@ -289,10 +289,22 @@ SOUNDSTORM_TLS=self-signed
 ```
 
 SoundStorm then runs its own certificate authority. Visit
-`http://<server>:8099/ca.crt`, install that file once per device, and there is
-no warning again — at any address, including a bare LAN IP, including addresses
-the server has never seen. Certificates are minted from the connection itself,
-so there is nothing to configure and nothing to renew.
+`https://<server>:8099/ca.crt`, install that file once per device, and there is
+no warning again. Nothing to renew.
+
+The installer records this machine's LAN address in the `.env` file as
+`SOUNDSTORM_TLS_HOSTS`, which is the list of addresses the certificate covers
+— the server is in a container and cannot work that out for itself. If the
+machine's address changes, or you reach it by a name your router hands out,
+add it:
+
+```sh
+SOUNDSTORM_TLS_HOSTS=192.168.1.50,media.lan
+```
+
+then `docker compose up -d`. Hostnames you connect to are also picked up
+automatically; only bare IP addresses have to be listed, because browsers send
+no name when you type one.
 
 Already have a real certificate? `SOUNDSTORM_TLS=file` with
 `SOUNDSTORM_TLS_CERT` and `SOUNDSTORM_TLS_KEY`. Behind a reverse proxy that

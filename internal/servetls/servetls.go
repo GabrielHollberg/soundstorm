@@ -16,14 +16,23 @@
 // renewed or the address changed. This is what mkcert and Caddy's internal
 // issuer do, for the same reason.
 //
-// Certificates are minted on demand from the connection itself. SoundStorm runs
-// in a container, so the addresses it can see on its own interfaces are the
-// container's - 172.18.0.5, not the 192.168.1.50 a person actually types. The
-// container has no way to learn the latter. But the TLS handshake carries it:
-// SNI for a hostname, and for a bare IP, which browsers send no SNI for, the
-// local address of the accepted connection is exactly the address the client
-// dialled. So GetCertificate answers for whatever it was asked about and
-// nothing has to be configured.
+// A hostname is easy: it arrives as SNI in the handshake, so a certificate is
+// minted for whatever was asked for and nothing has to be configured.
+//
+// A bare IP address is not, and this is the part that took a wrong turn first.
+// Browsers send no SNI when you dial an IP, so the name has to come from
+// somewhere else - and the obvious somewhere, the local address of the
+// accepted connection, is wrong here. SoundStorm's port is published by
+// Docker, which NATs it: inside the container the local address is the
+// container's own 172.20.0.5, not the 192.168.0.19 the client actually
+// dialled. That reads correctly in a unit test with a synthetic connection,
+// and correctly for a binary run directly on the host, and never once in the
+// way the thing actually ships.
+//
+// So the addresses to answer to have to be told to it, through
+// SOUNDSTORM_TLS_HOSTS, which the installer fills in with the machine's LAN
+// address. Those go into one certificate, used for any handshake that does not
+// name something else.
 package servetls
 
 import (
@@ -106,6 +115,13 @@ type Server struct {
 	ca     tls.Certificate
 	caLeaf *x509.Certificate
 	log    *slog.Logger
+
+	// fallback covers localhost, the loopback addresses and every name the
+	// operator configured. It answers any handshake that does not name
+	// something specific - which is every connection to a bare IP address,
+	// because browsers send no SNI for those.
+	fallback *tls.Certificate
+
 	mu     sync.Mutex
 	leaves map[string]*tls.Certificate
 }
@@ -181,28 +197,23 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 	}
 	s.cfg = baseConfig(s.getCertificate)
 
-	// Mint the always-true names up front, which both saves the first request a
-	// signature and proves at boot that the authority can actually sign.
-	if _, err := s.certFor("localhost", []string{"localhost", "127.0.0.1", "::1"}); err != nil {
+	// One certificate covering localhost and everything the operator named.
+	//
+	// These SANs are visible to anybody who opens a connection, which is why
+	// the list is exactly what was configured rather than every address the
+	// machine happens to have - enumerating somebody's Tailscale address and
+	// IPv6 prefixes to the local network would be a poor trade for saving them
+	// a setting.
+	names := unique(append([]string{"localhost", "127.0.0.1", "::1"}, cfg.Hosts...))
+	fallback, err := issue(ca, caLeaf, names)
+	if err != nil {
 		return nil, err
 	}
-	// Anything else named explicitly gets its own certificate, under its own
-	// key, so a handshake for it is a cache hit.
-	//
-	// One name per certificate rather than one certificate listing them all:
-	// every SAN in a leaf is visible to anybody who opens a connection, and a
-	// certificate enumerating a machine's Tailscale address, its IPv6 prefixes
-	// and its Windows hostname tells a stranger on the LAN more than they
-	// asked. Nothing needs them in one certificate - the handshake names the
-	// one address that matters.
-	for _, host := range unique(cfg.Hosts) {
-		if _, err := s.certFor(host, []string{host}); err != nil {
-			return nil, err
-		}
-	}
+	s.fallback = fallback
 
 	cfg.Log.Info("tls enabled with a local authority",
 		"install", "/ca.crt",
+		"answersTo", strings.Join(names, ","),
 		"caExpires", caLeaf.NotAfter.Format("2006-01-02"))
 	return s, nil
 }
@@ -216,15 +227,41 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 // certificate has to match.
 func (s *Server) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	name := strings.TrimSpace(hello.ServerName)
-	if name == "" && hello.Conn != nil {
-		if host, _, err := net.SplitHostPort(hello.Conn.LocalAddr().String()); err == nil {
-			name = host
+	if name == "" {
+		// A bare IP address, which browsers send no SNI for. Nothing in the
+		// handshake says which address was dialled - behind Docker's NAT the
+		// connection's local address is the container's own - so this is what
+		// the configured names are for.
+		return s.fallback, nil
+	}
+	if covers(s.fallback, name) {
+		return s.fallback, nil
+	}
+	// A hostname nobody configured. SNI is trustworthy enough to answer for,
+	// and minting keeps a name somebody set up in their router working without
+	// it also having to be listed here.
+	return s.certFor(name, []string{name})
+}
+
+// covers reports whether a certificate already answers for a name.
+func covers(cert *tls.Certificate, name string) bool {
+	if cert == nil || cert.Leaf == nil {
+		return false
+	}
+	if ip := net.ParseIP(name); ip != nil {
+		for _, known := range cert.Leaf.IPAddresses {
+			if known.Equal(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, known := range cert.Leaf.DNSNames {
+		if strings.EqualFold(known, name) {
+			return true
 		}
 	}
-	if name == "" {
-		name = "localhost"
-	}
-	return s.certFor(name, []string{name})
+	return false
 }
 
 // certFor returns a cached certificate for key, minting one covering names if

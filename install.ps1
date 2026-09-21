@@ -739,8 +739,17 @@ if ($upgrade) {
         }
     }
     if ($port -ne $FirstPort) { Note "Port $FirstPort was busy, using $port." }
-    # Compose reads .env from beside the compose file, so the choice sticks.
-    "SOUNDSTORM_PORT=$port" | Out-File -FilePath '.env' -Encoding ascii
+
+    # Compose reads .env from beside the compose file, so these stick.
+    #
+    # The LAN address is written even though TLS is off, because it is needed
+    # the moment somebody turns TLS on and it cannot be worked out then: the
+    # server is in a container and sees only the container's addresses. Better
+    # recorded now, while the machine that knows is the one running.
+    $lines = @("SOUNDSTORM_PORT=$port")
+    $lan = Get-LanAddress
+    if ($lan) { $lines += "SOUNDSTORM_TLS_HOSTS=$lan" }
+    $lines | Out-File -FilePath '.env' -Encoding ascii
 }
 
 if ($upgrade) {
