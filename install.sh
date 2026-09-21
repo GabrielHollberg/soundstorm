@@ -7,6 +7,11 @@
 # until it answers. Everything it needs is Docker; everything it leaves behind
 # is a folder you can delete.
 #
+#   (no arguments)   install, or update an existing install
+#   --https          serve over https instead of http
+#   --no-https       go back to http
+#   --uninstall      remove it, keeping the media library
+#
 # Written for /bin/sh rather than bash, because a stock Debian's /bin/sh is dash
 # and an installer that only works under bash is an installer that fails on the
 # exact cheap home server this is aimed at.
@@ -133,6 +138,47 @@ pick_port() {
 	PORT="$port"
 }
 
+# get_env and set_env read and rewrite one line of .env and leave the rest
+# alone, because the port and the certificate hosts live in there too and were
+# worked out on a run nobody is going to repeat.
+get_env() {
+	[ -f .env ] || return 0
+	sed -n "s/^[[:space:]]*$1=//p" .env | head -n 1
+}
+
+set_env() {
+	if [ -f .env ]; then
+		grep -v "^[[:space:]]*$1=" .env > .env.new || true
+		mv .env.new .env
+	fi
+	printf '%s=%s\n' "$1" "$2" >> .env
+}
+
+# installed_scheme reports what this install actually serves rather than
+# assuming http. Telling somebody the wrong scheme hands them a browser error
+# with nothing in it to suggest the address was the problem.
+installed_scheme() {
+	tls=$(get_env SOUNDSTORM_TLS)
+	if [ -n "$tls" ] && [ "$tls" != "off" ]; then
+		printf 'https'
+	else
+		printf 'http'
+	fi
+}
+
+# health_ok tolerates a self-signed certificate, because with --https that is
+# precisely what the server just minted for itself. The request goes to this
+# machine, for a certificate this machine made.
+health_ok() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSk "$1" -o /dev/null >/dev/null 2>&1
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q --no-check-certificate -O /dev/null "$1" >/dev/null 2>&1
+	else
+		return 0
+	fi
+}
+
 # lan_address is this machine's address on the local network.
 #
 # The container cannot work this out for itself - inside Docker the only
@@ -237,28 +283,40 @@ uninstall() {
 
 # --- go ---------------------------------------------------------------------
 
-case "${1:-}" in
-	--uninstall|-u)
-		need_docker
-		compose_cmd
-		uninstall
-		;;
-	--help|-h)
-		say "SoundStorm installer"
-		say ""
-		say "  (no arguments)   install, or update an existing install"
-		say "  --uninstall      remove it, keeping your media library"
-		say ""
-		exit 0
-		;;
-	"")
-		;;
-	*)
-		die "Unknown option: $1
+# A loop rather than a case on $1: --https has to be able to arrive alongside
+# nothing else and still reach the install below, which a single case cannot do.
+HTTPS=''
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--uninstall|-u)
+			need_docker
+			compose_cmd
+			uninstall
+			;;
+		--https)
+			HTTPS='on'
+			;;
+		--no-https)
+			HTTPS='off'
+			;;
+		--help|-h)
+			say "SoundStorm installer"
+			say ""
+			say "  (no arguments)   install, or update an existing install"
+			say "  --https          serve over https instead of http"
+			say "  --no-https       go back to http"
+			say "  --uninstall      remove it, keeping your media library"
+			say ""
+			exit 0
+			;;
+		*)
+			die "Unknown option: $1
 
 Run with --help to see what this accepts."
-		;;
-esac
+			;;
+	esac
+	shift
+done
 
 
 say ""
@@ -339,9 +397,29 @@ if [ "$UPGRADE" = "0" ]; then
 		printf 'SOUNDSTORM_TLS_HOSTS=%s\n' "$lan" >> .env
 	fi
 else
-	PORT=$(sed -n 's/^SOUNDSTORM_PORT=//p' .env 2>/dev/null || true)
+	PORT=$(get_env SOUNDSTORM_PORT)
 	[ -n "$PORT" ] || PORT="$FIRST_PORT"
 fi
+
+# After the port, so that on a fresh install this amends the file just written
+# rather than being overwritten by it.
+if [ "$HTTPS" = "on" ]; then
+	# The certificate has to name the LAN address, and only this machine can
+	# say what that is - the server sees the container's address, not the
+	# host's. An install from before .env carried that line is topped up here.
+	if [ -z "$(get_env SOUNDSTORM_TLS_HOSTS)" ]; then
+		lan=$(lan_address)
+		if [ -n "$lan" ]; then
+			set_env SOUNDSTORM_TLS_HOSTS "$lan"
+		fi
+	fi
+	set_env SOUNDSTORM_TLS self-signed
+	note "turning on https"
+elif [ "$HTTPS" = "off" ]; then
+	set_env SOUNDSTORM_TLS off
+	note "turning https back off"
+fi
+SCHEME=$(installed_scheme)
 
 if [ "$UPGRADE" = "1" ]; then
 	step "Checking for newer versions"
@@ -375,9 +453,9 @@ Pick another one and run this again:
 fi
 
 step "Waiting for SoundStorm to answer"
-URL="http://localhost:$PORT"
+URL="$SCHEME://localhost:$PORT"
 waited=0
-until fetch "$URL/healthz" /dev/null 2>/dev/null; do
+until health_ok "$URL/healthz"; do
 	waited=$((waited + 2))
 	if [ "$waited" -gt 120 ]; then
 		die "SoundStorm started but never answered on $URL.
@@ -406,15 +484,39 @@ if [ -n "$lan" ] || [ -n "$mdns" ]; then
 	say "On your phone, TV or another computer on this network:"
 	say ""
 	if [ -n "$mdns" ]; then
-		say "    ${BOLD}http://$mdns:$PORT${OFF}"
+		say "    ${BOLD}$SCHEME://$mdns:$PORT${OFF}"
 		if [ -n "$lan" ]; then
-			note "http://$lan:$PORT    (if the name does not work)"
+			note "$SCHEME://$lan:$PORT    (if the name does not work)"
 		fi
 	else
-		say "    ${BOLD}http://$lan:$PORT${OFF}"
+		say "    ${BOLD}$SCHEME://$lan:$PORT${OFF}"
 	fi
 	say ""
 	note "Same account. Open the port on the firewall if nothing loads."
+	say ""
+fi
+
+if [ "$SCHEME" = "https" ]; then
+	# Said plainly and up front, because the alternative is somebody deciding
+	# their own install is broken or unsafe. No outside authority can vouch for
+	# a certificate covering an address like 192.168.0.19, so the warning
+	# cannot be avoided without a real domain name - but it is fixable per
+	# device, and that fix is the useful half of this message.
+	say "The first visit shows a certificate warning on every device."
+	note "Expected: the certificate was made by this machine, and nobody"
+	note "outside can vouch for a home network address. Choose Advanced,"
+	note "then continue."
+	say ""
+	ca_host="${mdns:-${lan:-localhost}}"
+	say "To stop it asking, open this on each device and install the"
+	say "certificate it downloads:"
+	say ""
+	say "    ${BOLD}https://$ca_host:$PORT/ca.crt${OFF}"
+	say ""
+	note "Run this again with --no-https to go back to plain http."
+	say ""
+else
+	note "Run this again with --https to encrypt the connection."
 	say ""
 fi
 

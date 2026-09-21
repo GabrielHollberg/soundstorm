@@ -183,7 +183,9 @@ same port:
 http://192.168.1.50:8099        <- your number will differ
 ```
 
-The installer prints the exact address when it finishes. To find it again:
+`https://` instead, if you turned on [HTTPS](#turning-on-https) — that is the
+one part of the address you cannot guess, so the installer prints the scheme it
+actually set rather than leaving you to try both. To find the address again:
 
 | | |
 | --- | --- |
@@ -299,17 +301,42 @@ films" is not.
 ### Turning on HTTPS
 
 Off by default, because on `localhost` there is nothing on the wire to protect
-and a certificate warning is a poor first screen. The moment another machine
-can reach it, turn it on — put this in the `.env` file beside your
-`docker-compose.yml` and run `docker compose up -d`:
+and a certificate warning is a poor first screen. The moment another machine can
+reach it, turn it on by running the installer again with one extra word:
+
+**Windows** — paste this into PowerShell from anywhere:
+
+```powershell
+& "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Https
+```
+
+**Linux / macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --https
+```
+
+Either one edits one line of your `.env`, restarts, and — this is the part worth
+having — prints the `https://` addresses for *this* install, so you are not
+guessing at a scheme. `-NoHttps` and `--no-https` put it back.
+
+Behind that flag, SoundStorm runs its own certificate authority. Every device
+warns on the first visit, because nothing outside your house can vouch for an
+address like `192.168.1.50`. To stop it asking: visit
+`https://<server>:8099/ca.crt`, install that file once per device, and there is
+no warning again. Nothing to renew.
+
+<details>
+<summary>By hand, if you would rather</summary>
+
+Put this in the `.env` file beside your `docker-compose.yml` and run
+`docker compose up -d`:
 
 ```sh
 SOUNDSTORM_TLS=self-signed
 ```
 
-SoundStorm then runs its own certificate authority. Visit
-`https://<server>:8099/ca.crt`, install that file once per device, and there is
-no warning again. Nothing to renew.
+</details>
 
 The installer records this machine's LAN address in the `.env` file as
 `SOUNDSTORM_TLS_HOSTS`, which is the list of addresses the certificate covers

@@ -19,13 +19,16 @@ rem
 rem -ExecutionPolicy Bypass applies to this one process only. It is what makes
 rem a downloaded script run at all on a default Windows install; it changes
 rem nothing about the machine and nothing after this window closes.
+rem
+rem Arguments are passed straight through, so a typed command or a shortcut
+rem can say SoundStorm-Setup.cmd --https and have it reach the installer.
 
 setlocal
 
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "LOCAL=%~dp0install.ps1"
 if exist "%LOCAL%" (
-    "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%LOCAL%"
+    "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%LOCAL%" %*
     goto :done
 )
 
@@ -55,7 +58,7 @@ if not exist "%SAVED%" (
     goto :done
 )
 
-"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%SAVED%"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%SAVED%" %*
 del "%SAVED%" >nul 2>&1
 
 :done

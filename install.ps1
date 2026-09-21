@@ -12,21 +12,55 @@
 #
 #   -Launch        start an existing install and open it (what the shortcut runs)
 #   -Uninstall     remove SoundStorm, keeping the media library
+#   -Https         serve over https instead of http
+#   -NoHttps       go back to http
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
 #   -NoAutoStart   install, but do not start with Windows
 #
 # Updating is the same as installing: run it again. It pulls newer images and
-# restarts, and leaves everything else alone.
+# restarts, and leaves everything else alone. -Https and -NoHttps work on an
+# existing install for the same reason - they only change one line of .env.
+#
+# The double-dash spellings (--https) bind too, which is what somebody arriving
+# from the Linux instructions will type.
 
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
     [switch]$Launch,
     [switch]$Uninstall,
-    [switch]$NoShortcuts,
-    [switch]$NoAutoStart,
-    [switch]$NoBrowser
+    [switch]$Https,
+    # The hyphenated aliases are load-bearing, not decoration. PowerShell treats
+    # a leading -- as a single dash, so --https binds to -Https on its own - but
+    # --no-https becomes -no-https, and a parameter *name* cannot contain a
+    # hyphen. Without the alias it bound to nothing and was ignored in silence:
+    # the installer reported success and left the install on http.
+    [Alias('no-https')][switch]$NoHttps,
+    [Alias('no-shortcuts')][switch]$NoShortcuts,
+    [Alias('no-auto-start')][switch]$NoAutoStart,
+    [Alias('no-browser')][switch]$NoBrowser
 )
+
+if ($Https -and $NoHttps) {
+    Write-Host "  -Https and -NoHttps cannot both be given." -ForegroundColor Red
+    exit 1
+}
+
+# Older .NET defaults this to SSL 3.0 and TLS 1.0, and GitHub has required TLS
+# 1.2 since 2018 - so on an otherwise healthy machine every download below
+# fails, with an error that blames the connection rather than the protocol.
+#
+# Only when it has been pinned to something. Left at SystemDefault, Windows
+# picks the best protocol it has, which is better than anything named here -
+# forcing Tls12 in that case would switch TLS 1.3 off on Windows 11.
+try {
+    if ([Net.ServicePointManager]::SecurityProtocol -ne [Net.SecurityProtocolType]::SystemDefault) {
+        [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    }
+} catch {
+    # A .NET too old to know SystemDefault, or too new to expose the enum.
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -478,29 +512,90 @@ function Test-PortFree([int]$Port) {
     }
 }
 
+# Test-Healthz asks once and answers true or false.
+#
+# HttpWebRequest rather than Invoke-WebRequest, and that is not a preference.
+# PowerShell 5.1 has no -SkipCertificateCheck, so trusting our own self-signed
+# certificate means assigning ServicePointManager.ServerCertificateValidationCallback
+# - and with a scriptblock in that callback, Invoke-WebRequest fails against
+# *every* https address, ours and github.com alike, with "An unexpected error
+# occurred on a send". It runs the request off the pipeline thread, where there
+# is no runspace to execute a scriptblock in, so the validation delegate throws
+# and the connection is torn down. The error names the send, never the callback.
+# HttpWebRequest.GetResponse() runs on the pipeline thread and is fine.
+function Test-Healthz([string]$Url) {
+    try {
+        $request = [Net.HttpWebRequest]::Create("$Url/healthz")
+        $request.Timeout = 5000
+        $request.Method = 'GET'
+        $response = $request.GetResponse()
+        $response.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Wait-ForSoundStorm([string]$Url) {
-    $waited = 0
-    while ($true) {
-        try {
-            Invoke-WebRequest -Uri "$Url/healthz" -UseBasicParsing -TimeoutSec 5 | Out-Null
-            return
-        } catch {
+    # Process-wide, because .NET Framework offers no per-request hook. Set for
+    # the few seconds of the health check and put back afterwards; the requests
+    # it covers go to a certificate this machine minted, on this machine.
+    $priorCallback = $null
+    $bypassed = $false
+    if ($Url -like 'https://*') {
+        $priorCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        $bypassed = $true
+    }
+    try {
+        $waited = 0
+        while (-not (Test-Healthz $Url)) {
             Start-Sleep -Seconds 2
             $waited += 2
             if ($waited -gt 180) {
                 Stop-With "  SoundStorm started but never answered on $Url.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs soundstorm"
             }
         }
+    } finally {
+        if ($bypassed) { [Net.ServicePointManager]::ServerCertificateValidationCallback = $priorCallback }
     }
 }
 
-function Get-InstalledPort {
+function Get-EnvSetting([string]$Name) {
     $envFile = Join-Path $Dir '.env'
-    if (Test-Path $envFile) {
-        $line = Select-String -Path $envFile -Pattern '^SOUNDSTORM_PORT=(\d+)' -ErrorAction SilentlyContinue
-        if ($line) { return [int]$line.Matches[0].Groups[1].Value }
+    if (-not (Test-Path $envFile)) { return $null }
+    foreach ($line in (Get-Content $envFile)) {
+        if ($line -match "^\s*$([regex]::Escape($Name))=(.*)$") { return $Matches[1].Trim() }
     }
+    return $null
+}
+
+# Set-EnvSetting rewrites one line of .env and leaves the rest alone, because
+# the port and the certificate hosts are in there too and were worked out on a
+# run nobody is going to repeat.
+function Set-EnvSetting([string]$Name, [string]$Value) {
+    $envFile = Join-Path $Dir '.env'
+    $lines = @()
+    if (Test-Path $envFile) { $lines = @(Get-Content $envFile) }
+    $pattern = "^\s*$([regex]::Escape($Name))="
+    $kept = @($lines | Where-Object { $_ -notmatch $pattern })
+    $kept += "$Name=$Value"
+    $kept | Out-File -FilePath $envFile -Encoding ascii
+}
+
+function Get-InstalledPort {
+    $port = Get-EnvSetting 'SOUNDSTORM_PORT'
+    if ($port -match '^\d+$') { return [int]$port }
     return $FirstPort
+}
+
+# Get-InstalledScheme reads what this install is actually serving rather than
+# assuming http. Telling somebody the wrong scheme hands them a browser error
+# with no hint in it, which is worse than telling them nothing.
+function Get-InstalledScheme {
+    $tls = Get-EnvSetting 'SOUNDSTORM_TLS'
+    if ($tls -and $tls -ne 'off') { return 'https' }
+    return 'http'
 }
 
 # New-Shortcut writes a .lnk. WScript.Shell is the only way to do that without
@@ -673,7 +768,7 @@ if ($Launch) {
         Stop-With "  SoundStorm would not start.`n`n  Try turning the PC off and on again. If it keeps happening, show`n  this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
     }
     $port = Get-InstalledPort
-    $url = "http://localhost:$port"
+    $url = "$(Get-InstalledScheme)://localhost:$port"
     Wait-ForSoundStorm $url
     # At startup there is nobody watching yet, so the browser stays shut; the
     # desktop icon is what opens it.
@@ -769,6 +864,24 @@ if ($upgrade) {
     $lines | Out-File -FilePath '.env' -Encoding ascii
 }
 
+# After the port, so that on a fresh install this amends the file just written
+# rather than being overwritten by it.
+if ($Https) {
+    # The certificate has to name the LAN address, and only this machine can
+    # say what that is - the server sees the container's address, not the PC's.
+    # An install from before .env carried this line has to be topped up here.
+    if (-not (Get-EnvSetting 'SOUNDSTORM_TLS_HOSTS')) {
+        $lan = Get-LanAddress
+        if ($lan) { Set-EnvSetting 'SOUNDSTORM_TLS_HOSTS' $lan }
+    }
+    Set-EnvSetting 'SOUNDSTORM_TLS' 'self-signed'
+    Note "Turning on https."
+} elseif ($NoHttps) {
+    Set-EnvSetting 'SOUNDSTORM_TLS' 'off'
+    Note "Turning https back off."
+}
+$scheme = Get-InstalledScheme
+
 if ($upgrade) {
     Step "Checking for a newer version"
 } else {
@@ -792,7 +905,7 @@ if ($start.ExitCode -ne 0) {
     Stop-With "  SoundStorm would not start.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
 }
 
-$url = "http://localhost:$port"
+$url = "${scheme}://localhost:$port"
 Wait-ForSoundStorm $url
 
 if (-not $NoShortcuts) {
@@ -810,7 +923,7 @@ Write-Host ""
 Write-Host "  -----------------------------------------------------------"
 if ($upgrade) {
     Write-Host "  Up to date." -ForegroundColor Green -NoNewline
-    Write-Host " SoundStorm is running."
+    Write-Host " SoundStorm is running at $url"
 } else {
     Write-Host "  Done." -ForegroundColor Green -NoNewline
     Write-Host " SoundStorm is running at $url"
@@ -827,12 +940,35 @@ $lan = Get-LanAddress
 if ($lan) {
     Write-Host "  On your phone, TV or another computer on this network:"
     Write-Host ""
-    Write-Host "    http://${lan}:$port" -ForegroundColor White
+    Write-Host "    ${scheme}://${lan}:$port" -ForegroundColor White
     Write-Host ""
     Write-Host "  Same account. Worth saving as a bookmark - and worth giving this" -ForegroundColor DarkGray
     Write-Host "  PC a fixed address in your router, or that number will change." -ForegroundColor DarkGray
     Write-Host "  If nothing loads, allow SoundStorm through the Windows firewall" -ForegroundColor DarkGray
     Write-Host "  for private networks." -ForegroundColor DarkGray
+    Write-Host ""
+}
+if ($scheme -eq 'https') {
+    # Said plainly and up front, because the alternative is somebody deciding
+    # their own install is broken or unsafe. Nobody but this PC can vouch for a
+    # certificate covering an address like 192.168.0.19, so the warning is
+    # unavoidable without a real domain name - but it is fixable per device,
+    # and that fix is the useful half of this message.
+    Write-Host "  The first visit shows a certificate warning on every device." -ForegroundColor Yellow
+    Write-Host "  That is expected: the certificate was made by this PC, and no" -ForegroundColor DarkGray
+    Write-Host "  outside authority can vouch for a home network address." -ForegroundColor DarkGray
+    Write-Host "  Choose Advanced, then continue." -ForegroundColor DarkGray
+    Write-Host ""
+    $caHost = if ($lan) { $lan } else { 'localhost' }
+    Write-Host "  To stop it asking, open this on each device and install the"
+    Write-Host "  certificate it downloads:"
+    Write-Host ""
+    Write-Host "    https://${caHost}:$port/ca.crt" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  To go back to plain http, run the setup again with -NoHttps." -ForegroundColor DarkGray
+    Write-Host ""
+} else {
+    Write-Host "  Run the setup again with -Https to encrypt the connection." -ForegroundColor DarkGray
     Write-Host ""
 }
 if (-not $NoShortcuts) {

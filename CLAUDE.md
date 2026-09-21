@@ -768,6 +768,34 @@ and never point automated fetches at an origin site that has asked you not to.
 - **PowerShell here-strings carry CRLF into `docker exec bash -c`**, and a
   trailing carriage return makes bash misread the command. `scripts/` passes
   single-line commands for that reason.
+- **`Invoke-WebRequest` cannot do https once a scriptblock is in the
+  certificate callback.** PowerShell 5.1 has no `-SkipCertificateCheck`, so
+  trusting our own self-signed cert means assigning
+  `ServicePointManager.ServerCertificateValidationCallback`. Do that with a
+  scriptblock and `Invoke-WebRequest` then fails against *every* https address,
+  github.com included, with "The underlying connection was closed: An
+  unexpected error occurred on a send." It runs the request off the pipeline
+  thread, where there is no runspace to execute a scriptblock in, so the
+  delegate throws and the connection is torn down. The error never mentions the
+  callback. `[Net.HttpWebRequest]::Create(...).GetResponse()` runs on the
+  pipeline thread and works, which is what `Test-Healthz` in `install.ps1` uses.
+  Symptom if you get this wrong: the installer waits its full 180 seconds and
+  reports the server never answered, while curl gets a 200 from the same URL.
+- **`--no-https` binds to nothing without a hyphenated alias.** PowerShell
+  treats a leading `--` as a single dash, so `--https` reaches `-Https` by
+  itself - but `--no-https` becomes `-no-https`, and a parameter *name* cannot
+  contain a hyphen. It was accepted and ignored in silence: the installer
+  reported success and left the install on http. `[Alias('no-https')]` fixes
+  it. `[CmdletBinding()]` already rejects an outright typo, so the aliases are
+  the only gap.
+- **Do not fix a `.cmd` file with `sed -i`.** It strips the CRLF the file needs
+  (`.gitattributes` has `*.cmd -text`), and cmd.exe mishandles `goto` without
+  it. Use a tool that writes the line endings back. The CI guard that exists to
+  catch this was itself a no-op for two months: `grep -q "\r"` reaches grep as
+  an escape a POSIX basic regexp does not define, and GNU grep reads it as a
+  plain letter r - so it passed on any file containing the letter r, which is
+  every file. It now counts carriage returns against line count, which also
+  catches half a file being converted.
 - **Library folders are created 0777 on purpose.** They exist to be written
   into by a person on the host whose uid SoundStorm cannot know, and read by four
   backends running as assorted other uids. Being unable to copy files into your

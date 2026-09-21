@@ -47,15 +47,26 @@ jobs:
       # SoundStorm-Setup.cmd is downloaded straight from raw.githubusercontent
       # and run by cmd.exe, which does not reliably honour `goto` with LF line
       # endings - and this file uses goto. A repo-wide `sed -i` has quietly
-      # stripped the carriage returns out of it once already, which is not
+      # stripped the carriage returns out of it twice now, which is not
       # something anybody would notice until the first person to try it got a
       # batch file that ran half of itself.
+      #
+      # Counted rather than pattern-matched. The first version of this check
+      # grepped for an escaped r, which reaches grep as an escape sequence a
+      # POSIX basic regexp does not define - GNU grep reads it as a plain
+      # letter r. So the check passed on any file containing the letter r,
+      # which is every file, and it sat here green through the exact sed -i it
+      # was written to catch. Counting also catches half a file being
+      # converted, which matching never could.
       - name: The Windows setup file still has CRLF
         run: |
-          if od -c SoundStorm-Setup.cmd | grep -q "\\r"; then
-            echo "SoundStorm-Setup.cmd has its carriage returns."
+          returns=$(tr -cd '\r' < SoundStorm-Setup.cmd | wc -c)
+          lines=$(wc -l < SoundStorm-Setup.cmd)
+          if [ "$returns" -gt 0 ] && [ "$returns" -eq "$lines" ]; then
+            echo "SoundStorm-Setup.cmd has its carriage returns ($returns of $lines lines)."
           else
             echo "SoundStorm-Setup.cmd has lost its CRLF line endings."
+            echo "$returns of $lines lines end with a carriage return; all of them should."
             echo "cmd.exe needs them for goto. See .gitattributes."
             exit 1
           fi
