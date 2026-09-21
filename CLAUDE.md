@@ -681,6 +681,14 @@ and never point automated fetches at an origin site that has asked you not to.
   periodic scan ever runs and new music appears only on restart. Verified
   against 0.64.0. Check `--help` in the container before trusting any of these
   env names.
+- **Every external call in `install.ps1` must go through `Invoke-Native` or
+  `Invoke-Docker`.** With `$ErrorActionPreference = 'Stop'`, a bare native
+  call throws on its first line of stderr. `Test-DockerRunning` was written as
+  a bare `docker info` and therefore crashed in the one situation it exists to
+  detect - Docker installed but not running, which is precisely the state
+  immediately after installing Docker Desktop. It had been fixed once for
+  `docker compose` and missed here, so the rule is now the helper, not
+  vigilance.
 - **Docker Desktop's installer needs administrator rights**, and a setup file
   run by double-clicking does not have them - so winget fails and the whole
   install stops on its first action with a bare exit code 1. `Install-Docker`

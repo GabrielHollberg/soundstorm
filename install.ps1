@@ -125,9 +125,42 @@ function Invoke-Docker {
     }
 }
 
+# Invoke-Native runs an external program without its stderr becoming fatal.
+#
+# PowerShell 5.1 wraps every stderr line from a native program in an
+# ErrorRecord, and with $ErrorActionPreference = 'Stop' the first one throws.
+# That is not a stylistic problem: `docker info` writes to stderr when the
+# engine is not running, so the check for "is Docker running" crashed instead
+# of answering false - in exactly the situation it exists to detect, which is
+# the situation immediately after installing Docker Desktop.
+#
+# Every external call in this script goes through here or through Invoke-Docker.
+function Invoke-Native {
+    param([string]$Command, [string[]]$Arguments, [switch]$Show)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($Show) {
+            # Printed as it arrives rather than collected: a multi-minute
+            # download with a silent window is how somebody decides it hung.
+            & $Command @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+            return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = '' }
+        }
+        $lines = & $Command @Arguments 2>&1 | ForEach-Object { "$_" }
+        return [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            Output   = ($lines -join [Environment]::NewLine)
+        }
+    } catch {
+        return [pscustomobject]@{ ExitCode = 1; Output = $_.Exception.Message }
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 function Test-DockerRunning {
-    docker info *> $null
-    return ($LASTEXITCODE -eq 0)
+    return ((Invoke-Native 'docker' @('info')).ExitCode -eq 0)
 }
 
 function Get-DockerDesktopPath {
@@ -187,8 +220,7 @@ function Install-Docker {
     )
 
     if (Test-Administrator) {
-        & winget @wingetArgs
-        $code = $LASTEXITCODE
+        $code = (Invoke-Native 'winget' $wingetArgs -Show).ExitCode
     } else {
         Note "Windows will ask for permission to install it - say yes."
         try {
@@ -255,6 +287,8 @@ function Start-Docker {
     }
 
     Note "Starting Docker Desktop. This takes a minute on a cold start."
+    Note "If it opens a window asking you to accept its terms, say yes -"
+    Note "SoundStorm will carry on by itself once you have."
     Start-Process -FilePath $exe | Out-Null
 
     $waited = 0
@@ -262,12 +296,18 @@ function Start-Docker {
         Start-Sleep -Seconds 3
         $waited += 3
         if ($waited % 30 -eq 0) { Note "still starting... ($waited seconds)" }
-        if ($waited -gt 300) {
+        if ($waited -gt 420) {
             Stop-With @"
   Docker Desktop was started but its engine never came up.
 
-  Open Docker Desktop from the Start menu and see what it says - the first
-  run sometimes asks a question or wants a restart. Then run this again.
+  On a brand new install it usually wants one of these first:
+
+    * its terms accepted - open Docker Desktop from the Start menu and
+      see whether it is waiting on a window
+    * a restart of the PC
+
+  Do whichever it asks for, then run this setup again. Nothing is lost -
+  it picks up where it left off.
 "@
         }
     }
@@ -429,7 +469,7 @@ Write-Host "  -----------------------------------------------------------"
 
 Step "Checking for Docker"
 Initialize-Docker
-Note (docker --version)
+Note (Invoke-Native 'docker' @('--version')).Output
 
 Step "Setting up $Dir"
 
