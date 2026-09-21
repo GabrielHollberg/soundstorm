@@ -388,18 +388,31 @@ func (s *Source) Search(_ context.Context, q media.Query) ([]media.Item, error) 
 		return nil, fmt.Errorf("library has not finished scanning yet")
 	}
 
-	limit := q.LimitOr(25)
-	items := make([]media.Item, 0, limit)
+	// Matched first, then sorted, then cut - in that order, and the order is
+	// what makes paging work.
+	//
+	// federate asks every source for the first N and merges, which only
+	// yields the globally first N if each source really did return *its* first
+	// N by the same key the merge sorts on. Cutting at the limit while still
+	// in scan order would hand back an arbitrary subset, so page two would
+	// repeat some books and skip others. See federate.Search.
+	matched := make([]media.Item, 0, len(s.books))
 	for _, b := range s.books {
-		if len(items) >= limit {
-			break
+		if matches(b, terms) {
+			matched = append(matched, b.item(s.id))
 		}
-		if !matches(b, terms) {
-			continue
-		}
-		items = append(items, b.item(s.id))
 	}
-	return items, nil
+	sort.SliceStable(matched, func(a, b int) bool {
+		if matched[a].Title != matched[b].Title {
+			return matched[a].Title < matched[b].Title
+		}
+		return matched[a].ID < matched[b].ID
+	})
+
+	if limit := q.LimitOr(25); len(matched) > limit {
+		matched = matched[:limit]
+	}
+	return matched, nil
 }
 
 // matches reports whether every query term appears somewhere useful. Requiring

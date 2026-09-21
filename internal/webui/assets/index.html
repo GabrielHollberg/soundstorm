@@ -167,6 +167,12 @@
     <p id="status" class="muted"></p>
 
     <section id="results" class="grid"></section>
+
+    <!-- Watched by an IntersectionObserver: when this scrolls into view the
+         next page is fetched and appended. Zero height, so it changes no
+         layout and is invisible when there is nothing more to load. -->
+    <div id="scroll-sentinel" aria-hidden="true"></div>
+    <p id="loading-more" class="muted hidden" role="status">Loading more&hellip;</p>
   </div>
 
   <!-- Video overlay ----------------------------------------------------- -->

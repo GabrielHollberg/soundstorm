@@ -11,10 +11,17 @@
 
 const $ = (id) => document.getElementById(id);
 
+// One page. Small enough that the first screenful arrives quickly, large
+// enough that a fast scroll does not outrun it.
+const PAGE_SIZE = 50;
+
 const state = {
   kind: '',
   query: '',
   searchSeq: 0,
+  offset: 0,        // how many items are already on screen
+  hasMore: false,   // whether the server says another page exists
+  loadingMore: false,
   setupTimer: null,
   libraryEmpty: true,
   me: null, // the signed-in account, from /api/session
@@ -621,12 +628,13 @@ async function runSearch() {
   const seq = ++state.searchSeq;
   $('status').textContent = query ? 'Searching…' : 'Loading…';
 
-  const params = new URLSearchParams({ q: query });
+  // Back to the top of the list. Anything already on screen belongs to the
+  // previous query and must not be appended to.
+  state.offset = 0;
+  state.hasMore = false;
+
+  const params = new URLSearchParams({ q: query, limit: String(PAGE_SIZE) });
   if (state.kind) params.set('kind', state.kind);
-  // A browse wants the shelf, not a top-25 of it. Only when browsing: asking
-  // for four times as much on every keystroke would slow typing down for a
-  // list nobody reads past the top of anyway.
-  if (!query) params.set('limit', '100');
 
   const { ok, body } = await api(`/api/search?${params}`);
   if (seq !== state.searchSeq) return;
@@ -638,13 +646,19 @@ async function runSearch() {
   renderResults(body);
 }
 
-function renderResults(result) {
+function renderResults(result, append) {
   const grid = $('results');
-  grid.replaceChildren();
+  if (!append) grid.replaceChildren();
 
   for (const item of result.items) {
     grid.append(renderItem(item));
   }
+
+  // Trust the server's own count of where this page ended rather than adding
+  // up what arrived: a page clipped at the depth cap would otherwise leave the
+  // next request asking from the wrong place.
+  state.offset = (result.offset || 0) + result.items.length;
+  state.hasMore = Boolean(result.hasMore);
 
   const failed = (result.sources || []).filter((s) => !s.ok);
   if (failed.length) {
@@ -653,14 +667,19 @@ function renderResults(result) {
   }
   show($('degraded'), failed.length > 0);
 
-  const n = result.items.length;
+  // What is on screen, not what this page brought, or the count resets to 50
+  // on every scroll.
+  const shown = grid.childElementCount;
   const browsing = !state.query;
-  if (n) {
-    // A browse is a list, not an answer: "25 results" for a shelf nobody
+  if (shown) {
+    // A browse is a list, not an answer: "50 results" for a shelf nobody
     // asked a question of reads like a search that went wrong.
+    // The ellipsis goes after the noun, not inside the number: "100 items…"
+    // rather than "100… items", which reads like a broken number.
+    const more = state.hasMore ? '…' : '';
     $('status').textContent = browsing
-      ? `${n} item${n === 1 ? '' : 's'}${n >= 100 ? ' — type to narrow' : ''}`
-      : `${n} result${n === 1 ? '' : 's'} in ${result.tookMs} ms`;
+      ? `${shown} item${shown === 1 ? '' : 's'}${more}`
+      : `${shown} result${shown === 1 ? '' : 's'}${more} in ${result.tookMs} ms`;
   } else if (state.libraryEmpty) {
     // "Nothing matched" is a lie when there is nothing to match against.
     $('status').textContent = 'Nothing to search yet — your library is empty.';
@@ -672,6 +691,70 @@ function renderResults(result) {
   } else {
     $('status').textContent = 'Nothing matched.';
   }
+
+  show($('loading-more'), false);
+  // The page just appended may not have filled the screen - on a short list,
+  // or a tall monitor - in which case the sentinel is still in view and no
+  // scroll will ever happen to trigger it. Check once layout has settled.
+  requestAnimationFrame(maybeLoadMore);
+}
+
+/* --------------------------------------------------------- infinite scroll */
+
+// loadMore appends the next page.
+//
+// It deliberately does not bump searchSeq: this request belongs to the search
+// already on screen. It captures the sequence instead, so that a page which
+// comes back after the user has typed something else is dropped rather than
+// appended under results it has nothing to do with.
+async function loadMore() {
+  if (state.loadingMore || !state.hasMore) return;
+  state.loadingMore = true;
+  show($('loading-more'), true);
+
+  const seq = state.searchSeq;
+  const params = new URLSearchParams({
+    q: state.query,
+    limit: String(PAGE_SIZE),
+    offset: String(state.offset),
+  });
+  if (state.kind) params.set('kind', state.kind);
+
+  const { ok, body } = await api(`/api/search?${params}`);
+  state.loadingMore = false;
+
+  if (seq !== state.searchSeq) return;
+  if (!ok || !body) {
+    show($('loading-more'), false);
+    // Leave hasMore alone: scrolling again is a perfectly good retry, and a
+    // list that silently stops growing after one dropped request is worse
+    // than one that tries again.
+    return;
+  }
+  renderResults(body, true);
+}
+
+// maybeLoadMore asks whether the end of the list is close enough to be worth
+// fetching for. Used both by the observer and after each append.
+function maybeLoadMore() {
+  if (!state.hasMore || state.loadingMore) return;
+  const sentinel = $('scroll-sentinel');
+  const box = sentinel.getBoundingClientRect();
+  // 600px of lead time, so the next page is usually there before the gap is.
+  if (box.top < window.innerHeight + 600) loadMore();
+}
+
+// The observer catches scrolling; maybeLoadMore after each append catches the
+// case where the new page still did not fill the screen. An observer alone
+// would stall there, because a sentinel that never left the viewport never
+// crosses back into it and so never fires again.
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) maybeLoadMore();
+  }, { rootMargin: '600px' }).observe($('scroll-sentinel'));
+} else {
+  // Old browser: scrolling still works, it just asks on every scroll event.
+  window.addEventListener('scroll', maybeLoadMore, { passive: true });
 }
 
 function renderItem(item) {

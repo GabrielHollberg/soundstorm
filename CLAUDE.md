@@ -209,6 +209,41 @@ The browse asks for `limit=100` and a search does not. A browse wants the
 shelf; asking for four times as much on every keystroke would slow typing
 down for a list nobody reads past the top of.
 
+**Paging a merged list means re-fetching, and that is not laziness.**
+Infinite scroll asks for `?offset=`, and `federate.Search` asks every source
+for `offset + window` items and slices *after* the merge - so page two asks
+each backend for 200 and throws the first 100 away.
+
+Per-source paging looks like the obvious alternative and is wrong: each
+source's second page starts over at the top of its own order, so those items
+sort in behind ones already on screen. `TestPagesWalkTheMergedOrderExactly`
+is the property that matters - walking every page has to reproduce the single
+sorted list with nothing repeated and nothing skipped.
+
+That only holds if **every source returns its own title-first N**, because the
+globally first N can only come from the union of each source's first N. It is
+a requirement on the adapters, not an internal detail:
+
+- `localbooks` sorts before it cuts. It used to cut in scan order, which would
+  have made page two repeat some books and skip others.
+- Jellyfin gets `SortBy=SortName`, Audiobookshelf `sort=media.metadata.title`.
+- Navidrome's `search3` order is its own; nothing in the Subsonic API asks for
+  a sort, so a music-only browse can slip an item at a page boundary. Known,
+  and cheap to fix only if Navidrome grows the parameter.
+
+`HasMore` is not just "this page was full": a source returning exactly what it
+was asked for was probably truncated, so there is more behind it even when the
+merged page came up short. Without that, one source holding a long shelf
+answers a first page and looks exhausted.
+
+`MaxDepth` (2000) stops paging rather than serving pages that never arrive.
+The work per page grows with the offset, so there has to be an end somewhere.
+
+On the browser side an `IntersectionObserver` alone is not enough. If a page
+does not fill the screen the sentinel never leaves the viewport, so it never
+crosses back in and never fires again - the list stalls with more to load.
+Every append re-checks the sentinel's position once layout has settled.
+
 **Testing this needs a second stack, and `-p` is not enough.** The compose
 file pins `container_name` on every service, which a project name does not
 namespace - so a second stack collides by name and refuses to start. It fails

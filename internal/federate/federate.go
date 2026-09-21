@@ -21,9 +21,16 @@ import (
 // search.
 const DefaultPerSourceTimeout = 5 * time.Second
 
-// MaxResults caps the merged list. Per-source limits multiply by the number of
-// backends, and nobody scrolls past a hundred results.
+// MaxResults caps one page of the merged list.
 const MaxResults = 100
+
+// MaxDepth is how far into a shelf paging will go.
+//
+// Every page re-fetches from the start (see Search), so the work grows with
+// the offset rather than staying flat - which is fine for a house's worth of
+// media and needs a stop somewhere. At the cap Search reports HasMore false
+// rather than serving empty pages forever.
+const MaxDepth = 2000
 
 // SourceStatus is the per-source outcome of one federated search.
 type SourceStatus struct {
@@ -44,6 +51,13 @@ type Result struct {
 	// valid; they are just incomplete.
 	Degraded bool  `json:"degraded"`
 	TookMS   int64 `json:"tookMs"`
+
+	// Offset is where this page starts, echoed back so a client appending
+	// pages can tell a reply to its own request from a stale one.
+	Offset int `json:"offset"`
+
+	// HasMore says another page is worth asking for.
+	HasMore bool `json:"hasMore"`
 }
 
 // Search queries every source the registry says matches q, concurrently.
@@ -57,6 +71,26 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 	}
 	started := time.Now()
 	sources := reg.Matching(ctx, q)
+
+	// Every source is asked for the whole run up to the end of the window,
+	// not just the window itself - so page two asks for 200 and throws the
+	// first 100 away.
+	//
+	// That looks wasteful and is the only correct option here. A merged,
+	// globally sorted page cannot be built from per-source pages: each
+	// source's second page starts over at the top of its own order, so those
+	// items would sort in behind ones already on screen. Slicing after the
+	// merge is the only way the ordering survives paging.
+	window := q.Limit
+	if window <= 0 {
+		window = MaxResults
+	}
+	depth := q.Offset + window
+	if depth > MaxDepth {
+		depth = MaxDepth
+	}
+	fetch := q
+	fetch.Limit = depth
 
 	type outcome struct {
 		status SourceStatus
@@ -76,7 +110,7 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 			defer cancel()
 
 			begin := time.Now()
-			items, err := src.Search(sctx, q)
+			items, err := src.Search(sctx, fetch)
 			status := SourceStatus{
 				SourceID: src.ID(),
 				Kind:     src.Kind(),
@@ -114,9 +148,29 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 	}
 
 	sortItems(res.Items)
-	if len(res.Items) > MaxResults {
-		res.Items = res.Items[:MaxResults]
+
+	// A source that returned exactly what it was asked for was probably cut
+	// off, so there is more behind it even when this page is not full. Without
+	// this, one source holding a thousand books answers a first page of a
+	// hundred and looks exhausted.
+	truncated := false
+	for _, o := range outcomes {
+		if o.status.OK && len(o.items) >= depth {
+			truncated = true
+		}
 	}
+
+	total := len(res.Items)
+	start := min(q.Offset, total)
+	end := min(start+window, total)
+	res.Offset = q.Offset
+	res.HasMore = total > end || truncated
+	// At the cap, stop rather than hand out pages that will never arrive.
+	if q.Offset+window >= MaxDepth {
+		res.HasMore = false
+	}
+	res.Items = res.Items[start:end]
+
 	res.TookMS = time.Since(started).Milliseconds()
 	return res
 }

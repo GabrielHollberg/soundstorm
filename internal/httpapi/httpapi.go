@@ -972,6 +972,19 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Where this page starts in the merged list. Paging is global rather than
+	// per-source, because a merged order cannot survive being assembled from
+	// per-source pages - see federate.Search.
+	if raw := q.Get("offset"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 || n > federate.MaxDepth {
+			writeError(w, http.StatusBadRequest,
+				"offset must be between 0 and "+strconv.Itoa(federate.MaxDepth))
+			return
+		}
+		query.Offset = n
+	}
+
 	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > 200 {

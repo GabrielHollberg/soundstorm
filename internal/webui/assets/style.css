@@ -279,6 +279,13 @@ header {
   white-space: nowrap;
 }
 
+/* Infinite scroll -------------------------------------------------------- */
+
+/* No height of its own: it exists to be observed, not seen. Given any size it
+   would add a gap under the last row of every result list. */
+#scroll-sentinel { height: 1px; }
+#loading-more { margin: 0 20px 28px; font-size: 13px; }
+
 /* Video overlay --------------------------------------------------------- */
 
 .overlay {

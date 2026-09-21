@@ -88,9 +88,10 @@ type Item struct {
 
 // Query is a federated search request.
 type Query struct {
-	Text  string
-	Kinds []Kind // empty means "all kinds"
-	Limit int    // per-source cap; 0 means the source's own default
+	Text   string
+	Kinds  []Kind // empty means "all kinds"
+	Limit  int    // per-source cap; 0 means the source's own default
+	Offset int    // how many merged items to skip; paging, not per-source
 }
 
 // WantsKind reports whether this query is interested in kind k.
