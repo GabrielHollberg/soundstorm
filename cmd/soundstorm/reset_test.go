@@ -125,3 +125,21 @@ func capture(t *testing.T, fn func()) string {
 	os.Stdout = old
 	return <-done
 }
+
+// A switch has to mean what it says. This was `!= "false"`, so
+// SOUNDSTORM_STARTER_LIBRARY=off enabled the starter library - the opposite of
+// what was written, with nothing on screen to say so. Found by writing "off"
+// while testing something else, because SOUNDSTORM_TLS uses "off" for exactly
+// this idea.
+func TestEnabledReadsTheObviousSpellings(t *testing.T) {
+	for _, off := range []string{"false", "off", "no", "0", "", "  OFF  ", "False"} {
+		if enabled(off) {
+			t.Errorf("enabled(%q) = true, want false", off)
+		}
+	}
+	for _, on := range []string{"true", "yes", "1", "on", "anything"} {
+		if !enabled(on) {
+			t.Errorf("enabled(%q) = false, want true", on)
+		}
+	}
+}

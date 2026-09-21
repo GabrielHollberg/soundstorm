@@ -364,50 +364,16 @@ async function loadLibrary() {
 
   state.libraryEmpty = body.empty;
 
+  // The one signal worth keeping from the per-kind counts the card used to
+  // show: files on disk that no backend has indexed yet. It tells "nothing
+  // has been added" apart from "a scan is still running", which are the two
+  // reasons a search can come back empty and look broken.
   const folders = body.folders || [];
-  const kinds = folders.map(kindLabel);
-
-  // The heading does not vary, so it stays in the shell rather than being
-  // rewritten here on every load.
-  //
-  // The list of what it takes is the useful half of this sentence: "media" is
-  // vague, and somebody with a folder of .m4b files wants to see the word
-  // audiobooks before they trust it with them.
-  $('library-blurb').textContent = kinds.length
-    ? `${sentenceList(kinds)} — anywhere on this window. Whole folders work too, and SoundStorm files them for you.`
-    : 'Drop files anywhere on this window and SoundStorm files them for you.';
-
-  // One line of counts rather than five boxes of them. The per-kind numbers
-  // are still worth having - "did my music actually land" is a real question -
-  // but as a summary, not as the subject of the screen.
-  const summary = $('library-summary');
-  const total = folders.reduce((n, f) => n + (f.files || 0), 0);
-  if (!total) {
-    summary.textContent = 'Nothing in it yet.';
-  } else {
-    const parts = folders
-      .filter((f) => f.files > 0)
-      .map((f) => `${f.files} ${kindLabel(f)}`);
-    summary.textContent = `${total} file${total === 1 ? '' : 's'} — ${parts.join(', ')}`;
-  }
-  // The gap between files on disk and files indexed is what tells "you have
-  // not added anything" apart from "a scan is still running".
   const indexing = folders.some(
     (f) => typeof f.indexed === 'number' && f.indexed < f.files);
-  if (indexing) summary.textContent += ' · indexing…';
+  show($('library-indexing'), indexing);
 
-  // The folders still exist and still matter - copying a drive in over the
-  // network is not a drag and drop - so they get named. Once, at the bottom,
-  // rather than being the screen.
-  $('library-where').textContent = body.root
-    ? `They go in ${body.root} on the server. You can put them there yourself instead.`
-    : '';
-
-  // The address for everybody else in the house. The server works out whether
-  // it has one worth printing; an address that does not work is worse than no
-  // address, so there is no client-side fallback guess here either.
-  // Two places, one answer: the first screen, and the account panel that
-  // outlives it once the library fills up.
+  // Two places, one answer: the hint line, and the account panel.
   for (const [row, anchor] of [
     ['library-share', 'library-share-url'],
     ['account-share', 'account-share-url'],
@@ -419,37 +385,9 @@ async function loadLibrary() {
     }
     show($(row), Boolean(body.shareURL));
   }
-
-  updateLibraryVisibility();
 }
 
-// What to call a shelf in a sentence.
-//
-// Not folder.name, which is the name on disk: that is "tv", and "music,
-// movies, tv and ebooks" reads like a typo in the middle of a sentence. These
-// match the filter chips, so the same shelf is called the same thing whichever
-// screen somebody is looking at, and it falls through to the folder name for
-// a kind added later.
-const KIND_WORDS = {
-  music: 'music',
-  video: 'films',
-  tv: 'TV',
-  audiobook: 'audiobooks',
-  ebook: 'ebooks',
-};
 
-function kindLabel(folder) {
-  return KIND_WORDS[folder.kind] || folder.name || folder.kind;
-}
-
-// "music, films and ebooks" rather than "music, films, ebooks".
-//
-// Takes the words as given rather than lowercasing them, or KIND_WORDS' "TV"
-// comes back out as "tv" - which is the whole thing that map exists to stop.
-function sentenceList(words) {
-  if (words.length < 2) return words.join('');
-  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
-}
 
 // The scan button. Dropping files on the window already triggers this, so it
 // is here for media that arrived some other way - copied in from a file
@@ -490,6 +428,13 @@ $('rescan').addEventListener('click', async () => {
 // follow. This goes through exactly the same intake as a drop: collectFiles
 // already falls back to a flat file list when a DataTransfer carries no
 // directory entries, which is precisely the shape a file input gives.
+// A phone cannot drag anything, so telling one to is an instruction it cannot
+// follow - and it is the first line of the app. Asked of the pointer rather
+// than the width, because a narrow desktop window still has a mouse.
+if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+  $('hint-add').textContent = 'Add music, films, audiobooks or ebooks:';
+}
+
 $('choose-files').addEventListener('click', () => $('file-picker').click());
 
 $('file-picker').addEventListener('change', (event) => {
@@ -500,21 +445,6 @@ $('file-picker').addEventListener('change', (event) => {
   event.target.value = '';
   intake({ items: [], files });
 });
-
-function updateLibraryVisibility() {
-  // Shown whenever nothing is typed, but in two very different sizes.
-  //
-  // On a fresh install it is the whole screen, because "what do I do now" is
-  // the only question there is. Once there is something to browse it shrinks
-  // to a strip above the grid - it still carries Choose files, the rescan
-  // button and the address for other devices, and hiding it outright would
-  // take all three away from everybody who actually has a library.
-  const browsing = !state.query;
-  show($('library'), browsing);
-  $('library-card').classList.toggle('compact', !state.libraryEmpty);
-  show($('results'), true);
-  show($('status'), true);
-}
 
 async function pollSetup() {
   const { ok, body } = await api('/api/setup');
@@ -615,8 +545,6 @@ async function runSearch() {
   const query = $('search-input').value.trim();
   state.query = query;
 
-  updateLibraryVisibility();
-
   if (!query) {
     // Counts may have moved while the user was searching, and the shelf about
     // to be listed is the thing they describe.
@@ -681,9 +609,11 @@ function renderResults(result, append) {
       ? `${shown} item${shown === 1 ? '' : 's'}${more}`
       : `${shown} result${shown === 1 ? '' : 's'}${more} in ${result.tookMs} ms`;
   } else if (state.libraryEmpty) {
-    // "Nothing matched" is a lie when there is nothing to match against.
-    $('status').textContent = 'Nothing to search yet — your library is empty.';
-    show($('library'), true);
+    // "Nothing matched" is a lie when there is nothing to match against - and
+    // this is now the whole of the first-run guidance, since the box that used
+    // to carry it is gone. It has to say what to do, not just what happened.
+    $('status').textContent =
+      'Nothing here yet. Drag music, films, audiobooks or ebooks anywhere on this window.';
   } else if (browsing) {
     // Empty shelf, full library: they filtered to a kind they have none of,
     // or its backend is still doing its first scan.

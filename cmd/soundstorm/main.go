@@ -80,7 +80,7 @@ func run(log *slog.Logger) error {
 	// A media server with nothing in it cannot be evaluated, so the first run
 	// arrives with a small library of classics already in place. Only folders
 	// the user has not put anything in are touched.
-	if env("SOUNDSTORM_STARTER_LIBRARY", "true") != "false" {
+	if enabled(env("SOUNDSTORM_STARTER_LIBRARY", "true")) {
 		if _, err := starter.Install(lib.Root(), lib.FolderIsEmpty, log); err != nil {
 			// Never fatal: a server that will not start because it could not
 			// unpack sample media has its priorities backwards.
@@ -278,6 +278,22 @@ func splitList(raw string) []string {
 		}
 	}
 	return out
+}
+
+// enabled reads a switch the way somebody writing one expects it to be read.
+//
+// This used to be `!= "false"`, so SOUNDSTORM_STARTER_LIBRARY=off turned the
+// starter library on - the exact opposite of what was written, silently. "off"
+// is a reasonable thing to write, not least because SOUNDSTORM_TLS uses it for
+// the same idea, and a setting that quietly means its opposite is worse than
+// one that refuses to be understood.
+func enabled(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "false", "off", "no", "0", "":
+		return false
+	default:
+		return true
+	}
 }
 
 func env(key, def string) string {

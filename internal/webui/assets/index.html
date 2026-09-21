@@ -66,6 +66,37 @@
       <button class="chip" data-kind="ebook">Ebooks</button>
     </nav>
 
+    <!-- One line, not a box.
+         
+         Dropping works anywhere on the window, so the only thing that needs
+         saying is that it does. What shares the line with it is everything
+         that has nowhere else to live: a file picker, because a phone cannot
+         drag anything and this is still the app that wants files; the rescan,
+         for media copied in some other way; and the address to hand to
+         another device, which is the question people ask most.
+         
+         What used to be here and is not any more: a glyph, a heading, a
+         sentence listing what it accepts, the per-kind file counts and the
+         folder path. A screen whose job is to get out of the way should not
+         open with a box explaining itself. -->
+    <p id="hints" class="hints">
+      <span id="hint-add">Drag files anywhere on this window to add them</span>
+      <button id="choose-files" class="linkish" type="button">choose files</button>
+      <button id="rescan" class="linkish" type="button">check for new files</button>
+      <input id="file-picker" type="file" multiple hidden>
+      <!-- Only while a backend is still working through what arrived, so the
+           one signal worth keeping from the old counts does not become
+           permanent furniture. -->
+      <span id="library-indexing" class="hidden">indexing&hellip;</span>
+      <!-- Hidden rather than guessed at when the server has no honest answer. -->
+      <span id="library-share" class="hidden">
+        <span class="hint-sep" aria-hidden="true">&middot;</span>
+        on this network
+        <a id="library-share-url" href="#"></a>
+      </span>
+    </p>
+    <p id="rescan-note" class="muted hidden" role="status"></p>
+
     <!-- Provisioning progress. Visible until every backend is ready, because
          until then an empty search result is expected rather than broken. -->
     <section id="setup" class="card hidden">
@@ -115,42 +146,6 @@
       </div>
     </section>
 
-    <!-- Shown when there is no search running. On a fresh install this is the
-         first thing anyone sees, so it has to answer "what do I do now".
-
-         One card about the whole library, not one per folder. Five boxes of
-         paths and example filenames was a reference manual on a screen whose
-         job is to say "put something in". Dropping onto the window sorts
-         files by itself now, so the folders are the fallback rather than the
-         instruction, and they read as one line at the bottom. -->
-    <section id="library" class="hidden">
-      <div id="library-card" class="card drop-card">
-        <span class="drop-card-glyph" aria-hidden="true">&#8681;</span>
-        <h2 id="library-heading">Drag your media here</h2>
-        <p id="library-blurb" class="muted"></p>
-
-        <!-- A phone cannot drag anything, and this is the screen that asks
-             for files. Same code path as a drop: collectFiles falls back to a
-             flat file list when there are no directory entries. -->
-        <div class="drop-card-actions">
-          <button id="choose-files" type="button">Choose files</button>
-          <button id="rescan" class="ghost" type="button">Check for new files</button>
-        </div>
-        <input id="file-picker" type="file" multiple hidden>
-
-        <p id="rescan-note" class="muted hidden" role="status"></p>
-
-        <p id="library-summary" class="library-summary"></p>
-        <p id="library-where" class="muted library-where"></p>
-
-        <!-- The address to give everybody else in the house. Hidden rather
-             than guessed at when the server has no honest answer. -->
-        <p id="library-share" class="library-share hidden">
-          <span class="muted">On another device on this network:</span>
-          <a id="library-share-url" href="#"></a>
-        </p>
-      </div>
-    </section>
 
     <!-- What a drop is doing, and what it did. Stays up after an upload so
          somebody can read what was skipped and why. -->

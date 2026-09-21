@@ -662,6 +662,14 @@ header {
   button, select, input[type="submit"], input[type="button"] {
     min-height: 40px;
   }
+  /* The address is a real link, and a 15px line of text is not something a
+     thumb can hit. Padding alone would not do it on an inline element, so it
+     becomes a flex box tall enough to aim at. */
+  #library-share-url, #account-share-url {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
   .chip {
     display: inline-flex;
     align-items: center;
@@ -761,164 +769,64 @@ header {
   .reader:not(.fixed-layout) .page-turn { display: none; }
 }
 
-/* Library folder guide ---------------------------------------------------- */
+/* The hint line ----------------------------------------------------------
 
-/* The card sits in the middle of whatever room is left under the header,
-   rather than tucked into the top-left corner. It is the only thing on the
-   screen at this point, and the screen's whole job is to ask for files.
+   What replaced the drop card. One line of muted text under the filters,
+   carrying the three things that had nowhere else to go: that dropping works
+   anywhere, a file picker for devices that cannot drag, and the address for
+   another device.
 
-   #app becomes the flex column so "whatever room is left" is a thing the
-   browser can work out - the header and the filter row are its other
-   children, so their heights never have to be named here. */
-#app {
-  display: flex;
-  flex-direction: column;
-  /* The full viewport; the dock's strip is body padding outside this, and
-     only exists while something is playing. */
-  min-height: 100dvh;
-}
+   No border and no background on purpose. The moment it has a box around it,
+   it is the box again. */
 
-#library {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  /* The insets are taken here rather than in the @supports block above,
-     because this shorthand comes later in the file and would overwrite a
-     padding-left set there. One rule owning all four sides is the only way
-     that cannot go wrong. */
-  padding: 20px max(20px, env(safe-area-inset-right)) 20px max(20px, env(safe-area-inset-left));
-}
-#library-card { width: min(700px, 100%); }
-
-/* A strip belongs at the top with the results under it, not floating in the
-   middle of the page - so the section gives up both its stretch and its
-   centring as soon as the card goes compact. */
-#library:has(.drop-card.compact) {
-  flex: 0 0 auto;
-  place-items: stretch;
-  padding: 4px 20px 0;
-}
-#library:has(.drop-card.compact) #library-card { width: 100%; }
-
-/* The one card. Centred and roomy on purpose: this is the screen a new
-   install opens on, and its entire job is to say "put something in". The
-   previous version listed five folders with their paths and an example
-   filename each, which is a reference manual in the place an invitation
-   belongs - and a reference manual for the fallback route at that, now that
-   dropping onto the window sorts files by itself. */
-.drop-card {
-  text-align: center;
-  padding: 32px 24px 24px;
-  border-style: dashed;
-  border-width: 2px;
-}
-
-.drop-card-glyph {
-  display: block;
-  font-size: 34px;
-  line-height: 1;
-  color: var(--accent);
-  opacity: 0.8;
-  margin-bottom: 10px;
-}
-
-#library h2 { margin: 0 0 6px; font-size: 20px; }
-#library-blurb { margin: 0 auto 20px; font-size: 14px; max-width: 46ch; }
-
-.drop-card-actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-#rescan-note { margin: 12px 0 0; font-size: 13px; }
-
-/* Below a divider rather than in the flow: these answer "did it work" and
-   "where did it go", which are questions asked after the fact. */
-.library-summary {
-  margin: 22px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-  font-size: 13.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.library-where {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  opacity: 0.8;
-}
-
-/* The same card once there is a library to browse.
-   
-   It stops being the screen and becomes a strip above the grid: no glyph, no
-   heading, no invitation - just the three things that have nowhere else to
-   live (Choose files, the rescan button, and the address for other devices)
-   and the counts. Hiding it outright was the alternative, and that would have
-   taken all three away from everybody past their first five minutes. */
-.drop-card.compact {
-  text-align: left;
-  padding: 12px 16px;
-  border-style: solid;
-  border-width: 1px;
+.hints {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: 2px 10px;
+  margin: 10px 20px 0;
+  font-size: 13px;
+  color: var(--muted);
 }
-.drop-card.compact .drop-card-glyph,
-.drop-card.compact h2,
-.drop-card.compact #library-blurb,
-.drop-card.compact .library-where { display: none; }
+.hint-sep { opacity: 0.5; }
 
-.drop-card.compact .drop-card-actions { gap: 8px; order: 3; }
-.drop-card.compact .library-summary {
-  margin: 0;
-  padding: 0;
+/* The separator only separates while the line is a line. Once it wraps, a
+   leading interpunct at the start of a row is just a smudge. */
+@media (max-width: 620px) {
+  .hint-sep { display: none; }
+  .hints { gap: 6px 10px; }
+}
+
+/* Buttons that read as text. A row of real buttons under the filters would be
+   its own kind of clutter - but they are still buttons underneath, so they
+   keep the 40px minimum a finger needs on a touch screen. */
+.linkish {
+  background: none;
   border: none;
-  flex: 1 1 12ch;
-  font-size: 13px;
-}
-.drop-card.compact .library-share { margin: 0; gap: 6px; }
-.drop-card.compact #library-share-url { padding: 6px 9px; font-size: 13px; }
-.drop-card.compact button { font-size: 13px; padding: 7px 11px; }
-
-/* The address for everybody else. It is meant to be read off a screen and
-   typed into a phone, so it gets the monospace treatment and enough size to
-   tell a 1 from an l. */
-.library-share {
-  margin: 14px 0 0;
-  font-size: 13px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: baseline;
-  gap: 8px;
-}
-/* A pill rather than bare underlined text: it is a real link, and 21px of
-   line box is under every tap-target minimum there is. The padding is what
-   makes it reachable with a thumb, and the border is what makes it look like
-   something you are meant to reach for. */
-#library-share-url {
-  display: inline-block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 14px;
+  padding: 0;
+  font: inherit;
   color: var(--accent);
-  text-decoration: none;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 9px 12px;
-  /* An address is read a character at a time, so it must never be broken
-     across a line in the middle. */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linkish:hover { filter: none; color: var(--text); }
+
+/* Read off one screen and typed into another, so: monospace, and never broken
+   across a line. */
+#library-share-url,
+#account-share-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--accent);
   white-space: nowrap;
 }
-#library-share-url:hover {
-  border-color: var(--accent);
-  background: var(--accent-dim);
-}
+
+/* The account panel keeps the address in a paragraph of its own, where it has
+   room to be a proper tap target rather than a word in a sentence. */
+.library-share { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+#account-share { margin: 4px 0 14px; font-size: 13px; }
+
+#rescan-note { margin: 6px 20px 0; font-size: 13px; }
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

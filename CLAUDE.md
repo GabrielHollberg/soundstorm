@@ -198,16 +198,11 @@ Nothing in `federate` changed: `Relevance` scores every item 0 for an empty
 query, so `sortItems` falls through to its title tiebreak and a browse comes
 back alphabetical for free.
 
-The drop card did not go away when this landed. It carries Choose files, the
-rescan button and the address for other devices, and none of those have
-anywhere else to live - so it stays visible while browsing and goes
-`compact`: a strip above the grid on a library with content, the whole screen
-on one without. Hiding it outright was the obvious move and would have taken
-all three away from everybody past their first five minutes.
-
-The browse asks for `limit=100` and a search does not. A browse wants the
-shelf; asking for four times as much on every keystroke would slow typing
-down for a list nobody reads past the top of.
+The drop card survived this change and then did not survive the next one; see
+"The folders, and the line that replaced the box". What it carried - choose
+files, the rescan, the network address - moved to one line under the filters,
+because those three genuinely have nowhere else to live and everything else
+it held was explaining itself.
 
 **Paging a merged list means re-fetching, and that is not laziness.**
 Infinite scroll asks for `?offset=`, and `federate.Search` asks every source
@@ -503,80 +498,52 @@ is the worst available way to be wrong.
 cookie is Secure, for a reverse proxy that terminates TLS. Off unless asked
 for, because any client can send that header.
 
-## The folders were the interface
+## The folders, and the line that replaced the box
 
 Installing SoundStorm creates `library/` with five subfolders, and they are
 still the only part of SoundStorm a user interacts with that has no UI - so
 they are created for you and named for what people call the thing ("movies",
-not "video"). A README nobody reads is not an interface.
+not "video").
 
-**What changed: they are no longer the first screen.** That screen used to be
-a guide to them - five boxes, each with a path, a description and an example
-filename. That was right when putting a file in a folder was the only way to
-add media. It stopped being right when dropping onto the window started
-sorting files by itself, at which point the first screen of a media server was
-a reference manual for the fallback route.
+**Nothing on the first screen is a box any more.** That screen has now been
+three things: five folder rows with paths and example filenames, then one
+centred card asking for files, then nothing at all. Each version was smaller
+than the last and each removal was right, because dropping works anywhere on
+the window - so the screen's whole job is to get out of the way and show the
+library.
 
-It is now one card: drag here, a Choose files button, and one line each for
-what is in the library and where it lives on disk. The folders are named once,
-at the bottom, as the other way to do it. The user asked for this in exactly
-those terms - "one box about the entire library, telling people to drag and
-drop files there" - and the old design's own reasoning agreed once drag and
-drop existed.
+What is left is one line of muted text under the filter chips carrying the
+three things with nowhere else to live:
 
-**Choose files is not decoration.** A phone cannot drag anything, and this is
-the screen whose whole job is to ask for media. It goes through the same
-intake as a drop, because `collectFiles` already falls back to a flat file
-list when a DataTransfer carries no directory entries - which is exactly the
-shape a file input gives. Verified end to end: the picked file arrives in
-`library/ebooks`, not merely accepted by the UI.
+- **choose files**, because a phone cannot drag anything and this is still the
+  app that wants files. On a coarse pointer the sentence changes from "drag
+  files anywhere" to "add music, films, audiobooks or ebooks:" - telling a
+  touch device to drag is an instruction it cannot follow, and it was the
+  first line of the app.
+- **check for new files**, for media that arrived some other way.
+- **the address for another device**, which is the question people ask most.
+  Also in the Account panel, which is where somebody looks for it later.
+
+It has no border and no background on purpose. The moment it has a box around
+it, it is the box again.
+
+One signal survived from the per-kind counts the card used to show:
+**indexing…**, displayed only while a backend is still working through what
+arrived. It is what tells "nothing has been added" apart from "a scan is still
+running", which are the two reasons a search comes back empty and looks
+broken. The rest of the counts went; the library itself is now on screen.
+
+The empty state carries the whole of the first-run guidance, because nothing
+else does: "Nothing here yet. Drag music, films, audiobooks or ebooks anywhere
+on this window."
 
 `internal/library` owns the folders. It reads the directory for exactly two
-reasons - creating it, and counting files so the UI can distinguish "you have
-not added anything" from "a scan is still running". It does not index. Do not
-let it grow into an indexer.
+reasons - creating it, and counting files so the UI can tell those two cases
+apart. It does not index. Do not let it grow into an indexer.
 
 `Hint()` is the path to show a person and `Root()` is the path SoundStorm
 sees; inside a container those are `./library` and `/library`, and only the
 first exists on anybody's computer. `/api/library` sends the hint as `root`.
-
-**The card also prints the address to give everybody else in the house**, and
-that address is assembled from three places because not one of them knows all
-of it:
-
-- the **host** from `SOUNDSTORM_TLS_HOSTS`, written by the installer, which
-  ran on the host and could see its LAN address. This process cannot - inside
-  Docker the only addresses visible are the container's own.
-- the **port** from the `Host` header of the request. Compose's port mapping
-  is `${SOUNDSTORM_PORT}:8080` and the host side is never passed into the
-  container, so the only thing that knows it is the browser that just used it.
-- the **scheme** from `auth.OverTLS`, the same function that decides whether
-  the session cookie is Secure. Two answers to "are we on https" is one more
-  than this needs.
-
-It returns `""` rather than a guess, and the UI hides the line. That is the
-`.local` lesson applied: a printed address that does not work costs more than
-printing none. The fallback when nothing is configured is the request's own
-host, but only if it is not loopback - if this request reached us on
-192.168.1.50 then that address demonstrably works for at least one other
-machine, which is better evidence than anything derivable in here.
-
-Two things worth knowing:
-
-- Only `localbooks` reports an indexed count, so the "indexing…" suffix can
-  only ever come from the ebook shelf. Navidrome and Jellyfin would each need
-  a count call to fix that.
-- What a shelf is called in a sentence comes from `KIND_WORDS` in `app.js`,
-  not from the folder name. The folder is `tv`, and "music, films, tv and
-  ebooks" reads like a typo halfway through a sentence.
-- The card is centred by making `#app` a flex column of full viewport height
-  and giving `#library` `flex: 1` with `place-items: center`, so the header
-  and filter row never have their heights named in CSS. Two things had to move
-  for that to look right: the empty results grid and status line are now
-  hidden until there is a query (an empty grid still contributed 48px of
-  padding), and the audio dock's 96px of bottom padding is applied only while
-  something is playing, via a `dock-open` class on the body. Both were dead
-  space pushing the card off centre.
 
 ## PDFs, and why there is no PDF parser
 
