@@ -231,3 +231,78 @@ func TestExpiredSessionsAreNotLive(t *testing.T) {
 		t.Error("an expired session was accepted")
 	}
 }
+
+// The starter library gets one chance, ever. Before this flag existed the
+// unpack ran on every boot into any shelf with no media on it, so somebody who
+// deleted the samples deliberately found them back after the next restart - an
+// emptied shelf and a never-used one are indistinguishable on disk, so the flag
+// is the only thing that can tell them apart.
+func TestTheStarterLibraryFlagSurvivesARestart(t *testing.T) {
+	dir := t.TempDir()
+
+	first := open(t, dir)
+	// Absent means not yet done, which is the direction that can only cost one
+	// extra unpack. It is the opposite of User.Libraries, where the absent
+	// value had to mean "restricted" and omitempty was therefore forbidden.
+	if first.StarterInstalled() {
+		t.Error("a fresh state claims the starter library is already installed")
+	}
+	if err := first.MarkStarterInstalled(); err != nil {
+		t.Fatalf("MarkStarterInstalled: %v", err)
+	}
+	if !first.StarterInstalled() {
+		t.Error("the flag did not take effect in memory")
+	}
+
+	// Through the file, because that is the whole point - the value has to
+	// outlive the process that set it.
+	again := open(t, dir)
+	if !again.StarterInstalled() {
+		t.Error("the flag did not survive being written and read back")
+	}
+}
+
+// Marking it twice must not rewrite the file. Nothing breaks if it does, but
+// every write is a chance to change the file's ownership, which has cost this
+// project a crash-looping server once already.
+func TestMarkingTheStarterLibraryTwiceWritesOnce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	s := open(t, dir)
+
+	if err := s.MarkStarterInstalled(); err != nil {
+		t.Fatalf("MarkStarterInstalled: %v", err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.MarkStarterInstalled(); err != nil {
+		t.Fatalf("second MarkStarterInstalled: %v", err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Error("marking an already-marked store rewrote the file")
+	}
+}
+
+// A version 1 file predates the flag, so it reads as not-yet-installed and the
+// samples get their one chance on the next boot. That is the right way round:
+// the alternative would deny them to an install that has never had them.
+func TestAnUpgradedFileHasNotInstalledTheStarterLibrary(t *testing.T) {
+	dir := t.TempDir()
+	v1 := `{"version":1,"user":{"id":"u1","name":"gabe","role":"owner"},` +
+		`"sessions":{},"backends":{},"progress":{}}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(v1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := open(t, dir)
+	if s.StarterInstalled() {
+		t.Error("an upgraded file claims the starter library is installed")
+	}
+}

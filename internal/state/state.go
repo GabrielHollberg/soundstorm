@@ -163,6 +163,26 @@ type data struct {
 	// Identities are per-user accounts on a backend, keyed by user id and then
 	// by backend id.
 	Identities map[string]map[string]Identity `json:"identities,omitempty"`
+
+	// StarterInstalled records that the bundled sample library has had its one
+	// chance to unpack. Without it the unpack runs on every boot into any shelf
+	// with no media on it, so somebody who deleted the samples on purpose got
+	// them back the next time the server restarted.
+	//
+	// This is the one thing here that is not a credential or an account, and it
+	// is deliberately not a fact about anybody's media - it says what SoundStorm
+	// has done, not what is in the library. The alternative was a marker file in
+	// the library folder, which is worse for a reason that is easy to miss:
+	// Windows Explorer does not hide dot-files, so it would be the single stray
+	// item at the top of "the folders are the interface", and deleting it - the
+	// obvious thing to do with a file you do not recognise - would bring the
+	// samples back.
+	//
+	// It does mean `docker compose down -v` forgets, and a reinstall over an
+	// existing library can put samples on a shelf that happens to be empty.
+	// That is the documented full reset, and arriving at a fresh install with
+	// something to look at is the behaviour this feature exists for.
+	StarterInstalled bool `json:"starterInstalled,omitempty"`
 }
 
 // Store is the on-disk state, guarded for concurrent use.
@@ -610,6 +630,30 @@ func (s *Store) Backend(id string) (Backend, bool) {
 	defer s.mu.Unlock()
 	b, ok := s.d.Backends[id]
 	return b, ok
+}
+
+// StarterInstalled reports whether the bundled sample library has already had
+// its one chance to unpack.
+func (s *Store) StarterInstalled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.d.StarterInstalled
+}
+
+// MarkStarterInstalled records that it has, so it never runs again.
+//
+// Set whether or not anything was actually written: a boot that found every
+// shelf occupied has answered the question just as well as one that unpacked
+// ten books, and leaving the flag clear in that case would keep the samples
+// waiting for the first shelf somebody empties.
+func (s *Store) MarkStarterInstalled() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.StarterInstalled {
+		return nil // already recorded; no reason to write the file
+	}
+	s.d.StarterInstalled = true
+	return s.save()
 }
 
 // SetBackend records a freshly provisioned backend.

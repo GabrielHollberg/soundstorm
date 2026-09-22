@@ -104,14 +104,32 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	// Opened here, before the starter library rather than after the backends,
+	// because whether the samples have already been unpacked is recorded in it.
+	store, err := state.Open(filepath.Join(stateDir, "state.json"))
+	if err != nil {
+		return err
+	}
+
 	// A media server with nothing in it cannot be evaluated, so the first run
 	// arrives with a small library of classics already in place. Only folders
 	// the user has not put anything in are touched.
-	if enabled(env("SOUNDSTORM_STARTER_LIBRARY", "true")) {
+	//
+	// Once, ever - not on every boot into whatever shelf happens to be empty.
+	// It used to be the latter, which meant somebody who deleted the samples on
+	// purpose found them back after the next restart, with nothing to explain
+	// why. "Only folders the user has not put anything in" reads like it
+	// respects a decision and does the opposite of it: an emptied shelf and a
+	// never-used one look identical on disk.
+	if enabled(env("SOUNDSTORM_STARTER_LIBRARY", "true")) && !store.StarterInstalled() {
 		if _, err := starter.Install(lib.Root(), lib.FolderIsEmpty, log); err != nil {
 			// Never fatal: a server that will not start because it could not
 			// unpack sample media has its priorities backwards.
 			log.Warn("could not install the starter library", "err", err)
+		} else if err := store.MarkStarterInstalled(); err != nil {
+			// Also not fatal, and the cost of getting here is one more unpack
+			// next time rather than anything lost.
+			log.Warn("could not record that the starter library is installed", "err", err)
 		}
 		lib.Invalidate()
 	}
@@ -128,11 +146,6 @@ func run(log *slog.Logger) error {
 	if len(targets) == 0 {
 		return errors.New("no backends configured; set at least one of SOUNDSTORM_NAVIDROME_URL, " +
 			"SOUNDSTORM_JELLYFIN_URL, SOUNDSTORM_AUDIOBOOKSHELF_URL")
-	}
-
-	store, err := state.Open(filepath.Join(stateDir, "state.json"))
-	if err != nil {
-		return err
 	}
 
 	// TLS is set up before anything is served, and a bad setting is fatal:

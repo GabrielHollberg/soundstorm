@@ -53,8 +53,10 @@ and two of them were wrong for this product:
    bytes" at once. SoundStorm is now in the data path. See `internal/stream`.
 2. **"Stateless, restartable, no config writes."** Zero-keys provisioning means
    SoundStorm generates credentials, so it must remember them. One login means a
-   user and sessions. Both outlive a restart. See `internal/state` — note that
-   it holds *only* credentials and the account, never anything about the media.
+   user and sessions. Both outlive a restart. See `internal/state` — which holds
+   credentials, accounts, and one flag recording that the starter library has
+   unpacked. Never anything about the media itself; that is the line that
+   matters, and it is the reason there is no index in there to go stale.
 
 ## What SoundStorm deliberately does not do
 
@@ -950,6 +952,36 @@ outright that automated access to its website earns an IP block. It also means
 the first run works air-gapped. The cost is binary size, and that is why there
 is no video: one film outweighs everything else combined, so the UI names
 Blender's open movies instead of shipping one.
+
+**It unpacks once, ever, and the flag that says so is in the state file.** It
+used to run on every boot into any shelf with no media on it, which reads like
+it respects a decision and does the opposite: an emptied shelf and a never-used
+one are identical on disk, so somebody who deleted the samples on purpose got
+them back at the next restart with nothing to explain why. Reported as "so now
+am I able to delete everything from the library?" - and the honest answer was
+"yes, until you restart".
+
+`state.StarterInstalled` is the only thing in there that is not a credential or
+an account. It is still not a fact about anybody's media - it says what
+SoundStorm has done. A marker file in the library folder was the obvious
+alternative and is worse for a reason easy to miss from Linux: **Windows
+Explorer does not hide dot-files**, so it would sit at the top of "the folders
+are the interface" as the one item nobody recognises, and deleting it - the
+natural response - would bring the samples back.
+
+The flag is set even when nothing was unpacked, because a boot that found every
+shelf occupied has answered the question just as well; leaving it clear would
+keep the samples waiting for the first shelf somebody empties. Absent means
+not-yet-done, so `omitempty` is safe here - the opposite of `User.Libraries`,
+where the absent value had to mean "restricted".
+
+`docker compose down -v` forgets, so a reinstall over an existing library can
+still put samples on a shelf that happens to be empty. That is the documented
+full reset, and something to look at is the whole point of the feature.
+`SOUNDSTORM_STARTER_LIBRARY=false` still turns it off outright.
+
+Verified on a running server: ten ebooks and their placeholder deleted, restart,
+`books=0` and the folder holding nothing but the README it wrote back itself.
 
 Two Windows-specific traps live in here, both of which cost real time:
 
