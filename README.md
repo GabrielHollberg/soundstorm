@@ -167,12 +167,14 @@ every minute for music, every two for ebooks, and as the watchers notice for
 films and audiobooks. Until then the app says "indexing…" rather than
 pretending the file is not there.
 
-It arrives with a small library already in place — ten classics from Project
-Gutenberg, Bach's Goldberg Variations, and *As a Man Thinketh* as both an ebook
-and an audiobook — so there is something to search the moment it starts.
-Bundled in the binary rather than downloaded, so the first run works with no
-network and nobody's bandwidth but yours is involved. Delete them whenever you
-like; they are ordinary files.
+It arrives with one of each already in place — *The Richest Man in Babylon* to
+read, *As a Man Thinketh* to listen to, the Aria from the Open Goldberg
+Variations, and *Big Buck Bunny* to watch — so every kind of media works the
+moment it starts, and you can tell whether it works before finding anything of
+your own. All public domain or CC, bundled in the binary rather than downloaded,
+so the first run needs no network and nobody's bandwidth but yours. Delete them
+whenever you like: they are ordinary files, they stay deleted, and nothing puts
+them back.
 
 `library/ebooks` is a plain folder of `.epub` and `.pdf` files. It can also be
 an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
@@ -614,9 +616,12 @@ backend a human has to configure by hand defeats the point of the project.
 - **Zero third-party Go dependencies.** Standard library only, including
   password hashing (`crypto/pbkdf2`, stdlib since Go 1.24). There is no
   `go.sum` and the container build downloads nothing.
-- **A ~22MB starter library** is embedded in the binary (`internal/starter`) and
-  unpacked into empty library folders on first run. Public domain and CC0
-  throughout. Set `SOUNDSTORM_STARTER_LIBRARY=false` to skip it.
+- **A ~42MB starter library** is embedded in the binary (`internal/starter`) and
+  unpacked once, on first run, into whichever library folders are empty. One
+  item per shelf; the film is 25MB of it. Public domain or CC throughout, which
+  is a constraint rather than a preference — it ships inside a published binary.
+  Set `SOUNDSTORM_STARTER_LIBRARY=false` to skip it, and see
+  `scripts/fetch-starter-media.sh` for where each file comes from.
 - **Two vendored browser libraries**, both under
   `internal/webui/assets/vendor/`: foliate-js (MIT) renders EPUB, and hls.js
   (Apache-2.0) plays transcoded video where the browser has no native HLS. Both

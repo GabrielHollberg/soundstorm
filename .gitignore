@@ -37,3 +37,7 @@ coverage.*
 # Scratch programs for probing a live backend with the real adapter code. Handy
 # and never worth committing; one slipped in once.
 /tmpgen/
+
+# Working directories for scripts/fetch-starter-media.sh. It cleans up after
+# itself; this is for the run that gets interrupted.
+/.starter-*/

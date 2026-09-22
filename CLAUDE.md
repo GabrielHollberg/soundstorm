@@ -943,15 +943,58 @@ says so plainly next to the install instructions rather than burying it.
 
 ## The starter library
 
-A fresh install arrives with ~22MB of classics already in the library folders,
-embedded in the binary and unpacked on first run into folders that are empty.
+A fresh install arrives with **one item per shelf** - ~42MB embedded in the
+binary, unpacked once into whichever library folders are empty.
+
+	ebook       The Richest Man in Babylon (1926)   Wikisource, public domain
+	audiobook   As a Man Thinketh                   LibriVox, public domain
+	music       Aria, Open Goldberg Variations      CC0 1.0
+	film        Big Buck Bunny (2008)               CC-BY 3.0
 
 Bundled rather than downloaded, deliberately. Fetching on install means every
 installation spends somebody else's bandwidth, and Project Gutenberg states
 outright that automated access to its website earns an IP block. It also means
-the first run works air-gapped. The cost is binary size, and that is why there
-is no video: one film outweighs everything else combined, so the UI names
-Blender's open movies instead of shipping one.
+the first run works air-gapped.
+
+**One of each, not a selection.** It was ten ebooks and four music tracks, which
+demonstrated nothing the first of each did not and made the ebook shelf look
+like somebody else's taste in books. What a first run has to answer is "does
+each kind of media work", and that takes exactly one of each.
+
+**The film reverses "no video", and the old reasoning was not wrong.** It said
+one film outweighs everything else combined, and it still does - 25MB of the
+42MB. But that arithmetic was about a bundle that also held thirteen other
+files, and the shelf a media server is judged on cannot be the empty one. It is
+also the only item here that exercises video at all: the device profile, the
+direct-play check, HLS, the transcode teardown. `scripts/fetch-starter-media.sh`
+re-encodes it from 830k to crf 28, 62MB down to 25MB, and the `48 << 20` budget
+in `starter_test.go` has deliberately narrow headroom - the one way this grows
+by accident is somebody re-encoding at a kinder quality without deciding to.
+
+**Television gets nothing.** One film already answers the video question; a
+series would double the largest item to answer it twice.
+
+**A free licence is a hard constraint, not a preference** - this is compiled into
+a published binary. A genuinely famous song or film is almost certainly
+somebody's copyright, so each item is as recognisable as a free licence allows
+rather than as recognisable as possible. Two traps found while picking them:
+
+- **The Richest Man in Babylon is not on Project Gutenberg** - its whole
+  79,433-title catalogue was checked, and no work by Clason is either. The 1926
+  edition is US public domain; the *later expanded* editions are not, and most
+  copies circulating are those. Wikisource has it and tags it
+  `{{PD-US|1957|1926}}`, which is a licence review by somebody whose job that is,
+  so that is the source. The archive.org text hits are Internet Archive lending
+  scans and anonymous uploads - neither is a licence basis.
+- **`download.blender.org` and `musopen.org` both answer 403** from this
+  environment, so the film comes from archive.org's CC-BY copy and the music
+  stayed with the Open Goldberg recording already in hand. Worth knowing before
+  reaching for either as a source again.
+
+Nothing in the UI hardcodes any of this; it renders `starter.Attributions`,
+which is the more useful half of the idea - the point is telling somebody
+LibriVox and Wikisource exist. The film's credit is a **condition of CC-BY**
+rather than a courtesy, and a test requires one per stocked shelf.
 
 **It unpacks once, ever, and the flag that says so is in the state file.** It
 used to run on every boot into any shelf with no media on it, which reads like
@@ -1023,17 +1066,19 @@ consumer will.** Length and magic number prove nothing.
 
 - `internal/starter/integrity_test.go` opens every bundled epub's
   `META-INF/container.xml` - the entry, not the listing, because a damaged zip
-  lists it perfectly - and walks every mp3's frame chain end to end. It also
-  strips the carriage returns out of a bundled file and requires the walk to
-  object, because a checker for a silent fault is worth what its evidence is.
+  lists it perfectly - walks every mp3's frame chain end to end, and walks the
+  film's MP4 box tree (which also asserts `moov` precedes `mdat`, since without
+  faststart a browser cannot begin playing until the whole file has arrived).
+  Each check is itself checked against damage: the carriage returns are stripped
+  out of a bundled mp3 and a byte is cut off the film, and both must be noticed.
+  A checker for a silent fault is worth exactly what its evidence is.
 - `scripts/check-images.py` verifies every PNG against its own per-chunk CRC32
   and inflates the pixels to compare with the header. Wired into CI.
 
 The repair is worth knowing for next time. The ebooks and audio had to be
-fetched again - `scripts/fetch-starter-ebooks.sh` and
-`scripts/fetch-starter-audio.sh`, which also record how the audio was made,
-something that existed nowhere before and is why the damage could not simply be
-undone. Every re-fetched ebook came back exactly as many bytes larger as the
+fetched again - `scripts/fetch-starter-media.sh`, which also records how each
+file is made, something that existed nowhere before and is why the damage could
+not simply be undone. Every re-fetched ebook came back exactly as many bytes larger as the
 carriage returns that had been removed (2, 2, 1, 2, 10, 3, 1, 12, 3 and 0),
 which is what confirmed the diagnosis. The screenshots needed no re-capture:
 PNG carries a CRC32 per chunk, so for each damaged chunk the missing carriage

@@ -1,7 +1,7 @@
-// Package starter ships a small library of classics inside the binary.
+// Package starter ships one item per shelf inside the binary.
 //
 // A media server with nothing in it cannot be evaluated. Before this, a fresh
-// install left you with four empty folders and an instruction to go and find
+// install left you with five empty folders and an instruction to go and find
 // media - so the first thing anyone judged was an empty search box, and whether
 // the thing actually works was a question for later.
 //
@@ -14,18 +14,29 @@
 // run works with no network at all, which matters for the air-gapped installs
 // self-hosters actually do.
 //
-// The cost is about 22MB of binary. That is the honest price of the first run
-// being a working product rather than a set-up chore.
+// One of each rather than a spread. It was ten ebooks and four music tracks,
+// which demonstrated nothing the first of each did not and made the ebook shelf
+// look like somebody else's taste in books. What a first run has to answer is
+// "does each kind of media work", and that takes exactly one of each.
 //
-// Everything here is public domain or CC0, and redistributable as-is:
+//	ebook       The Richest Man in Babylon (1926)    Wikisource, public domain
+//	audiobook   As a Man Thinketh                    LibriVox, public domain
+//	music       Aria, Open Goldberg Variations       CC0 1.0
+//	film        Big Buck Bunny (2008)                CC-BY 3.0
 //
-//	ebooks      Project Gutenberg, under the licence included in each file
-//	audiobook   LibriVox, public domain
-//	music       The Open Goldberg Variations, CC0 1.0
+// Free licences are a hard constraint here, not a preference: these files are
+// compiled into a published binary. A genuinely famous song or film is almost
+// certainly somebody's copyright, so each of these is as recognisable as a free
+// licence allows rather than as recognisable as possible.
 //
-// Video is deliberately absent. One film costs more than everything above
-// combined, and most people would delete it; the UI points at Blender's open
-// movies instead.
+// Television has no entry. One film already answers the video question, and a
+// series would double the largest item in the bundle to answer it twice.
+//
+// The film reverses an earlier decision that video cost too much. It does cost
+// the most - 25MB of the 42MB total, more than everything else combined - and
+// the reasoning that rejected it was sound arithmetic about a bundle that also
+// held thirteen other files. With one item per shelf, the shelf a media server
+// is actually judged on cannot be the empty one.
 package starter
 
 import (
@@ -183,10 +194,10 @@ func Attributions() []Attribution {
 	return []Attribution{
 		{
 			Folder:  "ebooks",
-			Title:   "Ten classics, from Alice in Wonderland to As a Man Thinketh",
-			Source:  "Project Gutenberg",
-			URL:     "https://www.gutenberg.org",
-			License: "Public domain, under the licence included in each book",
+			Title:   "The Richest Man in Babylon, by George S. Clason",
+			Source:  "Wikisource",
+			URL:     "https://en.wikisource.org/wiki/The_Richest_Man_In_Babylon",
+			License: "Public domain (published 1926)",
 		},
 		{
 			Folder:  "audiobooks",
@@ -197,19 +208,25 @@ func Attributions() []Attribution {
 		},
 		{
 			Folder:  "music",
-			Title:   "Open Goldberg Variations, BWV 988 - Kimiko Ishizaka",
-			Source:  "opengoldbergvariations.org",
-			URL:     "https://opengoldbergvariations.org",
+			Title:   "Aria, from the Open Goldberg Variations - Kimiko Ishizaka",
+			Source:  "The Open Goldberg Variations",
+			URL:     "https://archive.org/details/OpenGoldbergVariations",
 			License: "CC0 1.0 Public Domain Dedication",
 		},
 		{
-			// Not bundled: one film outweighs everything above. Named anyway,
-			// because pointing somebody at it is the point.
+			// Bundled now, which reverses an earlier decision. It is still true
+			// that the film outweighs everything above it combined - it is 60%
+			// of the bundle on its own - but a media server with no film in it
+			// cannot be judged as a media server, and this is the only item
+			// here that exercises video at all.
+			//
+			// CC-BY, so this credit is a licence condition rather than a
+			// courtesy.
 			Folder:  "movies",
-			Title:   "Not included - Blender's open movies are a good first download",
+			Title:   "Big Buck Bunny (2008), by the Blender Foundation",
 			Source:  "Blender Foundation",
 			URL:     "https://studio.blender.org/films",
-			License: "CC-BY",
+			License: "CC-BY 3.0",
 		},
 	}
 }
