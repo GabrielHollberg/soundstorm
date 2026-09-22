@@ -267,6 +267,7 @@ func permitted(answer media.Kind, options []media.Kind, current media.Kind) bool
 func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 	var (
 		videoFiles int
+		audioFiles int
 		hasVideo   bool
 		hasAudio   bool
 		hasMP3     bool
@@ -302,15 +303,27 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		}
 		if mediaExtensions[media.KindMusic][ext] || mediaExtensions[media.KindAudiobook][ext] {
 			hasAudio = true
+			audioFiles++
 			if ambiguousAudio[ext] {
 				hasMP3 = true
 			}
 		}
 	}
 
+	// A folder of tracks with one video in it is an album with a bonus video,
+	// not a film. Any video used to win outright, so a single .mp4 sitting
+	// beside eleven .flac files sent the whole album to the film library -
+	// tracks and all. The video rides along into the music folder, where it
+	// keeps the album it belongs to and Navidrome simply ignores it.
+	audioLed := hasAudio && audioFiles > videoFiles
+
 	switch {
-	case hasVideo && episodes:
+	case hasVideo && episodes && !audioLed:
 		return media.KindTV, nil
+	case audioLed && hasMP3:
+		return "", []media.Kind{media.KindMusic, media.KindAudiobook}
+	case audioLed:
+		return media.KindMusic, nil
 	case hasVideo && videoFiles >= ambiguousVideoCount:
 		return "", []media.Kind{media.KindVideo, media.KindTV}
 	case hasVideo:

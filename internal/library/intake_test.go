@@ -432,3 +432,78 @@ func (r *failingReader) Read(p []byte) (int, error) {
 	r.read += n
 	return n, nil
 }
+
+// One video among many tracks is a bonus video, not a film.
+//
+// Any video used to win the decision outright, so a single .mp4 sitting beside
+// eleven .flac files sent the whole album to the film library - tracks and all.
+// The video travels with the album into music, where Navidrome ignores it and
+// it stays beside the record it came with.
+func TestAnAlbumWithABonusVideoStaysMusic(t *testing.T) {
+	l := newLibrary(t)
+	got := plan(l,
+		"Radiohead/In Rainbows/01 15 Step.flac",
+		"Radiohead/In Rainbows/02 Bodysnatchers.flac",
+		"Radiohead/In Rainbows/03 Nude.flac",
+		"Radiohead/In Rainbows/bonus-video.mp4",
+	)
+	if len(got) != 4 {
+		t.Fatalf("placed %d of 4 files", len(got))
+	}
+	for _, p := range got {
+		if !strings.HasPrefix(p.Dest, "music/") {
+			t.Errorf("%s went to %s, want music/", p.Path, p.Dest)
+		}
+	}
+}
+
+// And the reverse must still hold: a film with more video than audio is a film.
+func TestAFilmWithASampleTrackIsStillAFilm(t *testing.T) {
+	l := newLibrary(t)
+	got := plan(l,
+		"Arrival (2016)/Arrival (2016).mkv",
+		"Arrival (2016)/theme.mp3",
+	)
+	for _, p := range got {
+		if !strings.HasPrefix(p.Dest, "movies/") {
+			t.Errorf("%s went to %s, want movies/", p.Path, p.Dest)
+		}
+	}
+}
+
+// A season folder is still television, even with a stray audio file in it -
+// unless the audio actually outnumbers the episodes, at which point it is not
+// a season folder in any meaningful sense.
+func TestASeasonFolderIsStillTelevision(t *testing.T) {
+	l := newLibrary(t)
+	got := plan(l,
+		"Severance (2022)/Season 01/Severance - S01E01.mkv",
+		"Severance (2022)/Season 01/Severance - S01E02.mkv",
+		"Severance (2022)/Season 01/theme.mp3",
+	)
+	for _, p := range got {
+		if !strings.HasPrefix(p.Dest, "tv/") {
+			t.Errorf("%s went to %s, want tv/", p.Path, p.Dest)
+		}
+	}
+}
+
+// An album of mp3s with a bonus video is still the question it always was:
+// mp3 is the one extension that is genuinely both.
+func TestMP3AlbumWithAVideoStillAsks(t *testing.T) {
+	l := newLibrary(t)
+	questions := ask(l,
+		"Some Artist/Some Album/01.mp3",
+		"Some Artist/Some Album/02.mp3",
+		"Some Artist/Some Album/bonus.mp4",
+	)
+	if len(questions) != 1 {
+		t.Fatalf("got %d questions, want 1", len(questions))
+	}
+	want := map[media.Kind]bool{media.KindMusic: true, media.KindAudiobook: true}
+	for _, opt := range questions[0].Options {
+		if !want[opt] {
+			t.Errorf("offered %s, want only music or audiobook", opt)
+		}
+	}
+}
