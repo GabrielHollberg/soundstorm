@@ -143,3 +143,31 @@ func TestEnabledReadsTheObviousSpellings(t *testing.T) {
 		}
 	}
 }
+
+// An unknown argument must not start the server.
+//
+// It used to. `soundstorm backup` against an image too old to have the
+// command fell through to main's normal path and launched a second server
+// against the same state volume - two writers on the one file that cannot be
+// regenerated, in answer to what was effectively a typo. Caught by doing it.
+//
+// The commands are checked through the same switch main uses, so this notices
+// if one is renamed without the other.
+func TestKnownCommandsAreTheOnlyArguments(t *testing.T) {
+	known := []string{"reset-password", "backup", "restore"}
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	for _, name := range known {
+		if !strings.Contains(string(src), `case "`+name+`":`) {
+			t.Errorf("main no longer dispatches %q", name)
+		}
+	}
+	if !strings.Contains(string(src), "default:") {
+		t.Error("main has no default branch, so an unknown argument starts the server")
+	}
+	if !strings.Contains(string(src), "unknown command") {
+		t.Error("main does not report an unknown command")
+	}
+}

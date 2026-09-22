@@ -862,6 +862,14 @@ and never point automated fetches at an origin site that has asked you not to.
   ordinary `save()` also leaves a sibling `.bak`, which covers a bad write and
   nothing else - a deleted volume takes the `.bak` with it.
 
+  **An unknown argument is an error, not a server.** `main` used to fall
+  through to its normal path for anything it did not recognise, so
+  `soundstorm backup` against an image too old to have the command quietly
+  started a *second* SoundStorm against the same state volume - two writers on
+  the one file that cannot be regenerated, in answer to what was effectively a
+  typo. Found by doing exactly that. The server takes no arguments at all, so
+  every argument is a subcommand or a mistake.
+
   **Backup is read-only, and that is not a nicety.** `state.Open` migrates and
   saves unconditionally, so backing up through it would rewrite the file being
   backed up and hand its ownership to whoever ran the command. `state.Inspect`

@@ -43,6 +43,15 @@ func main() {
 	// own install, or holding a backup and an empty volume, should not also
 	// have to find a second tool. Anything else falls through and starts the
 	// server, so an unrecognised argument is not silently swallowed.
+	// Any argument at all is a subcommand, because the server itself takes
+	// none - it is configured entirely by environment variables.
+	//
+	// An unknown one is an error, and that is not pedantry. This used to fall
+	// through and start the server, so `soundstorm backup` against an older
+	// image quietly launched a *second* SoundStorm against the same state
+	// volume instead of saying the command did not exist. Two writers on the
+	// one file that cannot be regenerated is the worst possible way to answer
+	// a typo.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "reset-password":
@@ -51,6 +60,16 @@ func main() {
 			os.Exit(backupState(os.Args[2:]))
 		case "restore":
 			os.Exit(restoreState(os.Args[2:]))
+		default:
+			fmt.Fprintf(os.Stderr,
+				"soundstorm: unknown command %q\n\n"+
+					"  soundstorm                 start the server\n"+
+					"  soundstorm backup [file]   copy the accounts and credentials out\n"+
+					"  soundstorm restore <file>  put them back\n"+
+					"  soundstorm reset-password  set a new password for an account\n\n"+
+					"The server takes no arguments; everything else is environment variables.\n",
+				os.Args[1])
+			os.Exit(2)
 		}
 	}
 
