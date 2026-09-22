@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
@@ -610,6 +611,104 @@ func TestHumanBytesReadsLikeASentence(t *testing.T) {
 	} {
 		if got := humanBytes(c.in); got != c.want {
 			t.Errorf("humanBytes(%d) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// A real Audible filename is title, subtitle and ASIN in one string, and the
+// 120-character cap refused the long half of a 94-book drop. The evidence was
+// the library itself: the longest name that had ever made it in was 118
+// characters and nothing sat above it, which is a distribution with its tail
+// cut off rather than a coincidence.
+func TestALongAudiobookNameIsAcceptedNotRefused(t *testing.T) {
+	long := "How to Fast_ Rediscover the Ancient Practice for Unlocking Physical, " +
+		"Emotional, Spiritual and Communal Renewal in a World That Never Stops " +
+		"Eating, Unabridged [B0DCZY2XYL].m4b"
+	if len(long) <= 120 {
+		t.Fatalf("the sample is only %d characters; it has to exceed the old cap", len(long))
+	}
+
+	got, err := cleanRelPath("Jentezen Franklin/Fasting [B0DCZY2XYL]/" + long)
+	if err != nil {
+		t.Fatalf("refused a real audiobook name: %v", err)
+	}
+	if !strings.HasSuffix(got, ".m4b") {
+		t.Errorf("the extension did not survive: %q", got)
+	}
+	for _, seg := range strings.Split(got, "/") {
+		if len(seg) > maxSegment {
+			t.Errorf("segment is %d characters, over the %d cap: %q", len(seg), maxSegment, seg)
+		}
+	}
+}
+
+// Beyond the cap it is shortened rather than refused, and the extension is what
+// survives: it decides the shelf and it is what every player dispatches on.
+func TestAnAbsurdlyLongNameIsShortenedWithItsExtensionIntact(t *testing.T) {
+	name := strings.Repeat("The Complete and Unabridged Edition ", 20) + ".m4b"
+	got, err := cleanRelPath(name)
+	if err != nil {
+		t.Fatalf("cleanRelPath: %v", err)
+	}
+	if len(got) > maxSegment {
+		t.Errorf("result is %d characters, over the %d cap", len(got), maxSegment)
+	}
+	if !strings.HasSuffix(got, ".m4b") {
+		t.Errorf("lost the extension: %q", got)
+	}
+}
+
+// Cutting mid-character would leave half a UTF-8 sequence, and these names are
+// full of typographic quotes and accents - the library already holds one with a
+// curly quote in it.
+func TestShorteningCutsOnARuneBoundary(t *testing.T) {
+	name := strings.Repeat("Alcoholics Anonymous \u201cBig Book\u201d ", 12) + ".m4b"
+	got := shortenSegment(name)
+	if !utf8.ValidString(got) {
+		t.Errorf("shortened to invalid UTF-8: %q", got)
+	}
+	if len(got) > maxSegment {
+		t.Errorf("result is %d characters, over the %d cap", len(got), maxSegment)
+	}
+}
+
+// The reason has to be the actual reason. Every refusal used to read "that does
+// not look like a file name", so somebody missing half their library could not
+// tell a too-long name from an absolute path.
+func TestASkippedFileSaysWhyItWasSkipped(t *testing.T) {
+	root := t.TempDir()
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	places, _ := lib.Plan([]string{
+		"C:/Users/gabe/Music/track.mp3",
+		"book/../../etc/passwd.m4b",
+		"book/no-extension",
+	}, nil)
+
+	for _, want := range []struct{ path, contains string }{
+		{"C:/Users/gabe/Music/track.mp3", "absolute"},
+		{"book/../../etc/passwd.m4b", "climb"},
+		{"book/no-extension", "extension"},
+	} {
+		var found *Placement
+		for i := range places {
+			if places[i].Path == want.path {
+				found = &places[i]
+			}
+		}
+		if found == nil {
+			t.Errorf("no placement for %q", want.path)
+			continue
+		}
+		if !found.Skipped {
+			t.Errorf("%q was not skipped", want.path)
+		}
+		if !strings.Contains(found.Reason, want.contains) {
+			t.Errorf("reason for %q is %q, expected it to mention %q",
+				want.path, found.Reason, want.contains)
 		}
 	}
 }

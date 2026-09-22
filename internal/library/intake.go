@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/tags"
@@ -41,10 +42,19 @@ const (
 	// and it stops a dropped root directory from becoming a very large request.
 	maxFiles = 5000
 
-	// maxDepth and maxSegment keep a path recognisable as a path. Nothing
-	// legitimate nests an album eight levels deep.
-	maxDepth   = 8
-	maxSegment = 120
+	// maxDepth keeps a path recognisable as a path. Nothing legitimate nests an
+	// album eight levels deep.
+	maxDepth = 8
+
+	// maxSegment bounds one name. It was 120, which is not a sanity bound but a
+	// real ceiling that real files hit: an Audible filename is title, subtitle
+	// and ASIN in one string, and a drop of 94 audiobooks had its long-named
+	// half refused. The evidence was the library itself - the longest name that
+	// had ever made it in was 118 characters, and nothing sat above it.
+	//
+	// 200 leaves room under the 255 that ext4 and NTFS both allow per component,
+	// and anything longer is shortened rather than refused. See shortenSegment.
+	maxSegment = 200
 )
 
 // companionExtensions ride along with whatever they were dropped beside.
@@ -148,12 +158,18 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 	}
 
 	cleaned := make([]string, len(paths))
+	// Why each rejected path was rejected. Every one of them used to read "that
+	// does not look like a file name", which is true of an absolute path and
+	// actively misleading about a name three characters too long - somebody with
+	// half an audiobook library missing had no way to tell which.
+	refused := make([]string, len(paths))
 	groups := map[string][]int{}
 	var order []string
 
 	for i, raw := range paths {
 		rel, err := cleanRelPath(raw)
 		if err != nil {
+			refused[i] = err.Error()
 			continue
 		}
 		cleaned[i] = rel
@@ -173,10 +189,14 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 
 	out := make([]Placement, len(paths))
 	for i := range out {
+		why := refused[i]
+		if why == "" {
+			why = "that does not look like a file name"
+		}
 		out[i] = Placement{
 			Path:    paths[i],
 			Skipped: true,
-			Reason:  "that does not look like a file name",
+			Reason:  why,
 		}
 	}
 
@@ -416,11 +436,19 @@ func cleanRelPath(raw string) (string, error) {
 		if segment == "" {
 			continue
 		}
+		// Shortened rather than refused, and before the reserved-name check so a
+		// cut cannot produce one. A name too long to store is a reason to store
+		// it under a shorter name, not a reason to refuse somebody's audiobook -
+		// and nothing is hidden by it, because the plan shows the destination it
+		// will use before anything is copied.
+		if len(segment) > maxSegment {
+			segment = shortenSegment(segment)
+		}
 		if reservedNames.MatchString(segment) {
 			return "", fmt.Errorf("%q is not a usable file name", segment)
 		}
-		if len(segment) > maxSegment {
-			return "", fmt.Errorf("that name is too long")
+		if segment == "" {
+			continue
 		}
 		segments = append(segments, segment)
 	}
@@ -435,6 +463,36 @@ func cleanRelPath(raw string) (string, error) {
 		return "", fmt.Errorf("a file needs an extension for SoundStorm to place it")
 	}
 	return strings.Join(segments, "/"), nil
+}
+
+// shortenSegment cuts an over-long name down to fit, keeping its extension.
+//
+// The extension is what decides the shelf and what every player dispatches on,
+// so it survives at the cost of the title. Cut on a rune boundary: a name ending
+// in half a UTF-8 character is not a name, and these are full of typographic
+// quotes and accents.
+func shortenSegment(s string) string {
+	ext := path.Ext(s)
+	// Past a certain length that full stop was part of the title rather than an
+	// extension, and keeping it would waste the budget on nothing.
+	if len(ext) > 16 {
+		ext = ""
+	}
+	budget := maxSegment - len(ext)
+	if budget <= 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	for _, r := range s[:len(s)-len(ext)] {
+		if b.Len()+utf8.RuneLen(r) > budget {
+			break
+		}
+		b.WriteRune(r)
+	}
+	// A trailing dot or space disappears on Windows, which is the same trap the
+	// caller trims for before it gets here.
+	return strings.TrimRight(b.String(), ". ") + ext
 }
 
 // ErrAlreadyThere is returned when the destination exists.

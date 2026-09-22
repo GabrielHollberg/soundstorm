@@ -1,0 +1,30 @@
+# What the image build is allowed to see, which is not the media library.
+#
+# There was no .dockerignore, so `COPY . .` sent the whole working directory -
+# and `library/` is a bind mount whose entire purpose is to hold tens of
+# gigabytes. After a drop of 94 audiobooks a build reported
+# "transferring context: 8.87GB" and then died with an RPC EOF, having written
+# all of it into BuildKit's cache on the same drive the library lives on. The
+# drive hit 0 bytes free, and uploads then failed with EIO, which is what Docker
+# Desktop reports for a full bind mount. One missing file, two symptoms that look
+# unrelated.
+#
+# An allow-list rather than a deny-list, deliberately. A deny-list has to name
+# every directory that might one day be enormous, and the one that already was
+# had been sitting there unlisted since the first commit. This way a new folder
+# of media cannot creep back in, and the failure mode if the build ever needs
+# something new is "file not found" at build time - loud, immediate, and nothing
+# like a full disk a week later.
+*
+
+# The Go module, which has no dependencies and therefore no go.sum.
+!go.mod
+
+# The binary, and everything embedded into it: the web UI under
+# internal/webui/assets and the starter library under internal/starter/media.
+!cmd
+!internal
+
+# Named explicitly. BuildKit handles the Dockerfile itself, but being excluded
+# by a wildcard is not a thing to leave to the builder's good manners.
+!Dockerfile
