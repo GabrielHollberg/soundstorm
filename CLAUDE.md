@@ -453,6 +453,33 @@ used to end "Deleting it is harmless." It is generated from the same
 none of the backends - a file dropped in somebody's media folder is a poor place
 to break the claim that they never learn Jellyfin exists.
 
+**Every backend handles a deleted file differently, and only one of the four
+needed no help.** That was worth finding out one at a time rather than assuming
+Jellyfin's answer was the general one - the follow-up report was "the audiobooks
+never disappeared either", and it was a different bug with the same symptom.
+
+- **Navidrome** flags the row `missing` and excludes it from `search3` itself.
+  Nothing to do. Its database still held 52 tracks for an empty folder while
+  answering search with none of them, which is exactly right.
+- **Jellyfin** removes the item on the next validation, as long as the folder is
+  not empty. See above.
+- **Audiobookshelf** sets `isMissing` and **keeps serving the item** from both
+  `/search` and `/items`. That is defensible for a server - a book on an
+  unplugged drive should not lose its listening position - and it means a shelf
+  somebody emptied still looks full, with a play button behind every entry. So
+  the adapter skips them. Six of the seven items in a live library were missing
+  when this was found.
+- **localbooks** reads the folder on every scan, so the question cannot arise.
+
+The Audiobookshelf filter is client-side because it has to be: the `/items`
+`filter` parameter selects items that match a condition, and there is no "not
+missing" to ask for. A page can therefore come back shorter than its limit,
+which `federate` already tolerates.
+
+Both endpoints are tested, because they are fetched and decoded separately and
+only the conversion after them is shared - a fix that covered one would look
+complete.
+
 ## Accounts, and the one thing that is per person
 
 Two roles, and the gap between them is deliberately thin: the **owner** is

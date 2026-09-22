@@ -94,7 +94,15 @@ type listResponse struct {
 }
 
 type libraryItem struct {
-	ID    string `json:"id"`
+	ID string `json:"id"`
+
+	// IsMissing is Audiobookshelf's answer to "the files this item was made
+	// from are no longer on disk". It does not delete the item - it flags it and
+	// carries on serving it from both /search and /items, so a book somebody
+	// deleted a month ago is still a result with a cover and a play button
+	// behind it. Skipping these is the whole reason this field is read.
+	IsMissing bool `json:"isMissing"`
+
 	Media struct {
 		Duration   float64     `json:"duration"`
 		CoverPath  string      `json:"coverPath"`
@@ -197,6 +205,20 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 
 	items := make([]media.Item, 0, len(found))
 	for _, li := range found {
+		// Deleted. Audiobookshelf keeps the record and flags it rather than
+		// removing it, which is the right call for a server - a book on an
+		// unplugged drive should not lose its progress - and the wrong thing to
+		// put in front of somebody who has just tidied their shelf. Reported as
+		// "I deleted all the files but the audiobooks never disappeared".
+		//
+		// Filtered here rather than asked for: the /items filter parameter
+		// selects items that match a condition, so there is no "not missing" to
+		// request. The cost is that a page can come back shorter than its limit,
+		// which federate already tolerates.
+		if li.IsMissing {
+			continue
+		}
+
 		md := li.Media.Metadata
 
 		item := media.Item{
