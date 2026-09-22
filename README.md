@@ -168,13 +168,13 @@ films and audiobooks. Until then the app says "indexing…" rather than
 pretending the file is not there.
 
 It arrives with one of each already in place — *The Richest Man in Babylon* to
-read, *As a Man Thinketh* to listen to, the Aria from the Open Goldberg
-Variations, and *Big Buck Bunny* to watch — so every kind of media works the
-moment it starts, and you can tell whether it works before finding anything of
-your own. All public domain or CC, bundled in the binary rather than downloaded,
-so the first run needs no network and nobody's bandwidth but yours. Delete them
-whenever you like: they are ordinary files, they stay deleted, and nothing puts
-them back.
+read, *As a Man Thinketh* to listen to, and the Aria from the Open Goldberg
+Variations — so you can tell it works before finding anything of your own. No
+film: one would outweigh all three combined, and Blender's open movies are a
+good first download instead. All public domain or CC, bundled in the binary
+rather than downloaded, so the first run needs no network and nobody's bandwidth
+but yours. Delete them whenever you like: they are ordinary files, they stay
+deleted, and nothing puts them back.
 
 `library/ebooks` is a plain folder of `.epub` and `.pdf` files. It can also be
 an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
@@ -616,11 +616,12 @@ backend a human has to configure by hand defeats the point of the project.
 - **Zero third-party Go dependencies.** Standard library only, including
   password hashing (`crypto/pbkdf2`, stdlib since Go 1.24). There is no
   `go.sum` and the container build downloads nothing.
-- **A ~42MB starter library** is embedded in the binary (`internal/starter`) and
+- **A ~17MB starter library** is embedded in the binary (`internal/starter`) and
   unpacked once, on first run, into whichever library folders are empty. One
-  item per shelf; the film is 25MB of it. Public domain or CC throughout, which
-  is a constraint rather than a preference — it ships inside a published binary.
-  Set `SOUNDSTORM_STARTER_LIBRARY=false` to skip it, and see
+  ebook, one audiobook, one song; no video, because one film would outweigh all
+  three. Public domain or CC throughout, which is a constraint rather than a
+  preference — it ships inside a published binary. Set
+  `SOUNDSTORM_STARTER_LIBRARY=false` to skip it, and see
   `scripts/fetch-starter-media.sh` for where each file comes from.
 - **Two vendored browser libraries**, both under
   `internal/webui/assets/vendor/`: foliate-js (MIT) renders EPUB, and hls.js

@@ -943,13 +943,12 @@ says so plainly next to the install instructions rather than burying it.
 
 ## The starter library
 
-A fresh install arrives with **one item per shelf** - ~42MB embedded in the
-binary, unpacked once into whichever library folders are empty.
+A fresh install arrives with **one item per stocked shelf** - ~17MB embedded in
+the binary, unpacked once into whichever library folders are empty.
 
 	ebook       The Richest Man in Babylon (1926)   Wikisource, public domain
 	audiobook   As a Man Thinketh                   LibriVox, public domain
 	music       Aria, Open Goldberg Variations      CC0 1.0
-	film        Big Buck Bunny (2008)               CC-BY 3.0
 
 Bundled rather than downloaded, deliberately. Fetching on install means every
 installation spends somebody else's bandwidth, and Project Gutenberg states
@@ -961,18 +960,28 @@ demonstrated nothing the first of each did not and made the ebook shelf look
 like somebody else's taste in books. What a first run has to answer is "does
 each kind of media work", and that takes exactly one of each.
 
-**The film reverses "no video", and the old reasoning was not wrong.** It said
-one film outweighs everything else combined, and it still does - 25MB of the
-42MB. But that arithmetic was about a bundle that also held thirteen other
-files, and the shelf a media server is judged on cannot be the empty one. It is
-also the only item here that exercises video at all: the device profile, the
-direct-play check, HLS, the transcode teardown. `scripts/fetch-starter-media.sh`
-re-encodes it from 830k to crf 28, 62MB down to 25MB, and the `48 << 20` budget
-in `starter_test.go` has deliberately narrow headroom - the one way this grows
-by accident is somebody re-encoding at a kinder quality without deciding to.
+**No video, and it was tried - do not re-litigate this from scratch.** Big Buck
+Bunny was bundled for exactly one commit (`07731d7`, reverted in the next). What
+was measured, so nobody has to measure it again: archive.org's CC-BY copy is
+640x360 stereo at 830k despite being named `720p_surround`, re-encoding at crf 28
+takes 62MB down to 25MB, Jellyfin identified it from the folder name alone and
+**direct-played** it with no transcode, and it was 60% of a 42MB bundle - more
+than everything else combined. That last number is the same arithmetic that kept
+video out originally, and it did not change.
 
-**Television gets nothing.** One film already answers the video question; a
-series would double the largest item to answer it twice.
+The argument for including it was that the shelf a media server is judged on
+should not be the empty one, and it is a real argument. It lost to size: three
+shelves' worth of working media is enough to show the thing works, and a film is
+the one kind of media everybody already has a copy of. `scripts/fetch-starter-
+media.sh` no longer fetches it; the credit points at Blender instead, which is
+the better use of the space - what changes how somebody uses a media server is
+learning that free films exist.
+
+The `24 << 20` budget in `starter_test.go` has deliberately narrow headroom
+against the 17MB bundle. It came *down* from 30MB rather than being left as
+slack, because slack is what a film grows into.
+
+**Television gets nothing either**, for the same reason twice over.
 
 **A free licence is a hard constraint, not a preference** - this is compiled into
 a published binary. A genuinely famous song or film is almost certainly
@@ -987,14 +996,15 @@ rather than as recognisable as possible. Two traps found while picking them:
   so that is the source. The archive.org text hits are Internet Archive lending
   scans and anonymous uploads - neither is a licence basis.
 - **`download.blender.org` and `musopen.org` both answer 403** from this
-  environment, so the film comes from archive.org's CC-BY copy and the music
-  stayed with the Open Goldberg recording already in hand. Worth knowing before
-  reaching for either as a source again.
+  environment, so a Blender film has to come from archive.org's CC-BY mirror and
+  Musopen is not available as a source for a better-known piece of music. Worth
+  knowing before reaching for either again.
 
 Nothing in the UI hardcodes any of this; it renders `starter.Attributions`,
 which is the more useful half of the idea - the point is telling somebody
-LibriVox and Wikisource exist. The film's credit is a **condition of CC-BY**
-rather than a courtesy, and a test requires one per stocked shelf.
+LibriVox and Wikisource exist. A test requires a credit for `movies` too, even
+though nothing ships there: naming where free films are is the whole reason that
+entry exists.
 
 **It unpacks once, ever, and the flag that says so is in the state file.** It
 used to run on every boot into any shelf with no media on it, which reads like
@@ -1066,12 +1076,11 @@ consumer will.** Length and magic number prove nothing.
 
 - `internal/starter/integrity_test.go` opens every bundled epub's
   `META-INF/container.xml` - the entry, not the listing, because a damaged zip
-  lists it perfectly - walks every mp3's frame chain end to end, and walks the
-  film's MP4 box tree (which also asserts `moov` precedes `mdat`, since without
-  faststart a browser cannot begin playing until the whole file has arrived).
-  Each check is itself checked against damage: the carriage returns are stripped
-  out of a bundled mp3 and a byte is cut off the film, and both must be noticed.
-  A checker for a silent fault is worth exactly what its evidence is.
+  lists it perfectly - and walks every mp3's frame chain end to end. The check is
+  itself checked against damage: the carriage returns are stripped out of a
+  bundled mp3 and the walk must object. A checker for a silent fault is worth
+  exactly what its evidence is. (An MP4 box walk lived here for one commit,
+  alongside the film, and went with it.)
 - `scripts/check-images.py` verifies every PNG against its own per-chunk CRC32
   and inflates the pixels to compare with the header. Wired into CI.
 

@@ -1,18 +1,18 @@
 #!/bin/sh
-# Rebuild the starter library: one item per shelf, from its source.
+# Rebuild the starter library: one item per stocked shelf, from its source.
 #
 # The bundle is in git, so normally there is nothing to run. This exists for two
 # reasons. The committed copies were once damaged - every carriage return had
 # been stripped out of them, which leaves a zip unopenable and an mp3 losing
 # frame sync about once per 64KB - and a repository cannot repair that from
-# itself. And three of the four files are re-encoded or converted rather than
-# downloaded verbatim, so without this there is no record of how they were made.
+# itself. And two of the three are re-encoded rather than downloaded verbatim, so
+# without this there is no record of how they were made.
 #
 #   sh scripts/fetch-starter-media.sh
 #
 # Wants docker (for ffmpeg, from the jellyfin image this project already pulls),
-# curl and python. Downloads about 70MB and spends a few minutes encoding, most
-# of it on the film.
+# curl and python. Downloads about 55MB, nearly all of it the eight audiobook
+# chapters that get joined into one.
 #
 # Everything here is public domain or CC, and that is a hard constraint rather
 # than a preference: these files are compiled into a binary and published. A
@@ -27,24 +27,23 @@
 #              Not on Project Gutenberg; its 79,433-title catalogue was checked.
 #   audiobook  As a Man Thinketh, read for LibriVox, public domain. Eight
 #              chapter files joined into one and re-encoded at 32k mono - spoken
-#              word, and still the second largest item.
+#              word, and even so it is 13MB of the 17MB bundle.
 #   music      The Aria from Kimiko Ishizaka's Open Goldberg Variations (2012),
 #              CC0, at 96k. One track of thirty-one.
-#   film       Big Buck Bunny (2008), Blender Foundation, CC-BY 3.0, re-encoded
-#              from 830k to crf 28 - 62MB down to about 25MB. Attribution is
-#              required by the licence and is in starter.Attributions.
+#
+# No film. Big Buck Bunny was bundled for one commit and measured at 25MB of a
+# 42MB bundle - more than everything else combined, which is the arithmetic that
+# kept video out to begin with. starter.Attributions points at Blender instead.
 set -e
 
 DEST=${DEST:-internal/starter/media}
 FFIMAGE=${FFIMAGE:-jellyfin/jellyfin}
 DELAY=${DELAY:-2}
-FILM_CRF=${FILM_CRF:-28}
 
 WS="https://ws-export.wmcloud.org"
 LV="https://archive.org/download/as_a_man_thinketh_mc_librivox"
 OGV="https://archive.org/download/OpenGoldbergVariations"
 OGV_TRACK="Kimiko Ishizaka - J.S. Bach- -Open- Goldberg Variations, BWV 988 (Piano) - 01 Aria.mp3"
-BBB="https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4"
 
 if [ ! -d "$DEST" ]; then
   echo "No $DEST - run this from the repository root." >&2
@@ -145,20 +144,6 @@ ff -i /work/in/aria.mp3 -c:a libmp3lame -b:a 96k -map_metadata -1 \
   -id3v2_version 4 -write_id3v1 0 /work/out/aria.mp3
 cp "$work/out/aria.mp3" "$MUSICDIR/01 Aria.mp3"
 report "$work/out/aria.mp3" "01 Aria.mp3  ($(probe /work/out/aria.mp3)s)"
-
-echo
-echo "  Film - Big Buck Bunny, re-encoded (this is the slow part)"
-FILMDIR="$DEST/movies/Big Buck Bunny (2008)"
-mkdir -p "$FILMDIR"
-get "$BBB" "$work/in/film.mp4"
-# Named "720p_surround" upstream and actually 640x360 stereo, which is why this
-# scales nothing: the only change is the bitrate. faststart puts the index at
-# the front so playback can begin before the whole file has arrived.
-ff -i /work/in/film.mp4 -c:v libx264 -preset medium -crf "$FILM_CRF" \
-  -pix_fmt yuv420p -c:a aac -b:a 64k -ac 2 -movflags +faststart \
-  /work/out/film.mp4
-cp "$work/out/film.mp4" "$FILMDIR/Big Buck Bunny (2008).mp4"
-report "$work/out/film.mp4" "Big Buck Bunny (2008).mp4  ($(probe /work/out/film.mp4)s)"
 
 echo
 echo "  Done. Check it with: go test ./internal/starter"

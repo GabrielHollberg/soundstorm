@@ -22,21 +22,19 @@
 //	ebook       The Richest Man in Babylon (1926)    Wikisource, public domain
 //	audiobook   As a Man Thinketh                    LibriVox, public domain
 //	music       Aria, Open Goldberg Variations       CC0 1.0
-//	film        Big Buck Bunny (2008)                CC-BY 3.0
 //
 // Free licences are a hard constraint here, not a preference: these files are
-// compiled into a published binary. A genuinely famous song or film is almost
-// certainly somebody's copyright, so each of these is as recognisable as a free
-// licence allows rather than as recognisable as possible.
+// compiled into a published binary. A genuinely famous song is almost certainly
+// somebody's copyright, so each of these is as recognisable as a free licence
+// allows rather than as recognisable as possible.
 //
-// Television has no entry. One film already answers the video question, and a
-// series would double the largest item in the bundle to answer it twice.
-//
-// The film reverses an earlier decision that video cost too much. It does cost
-// the most - 25MB of the 42MB total, more than everything else combined - and
-// the reasoning that rejected it was sound arithmetic about a bundle that also
-// held thirteen other files. With one item per shelf, the shelf a media server
-// is actually judged on cannot be the empty one.
+// No video, and it was tried. Big Buck Bunny was bundled for one commit: CC-BY,
+// re-encoded to 25MB, and it direct-played through Jellyfin without a transcode.
+// It was still 60% of the bundle on its own - more than everything else combined
+// - which is the same arithmetic that kept video out in the first place, and
+// three shelves' worth of proof that the thing works is enough. The UI names
+// Blender's open movies instead, which is a better use of the space: what
+// changes how somebody uses a media server is finding out where free films are.
 package starter
 
 import (
@@ -214,19 +212,15 @@ func Attributions() []Attribution {
 			License: "CC0 1.0 Public Domain Dedication",
 		},
 		{
-			// Bundled now, which reverses an earlier decision. It is still true
-			// that the film outweighs everything above it combined - it is 60%
-			// of the bundle on its own - but a media server with no film in it
-			// cannot be judged as a media server, and this is the only item
-			// here that exercises video at all.
-			//
-			// CC-BY, so this credit is a licence condition rather than a
-			// courtesy.
+			// Not bundled: one film outweighs everything above it combined.
+			// Big Buck Bunny was, briefly, and measured at 25MB of a 42MB
+			// bundle. Named anyway, because pointing somebody at free films is
+			// the point.
 			Folder:  "movies",
-			Title:   "Big Buck Bunny (2008), by the Blender Foundation",
+			Title:   "Not included - Blender's open movies are a good first download",
 			Source:  "Blender Foundation",
 			URL:     "https://studio.blender.org/films",
-			License: "CC-BY 3.0",
+			License: "CC-BY",
 		},
 	}
 }

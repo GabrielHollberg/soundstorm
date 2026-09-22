@@ -29,11 +29,12 @@ func TestInstallPopulatesEmptyFolders(t *testing.T) {
 	for _, u := range installed {
 		byFolder[u.Folder] = u
 	}
-	// Every shelf the bundle covers, film included. This is the assertion that
-	// says what the bundle is for: a first run has to be able to answer "does
-	// each kind of media work", and it cannot answer that for a shelf it left
-	// empty. Television is deliberately absent - see the package comment.
-	for _, want := range []string{"ebooks", "audiobooks", "music", "movies"} {
+	// Every shelf the bundle covers. This is the assertion that says what the
+	// bundle is for: a first run has to be able to answer "does this kind of
+	// media work", and it cannot answer that for a shelf it left empty. Video is
+	// deliberately absent - see the package comment - so movies and tv are not
+	// in this list, and a credit points at Blender instead.
+	for _, want := range []string{"ebooks", "audiobooks", "music"} {
 		if byFolder[want].Files == 0 {
 			t.Errorf("no files installed into %s", want)
 		}
@@ -71,12 +72,12 @@ func TestInstallPopulatesEmptyFolders(t *testing.T) {
 
 	// Worth knowing if this ever balloons: it ships in every binary.
 	//
-	// 48MB against a bundle of 42MB. It was 30MB against 22MB, and the film is
-	// what moved it - 25MB of the total, more than everything else combined.
-	// The headroom is deliberately narrow: the one way this grows by accident is
-	// somebody re-encoding the film at a kinder quality without deciding to, and
-	// a budget that only bites when the bundle has doubled would not catch it.
-	const budget = 48 << 20
+	// 24MB against a bundle of 17MB, and the headroom is deliberately narrow.
+	// It was 30MB against 22MB when the bundle held fourteen files; one item per
+	// shelf is much smaller, so the budget came down with it rather than being
+	// left as slack for something to grow into. The audiobook is 13MB of the 17
+	// and the only item big enough to matter.
+	const budget = 24 << 20
 	if bytes > budget {
 		t.Errorf("bundle is %d bytes, over the %d budget", bytes, budget)
 	}
@@ -138,7 +139,7 @@ func TestBundleContainsOnlyPlayableMedia(t *testing.T) {
 		t.Fatalf("Install: %v", err)
 	}
 
-	allowed := map[string]bool{".mp3": true, ".epub": true, ".mp4": true}
+	allowed := map[string]bool{".mp3": true, ".epub": true}
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
@@ -164,9 +165,8 @@ func TestAttributionsAreComplete(t *testing.T) {
 		}
 		seen[a.Folder] = true
 	}
-	// One credit per shelf that has something on it. The film's is a condition
-	// of CC-BY rather than a courtesy, so a missing one is a licence problem and
-	// not a cosmetic gap.
+	// Video is not bundled, but it is named - pointing somebody at free films
+	// is the point even when we ship none.
 	for _, want := range []string{"ebooks", "audiobooks", "music", "movies"} {
 		if !seen[want] {
 			t.Errorf("nothing credited for %s", want)
