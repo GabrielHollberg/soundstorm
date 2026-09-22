@@ -1,6 +1,7 @@
 package library
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -512,6 +513,103 @@ func TestMP3AlbumWithAVideoStillAsks(t *testing.T) {
 	for _, opt := range questions[0].Options {
 		if !want[opt] {
 			t.Errorf("offered %s, want only music or audiobook", opt)
+		}
+	}
+}
+
+// The whole path, not just the lookup: Save is what a real upload calls, and it
+// is what has to put the pdf beside the m4b.
+func TestSaveFilesACompanionBesideItsAudio(t *testing.T) {
+	root := t.TempDir()
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	group := "The Way of Kings [B003ZWFO7E]"
+	audio := id3(map[string]string{"TPE1": "Brandon Sanderson", "TALB": "The Way of Kings"})
+
+	first, err := lib.Save(media.KindAudiobook, group+"/book.m4b", bytes.NewReader(audio))
+	if err != nil {
+		t.Fatalf("Save the audio: %v", err)
+	}
+	second, err := lib.Save(media.KindAudiobook, group+"/book.pdf", strings.NewReader("%PDF-1.4"))
+	if err != nil {
+		t.Fatalf("Save the companion: %v", err)
+	}
+
+	// The m4b carries an ID3 tag here rather than MP4 atoms, which internal/tags
+	// reads happily - what matters is that one file has an author to give and the
+	// other has none.
+	wantDir := filepath.Dir(first)
+	if got := filepath.Dir(second); got != wantDir {
+		t.Errorf("the companion landed in %q, the audio in %q", got, wantDir)
+	}
+	if !strings.Contains(filepath.ToSlash(second), "Brandon Sanderson/") {
+		t.Errorf("companion went to %q, expected it under the author", second)
+	}
+	if strings.Contains(filepath.ToSlash(second), "Unknown Author") {
+		t.Errorf("companion went to %q, which is the bug this test exists for", second)
+	}
+}
+
+// With no audio to follow, a companion still has to land somewhere findable
+// rather than being refused.
+func TestSaveStillPlacesACompanionWithNoAudioToFollow(t *testing.T) {
+	root := t.TempDir()
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	dest, err := lib.Save(media.KindAudiobook,
+		"The Way of Kings [B003ZWFO7E]/book.pdf", strings.NewReader("%PDF-1.4"))
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if !strings.Contains(filepath.ToSlash(dest), "Unknown Author/") {
+		t.Errorf("dest = %q, want the placeholder author", dest)
+	}
+}
+
+// The error somebody actually saw was "write /library/.uploads/part-753272949:
+// input/output error", ninety-one times, with the host drive at 0 bytes free.
+// EIO is what Docker Desktop reports for a bind mount with no room left, and it
+// reads like corruption - so the message has to carry the number that explains
+// it. Measured rather than inferred from the errno, which is why this asserts
+// the figure is present rather than what it says.
+func TestAFailedWriteReportsTheRoomLeft(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok := freeSpace(dir); !ok {
+		t.Skip("free space is not measurable on this platform, and the message says less")
+	}
+
+	err := receiveError(dir, fmt.Errorf("input/output error"))
+	if err == nil {
+		t.Fatal("no error")
+	}
+	if !strings.Contains(err.Error(), "free") {
+		t.Errorf("error does not mention free space: %v", err)
+	}
+	// The original has to survive, or the cause is lost.
+	if !strings.Contains(err.Error(), "input/output error") {
+		t.Errorf("error dropped the underlying cause: %v", err)
+	}
+}
+
+func TestHumanBytesReadsLikeASentence(t *testing.T) {
+	for _, c := range []struct {
+		in   uint64
+		want string
+	}{
+		{0, "0 bytes"},
+		{512, "512 bytes"},
+		{2 << 10, "2 KB"},
+		{5 << 20, "5 MB"},
+		{3 << 30, "3.0 GB"},
+	} {
+		if got := humanBytes(c.in); got != c.want {
+			t.Errorf("humanBytes(%d) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

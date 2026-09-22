@@ -773,12 +773,25 @@ func (s *Server) handleUploadPlan(w http.ResponseWriter, r *http.Request) {
 	// one option it stops being a question and becomes the answer.
 	questions = narrowQuestions(questions, access)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	// How much room there is, so the browser can compare it with what it is
+	// about to send. This is the only part of the plan that is not about
+	// placement, and it earns its place: ninety-one audiobooks failed one at a
+	// time against a full disk, each with its own request, and nothing knew
+	// until the first write failed. The plan is given paths and not sizes, so
+	// the client owns the comparison - it is the only side that knows both.
+	//
+	// Omitted when it cannot be measured rather than sent as zero, which would
+	// read as "no room at all" and stop every upload on a native Windows build.
+	resp := map[string]any{
 		"files":     placements,
 		"questions": questions,
 		"accepted":  accepted,
 		"waiting":   waiting,
-	})
+	}
+	if free, ok := s.library.FreeSpace(); ok {
+		resp["freeBytes"] = free
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // narrowQuestions drops options an account may not use, and drops the question

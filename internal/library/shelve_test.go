@@ -136,3 +136,104 @@ func TestVideoIsNotRestructured(t *testing.T) {
 		t.Errorf("a film was moved to %q", dest)
 	}
 }
+
+// An Audible audiobook arrives as an .m4b beside a companion .pdf of the same
+// name. The m4b carries tags and the pdf carries none, so reading each file's
+// own metadata filed one book under two authors:
+//
+//	Brandon Sanderson/The Way of Kings [B003ZWFO7E]/....m4b
+//	Unknown Author/The Way of Kings [B003ZWFO7E]/....pdf
+//
+// Reported from a real drop of 94 audiobooks, where every single entry under
+// "Unknown Author" was a companion PDF.
+func TestACompanionJoinsTheFolderItsGroupAlreadyMade(t *testing.T) {
+	root := t.TempDir()
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	shelf := lib.PathFor(media.KindAudiobook)
+
+	// The audio file went first and named the author, which is what the client
+	// now guarantees by sending taggable files before the rest of their group.
+	group := "The Way of Kings [B003ZWFO7E]"
+	if err := os.MkdirAll(filepath.Join(shelf, "Brandon Sanderson", group), 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := groupFolder(media.KindAudiobook, group+"/The Way of Kings.pdf", shelf)
+	if !ok {
+		t.Fatal("the companion found no folder to join")
+	}
+	want := "Brandon Sanderson/" + group + "/The Way of Kings.pdf"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Every Audible folder is named "Title [ASIN]", and to filepath.Glob a bracketed
+// run is a character class - so a Glob-based lookup would match a directory
+// called "The Way of Kings B" and never the real one. This is the test that
+// would have caught that.
+func TestGroupLookupTreatsBracketsAsLiteralText(t *testing.T) {
+	root := t.TempDir()
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	shelf := lib.PathFor(media.KindAudiobook)
+
+	group := "The Way of Kings [B003ZWFO7E]"
+	// A decoy that a character class would match and a literal comparison will
+	// not. If the lookup ever goes back to globbing, this directory is what it
+	// finds instead.
+	for _, dir := range []string{
+		filepath.Join("Brandon Sanderson", group),
+		filepath.Join("Somebody Else", "The Way of Kings B"),
+	} {
+		if err := os.MkdirAll(filepath.Join(shelf, dir), 0o777); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, ok := groupFolder(media.KindAudiobook, group+"/notes.pdf", shelf)
+	if !ok || got != "Brandon Sanderson/"+group+"/notes.pdf" {
+		t.Errorf("got %q (ok=%v), want the bracketed folder", got, ok)
+	}
+}
+
+// Two authors already holding the same book is a mess somebody has to resolve,
+// and joining one of them at random would make it permanent.
+func TestACompanionWillNotChooseBetweenTwoFolders(t *testing.T) {
+	root := t.TempDir()
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	shelf := lib.PathFor(media.KindAudiobook)
+
+	group := "The Way of Kings [B003ZWFO7E]"
+	for _, author := range []string{"Brandon Sanderson", "Unknown Author"} {
+		if err := os.MkdirAll(filepath.Join(shelf, author, group), 0o777); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := groupFolder(media.KindAudiobook, group+"/notes.pdf", shelf); ok {
+		t.Error("it picked one of two equally good answers")
+	}
+}
+
+// A taggable file must keep deciding for itself, or the first book to land under
+// Unknown Author would drag every later one in beside it.
+func TestATaggableFileIgnoresWhatIsAlreadyThere(t *testing.T) {
+	for _, name := range []string{"book.m4b", "01 track.mp3", "x.flac", "y.m4a"} {
+		if !taggable(name) {
+			t.Errorf("%s should be taggable", name)
+		}
+	}
+	for _, name := range []string{"notes.pdf", "cover.jpg", "info.nfo", "book.epub"} {
+		if taggable(name) {
+			t.Errorf("%s should not be taggable", name)
+		}
+	}
+}

@@ -479,17 +479,17 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	}()
 
 	if _, err := io.Copy(tmp, r); err != nil {
-		return "", fmt.Errorf("receive file: %w", err)
+		return "", receiveError(staging, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return "", fmt.Errorf("receive file: %w", err)
+		return "", receiveError(staging, err)
 	}
 
 	// Where it goes is decided now rather than before the bytes arrived,
 	// because for a loose track the answer is inside the file. Nothing has
 	// been written outside the staging directory yet, so a refusal here still
 	// leaves the library untouched.
-	rel = shelveUnder(kind, rel, tmpName)
+	rel = shelveUnder(kind, rel, tmpName, folder)
 
 	dest := filepath.Join(folder, filepath.FromSlash(rel))
 	// Sanitising should already guarantee this. Checking the result anyway
@@ -586,11 +586,99 @@ var structuredDepth = map[media.Kind]int{
 // Anything already deep enough is left alone: somebody who dropped
 // Artist/Album/track.flac has said where it goes more reliably than a tag
 // will, and second-guessing that would move files for no reason.
-func shelveUnder(kind media.Kind, rel, staged string) string {
+func shelveUnder(kind media.Kind, rel, staged, shelf string) string {
 	if _, ok := structuredDepth[kind]; !ok {
 		return rel
 	}
+	// A file that cannot carry tags must not be the one that derives a folder
+	// from them. An Audible book arrives as an .m4b beside a companion .pdf, and
+	// reading each one's own tags put them in different places: the m4b under
+	// "Brandon Sanderson/The Way of Kings [B003ZWFO7E]" and the pdf under
+	// "Unknown Author/The Way of Kings [B003ZWFO7E]". One book, two authors, and
+	// the PDF orphaned from the thing it explains.
+	//
+	// This is the same rule as the shelf decision one level down: a file that
+	// cannot name a shelf inherits its group's, and a file that cannot name a
+	// folder inherits its group's too.
+	if !taggable(rel) {
+		if beside, ok := groupFolder(kind, rel, shelf); ok {
+			return beside
+		}
+	}
 	return shelvePath(kind, rel, readTags(staged))
+}
+
+// taggable reports whether internal/tags can read this file's own metadata.
+//
+// Deliberately the formats that package handles rather than "is it audio":
+// something it cannot read has nothing to say about where it belongs, whatever
+// it is.
+func taggable(rel string) bool {
+	switch strings.ToLower(path.Ext(rel)) {
+	case ".mp3", ".m4a", ".m4b", ".mp4", ".flac":
+		return true
+	}
+	return false
+}
+
+// groupFolder finds where this file's group already landed, so a companion can
+// join it instead of guessing.
+//
+// The group is the folder the drop came in - "The Way of Kings [B003ZWFO7E]" -
+// and if a taggable file from it has already been placed, that folder exists
+// under the shelf with the author the tags named. One match is an answer; none
+// or several is not, and the caller falls back to the placeholder.
+//
+// Directory entries are compared by name rather than matched with
+// filepath.Glob, which would be shorter and wrong: every Audible folder is named
+// "Title [ASIN]", and to Glob a bracketed run is a character class. "The Way of
+// Kings [B003ZWFO7E]" would match a directory called "The Way of Kings B" and
+// nothing else.
+func groupFolder(kind media.Kind, rel, shelf string) (string, bool) {
+	want, ok := structuredDepth[kind]
+	if !ok {
+		return "", false
+	}
+	depth := strings.Count(rel, "/")
+	// depth 0 is a loose file, which belongs to no group and so has nothing to
+	// join. At or past the wanted depth nothing is being added anyway.
+	if depth == 0 || depth >= want {
+		return "", false
+	}
+	// With want == 2 and depth == 1 - every real case - the group sits one
+	// directory below the shelf. Deeper searching is not worth guessing at.
+	if want-depth != 1 {
+		return "", false
+	}
+
+	group := rel[:strings.Index(rel, "/")]
+	entries, err := os.ReadDir(shelf)
+	if err != nil {
+		return "", false
+	}
+
+	var found string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		// Stat rather than ReadDir per candidate: a shelf can hold hundreds of
+		// authors and this runs on every companion upload.
+		info, err := os.Stat(filepath.Join(shelf, e.Name(), group))
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if found != "" {
+			// The same book filed under two authors already. Joining one of
+			// them at random would make that permanent.
+			return "", false
+		}
+		found = e.Name()
+	}
+	if found == "" {
+		return "", false
+	}
+	return found + "/" + rel, true
 }
 
 // shelvePath applies the layout rule. Split out so that Plan can run it with
@@ -644,6 +732,49 @@ func shelvePath(kind media.Kind, rel string, t tags.Tags) string {
 		return rel
 	}
 	return rebuilt
+}
+
+// diskFull is how little has to be left before a failed write is reported as a
+// full disk rather than as itself. An audiobook is routinely hundreds of
+// megabytes, so anything under this is full for the purpose at hand.
+const diskFull = 64 << 20
+
+// receiveError explains a failed write, because the raw error does not.
+//
+// Ninety-one uploads failed with "write /library/.uploads/part-753272949:
+// input/output error" while the host's drive sat at exactly 0 bytes free. EIO
+// is what Docker Desktop's file sharing reports for a bind mount with no room
+// left - it reads like corruption or a permissions problem, and sends somebody
+// looking in either of those directions instead of at df.
+//
+// The free-space figure is the honest part: it is measured rather than inferred
+// from an errno, so it says nothing when it cannot tell (see space_other.go).
+func receiveError(dir string, err error) error {
+	free, known := freeSpace(dir)
+	switch {
+	case known && free < diskFull:
+		return fmt.Errorf("the library disk is full - %s free: %w", humanBytes(free), err)
+	case known:
+		return fmt.Errorf("receive file: %w (the library disk has %s free)", err, humanBytes(free))
+	}
+	return fmt.Errorf("receive file: %w", err)
+}
+
+// FreeSpace reports the room left in the library, for the UI to warn with
+// before a drop starts rather than after it has failed 91 times.
+func (l *Library) FreeSpace() (uint64, bool) { return freeSpace(l.root) }
+
+// humanBytes is for a person reading an error message, so it rounds.
+func humanBytes(n uint64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", n)
 }
 
 // readTags opens the staged file and reads what it says about itself. Any

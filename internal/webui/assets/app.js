@@ -1439,6 +1439,13 @@ async function runIntake(dataTransfer) {
       return;
     }
 
+    // Remembered from the plan rather than fetched separately, so the figure is
+    // from the same moment as the placements. Absent on a build that cannot
+    // measure it, which enoughRoom treats as "do not block".
+    lastPlanFree = typeof body.freeBytes === 'number' ? body.freeBytes : null;
+    $('intake-note').textContent = '';
+    show($('intake-note'), false);
+
     const questions = body.questions || [];
     if (!questions.length) {
       await sendFiles(body.files || [], dropped);
@@ -1502,6 +1509,75 @@ function askQuestion(question) {
 }
 
 // sendFiles uploads everything the final plan accepted.
+// What the last plan said was free on the library disk, or null when the server
+// could not measure it.
+let lastPlanFree = null;
+
+// Files whose own tags decide their folder go first within a group.
+//
+// An Audible book is an .m4b beside a companion .pdf. The server reads the m4b's
+// tags to file it under its author, and the pdf has no tags to read - so it joins
+// whichever folder its group already made. That only works if the m4b has
+// already been sent, which is what this guarantees. Get it backwards and the
+// book lands under two authors, one of them "Unknown Author".
+//
+// Stable within a group and it does not reorder groups, so the progress list
+// still reads in the order somebody dropped things.
+const TAGGABLE = /\.(mp3|m4a|m4b|mp4|flac)$/i;
+
+function orderTaggableFirst(queue) {
+  const groups = [];
+  const seen = new Map();
+  for (const item of queue) {
+    const key = item.group || item.path;
+    if (!seen.has(key)) {
+      seen.set(key, []);
+      groups.push(key);
+    }
+    seen.get(key).push(item);
+  }
+  let at = 0;
+  for (const key of groups) {
+    const members = seen.get(key);
+    for (const item of members) {
+      if (TAGGABLE.test(item.file.name)) queue[at++] = item;
+    }
+    for (const item of members) {
+      if (!TAGGABLE.test(item.file.name)) queue[at++] = item;
+    }
+  }
+}
+
+// enoughRoom stops a drop that cannot fit before it starts.
+//
+// Ninety-four audiobooks were dropped onto a host with no space left. Each is a
+// separate request, so ninety-one of them failed one at a time over several
+// minutes, and the only sign was a per-file error nobody could act on. The
+// server reports what it has; the browser is the only side that knows what is
+// coming, so the comparison happens here.
+//
+// A tenth on top, because the staging copy and the rename are not free and a
+// disk at exactly zero is a bad place to find the edge.
+function enoughRoom(total) {
+  if (typeof lastPlanFree !== 'number') return true;  // unmeasurable; do not block
+  const needed = total * 1.1;
+  if (needed <= lastPlanFree) return true;
+  $('intake-title').textContent =
+    `Not enough room: ${bytes(total)} to add, ${bytes(lastPlanFree)} free.`;
+  $('intake-note').textContent =
+    'Nothing was copied. Free some space on the drive holding your library, then drop these again.';
+  show($('intake-note'), true);
+  return false;
+}
+
+// bytes formats for somebody reading a sentence, so it rounds.
+function bytes(n) {
+  if (n >= 1 << 30) return (n / (1 << 30)).toFixed(1) + ' GB';
+  if (n >= 1 << 20) return Math.round(n / (1 << 20)) + ' MB';
+  if (n >= 1 << 10) return Math.round(n / (1 << 10)) + ' KB';
+  return n + ' bytes';
+}
+
 async function sendFiles(plan, dropped) {
   $('intake-list').replaceChildren();
 
@@ -1518,7 +1594,10 @@ async function sendFiles(plan, dropped) {
     return;
   }
 
+  orderTaggableFirst(queue);
+
   const total = queue.reduce((sum, item) => sum + item.file.size, 0);
+  if (!enoughRoom(total)) return;
   show($('intake-bar'), true);
 
   let done = 0;
