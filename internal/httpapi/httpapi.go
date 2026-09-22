@@ -894,6 +894,14 @@ func (s *Server) rescanNow(kind media.Kind) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Before asking, not after. A backend that finds its folder completely
+	// empty declines to remove anything from it - it cannot tell a deletion
+	// from an unmounted disk - so a scan triggered a moment after somebody
+	// emptied a folder by hand would report success and change nothing, and
+	// what they deleted would stay searchable indefinitely. Putting the
+	// placeholder back first is what makes the scan able to see the deletion.
+	s.library.EnsurePlaceholders()
+
 	for _, src := range s.reg.All(ctx) {
 		if src.Kind() != kind {
 			continue

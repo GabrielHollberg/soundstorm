@@ -424,6 +424,35 @@ and the backend's own timer will find the file regardless. Measured end to end
 after this: an uploaded ebook was searchable in **5 seconds**, and Navidrome's
 `lastScan` moved three seconds after being asked.
 
+**A scan only notices a deletion if the folder is not empty.** Jellyfin refuses
+to remove items when a library folder comes back empty - it cannot tell
+"everything was deleted" from "the drive did not mount", and emptying somebody's
+library over a bad mount is much the worse mistake. It logs
+`Library folder "/media/movies" is inaccessible or empty, skipping` and changes
+nothing, so every deleted film stays searchable for ever. There is nowhere a
+user could fix that by hand, because SoundStorm never shows Jellyfin's UI.
+
+This surfaced as "I deleted all the files but some still show". Navidrome was
+fine - it flags the rows `missing` and drops them from search - and so was the
+ebook scanner. Jellyfin held nine items across repeated refreshes.
+
+What had been holding it up all along was `library/*/README.txt`. The folders
+ship with a placeholder so a fresh clone has the structure, which means they are
+never empty, which means Jellyfin never took that branch. Nothing *created* it:
+it was only in git, so a fresh install has no placeholder in `movies` or `tv`
+(the starter library deliberately ships no video) and was one deletion away from
+the same trap. `library.EnsurePlaceholders` now writes it, and `rescanNow` calls
+that **before** asking any backend to scan - the scan that matters is the one
+right after somebody emptied a folder from their file manager. Deleting the
+placeholder and asking for a scan restored it and the nine items went in five
+seconds, along with the dead studios and genres behind them.
+
+So the placeholder is documentation and it is load-bearing, and its own text
+used to end "Deleting it is harmless." It is generated from the same
+`Description` and `Example` the home screen shows, and a test asserts it names
+none of the backends - a file dropped in somebody's media folder is a poor place
+to break the claim that they never learn Jellyfin exists.
+
 ## Accounts, and the one thing that is per person
 
 Two roles, and the gap between them is deliberately thin: the **owner** is

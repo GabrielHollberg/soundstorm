@@ -6,8 +6,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
 
 type placement struct {
@@ -271,18 +274,36 @@ func TestPlanningWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	h.signUp(t)
 
+	// Counted either side rather than against zero. The folders are not empty
+	// to begin with - each ships a placeholder, and that placeholder is what
+	// keeps a backend willing to notice deletions - so "nothing was written"
+	// is a comparison, not a count.
+	before := listFiles(h.libraryRoot(t))
+
 	h.plan(t, "Arrival (2016).mkv", "song.flac", "book.epub")
 
-	var files int
-	_ = filepath.Walk(h.libraryRoot(t), func(_ string, info os.FileInfo, err error) error {
+	after := listFiles(h.libraryRoot(t))
+	if len(after) != len(before) {
+		t.Errorf("planning changed the library from %d files to %d: %v",
+			len(before), len(after), after)
+	}
+}
+
+// listFiles is every file under root, relative, sorted.
+func listFiles(root string) []string {
+	var out []string
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() {
-			files++
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			out = append(out, filepath.ToSlash(rel))
 		}
 		return nil
 	})
-	if files != 0 {
-		t.Errorf("planning wrote %d files", files)
-	}
+	sort.Strings(out)
+	return out
 }
 
 func TestUploadingRequiresASignIn(t *testing.T) {
@@ -303,4 +324,26 @@ func TestUploadingRequiresASignIn(t *testing.T) {
 func mustRead(path string) []byte {
 	b, _ := os.ReadFile(path)
 	return b
+}
+
+// The scan somebody triggers by hand is, more often than not, the scan right
+// after they emptied a folder from their file manager and wondered why their
+// deleted films were still listed. That is the moment the placeholder has to be
+// back: asked to scan a folder that is genuinely empty, a backend declines to
+// remove anything from it - it cannot tell a deletion from an unmounted disk -
+// and reports success while changing nothing.
+func TestScanningPutsAMissingPlaceholderBackFirst(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+
+	placeholder := filepath.Join(h.libraryRoot(t), "movies", "README.txt")
+	if err := os.Remove(placeholder); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	h.api.rescanNow(media.KindVideo)
+
+	if _, err := os.Stat(placeholder); err != nil {
+		t.Errorf("a scan left the folder empty, so a deletion would go unnoticed: %v", err)
+	}
 }

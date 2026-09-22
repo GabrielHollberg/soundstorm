@@ -119,6 +119,65 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 	},
 }
 
+// readmeName is the placeholder file in every library folder.
+//
+// It reads as documentation and it is also load-bearing, which is the part
+// nobody would guess from looking at it. Jellyfin refuses to remove items when
+// a library folder comes back empty: it cannot tell "everything was deleted"
+// from "the drive did not mount", and emptying somebody's library over a bad
+// mount is much the worse mistake. So it skips the folder entirely, and every
+// deleted film stays in search for ever. SoundStorm never shows Jellyfin's own
+// UI - that is the whole point of it - so there is nowhere a user could clear
+// that by hand.
+//
+// A folder holding this file is never empty, so the question never comes up.
+// Measured rather than reasoned about: with the folders truly empty, Jellyfin
+// logged `Library folder "/media/movies" is inaccessible or empty, skipping`
+// and kept nine items for files that were gone across repeated refreshes; with
+// this file back in place the same refresh dropped all nine, and the dead
+// studios and genres behind them, inside five seconds.
+//
+// It is not counted as media - see mediaExtensions - so a folder containing
+// only this one still reads as empty to the UI.
+const readmeName = "README.txt"
+
+// readme is what the placeholder says, built from the same description and
+// example the home screen shows, so there is one source of truth for both.
+//
+// It does not mention Jellyfin, Navidrome or Audiobookshelf. A user of
+// SoundStorm is never told those exist, and a placeholder file is a poor place
+// to start.
+func readme(f Folder) string {
+	return fmt.Sprintf(`%s
+
+%s
+
+  %s
+
+SoundStorm picks up new files automatically - there is nothing to import and no
+scan to trigger by hand.
+
+Leave this file where it is. It keeps the folder from being empty, and an empty
+folder is ambiguous: it looks the same whether you deleted everything or the
+drive holding it is not mounted. Rather than risk clearing a library over a
+missing disk, SoundStorm leaves a folder in that state alone - which means
+things you deleted would keep appearing in search. This file is what stops the
+folder ever being empty. Delete it and SoundStorm writes it back.
+`, f.headline(), f.Description, f.Example)
+}
+
+// headline is the first line of the placeholder: the folder in the words
+// somebody would use out loud.
+func (f Folder) headline() string {
+	switch f.Kind {
+	case media.KindTV:
+		return "Put your TV series here."
+	case media.KindVideo:
+		return "Put your films here."
+	}
+	return "Put your " + f.Name + " here."
+}
+
 // Library is the on-disk media root.
 type Library struct {
 	root string
@@ -189,7 +248,9 @@ func (l *Library) ensure() error {
 		if info, err := os.Stat(path); err == nil {
 			if !info.IsDir() {
 				l.log.Warn("library path is not a directory", "path", path)
+				continue
 			}
+			l.placeholder(path, f)
 			continue
 		} else if !os.IsNotExist(err) {
 			// A stat that failed for any other reason is not evidence the
@@ -220,6 +281,7 @@ func (l *Library) ensure() error {
 			l.log.Warn("could not relax permissions on library folder",
 				"path", path, "err", err)
 		}
+		l.placeholder(path, f)
 		created = append(created, f.Name)
 	}
 
@@ -228,6 +290,43 @@ func (l *Library) ensure() error {
 			"root", l.root, "folders", strings.Join(created, ", "))
 	}
 	return nil
+}
+
+// EnsurePlaceholders writes back any README.txt that has gone missing.
+//
+// Called once at startup, and again immediately before SoundStorm asks the
+// backends to scan. The second one is the one that earns its keep: somebody can
+// empty a folder from their file manager while the server is running, and until
+// the placeholder is back, the backend that owns that folder will not notice
+// anything was removed - so the files they just deleted keep turning up in
+// search, with no way to clear them.
+func (l *Library) EnsurePlaceholders() {
+	for _, f := range layout {
+		path := filepath.Join(l.root, f.Name)
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			continue // no folder to put it in; ensure() owns that case
+		}
+		l.placeholder(path, f)
+	}
+}
+
+// placeholder writes the README if it is not there, and never touches one that
+// is - somebody may well have written their own notes into it.
+func (l *Library) placeholder(dir string, f Folder) {
+	path := filepath.Join(dir, readmeName)
+	if _, err := os.Stat(path); err == nil {
+		return
+	} else if !os.IsNotExist(err) {
+		// A stat that failed for some other reason is not evidence the file is
+		// missing, and writing over somebody's notes on that guess is worse
+		// than leaving a folder without a placeholder.
+		return
+	}
+	if err := os.WriteFile(path, []byte(readme(f)), 0o666); err != nil {
+		// Not fatal. The cost is a folder that stays ambiguous when emptied,
+		// which is exactly where we were before this existed.
+		l.log.Warn("could not write library placeholder", "path", path, "err", err)
+	}
 }
 
 // Folders returns the layout with current file counts, cached briefly.

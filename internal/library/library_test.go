@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -194,5 +195,113 @@ func TestOpenSurvivesAFolderItCannotCreate(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "ebooks")); err != nil {
 		t.Errorf("ebooks should still have been created: %v", err)
+	}
+}
+
+// The placeholder is the thing that stops a library folder ever being empty,
+// and an empty folder is what makes a backend refuse to notice a deletion. So
+// these read as tests about a README and are really tests about whether
+// deleting a film makes it disappear.
+
+func TestOpenWritesAPlaceholderInEveryFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "library")
+	if _, err := Open(root, "./library", testLog()); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	for _, f := range layout {
+		path := filepath.Join(root, f.Name, readmeName)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("%s has no placeholder: %v", f.Name, err)
+			continue
+		}
+		if len(body) == 0 {
+			t.Errorf("%s placeholder is empty", f.Name)
+		}
+		// It has to say what the folder is for, or it is just a marker and
+		// somebody will reasonably delete it.
+		if !strings.Contains(string(body), f.Example) {
+			t.Errorf("%s placeholder does not show the example layout", f.Name)
+		}
+	}
+}
+
+func TestEnsurePlaceholdersPutsADeletedOneBack(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "library")
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Somebody selects everything in the folder and deletes it, placeholder
+	// included, while the server is running. This is exactly how it happened.
+	gone := filepath.Join(root, "movies", readmeName)
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	lib.EnsurePlaceholders()
+
+	if _, err := os.Stat(gone); err != nil {
+		t.Errorf("the placeholder was not restored: %v", err)
+	}
+}
+
+func TestEnsurePlaceholdersLeavesAnEditedOneAlone(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "library")
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	path := filepath.Join(root, "music", readmeName)
+	mine := "my own notes about where the b-sides went\n"
+	if err := os.WriteFile(path, []byte(mine), 0o666); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lib.EnsurePlaceholders()
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(body) != mine {
+		t.Error("a placeholder somebody had written in was overwritten")
+	}
+}
+
+// A folder holding nothing but its placeholder is a folder nobody has put
+// anything in, and the UI must say so. Getting this wrong would replace "drag
+// your music here" with a library that claims to have one file in it.
+func TestAPlaceholderDoesNotCountAsMedia(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "library")
+	lib, err := Open(root, "./library", testLog())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	if !lib.IsEmpty() {
+		t.Error("a library containing only placeholders should report itself empty")
+	}
+	for _, f := range lib.Folders() {
+		if f.Files != 0 {
+			t.Errorf("%s counts %d files with only a placeholder in it", f.Name, f.Files)
+		}
+	}
+}
+
+// SoundStorm's central claim is that a user never finds out which servers are
+// behind it. A file dropped into their media folder is a poor place to break
+// that, however good the explanation would be.
+func TestThePlaceholderNamesNoBackend(t *testing.T) {
+	for _, f := range layout {
+		body := readme(f)
+		for _, name := range []string{"Jellyfin", "Navidrome", "Audiobookshelf", "Docker"} {
+			if strings.Contains(body, name) {
+				t.Errorf("%s placeholder mentions %s", f.Name, name)
+			}
+		}
 	}
 }

@@ -53,6 +53,11 @@ type harness struct {
 	srv    *httptest.Server
 	client *http.Client
 	root   string // the library on disk, for tests that check what landed there
+
+	// api is the server behind srv, for the few tests that need to reach past
+	// HTTP - a scan is debounced by two seconds on purpose, and waiting that
+	// out in a test buys nothing but flakiness.
+	api *Server
 }
 
 // libraryRoot is where this harness put its library folders.
@@ -103,7 +108,7 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)
 	}
-	return &harness{srv: srv, client: &http.Client{Jar: jar}, root: libRoot}
+	return &harness{srv: srv, client: &http.Client{Jar: jar}, root: libRoot, api: api}
 }
 
 func (h *harness) do(t *testing.T, method, path, body string) (*http.Response, []byte) {
