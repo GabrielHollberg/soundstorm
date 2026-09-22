@@ -16,6 +16,12 @@
 /state/
 state.json
 
+# Backups of it, which are the same secrets in a different file: the accounts
+# and every backend password. The uninstaller writes one into the install
+# folder, and on a development machine the install folder is this repository.
+soundstorm-backup*.json
+state.json.bak
+
 # Go
 *.test
 *.out
