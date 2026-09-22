@@ -33,3 +33,7 @@ coverage.*
 # Per-install settings written by the installer: the chosen port, the TLS
 # mode, an image override. Belongs to one machine, never to the repository.
 .env
+
+# Scratch programs for probing a live backend with the real adapter code. Handy
+# and never worth committing; one slipped in once.
+/tmpgen/
