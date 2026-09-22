@@ -103,6 +103,54 @@ sources", and that was not actually possible until `jellyfin.Config` grew a
 Kind and ItemTypes; the adapter hardcoded `KindVideo`. `provision.buildSources`
 now returns a slice for this reason.
 
+## The shelf layout is enforced, not hoped for
+
+Music is always `Artist/Album/track` and audiobooks are always `Author/Title/part`.
+A loose track used to land at the top of `music/`, which is untidy rather than
+broken - Navidrome reads tags, not paths - but it is exactly the mess the
+folders exist to prevent, and it accumulates one file at a time.
+
+`internal/tags` reads just enough to know where to file something: album
+artist, artist, album, title, from ID3v2 in MP3, iTunes atoms in M4A/MP4, and
+Vorbis comments in FLAC. It is not a tag library and must not become one.
+Everything else about a file - duration, artwork, replay gain - belongs to the
+backends, which are much better at it. Same shape as `internal/epub` and
+`internal/pdf`: read the little that answers one question, no dependencies.
+
+Three things about it that are easy to get wrong and were verified against a
+real file rather than reasoned about:
+
+- **ID3 frame sizes are plain integers in 2.3 and syncsafe in 2.4.** Read one
+  as the other and the walk falls off the end of the first frame.
+- **Unsynchronisation** rewrites every `0xFF 0x00` pair so no part of a tag can
+  look like an audio frame. Left undone, every length after the first such pair
+  is wrong. The first real file tested had the flag set.
+- **MP4's `meta` is a full atom**: four bytes of version and flags before its
+  children, which its siblings do not have. Descending without skipping them
+  lands mid-atom and finds nothing, which is the usual reason an M4A looks
+  untagged.
+
+**Only the missing levels are filled in.** A drop of `Laughing Stock/01.flac`
+already names the album, so only the artist is added - replacing a folder
+somebody chose with whatever a tag says would be worse than leaving it. With
+nothing known at all it is `Unknown Artist/Unknown Album`, because the file
+that says nothing about itself is the one that most needs somewhere obvious to
+be found and fixed. Two levels deep or more is left alone entirely.
+
+**Plan and Save share the rule**, and that matters: Plan runs it with empty
+tags because the bytes have not arrived, Save runs it again with the file's
+own. They agree for an untagged file, and where they differ Save is better
+informed than the prediction - never worse.
+
+Films and television are not restructured. Jellyfin matches on the *name*, not
+the depth, and anything dropped there is already folder-shaped; imposing a
+layout would be inventing one. Ebooks are flat on purpose.
+
+Tags are somebody else's text, so they go through `cleanRelPath` like any
+other path, and the separators in them are replaced rather than refused - an
+album really is called "AC/DC Live". `../../etc/passwd` as an album name
+becomes the single harmless segment `..-..-etc-passwd`.
+
 ## Dropping files in
 
 Dragging onto the window does what dragging into the folder would have done,

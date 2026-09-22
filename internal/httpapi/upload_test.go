@@ -136,7 +136,7 @@ func TestWhatItCannotSortItAsksAbout(t *testing.T) {
 	if len(answered.Questions) != 0 {
 		t.Fatalf("still asking: %+v", answered.Questions)
 	}
-	if answered.Files[0].Dest != "audiobooks/Esopo/one.mp3" {
+	if answered.Files[0].Dest != "audiobooks/Unknown Author/Esopo/one.mp3" {
 		t.Errorf("after answering: %q", answered.Files[0].Dest)
 	}
 
@@ -144,7 +144,7 @@ func TestWhatItCannotSortItAsksAbout(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("upload: %d %s", resp.StatusCode, out)
 	}
-	if _, err := os.Stat(filepath.Join(h.libraryRoot(t), "audiobooks", "Esopo", "one.mp3")); err != nil {
+	if _, err := os.Stat(filepath.Join(h.libraryRoot(t), "audiobooks", "Unknown Author", "Esopo", "one.mp3")); err != nil {
 		t.Errorf("not where it was asked to go: %v", err)
 	}
 }
@@ -253,7 +253,10 @@ func TestUploadingTheSameFileTwiceIsRefusedNotDuplicated(t *testing.T) {
 		t.Errorf("second upload = %d, want 409: %s", resp.StatusCode, out)
 	}
 
-	got, err := os.ReadFile(filepath.Join(h.libraryRoot(t), "music", "song.mp3"))
+	// Music is filed under artist and album now, and "original" carries no
+	// tags, so it lands under the placeholders rather than at the top.
+	got, err := os.ReadFile(filepath.Join(h.libraryRoot(t),
+		"music", "Unknown Artist", "Unknown Album", "song.mp3"))
 	if err != nil {
 		t.Fatal(err)
 	}

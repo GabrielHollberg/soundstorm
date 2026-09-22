@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/tags"
 )
 
 // Accepting dropped files.
@@ -232,7 +233,11 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 					Path:  paths[i],
 					Group: key,
 					Kind:  kind,
-					Dest:  folderName(kind) + "/" + rel,
+					// Predicted with no tags, because the bytes have not
+					// arrived yet. Save runs the same rule with the file's
+					// own tags and can only do better - it fills in a real
+					// artist where this had to guess at a placeholder.
+					Dest: folderName(kind) + "/" + shelvePath(kind, rel, tags.Tags{}),
 				}
 			}
 		}
@@ -457,17 +462,6 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 		return "", fmt.Errorf("there is no %s library", kind)
 	}
 
-	dest := filepath.Join(folder, filepath.FromSlash(rel))
-	// Sanitising should already guarantee this. Checking the result anyway
-	// costs nothing and turns a future mistake in cleanRelPath into a refusal
-	// rather than a write outside the library.
-	if !within(folder, dest) {
-		return "", fmt.Errorf("that path does not stay inside the library")
-	}
-	if _, err := os.Stat(dest); err == nil {
-		return "", ErrAlreadyThere
-	}
-
 	staging := filepath.Join(l.root, ".uploads")
 	if err := os.MkdirAll(staging, 0o777); err != nil {
 		return "", fmt.Errorf("prepare upload: %w", err)
@@ -489,6 +483,24 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	}
 	if err := tmp.Close(); err != nil {
 		return "", fmt.Errorf("receive file: %w", err)
+	}
+
+	// Where it goes is decided now rather than before the bytes arrived,
+	// because for a loose track the answer is inside the file. Nothing has
+	// been written outside the staging directory yet, so a refusal here still
+	// leaves the library untouched.
+	rel = shelveUnder(kind, rel, tmpName)
+
+	dest := filepath.Join(folder, filepath.FromSlash(rel))
+	// Sanitising should already guarantee this. Checking the result anyway
+	// costs nothing and turns a future mistake in cleanRelPath - or in the
+	// names that just came out of a stranger's tags - into a refusal rather
+	// than a write outside the library.
+	if !within(folder, dest) {
+		return "", fmt.Errorf("that path does not stay inside the library")
+	}
+	if _, err := os.Stat(dest); err == nil {
+		return "", ErrAlreadyThere
 	}
 
 	if err := ensureDir(filepath.Dir(dest)); err != nil {
@@ -547,4 +559,130 @@ func (l *Library) ClearStaging() {
 			_ = os.Remove(filepath.Join(staging, e.Name()))
 		}
 	}
+}
+
+// --- shelf layout -----------------------------------------------------------
+
+// structuredDepth is how many folders a shelf expects above the file.
+//
+// Music and audiobooks are the two the backends read structurally: Navidrome
+// groups an album by its folder as well as its tags, and Audiobookshelf reads
+// Author/Title straight from the path. Films and television are already folder
+// shaped by the time anybody drops them, and Jellyfin matches on the *name*
+// rather than the depth, so imposing a layout there would be inventing one.
+// Ebooks are a flat folder on purpose.
+var structuredDepth = map[media.Kind]int{
+	media.KindMusic:     2, // Artist/Album/track
+	media.KindAudiobook: 2, // Author/Title/part
+}
+
+// shelveUnder gives a loose file the folders its shelf expects.
+//
+// Dropping a single track used to leave it at the top of music/, which is
+// untidy rather than broken - Navidrome reads tags, not paths - but it is also
+// exactly the mess the folders exist to prevent, and it compounds one file at
+// a time.
+//
+// Anything already deep enough is left alone: somebody who dropped
+// Artist/Album/track.flac has said where it goes more reliably than a tag
+// will, and second-guessing that would move files for no reason.
+func shelveUnder(kind media.Kind, rel, staged string) string {
+	if _, ok := structuredDepth[kind]; !ok {
+		return rel
+	}
+	return shelvePath(kind, rel, readTags(staged))
+}
+
+// shelvePath applies the layout rule. Split out so that Plan can run it with
+// no tags at all - it has only the path at that point - and Save can run it
+// again with the file's own. They agree whenever a file is untagged, and when
+// it is not, Save is strictly better informed than the prediction.
+func shelvePath(kind media.Kind, rel string, t tags.Tags) string {
+	want, ok := structuredDepth[kind]
+	if !ok {
+		return rel
+	}
+	depth := strings.Count(rel, "/")
+	if depth >= want {
+		return rel
+	}
+
+	// Only the missing levels are filled in. A drop of "Laughing Stock/01
+	// Myrrhman.flac" already names the album, and replacing that with whatever
+	// the tags say - or worse, with a placeholder when there are no tags -
+	// would throw away the one piece of structure a person actually chose.
+	base := rel
+	middle := ""
+	if i := strings.LastIndex(rel, "/"); i >= 0 {
+		base, middle = rel[i+1:], rel[:i]
+	}
+
+	artist := t.Folder()
+	album := middle
+	if album == "" {
+		album = t.Album
+	}
+	if kind == media.KindAudiobook && album == "" {
+		// Audiobookshelf reads the album tag as the book and the artist tag as
+		// the author, which is what every audiobook ripper writes - but a
+		// single-file book often carries only a title.
+		album = t.Title
+	}
+
+	// Placeholders when nothing is known, rather than leaving the file loose.
+	// The rule is that a track always has an artist folder and an album
+	// folder, and a file that says nothing about itself is exactly the one
+	// that needs somewhere obvious to be found and fixed.
+	first, second := "Unknown Artist", "Unknown Album"
+	if kind == media.KindAudiobook {
+		first, second = "Unknown Author", "Unknown Title"
+	}
+	rebuilt, err := cleanRelPath(tagSegment(artist, first) + "/" + tagSegment(album, second) + "/" + base)
+	if err != nil {
+		// A tag that cannot survive being a path is not worth failing an
+		// upload over; where it was asked to go is safe.
+		return rel
+	}
+	return rebuilt
+}
+
+// readTags opens the staged file and reads what it says about itself. Any
+// failure is silence: a file with no tags is ordinary, not an error.
+func readTags(path string) tags.Tags {
+	f, err := os.Open(path)
+	if err != nil {
+		return tags.Tags{}
+	}
+	defer f.Close()
+	t, err := tags.Read(f)
+	if err != nil {
+		return tags.Tags{}
+	}
+	return t
+}
+
+// tagSegment turns a tag into one path segment, or falls back.
+//
+// Tags come from whoever made the file, so they contain slashes, colons and
+// occasionally a newline. Those are replaced rather than refused: an album
+// genuinely called "AC/DC Live" should not fail to upload.
+func tagSegment(value, fallback string) string {
+	value = strings.TrimSpace(strings.Map(func(r rune) rune {
+		switch r {
+		case '/', rune(92), ':', '*', '?', rune(34), '<', '>', '|':
+			return '-'
+		}
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, value))
+	value = strings.TrimRight(value, ". ")
+	if value == "" {
+		return fallback
+	}
+	if len(value) > maxSegment {
+		value = strings.TrimSpace(value[:maxSegment])
+	}
+	return value
 }

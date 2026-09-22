@@ -41,11 +41,13 @@ func TestFilesGoToTheShelfTheirNameImplies(t *testing.T) {
 		path string
 		dest string
 	}{
-		{"Myrrhman.flac", "music/Myrrhman.flac"},
+		// Music and audiobooks are filed under artist and album even when the
+		// drop names neither: the shelf is never a flat pile of tracks.
+		{"Myrrhman.flac", "music/Unknown Artist/Unknown Album/Myrrhman.flac"},
 		{"Arrival (2016).mkv", "movies/Arrival (2016).mkv"},
 		{"A Wizard of Earthsea.epub", "ebooks/A Wizard of Earthsea.epub"},
 		{"Attention Is All You Need.pdf", "ebooks/Attention Is All You Need.pdf"},
-		{"book.m4b", "audiobooks/book.m4b"},
+		{"book.m4b", "audiobooks/Unknown Author/Unknown Title/book.m4b"},
 		// Television, in both of the forms people actually name it.
 		{"Severance - S01E01.mkv", "tv/Severance - S01E01.mkv"},
 		{"The Wire 1x02.avi", "tv/The Wire 1x02.avi"},
@@ -118,8 +120,10 @@ func TestEachDroppedItemIsDecidedSeparately(t *testing.T) {
 	)
 
 	want := []string{
-		"music/Laughing Stock/01 Myrrhman.flac",
-		"music/Laughing Stock/cover.jpg",
+		// The album folder the drop gave is kept; only the missing artist
+		// level is filled in, and the cover travels with its album.
+		"music/Unknown Artist/Laughing Stock/01 Myrrhman.flac",
+		"music/Unknown Artist/Laughing Stock/cover.jpg",
 		"movies/Arrival (2016)/Arrival (2016).mkv",
 		"movies/Arrival (2016)/Arrival (2016).srt",
 	}
@@ -188,7 +192,9 @@ func TestAnAnswerPlacesTheWholeGroup(t *testing.T) {
 			t.Errorf("%s was not placed: %+v", paths[i], p)
 			continue
 		}
-		if !strings.HasPrefix(p.Dest, "audiobooks/Esopo/") {
+		// The folder the drop named is kept as the title; the missing
+		// author level is filled in.
+		if !strings.HasPrefix(p.Dest, "audiobooks/Unknown Author/Esopo/") {
 			t.Errorf("%s -> %s", paths[i], p.Dest)
 		}
 	}
@@ -317,7 +323,7 @@ func TestAwkwardNamesAreNormalisedOrRefused(t *testing.T) {
 	if got.Skipped {
 		t.Fatalf("a harmlessly spaced name was refused: %s", got.Reason)
 	}
-	if got.Dest != "music/spaced out .flac" {
+	if got.Dest != "music/Unknown Artist/Unknown Album/spaced out .flac" {
 		t.Errorf("dest = %q", got.Dest)
 	}
 
@@ -340,11 +346,13 @@ func TestSaveWritesTheFileWhereThePlanSaid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if dest != "music/Laughing Stock/01 Myrrhman.flac" {
+	// The plan and the save agree: both apply the layout rule, and with no
+	// readable tags in "not really a flac" both reach the same placeholder.
+	if dest != "music/Unknown Artist/Laughing Stock/01 Myrrhman.flac" {
 		t.Errorf("dest = %q", dest)
 	}
 
-	onDisk := filepath.Join(l.Root(), "music", "Laughing Stock", "01 Myrrhman.flac")
+	onDisk := filepath.Join(l.Root(), "music", "Unknown Artist", "Laughing Stock", "01 Myrrhman.flac")
 	got, err := os.ReadFile(onDisk)
 	if err != nil {
 		t.Fatalf("read back: %v", err)
@@ -372,7 +380,7 @@ func TestSaveRefusesToOverwrite(t *testing.T) {
 		t.Fatal("the second upload overwrote the first")
 	}
 
-	got, _ := os.ReadFile(filepath.Join(l.Root(), "music", "track.mp3"))
+	got, _ := os.ReadFile(filepath.Join(l.Root(), "music", "Unknown Artist", "Unknown Album", "track.mp3"))
 	if string(got) != "first" {
 		t.Errorf("the original was changed to %q", got)
 	}
