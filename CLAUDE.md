@@ -855,6 +855,27 @@ and never point automated fetches at an origin site that has asked you not to.
   volume is wiped but SoundStorm's state survives (or vice versa), you get a
   backend with an account whose password nobody holds. The provisioners detect
   this and say so rather than retrying forever. The fix is a human decision.
+
+  `soundstorm backup` and `soundstorm restore` are now that decision's tools,
+  and the uninstaller takes a backup into the install folder before `down -v`,
+  which is the one moment the credentials stop existing anywhere. Every
+  ordinary `save()` also leaves a sibling `.bak`, which covers a bad write and
+  nothing else - a deleted volume takes the `.bak` with it.
+
+  **Backup is read-only, and that is not a nicety.** `state.Open` migrates and
+  saves unconditionally, so backing up through it would rewrite the file being
+  backed up and hand its ownership to whoever ran the command. `state.Inspect`
+  and `state.CopyTo` exist so the command can look without touching. Proven by
+  running the backup as root against a volume owned by uid 10001 and checking
+  the ownership afterwards.
+
+  **Restore has to put the ownership back**, for the same reason the password
+  reset does. It falls back to the *directory's* owner when there is no state
+  file to copy from, which is the normal case - the whole point of a restore is
+  often that the volume is empty. A fresh named volume mounted at
+  `/var/lib/soundstorm` inherits 10001 from the image, because the Dockerfile
+  chowns that path and declares it a VOLUME. Mount it anywhere else and the
+  directory is root's, which is what made the first attempt look broken.
 - **Reconnecting is not provisioning, and conflating them destroys credentials.**
   On restart SoundStorm beats the backends to listening. A failed health check then
   looks like "wrong password" unless you check what kind of failure it was, and

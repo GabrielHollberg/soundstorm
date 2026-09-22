@@ -293,6 +293,37 @@ docker compose pull && docker compose up -d
 
 </details>
 
+### Backing it up
+
+One file holds your accounts and the passwords SoundStorm invented for
+Navidrome, Jellyfin and Audiobookshelf. **Those passwords exist nowhere else.**
+Lose that file and the media servers keep running with accounts nobody can
+sign in to — and reinstalling does not help, because they are already set up.
+
+From the install folder:
+
+```sh
+docker compose run --rm -v "$PWD:/backup" soundstorm backup /backup/soundstorm-backup.json
+```
+
+Keep the result somewhere that is not this machine. It is worth as much as the
+server: anyone holding it holds every backend password.
+
+To put it back — on a new machine, or after a `docker compose down -v`:
+
+```sh
+docker compose run --rm -v "$PWD:/backup" soundstorm restore /backup/soundstorm-backup.json
+docker compose up -d
+```
+
+Restoring refuses anything that is not a SoundStorm backup, and keeps whatever
+it replaced as `state.json.bak`, so restoring the wrong file is undoable too.
+Every ordinary write already leaves a `.bak` beside the state, which covers a
+bad write but not a deleted volume — that is what this is for.
+
+**Uninstalling saves one automatically** into the install folder before it
+removes anything, and leaves it behind when it cleans up.
+
 ### Forgotten your password
 
 Signup closes for good once the first account exists, so there is no “register again” to fall back on. From the install folder:

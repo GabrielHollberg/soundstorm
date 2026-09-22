@@ -286,10 +286,161 @@ func (s *Store) save() error {
 	if err := os.WriteFile(tmp, encoded, 0o600); err != nil {
 		return fmt.Errorf("write state: %w", err)
 	}
+
+	// Keep the version being replaced, before replacing it.
+	//
+	// This file is the only copy of the credentials SoundStorm generated for
+	// four backends, and those backends cannot be re-provisioned: an account
+	// already exists on each of them and nothing else knows its password. A
+	// bad write here is not "lose your settings", it is "lose the servers".
+	//
+	// It is a sibling rather than a second location on purpose. The rename
+	// below already survives a crash, so what this adds is a way back from a
+	// write that succeeded and should not have - a wrong edit, a truncation, a
+	// migration that went sideways. Surviving the volume being deleted is a
+	// different problem and needs somewhere else entirely, which is what
+	// BackupTo exists for.
+	if previous, err := os.ReadFile(s.path); err == nil {
+		// Best effort. A backup that cannot be written is not a reason to
+		// refuse the write that matters.
+		_ = os.WriteFile(s.path+".bak", previous, 0o600)
+	}
+
 	// os.Rename replaces an existing file on both Unix and Windows, so a
 	// crash mid-write leaves the previous state intact rather than a partial
 	// file that would strand every provisioned credential.
 	if err := os.Rename(tmp, s.path); err != nil {
+		return fmt.Errorf("replace state: %w", err)
+	}
+	return nil
+}
+
+// BackendIDs lists the backends this state holds credentials for, sorted so
+// the order is the same every time it is printed.
+func (s *Store) BackendIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]string, 0, len(s.d.Backends))
+	for id := range s.d.Backends {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Summary describes a state file without opening it as a Store.
+type Summary struct {
+	Version  int
+	Users    int
+	Backends []string
+}
+
+// Inspect reads a state file and reports what is in it, writing nothing.
+//
+// state.Open cannot be used for this: it migrates and saves unconditionally,
+// so merely looking at a state file with it rewrites the file and hands
+// ownership to whoever asked. A backup that modifies the thing it is backing
+// up is not a backup.
+func Inspect(path string) (Summary, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Summary{}, err
+	}
+	var d data
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return Summary{}, fmt.Errorf("parse state %s: %w", path, err)
+	}
+	ids := make([]string, 0, len(d.Backends))
+	for id := range d.Backends {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return Summary{Version: d.Version, Users: len(d.Users), Backends: ids}, nil
+}
+
+// CopyTo copies a state file byte for byte, touching neither end's contents.
+func CopyTo(path, dest string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read state: %w", err)
+	}
+	if dir := filepath.Dir(dest); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create backup directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(dest, raw, 0o600); err != nil {
+		return fmt.Errorf("write backup: %w", err)
+	}
+	return nil
+}
+
+// BackupTo writes a copy of the state somewhere that is not this volume.
+//
+// The sibling .bak above covers a bad write. It does nothing for the failure
+// that actually ends an install: `docker compose down -v`, a wiped volume, a
+// replaced machine. After that the backends are still there, still holding
+// accounts SoundStorm created, with passwords that existed in exactly one
+// file. The provisioners detect it and say so; they cannot fix it.
+//
+// 0600, and the caller chooses where. This file is worth as much as the
+// server, so it is never written anywhere by default - somewhere the media
+// folder gets synced to would be the obvious wrong place.
+func (s *Store) BackupTo(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	encoded, err := json.MarshalIndent(s.d, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode state: %w", err)
+	}
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create backup directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		return fmt.Errorf("write backup: %w", err)
+	}
+	return nil
+}
+
+// RestoreFrom replaces the state with a backup, after checking it is one.
+//
+// Refusing a file that is not a SoundStorm state is the whole value here: the
+// alternative is overwriting a working install with a typo and discovering it
+// at the next restart.
+func RestoreFrom(backup, path string) error {
+	raw, err := os.ReadFile(backup)
+	if err != nil {
+		return fmt.Errorf("read backup: %w", err)
+	}
+	var probe data
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return fmt.Errorf("%s is not a SoundStorm backup: %w", backup, err)
+	}
+	if probe.Version == 0 {
+		return fmt.Errorf("%s has no version field, so it is not a SoundStorm backup", backup)
+	}
+	if probe.Version > currentVersion {
+		return fmt.Errorf("%s was written by a newer SoundStorm (version %d, this one understands %d)",
+			backup, probe.Version, currentVersion)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create state directory: %w", err)
+	}
+	// Whatever is there now becomes the .bak, so restoring the wrong file is
+	// itself undoable.
+	if previous, err := os.ReadFile(path); err == nil {
+		_ = os.WriteFile(path+".bak", previous, 0o600)
+	}
+	tmp := path + ".restore"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return fmt.Errorf("write state: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("replace state: %w", err)
 	}
 	return nil

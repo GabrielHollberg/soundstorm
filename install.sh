@@ -283,6 +283,19 @@ uninstall() {
 	if [ -f "$DIR/docker-compose.yml" ]; then
 		cd "$DIR"
 		if command -v docker >/dev/null 2>&1; then
+			# A copy first, into the folder rather than the volume about to be
+			# deleted. This is the exact moment the credentials for four
+			# backends stop existing anywhere.
+			step "Saving your accounts first"
+			if $COMPOSE run --rm -v "$DIR:/backup" soundstorm backup 				/backup/soundstorm-backup.json >/dev/null 2>&1 &&
+				[ -f "$DIR/soundstorm-backup.json" ]; then
+				note "saved to $DIR/soundstorm-backup.json"
+				note "keep it if you might reinstall - it is the only copy of the"
+				note "passwords SoundStorm made on the media servers"
+			else
+				note "could not save a copy; carrying on with the uninstall"
+			fi
+
 			step "Stopping it and removing its data"
 			note "accounts and the servers own settings go; your media does not"
 			# down -v takes the named volumes with it - SoundStorm accounts,
@@ -293,6 +306,7 @@ uninstall() {
 			note "docker is not available, so the containers were left alone"
 		fi
 		step "Cleaning up"
+		# soundstorm-backup.json is deliberately not in this list.
 		rm -f "$DIR/docker-compose.yml" "$DIR/.env"
 	else
 		note "nothing installed in $DIR"

@@ -1023,6 +1023,26 @@ if ($Uninstall) {
     } else {
         Set-Location $Dir
         if (Get-Command docker -ErrorAction SilentlyContinue) {
+            # A copy first, into the folder rather than the volume about to be
+            # deleted. This is the exact moment the credentials for four
+            # backends stop existing anywhere, and somebody uninstalling to
+            # move machines has no other warning that they were about to.
+            Step "Saving your accounts first"
+            $backup = Join-Path $Dir 'soundstorm-backup.json'
+            $saved = Invoke-Docker @(
+                'compose', 'run', '--rm', '-v', "${Dir}:/backup",
+                'soundstorm', 'backup', '/backup/soundstorm-backup.json'
+            ) -Capture
+            if ($saved.ExitCode -eq 0 -and (Test-Path $backup)) {
+                Good "Saved to $backup"
+                Note "Keep it if you might reinstall - it is the only copy of the"
+                Note "passwords SoundStorm made on the media servers."
+            } else {
+                # Not fatal: somebody uninstalling has asked to lose this, and
+                # refusing to uninstall because the backup failed is worse.
+                Note "Could not save a copy. Carrying on with the uninstall."
+            }
+
             Step "Stopping it and removing its data"
             Note "Accounts and the servers' own settings go; your media does not."
             # down -v takes the named volumes with it: SoundStorm's accounts,
@@ -1040,7 +1060,10 @@ if ($Uninstall) {
     Good "Shortcuts removed."
 
     Step "Cleaning up the folder"
-    foreach ($leftover in @('docker-compose.yml', '.env', 'soundstorm.ps1')) {
+    # soundstorm-backup.json is deliberately not in this list. It is the only
+    # thing here worth keeping, and the moment somebody wants it is after they
+    # have already uninstalled.
+    foreach ($leftover in @('docker-compose.yml', '.env', 'soundstorm.ps1', 'tailscale-serve.json')) {
         Remove-Item (Join-Path $Dir $leftover) -Force -ErrorAction SilentlyContinue
     }
 

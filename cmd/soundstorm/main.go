@@ -39,11 +39,19 @@ import (
 )
 
 func main() {
-	// One subcommand, and it is deliberately the only one. Recovery has to
-	// live wherever the server lives - somebody locked out of their own
-	// install should not also have to fetch a second tool.
-	if len(os.Args) > 1 && os.Args[1] == "reset-password" {
-		os.Exit(resetPassword(os.Args[2:]))
+	// Recovery lives wherever the server lives: somebody locked out of their
+	// own install, or holding a backup and an empty volume, should not also
+	// have to find a second tool. Anything else falls through and starts the
+	// server, so an unrecognised argument is not silently swallowed.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "reset-password":
+			os.Exit(resetPassword(os.Args[2:]))
+		case "backup":
+			os.Exit(backupState(os.Args[2:]))
+		case "restore":
+			os.Exit(restoreState(os.Args[2:]))
+		}
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
