@@ -925,6 +925,49 @@ Do not move `library/` while the stack is running. The backends hold bind mounts
 into its subfolders, and replacing the directory leaves them dangling in a state
 where stat and mkdir disagree about whether a path exists.
 
+**The bundle was silently corrupt for months, and the lesson is about binaries
+in general.** Something read the committed media as text and wrote it back,
+which on Windows drops every carriage return. Nine of the ten ebooks then could
+not be opened at all - removing a byte moves a zip's central directory out from
+under its own recorded offsets - and the four music tracks and the audiobook
+lost frame sync about once per 64KB, which a decoder survives as a click rather
+than an error. Nineteen of the twenty-one screenshots in `docs/shots` lost the
+carriage return out of the PNG signature, `89 50 4E 47 0D 0A 1A 0A`, so the
+README's images rendered as broken-image icons on the page where somebody
+decides whether to install this.
+
+Every symptom was quiet. The files were the right length, opened, and began
+with the right magic number; a fresh install simply showed one book instead of
+ten. It was found only by chasing an unrelated report and noticing
+`failed=9` in a scan log.
+
+It was **not** git. `.gitattributes` marks these binary, and a test confirms
+git leaves a PNG alone even with `core.autocrlf=true` and no attributes at all -
+its own binary detection catches it. The conversion happened before the files
+were ever committed, in whatever wrote them.
+
+So the rule is: **a committed binary needs a check that reads it the way its
+consumer will.** Length and magic number prove nothing.
+
+- `internal/starter/integrity_test.go` opens every bundled epub's
+  `META-INF/container.xml` - the entry, not the listing, because a damaged zip
+  lists it perfectly - and walks every mp3's frame chain end to end. It also
+  strips the carriage returns out of a bundled file and requires the walk to
+  object, because a checker for a silent fault is worth what its evidence is.
+- `scripts/check-images.py` verifies every PNG against its own per-chunk CRC32
+  and inflates the pixels to compare with the header. Wired into CI.
+
+The repair is worth knowing for next time. The ebooks and audio had to be
+fetched again - `scripts/fetch-starter-ebooks.sh` and
+`scripts/fetch-starter-audio.sh`, which also record how the audio was made,
+something that existed nowhere before and is why the damage could not simply be
+undone. Every re-fetched ebook came back exactly as many bytes larger as the
+carriage returns that had been removed (2, 2, 1, 2, 10, 3, 1, 12, 3 and 0),
+which is what confirmed the diagnosis. The screenshots needed no re-capture:
+PNG carries a CRC32 per chunk, so for each damaged chunk the missing carriage
+returns could be found by trying each newline position until the checksum
+matched. All twenty-one now inflate to exactly the size their headers claim.
+
 ## Testing against real media
 
 `scripts/fetch-test-library.ps1` builds a library from Project Gutenberg,

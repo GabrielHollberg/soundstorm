@@ -44,20 +44,6 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
-      # SoundStorm-Setup.cmd is downloaded straight from raw.githubusercontent
-      # and run by cmd.exe, which does not reliably honour `goto` with LF line
-      # endings - and this file uses goto. A repo-wide `sed -i` has quietly
-      # stripped the carriage returns out of it twice now, which is not
-      # something anybody would notice until the first person to try it got a
-      # batch file that ran half of itself.
-      #
-      # Counted rather than pattern-matched. The first version of this check
-      # grepped for an escaped r, which reaches grep as an escape sequence a
-      # POSIX basic regexp does not define - GNU grep reads it as a plain
-      # letter r. So the check passed on any file containing the letter r,
-      # which is every file, and it sat here green through the exact sed -i it
-      # was written to catch. Counting also catches half a file being
-      # converted, which matching never could.
       # The Tailscale sidecar proxies to SoundStorm by name, and the name it
       # must not use is "soundstorm" - that is the sidecar's own tailnet
       # hostname, which Docker writes into its /etc/hosts, so the proxy target
@@ -89,6 +75,34 @@ jobs:
             exit 1
           fi
 
+      # The mirror image of the check below, and the more expensive mistake.
+      # Nineteen of the twenty-one screenshots in docs/shots spent months with
+      # their carriage returns stripped out, which breaks a PNG at its own
+      # signature - 89 50 4E 47 0D 0A 1A 0A - so GitHub rendered the README's
+      # images as broken-image icons on the page where somebody decides whether
+      # to install this. Nothing said so, because a damaged PNG is still the
+      # right length and still starts with the right first four bytes.
+      #
+      # The same thing happened to the starter library: nine of its ten ebooks
+      # could not be opened at all. That half is checked by go test, in
+      # internal/starter, because those files are embedded in the binary.
+      - name: Committed images still decode
+        run: python3 scripts/check-images.py
+
+      # SoundStorm-Setup.cmd is downloaded straight from raw.githubusercontent
+      # and run by cmd.exe, which does not reliably honour `goto` with LF line
+      # endings - and this file uses goto. A repo-wide `sed -i` has quietly
+      # stripped the carriage returns out of it twice now, which is not
+      # something anybody would notice until the first person to try it got a
+      # batch file that ran half of itself.
+      #
+      # Counted rather than pattern-matched. The first version of this check
+      # grepped for an escaped r, which reaches grep as an escape sequence a
+      # POSIX basic regexp does not define - GNU grep reads it as a plain
+      # letter r. So the check passed on any file containing the letter r,
+      # which is every file, and it sat here green through the exact sed -i it
+      # was written to catch. Counting also catches half a file being
+      # converted, which matching never could.
       - name: The Windows setup file still has CRLF
         run: |
           returns=$(tr -cd '\r' < SoundStorm-Setup.cmd | wc -c)
