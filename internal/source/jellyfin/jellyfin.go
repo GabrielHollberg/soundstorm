@@ -109,6 +109,23 @@ func (s *Source) searchParams(q media.Query) url.Values {
 		"IncludeItemTypes": {s.itemTypes},
 		"Limit":            {strconv.Itoa(q.LimitOr(25))},
 		"Fields":           {"Overview,ProductionYear,ParentIndexNumber,IndexNumber"},
+
+		// Jellyfin can hold episodes that have no file: with a user's
+		// "display missing episodes" preference on, it manufactures one per gap
+		// from the series metadata. They look like ordinary results and there is
+		// nothing behind them to play. SoundStorm creates its own Jellyfin
+		// account and never turns that on, so this is insurance rather than a
+		// fix - but it costs one parameter, and the two sibling backends both
+		// turned out to hand over items for deleted files.
+		//
+		// IsMissing, and not IsVirtualItem, which looks like the more general
+		// answer and is silently ignored: on 12.1.0 `IsVirtualItem=true`
+		// returned a real film, exactly as a parameter name invented for the
+		// test did. `IsMissing=true` returned nothing for the same film, and
+		// `IsMissing=false` kept the film, the episode and the series - which is
+		// the case that matters, because a Series has no file of its own and a
+		// filter that dropped it would empty the television shelf.
+		"IsMissing": {"false"},
 	}
 	// Omitted entirely rather than sent empty. /Items with no searchTerm is
 	// Jellyfin's own browse: it returns the library in order. Sending

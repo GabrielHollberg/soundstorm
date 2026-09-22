@@ -306,3 +306,37 @@ func TestSubtitleTargetBuildsAVTTURL(t *testing.T) {
 		}
 	}
 }
+
+// Jellyfin will serve episodes that have no file - one per gap in a series,
+// manufactured from its metadata, when a user has "display missing episodes"
+// switched on. They arrive as ordinary results with nothing behind them to play.
+//
+// The parameter is asserted rather than the behaviour, because a fake server
+// cannot manufacture a virtual episode. What it is standing in for was checked
+// against Jellyfin 12.1.0 directly: IsMissing=true returned nothing for a real
+// film, IsMissing=false kept the film, an episode and its parent series, and
+// IsVirtualItem=false - the parameter that looks like the more general answer -
+// was ignored as completely as a name invented for the test.
+func TestSearchAsksJellyfinToLeaveOutItemsWithNoFile(t *testing.T) {
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Items":[],"TotalRecordCount":0}`))
+	}))
+	defer srv.Close()
+
+	s, err := New(Config{ID: "jellyfin", BaseURL: srv.URL, Token: "t"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, q := range []media.Query{{}, {Text: "dune"}} {
+		if _, err := s.Search(context.Background(), q); err != nil {
+			t.Fatalf("Search(%q): %v", q.Text, err)
+		}
+		if got.Get("IsMissing") != "false" {
+			t.Errorf("Search(%q) sent IsMissing=%q, want \"false\"", q.Text, got.Get("IsMissing"))
+		}
+	}
+}

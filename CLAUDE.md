@@ -462,7 +462,12 @@ never disappeared either", and it was a different bug with the same symptom.
   Nothing to do. Its database still held 52 tracks for an empty folder while
   answering search with none of them, which is exactly right.
 - **Jellyfin** removes the item on the next validation, as long as the folder is
-  not empty. See above.
+  not empty. See above. It can also hold episodes that never had a file - with a
+  user's "display missing episodes" preference on it manufactures one per gap in
+  a series - so the adapter sends `IsMissing=false`. SoundStorm owns the Jellyfin
+  account and never turns that preference on, so that is insurance; it is there
+  because the other two backends both turned out to serve items for files that
+  were gone.
 - **Audiobookshelf** sets `isMissing` and **keeps serving the item** from both
   `/search` and `/items`. That is defensible for a server - a book on an
   unplugged drive should not lose its listening position - and it means a shelf
@@ -786,6 +791,14 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   form it accepts is `Authorization: MediaBrowser ... Token="..."`. Most docs
   and every older client still show the other two. This is why
   `source.Target` carries headers rather than just a URL.
+- **Jellyfin ignores a query parameter it does not know, silently, with a 200.**
+  So a 200 is not evidence a filter was applied. `IsVirtualItem=true` returned a
+  real film - identical to a parameter name invented for the test - while
+  `IsMissing=true` returned nothing for the same film and `IsMissing=false` kept
+  the film, an episode and its parent series. That last case is the one that
+  matters: a Series has no file of its own, and a filter that dropped it would
+  empty the television shelf. Test any filter by asking for the *opposite* and
+  checking the count actually changes; the same trap as `ND_SCANINTERVAL`.
 - **Audiobookshelf 2.36.1 `/login` returns two tokens.** `user.accessToken`
   carries an `exp` one hour out; `user.token` is a legacy JWT with no `exp` at
   all. SoundStorm stores the legacy one on purpose - the other would strand the
