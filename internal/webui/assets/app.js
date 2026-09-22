@@ -30,11 +30,21 @@ const state = {
 /* ---------------------------------------------------------------- helpers */
 
 async function api(path, options = {}) {
-  const resp = await fetch(path, {
-    credentials: 'same-origin',
-    headers: options.body ? { 'Content-Type': 'application/json' } : {},
-    ...options,
-  });
+  let resp;
+  try {
+    resp = await fetch(path, {
+      credentials: 'same-origin',
+      headers: options.body ? { 'Content-Type': 'application/json' } : {},
+      ...options,
+    });
+  } catch (err) {
+    // fetch rejects rather than resolving when the request never completes at
+    // all: the server is down, the wifi dropped, or - the common one here -
+    // the browser refused the certificate. Callers only ever checked `ok`, so
+    // this used to reject straight through them and leave the boot spinner
+    // turning for ever with "Failed to fetch" in a console nobody opens.
+    return { ok: false, status: 0, body: null, offline: true };
+  }
   let body = null;
   try {
     body = await resp.json();
@@ -1615,11 +1625,37 @@ $('intake-close').addEventListener('click', () => {
 /* ------------------------------------------------------------------- boot */
 
 (async function boot() {
-  const { ok, body } = await api('/api/session');
-  if (!ok || !body) {
-    $('boot').textContent = 'soundstorm is not responding.';
+  const { ok, body, offline } = await api('/api/session');
+  if (ok && body) {
+    if (body.signedIn) showApp(body.user);
+    else showGate(body.hasAccount);
     return;
   }
-  if (body.signedIn) showApp(body.user);
-  else showGate(body.hasAccount);
+
+  // Whatever went wrong, stop spinning. A spinner that never resolves is the
+  // one failure that tells somebody nothing at all.
+  const boot = $('boot');
+  boot.replaceChildren();
+
+  const message = document.createElement('p');
+  if (offline) {
+    // Almost always the certificate rather than the server: SoundStorm mints
+    // its own, and a browser that has not been told to trust it refuses the
+    // connection outright. Reloading is what applies a freshly accepted one.
+    message.textContent = 'Cannot reach SoundStorm.';
+    const detail = document.createElement('p');
+    detail.className = 'muted';
+    detail.textContent =
+      'If this address used to work, the certificate changed when the server '
+      + 'restarted. Open it in a new tab, accept the warning, and reload. '
+      + 'Otherwise check that SoundStorm is running.';
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.textContent = 'Try again';
+    again.addEventListener('click', () => location.reload());
+    boot.append(message, detail, again);
+  } else {
+    message.textContent = 'SoundStorm is not responding.';
+    boot.append(message);
+  }
 })();

@@ -542,6 +542,24 @@ certificate warning is a poor first screen. An unknown `SOUNDSTORM_TLS` value
 is **fatal** - quietly serving plain HTTP to somebody who asked for encryption
 is the worst available way to be wrong.
 
+**The server certificate is persisted, not just the authority.** It was not,
+and that was not cosmetic. Most devices never install the authority; what
+people do instead is click through the browser's warning once, and a browser
+pins that exception to the exact certificate it saw. Minting a fresh one on
+every start revoked it on every restart - and with a service worker holding
+the shell in cache the symptom was not a warning at all but a spinner that
+never stopped, because the cached page kept loading while every request behind
+it failed TLS. `server.pem` and `server-key.pem` sit beside the authority now,
+reissued only near expiry or when `SOUNDSTORM_TLS_HOSTS` changes.
+
+**Nothing in the UI may assume `fetch` resolves.** `api()` had no catch, so a
+failed TLS handshake, a stopped server or a dropped connection rejected
+straight through every caller - and `boot()` checked `ok` but never the
+rejection, leaving the spinner turning with "Failed to fetch" in a console
+nobody opens. It now returns `{ok: false, offline: true}` and the boot screen
+says so, with the certificate explanation first because that is the usual
+cause here.
+
 `SOUNDSTORM_TRUST_PROXY` lets `X-Forwarded-Proto` decide whether the session
 cookie is Secure, for a reverse proxy that terminates TLS. Off unless asked
 for, because any client can send that header.

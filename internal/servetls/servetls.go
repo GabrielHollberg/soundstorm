@@ -205,7 +205,7 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 	// IPv6 prefixes to the local network would be a poor trade for saving them
 	// a setting.
 	names := unique(append([]string{"localhost", "127.0.0.1", "::1"}, cfg.Hosts...))
-	fallback, err := issue(ca, caLeaf, names)
+	fallback, err := loadOrIssueFallback(cfg.Dir, ca, caLeaf, names)
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +379,90 @@ func loadOrMakeCA(dir string) (tls.Certificate, *x509.Certificate, []byte, error
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf},
 		leaf, certPEM, nil
+}
+
+// loadOrIssueFallback reuses the server certificate across restarts.
+//
+// A fresh one every start looks harmless and is not. Nobody has installed the
+// authority yet on most devices, so what they did instead was click through
+// the browser's warning once - and a browser pins that exception to the exact
+// certificate it saw. Re-minting on every start revoked it every time: the
+// warning came back after each restart, and with a service worker in front of
+// the page the result was not even a warning but a spinner that never stopped,
+// because every request failed TLS while the cached shell kept loading.
+//
+// Reissued when it is near expiry, or when the names no longer match - a LAN
+// address changing has to produce a certificate that covers the new one.
+func loadOrIssueFallback(dir string, ca tls.Certificate, caLeaf *x509.Certificate, names []string) (*tls.Certificate, error) {
+	certPath := filepath.Join(dir, "server.pem")
+	keyPath := filepath.Join(dir, "server-key.pem")
+
+	certPEM, certErr := os.ReadFile(certPath)
+	keyPEM, keyErr := os.ReadFile(keyPath)
+	if certErr == nil && keyErr == nil {
+		if pair, err := tls.X509KeyPair(certPEM, keyPEM); err == nil {
+			if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
+				pair.Leaf = leaf
+				if time.Now().Add(renewBefore).Before(leaf.NotAfter) && sameNames(leaf, names) {
+					return &pair, nil
+				}
+			}
+		}
+	}
+
+	fresh, err := issue(ca, caLeaf, names)
+	if err != nil {
+		return nil, err
+	}
+	// Best effort: a certificate that cannot be saved still works for this
+	// run, and refusing to serve because of it would be the worse failure.
+	if pemPair, err := encodePair(fresh); err == nil {
+		_ = os.WriteFile(certPath, pemPair.cert, 0o644)
+		_ = os.WriteFile(keyPath, pemPair.key, 0o600)
+	}
+	return fresh, nil
+}
+
+// sameNames reports whether a certificate covers exactly the names asked for,
+// so that adding or changing SOUNDSTORM_TLS_HOSTS takes effect on restart.
+func sameNames(leaf *x509.Certificate, names []string) bool {
+	have := map[string]bool{}
+	for _, dns := range leaf.DNSNames {
+		have[strings.ToLower(dns)] = true
+	}
+	for _, ip := range leaf.IPAddresses {
+		have[ip.String()] = true
+	}
+	if len(have) != len(names) {
+		return false
+	}
+	for _, name := range names {
+		key := strings.ToLower(name)
+		if parsed := net.ParseIP(name); parsed != nil {
+			key = parsed.String()
+		}
+		if !have[key] {
+			return false
+		}
+	}
+	return true
+}
+
+type pemPair struct{ cert, key []byte }
+
+func encodePair(cert *tls.Certificate) (pemPair, error) {
+	key, ok := cert.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return pemPair{}, fmt.Errorf("unexpected key type %T", cert.PrivateKey)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return pemPair{}, err
+	}
+	return pemPair{
+		cert: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]}),
+		key:  pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}),
+	}, nil
 }
 
 // issue signs a server certificate for the given names.

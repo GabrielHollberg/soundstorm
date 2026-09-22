@@ -307,3 +307,58 @@ func writePair(t *testing.T, dir string, cert *tls.Certificate) (string, string)
 func pemEncode(kind string, der []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: kind, Bytes: der})
 }
+
+// The server certificate has to survive a restart, not just the authority.
+//
+// It did not, and the consequence was not cosmetic. Most devices never install
+// the authority; what people do instead is click through the browser's warning
+// once, and a browser pins that exception to the exact certificate it saw. A
+// fresh one on every start revoked it every time - so the warning returned
+// after each restart, and with a service worker holding the shell in cache the
+// symptom was a spinner that never stopped rather than a warning at all.
+func TestTheServerCertificateSurvivesARestart(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := Load(Config{Mode: ModeSelfSigned, Dir: dir, Hosts: []string{"192.168.0.19"}, Log: testLog()})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	second, err := Load(Config{Mode: ModeSelfSigned, Dir: dir, Hosts: []string{"192.168.0.19"}, Log: testLog()})
+	if err != nil {
+		t.Fatalf("Load again: %v", err)
+	}
+
+	if first.fallback.Leaf.SerialNumber.Cmp(second.fallback.Leaf.SerialNumber) != 0 {
+		t.Errorf("restart minted a new server certificate (%s then %s); every accepted "+
+			"browser exception would be revoked",
+			first.fallback.Leaf.SerialNumber, second.fallback.Leaf.SerialNumber)
+	}
+}
+
+// But changing the addresses it has to cover must produce a new one, or
+// setting SOUNDSTORM_TLS_HOSTS after the fact would do nothing.
+func TestAddingAHostReissuesTheCertificate(t *testing.T) {
+	dir := t.TempDir()
+
+	before, err := Load(Config{Mode: ModeSelfSigned, Dir: dir, Log: testLog()})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	after, err := Load(Config{Mode: ModeSelfSigned, Dir: dir, Hosts: []string{"192.168.0.19"}, Log: testLog()})
+	if err != nil {
+		t.Fatalf("Load again: %v", err)
+	}
+
+	if before.fallback.Leaf.SerialNumber.Cmp(after.fallback.Leaf.SerialNumber) == 0 {
+		t.Fatal("adding a host reused the old certificate, which does not cover it")
+	}
+	var found bool
+	for _, ip := range after.fallback.Leaf.IPAddresses {
+		if ip.String() == "192.168.0.19" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("reissued certificate covers %v, not the new host", after.fallback.Leaf.IPAddresses)
+	}
+}
