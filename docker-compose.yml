@@ -33,6 +33,19 @@ services:
     image: ${SOUNDSTORM_IMAGE:-ghcr.io/gabrielhollberg/soundstorm:latest}
     container_name: soundstorm
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          # A second name for itself, and the Tailscale sidecar proxies to
+          # this one rather than to "soundstorm".
+          #
+          # That sidecar takes "soundstorm" as its *tailnet* hostname, which
+          # is the address people end up typing - and Docker writes a
+          # container's own hostname into its /etc/hosts. So inside it,
+          # "soundstorm" resolves to itself, and the proxy target quietly
+          # became a loopback: everything healthy, tailnet address answering
+          # 502. Found by asking the container to fetch its own proxy target.
+          - soundstorm-app
     ports:
       # Host port is configurable because 8080 is a popular address - a Calibre
       # content server defaults to it, for one. Override with SOUNDSTORM_PORT,
@@ -139,8 +152,49 @@ services:
       - abs-metadata:/metadata
     # Deliberately no ports. SoundStorm reaches it at http://audiobookshelf:80.
 
+  # Remote access, and only if asked for. Nothing below runs unless you start
+  # the stack with --profile tailscale.
+  #
+  #   docker compose --profile tailscale up -d
+  #
+  # It puts SoundStorm on your tailnet at https://<hostname>.<tailnet>.ts.net
+  # with a real certificate, so it works away from the house with no port
+  # forwarded, nothing exposed to the internet, and no browser warning.
+  #
+  # Two things this cannot do for you: a tailscale.com account, and the
+  # Tailscale app on every device that wants to connect. Both need a person.
+  # SoundStorm is fully working without any of it - that is why this is a
+  # profile and not a service.
+  tailscale:
+    profiles: ["tailscale"]
+    image: tailscale/tailscale:latest
+    container_name: soundstorm-tailscale
+    restart: unless-stopped
+    # The name this machine takes on your tailnet, and therefore the address
+    # you will type. Keep it short.
+    hostname: ${SOUNDSTORM_TAILSCALE_HOSTNAME:-soundstorm}
+    environment:
+      # From the Tailscale admin console, Settings -> Keys -> Generate auth
+      # key. The installer's --tailscale writes it into .env for you.
+      TS_AUTHKEY: ${SOUNDSTORM_TAILSCALE_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      # Tailscale terminates TLS with a genuine Let's Encrypt certificate and
+      # proxies to SoundStorm over the internal compose network.
+      TS_SERVE_CONFIG: /config/serve.json
+      # The default, and stated rather than assumed: userspace networking
+      # needs no NET_ADMIN and no /dev/net/tun, so this stays an ordinary
+      # unprivileged container. Kernel mode is faster and not worth the
+      # capabilities for one proxied web app.
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale-serve.json:/config/serve.json:ro
+    depends_on:
+      - soundstorm
+
 volumes:
   soundstorm-state:
+  tailscale-state:
   navidrome-data:
   jellyfin-config:
   jellyfin-cache:

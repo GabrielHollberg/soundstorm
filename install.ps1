@@ -14,6 +14,8 @@
 #   -Uninstall     remove SoundStorm, keeping the media library
 #   -Https         serve over https instead of http
 #   -NoHttps       go back to http
+#   -Tailscale     also reach it away from home, over a tailnet
+#   -NoTailscale   stop doing that
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
 #   -NoAutoStart   install, but do not start with Windows
 #
@@ -30,6 +32,13 @@ param(
     [switch]$Launch,
     [switch]$Uninstall,
     [switch]$Https,
+    # No alias here, unlike -NoTailscale below: PowerShell already matches
+    # --tailscale to -Tailscale case-insensitively, and declaring an alias
+    # that differs only in case is an outright error rather than a no-op.
+    [switch]$Tailscale,
+    [Alias('no-tailscale')][switch]$NoTailscale,
+    # The key itself, for anybody scripting this. Left out, -Tailscale asks.
+    [Alias('auth-key')][string]$AuthKey,
     # The hyphenated aliases are load-bearing, not decoration. PowerShell treats
     # a leading -- as a single dash, so --https binds to -Https on its own - but
     # --no-https becomes -no-https, and a parameter *name* cannot contain a
@@ -43,6 +52,10 @@ param(
 
 if ($Https -and $NoHttps) {
     Write-Host "  -Https and -NoHttps cannot both be given." -ForegroundColor Red
+    exit 1
+}
+if ($Tailscale -and $NoTailscale) {
+    Write-Host "  -Tailscale and -NoTailscale cannot both be given." -ForegroundColor Red
     exit 1
 }
 
@@ -831,6 +844,60 @@ function Get-InstalledPort {
     return $FirstPort
 }
 
+# Write-ServeConfig writes the file Tailscale proxies through.
+#
+# The scheme matters and is the one thing that cannot be a constant: Tailscale
+# talks to SoundStorm over the internal compose network, and SoundStorm is
+# either speaking plain HTTP there or its own self-signed HTTPS depending on
+# what -Https did. Point the proxy at the wrong one and the tailnet address
+# answers 502 while everything else looks fine.
+#
+# https+insecure is Tailscale's documented pseudo-scheme for a backend with a
+# certificate nothing can validate, which is exactly what a local authority
+# issues. The hop is inside Docker's own network either way.
+function Write-ServeConfig {
+    $target = if ((Get-InstalledScheme) -eq 'https') {
+        'https+insecure://soundstorm-app:8080'
+    } else {
+        'http://soundstorm-app:8080'
+    }
+    $json = @"
+{
+  "TCP": { "443": { "HTTPS": true } },
+  "Web": {
+    "`${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": { "Proxy": "$target" }
+      }
+    }
+  }
+}
+"@
+    $json | Out-File -FilePath (Join-Path $Dir 'tailscale-serve.json') -Encoding ascii
+}
+
+# Get-TailnetURL asks the running Tailscale container where it ended up.
+#
+# The address is assigned by Tailscale, not chosen here - it is the hostname
+# plus whatever the tailnet is called - so the only honest way to print it is
+# to ask after the fact.
+function Get-TailnetURL {
+    for ($waited = 0; $waited -lt 60; $waited += 3) {
+        $status = Invoke-Docker @('exec', 'soundstorm-tailscale', 'tailscale', 'status', '--json') -Capture
+        if ($status.ExitCode -eq 0) {
+            try {
+                $parsed = $status.Output | ConvertFrom-Json
+                $name = $parsed.Self.DNSName
+                if ($name) { return "https://" + $name.TrimEnd('.') }
+            } catch {
+                # Still coming up; it prints something that is not JSON yet.
+            }
+        }
+        Start-Sleep -Seconds 3
+    }
+    return ''
+}
+
 # Get-InstalledScheme reads what this install is actually serving rather than
 # assuming http. Telling somebody the wrong scheme hands them a browser error
 # with no hint in it, which is worse than telling them nothing.
@@ -1098,6 +1165,12 @@ foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks') {
     New-Item -ItemType Directory -Force -Path (Join-Path 'library' $folder) | Out-Null
 }
 
+# Always, whether or not Tailscale is wanted. compose bind-mounts this file,
+# and Docker's answer to a bind mount whose source is missing is to create a
+# *directory* with that name - after which the container fails in a way that
+# reads like a Tailscale problem rather than a missing file.
+if (-not (Test-Path (Join-Path $Dir 'tailscale-serve.json'))) { Write-ServeConfig }
+
 if ($upgrade) {
     $port = Get-InstalledPort
 } else {
@@ -1140,6 +1213,50 @@ if ($Https) {
 }
 $scheme = Get-InstalledScheme
 
+# Remote access. Off unless asked for, and it stays a separate decision from
+# -Https: one is about the wifi at home, the other about being away from it.
+if ($Tailscale) {
+    $key = $AuthKey
+    if (-not $key) { $key = Get-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' }
+    if (-not $key) {
+        Write-Host ""
+        Write-Host "  Reaching SoundStorm from outside the house needs a Tailscale account."
+        Write-Host "  It is free for personal use and takes about two minutes."
+        Write-Host ""
+        Write-Host "    1. Sign up at https://tailscale.com"
+        Write-Host "    2. Open the admin console, Settings, then Keys"
+        Write-Host "    3. Generate an auth key and copy it"
+        Write-Host ""
+        # The one prompt in this whole script, and only on a flag somebody
+        # typed on purpose. A double-click install never reaches it.
+        $key = Read-Host "  Paste the auth key here"
+        $key = $key.Trim()
+    }
+    if (-not $key) {
+        Stop-With @"
+  No auth key, so there is nothing to connect with.
+
+  SoundStorm is installed and working on this network either way - run the
+  setup again with -Tailscale when you have a key.
+"@
+    }
+    Set-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' $key
+    Write-ServeConfig
+    Note "Tailscale will be started with SoundStorm."
+} elseif ($NoTailscale) {
+    Set-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' ''
+    Note "Turning off remote access. SoundStorm stays on this network."
+}
+
+# Whether the profile is wanted at all, which outlives this run: somebody who
+# set it up in January should still get it after an upgrade in June.
+$useTailscale = $false
+if (-not $NoTailscale) {
+    $useTailscale = [bool](Get-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY')
+}
+$composeArgs = @()
+if ($useTailscale) { $composeArgs = @('--profile', 'tailscale') }
+
 if ($upgrade) {
     Step "Checking for a newer version"
 } else {
@@ -1148,13 +1265,13 @@ if ($upgrade) {
 }
 # Shown rather than captured: this is the part that takes minutes, and a
 # silent window is how somebody decides it has hung.
-$pull = Invoke-Docker @('compose', 'pull') -Calm
+$pull = Invoke-Docker (@('compose') + $composeArgs + @('pull')) -Calm
 if ($pull.ExitCode -ne 0) {
     Stop-With "  Could not download the media servers. That is almost always the`n  internet connection. Try again - anything already downloaded is kept."
 }
 
 Step "Starting SoundStorm"
-$start = Invoke-Docker @('compose', 'up', '-d') -Capture
+$start = Invoke-Docker (@('compose') + $composeArgs + @('up', '-d')) -Capture
 if ($start.ExitCode -ne 0) {
     Write-Host $start.Output
     if ($start.Output -match 'already allocated|address already in use|forbidden by its access permissions') {
@@ -1206,6 +1323,29 @@ if ($lan) {
     Write-Host "  for private networks." -ForegroundColor DarkGray
     Write-Host ""
 }
+if ($useTailscale) {
+    Step "Connecting to your tailnet"
+    $tailnet = Get-TailnetURL
+    Write-Host ""
+    if ($tailnet) {
+        Write-Host "  From anywhere, on any device signed into your tailnet:"
+        Write-Host ""
+        Write-Host "    $tailnet" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  That address has a real certificate, so no warning - and it works" -ForegroundColor DarkGray
+        Write-Host "  away from the house with nothing forwarded on your router." -ForegroundColor DarkGray
+    } else {
+        Write-Host "  Tailscale is starting but has not reported an address yet." -ForegroundColor Yellow
+        Write-Host "  Check the Tailscale admin console, or run:" -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "    docker logs soundstorm-tailscale" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    Write-Host "  Every device that should reach it needs the Tailscale app and the" -ForegroundColor DarkGray
+    Write-Host "  same account. There is no way around that part." -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 if ($scheme -eq 'https') {
     # Said plainly and up front, because the alternative is somebody deciding
     # their own install is broken or unsafe. Nobody but this PC can vouch for a

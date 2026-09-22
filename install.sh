@@ -10,6 +10,8 @@
 #   (no arguments)   install, or update an existing install
 #   --https          serve over https instead of http
 #   --no-https       go back to http
+#   --tailscale      also reach it away from home, over a tailnet
+#   --no-tailscale   stop doing that
 #   --uninstall      remove it, keeping the media library
 #
 # Written for /bin/sh rather than bash, because a stock Debian's /bin/sh is dash
@@ -166,6 +168,37 @@ installed_scheme() {
 	fi
 }
 
+# write_serve_config writes the file Tailscale proxies through.
+#
+# The scheme is the one thing that cannot be a constant. Tailscale talks to
+# SoundStorm over the internal compose network, where SoundStorm is speaking
+# either plain HTTP or its own self-signed HTTPS depending on --https. Point it
+# at the wrong one and the tailnet address answers 502 while everything else
+# looks fine. https+insecure is Tailscale's documented pseudo-scheme for a
+# certificate nothing can validate, which is what a local authority issues.
+write_serve_config() {
+	if [ "$(installed_scheme)" = "https" ]; then
+		target="https+insecure://soundstorm-app:8080"
+	else
+		target="http://soundstorm-app:8080"
+	fi
+	# The backslash is load-bearing: TS_CERT_DOMAIN is substituted by the
+	# Tailscale container at run time, so it has to reach the file as literal
+	# text. $target, one line down, is meant to expand here and does.
+	cat > tailscale-serve.json <<EOF
+{
+  "TCP": { "443": { "HTTPS": true } },
+  "Web": {
+    "\${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": { "Proxy": "$target" }
+      }
+    }
+  }
+}
+EOF
+}
+
 # health_ok tolerates a self-signed certificate, because with --https that is
 # precisely what the server just minted for itself. The request goes to this
 # machine, for a certificate this machine made.
@@ -286,6 +319,8 @@ uninstall() {
 # A loop rather than a case on $1: --https has to be able to arrive alongside
 # nothing else and still reach the install below, which a single case cannot do.
 HTTPS=''
+TAILSCALE=''
+AUTHKEY=''
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--uninstall|-u)
@@ -299,12 +334,25 @@ while [ $# -gt 0 ]; do
 		--no-https)
 			HTTPS='off'
 			;;
+		--tailscale)
+			TAILSCALE='on'
+			;;
+		--no-tailscale)
+			TAILSCALE='off'
+			;;
+		--auth-key)
+			shift
+			AUTHKEY="${1:-}"
+			[ -n "$AUTHKEY" ] || die "--auth-key needs a key after it"
+			;;
 		--help|-h)
 			say "SoundStorm installer"
 			say ""
 			say "  (no arguments)   install, or update an existing install"
 			say "  --https          serve over https instead of http"
 			say "  --no-https       go back to http"
+			say "  --tailscale      also reach it away from home, over a tailnet"
+			say "  --no-tailscale   stop doing that"
 			say "  --uninstall      remove it, keeping your media library"
 			say ""
 			exit 0
@@ -421,13 +469,61 @@ elif [ "$HTTPS" = "off" ]; then
 fi
 SCHEME=$(installed_scheme)
 
+# Remote access. A separate decision from --https: one is about the wifi at
+# home, the other about being away from it.
+if [ "$TAILSCALE" = "on" ]; then
+	key="$AUTHKEY"
+	[ -n "$key" ] || key=$(get_env SOUNDSTORM_TAILSCALE_AUTHKEY)
+	if [ -z "$key" ]; then
+		say ""
+		say "Reaching SoundStorm from outside the house needs a Tailscale account."
+		say "It is free for personal use and takes about two minutes."
+		say ""
+		say "  1. Sign up at https://tailscale.com"
+		say "  2. Open the admin console, Settings, then Keys"
+		say "  3. Generate an auth key and copy it"
+		say ""
+		# Only reachable from a flag somebody typed. Piping this script into
+		# sh leaves no terminal to read from, hence --auth-key.
+		if [ -t 0 ]; then
+			printf '  Paste the auth key here: '
+			read -r key
+		fi
+	fi
+	if [ -z "$key" ]; then
+		die "No auth key, so there is nothing to connect with.
+
+SoundStorm is installed and working on this network either way. Run this again
+with --tailscale when you have a key, or pass it directly:
+
+  sh install.sh --tailscale --auth-key tskey-..."
+	fi
+	set_env SOUNDSTORM_TAILSCALE_AUTHKEY "$key"
+	write_serve_config
+	note "Tailscale will be started with SoundStorm"
+elif [ "$TAILSCALE" = "off" ]; then
+	set_env SOUNDSTORM_TAILSCALE_AUTHKEY ""
+	note "turning off remote access"
+fi
+
+# Whether the profile is wanted at all, which outlives this run: somebody who
+# set it up in January should still get it after an upgrade in June.
+PROFILE=""
+if [ "$TAILSCALE" != "off" ] && [ -n "$(get_env SOUNDSTORM_TAILSCALE_AUTHKEY)" ]; then
+	PROFILE="--profile tailscale"
+fi
+
+# Always, whether or not Tailscale is wanted: compose bind-mounts this file,
+# and Docker answers a missing bind-mount source by creating a directory there.
+[ -f tailscale-serve.json ] || write_serve_config
+
 if [ "$UPGRADE" = "1" ]; then
 	step "Checking for newer versions"
 else
 	step "Downloading the media servers"
 	note "about 3GB the first time - Jellyfin is most of it"
 fi
-if ! $COMPOSE pull; then
+if ! $COMPOSE $PROFILE pull; then
 	die "Could not download the images. That is almost always the network.
 Check your connection and run this again - anything already downloaded is kept."
 fi
@@ -435,7 +531,7 @@ fi
 step "Starting"
 # Captured rather than streamed, so a failure can be read and explained instead
 # of leaving somebody to interpret a Docker error.
-if ! out=$($COMPOSE up -d 2>&1); then
+if ! out=$($COMPOSE $PROFILE up -d 2>&1); then
 	printf '%s\n' "$out" >&2
 	# The pre-flight port check above cannot always tell - a machine with no
 	# nc, ss or lsof has nothing to ask - so this is where a busy port is

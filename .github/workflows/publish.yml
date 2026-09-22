@@ -58,6 +58,37 @@ jobs:
       # which is every file, and it sat here green through the exact sed -i it
       # was written to catch. Counting also catches half a file being
       # converted, which matching never could.
+      # The Tailscale sidecar proxies to SoundStorm by name, and the name it
+      # must not use is "soundstorm" - that is the sidecar's own tailnet
+      # hostname, which Docker writes into its /etc/hosts, so the proxy target
+      # resolves to the proxy. The symptom is a tailnet address answering 502
+      # while every container reports healthy. Caught once by asking the
+      # container to fetch its own target; this keeps it caught.
+      - name: The Tailscale serve config points somewhere real
+        run: |
+          python3 -c "
+          import json, sys
+          c = json.load(open('tailscale-serve.json'))
+          proxy = list(c['Web'].values())[0]['Handlers']['/']['Proxy']
+          print('proxy target:', proxy)
+          if '//soundstorm:' in proxy:
+              sys.exit('points at the sidecar itself; use the soundstorm-app alias')
+          if 'soundstorm-app' not in proxy:
+              sys.exit('does not point at SoundStorm')
+          "
+          grep -q 'soundstorm-app' docker-compose.yml             || { echo 'compose does not define the soundstorm-app alias'; exit 1; }
+
+      - name: Compose is valid, with and without the profile
+        run: |
+          docker compose config --quiet
+          docker compose --profile tailscale config --quiet
+          # The profile must stay off by default, or every install starts a
+          # Tailscale container nobody asked for.
+          if docker compose config --services | grep -qx tailscale; then
+            echo "tailscale runs without --profile tailscale"
+            exit 1
+          fi
+
       - name: The Windows setup file still has CRLF
         run: |
           returns=$(tr -cd '\r' < SoundStorm-Setup.cmd | wc -c)

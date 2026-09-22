@@ -456,6 +456,54 @@ account drops the record of which Audiobookshelf user belonged to it and after
 that nothing knows what to clean up. It is best effort: a backend that is down
 must not stop somebody being removed.
 
+## Tailscale, and why it is a profile rather than a service
+
+Reaching SoundStorm away from home is the one thing the LAN address cannot do.
+`docker compose --profile tailscale up -d` runs a Tailscale sidecar that puts
+it on a tailnet at `https://<hostname>.<tailnet>.ts.net`, with a **real
+certificate** - which also removes the warning the local authority cannot
+avoid. `--tailscale` in both installers writes the auth key into `.env`,
+generates the serve config and turns the profile on.
+
+**It is opt-in, and that is the Plex decision applied again.** Plex was
+rejected because it "cannot be provisioned without a human logging into a
+cloud service - fatal to the zero-keys claim". Tailscale has exactly that
+property: an account, an auth key, and the app on every client device, none of
+which can be automated. The difference is that this is remote access rather
+than a backend - SoundStorm is fully working without it and nobody is ever
+walked through a signup they did not ask for. Make it default and the claim
+stops being true.
+
+Three things learned by running it rather than reasoning about it:
+
+- **Userspace networking is the default**, so the sidecar needs no `NET_ADMIN`
+  and no `/dev/net/tun`. It stays an ordinary unprivileged container, which
+  matters on Docker Desktop.
+- **The proxy target must not be called `soundstorm`.** The sidecar takes that
+  as its *tailnet* hostname - it is the address people type - and Docker writes
+  a container's own hostname into its `/etc/hosts`. So inside the sidecar,
+  `soundstorm` resolves to itself, the proxy loops back, and the tailnet
+  address answers 502 while every container reports healthy. The compose file
+  gives SoundStorm a second network alias, `soundstorm-app`, and the serve
+  config points at that. A CI step guards it.
+- **The scheme in the serve config is not a constant.** Tailscale reaches
+  SoundStorm over the compose network, where it speaks plain HTTP or its own
+  self-signed HTTPS depending on `-Https`. Both installers write
+  `https+insecure://` or `http://` to match; the wrong one is another silent
+  502. `https+insecure` is Tailscale's documented pseudo-scheme for a
+  certificate nothing can validate.
+
+`tailscale-serve.json` is written on every install whether or not Tailscale is
+wanted, because compose bind-mounts it - and Docker's answer to a bind mount
+whose source is missing is to create a *directory* with that name, after which
+the container fails in a way that reads like a Tailscale problem.
+
+**Unverified:** that a real auth key produces a working `ts.net` address. That
+needs a Tailscale account, which is the user's to create. What was checked is
+everything up to it: the profile stays off by default, the config mounts as a
+file with `${TS_CERT_DOMAIN}` intact, the sidecar starts, and it can fetch
+`/healthz` from the proxy target it will actually use.
+
 ## TLS without anybody running openssl
 
 `internal/servetls`. A home server has no domain name and no route an ACME

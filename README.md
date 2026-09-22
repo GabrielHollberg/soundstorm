@@ -226,21 +226,37 @@ Two things worth doing:
 > than a number.
 
 **From outside the house** is a different question, and the answer is not
-"forward a port". Use a VPN such as [Tailscale](https://tailscale.com): install
-it on the server and on your phone, and SoundStorm is reachable from anywhere
-with nothing exposed to the internet. With MagicDNS the address is just the
-machine's name.
+"forward a port". Run SoundStorm on a [Tailscale](https://tailscale.com)
+tailnet instead — nothing is exposed to the internet, and there is no port
+forwarding at all:
 
-> **Turn on HTTPS before you do this.** Over plain HTTP on a shared network,
-> your session cookie and the music stream URLs — which carry credentials in
-> the query string, because that is how the Subsonic protocol works — are
-> readable by anything else on the wire. It is one setting: see
-> [Turning on HTTPS](#turning-on-https).
+**Windows:**
 
-**From outside the house** is a different question, and the answer is not
-"forward a port". Use a VPN such as [Tailscale](https://tailscale.com): install
-it on the server and on your phone, and SoundStorm is reachable at the server's
-Tailscale address from anywhere, with nothing exposed to the internet.
+```powershell
+& "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Tailscale
+```
+
+**Linux / macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --tailscale --auth-key tskey-...
+```
+
+It asks for a Tailscale auth key, starts a Tailscale container beside
+SoundStorm, and prints the address it lands on — something like
+`https://soundstorm.your-tailnet.ts.net`. That address has a **real
+certificate**, so unlike the LAN one it shows no browser warning.
+
+Three things it cannot do for you, and there is no way around any of them:
+
+1. **A Tailscale account.** Free for personal use — unlimited devices, up to
+   six people — but somebody has to sign up.
+2. **An auth key**, generated in their admin console under Settings → Keys.
+3. **The Tailscale app on every device** that should reach SoundStorm,
+   signed into the same account. A phone without it sees nothing.
+
+SoundStorm works exactly the same with none of this. `--no-tailscale` turns
+it off again, and nothing else changes.
 
 ### Updating
 
