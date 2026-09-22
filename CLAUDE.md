@@ -925,14 +925,31 @@ and never point automated fetches at an origin site that has asked you not to.
   that is what protects the session from an EPUB - but to put the script in a
   file. `assets/sw-register.js` is that file, and
   `TestShellHasNoInlineScript` walks the shell so the next one cannot slip in.
-- **The PWA needs a secure context, so installing to a home screen needs
-  `--https`.** `navigator.serviceWorker` is undefined over plain http to a LAN
-  address, so registration quietly does nothing and Chrome on Android never
-  offers to install. iOS adds to the home screen regardless, because Safari
-  reads none of the manifest - the three `apple-mobile-web-app-*` tags and
-  `apple-touch-icon` are the whole of what it looks at. localhost counts as
-  secure, which is why this all works in development with TLS off and is
-  exactly the way to fool yourself about it.
+- **The PWA needs a *trusted* certificate, not merely https - and localhost
+  hides that.** Android would not install SoundStorm from its LAN address, and
+  the reason is that Chrome answers `ERR_CERT_AUTHORITY_INVALID` for a
+  certificate signed by the local authority. It treats such an origin as
+  having a certificate error, and refuses to register a service worker there -
+  so "Install app" never appears. Clicking through the interstitial lets you
+  browse and does not change that.
+
+  `navigator.serviceWorker` being undefined outside a secure context is still
+  true and is why plain http never worked either. The part that was missed is
+  that a self-signed https origin is not a secure context in Chrome's eyes.
+
+  **Every PWA test had been run against localhost or with `ignoreHTTPSErrors:
+  true`**, both of which are secure contexts whatever the certificate. So
+  `scripts/mobile-check.js` reported a registered worker, truthfully, while a
+  real phone could not install it at all. A check that cannot see the failure
+  it is meant to catch is worse than no check, because it is believed. The
+  script now says what it does and does not prove.
+
+  Two fixes, and Tailscale is the better one: a `ts.net` address carries a real
+  Let's Encrypt certificate, so it installs with no warning and works away from
+  home as well. Otherwise `/ca.crt` has to be installed on each device, which
+  Android accompanies with a standing "network may be monitored" notice.
+  iPhone is unaffected: Safari's Add to Home Screen does not go through a
+  service worker.
 - **A service worker is served from `/`, not `/static/`.** Its scope is its own
   directory, so from `/static/sw.js` it could never control `/` - the only page
   there is. It would register, report success and intercept nothing. Same for

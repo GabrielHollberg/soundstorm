@@ -165,8 +165,18 @@ async function check(page, name) {
     workers: (await navigator.serviceWorker?.getRegistrations?.() || []).length,
   }));
   console.log('\n  PWA:', JSON.stringify(pwa));
-  // Over plain http to a LAN address there is no secure context and no worker,
-  // which is correct. On localhost there should be one.
+  // Read this honestly: it says the tags and the worker are right, and nothing
+  // about whether a phone can install it.
+  //
+  // This runs against localhost, which browsers treat as a secure context
+  // whatever the certificate. A real phone reaches SoundStorm by LAN address
+  // over a certificate signed by an authority only that install knows about -
+  // Chrome answers ERR_CERT_AUTHORITY_INVALID, treats the origin as having a
+  // certificate error, and refuses to register a service worker there. So a
+  // green line here sat happily alongside an Android that would not install.
+  //
+  // To test installability for real, point SHOT_BASE at the LAN or ts.net
+  // address, from a browser that has not been told to ignore certificates.
   if (!pwa.manifest || !pwa.appleIcon) failures++;
 
   console.log(`\n=== ${SMALL.width}x${SMALL.height} ===`);

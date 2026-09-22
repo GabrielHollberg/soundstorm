@@ -206,10 +206,27 @@ bookmark: its own icon, its own window, and no address bar eating the top of
 the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
 → Install app.
 
-> Android only offers this over **https**, because a service worker will not
-> register outside a secure context — so turn on [HTTPS](#turning-on-https)
-> first. iPhone will add it either way. Nothing else about SoundStorm depends
-> on this; over plain http it simply runs in the browser as before.
+> **Android needs a certificate it trusts**, not merely https. SoundStorm's
+> own certificate is signed by an authority only this install knows about, so
+> Chrome reports `ERR_CERT_AUTHORITY_INVALID`, treats the origin as having a
+> certificate error, and refuses to register a service worker there — which
+> is what "Install app" depends on. Clicking through the warning lets you
+> browse, but does not fix that.
+>
+> Two ways round it, in order of how pleasant they are:
+>
+> 1. **[Tailscale](#reaching-it-from-outside-the-house)**, which serves
+> SoundStorm on a `ts.net` address with a real Let's Encrypt certificate.
+> Installs cleanly, no warning, and works away from home as a bonus.
+> 2. **Install SoundStorm's certificate authority on the phone**: open
+> `https://<server>:8099/ca.crt`, then Settings → Security → Encryption &
+> credentials → Install a certificate → CA certificate. Android will warn
+> that the network may be monitored; that warning is about user-installed
+> authorities in general, not about this one in particular.
+>
+> **iPhone adds it to the home screen either way**, because Safari's Add to
+> Home Screen does not go through a service worker at all. Nothing else about
+> SoundStorm depends on any of this.
 
 Two things worth doing:
 
