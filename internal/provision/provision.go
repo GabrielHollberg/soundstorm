@@ -34,6 +34,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 	"github.com/GabrielHollberg/soundstorm/internal/source/audiobookshelf"
+	"github.com/GabrielHollberg/soundstorm/internal/source/immich"
 	"github.com/GabrielHollberg/soundstorm/internal/source/jellyfin"
 	"github.com/GabrielHollberg/soundstorm/internal/source/localbooks"
 	"github.com/GabrielHollberg/soundstorm/internal/source/opds"
@@ -333,6 +334,9 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 	case "audiobookshelf":
 		m.set(t.ID, StatusProvisioning, "creating Audiobookshelf account", "")
 		return provisionAudiobookshelf(ctx, c, t, log)
+	case "immich":
+		m.set(t.ID, StatusProvisioning, "setting up the photo library", "")
+		return provisionImmich(ctx, c, t, log)
 	case "calibreweb":
 		m.set(t.ID, StatusProvisioning, "configuring Calibre-Web", "")
 		return provisionCalibreWeb(ctx, c, t, log)
@@ -438,6 +442,16 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			TokenFor: func(ctx context.Context, userID string) (string, error) {
 				return m.TokenFor(ctx, t.ID, userID)
 			},
+		})
+		return one(s, err)
+
+	case "immich":
+		s, err := immich.New(immich.Config{
+			ID:        t.ID,
+			BaseURL:   t.BaseURL,
+			APIKey:    creds.Token,
+			LibraryID: creds.LibraryID,
+			Timeout:   15 * time.Second,
 		})
 		return one(s, err)
 

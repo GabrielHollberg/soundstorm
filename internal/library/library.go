@@ -98,6 +98,12 @@ var layout = []Folder{
 		Description: "PDFs that are not books - papers, manuals, statements - kept in whatever folders you give them.",
 		Example:     "documents/Manuals/Dishwasher.pdf",
 	},
+	{
+		Kind:        media.KindPicture,
+		Name:        "pictures",
+		Description: "Photos and the videos you took with them, in whatever folders you like.",
+		Example:     "pictures/2024 Holiday/IMG_4031.heic",
+	},
 }
 
 // mediaExtensions is what counts as a media file per folder. Deliberately
@@ -125,6 +131,15 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 	},
 	media.KindDocument: {
 		".pdf": true,
+	},
+	// Everything a camera or phone writes, raw formats included. Clips are
+	// counted too: a camera roll holds both, and Immich shows both.
+	media.KindPicture: {
+		".jpg": true, ".jpeg": true, ".png": true, ".heic": true, ".heif": true,
+		".webp": true, ".gif": true, ".tif": true, ".tiff": true, ".avif": true,
+		".dng": true, ".cr2": true, ".cr3": true, ".nef": true, ".arw": true,
+		".raf": true, ".orf": true, ".rw2": true,
+		".mov": true, ".mp4": true,
 	},
 }
 

@@ -302,6 +302,16 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 			MediaPath: env("SOUNDSTORM_AUDIOBOOKSHELF_MEDIA_PATH", "/audiobooks"),
 		})
 	}
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_IMMICH_URL")); url != "" {
+		targets = append(targets, provision.Target{
+			ID:      "immich",
+			Type:    "immich",
+			BaseURL: url,
+			// The folder as Immich's container sees it, which is what its
+			// library API wants.
+			MediaPath: env("SOUNDSTORM_IMMICH_MEDIA_PATH", "/pictures"),
+		})
+	}
 	// Ebooks are served straight off the disk: an EPUB describes itself, so no
 	// backend has to stand between SoundStorm and the folder. The path comes from
 	// the library layout rather than its own variable - there is one answer to

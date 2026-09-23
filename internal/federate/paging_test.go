@@ -102,6 +102,35 @@ func TestPagesWalkTheMergedOrderExactly(t *testing.T) {
 	}
 }
 
+// Photos come back newest first, which is the only order their backend can
+// return them in, and say so through SortKey. Paging has to walk that order
+// exactly - newest first, nothing repeated, nothing skipped - or a camera roll
+// shuffles between pages.
+func TestASortKeyOrdersAShelfThatIsNotAlphabetical(t *testing.T) {
+	photos := &limited{id: "p", kind: media.KindPicture}
+	// Returned newest first; the titles are deliberately not in that order.
+	for i, name := range []string{"IMG_0900", "IMG_0100", "IMG_0500", "IMG_0300", "IMG_0700"} {
+		photos.items = append(photos.items, media.Item{
+			ID: name, SourceID: "p", Kind: media.KindPicture, Title: name,
+			SortKey: fmt.Sprintf("~%03d", i),
+		})
+	}
+	reg := source.NewRegistry(photos)
+
+	var got []string
+	for offset := 0; ; offset += 2 {
+		res := Search(context.Background(), reg, media.Query{Limit: 2, Offset: offset}, time.Second)
+		got = append(got, titles(res.Items)...)
+		if !res.HasMore || offset > 20 {
+			break
+		}
+	}
+	want := []string{"IMG_0900", "IMG_0100", "IMG_0500", "IMG_0300", "IMG_0700"}
+	if !equal(got, want) {
+		t.Errorf("walking the pages gave %v, want the source's own order %v", got, want)
+	}
+}
+
 // Each source is asked for the whole run up to the end of the window, because
 // the merge has to happen before the slice.
 func TestEachPageRefetchesFromTheStart(t *testing.T) {

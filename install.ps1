@@ -1215,7 +1215,7 @@ try {
     }
 }
 
-foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks', 'documents') {
+foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks', 'documents', 'pictures') {
     New-Item -ItemType Directory -Force -Path (Join-Path 'library' $folder) | Out-Null
 }
 
@@ -1323,7 +1323,7 @@ if ($upgrade) {
     Step "Checking for a newer version"
 } else {
     Step "Downloading the media servers"
-    Note "About 3GB the first time. This is the long part - leave it running."
+    Note "About 8GB the first time. This is the long part - leave it running."
 }
 # Shown rather than captured: this is the part that takes minutes, and a
 # silent window is how somebody decides it has hung.

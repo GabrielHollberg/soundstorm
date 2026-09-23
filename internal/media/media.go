@@ -21,13 +21,17 @@ const (
 	// statement. Kept apart from ebooks because it is browsed differently
 	// and promises less - no reflow, no reading position, no cover.
 	KindDocument Kind = "document"
-	KindVideo    Kind = "video" // films
-	KindTV       Kind = "tv"    // series and episodes
+	// KindPicture is a photo, or a clip shot alongside photos. Served by
+	// Immich, which owns the thumbnails, the HEIC decoding and the search by
+	// what is in a picture.
+	KindPicture Kind = "picture"
+	KindVideo   Kind = "video" // films
+	KindTV      Kind = "tv"    // series and episodes
 )
 
 // AllKinds is the set of kinds SoundStorm understands.
 func AllKinds() []Kind {
-	return []Kind{KindMusic, KindAudiobook, KindEbook, KindDocument, KindVideo, KindTV}
+	return []Kind{KindMusic, KindAudiobook, KindEbook, KindDocument, KindPicture, KindVideo, KindTV}
 }
 
 // Valid reports whether k is a kind SoundStorm knows about.
@@ -84,6 +88,16 @@ type Item struct {
 
 	// Score is the relevance assigned at federation time, 0..1.
 	Score float64 `json:"score"`
+
+	// SortKey, when set, replaces Title as the tiebreak in a merged list.
+	//
+	// Paging a merged list only works if every source returns its own first
+	// N in the merged order (see federate), and for most media that order is
+	// the title. For photos it is not: a filename like IMG_4031 says nothing,
+	// and nobody browses a camera roll alphabetically. Photos sort newest
+	// first, which is the order their backend can actually return them in,
+	// and this is how the adapter says so. Never sent to the browser.
+	SortKey string `json:"-"`
 
 	// Extra carries source-specific fields worth showing but not worth
 	// promoting into the common shape (album, narrator, series, rating...).

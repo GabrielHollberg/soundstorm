@@ -25,6 +25,7 @@ const state = {
   setupTimer: null,
   libraryEmpty: true,
   me: null, // the signed-in account, from /api/session
+  items: [], // what is on screen, in order - the photo viewer steps through it
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -299,6 +300,7 @@ const LIBRARY_LABELS = [
   ['audiobook', 'Audiobooks'],
   ['ebook', 'Ebooks'],
   ['document', 'Documents'],
+  ['picture', 'Pictures'],
 ];
 
 async function saveLibraries(person, chosen, wrap) {
@@ -445,7 +447,7 @@ $('rescan').addEventListener('click', async () => {
 // follow - and it is the first line of the app. Asked of the pointer rather
 // than the width, because a narrow desktop window still has a mouse.
 if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-  $('hint-add').textContent = 'Add music, films, books or documents:';
+  $('hint-add').textContent = 'Add music, films, books, documents or photos:';
 }
 
 $('choose-files').addEventListener('click', () => $('file-picker').click());
@@ -594,6 +596,7 @@ function renderResults(result, append) {
   for (const item of result.items) {
     grid.append(renderItem(item));
   }
+  state.items = append ? state.items.concat(result.items) : result.items.slice();
 
   // Trust the server's own count of where this page ended rather than adding
   // up what arrived: a page clipped at the depth cap would otherwise leave the
@@ -626,7 +629,7 @@ function renderResults(result, append) {
     // this is now the whole of the first-run guidance, since the box that used
     // to carry it is gone. It has to say what to do, not just what happened.
     $('status').textContent =
-      'Nothing here yet. Drag music, films, books or documents anywhere on this window.';
+      'Nothing here yet. Drag music, films, books, documents or photos anywhere on this window.';
   } else if (browsing) {
     // Empty shelf, full library: they filtered to a kind they have none of,
     // or its backend is still doing its first scan.
@@ -760,6 +763,7 @@ const GLYPHS = {
   audiobook: '🎧',
   ebook: '📖',
   document: '📄',
+  picture: '🖼️',
 };
 
 function fallbackArt(item) {
@@ -776,6 +780,12 @@ function play(item) {
     case 'video':
       playVideo(item);
       break;
+    case 'picture':
+      // A clip from a camera roll plays like any video; everything else is a
+      // photo, shown in the viewer.
+      if (item.extra && item.extra.type === 'video') playVideo(item);
+      else showPhoto(item);
+      break;
     case 'ebook':
     case 'document':
       // A document is always a PDF, and opens in the same viewer a PDF book
@@ -787,6 +797,61 @@ function play(item) {
       playAudio(item);
   }
 }
+
+// The photo viewer. Photos only: stepping onto a clip would mean switching
+// players mid-browse, so the arrows skip over clips and a click on one plays
+// it instead.
+function photosOnScreen() {
+  return state.items.filter((i) => i.kind === 'picture' && !(i.extra && i.extra.type === 'video'));
+}
+
+let photoShown = null;
+
+function showPhoto(item) {
+  stopAudio();
+  closeVideo();
+  photoShown = item;
+
+  const img = $('photo-image');
+  img.src = `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId + '@preview')}`;
+  img.alt = item.title;
+  const place = item.extra && item.extra.place;
+  $('photo-caption').textContent = [item.title, item.subtitle, place].filter(Boolean).join(' — ');
+
+  const download = $('photo-download');
+  download.href = streamPath(item);
+  download.download = item.title;
+
+  const photos = photosOnScreen();
+  const at = photos.findIndex((p) => p.id === item.id && p.sourceId === item.sourceId);
+  $('photo-prev').disabled = at <= 0;
+  $('photo-next').disabled = at < 0 || at >= photos.length - 1;
+  show($('photo-overlay'), true);
+}
+
+function stepPhoto(by) {
+  if (!photoShown) return;
+  const photos = photosOnScreen();
+  const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
+  const next = photos[at + by];
+  if (next) showPhoto(next);
+}
+
+function closePhoto() {
+  photoShown = null;
+  show($('photo-overlay'), false);
+  $('photo-image').removeAttribute('src');
+}
+
+$('photo-close').addEventListener('click', closePhoto);
+$('photo-prev').addEventListener('click', () => stepPhoto(-1));
+$('photo-next').addEventListener('click', () => stepPhoto(1));
+document.addEventListener('keydown', (event) => {
+  if (!photoShown) return;
+  if (event.key === 'Escape') closePhoto();
+  else if (event.key === 'ArrowLeft') stepPhoto(-1);
+  else if (event.key === 'ArrowRight') stepPhoto(1);
+});
 
 // Ebooks open in SoundStorm's own reader. Downloading is still offered, but as a
 // choice rather than the only option - a result that leaves SoundStorm is a seam,
@@ -1312,6 +1377,7 @@ const LIBRARY_NAMES = {
   audiobook: 'Audiobooks',
   ebook: 'Ebooks',
   document: 'Documents',
+  picture: 'Pictures',
 };
 
 // dragDepth counts enter/leave pairs. Moving the pointer between two elements

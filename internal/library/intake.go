@@ -302,6 +302,8 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		hasPDF     bool
 		hasOPF     bool
 		pdfSays    media.Kind
+		photos     int  // images that look like photos, not artwork
+		photoPath  bool // a folder name says pictures
 	)
 
 	for _, i := range members {
@@ -310,6 +312,15 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		if ext == ".opf" {
 			// Calibre writes a metadata.opf beside every book it manages.
 			hasOPF = true
+		}
+		// Counted before the companion check, because a .jpg is both: the
+		// cover of an album and a photo. Which it is depends on what else was
+		// dropped with it, and that is only known once the walk is done.
+		if stillImage[ext] && !looksLikeArtwork(rel) {
+			photos++
+		}
+		if mentionsPictures(rel) {
+			photoPath = true
 		}
 		if ext == "" || companionExtensions[ext] {
 			continue
@@ -362,7 +373,17 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 	// keeps the album it belongs to and Navidrome simply ignores it.
 	audioLed := hasAudio && audioFiles > videoFiles
 
+	// Photos lead when there is nothing else, or when they plainly outnumber
+	// the videos beside them - a camera roll with a few clips in it. A film
+	// folder with a poster and some fan art is not that: artwork is not
+	// counted as photos, and one or two images next to a video never lead.
+	// Audio or a book in the group means the images are its artwork.
+	photoLed := photos > 0 && !hasAudio && !hasPDF &&
+		(!hasVideo || photoPath || (photos >= 5 && photos > 2*videoFiles))
+
 	switch {
+	case photoLed:
+		return media.KindPicture, nil
 	case hasVideo && episodes && !audioLed:
 		return media.KindTV, nil
 	case audioLed && hasMP3:
@@ -418,6 +439,63 @@ func pdfEvidence(rel string) media.Kind {
 		}
 	}
 	return ""
+}
+
+// stillImage are the extensions a photo arrives as. Several of them double as
+// artwork, which is why they are also companions.
+var stillImage = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".heic": true, ".heif": true,
+	".webp": true, ".gif": true, ".tif": true, ".tiff": true, ".avif": true,
+	".dng": true, ".cr2": true, ".cr3": true, ".nef": true, ".arw": true,
+	".raf": true, ".orf": true, ".rw2": true,
+}
+
+// artworkNames are what media managers call the pictures they keep beside a
+// film or an album - Kodi, Jellyfin and every tagger agree on these. Matched
+// against the name without its extension, and "-poster" style suffixes too.
+var artworkNames = []string{
+	"poster", "fanart", "folder", "cover", "backdrop", "banner", "logo",
+	"thumb", "landscape", "clearart", "clearlogo", "disc", "discart", "front",
+	"back", "keyart", "background",
+}
+
+// artworkFolders hold nothing but artwork, however many files are in them.
+var artworkFolders = map[string]bool{
+	"extrafanart": true, "extrathumbs": true, "artwork": true, ".actors": true,
+	"scans": true, "covers": true,
+}
+
+// looksLikeArtwork reports whether an image is a poster, a cover or fan art
+// rather than a photo, so a film folder with ten pieces of fan art is still a
+// film.
+func looksLikeArtwork(rel string) bool {
+	segments := strings.Split(strings.ToLower(rel), "/")
+	for _, dir := range segments[:len(segments)-1] {
+		if artworkFolders[dir] {
+			return true
+		}
+	}
+	base := segments[len(segments)-1]
+	base = strings.TrimSuffix(base, path.Ext(base))
+	for _, name := range artworkNames {
+		if base == name || strings.HasSuffix(base, "-"+name) {
+			return true
+		}
+	}
+	return false
+}
+
+// mentionsPictures reports whether a folder in the path says it holds photos.
+// DCIM is what every camera and phone names its own folder.
+func mentionsPictures(rel string) bool {
+	segments := strings.Split(strings.ToLower(rel), "/")
+	for _, dir := range segments[:len(segments)-1] {
+		switch strings.TrimSpace(dir) {
+		case "pictures", "photos", "dcim", "camera", "camera roll", "my pictures":
+			return true
+		}
+	}
+	return false
 }
 
 // looksLikeEpisode reports whether a path names television.

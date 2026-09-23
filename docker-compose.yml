@@ -11,7 +11,7 @@
 # first boot.
 #
 #   library/
-#     music/   movies/   tv/   audiobooks/   ebooks/   documents/
+#     music/   movies/   tv/   audiobooks/   ebooks/   documents/   pictures/
 #
 # The important line in this file is the one that is missing. None of the three
 # backends publishes a port. They are reachable only on the internal compose
@@ -61,6 +61,8 @@ services:
       SOUNDSTORM_JELLYFIN_TV_PATH: /media/tv
       SOUNDSTORM_AUDIOBOOKSHELF_URL: http://audiobookshelf:80
       SOUNDSTORM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
+      SOUNDSTORM_IMMICH_URL: http://immich-server:2283
+      SOUNDSTORM_IMMICH_MEDIA_PATH: /pictures
       # SoundStorm creates and owns this folder. Ebooks are read straight out of
       # it, since an EPUB describes itself and needs no backend; the other
       # three folders are handed to the server that indexes them.
@@ -105,6 +107,7 @@ services:
       - navidrome
       - jellyfin
       - audiobookshelf
+      - immich-server
     healthcheck:
       # Either scheme: the same container serves plain HTTP or TLS depending on
       # SOUNDSTORM_TLS, and a healthcheck that only knew one would report the
@@ -159,6 +162,66 @@ services:
       - abs-metadata:/metadata
     # Deliberately no ports. SoundStorm reaches it at http://audiobookshelf:80.
 
+  # Pictures. Immich is four containers - the server, the machine learning
+  # that makes "dog on a beach" find a photo, a Postgres with vector search,
+  # and a Valkey cache - and all four are pinned to a *major* version rather
+  # than latest. Immich keeps its promise of breaking changes only in major
+  # releases, and v3 broke API endpoints third-party tools use, which is
+  # exactly what SoundStorm is. Moving to v4 is a deliberate change here.
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:v3
+    container_name: soundstorm-immich
+    restart: unless-stopped
+    environment:
+      DB_HOSTNAME: immich-database
+      DB_USERNAME: postgres
+      DB_DATABASE_NAME: immich
+      # Reachable only on this compose network, by Immich itself: the
+      # database publishes no port and SoundStorm never talks to it.
+      DB_PASSWORD: ${SOUNDSTORM_IMMICH_DB_PASSWORD:-soundstorm-immich}
+      REDIS_HOSTNAME: immich-redis
+    volumes:
+      # Read-only: Immich indexes the folder in place and can never move,
+      # rename or delete a photo in it.
+      - ./library/pictures:/pictures:ro
+      # Immich's own working space - thumbnails, previews, transcoded clips.
+      # A named volume, not a folder: it is regenerated from the photos.
+      - immich-data:/data
+    depends_on:
+      - immich-redis
+      - immich-database
+    # Deliberately no ports. SoundStorm reaches it at http://immich-server:2283.
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:v3
+    container_name: soundstorm-immich-ml
+    restart: unless-stopped
+    volumes:
+      # Models are downloaded on first use - a couple of minutes during which
+      # searching by what is in a picture falls back to searching file names.
+      - immich-models:/cache
+
+  immich-redis:
+    image: docker.io/valkey/valkey:9
+    container_name: soundstorm-immich-redis
+    restart: unless-stopped
+
+  immich-database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: soundstorm-immich-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: immich
+      POSTGRES_PASSWORD: ${SOUNDSTORM_IMMICH_DB_PASSWORD:-soundstorm-immich}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    volumes:
+      # A named volume, never a folder: Immich's database must not sit on a
+      # network share or an NTFS drive, and a named volume lives on Docker's
+      # own Linux disk wherever the host is.
+      - immich-db:/var/lib/postgresql/data
+    shm_size: 128mb
+
   # Remote access, and only if asked for. Nothing below runs unless you start
   # the stack with --profile tailscale.
   #
@@ -207,3 +270,6 @@ volumes:
   jellyfin-cache:
   abs-config:
   abs-metadata:
+  immich-data:
+  immich-models:
+  immich-db:

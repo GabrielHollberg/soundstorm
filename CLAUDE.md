@@ -7,7 +7,8 @@ two reversals of earlier decisions that looked right and were not.
 
 A unified front end for a self-hosted media library. One login, one search box,
 one player over Navidrome (music), Jellyfin (films and TV), Audiobookshelf
-(audiobooks) and a plain folder of EPUBs (ebooks).
+(audiobooks), Immich (pictures) and plain folders of EPUBs and PDFs (ebooks
+and documents).
 
 The user's words for what they wanted: *"an all-encompassing server that can do
 movies, audiobooks, ebooks, music all together... easy for users to install and
@@ -1049,13 +1050,83 @@ audiobook to a book shelf.
 Documents are **not** restructured. A tax form has no author to file by, and
 `Taxes/2024/` is exactly how somebody finds it again.
 
-**Pictures come next, and this is the template.** A pictures shelf will need
-its own kind and folder like this one, but not this source: images want
-thumbnails and a grid, not a reader. Whether it passes the ownership rule is a
-decision to make then rather than assume now - images are self-describing
-(EXIF) and need no transcoding, but a thumbnail is a resize, and a photo
-library of any size is exactly the scanning-and-indexing job this project
-exists not to rebuild. Immich is the backend to weigh it against.
+## Pictures, and why they are delegated
+
+Pictures fail the ownership rule, and the reason is concrete: **iPhones save
+HEIC, and Go's standard library cannot decode it.** SoundStorm could not show
+a thumbnail of most phone photos without a dependency, phone clips need
+transcoding, and a photo library of any size is the scanning-and-indexing job
+this project exists not to rebuild. So they go to Immich, the way music goes
+to Navidrome.
+
+Immich was chosen over Photoview (lighter, closer to "the folder is the
+interface") for search by what is in a picture - the feature people compare
+against Google Photos - at the price of four containers (server, machine
+learning, Postgres with vector search, Valkey), about 5GB of images, and 6-8GB
+of RAM. Researched, not assumed: v2.0 (October 2025) promised semver, and v3.0
+(July 2026) then broke API endpoints "that affect only third-party tools" -
+which is what SoundStorm is. **So every Immich image is pinned to its major
+version (`v3`), never `latest`**, and moving to v4 is a deliberate change with
+an adapter update behind it.
+
+**Provisioned with nobody logging in**, every step checked against a live
+3.2.2: `admin-sign-up` accepts `soundstorm@soundstorm.invalid` (RFC 2606's
+never-existing domain; Immich validates the shape and sends nothing to it),
+login, an API key with `permissions: ["all"]` - the session token expires, the
+key does not, and the password is not kept - then an **external library** on
+`/pictures`, mounted read-only. Immich's docs only describe creating one
+through the admin screens; the endpoint behind them is in the API. Folder
+watching is off by default and is switched on by reading `/api/system-config`,
+changing `library.watch.enabled` and sending the whole document back, which a
+test holds to changing nothing else.
+
+External rather than Immich's own upload storage, deliberately: a photo is a
+file in `pictures/` however it arrived, and Immich can never move, rename or
+delete one. Its thumbnails and previews live in a named volume, regenerable
+from the photos. Its database is a named volume too, and must be: Immich's
+Postgres must not sit on a network share or an NTFS drive, and a named volume
+lives on Docker's own Linux disk on every host.
+
+**Photos break the title order that paging depends on**, so `media.Item`
+grew a `SortKey`. A filename like `IMG_4031` means nothing and nobody browses
+a camera roll alphabetically; Immich returns newest first (or most relevant
+first for a search), and each item's SortKey is its rank in that order, behind
+a `~` so that in a browse of everything photos follow the titled media. The
+merged-paging property - each source returns its own first N in merged order -
+holds because the key *is* the source's order, and a test walks it.
+
+**The viewer shows Immich's preview, never the original.** The preview is a
+JPEG whatever the original was; a browser can show neither HEIC nor raw. The
+original is a download (`/api/stream`), and a clip plays through the ordinary
+video player from Immich's playback endpoint, which honours `Range` (206), so
+seeking works through SoundStorm's proxy. `ArtTarget` takes `<id>@preview` for
+the large size.
+
+**Smart search needs models Immich downloads on first use.** On a fresh probe
+the first two searches timed out while it did; the adapter falls back to a
+filename search, so a new install's first searches still answer.
+
+**A picture drop is decided by what dominates.** `.jpg` was only ever a
+companion - an album cover, a film poster - and a folder of nothing but photos
+used to be skipped as a folder of companions. Now a group of only images is
+pictures; images beside audio or a book stay artwork; beside video, photos
+lead only when they plainly outnumber the clips (a camera roll) or a folder
+says `DCIM`, `Photos` or `Pictures`. Recognised artwork - `poster`, `fanart`,
+`cover`, `extrafanart/` - is never counted as photos, so a film with ten
+pieces of fan art stays a film. Pictures keep their dropped folders.
+
+Verified end to end on a throwaway stack: SoundStorm provisioned a fresh
+Immich by itself, browse returned newest first, thumbnail (WebP), preview
+(JPEG) and original came through SoundStorm, an upload appeared four seconds
+later, and in Chrome the viewer opened, stepped with the arrow keys and
+closed on Escape.
+
+**Found on the way, not yet fixed:** uploads are staged in `library/.uploads`
+and *renamed* into place, which is atomic only on one filesystem. The compose
+file mounts `library/` whole, so it holds - but somebody who mounts
+`pictures/` from a separate drive (a common wish for photos) would get
+`invalid cross-device link` on every upload. The fix is a copy to a hidden
+temporary name beside the destination, then the rename.
 
 ## The reader
 

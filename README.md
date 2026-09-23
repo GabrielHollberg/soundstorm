@@ -48,9 +48,12 @@ Needs [Docker](https://docs.docker.com/engine/install/) already installed.
 
 ---
 
-**Either way**, it downloads about 3GB of media servers, sets them all up, and
+**Either way**, it downloads about 8GB of media servers, sets them all up, and
 opens your browser. Pick a username and password on the first screen and you
 are in.
+
+It wants a machine with **8GB of memory** or more. Most of that is the photo
+server's ability to search your pictures by what is in them.
 
 ![One search returning an ebook, a film, music and an audiobook in a single ranked list](docs/shots/2-search.png)
 
@@ -87,6 +90,7 @@ credentials itself, and puts one interface on top:
 | **Films and TV** | Jellyfin — metadata, artwork, season/episode structure |
 | **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
 | **Ebooks** | SoundStorm itself — EPUB and PDF, read in the browser |
+| **Pictures** | Immich — thumbnails, iPhone HEIC and raw photos, search by what is *in* a picture |
 
 Using the real servers instead of reimplementing them is the whole trick. When
 you search "dune" and get a film back with a real poster and a real synopsis,
@@ -150,6 +154,7 @@ library/
   audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
   ebooks/      Ursula K. Le Guin/A Wizard of Earthsea/A Wizard of Earthsea.epub
   documents/   Manuals/Dishwasher.pdf, Taxes/2024/statement.pdf
+  pictures/    2024 Holiday/IMG_4031.heic
 ```
 
 Nothing to import, no library to configure.

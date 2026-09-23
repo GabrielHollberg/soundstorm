@@ -462,7 +462,7 @@ fi
 # The library folders are made here rather than left to Docker. A bind mount to
 # a path that does not exist is created by the daemon as root, which on Linux
 # leaves somebody unable to copy files into their own media folder.
-mkdir -p library/music library/movies library/tv library/audiobooks library/ebooks library/documents
+mkdir -p library/music library/movies library/tv library/audiobooks library/ebooks library/documents library/pictures
 
 if [ "$UPGRADE" = "0" ]; then
 	step "Choosing a port"
@@ -570,7 +570,7 @@ if [ "$UPGRADE" = "1" ]; then
 	step "Checking for newer versions"
 else
 	step "Downloading the media servers"
-	note "about 3GB the first time - Jellyfin is most of it"
+	note "about 8GB the first time - the photo and film servers are most of it"
 fi
 if ! $COMPOSE $PROFILE pull; then
 	die "Could not download the images. That is almost always the network.
@@ -618,7 +618,7 @@ else
 fi
 say ""
 say "Your media goes in ${BOLD}$DIR/library${OFF}:"
-say "    music/  movies/  tv/  audiobooks/  ebooks/  documents/"
+say "    music/  movies/  tv/  audiobooks/  ebooks/  documents/  pictures/"
 say ""
 note "The media servers are still setting themselves up in the background."
 note "The app shows you when each one is ready - that takes a minute or two."
