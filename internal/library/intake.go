@@ -1,10 +1,10 @@
 package library
 
 import (
-	"io/fs"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -705,12 +705,15 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 		return "", ErrAlreadyThere
 	}
 	// The same recording under another name - iTunes keeps "03 Heathens 1.m4a"
-	// beside "03 Heathens.m4a". Checked against this folder only; see
-	// duplicate.go for why that is the right scope.
-	if of, err := findDuplicate(tmpName, filepath.Dir(dest), filepath.Base(dest)); err != nil {
-		return "", fmt.Errorf("check for duplicates: %w", err)
-	} else if of != "" {
-		return "", &DuplicateError{Of: of, Audio: audioFormats[strings.ToLower(filepath.Ext(dest))]}
+	// beside "03 Heathens.m4a". Checked against this folder only, and only
+	// for the two audio kinds; see duplicate.go for why that is the right
+	// scope. Everything else stops at the name check above.
+	if kind == media.KindMusic || kind == media.KindAudiobook {
+		if of, err := findDuplicate(tmpName, filepath.Dir(dest), filepath.Base(dest)); err != nil {
+			return "", fmt.Errorf("check for duplicates: %w", err)
+		} else if of != "" {
+			return "", &DuplicateError{Of: of, Audio: audioFormats[strings.ToLower(filepath.Ext(dest))]}
+		}
 	}
 
 	if err := ensureDir(filepath.Dir(dest)); err != nil {

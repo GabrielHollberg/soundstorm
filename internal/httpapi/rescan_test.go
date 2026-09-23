@@ -133,3 +133,81 @@ func TestASourceWithoutRescanIsSkipped(t *testing.T) {
 
 // Rescanner is optional, and the compiler should say so.
 var _ source.Rescanner = (*counter)(nil)
+
+// The debounce coalesces one burst into one scan; on its own it does nothing
+// against a stream of separate triggers spaced apart on purpose - a script
+// hitting the manual rescan button, or two uploads a few seconds apart. Each
+// real scan is a whole backend walking its library, and every signed-in
+// member can ask for one, so it must not be unboundedly repeatable.
+// Both tests below set minRescanInterval well above rescanDelay (a fixed 2s
+// constant), on purpose: only then does the floor ever extend a timer past
+// its ordinary debounce delay, which is the only case there is anything to
+// prove. A floor shorter than rescanDelay is already spent by the time
+// anything in these tests could observe it.
+func TestRepeatedTriggersAreLimitedToOnceEveryFloor(t *testing.T) {
+	old := minRescanInterval
+	minRescanInterval = 4 * time.Second
+	defer func() { minRescanInterval = old }()
+
+	music := &counter{stub: stub{id: "navidrome", kind: media.KindMusic}}
+	h := newHarness(t, music)
+	h.signUp(t)
+
+	// The first scan, promptly - through the ordinary debounce, not the floor.
+	if resp, _ := h.upload(t, "music", "a.flac", "a"); resp.StatusCode != http.StatusOK {
+		t.Fatal("upload failed")
+	}
+	waitFor(t, 3*time.Second, "the first scan", func() bool { return music.count() >= 1 })
+
+	// A trigger shortly after lands well inside the floor's window, so it
+	// must wait for the floor rather than firing after the ordinary debounce.
+	time.Sleep(200 * time.Millisecond)
+	if resp, _ := h.upload(t, "music", "b.flac", "b"); resp.StatusCode != http.StatusOK {
+		t.Fatal("upload failed")
+	}
+	// Long after the ordinary debounce would have fired, but well short of
+	// the floor: still just the one scan.
+	time.Sleep(rescanDelay + 500*time.Millisecond)
+	if n := music.count(); n != 1 {
+		t.Fatalf("a second scan fired before the floor: %d", n)
+	}
+	waitFor(t, 4*time.Second, "the second scan, once the floor passes", func() bool { return music.count() >= 2 })
+}
+
+// A trigger that arrives while a floor-extended timer is already pending must
+// not reset it to the ordinary, shorter debounce delay - it has to recompute
+// the same floor, or a rapid run of triggers could keep resetting a real scan
+// back to two seconds away forever.
+func TestAPendingRescanCannotBeShortenedBelowTheFloor(t *testing.T) {
+	old := minRescanInterval
+	minRescanInterval = 6 * time.Second
+	defer func() { minRescanInterval = old }()
+
+	music := &counter{stub: stub{id: "navidrome", kind: media.KindMusic}}
+	h := newHarness(t, music)
+	h.signUp(t)
+
+	if resp, _ := h.upload(t, "music", "a.flac", "a"); resp.StatusCode != http.StatusOK {
+		t.Fatal("upload failed")
+	}
+	waitFor(t, 3*time.Second, "the first scan", func() bool { return music.count() >= 1 })
+
+	// Starts a floor-extended timer, targeting roughly six seconds from now.
+	time.Sleep(300 * time.Millisecond)
+	if resp, _ := h.upload(t, "music", "b.flac", "b"); resp.StatusCode != http.StatusOK {
+		t.Fatal("upload failed")
+	}
+	// Lands while that timer is still pending. A version that reset it to
+	// the bare rescanDelay would fire around 2.6s after the first scan; the
+	// correct one keeps aiming for roughly six.
+	time.Sleep(300 * time.Millisecond)
+	if resp, _ := h.upload(t, "music", "c.flac", "c"); resp.StatusCode != http.StatusOK {
+		t.Fatal("upload failed")
+	}
+
+	time.Sleep(3 * time.Second) // well past the buggy target, well short of the real one
+	if n := music.count(); n != 1 {
+		t.Fatalf("the floor was shortened by a later trigger: %d scans", n)
+	}
+	waitFor(t, 5*time.Second, "the second scan, once the floor passes", func() bool { return music.count() >= 2 })
+}

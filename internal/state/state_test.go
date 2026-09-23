@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -229,6 +230,69 @@ func TestExpiredSessionsAreNotLive(t *testing.T) {
 	}
 	if _, ok := s.SessionUser("stale"); ok {
 		t.Error("an expired session was accepted")
+	}
+}
+
+// state.json is what a backup copies and what an old volume leaves behind,
+// with nobody running the server around it - so the literal cookie value must
+// never be sitting in it. Whoever holds one only has a hash to try.
+func TestTheRawSessionTokenIsNeverWrittenToDisk(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	user, _ := s.AddUser(User{Name: "gabe"})
+	const token = "this-exact-cookie-value-must-not-appear-on-disk"
+	if err := s.AddSession(token, user.ID, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), token) {
+		t.Error("the raw session token was written to state.json")
+	}
+
+	// And it still works as a cookie, looked up through the hash.
+	if _, ok := s.SessionUser(token); !ok {
+		t.Error("the session stopped working once hashed")
+	}
+}
+
+// A file at version 2 - the shape every install has today - still keys its
+// sessions by the raw token. Opening it must rehash them in place rather than
+// only handling the older, version 1 upgrade path.
+func TestAVersionTwoFileGetsItsSessionsHashedOnOpen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	v2 := `{
+	  "version": 2,
+	  "users": {"u1": {"id": "u1", "name": "gabe", "role": "owner"}},
+	  "sessions": {"tok-plain": {"userId": "u1", "expires": "` +
+		time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano) + `"}},
+	  "backends": {}, "progress": {}
+	}`
+	if err := os.WriteFile(path, []byte(v2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := open(t, dir)
+	if _, ok := s.SessionUser("tok-plain"); !ok {
+		t.Fatal("the existing session stopped working after hashing")
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "tok-plain") {
+		t.Error("the raw token from the version 2 file is still on disk")
+	}
+
+	// Opening it again must not hash an already-hashed key a second time.
+	s2 := open(t, dir)
+	if _, ok := s2.SessionUser("tok-plain"); !ok {
+		t.Error("re-opening the migrated file broke the session")
 	}
 }
 

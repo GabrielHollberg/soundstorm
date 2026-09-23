@@ -36,11 +36,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,9 +81,11 @@ type Server struct {
 	lanHosts         []string
 	publicName       func() string
 
-	// rescans coalesces "look at your folder now" requests, keyed by kind.
+	// rescans coalesces "look at your folder now" requests, keyed by kind,
+	// and lastRescan is when one last actually fired - see scheduleRescan.
 	rescanMu     sync.Mutex
 	rescanTimers map[media.Kind]*time.Timer
+	lastRescan   map[media.Kind]time.Time
 }
 
 // Config configures the server.
@@ -136,6 +140,7 @@ func New(cfg Config) *Server {
 		publicName:       cfg.PublicName,
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
 		rescanTimers:     map[media.Kind]*time.Timer{},
+		lastRescan:       map[media.Kind]time.Time{},
 	}
 }
 
@@ -997,7 +1002,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.log.Warn("upload failed", "path", path, "kind", kind, "err", err)
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, desensitizeFSError(err))
 		return
 	}
 
@@ -1020,8 +1025,27 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 // minute somebody would otherwise be waiting.
 const rescanDelay = 2 * time.Second
 
+// minRescanIntervalDefault is the least time between two real scans of one
+// kind, whatever asked for them.
+//
+// The debounce above coalesces one burst into one scan, but does nothing
+// against a stream of separate triggers spaced further apart than
+// rescanDelay: the manual "check for new files" button is one call for any
+// signed-in member, not just the owner, and each real scan is Jellyfin
+// refreshing every library or Navidrome walking the music folder. A script
+// calling it every three seconds would otherwise get a real scan every three
+// seconds, forever. Half a minute keeps an occasional click instant while
+// capping that to two scans a minute - well under what the backends' own
+// timers already cost by themselves.
+const minRescanIntervalDefault = 30 * time.Second
+
+// minRescanInterval is a variable only so a test can shrink it rather than
+// waiting out the real thing.
+var minRescanInterval = minRescanIntervalDefault
+
 // scheduleRescan asks the backends that own a kind to look at their folder,
-// shortly, once.
+// shortly, once - and no sooner than minRescanInterval after the last time
+// one actually ran, however many requests ask for it in between.
 //
 // Every backend indexes on a timer - Navidrome every minute, the ebook scanner
 // every two - so without this a file is on disk and unsearchable for up to two
@@ -1031,15 +1055,28 @@ func (s *Server) scheduleRescan(kind media.Kind) {
 	s.rescanMu.Lock()
 	defer s.rescanMu.Unlock()
 
+	// Never shorter than rescanDelay, and never sooner than minRescanInterval
+	// after the last scan actually started. Recomputed on every call, not
+	// just the first: a later trigger with a tighter floor (the previous scan
+	// finished starting in the meantime) must not let an in-flight reset
+	// shrink the wait back below it.
+	delay := rescanDelay
+	if last, ok := s.lastRescan[kind]; ok {
+		if floor := minRescanInterval - time.Since(last); floor > delay {
+			delay = floor
+		}
+	}
+
 	if timer, ok := s.rescanTimers[kind]; ok {
 		// Still waiting: push the moment back rather than adding a second one,
 		// so a long upload results in one scan after the last file.
-		timer.Reset(rescanDelay)
+		timer.Reset(delay)
 		return
 	}
-	s.rescanTimers[kind] = time.AfterFunc(rescanDelay, func() {
+	s.rescanTimers[kind] = time.AfterFunc(delay, func() {
 		s.rescanMu.Lock()
 		delete(s.rescanTimers, kind)
+		s.lastRescan[kind] = time.Now()
 		s.rescanMu.Unlock()
 		s.rescanNow(kind)
 	})
@@ -1107,6 +1144,29 @@ func statusForUpload(err error) int {
 		return http.StatusForbidden
 	}
 	return http.StatusBadRequest
+}
+
+// desensitizeFSError strips the container's own absolute path out of an
+// upload failure before it reaches a browser.
+//
+// Most of what library.Save refuses for is already a message written for a
+// person - "there is no music library", the file type check, a duplicate.
+// What it is not written for is the rare case where the disk itself
+// misbehaves: os.MkdirAll, os.CreateTemp and a failed rename all quote the
+// full path they were given on error, and inside the container that path is
+// /library/... or /var/lib/... - the internal layout, in a 400 body, to
+// whoever's upload happened to trip over it. The original, path and all, is
+// already in the log by the time this runs.
+func desensitizeFSError(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return fmt.Sprintf("%s: %s", pe.Op, pe.Err)
+	}
+	var le *os.LinkError
+	if errors.As(err, &le) {
+		return fmt.Sprintf("%s: %s", le.Op, le.Err)
+	}
+	return err.Error()
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -1314,6 +1374,20 @@ func (s *Server) handleSetPosition(w http.ResponseWriter, r *http.Request) {
 func isTime(seconds float64) bool {
 	return !math.IsNaN(seconds) && !math.IsInf(seconds, 0) && seconds >= 0
 }
+
+// isFraction reports whether f is a real number between 0 and 1, which is
+// the only thing "how much of this book has been read" can mean. Rejects the
+// same class of bad input isTime does - 1e400 decodes to +Inf without error,
+// and a JSON body could as easily hand back a negative number or ten.
+func isFraction(f float64) bool {
+	return !math.IsNaN(f) && !math.IsInf(f, 0) && f >= 0 && f <= 1
+}
+
+// maxLocationLength bounds an EPUB CFI. A real one is a few dozen characters;
+// this is generous for a nested, multi-range one and still small next to
+// maxProgressBody - and small enough that a book opened once a minute for a
+// year would add a few hundred KB to state.json, not the whole quota each time.
+const maxLocationLength = 2 << 10
 
 // streamURL is where a client fetches an item's, or a track's, bytes.
 func streamURL(sourceID, id string) string {
@@ -1536,6 +1610,21 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Location == "" {
 		writeError(w, http.StatusBadRequest, "location is required")
+		return
+	}
+	// Unlike handleSetPosition's isTime, nothing here checked at all: a
+	// fraction is a JSON number like any other, so 1e400 silently decodes to
+	// +Inf (the same trap noted for Audiobookshelf's own API) and would sit in
+	// state.json forever, read back into a progress bar computing width from
+	// it. And an EPUB CFI is normally a few dozen characters, so a location
+	// with no length check is an easy way to grow that file - which every
+	// login and session change reads and rewrites whole - one book at a time.
+	if !isFraction(body.Fraction) {
+		writeError(w, http.StatusBadRequest, "fraction must be a number between 0 and 1")
+		return
+	}
+	if len(body.Location) > maxLocationLength {
+		writeError(w, http.StatusBadRequest, "location is too long")
 		return
 	}
 

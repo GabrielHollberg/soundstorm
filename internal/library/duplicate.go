@@ -21,17 +21,28 @@ import (
 // library: of nine such pairs none were identical files, and five had
 // identical audio.
 //
-// So for audio the fingerprint is the audio alone - the mdat of an MP4, the
-// frames of an MP3 after its ID3 tag, the frames of a FLAC after its metadata
-// blocks - and for everything else it is the whole file. A clean and an
-// explicit version differ in their audio, so both are kept; only the same
-// recording under a different listing is skipped.
+// The fingerprint is the audio alone - the mdat of an MP4, the frames of an
+// MP3 after its ID3 tag, the frames of a FLAC after its metadata blocks. A
+// clean and an explicit version differ in their audio, so both are kept; only
+// the same recording under a different listing is skipped.
 //
-// Only against files already in the same destination folder. The same song
-// on an album and on a compilation is not a duplicate, and a deluxe edition in
-// its own folder keeps every track even where it shares one with the
-// standard. And only uploads: a file copied in by hand is never checked, which
-// is also the way to add one anyway.
+// Only against files already in the same destination folder, only for music
+// and audiobooks, and only on upload. The same song on an album and on a
+// compilation is not a duplicate, and a deluxe edition in its own folder
+// keeps every track even where it shares one with the standard. A file
+// copied in by hand is never checked, which is also the way to add one
+// anyway.
+//
+// Scoped to audio kinds on purpose - this is where the problem was found and
+// measured, and it is the one place a full-file hash is worth its cost.
+// Everything else only ever hits the plain "a file of this name already
+// exists" check above findDuplicate, which is free. A picture library or a
+// documents folder can hold thousands of same-sized, same-extension files,
+// and duplicate detection there would mean reading every one of them, in
+// full, on every single upload, for a case that in practice does not arise -
+// two cameras do not produce byte-identical files under different names the
+// way iTunes reliably does. If that ever needs revisiting, it needs its own
+// measurement first, the same way this one was.
 
 // DuplicateError says an upload was not added because the same recording, or
 // the same file, is already beside where it was going.

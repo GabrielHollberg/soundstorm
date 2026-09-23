@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -345,5 +348,33 @@ func TestScanningPutsAMissingPlaceholderBackFirst(t *testing.T) {
 
 	if _, err := os.Stat(placeholder); err != nil {
 		t.Errorf("a scan left the folder empty, so a deletion would go unnoticed: %v", err)
+	}
+}
+
+// A disk failure quotes the container's own absolute path - os.MkdirAll and a
+// failed rename both do - and that path has no business in a 400 body. The
+// original, path and all, is what gets logged; this is what the browser sees.
+func TestFilesystemPathsDoNotReachTheBrowserOnAFailedUpload(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"a bare path error", &fs.PathError{Op: "mkdir", Path: "/library/.uploads", Err: fs.ErrPermission}},
+		{"a wrapped path error", fmt.Errorf("prepare upload: %w", &fs.PathError{Op: "open", Path: "/library/music/x", Err: fs.ErrNotExist})},
+		{"a link error", &os.LinkError{Op: "rename", Old: "/library/.uploads/part-1", New: "/library/music/a.mp3", Err: fs.ErrExist}},
+	}
+	for _, c := range cases {
+		got := desensitizeFSError(c.err)
+		if strings.Contains(got, "/library") {
+			t.Errorf("%s: %q still names the library path", c.name, got)
+		}
+		if got == "" {
+			t.Errorf("%s: message was emptied entirely", c.name)
+		}
+	}
+	// An ordinary, already-friendly validation message is left alone.
+	plain := errors.New("there is no music library")
+	if got := desensitizeFSError(plain); got != plain.Error() {
+		t.Errorf("a plain message was altered: %q", got)
 	}
 }

@@ -3,6 +3,7 @@ package library
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"testing"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -94,13 +95,23 @@ func TestOtherFoldersAndOtherFormatsAreKept(t *testing.T) {
 	saved(t, l, media.KindMusic, "Furious 7/07 See You Again.m4b", m4a("7 of 16", audio))
 }
 
-// Anything that is not audio is compared whole: a second copy of a photo or a
-// book is skipped, an edited one is not.
-func TestOtherFilesAreComparedWhole(t *testing.T) {
+// Duplicate detection is scoped to music and audiobooks - the two kinds it
+// was measured against - and nowhere else, because a picture or documents
+// folder can hold thousands of same-sized files and hashing every one of
+// them on every upload has a cost with no real-world case behind it. A
+// second copy of a photo under another name is kept; only the same *name*
+// is ever refused, by the plain check that runs before this one.
+func TestDuplicateDetectionIsScopedToAudio(t *testing.T) {
 	l := newLibrary(t)
 	saved(t, l, media.KindPicture, "Holiday/IMG_0001.jpg", []byte("\xff\xd8\xffphoto"))
-	expectDuplicate(t, l, media.KindPicture, "Holiday/IMG_0001 (1).jpg", []byte("\xff\xd8\xffphoto"), "IMG_0001.jpg")
-	saved(t, l, media.KindPicture, "Holiday/IMG_0001 edited.jpg", []byte("\xff\xd8\xffphoto, cropped"))
+	saved(t, l, media.KindPicture, "Holiday/IMG_0001 (1).jpg", []byte("\xff\xd8\xffphoto"))
+	saved(t, l, media.KindDocument, "Taxes/2024.pdf", []byte("%PDF-1.4 form"))
+	saved(t, l, media.KindDocument, "Taxes/2024 (1).pdf", []byte("%PDF-1.4 form"))
+
+	// The name check still applies: the exact same name is still refused.
+	if _, err := l.Save(media.KindPicture, "Holiday/IMG_0001.jpg", bytes.NewReader([]byte("different bytes entirely"))); !errors.Is(err, ErrAlreadyThere) {
+		t.Errorf("err = %v, want ErrAlreadyThere", err)
+	}
 }
 
 // A file that claims a format it does not have is compared whole rather than

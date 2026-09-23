@@ -42,6 +42,18 @@ const (
 	// out of their own library.
 	MinPasswordLength = 8
 
+	// MaxPasswordLength is enforced both when a password is set and when one
+	// is checked - the opposite of the minimum, and safely so. PBKDF2's cost
+	// rises with the input's length past SHA-256's 64-byte block, so a login
+	// guess sent thousands of bytes long (the JSON body allows up to 4KB)
+	// costs several times what an ordinary attempt does, for the same one
+	// hash the throttle was sized around. Because this is also enforced at
+	// set time, no genuine password can ever be this long, which is what
+	// makes it safe to refuse a longer guess before hashing it at all rather
+	// than only when a password is chosen, the way the minimum is. 256 bytes
+	// is well past anything anybody has ever typed on purpose.
+	MaxPasswordLength = 256
+
 	sessionTTL = 30 * 24 * time.Hour
 	CookieName = "soundstorm_session"
 )
@@ -302,6 +314,9 @@ func (m *Manager) ResetPassword(actor state.User, id, password, keepToken string
 
 // verify checks a password against an account by id.
 func (m *Manager) verify(id, password string) error {
+	if len(password) > MaxPasswordLength {
+		return ErrInvalidCredentials
+	}
 	user, ok := m.store.User(id)
 	if !ok {
 		return ErrInvalidCredentials
@@ -319,6 +334,9 @@ func (m *Manager) verify(id, password string) error {
 func checkPassword(password string) error {
 	if len(password) < MinPasswordLength {
 		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)
+	}
+	if len(password) > MaxPasswordLength {
+		return fmt.Errorf("password must be at most %d characters", MaxPasswordLength)
 	}
 	return nil
 }
@@ -370,6 +388,13 @@ func (m *Manager) SignIn(ctx context.Context, client, name, password string) (st
 //
 // It is not throttled; anything answering the network must use SignIn.
 func (m *Manager) Login(name, password string) (string, time.Time, state.User, error) {
+	// Refused before the account is even looked up, so a wrong name and an
+	// over-long password are indistinguishable in cost - see
+	// MaxPasswordLength for why hashing it at all would be worth doing.
+	if len(password) > MaxPasswordLength {
+		return "", time.Time{}, state.User{}, ErrInvalidCredentials
+	}
+
 	user, found := m.store.UserByName(name)
 
 	salt, want := decoySalt, []byte(nil)

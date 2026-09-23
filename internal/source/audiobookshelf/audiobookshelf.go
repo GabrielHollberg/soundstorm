@@ -172,55 +172,66 @@ func (s *Source) itemsPath() string {
 }
 
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
-	limit := q.LimitOr(25)
-
 	// A browse fetches the whole shelf and orders it here. Audiobookshelf's
 	// own title sort ignores case, so "How to Fast" and "How To Overcome"
 	// came back in the opposite order to the merge's, and a book at a page
-	// boundary appeared twice or not at all (see media.Less).
+	// boundary appeared twice or not at all (see media.Less). Cached and
+	// coalesced by key "": concurrent page-1 requests against a cold cache -
+	// more than one tab, more than one device opening the app at once -
+	// would otherwise each fetch the whole shelf independently.
 	if q.Text == "" {
-		if items, ok := s.shelf.Get(""); ok {
-			return media.FirstN(items, limit), nil
-		}
-	}
-
-	// Two endpoints, because Audiobookshelf's search does not answer the
-	// question "what is on this shelf" - asked with an empty q it matches
-	// nothing at all. /items is its listing call, and returns the same
-	// library items one wrapper shallower.
-	var found []libraryItem
-	if q.Text == "" {
-		for page := 0; ; page++ {
-			var resp listResponse
-			params := url.Values{
-				"limit": {strconv.Itoa(listPage)},
-				"page":  {strconv.Itoa(page)},
-			}
-			if err := s.http.JSON(ctx, s.itemsPath(), params, &resp); err != nil {
-				return nil, err
-			}
-			found = append(found, resp.Results...)
-			if len(resp.Results) < listPage || len(found) >= maxListing {
-				break
-			}
-		}
-	} else {
-		// Every match, not the first few: the merge ranks them, and a cut
-		// here would be a cut in Audiobookshelf's order rather than ours.
-		var resp searchResponse
-		params := url.Values{
-			"q":     {q.Text},
-			"limit": {strconv.Itoa(maxListing)},
-		}
-		if err := s.http.JSON(ctx, s.searchPath(), params, &resp); err != nil {
+		items, err := s.shelf.GetOrFetch("", func() ([]media.Item, error) { return s.browseAll(ctx) })
+		if err != nil {
 			return nil, err
 		}
-		found = make([]libraryItem, 0, len(resp.Book))
-		for _, b := range resp.Book {
-			found = append(found, b.LibraryItem)
-		}
+		return media.FirstN(items, q.LimitOr(25)), nil
 	}
 
+	// Audiobookshelf's search does not answer "what is on this shelf" - asked
+	// with an empty q it matches nothing at all, which is why browsing uses
+	// /items above instead. Every match is fetched, not the first few: the
+	// merge ranks them, and a cut here would be a cut in Audiobookshelf's
+	// order rather than ours. Not cached: a search is asked once per keypress
+	// and rarely repeated, so there is nothing here worth keeping past the
+	// request that made it.
+	var resp searchResponse
+	params := url.Values{
+		"q":     {q.Text},
+		"limit": {strconv.Itoa(maxListing)},
+	}
+	if err := s.http.JSON(ctx, s.searchPath(), params, &resp); err != nil {
+		return nil, err
+	}
+	found := make([]libraryItem, 0, len(resp.Book))
+	for _, b := range resp.Book {
+		found = append(found, b.LibraryItem)
+	}
+	return convertItems(s.id, found), nil
+}
+
+// browseAll fetches and converts the whole shelf - what /items is asked for
+// when there is no query to narrow it, one page at a time.
+func (s *Source) browseAll(ctx context.Context) ([]media.Item, error) {
+	var found []libraryItem
+	for page := 0; ; page++ {
+		var resp listResponse
+		params := url.Values{
+			"limit": {strconv.Itoa(listPage)},
+			"page":  {strconv.Itoa(page)},
+		}
+		if err := s.http.JSON(ctx, s.itemsPath(), params, &resp); err != nil {
+			return nil, err
+		}
+		found = append(found, resp.Results...)
+		if len(resp.Results) < listPage || len(found) >= maxListing {
+			break
+		}
+	}
+	return convertItems(s.id, found), nil
+}
+
+// convertItems turns Audiobookshelf's libraryItem shape into media.Item.
+func convertItems(sourceID string, found []libraryItem) []media.Item {
 	items := make([]media.Item, 0, len(found))
 	for _, li := range found {
 		// Deleted. Audiobookshelf keeps the record and flags it rather than
@@ -241,7 +252,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 
 		item := media.Item{
 			ID:              li.ID,
-			SourceID:        s.id,
+			SourceID:        sourceID,
 			Kind:            media.KindAudiobook,
 			Title:           decodeEntities(md.Title),
 			Subtitle:        decodeEntities(md.Subtitle),
@@ -271,11 +282,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 		}
 		items = append(items, item)
 	}
-	if q.Text == "" {
-		s.shelf.Put("", items)
-		return media.FirstN(items, limit), nil
-	}
-	return items, nil
+	return items
 }
 
 // listPage is how many library items one /items call asks for, and

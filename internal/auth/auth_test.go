@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -277,5 +278,51 @@ func TestASprayOfNamesDoesNotForgiveTheAccountUnderAttack(t *testing.T) {
 	}
 	if th.waitFor("fresh", "gabe") == 0 {
 		t.Error("the spray flushed the account under attack")
+	}
+}
+
+// PBKDF2's cost rises with the input's length once it passes SHA-256's
+// 64-byte block, so a login guess sent thousands of bytes long costs several
+// times what an ordinary attempt does - for one hash the throttle's
+// concurrency cap was sized around. checkPassword already refuses anything
+// this long when a password is *set*, so nothing genuine is ever this long,
+// which is what makes it safe to refuse it before hashing at all.
+func TestAnOverlongPasswordIsNeverSetOrHashed(t *testing.T) {
+	m := newManager(t)
+	huge := strings.Repeat("a", MaxPasswordLength+1)
+
+	if _, err := m.Signup("gabe", huge); err == nil {
+		t.Fatal("an over-length password was accepted at signup")
+	}
+
+	if _, err := m.Signup("gabe", "correct horse"); err != nil {
+		t.Fatalf("signup: %v", err)
+	}
+	ctx := context.Background()
+	_, _, _, err := m.SignIn(ctx, "1.2.3.4", "gabe", huge)
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
+	}
+	// And refusing it did not count as a throttled failure against the real
+	// password's ordinary attempts - it is refused before the throttle's own
+	// bookkeeping for a wrong password even applies, since it never reaches
+	// a real comparison.
+	if _, _, _, err := m.SignIn(ctx, "1.2.3.4", "gabe", "correct horse"); err != nil {
+		t.Errorf("the real password stopped working: %v", err)
+	}
+}
+
+// The same refusal applies to the current-password check on a password
+// change, which hashes exactly the same way.
+func TestAnOverlongCurrentPasswordIsRefused(t *testing.T) {
+	m := newManager(t)
+	owner, err := m.Signup("gabe", "correct horse")
+	if err != nil {
+		t.Fatalf("signup: %v", err)
+	}
+	huge := strings.Repeat("a", MaxPasswordLength+1)
+	err = m.ChangeOwnPassword(context.Background(), "1.2.3.4", owner, huge, "a new password here", "")
+	if !errors.Is(err, ErrWrongCurrentPassword) {
+		t.Fatalf("err = %v, want ErrWrongCurrentPassword", err)
 	}
 }

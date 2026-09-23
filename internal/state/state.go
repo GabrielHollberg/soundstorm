@@ -20,6 +20,7 @@ package state
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -144,8 +145,9 @@ type Progress struct {
 }
 
 // currentVersion is the state file's schema version. Version 1 had a single
-// `user` object; version 2 has a map of accounts.
-const currentVersion = 2
+// `user` object; version 2 has a map of accounts; version 3 keys a session by
+// a hash of its token rather than the token itself.
+const currentVersion = 3
 
 type data struct {
 	Version int `json:"version"`
@@ -255,6 +257,12 @@ func Open(path string) (*Store, error) {
 // and nobody loses their place, which is the whole point of doing this rather
 // than starting the file again.
 func (s *Store) migrateLocked() {
+	// Independent of the account migration below, and checked first: a file
+	// already at version 2 still needs this one.
+	if s.d.Version < 3 {
+		s.hashSessionTokensLocked()
+	}
+
 	if s.d.Version >= currentVersion {
 		s.d.Version = currentVersion
 		return
@@ -282,6 +290,42 @@ func (s *Store) migrateLocked() {
 
 	s.d.User = nil
 	s.d.Version = currentVersion
+}
+
+// hashSessionTokensLocked rewrites the session map so its keys are a hash of
+// each token rather than the token itself.
+//
+// Every earlier version kept the literal cookie value as the map key, so
+// state.json - the file a backup copies, the file left in an old volume,
+// anything that gets hold of it without the server around it - was itself
+// enough to sign in as anybody with a live session, owner included, for as
+// long as it had left to run. A session token has as much entropy as a
+// password reset token: nothing to be slow against, since the only way to
+// find one is to already have it, but no reason to keep it in the clear
+// either.
+//
+// This is lossless. The key being replaced *is* the original raw token, so
+// hashing it in place computes exactly what a real request presenting that
+// same cookie will look up next. Nobody is signed out by it, unlike most ways
+// of changing how a credential is stored.
+func (s *Store) hashSessionTokensLocked() {
+	if len(s.d.Sessions) == 0 {
+		return
+	}
+	hashed := make(map[string]Session, len(s.d.Sessions))
+	for token, session := range s.d.Sessions {
+		hashed[hashSessionToken(token)] = session
+	}
+	s.d.Sessions = hashed
+}
+
+// hashSessionToken is what a session is actually keyed by, on disk and in
+// memory. SHA-256 rather than anything slow: the input is 256 bits from
+// crypto/rand, not a password somebody chose, so brute force is not the
+// threat a hash has to answer here - reading it off the disk is.
+func hashSessionToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // newID generates an account identifier.
@@ -591,9 +635,9 @@ func (s *Store) DeleteUser(id string) error {
 
 	delete(s.d.Users, id)
 	delete(s.d.Identities, id)
-	for token, session := range s.d.Sessions {
+	for key, session := range s.d.Sessions {
 		if session.UserID == id {
-			delete(s.d.Sessions, token)
+			delete(s.d.Sessions, key)
 		}
 	}
 	prefix := id + "/"
@@ -682,11 +726,14 @@ func (s *Store) SetProgress(key string, p Progress) error {
 }
 
 // AddSession records a session token, whose it is, and when it expires.
+//
+// The token itself is never written - only its hash. See
+// hashSessionTokensLocked for why.
 func (s *Store) AddSession(token, userID string, expiry time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pruneLocked()
-	s.d.Sessions[token] = Session{UserID: userID, Expires: expiry}
+	s.d.Sessions[hashSessionToken(token)] = Session{UserID: userID, Expires: expiry}
 	return s.save()
 }
 
@@ -702,7 +749,7 @@ func (s *Store) SessionUser(token string) (User, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	session, ok := s.d.Sessions[token]
+	session, ok := s.d.Sessions[hashSessionToken(token)]
 	if !ok || !time.Now().Before(session.Expires) {
 		return User{}, false
 	}
@@ -714,10 +761,11 @@ func (s *Store) SessionUser(token string) (User, bool) {
 func (s *Store) DeleteSession(token string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.d.Sessions[token]; !ok {
+	key := hashSessionToken(token)
+	if _, ok := s.d.Sessions[key]; !ok {
 		return nil
 	}
-	delete(s.d.Sessions, token)
+	delete(s.d.Sessions, key)
 	return s.save()
 }
 
@@ -727,10 +775,11 @@ func (s *Store) DeleteSession(token string) error {
 func (s *Store) DeleteSessionsFor(userID, keep string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	keepKey := hashSessionToken(keep)
 	changed := false
-	for token, session := range s.d.Sessions {
-		if session.UserID == userID && token != keep {
-			delete(s.d.Sessions, token)
+	for key, session := range s.d.Sessions {
+		if session.UserID == userID && key != keepKey {
+			delete(s.d.Sessions, key)
 			changed = true
 		}
 	}
@@ -743,9 +792,9 @@ func (s *Store) DeleteSessionsFor(userID, keep string) error {
 // pruneLocked drops expired sessions. Callers must hold the mutex.
 func (s *Store) pruneLocked() {
 	now := time.Now()
-	for token, session := range s.d.Sessions {
+	for key, session := range s.d.Sessions {
 		if now.After(session.Expires) {
-			delete(s.d.Sessions, token)
+			delete(s.d.Sessions, key)
 		}
 	}
 }

@@ -410,3 +410,55 @@ func TestSignupReturnsTheAccountItJustCreated(t *testing.T) {
 		t.Errorf("signup returned %+v", out.User)
 	}
 }
+
+// A fraction is a JSON number like any other, so nothing stopped one outside
+// [0, 1] before - including the exact trap noted for Audiobookshelf's own
+// API: a literal too large for float64 decodes to +Inf without an error.
+func TestReadingProgressRejectsABadFraction(t *testing.T) {
+	h := newHarness(t, stub{id: "ebooks", kind: media.KindEbook})
+	h.signUp(t)
+	const where = "?source=ebooks&id=dune.epub"
+
+	for _, body := range []string{
+		`{"location":"epubcfi(/6/4!/2)","fraction":1e400}`,  // +Inf
+		`{"location":"epubcfi(/6/4!/2)","fraction":-1e400}`, // -Inf
+		`{"location":"epubcfi(/6/4!/2)","fraction":-0.5}`,
+		`{"location":"epubcfi(/6/4!/2)","fraction":1.5}`,
+	} {
+		resp, respBody := h.do(t, http.MethodPut, "/api/book/progress"+where, body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400 (body %s)", body, resp.StatusCode, respBody)
+		}
+	}
+	// The boundaries themselves are fine.
+	for _, f := range []string{"0", "1", "0.5"} {
+		resp, respBody := h.do(t, http.MethodPut, "/api/book/progress"+where,
+			`{"location":"epubcfi(/6/4!/2)","fraction":`+f+`}`)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("fraction %s: status = %d, want 200 (body %s)", f, resp.StatusCode, respBody)
+		}
+	}
+}
+
+// An EPUB CFI is a few dozen characters. Nothing stopped a client sending
+// something enormous, which would sit in state.json - the file every login
+// and session change reads and rewrites whole - forever.
+func TestReadingProgressRejectsAnOverlongLocation(t *testing.T) {
+	h := newHarness(t, stub{id: "ebooks", kind: media.KindEbook})
+	h.signUp(t)
+	const where = "?source=ebooks&id=dune.epub"
+
+	huge := strings.Repeat("a", maxLocationLength+1)
+	resp, body := h.do(t, http.MethodPut, "/api/book/progress"+where,
+		`{"location":"`+huge+`","fraction":0.1}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (body %s)", resp.StatusCode, body)
+	}
+
+	ok := strings.Repeat("a", maxLocationLength)
+	resp, body = h.do(t, http.MethodPut, "/api/book/progress"+where,
+		`{"location":"`+ok+`","fraction":0.1}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("a location right at the limit was refused: %d %s", resp.StatusCode, body)
+	}
+}

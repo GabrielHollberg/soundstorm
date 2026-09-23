@@ -562,7 +562,13 @@ func (s *Source) OpenBook(_ context.Context, itemID string) (source.OpenBook, er
 	}
 	opened, err := epub.Open(b.Path)
 	if err != nil {
-		return nil, err
+		// epub.Open's error wraps whatever the zip package or the filesystem
+		// said, and both quote the path in full - the container's own
+		// absolute path, not the one anybody outside was ever shown. That
+		// reached the browser as a 404 body; the detail belongs in the log,
+		// not on someone's screen.
+		s.log.Warn("could not open book", "id", itemID, "path", b.Path, "err", err)
+		return nil, fmt.Errorf("localbooks %q: could not open %q", s.id, itemID)
 	}
 	return &openBook{Book: opened}, nil
 }

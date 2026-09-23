@@ -807,6 +807,61 @@ came before building any of it. What it found, and what each fix rests on:
   backend database that cannot write is a broken server, not a full shelf.
 - **`Save` applies the plan's file-type test itself**, because the upload
   endpoint can be called without a plan.
+- **Duplicate detection is scoped to music and audiobooks only.** It hashes
+  every same-sized, same-extension sibling in the destination folder on every
+  upload, which is fine for an album but not for a picture or documents shelf
+  that can hold thousands of same-sized files - and the case it exists for
+  (an iTunes repurchase, same audio under two names) has no photo or document
+  equivalent. Everything else stops at the plain "this name already exists"
+  check, which is free.
+- **A cold shelf cache is a stampede, not a cost, without coalescing.**
+  Opening the app from two devices, or a browser's own retry, used to fetch
+  the whole shelf once per request against a cold cache. `ShelfCache.GetOrFetch`
+  shares one fetch among concurrent callers of the same key, and eviction is
+  LRU rather than "wipe everything once full" - the entry a scroll is still
+  paging through must not be evicted by a burst of one-off searches elsewhere.
+- **The manual "check for new files" button has no owner-only guard**, and
+  each real scan is Jellyfin refreshing every library or Navidrome walking the
+  music folder. The 2-second debounce coalesces one upload burst into one
+  scan; it does nothing against a stream of separate triggers spaced further
+  apart, which is what a script hitting the button repeatedly looks like.
+  `minRescanInterval` (30s) floors the gap between two real scans of one kind,
+  however many requests ask for it - and a trigger that lands while a
+  floor-extended timer is already pending must recompute the same floor
+  rather than resetting to the bare debounce delay, or a fast enough stream of
+  triggers could keep pushing a real scan two seconds away forever.
+- **Filesystem errors quote the container's own absolute path.** `os.MkdirAll`,
+  a failed rename and `zip.OpenReader` on a corrupted book all do, and that
+  reached a browser as the body of a 400 or 404 - `/library/...` or
+  `/var/lib/...`, the internal layout, to whoever's request happened to trip
+  over it. `desensitizeFSError` strips it from an upload failure;
+  `localbooks.OpenBook` logs the real path and returns a generic one. Every
+  other error a client sees was already written for a person and never
+  carried a path to begin with.
+- **A session token was the literal map key in state.json.** That file is
+  what a backup copies and what an old volume leaves behind, with nobody
+  running the server around it, so it was itself enough to sign in as anybody
+  with a live session - owner included - for as long as it had left to run.
+  Sessions are now keyed by a hash of the token, migrated on open: since the
+  old key *was* the raw token, hashing it in place computes exactly what a
+  real cookie looks up next, so nobody already signed in loses their session.
+  SHA-256, not anything slow - the input is 256 bits from `crypto/rand`, not a
+  password, so there is nothing to be slow against.
+- **A password had no maximum length**, on either end. PBKDF2's cost per
+  round rises with the input past SHA-256's 64-byte block, so a login guess
+  sent thousands of bytes long (the JSON body allows 4KB) cost several times
+  an ordinary attempt for the one hash the throttle's concurrency cap was
+  sized around. `MaxPasswordLength` (256) is enforced when a password is set,
+  which is what makes it safe to refuse a longer guess before hashing it at
+  all, at sign-in and at the current-password check alike - no genuine
+  password can already be this long.
+- **Reading position had no validation at all**, unlike the audiobook
+  position endpoint's `isTime`. A fraction is a JSON number like any other, so
+  `1e400` decoded to `+Inf` without error - the same trap already known from
+  Audiobookshelf's own API - and an EPUB CFI had no length limit, so a bad
+  client could grow `state.json`, the file every login rewrites whole, one
+  book at a time. `isFraction` bounds it to [0, 1]; `maxLocationLength` (2KB)
+  bounds the CFI.
 
 ## Tailscale, and why it is a profile rather than a service
 

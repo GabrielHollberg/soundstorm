@@ -158,13 +158,9 @@ func (s *Source) searchParams(q media.Query) url.Values {
 // returned whole for the merge to rank. Listings are cached briefly so
 // scrolling costs one fetch.
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
-	all, ok := s.shelf.Get(q.Text)
-	if !ok {
-		var err error
-		if all, err = s.fetchAll(ctx, q); err != nil {
-			return nil, err
-		}
-		s.shelf.Put(q.Text, all)
+	all, err := s.shelf.GetOrFetch(q.Text, func() ([]media.Item, error) { return s.fetchAll(ctx, q) })
+	if err != nil {
+		return nil, err
 	}
 	if q.Text == "" {
 		return media.FirstN(all, q.LimitOr(25)), nil
