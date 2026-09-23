@@ -1,0 +1,9 @@
+# Railway's settings for the name service. Point the Railway service's
+# "Config file path" at this file; the build context stays the repository root.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "cmd/soundstorm-names/Dockerfile"
+
+[deploy]
+healthcheckPath = "/healthz"
+restartPolicyType = "ON_FAILURE"

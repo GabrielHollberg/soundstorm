@@ -44,6 +44,13 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+      # The ACME client is hand-written, and only a real authority can say
+      # whether its signatures and challenge answers are right - a fake one
+      # written alongside it would share its mistakes. Pebble is Let's
+      # Encrypt's own test authority, and needs no account.
+      - name: Certificate rehearsal against Pebble
+        run: sh scripts/acme-rehearsal.sh
+
       # The Tailscale sidecar proxies to SoundStorm by name, and the name it
       # must not use is "soundstorm" - that is the sidecar's own tailnet
       # hostname, which Docker writes into its /etc/hosts, so the proxy target
