@@ -78,9 +78,9 @@ type autoCert struct {
 	dir       string
 	announce  string // the LAN address the name should point at
 	directory string // the ACME directory certificates come from
-	names    *names.Client
-	newACME  func(key *ecdsa.PrivateKey) issuer
-	log      *slog.Logger
+	names     *names.Client
+	newACME   func(key *ecdsa.PrivateKey) issuer
+	log       *slog.Logger
 
 	mu   sync.RWMutex
 	reg  names.Registration

@@ -247,7 +247,7 @@ func loadAuto(cfg Config) (*Server, error) {
 		dir:       cfg.Dir,
 		announce:  announce,
 		directory: directory,
-		names:    &names.Client{Base: namesURL},
+		names:     &names.Client{Base: namesURL},
 		newACME: func(key *ecdsa.PrivateKey) issuer {
 			return &acme.Client{Directory: directory, Key: key, HTTP: cfg.ACMEHTTP}
 		},
