@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -157,7 +158,10 @@ func run(log *slog.Logger) error {
 		KeyFile:  os.Getenv("SOUNDSTORM_TLS_KEY"),
 		Dir:      filepath.Join(stateDir, "tls"),
 		Hosts:    splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
-		Log:      log,
+		// Auto mode's two outside services; empty means the real ones.
+		NamesURL:      os.Getenv("SOUNDSTORM_NAMES_URL"),
+		ACMEDirectory: os.Getenv("SOUNDSTORM_ACME_DIRECTORY"),
+		Log:           log,
 	})
 	if err != nil {
 		return err
@@ -174,6 +178,9 @@ func run(log *slog.Logger) error {
 	// and SoundStorm should be showing setup progress during it, not refusing to
 	// start. This is why the registry is populated asynchronously.
 	setup.Start(ctx)
+	// In auto mode, getting the real certificate - in the background too, and
+	// for the same reason.
+	tlsServer.Start(ctx)
 
 	authManager := auth.New(store)
 	// Only meaningful behind a proxy that sets the header and strips any
@@ -197,7 +204,8 @@ func run(log *slog.Logger) error {
 		// The same list the certificate covers, for the same reason: it is
 		// the machine's LAN address, and only the installer - which ran on
 		// the host - was ever in a position to find it out.
-		LANHosts: splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
+		LANHosts:   splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
+		PublicName: tlsServer.PublicName,
 	})
 
 	srv := &http.Server{
@@ -215,7 +223,9 @@ func run(log *slog.Logger) error {
 		accountState = "no accounts yet - the first visit creates the owner"
 	}
 	scheme := "http"
-	if tlsServer != nil {
+	if tlsServer.Sniffs() {
+		scheme = "http and https"
+	} else if tlsServer != nil {
 		scheme = "https"
 	}
 	log.Info("SoundStorm starting",
@@ -230,7 +240,15 @@ func run(log *slog.Logger) error {
 	errCh := make(chan error, 1)
 	go func() {
 		var err error
-		if tlsServer != nil {
+		if tlsServer.Sniffs() {
+			// Both protocols on one port, told apart by their first byte, so
+			// the http:// address everybody already has keeps working beside
+			// the real https one.
+			var ln net.Listener
+			if ln, err = net.Listen("tcp", listen); err == nil {
+				err = srv.Serve(tlsServer.Listener(ln))
+			}
+		} else if tlsServer != nil {
 			// Empty paths: the certificate comes from TLSConfig.GetCertificate,
 			// which mints one for whatever address the client actually dialled.
 			err = srv.ListenAndServeTLS("", "")

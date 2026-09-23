@@ -1705,9 +1705,36 @@ $('intake-close').addEventListener('click', () => {
 
 /* ------------------------------------------------------------------- boot */
 
+// moveToSecureName sends the page to the install's real https address - a
+// soundstorm.dev name with a certificate every browser trusts - but only after
+// checking this browser can actually reach it. Plenty of routers refuse to
+// resolve a public name that points at a home address (DNS rebinding
+// protection), and a redirect into a failure is worse than staying on http.
+//
+// no-cors is enough: the fetch resolves only if the name resolved, the
+// connection opened and the certificate verified, which is the whole question.
+// The port is the one in use now, because the server answers http and https
+// on the same one. Resolves false when it stays put.
+async function moveToSecureName(name) {
+  const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+  const target = 'https://' + name + (port === '443' ? '' : ':' + port);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    await fetch(target + '/healthz', { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+  location.replace(target + location.pathname + location.search + location.hash);
+  return true;
+}
+
 (async function boot() {
   const { ok, body, offline } = await api('/api/session');
   if (ok && body) {
+    if (body.secureName && await moveToSecureName(body.secureName)) return;
     if (body.signedIn) showApp(body.user);
     else showGate(body.hasAccount);
     return;

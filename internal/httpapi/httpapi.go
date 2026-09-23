@@ -74,6 +74,7 @@ type Server struct {
 	log              *slog.Logger
 	caPEM            []byte
 	lanHosts         []string
+	publicName       func() string
 
 	// rescans coalesces "look at your folder now" requests, keyed by kind.
 	rescanMu     sync.Mutex
@@ -103,6 +104,10 @@ type Config struct {
 	// inside Docker the only addresses it can see are the container's own.
 	// Whoever ran the installer was on the host and could.
 	LANHosts []string
+
+	// PublicName reports the install's real certificate name, or "" while it
+	// has none - see servetls auto mode. Nil when that mode is off.
+	PublicName func() string
 }
 
 // New builds the HTTP server.
@@ -122,6 +127,7 @@ func New(cfg Config) *Server {
 		log:              cfg.Log,
 		caPEM:            cfg.CAPEM,
 		lanHosts:         cfg.LANHosts,
+		publicName:       cfg.PublicName,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 	}
 }
@@ -230,6 +236,12 @@ func (s *Server) withUserContext(next http.Handler) http.Handler {
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// One shell for every state. The page asks /api/session and renders the
 	// signup form, the login form or the search UI accordingly.
+	if name := s.currentPublicName(); name != "" {
+		// Any port: the published one lives in compose, and only the browser
+		// knows it.
+		webui.ServeShell(w, r, "https://"+name+":*")
+		return
+	}
 	webui.ServeShell(w, r)
 }
 
@@ -267,6 +279,13 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if user, ok := s.auth.UserFor(r); ok {
 		answer["signedIn"] = true
 		answer["user"] = publicUser(user)
+	}
+	// The install's real https address, offered to a page that is not already
+	// on it. The page checks it can reach it before going there, because a
+	// router refusing to resolve a name pointing at a home address is common
+	// enough that the server cannot assume it works.
+	if name := s.currentPublicName(); name != "" && !strings.EqualFold(requestHostname(r), name) {
+		answer["secureName"] = name
 	}
 	writeJSON(w, http.StatusOK, answer)
 }
@@ -679,6 +698,13 @@ func (s *Server) shareURL(r *http.Request) string {
 		scheme = "https"
 	}
 
+	// Already on the real name: that address is proven to work from this
+	// network, has a certificate every device trusts, and is the one worth
+	// handing on.
+	if name := s.currentPublicName(); name != "" && strings.EqualFold(requestHostname(r), name) {
+		return scheme + "://" + r.Host
+	}
+
 	// r.Host may or may not carry a port. SplitHostPort errors when it does
 	// not, which is the ordinary case behind a proxy on 443.
 	reqHost, port, err := net.SplitHostPort(r.Host)
@@ -708,6 +734,22 @@ func (s *Server) shareURL(r *http.Request) string {
 		return scheme + "://" + host
 	}
 	return scheme + "://" + net.JoinHostPort(host, port)
+}
+
+func (s *Server) currentPublicName() string {
+	if s.publicName == nil {
+		return ""
+	}
+	return s.publicName()
+}
+
+// requestHostname is the host a request was addressed to, without its port.
+func requestHostname(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		return r.Host
+	}
+	return host
 }
 
 // isLoopbackHost covers the names and addresses that mean "this machine", and

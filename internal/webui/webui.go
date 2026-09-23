@@ -10,6 +10,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"strings"
 )
 
 //go:embed assets
@@ -95,7 +96,12 @@ func ServeManifest(w http.ResponseWriter, r *http.Request) {
 
 // ServeShell writes the single-page shell. The page decides for itself whether
 // to show signup, login or the search UI, by asking /api/session.
-func ServeShell(w http.ResponseWriter, r *http.Request) {
+//
+// connectAlso adds origins the page may fetch from. It is how the page is
+// allowed to check that the install's real https address works from this
+// browser before moving there; with connect-src 'self' alone that probe is
+// refused before it leaves.
+func ServeShell(w http.ResponseWriter, r *http.Request, connectAlso ...string) {
 	page, err := assetsFS.ReadFile("assets/index.html")
 	if err != nil {
 		http.Error(w, "ui unavailable", http.StatusInternalServerError)
@@ -106,6 +112,10 @@ func ServeShell(w http.ResponseWriter, r *http.Request) {
 	// creates confusing stale-login behaviour.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+	csp := contentSecurityPolicy
+	if len(connectAlso) > 0 {
+		csp = strings.Replace(csp, "connect-src 'self' blob:", "connect-src 'self' blob: "+strings.Join(connectAlso, " "), 1)
+	}
+	w.Header().Set("Content-Security-Policy", csp)
 	_, _ = w.Write(page)
 }

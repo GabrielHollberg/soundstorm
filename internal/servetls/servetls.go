@@ -36,6 +36,7 @@
 package servetls
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -47,11 +48,15 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/GabrielHollberg/soundstorm/internal/acme"
+	"github.com/GabrielHollberg/soundstorm/internal/names"
 )
 
 const (
@@ -79,11 +84,14 @@ const (
 	ModeOff        = "off"
 	ModeSelfSigned = "self-signed"
 	ModeFile       = "file"
+	// ModeAuto is self-signed plus a real certificate for a soundstorm.dev
+	// name, once one can be had. See auto.go.
+	ModeAuto = "auto"
 )
 
 // Config says what kind of TLS to set up.
 type Config struct {
-	// Mode is "off", "self-signed", or "file". Anything else is an error,
+	// Mode is "off", "self-signed", "file" or "auto". Anything else is an error,
 	// because silently serving plain HTTP when somebody asked for TLS is the
 	// worst possible way to be wrong.
 	Mode string
@@ -100,6 +108,15 @@ type Config struct {
 	// names are learned from handshakes, so this only saves the first request
 	// to each address a signature.
 	Hosts []string
+
+	// NamesURL and ACMEDirectory are auto mode's two outside services: the
+	// name service and the certificate authority. Empty means the real ones.
+	NamesURL, ACMEDirectory string
+
+	// ACMEHTTP talks to the authority. Nil is an ordinary client; the
+	// rehearsal against Pebble needs one that accepts Pebble's own
+	// certificate.
+	ACMEHTTP *http.Client
 
 	Log *slog.Logger
 }
@@ -124,7 +141,31 @@ type Server struct {
 
 	mu     sync.Mutex
 	leaves map[string]*tls.Certificate
+
+	// auto is set in ModeAuto: the real certificate, when there is one.
+	auto *autoCert
 }
+
+// Start runs whatever the configuration needs in the background - in auto
+// mode, getting and renewing the real certificate. A no-op otherwise.
+func (s *Server) Start(ctx context.Context) {
+	if s != nil && s.auto != nil {
+		go s.auto.run(ctx)
+	}
+}
+
+// PublicName is the name a real certificate answers to, or "" when there is
+// none yet - which is always, outside auto mode.
+func (s *Server) PublicName() string {
+	if s == nil || s.auto == nil {
+		return ""
+	}
+	return s.auto.name()
+}
+
+// Sniffs reports whether this configuration serves plain HTTP and TLS on one
+// port, in which case it must be served through Listener.
+func (s *Server) Sniffs() bool { return s != nil && s.auto != nil }
 
 // TLSConfig returns the configuration to hand to http.Server.
 func (s *Server) TLSConfig() *tls.Config { return s.cfg }
@@ -159,8 +200,11 @@ func Load(cfg Config) (*Server, error) {
 	case ModeSelfSigned:
 		return loadSelfSigned(cfg)
 
+	case ModeAuto:
+		return loadAuto(cfg)
+
 	default:
-		return nil, fmt.Errorf("unknown tls mode %q: want off, self-signed or file", cfg.Mode)
+		return nil, fmt.Errorf("unknown tls mode %q: want off, self-signed, file or auto", cfg.Mode)
 	}
 }
 
@@ -173,6 +217,47 @@ func baseConfig(get func(*tls.ClientHelloInfo) (*tls.Certificate, error)) *tls.C
 		MinVersion: tls.VersionTLS12,
 		NextProtos: []string{"h2", "http/1.1"},
 	}
+}
+
+// loadAuto is self-signed with a real certificate layered over it. The local
+// authority is not a leftover: it is what answers before the real certificate
+// arrives, for a bare IP address, and for good if it never can.
+func loadAuto(cfg Config) (*Server, error) {
+	s, err := loadSelfSigned(cfg)
+	if err != nil {
+		return nil, err
+	}
+	announce := announceAddress(cfg.Hosts)
+	if announce == "" {
+		// Not fatal: this is exactly self-signed mode, which works. But say
+		// why the real certificate will never come.
+		cfg.Log.Warn("tls auto mode needs this machine's LAN address in SOUNDSTORM_TLS_HOSTS " +
+			"to name it; serving with the local authority only")
+		return s, nil
+	}
+	namesURL := cfg.NamesURL
+	if namesURL == "" {
+		namesURL = names.DefaultService
+	}
+	directory := cfg.ACMEDirectory
+	if directory == "" {
+		directory = acme.LetsEncrypt
+	}
+	s.auto = &autoCert{
+		dir:      cfg.Dir,
+		announce: announce,
+		names:    &names.Client{Base: namesURL},
+		newACME: func(key *ecdsa.PrivateKey) issuer {
+			return &acme.Client{Directory: directory, Key: key, HTTP: cfg.ACMEHTTP}
+		},
+		log: cfg.Log,
+	}
+	s.auto.load()
+	if name := s.auto.name(); name != "" {
+		cfg.Log.Info("real certificate loaded", "name", name,
+			"expires", s.auto.cert.Leaf.NotAfter.Format("2006-01-02"))
+	}
+	return s, nil
 }
 
 func loadSelfSigned(cfg Config) (*Server, error) {
@@ -227,6 +312,11 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 // certificate has to match.
 func (s *Server) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	name := strings.TrimSpace(hello.ServerName)
+	if s.auto != nil {
+		if cert := s.auto.current(name); cert != nil {
+			return cert, nil
+		}
+	}
 	if name == "" {
 		// A bare IP address, which browsers send no SNI for. Nothing in the
 		// handshake says which address was dialled - behind Docker's NAT the

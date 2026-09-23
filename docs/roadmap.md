@@ -72,9 +72,32 @@ other in a book. What is not built:
 ## 6. HTTPS
 
 Built: `SOUNDSTORM_TLS` serves HTTPS from a local certificate authority, and
-the Tailscale profile gives a real certificate. What is left is a trusted
-certificate on a plain LAN address without Tailscale, which no home server can
-get from a public authority.
+the Tailscale profile gives a real certificate.
+
+**Built, not yet live: a trusted certificate on a plain LAN address, with no
+account.** `SOUNDSTORM_TLS=auto` registers the install with the name service
+(`cmd/soundstorm-names`), which names it `<id>.home.soundstorm.dev`, points
+that at its LAN address through Porkbun's DNS, and publishes the DNS challenge
+Let's Encrypt checks. Rehearsed end to end against Pebble, in CI and in a real
+browser. See `docs/names-service.md`. What is left, in order:
+
+1. Deploy the name service at `names.soundstorm.dev` and run one install
+   against Let's Encrypt **staging**, which is where anything new belongs.
+2. Then production, and make `auto` what the installer writes. HTTPS becomes
+   the default at that point and not before - see "Reaching it from another
+   device" in CLAUDE.md for why the order matters.
+3. Apply for `soundstorm.dev` on the Public Suffix List before installs
+   number in the hundreds. Until then every install shares the domain's weekly
+   Let's Encrypt allowance of about fifty new certificates.
+4. Remote access without Tailscale: the same name pointed at the home's public
+   address, with the port opened by UPnP where the router allows it. The
+   service refuses public addresses today, on purpose - it would first have to
+   prove the install is really there, or a trusted certificate on a public
+   address is a phishing kit.
+
+The rule that keeps it cheap, and must not bend: **the service never carries
+media**. A relay would scale its cost with every film watched; DNS records
+and a challenge every couple of months do not.
 
 ## Deliberately not planned
 

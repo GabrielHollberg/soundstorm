@@ -730,6 +730,78 @@ has changed since. The text warns that the warning is coming.
 cookie is Secure, for a reverse proxy that terminates TLS. Off unless asked
 for, because any client can send that header.
 
+## Real certificates, and the one service SoundStorm runs
+
+The local authority works and costs a warning on every device, and the only
+thing that removes the warning is a certificate somebody on the internet
+vouches for. That needs a name on the internet. `SOUNDSTORM_TLS=auto` gets
+one: `internal/names` is a small service, deployed from
+`cmd/soundstorm-names`, that gives each install `<id>.home.soundstorm.dev`,
+points it at the install's LAN address, and publishes the DNS-01 challenge
+that lets Let's Encrypt issue for a server nothing on the internet can reach.
+This is what Plex does with `plex.direct`, without the account.
+
+It is the first piece of central infrastructure the project has, which is a
+real change and was decided deliberately. Its shape is what keeps that from
+becoming the trap the rest of this file warns about:
+
+- **It never carries media.** A relay's cost grows with every film watched;
+  DNS records and a challenge every couple of months do not. Roughly $5 a
+  month on Railway plus the domain, however many installs. Do not add
+  anything that puts it in the data path.
+- **It holds no state.** A token is an HMAC of the install's id; Porkbun's
+  DNS is the only record of anything. So once a name resolves it resolves
+  without the service, and an outage stops registration and renewal, never a
+  lookup - and renewal starts with a third of the certificate's life left,
+  which is a month of slack.
+- **It only names private addresses.** A trusted certificate on a public
+  address is a phishing kit with our name on it. It also only publishes values
+  shaped like an ACME challenge, and caps challenges per install and overall,
+  because every certificate under the zone spends the domain's weekly Let's
+  Encrypt allowance until the zone is on the Public Suffix List.
+- **Every failure falls back to how things were.** Until the certificate
+  arrives, or if it never can, the local authority serves exactly as in
+  self-signed mode.
+
+**Why Porkbun's API and not a DNS server of our own.** The first design had
+the service answer DNS itself, reading the address out of the name
+(`192-168-0-19.<id>...`). Railway cannot host that - it offers no UDP and no
+port 53 - and it would have made every lookup depend on our uptime. Writing
+ordinary records through the registrar's API is less clever and strictly more
+robust.
+
+**The ACME client is ours** (`internal/acme`), for the zero-dependency rule:
+RFC 8555 for one account, one name, dns-01 and ES256 is a few hundred lines.
+It is believed because of `scripts/acme-rehearsal.sh`, which runs it against
+Pebble - Let's Encrypt's own test authority - with pebble-challtestsrv standing
+in for Porkbun, in CI. A fake authority written beside the client would share
+its mistakes; Pebble does not. It found one thing: at a 50% nonce refusal rate
+five retries failed a run in six, so it is ten.
+
+**One port speaks both protocols** (`servetls.Listener`). The address people
+already have is `http://localhost:8099`; the certificate is for
+`https://<name>:8099`; the published port lives in compose, so it has to be
+the same one. A TLS connection opens with byte 0x16 and no HTTP request does.
+The listener hands net/http a real `*tls.Conn`, not a wrapper, because that
+type check is what fills in `r.TLS`, and `r.TLS` is what makes the session
+cookie Secure. HTTP/2 still negotiates: `Serve` configures it when
+`srv.TLSConfig` is set, which a test asserts.
+
+**The page moves itself, and only after checking.** `/api/session` offers
+`secureName` to a page not already on it; the page fetches
+`https://<name>:<port>/healthz` in `no-cors` mode - it resolves only if the
+name resolved, the connection opened and the certificate verified - and then
+`location.replace`s. Plenty of routers refuse to resolve a public name that
+points at a private address (DNS rebinding protection), and a redirect into
+that failure would be worse than staying on http. The CSP's `connect-src`
+admits the name for exactly this, or the check is refused before it leaves.
+Verified in Chrome against the whole system in containers: with the name
+resolvable it moved and the app loaded; without, it stayed on http.
+
+What is not verified: anything against the real Let's Encrypt or Porkbun,
+because neither is set up yet. `docs/names-service.md` has the steps, and
+staging comes before production.
+
 ## The folders, and the line that replaced the box
 
 Installing SoundStorm creates `library/` with five subfolders, and they are
