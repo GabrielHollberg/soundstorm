@@ -133,17 +133,45 @@ real file rather than reasoned about:
   lands mid-atom and finds nothing, which is the usual reason an M4A looks
   untagged.
 
-**Only the missing levels are filled in.** A drop of `Laughing Stock/01.flac`
-already names the album, so only the artist is added - replacing a folder
-somebody chose with whatever a tag says would be worse than leaving it. With
-nothing known at all it is `Unknown Artist/Unknown Album`, because the file
-that says nothing about itself is the one that most needs somewhere obvious to
-be found and fixed. Two levels deep or more is left alone entirely.
+**The shelf is always exactly two levels, whatever shape the drop had - and
+that was a reversal.** The first rule filled in only the missing levels and
+left anything two folders deep alone, on the reasoning that a folder somebody
+chose beats a tag. Then a drop of Libation's `Books` folder -
+`Books/<Title> [ASIN]/<file>.m4b` - filed ninety-four audiobooks under an
+author called "Books". Whatever sits above an album or book in a drop is at
+least as often a container as a name; the tags named the author correctly for
+all 112 books in that drop.
+
+So now:
+
+- **The album or book folder keeps its dropped name** when it had one.
+  `Atomic Habits [1524779261]` beats the tag's `Atomic Habits (Unabridged)`,
+  and the ASIN keeps two editions apart. Only a loose file takes its album
+  from the tags. That half of the old reasoning was right.
+- **The artist or author comes from the tags.** For audiobooks the artist tag
+  is the author on every part, so it wins. For music it is the performer,
+  which varies across a compilation, so the order is album artist, then the
+  folder the album was dropped in, then the track artist - otherwise a
+  compilation without an album-artist tag scatters into a folder per guest.
+- **Without tags, the folder above is used unless it is a container** -
+  `Books`, `Music`, `Downloads` and so on, a short list in `intake.go` - in
+  which case it is `Unknown Author`, somewhere obvious to be found and fixed.
+- **Disc folders are kept inside the album** (`CD1`, `Disc 2`), or every CD
+  rip of an audiobook would become a book called "CD1".
+- Everything else in front of the artist - `Music/Rock/` - is discarded.
 
 **Plan and Save share the rule**, and that matters: Plan runs it with empty
 tags because the bytes have not arrived, Save runs it again with the file's
 own. They agree for an untagged file, and where they differ Save is better
-informed than the prediction - never worse.
+informed than the prediction - never worse. With the author now coming from
+tags, they differ more often: the Libation drop is planned under
+`Unknown Author` and saved under the real one. So the drop panel replaces its
+planned destination with the one the upload returns, rather than leaving the
+prediction on screen next to a tick.
+
+The 112 books already filed under `Books/` were moved by the same rule -
+whole book folders, companions included - and Audiobookshelf took them as
+moves ("0 Added"), so listening positions survived.
 
 Films and television are not restructured. Jellyfin matches on the *name*, not
 the depth, and anything dropped there is already folder-shaped; imposing a

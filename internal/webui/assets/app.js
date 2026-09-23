@@ -1647,7 +1647,13 @@ function uploadOne(item, onProgress) {
     });
     request.addEventListener('load', () => {
       if (request.status === 200) {
-        resolve({ ok: true });
+        let dest = '';
+        try {
+          dest = JSON.parse(request.responseText).dest || '';
+        } catch {
+          // The file is in; only the display of where is lost.
+        }
+        resolve({ ok: true, dest });
         return;
       }
       let message = `failed (${request.status})`;
@@ -1691,7 +1697,11 @@ function markIntakeRow(path, result) {
   if (!li) return;
   const dest = li.querySelector('.intake-dest');
   if (result.ok) {
-    dest.textContent = `${dest.textContent} ✓`;
+    // Where it actually went, which can differ from the plan: the plan is made
+    // before the bytes arrive, so it cannot read the tags that name an author,
+    // and a book dropped inside a "Books" folder was shown heading for
+    // "Unknown Author" right up until it landed under the real one.
+    dest.textContent = `${result.dest || dest.textContent} ✓`;
     return;
   }
   li.classList.add('intake-failed');

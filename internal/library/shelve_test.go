@@ -3,11 +3,13 @@ package library
 import (
 	"bytes"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/tags"
 )
 
 // id3 builds a minimal but real ID3v2.3 tag followed by a byte of "audio",
@@ -235,5 +237,108 @@ func TestATaggableFileIgnoresWhatIsAlreadyThere(t *testing.T) {
 		if taggable(name) {
 			t.Errorf("%s should not be taggable", name)
 		}
+	}
+}
+
+var tagsNone tags.Tags
+
+// Libation's "Books" folder, dropped whole, filed every book under an author
+// called "Books": the old rule trusted any drop two folders deep. The author
+// comes from the tags now, and the book keeps the folder it came in - the
+// ASIN in it is what tells two editions apart.
+func TestADroppedContainerFolderIsNotAnAuthor(t *testing.T) {
+	l := newLibrary(t)
+	dest := saved(t, l, media.KindAudiobook, "Books/Atomic Habits [1524779261]/Atomic Habits.mp3",
+		id3(map[string]string{"TPE1": "James Clear", "TALB": "Atomic Habits (Unabridged)"}))
+	if dest != "audiobooks/James Clear/Atomic Habits [1524779261]/Atomic Habits.mp3" {
+		t.Errorf("filed at %q", dest)
+	}
+}
+
+// For an audiobook the author tag is the author on every part, so it wins over
+// whatever folder the book happened to sit in.
+func TestAnAudiobookAuthorTagBeatsTheFolderAboveIt(t *testing.T) {
+	l := newLibrary(t)
+	dest := saved(t, l, media.KindAudiobook, "To Listen/The Dispossessed/part1.mp3",
+		id3(map[string]string{"TPE1": "Ursula K. Le Guin", "TALB": "The Dispossessed"}))
+	if dest != "audiobooks/Ursula K. Le Guin/The Dispossessed/part1.mp3" {
+		t.Errorf("filed at %q", dest)
+	}
+}
+
+// With no tags the folder above the book is the only evidence, and it is used
+// - unless it is a container name, which is evidence of nothing.
+func TestAnUntaggedBookUsesTheFolderAboveUnlessItIsAContainer(t *testing.T) {
+	for rel, want := range map[string]string{
+		"Books/Earthsea/part1.mp3":             "Unknown Author/Earthsea/part1.mp3",
+		"audiobooks/Earthsea/part1.mp3":        "Unknown Author/Earthsea/part1.mp3",
+		"Ursula K. Le Guin/Earthsea/part1.mp3": "Ursula K. Le Guin/Earthsea/part1.mp3",
+		"Downloads/Books/Earthsea/part1.mp3":   "Unknown Author/Earthsea/part1.mp3",
+	} {
+		if got := shelvePath(media.KindAudiobook, rel, tagsNone); got != want {
+			t.Errorf("%s -> %q, want %q", rel, got, want)
+		}
+	}
+}
+
+// A music folder dropped from somewhere deep keeps only Artist/Album. The
+// folders in front of the artist were somebody's filing, not the album's.
+func TestMusicDroppedFromDeepInsideALibraryIsReShelved(t *testing.T) {
+	l := newLibrary(t)
+	dest := saved(t, l, media.KindMusic, "Music/Rock/Radiohead/In Rainbows/01 15 Step.mp3",
+		id3(map[string]string{"TPE1": "Radiohead", "TALB": "In Rainbows"}))
+	if dest != "music/Radiohead/In Rainbows/01 15 Step.mp3" {
+		t.Errorf("filed at %q", dest)
+	}
+
+	// And a container right above the album is not an artist either.
+	dest = saved(t, l, media.KindMusic, "Music/OK Computer/01 Airbag.mp3",
+		id3(map[string]string{"TPE1": "Radiohead", "TALB": "OK Computer"}))
+	if dest != "music/Radiohead/OK Computer/01 Airbag.mp3" {
+		t.Errorf("filed at %q", dest)
+	}
+}
+
+// A track's artist tag is the performer, which differs across a compilation;
+// the folder the album came in is better evidence of where it belongs, and an
+// album-artist tag is better still.
+func TestACompilationFolderIsNotScatteredByTrackArtists(t *testing.T) {
+	l := newLibrary(t)
+	a := saved(t, l, media.KindMusic, "Various/Now 50/01.mp3", id3(map[string]string{"TPE1": "Guest One", "TALB": "Now 50"}))
+	b := saved(t, l, media.KindMusic, "Various/Now 50/02.mp3", id3(map[string]string{"TPE1": "Guest Two", "TALB": "Now 50"}))
+	if path.Dir(a) != path.Dir(b) {
+		t.Errorf("one album filed in two places: %q and %q", a, b)
+	}
+	c := saved(t, l, media.KindMusic, "Somebody/Hits/01.mp3", id3(map[string]string{"TPE1": "Guest", "TPE2": "The Real Artist", "TALB": "Hits"}))
+	if c != "music/The Real Artist/Hits/01.mp3" {
+		t.Errorf("album artist ignored: %q", c)
+	}
+}
+
+// Multi-disc rips keep their disc folders inside the album - and are not
+// mistaken for an album, or a book, called "CD1".
+func TestDiscFoldersStayInsideTheAlbum(t *testing.T) {
+	l := newLibrary(t)
+	dest := saved(t, l, media.KindMusic, "In Rainbows/CD1/01 15 Step.mp3",
+		id3(map[string]string{"TPE2": "Radiohead", "TALB": "In Rainbows"}))
+	if dest != "music/Radiohead/In Rainbows/CD1/01 15 Step.mp3" {
+		t.Errorf("filed at %q", dest)
+	}
+	dest = saved(t, l, media.KindAudiobook, "Books/Dune/Disc 2/05.mp3",
+		id3(map[string]string{"TPE1": "Frank Herbert", "TALB": "Dune"}))
+	if dest != "audiobooks/Frank Herbert/Dune/Disc 2/05.mp3" {
+		t.Errorf("filed at %q", dest)
+	}
+}
+
+// A companion two folders deep - Books/Title/notes.pdf - still finds the
+// folder its book's tags already made.
+func TestACompanionFromADeepDropJoinsItsBook(t *testing.T) {
+	l := newLibrary(t)
+	saved(t, l, media.KindAudiobook, "Books/Atomic Habits [1524779261]/Atomic Habits.mp3",
+		id3(map[string]string{"TPE1": "James Clear"}))
+	dest := saved(t, l, media.KindAudiobook, "Books/Atomic Habits [1524779261]/Atomic Habits.pdf", []byte("%PDF-1.4"))
+	if dest != "audiobooks/James Clear/Atomic Habits [1524779261]/Atomic Habits.pdf" {
+		t.Errorf("the companion landed at %q, away from its book", dest)
 	}
 }

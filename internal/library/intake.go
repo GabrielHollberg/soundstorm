@@ -634,30 +634,19 @@ var structuredDepth = map[media.Kind]int{
 	media.KindAudiobook: 2, // Author/Title/part
 }
 
-// shelveUnder gives a loose file the folders its shelf expects.
+// shelveUnder files an upload as Artist/Album or Author/Title.
 //
-// Dropping a single track used to leave it at the top of music/, which is
-// untidy rather than broken - Navidrome reads tags, not paths - but it is also
-// exactly the mess the folders exist to prevent, and it compounds one file at
-// a time.
-//
-// Anything already deep enough is left alone: somebody who dropped
-// Artist/Album/track.flac has said where it goes more reliably than a tag
-// will, and second-guessing that would move files for no reason.
+// A file that cannot carry tags inherits its group's folder rather than
+// deriving one: an Audible book arrives as an .m4b beside a companion .pdf,
+// and reading each one's own tags put them in different places - the m4b
+// under "Brandon Sanderson/The Way of Kings [B003ZWFO7E]" and the pdf under
+// "Unknown Author/The Way of Kings [B003ZWFO7E]". One book, two authors, and
+// the PDF orphaned from the thing it explains. The client sends taggable files
+// first so the group's folder exists by the time a companion arrives.
 func shelveUnder(kind media.Kind, rel, staged, shelf string) string {
 	if _, ok := structuredDepth[kind]; !ok {
 		return rel
 	}
-	// A file that cannot carry tags must not be the one that derives a folder
-	// from them. An Audible book arrives as an .m4b beside a companion .pdf, and
-	// reading each one's own tags put them in different places: the m4b under
-	// "Brandon Sanderson/The Way of Kings [B003ZWFO7E]" and the pdf under
-	// "Unknown Author/The Way of Kings [B003ZWFO7E]". One book, two authors, and
-	// the PDF orphaned from the thing it explains.
-	//
-	// This is the same rule as the shelf decision one level down: a file that
-	// cannot name a shelf inherits its group's, and a file that cannot name a
-	// folder inherits its group's too.
 	if !taggable(rel) {
 		if beside, ok := groupFolder(kind, rel, shelf); ok {
 			return beside
@@ -679,13 +668,56 @@ func taggable(rel string) bool {
 	return false
 }
 
+// dropShape is what the dropped path says about a file: the folder that is
+// the album or book, a disc folder inside it if there is one, and the folder
+// above it, which may or may not be the artist.
+type dropShape struct {
+	base  string // the file name
+	group string // the album or book folder, "" for a loose file
+	disc  string // "CD1", "Disc 2" - kept as a folder inside the group
+	above string // the folder above the group, "" if none or a container
+}
+
+// discFolder matches the folders a multi-disc rip splits into. Without this a
+// CD rip of an audiobook - Title/CD1/01.mp3 - would be filed as a book called
+// "CD1".
+var discFolder = regexp.MustCompile(`(?i)^(cd|disc|disk)\s*\d+([\s._-]*(of\s*\d+)?)?$`)
+
+// containers are folder names that hold a library rather than name anybody.
+// Dropping Libation's "Books" folder put every book under an author called
+// "Books", which is how this list started. Compared case-insensitively.
+var containers = map[string]bool{
+	"books": true, "audiobooks": true, "audio books": true, "audible": true,
+	"libation": true, "music": true, "my music": true, "itunes": true,
+	"itunes media": true, "media": true, "library": true, "downloads": true,
+	"download": true, "albums": true, "artists": true, "mp3": true, "flac": true,
+	"new folder": true, "soundstorm media": true,
+}
+
+func shapeOf(rel string) dropShape {
+	parts := strings.Split(rel, "/")
+	s := dropShape{base: parts[len(parts)-1]}
+	dirs := parts[:len(parts)-1]
+	if n := len(dirs); n >= 2 && discFolder.MatchString(dirs[n-1]) {
+		s.disc, dirs = dirs[n-1], dirs[:n-1]
+	}
+	if n := len(dirs); n >= 1 {
+		s.group = dirs[n-1]
+		if n >= 2 && !containers[strings.ToLower(strings.TrimSpace(dirs[n-2]))] {
+			s.above = dirs[n-2]
+		}
+	}
+	return s
+}
+
 // groupFolder finds where this file's group already landed, so a companion can
 // join it instead of guessing.
 //
-// The group is the folder the drop came in - "The Way of Kings [B003ZWFO7E]" -
-// and if a taggable file from it has already been placed, that folder exists
-// under the shelf with the author the tags named. One match is an answer; none
-// or several is not, and the caller falls back to the placeholder.
+// The group is the album or book folder the drop came in - "The Way of Kings
+// [B003ZWFO7E]" - wherever it sat in the drop, and if a taggable file from it
+// has already been placed, that folder exists under the shelf beneath whatever
+// author the tags named. One match is an answer; none or several is not, and
+// the caller falls back to the path.
 //
 // Directory entries are compared by name rather than matched with
 // filepath.Glob, which would be shorter and wrong: every Audible folder is named
@@ -693,23 +725,14 @@ func taggable(rel string) bool {
 // Kings [B003ZWFO7E]" would match a directory called "The Way of Kings B" and
 // nothing else.
 func groupFolder(kind media.Kind, rel, shelf string) (string, bool) {
-	want, ok := structuredDepth[kind]
-	if !ok {
+	if _, ok := structuredDepth[kind]; !ok {
 		return "", false
 	}
-	depth := strings.Count(rel, "/")
-	// depth 0 is a loose file, which belongs to no group and so has nothing to
-	// join. At or past the wanted depth nothing is being added anyway.
-	if depth == 0 || depth >= want {
+	s := shapeOf(rel)
+	if s.group == "" {
+		// A loose file belongs to no group and so has nothing to join.
 		return "", false
 	}
-	// With want == 2 and depth == 1 - every real case - the group sits one
-	// directory below the shelf. Deeper searching is not worth guessing at.
-	if want-depth != 1 {
-		return "", false
-	}
-
-	group := rel[:strings.Index(rel, "/")]
 	entries, err := os.ReadDir(shelf)
 	if err != nil {
 		return "", false
@@ -722,7 +745,7 @@ func groupFolder(kind media.Kind, rel, shelf string) (string, bool) {
 		}
 		// Stat rather than ReadDir per candidate: a shelf can hold hundreds of
 		// authors and this runs on every companion upload.
-		info, err := os.Stat(filepath.Join(shelf, e.Name(), group))
+		info, err := os.Stat(filepath.Join(shelf, e.Name(), s.group))
 		if err != nil || !info.IsDir() {
 			continue
 		}
@@ -736,60 +759,89 @@ func groupFolder(kind media.Kind, rel, shelf string) (string, bool) {
 	if found == "" {
 		return "", false
 	}
-	return found + "/" + rel, true
+	return joinShelf(found, s.group, s.disc, s.base), true
 }
 
 // shelvePath applies the layout rule. Split out so that Plan can run it with
 // no tags at all - it has only the path at that point - and Save can run it
-// again with the file's own. They agree whenever a file is untagged, and when
-// it is not, Save is strictly better informed than the prediction.
+// again with the file's own. Where they differ, Save is better informed.
+//
+// The shelf is always exactly Artist/Album or Author/Title, whatever shape the
+// drop had:
+//
+//   - **The album or book folder keeps the name it was dropped with**, when it
+//     had one. "Atomic Habits [1524779261]" is a better folder than the tag's
+//     "Atomic Habits (Unabridged)", and the bracketed ASIN keeps two editions
+//     apart. Only a loose file takes its album from the tags.
+//   - **The artist or author folder comes from the tags.** This reversed an
+//     earlier rule that trusted any drop already two folders deep, which filed
+//     a drop of Libation's "Books" folder as ninety-four books by an author
+//     called "Books". Whatever sits above the book in a drop is at least as
+//     often a container as a name; the tags said the right thing for all 112
+//     books in that drop.
+//   - Everything else in the drop - "Music/Rock/" in front of an artist - is
+//     discarded, and a disc folder is kept inside the album.
+//
+// Music and audiobooks differ in one place. An audiobook's artist tag is its
+// author on every part. A track's artist tag is the performer, and differs
+// across a compilation or a featured guest, so for music the album artist tag
+// comes first, then the folder the album was dropped in, and only then the
+// track's artist - or a compilation without an album-artist tag would be
+// scattered across a folder per guest.
 func shelvePath(kind media.Kind, rel string, t tags.Tags) string {
-	want, ok := structuredDepth[kind]
-	if !ok {
+	if _, ok := structuredDepth[kind]; !ok {
 		return rel
 	}
-	depth := strings.Count(rel, "/")
-	if depth >= want {
-		return rel
+	s := shapeOf(rel)
+
+	var who string
+	if kind == media.KindMusic {
+		who = firstOf(t.AlbumArtist, s.above, t.Artist)
+	} else {
+		who = firstOf(t.Folder(), s.above)
 	}
 
-	// Only the missing levels are filled in. A drop of "Laughing Stock/01
-	// Myrrhman.flac" already names the album, and replacing that with whatever
-	// the tags say - or worse, with a placeholder when there are no tags -
-	// would throw away the one piece of structure a person actually chose.
-	base := rel
-	middle := ""
-	if i := strings.LastIndex(rel, "/"); i >= 0 {
-		base, middle = rel[i+1:], rel[:i]
-	}
-
-	artist := t.Folder()
-	album := middle
+	album := s.group
 	if album == "" {
 		album = t.Album
-	}
-	if kind == media.KindAudiobook && album == "" {
-		// Audiobookshelf reads the album tag as the book and the artist tag as
-		// the author, which is what every audiobook ripper writes - but a
-		// single-file book often carries only a title.
-		album = t.Title
+		if kind == media.KindAudiobook && album == "" {
+			// Audiobookshelf reads the album tag as the book, which is what
+			// every audiobook ripper writes - but a single-file book often
+			// carries only a title.
+			album = t.Title
+		}
 	}
 
 	// Placeholders when nothing is known, rather than leaving the file loose.
-	// The rule is that a track always has an artist folder and an album
-	// folder, and a file that says nothing about itself is exactly the one
-	// that needs somewhere obvious to be found and fixed.
+	// A file that says nothing about itself is exactly the one that needs
+	// somewhere obvious to be found and fixed.
 	first, second := "Unknown Artist", "Unknown Album"
 	if kind == media.KindAudiobook {
 		first, second = "Unknown Author", "Unknown Title"
 	}
-	rebuilt, err := cleanRelPath(tagSegment(artist, first) + "/" + tagSegment(album, second) + "/" + base)
+	rebuilt, err := cleanRelPath(joinShelf(tagSegment(who, first), tagSegment(album, second), s.disc, s.base))
 	if err != nil {
-		// A tag that cannot survive being a path is not worth failing an
+		// A name that cannot survive being a path is not worth failing an
 		// upload over; where it was asked to go is safe.
 		return rel
 	}
 	return rebuilt
+}
+
+func firstOf(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func joinShelf(who, group, disc, base string) string {
+	if disc != "" {
+		return who + "/" + group + "/" + disc + "/" + base
+	}
+	return who + "/" + group + "/" + base
 }
 
 // diskFull is how little has to be left before a failed write is reported as a
