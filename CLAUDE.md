@@ -755,6 +755,59 @@ account drops the record of which Audiobookshelf user belonged to it and after
 that nothing knows what to clean up. It is best effort: a backend that is down
 must not stop somebody being removed.
 
+## Before it faces the internet
+
+Reaching SoundStorm from outside without Tailscale was asked for, and a review
+came before building any of it. What it found, and what each fix rests on:
+
+- **A path is an instruction to a backend holding an admin credential.**
+  `/api/hls/jellyfin/%252e%252e/System/Info` reached Jellyfin's admin API: the
+  router decodes once, `%2e%2e` passed a `..` check, and Jellyfin decoded it
+  into a dot segment and answered 200. An OPDS `dl:` id could name any URL.
+  So `httpx` refuses absolute references, a second leading slash and dot
+  segments for every adapter, and HLS paths must match the shapes Jellyfin's
+  playlists actually use.
+- **One Jellyfin account serves two sources**, so an id is all that tells a
+  film from an episode - a member refused films could play one through the
+  television source. Every Jellyfin target checks the item comes back from a
+  query restricted to its own item types, cached ten minutes because every
+  HLS segment asks.
+- **Anything a browser would run as a page is sandboxed** when served from our
+  origin: every book resource (only ever fetched, never navigated to), and
+  streamed HTML, XML, SVG or untyped content. Not PDFs - Chrome will not
+  render one in a sandboxed document - and not media, which cannot script.
+- **Transport errors carried the request URL**, and a Subsonic URL has its
+  credential in the query. `httpx.Redact` strips it; members see "did not
+  answer", the owner sees setup detail, and the log gets the rest.
+- **The first sign-up needs a setup code** - see "Accounts".
+- **Guesses are limited per account as well as per address.** Per address is
+  five free guesses from every address an attacker can borrow. Per account it
+  is ten free, then doubling to a one-minute cap - short, because it reaches
+  the real owner too, and only while somebody is guessing their name. Counted
+  for any name, existing or not, or the 429 would say who has an account; a
+  spray of made-up names is pruned first so it cannot flush the real one.
+- **No global `ReadTimeout`, deliberately.** A read deadline that expires
+  while a response is being written cancels the request's context, and a film
+  stops with it. Bodies get 30 seconds of their own (`bodyDeadline`), uploads a
+  deadline pushed back on every read, and headers the existing 10.
+- **Cross-site writes are refused on origin, not site.** The cookie is
+  SameSite=Lax, and every install's name is under `soundstorm.dev` - so until
+  the zone is on the Public Suffix List, another install *is* the same site.
+  `Sec-Fetch-Site` must be same-origin (or absent, from a non-browser client);
+  Origin is the fallback.
+- **Framing only by our own pages** (a PDF opens in our iframe, so not DENY),
+  and HSTS only on the real certificate's name, where it can only help.
+- **An upload never replaces a file.** Two uploads of one name both passed the
+  "is it there" check and the second rename overwrote the first. Files are
+  hard-linked into place, which fails if the name is taken; where a filesystem
+  cannot link, the check is repeated right before the rename. Links work on a
+  Docker Desktop bind mount - checked, not assumed.
+- **Uploads leave 1GB free**, refused up front when the size is known and
+  mid-copy when it is not: the library is often Docker's disk too, and a
+  backend database that cannot write is a broken server, not a full shelf.
+- **`Save` applies the plan's file-type test itself**, because the upload
+  endpoint can be called without a plan.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

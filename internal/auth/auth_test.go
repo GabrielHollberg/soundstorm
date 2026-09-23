@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -83,7 +84,7 @@ func TestThrottleClearsOnSuccess(t *testing.T) {
 	for i := 0; i < freeFailures+3; i++ {
 		th.fail("a")
 	}
-	th.succeed("a")
+	th.succeed("a", "")
 	if w := th.wait("a"); w != 0 {
 		t.Errorf("a successful sign-in left a wait of %v", w)
 	}
@@ -95,7 +96,7 @@ func TestThrottleCountsOnlyWrongPasswords(t *testing.T) {
 	th := newThrottle()
 	boom := errors.New("disk full")
 	for i := 0; i < freeFailures*2; i++ {
-		if err := th.guarded(context.Background(), "a", func() error { return boom }); !errors.Is(err, boom) {
+		if err := th.guarded(context.Background(), "a", "", func() error { return boom }); !errors.Is(err, boom) {
 			t.Fatalf("err = %v", err)
 		}
 	}
@@ -114,7 +115,7 @@ func TestThrottleBoundsConcurrentHashes(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = th.guarded(context.Background(), "a", func() error {
+			_ = th.guarded(context.Background(), "a", "", func() error {
 				n := running.Add(1)
 				for {
 					p := peak.Load()
@@ -226,5 +227,55 @@ func TestOnlyTheOwnerManagesAccounts(t *testing.T) {
 	}
 	if err := m.DeleteUser(owner, owner.ID); err == nil {
 		t.Error("the owner removed themselves")
+	}
+}
+
+// From the internet an attacker has as many addresses as they can borrow,
+// and a limit per address is five free guesses from each. The name being
+// guessed is counted too, so a spread-out attack slows down all the same.
+func TestGuessesFromManyAddressesAreLimitedPerAccount(t *testing.T) {
+	th := newThrottle()
+	wrong := func() error { return ErrInvalidCredentials }
+	for i := 0; i < accountFreeFailures; i++ {
+		client := fmt.Sprintf("203.0.113.%d", i)
+		if err := th.guarded(context.Background(), client, "Gabe", wrong); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("guess %d: %v, want it checked", i, err)
+		}
+	}
+	// A fresh address, the same name - in another case, which is the same
+	// account to the store.
+	err := th.guarded(context.Background(), "198.51.100.7", "gabe", func() error {
+		t.Fatal("hashed a guess at an account under attack")
+		return nil
+	})
+	if _, ok := IsThrottled(err); !ok {
+		t.Fatalf("err = %v, want throttled", err)
+	}
+	// Somebody else signing in is not held up by it.
+	if err := th.guarded(context.Background(), "198.51.100.7", "sam", func() error { return nil }); err != nil {
+		t.Errorf("another account was held up: %v", err)
+	}
+
+	// Capped well below the address limit, because this one reaches the owner.
+	for i := 0; i < 30; i++ {
+		th.failFor(fmt.Sprintf("x%d", i), "gabe")
+	}
+	if w := th.waitFor("fresh", "gabe"); w > accountMaxWait {
+		t.Errorf("wait = %v, want at most %v", w, accountMaxWait)
+	}
+}
+
+// A spray of made-up names must not push the account under attack out of
+// the ledger - which is what clearing it whenever it filled up would do.
+func TestASprayOfNamesDoesNotForgiveTheAccountUnderAttack(t *testing.T) {
+	th := newThrottle()
+	for i := 0; i < accountFreeFailures+2; i++ {
+		th.failFor(fmt.Sprintf("a%d", i), "gabe")
+	}
+	for i := 0; i < maxTracked+10; i++ {
+		th.failFor("spray", fmt.Sprintf("nobody-%d", i))
+	}
+	if th.waitFor("fresh", "gabe") == 0 {
+		t.Error("the spray flushed the account under attack")
 	}
 }

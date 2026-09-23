@@ -227,7 +227,13 @@ func run(log *slog.Logger) error {
 		Addr:              listen,
 		Handler:           api.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
-		// No WriteTimeout: it would cut off a film mid-playback.
+		// No WriteTimeout: it would cut off a film mid-playback. No
+		// ReadTimeout either, for the same film: a read deadline that expires
+		// while a response is still being written cancels the request's
+		// context, and the stream stops with it. Bodies get their own
+		// deadline instead - see httpapi.bodyDeadline.
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
 	}
 	if tlsServer != nil {
 		srv.TLSConfig = tlsServer.TLSConfig()

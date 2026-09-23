@@ -1,6 +1,8 @@
 package library
 
 import (
+	"io/fs"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -651,6 +653,12 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	if err != nil {
 		return "", err
 	}
+	// The same test the plan applies. The upload endpoint is reachable
+	// without asking for a plan first, so without this it would take any
+	// file at all - a page with a script in it, say - onto a shelf.
+	if !usable(rel) {
+		return "", fmt.Errorf("%s is not a kind of file SoundStorm keeps", path.Base(rel))
+	}
 	folder := l.PathFor(kind)
 	if folder == "" {
 		return "", fmt.Errorf("there is no %s library", kind)
@@ -672,7 +680,7 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 		os.Remove(tmpName)
 	}()
 
-	if _, err := io.Copy(tmp, r); err != nil {
+	if _, err := io.Copy(&reserveWriter{w: tmp, dir: staging}, r); err != nil {
 		return "", receiveError(staging, err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -736,12 +744,43 @@ var rename = os.Rename
 // and renamed from there, which is on one filesystem and atomic again. The
 // temporary name ends ".soundstorm-part", an extension no backend treats as
 // media, so nothing indexes a half-copied photo in the meantime.
+//
+// And it never replaces a file. Save checks the destination is free, but two
+// uploads of the same name at once both pass that check, and a rename onto an
+// existing name silently replaces it - the second copy of an album would
+// overwrite the first track by track. A hard link fails if the name is taken,
+// so the file is linked into place and the staged name removed. Where a
+// filesystem cannot link, the check is made again right before the rename,
+// which narrows the window to almost nothing rather than closing it.
 func placeFile(staged, dest string) error {
-	err := rename(staged, dest)
+	err := noClobber(staged, dest)
 	if err == nil || !crossDevice(err) {
 		return err
 	}
 	return copyThenRename(staged, dest)
+}
+
+// link is os.Link, swappable so a test can stand in for a filesystem that
+// cannot make one.
+var link = os.Link
+
+func noClobber(from, to string) error {
+	err := link(from, to)
+	if err == nil {
+		os.Remove(from)
+		return nil
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return ErrAlreadyThere
+	}
+	if crossDevice(err) {
+		return err
+	}
+	// No hard links here - some network and FAT-family filesystems.
+	if _, statErr := os.Lstat(to); statErr == nil {
+		return ErrAlreadyThere
+	}
+	return rename(from, to)
 }
 
 func copyThenRename(staged, dest string) error {
@@ -776,7 +815,7 @@ func copyThenRename(staged, dest string) error {
 	if err := os.Chmod(tmpName, 0o666); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, dest)
+	return noClobber(tmpName, dest)
 }
 
 // within reports whether child is inside parent.
@@ -1136,6 +1175,48 @@ func joinShelf(who, group, disc, base string) string {
 // full disk rather than as itself. An audiobook is routinely hundreds of
 // megabytes, so anything under this is full for the purpose at hand.
 const diskFull = 64 << 20
+
+// DiskReserve is left free whatever is uploaded. The library is often the
+// same disk as Docker's, where every backend keeps its database, and a
+// database that cannot write is a broken server rather than a full shelf -
+// so an upload that would eat into this is refused, before it starts when its
+// size is known and part way through when it is not.
+const DiskReserve = 1 << 30
+
+// reserveWriter stops writing once the disk is down to DiskReserve. Checked
+// every reserveCheck bytes rather than per write, because asking the
+// filesystem is a system call and writes come 32KB at a time.
+type reserveWriter struct {
+	w       io.Writer
+	dir     string
+	pending int64
+}
+
+const reserveCheck = 64 << 20
+
+// ErrDiskReserve is an upload refused to keep the disk from filling.
+var ErrDiskReserve = errors.New("the library disk is nearly full")
+
+func (rw *reserveWriter) Write(p []byte) (int, error) {
+	rw.pending += int64(len(p))
+	if rw.pending >= reserveCheck {
+		rw.pending = 0
+		if free, known := freeSpace(rw.dir); known && free < DiskReserve {
+			return 0, ErrDiskReserve
+		}
+	}
+	return rw.w.Write(p)
+}
+
+// Room reports whether an upload of size bytes would leave DiskReserve free.
+// Unknown free space, or an unknown size, is not a reason to refuse.
+func (l *Library) Room(size int64) bool {
+	free, known := freeSpace(filepath.Join(l.root, ".uploads"))
+	if !known {
+		free, known = freeSpace(l.root)
+	}
+	return !known || size <= 0 || uint64(size)+DiskReserve <= free
+}
 
 // receiveError explains a failed write, because the raw error does not.
 //

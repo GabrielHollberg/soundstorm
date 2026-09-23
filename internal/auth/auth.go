@@ -269,7 +269,7 @@ func (m *Manager) ChangeOwnPassword(ctx context.Context, client string, actor st
 	if err := checkPassword(password); err != nil {
 		return err
 	}
-	err := m.throttle.guarded(ctx, client, func() error {
+	err := m.throttle.guarded(ctx, client, actor.Name, func() error {
 		return m.verify(actor.ID, current)
 	})
 	if errors.Is(err, ErrInvalidCredentials) {
@@ -358,7 +358,7 @@ func (m *Manager) SignIn(ctx context.Context, client, name, password string) (st
 		expiry time.Time
 		user   state.User
 	)
-	err := m.throttle.guarded(ctx, client, func() error {
+	err := m.throttle.guarded(ctx, client, name, func() error {
 		var err error
 		token, expiry, user, err = m.Login(name, password)
 		return err

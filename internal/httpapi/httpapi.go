@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net"
@@ -215,7 +216,9 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("/api/", s.auth.Require(s.withUserContext(guarded)))
 
-	return s.withLogging(mux)
+	// Every route, signed in or not, gets the body deadline and the
+	// browser-facing checks.
+	return s.withLogging(s.secureHeaders(sameOrigin(bodyDeadline(mux))))
 }
 
 // withUserContext hands the account id down to the adapters.
@@ -965,8 +968,23 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dest, err := s.library.Save(kind, path, r.Body)
+	// Refused before a byte moves when the size is known and would leave the
+	// disk under its reserve; Save checks again as the bytes arrive.
+	if !s.library.Room(r.ContentLength) {
+		writeError(w, http.StatusInsufficientStorage, "the library disk is nearly full")
+		return
+	}
+	// A rolling deadline rather than a fixed one: a film on a slow uplink can
+	// take an hour, and that is fine as long as it keeps moving.
+	body := &stallReader{r: r.Body, rc: http.NewResponseController(w)}
+	defer func() { _ = body.rc.SetReadDeadline(time.Time{}) }()
+
+	dest, err := s.library.Save(kind, path, body)
 	if err != nil {
+		if errors.Is(err, library.ErrDiskReserve) {
+			writeError(w, http.StatusInsufficientStorage, err.Error())
+			return
+		}
 		if errors.Is(err, library.ErrAlreadyThere) || library.IsDuplicate(err) {
 			// Not an error worth a stack trace in the log: re-dropping an
 			// album somebody already added is an ordinary thing to do, and so
@@ -1611,4 +1629,99 @@ func NormalizeSetupCode(code string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+// bodyDeadline stops a client holding a connection open by sending its
+// request body a byte at a time. Every body here but an upload is a few
+// hundred bytes of JSON, so half a minute is generous; an upload is given a
+// rolling deadline by handleUpload instead. Requests without a body - which
+// includes every stream - are left alone, because a read deadline still
+// pending while a film is written out would cancel it.
+func bodyDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil && r.Body != http.NoBody && r.URL.Path != "/api/upload" {
+			rc := http.NewResponseController(w)
+			_ = rc.SetReadDeadline(time.Now().Add(bodyTimeout))
+			defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// bodyTimeout is a variable only so a test can wait for it.
+var bodyTimeout = bodyTimeoutDefault
+
+const (
+	bodyTimeoutDefault = 30 * time.Second
+	// uploadStall is how long an upload may send nothing before it is
+	// dropped. Pushed back on every read, so a slow connection moving a big
+	// film is fine and one that has stopped is not.
+	uploadStall = time.Minute
+)
+
+// stallReader extends the connection's read deadline each time data arrives.
+type stallReader struct {
+	r  io.Reader
+	rc *http.ResponseController
+}
+
+func (s *stallReader) Read(p []byte) (int, error) {
+	_ = s.rc.SetReadDeadline(time.Now().Add(uploadStall))
+	return s.r.Read(p)
+}
+
+// sameOrigin refuses a state-changing request that another site's page sent.
+//
+// The session cookie is SameSite=Lax, and that is not enough on its own:
+// every install's name is under soundstorm.dev, which until the zone is on
+// the Public Suffix List makes every other install the same *site* - so a
+// page on somebody else's name could post here with this household's cookie.
+// Sec-Fetch-Site says what the browser saw, and every current browser sends
+// it; Origin is the fallback for one that does not. A request with neither
+// is not from a browser page at all - the installer, curl - and has no
+// cookie a page could have borrowed.
+func sameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
+			if site != "same-origin" && site != "none" {
+				writeError(w, http.StatusForbidden, "cross-site request refused")
+				return
+			}
+		} else if origin := r.Header.Get("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			if err != nil || !strings.EqualFold(u.Host, r.Host) {
+				writeError(w, http.StatusForbidden, "cross-site request refused")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// secureHeaders are the answers a browser needs on every response.
+//
+//   - Framing only by our own pages. A PDF opens in an iframe of ours, so
+//     not DENY; anybody else's page framing the app to trick a click is out.
+//   - HSTS on the real certificate's name only. That name has a certificate
+//     every browser trusts, so promising https for it can only help; on an
+//     IP address, localhost or a self-signed name it would be a promise the
+//     next reinstall breaks.
+func (s *Server) secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		if r.TLS != nil {
+			if name := s.currentPublicName(); name != "" && strings.EqualFold(requestHostname(r), name) {
+				h.Set("Strict-Transport-Security", "max-age=31536000")
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

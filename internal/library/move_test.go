@@ -16,13 +16,15 @@ import (
 // drive, so it makes the first rename fail the way the kernel does.
 func TestAnUploadToAShelfOnAnotherDriveLandsWhole(t *testing.T) {
 	l := newLibrary(t)
-	real := rename
-	t.Cleanup(func() { rename = real })
+	// The first move is a hard link (see placeFile), which fails across
+	// drives exactly as a rename does.
+	real := link
+	t.Cleanup(func() { link = real })
 	failures := 0
-	rename = func(from, to string) error {
+	link = func(from, to string) error {
 		if strings.Contains(from, ".uploads") {
 			failures++
-			return &os.LinkError{Op: "rename", Old: from, New: to, Err: crossDeviceErr()}
+			return &os.LinkError{Op: "link", Old: from, New: to, Err: crossDeviceErr()}
 		}
 		return real(from, to)
 	}
@@ -54,11 +56,12 @@ func TestAnUploadToAShelfOnAnotherDriveLandsWhole(t *testing.T) {
 // that a copy can fix.
 func TestOnlyACrossDriveFailureIsCopied(t *testing.T) {
 	l := newLibrary(t)
-	real := rename
-	t.Cleanup(func() { rename = real })
-	rename = func(from, to string) error {
-		return &os.LinkError{Op: "rename", Old: from, New: to, Err: errors.New("permission denied")}
+	realRename, realLink := rename, link
+	t.Cleanup(func() { rename, link = realRename, realLink })
+	denied := func(from, to string) error {
+		return &os.LinkError{Op: "move", Old: from, New: to, Err: errors.New("permission denied")}
 	}
+	rename, link = denied, denied
 	if _, err := l.Save(media.KindPicture, "IMG_0002.jpg", strings.NewReader("x")); err == nil {
 		t.Error("a permission failure was papered over by copying")
 	}

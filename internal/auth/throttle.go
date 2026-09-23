@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,6 +25,13 @@ import (
 // there slows everybody's sign-in too. That is why the waits are capped at a
 // few minutes rather than being a lockout: slower for a while is an acceptable
 // cost of an attack, a household locked out of its own server is not.
+//
+// The account being guessed at is counted too, whoever is asking. An
+// address-only limit is five free guesses per address, which from the
+// internet is five per address an attacker can borrow; per account it is a
+// guess a minute however many there are. That cost falls on the real owner
+// only while somebody is actively guessing their name, is at most a minute,
+// and never touches a device that is already signed in.
 const (
 	// freeFailures is how many wrong passwords cost nothing extra.
 	freeFailures = 5
@@ -39,6 +47,14 @@ const (
 	// queueWait is how long a sign-in waits for a free slot before being
 	// told to come back. Long enough to absorb a household arriving at once.
 	queueWait = 10 * time.Second
+
+	// accountFreeFailures, accountFirstWait and accountMaxWait are the same
+	// three for an account name, whatever address the guesses come from.
+	// More free failures than an address gets, because a whole household's
+	// typos land here; a shorter cap, because this one reaches the owner.
+	accountFreeFailures = 10
+	accountFirstWait    = 2 * time.Second
+	accountMaxWait      = time.Minute
 
 	// maxTracked bounds memory against a flood from many addresses.
 	maxTracked = 4096
@@ -70,71 +86,115 @@ type strikes struct {
 	last  time.Time
 }
 
+// ledger counts failures per key and says how long a key must wait.
+type ledger struct {
+	free       int
+	first, max time.Duration
+	keys       map[string]strikes
+}
+
 type throttle struct {
-	mu      sync.Mutex
-	clients map[string]strikes
-	slots   chan struct{}
-	now     func() time.Time
+	mu       sync.Mutex
+	clients  *ledger
+	accounts *ledger
+	slots    chan struct{}
+	now      func() time.Time
 }
 
 func newThrottle() *throttle {
 	return &throttle{
-		clients: map[string]strikes{},
-		slots:   make(chan struct{}, concurrentHashes),
-		now:     time.Now,
+		clients:  &ledger{free: freeFailures, first: firstWait, max: maxWait, keys: map[string]strikes{}},
+		accounts: &ledger{free: accountFreeFailures, first: accountFirstWait, max: accountMaxWait, keys: map[string]strikes{}},
+		slots:    make(chan struct{}, concurrentHashes),
+		now:      time.Now,
 	}
 }
 
-// wait returns how long client must still wait before its next attempt.
-func (t *throttle) wait(client string) time.Duration {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	s, ok := t.clients[client]
-	if !ok || s.count < freeFailures {
+func (l *ledger) wait(key string, now time.Time) time.Duration {
+	s, ok := l.keys[key]
+	if !ok || s.count < l.free {
 		return 0
 	}
-	penalty := firstWait << (s.count - freeFailures)
-	if penalty > maxWait || penalty <= 0 {
-		penalty = maxWait
+	penalty := l.first << (s.count - l.free)
+	if penalty > l.max || penalty <= 0 {
+		penalty = l.max
 	}
-	if left := s.last.Add(penalty).Sub(t.now()); left > 0 {
+	if left := s.last.Add(penalty).Sub(now); left > 0 {
 		return left
 	}
 	return 0
 }
 
-func (t *throttle) fail(client string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	now := t.now()
-	if len(t.clients) >= maxTracked {
-		t.pruneLocked(now)
+func (l *ledger) fail(key string, now time.Time) {
+	if len(l.keys) >= maxTracked {
+		l.prune(now)
 	}
-	s := t.clients[client]
+	s := l.keys[key]
 	if now.Sub(s.last) > forgetAfter {
 		s.count = 0
 	}
 	s.count++
 	s.last = now
-	t.clients[client] = s
+	l.keys[key] = s
 }
 
-func (t *throttle) succeed(client string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.clients, client)
-}
-
-// pruneLocked forgets idle clients, and if that is not enough, everybody.
-// Forgetting is the safe direction: it can only make sign-in easier.
-func (t *throttle) pruneLocked(now time.Time) {
-	for c, s := range t.clients {
+// prune forgets idle keys, then keys that have cost nothing yet, and only
+// then everybody. The middle step is what stops a spray of made-up names
+// from flushing the one account actually under attack. Forgetting is the
+// safe direction: it can only make sign-in easier.
+func (l *ledger) prune(now time.Time) {
+	for k, s := range l.keys {
 		if now.Sub(s.last) > forgetAfter {
-			delete(t.clients, c)
+			delete(l.keys, k)
 		}
 	}
-	if len(t.clients) >= maxTracked {
-		t.clients = map[string]strikes{}
+	if len(l.keys) >= maxTracked {
+		for k, s := range l.keys {
+			if s.count < l.free {
+				delete(l.keys, k)
+			}
+		}
+	}
+	if len(l.keys) >= maxTracked {
+		l.keys = map[string]strikes{}
+	}
+}
+
+// wait returns how long client must still wait before its next attempt.
+func (t *throttle) wait(client string) time.Duration {
+	return t.waitFor(client, "")
+}
+
+// waitFor is the longer of the client's wait and the account's.
+func (t *throttle) waitFor(client, account string) time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := t.now()
+	w := t.clients.wait(client, now)
+	if account != "" {
+		w = max(w, t.accounts.wait(account, now))
+	}
+	return w
+}
+
+func (t *throttle) fail(client string) { t.failFor(client, "") }
+
+func (t *throttle) failFor(client, account string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := t.now()
+	t.clients.fail(client, now)
+	if account != "" {
+		t.accounts.fail(account, now)
+	}
+}
+
+func (t *throttle) succeed(client, account string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.clients.keys, client)
+	if account != "" {
+		delete(t.accounts.keys, account)
 	}
 }
 
@@ -152,11 +212,15 @@ func (t *throttle) acquire(ctx context.Context) (func(), error) {
 	}
 }
 
-// guarded runs check - a password comparison - behind both limits, and
-// records the outcome against client. Only ErrInvalidCredentials counts as a
-// failure; a server error is not the client's fault.
-func (t *throttle) guarded(ctx context.Context, client string, check func() error) error {
-	if left := t.wait(client); left > 0 {
+// guarded runs check - a password comparison - behind every limit, and
+// records the outcome against client and account. account is the name being
+// signed in as, folded to lower case, whether or not it exists: counting only
+// real ones would make the 429 a way to find out who has an account. Only
+// ErrInvalidCredentials counts as a failure; a server error is not the
+// client's fault.
+func (t *throttle) guarded(ctx context.Context, client, account string, check func() error) error {
+	account = strings.ToLower(strings.TrimSpace(account))
+	if left := t.waitFor(client, account); left > 0 {
 		return &ThrottledError{RetryAfter: left}
 	}
 	release, err := t.acquire(ctx)
@@ -168,9 +232,9 @@ func (t *throttle) guarded(ctx context.Context, client string, check func() erro
 	err = check()
 	switch {
 	case err == nil:
-		t.succeed(client)
+		t.succeed(client, account)
 	case errors.Is(err, ErrInvalidCredentials):
-		t.fail(client)
+		t.failFor(client, account)
 	}
 	return err
 }
