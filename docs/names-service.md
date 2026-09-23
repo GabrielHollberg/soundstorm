@@ -34,7 +34,7 @@ website or mail on it is untouched: installs live under `home.soundstorm.dev`.
    | `NAMES_SECRET` | 48 random bytes: `openssl rand -base64 48`. Keep a copy somewhere safe - changing it makes every install register again. |
    | `PORKBUN_API_KEY` | the `pk1_...` half |
    | `PORKBUN_SECRET_API_KEY` | the `sk1_...` half |
-   | `NAMES_CLIENT_IP_HEADER` | `X-Real-IP` - the header Railway's proxy puts the caller's address in, used for rate limiting. **Unverified**; if registration starts refusing everybody at once, this is why. |
+   | `NAMES_CLIENT_IP_HEADER` | `X-Real-IP` - the header Railway's proxy puts the caller's address in, used for rate limiting. Measured, not assumed: see below. |
 
 3. **Settings → Deploy → Healthcheck path:** `/healthz`, if the setting is
    there. Optional; it lets Railway tell a working deploy from a broken one.
@@ -43,7 +43,27 @@ website or mail on it is untouched: installs live under `home.soundstorm.dev`.
    `soundstorm.dev`, type CNAME, host `names`). Railway issues the
    certificate for it by itself.
 
-Check it: `https://names.soundstorm.dev/healthz` answers `{"status":"ok"}`.
+Check it: `https://names.soundstorm.dev/healthz` answers `{"status":"ok"}`,
+and `https://names.soundstorm.dev/v1/whoami` answers with *your* public
+address as `clientIP`. If it shows some other address, every install is
+sharing one registration limit - see the next section.
+
+### Why X-Real-IP, and not X-Forwarded-For
+
+Measured on 2026-09-23 through `/v1/whoami`, because Railway's own guidance
+contradicted itself (its staff recommend the *first* X-Forwarded-For entry and
+call X-Real-IP broken behind their CDN):
+
+- `X-Real-IP` carried the real client address, and a forged `X-Real-IP` sent
+  by the client was overwritten. Correct and unspoofable.
+- `X-Forwarded-For` arrived as `<client>, <Railway edge>`, with a forged value
+  stripped. The service reads the *last* entry of a list - right for a proxy
+  that appends - and on Railway that is Railway's own edge server, so setting
+  this header would put every install in the world behind one limit of ten
+  registrations an hour.
+
+If Railway ever changes this (it has said X-Real-IP will be "fixed" for its
+CDN path), `/v1/whoami` is how to notice.
 
 ## 3. One install, against staging
 

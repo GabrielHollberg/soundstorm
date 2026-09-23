@@ -848,8 +848,12 @@ Changing the ACME directory now forces a new certificate: the issuer is
 recorded beside it (`public-issuer.txt`), because otherwise a staging
 certificate survived the switch to production until renewal.
 
-Still unverified: that `X-Real-IP` is the header Railway sets, and Porkbun's
-API rate limits.
+`X-Real-IP` is the right client-address header on Railway - measured through
+`/v1/whoami`, not taken from Railway's docs, which contradicted themselves: it
+carries the real address and a forged one is overwritten. `X-Forwarded-For`
+arrives as `<client>, <Railway edge>`, and the service reads the last entry,
+so that header would have put every install behind one shared limit. Still
+unverified: Porkbun's API rate limits.
 
 ## The folders, and the line that replaced the box
 
