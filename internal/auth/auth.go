@@ -65,10 +65,15 @@ type Manager struct {
 	// claim their connection was encrypted. It is only meaningful when
 	// SoundStorm is behind a proxy that sets it and strips an incoming one.
 	TrustForwardedProto bool
+
+	// throttle guards every password check a request can trigger.
+	throttle *throttle
 }
 
 // New builds a Manager over a state store.
-func New(store *state.Store) *Manager { return &Manager{store: store} }
+func New(store *state.Store) *Manager {
+	return &Manager{store: store, throttle: newThrottle()}
+}
 
 // --- context ----------------------------------------------------------------
 
@@ -245,6 +250,72 @@ func (m *Manager) SetPassword(actor state.User, id, password string) error {
 	return m.store.SetPassword(id, salt, hash, iterations)
 }
 
+// ChangeOwnPassword changes the signed-in account's password, and signs out
+// every other session it has.
+//
+// The current password is required. A session is a cookie, and a cookie can be
+// left on a shared computer or lifted off an unencrypted network; without this
+// check, holding one would be enough to change the password and keep the
+// account. The check goes through the same throttle as signing in, or it would
+// be a second, unthrottled place to guess.
+//
+// Other sessions go because changing a password is what somebody does when
+// they think it is known - and a password change that leaves the other
+// person signed in has fixed nothing. keepToken is the session making the
+// request, so changing it does not sign you out of the device you did it on.
+func (m *Manager) ChangeOwnPassword(ctx context.Context, client string, actor state.User, current, password, keepToken string) error {
+	// Checked first, so a password that would be refused anyway costs no hash
+	// and no strike.
+	if err := checkPassword(password); err != nil {
+		return err
+	}
+	err := m.throttle.guarded(ctx, client, func() error {
+		return m.verify(actor.ID, current)
+	})
+	if errors.Is(err, ErrInvalidCredentials) {
+		return ErrWrongCurrentPassword
+	}
+	if err != nil {
+		return err
+	}
+	if err := m.SetPassword(actor, actor.ID, password); err != nil {
+		return err
+	}
+	return m.store.DeleteSessionsFor(actor.ID, keepToken)
+}
+
+// ErrWrongCurrentPassword is a failed ChangeOwnPassword. It is not
+// ErrInvalidCredentials because the person is signed in, and "invalid username
+// or password" would be a confusing thing to tell them.
+var ErrWrongCurrentPassword = errors.New("your current password is not right")
+
+// ResetPassword is the owner setting somebody's password, which signs that
+// account out everywhere - the usual reason for doing it is that somebody
+// else knows the old one. keepToken spares the owner's own session when they
+// use this on themselves.
+func (m *Manager) ResetPassword(actor state.User, id, password, keepToken string) error {
+	if err := m.SetPassword(actor, id, password); err != nil {
+		return err
+	}
+	return m.store.DeleteSessionsFor(id, keepToken)
+}
+
+// verify checks a password against an account by id.
+func (m *Manager) verify(id, password string) error {
+	user, ok := m.store.User(id)
+	if !ok {
+		return ErrInvalidCredentials
+	}
+	got, err := pbkdf2.Key(sha256.New, password, user.Salt, iterationsOr(user.Iterations), keyLen)
+	if err != nil {
+		return fmt.Errorf("derive key: %w", err)
+	}
+	if subtle.ConstantTimeCompare(got, user.Hash) != 1 {
+		return ErrInvalidCredentials
+	}
+	return nil
+}
+
 func checkPassword(password string) error {
 	if len(password) < MinPasswordLength {
 		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)
@@ -277,7 +348,27 @@ func derive(password string, salt []byte) ([]byte, []byte, error) {
 // to find out who has an account here.
 var decoySalt = make([]byte, saltLen)
 
+// SignIn is Login for a request from the network: behind the throttle, so
+// that neither guessing nor the cost of hashing is free. client identifies who
+// is asking, normally their address. A refusal from the throttle is a
+// *ThrottledError, and costs no hash.
+func (m *Manager) SignIn(ctx context.Context, client, name, password string) (string, time.Time, state.User, error) {
+	var (
+		token  string
+		expiry time.Time
+		user   state.User
+	)
+	err := m.throttle.guarded(ctx, client, func() error {
+		var err error
+		token, expiry, user, err = m.Login(name, password)
+		return err
+	})
+	return token, expiry, user, err
+}
+
 // Login verifies credentials and returns a new session token.
+//
+// It is not throttled; anything answering the network must use SignIn.
 func (m *Manager) Login(name, password string) (string, time.Time, state.User, error) {
 	user, found := m.store.UserByName(name)
 
@@ -320,6 +411,15 @@ func (m *Manager) Logout(r *http.Request) error {
 		return nil
 	}
 	return m.store.DeleteSession(c.Value)
+}
+
+// SessionToken returns the request's session token, or "" if it has none.
+func SessionToken(r *http.Request) string {
+	c, err := r.Cookie(CookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
 }
 
 // UserFor returns the account making a request, if it carries a live session.

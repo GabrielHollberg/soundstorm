@@ -721,6 +721,25 @@ func (s *Store) DeleteSession(token string) error {
 	return s.save()
 }
 
+// DeleteSessionsFor signs an account out everywhere except keep, which may be
+// empty. Used when a password changes: the old one may be known to somebody,
+// and their session would otherwise outlive the change by up to a month.
+func (s *Store) DeleteSessionsFor(userID, keep string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := false
+	for token, session := range s.d.Sessions {
+		if session.UserID == userID && token != keep {
+			delete(s.d.Sessions, token)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return s.save()
+}
+
 // pruneLocked drops expired sessions. Callers must hold the mutex.
 func (s *Store) pruneLocked() {
 	now := time.Now()

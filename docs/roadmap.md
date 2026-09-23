@@ -65,18 +65,16 @@ other in a book. What is not built:
   properly means per-user Jellyfin accounts and its parental ratings, which is
   a second provisioning path for one feature - worth it only once somebody
   actually asks.
-- **Rate limiting on the login.** The 600k-iteration derivation makes each
-  attempt cost a few hundred milliseconds, and that is the only defence there
-  is. Fine on a LAN; not enough facing the internet.
 - **Sessions cannot be listed or revoked individually.** Changing a password
-  does not sign other devices out, which is the wrong default the moment a
-  password is changed *because* it leaked.
+  signs every other device out, which covers the leaked-password case; there
+  is still no "sign out that one phone".
 
 ## 6. HTTPS
 
-The session cookie currently crosses the wire in the clear on a LAN. The cookie
-is marked `Secure` automatically when served over TLS, so this is mostly a
-deployment story: a reverse proxy, or built-in ACME.
+Built: `SOUNDSTORM_TLS` serves HTTPS from a local certificate authority, and
+the Tailscale profile gives a real certificate. What is left is a trusted
+certificate on a plain LAN address without Tailscale, which no home server can
+get from a public authority.
 
 ## Deliberately not planned
 

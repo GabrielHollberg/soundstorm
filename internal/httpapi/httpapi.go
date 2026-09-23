@@ -355,11 +355,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	token, expiry, user, err := s.auth.Login(creds.Username, creds.Password)
+	token, expiry, user, err := s.auth.SignIn(r.Context(), clientOf(r), creds.Username, creds.Password)
+	if t, ok := auth.IsThrottled(err); ok {
+		s.log.Warn("sign-in throttled", "remote", r.RemoteAddr)
+		writeThrottled(w, t)
+		return
+	}
 	if err != nil {
-		// The 600k-iteration key derivation makes each attempt cost a few
-		// hundred milliseconds, which is the only brute-force defence here.
-		// A real lockout belongs in front of a multi-user version.
 		s.log.Warn("failed sign-in", "remote", r.RemoteAddr)
 		writeError(w, http.StatusUnauthorized, auth.ErrInvalidCredentials.Error())
 		return
@@ -501,20 +503,6 @@ func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.changePassword(w, r, actor, r.PathValue("id"))
-}
-
-// handleChangeOwnPassword lets anybody change their own, which is the only
-// account operation a member can perform.
-func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
-	actor, ok := s.requireUser(w, r)
-	if !ok {
-		return
-	}
-	s.changePassword(w, r, actor, actor.ID)
-}
-
-func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, actor state.User, id string) {
 	var body struct {
 		Password string `json:"password"`
 	}
@@ -523,12 +511,69 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, actor st
 		writeError(w, http.StatusBadRequest, "expected a JSON body with a password")
 		return
 	}
-	if err := s.auth.SetPassword(actor, id, body.Password); err != nil {
+	id := r.PathValue("id")
+	if err := s.auth.ResetPassword(actor, id, body.Password, auth.SessionToken(r)); err != nil {
 		writeError(w, statusFor(err), err.Error())
 		return
 	}
-	s.log.Info("password changed", "id", id, "by", actor.Name)
+	s.log.Info("password reset", "id", id, "by", actor.Name)
 	writeJSON(w, http.StatusOK, map[string]any{"changed": true})
+}
+
+// handleChangeOwnPassword lets anybody change their own, which is the only
+// account operation a member can perform. It needs the current password, and
+// signs out every other device.
+func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Current  string `json:"current"`
+		Password string `json:"password"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxCredentialBody))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with a password")
+		return
+	}
+	err := s.auth.ChangeOwnPassword(r.Context(), clientOf(r), actor,
+		body.Current, body.Password, auth.SessionToken(r))
+	if t, ok := auth.IsThrottled(err); ok {
+		writeThrottled(w, t)
+		return
+	}
+	if errors.Is(err, auth.ErrWrongCurrentPassword) {
+		s.log.Warn("wrong current password on change", "id", actor.ID, "remote", r.RemoteAddr)
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if err != nil {
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+	s.log.Info("password changed", "id", actor.ID)
+	writeJSON(w, http.StatusOK, map[string]any{"changed": true})
+}
+
+// clientOf names who is asking, for the sign-in throttle. The address without
+// its port: a port is chosen fresh for every connection.
+func clientOf(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// writeThrottled refuses a request the throttle stopped, saying when to retry.
+func writeThrottled(w http.ResponseWriter, t *auth.ThrottledError) {
+	secs := int(t.RetryAfter.Round(time.Second) / time.Second)
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	writeError(w, http.StatusTooManyRequests, t.Error())
 }
 
 // statusFor maps an account error onto a status code. Being refused for lack of
