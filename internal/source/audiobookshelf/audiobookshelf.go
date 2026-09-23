@@ -52,9 +52,10 @@ type Config struct {
 
 // Source is an Audiobookshelf library.
 type Source struct {
-	id   string
-	cfg  Config
-	http *httpx.Client
+	id    string
+	cfg   Config
+	http  *httpx.Client
+	shelf media.ShelfCache
 }
 
 // New builds an Audiobookshelf source.
@@ -173,26 +174,43 @@ func (s *Source) itemsPath() string {
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
 	limit := q.LimitOr(25)
 
+	// A browse fetches the whole shelf and orders it here. Audiobookshelf's
+	// own title sort ignores case, so "How to Fast" and "How To Overcome"
+	// came back in the opposite order to the merge's, and a book at a page
+	// boundary appeared twice or not at all (see media.Less).
+	if q.Text == "" {
+		if items, ok := s.shelf.Get(""); ok {
+			return media.FirstN(items, limit), nil
+		}
+	}
+
 	// Two endpoints, because Audiobookshelf's search does not answer the
 	// question "what is on this shelf" - asked with an empty q it matches
 	// nothing at all. /items is its listing call, and returns the same
 	// library items one wrapper shallower.
 	var found []libraryItem
 	if q.Text == "" {
-		var resp listResponse
-		params := url.Values{
-			"limit": {strconv.Itoa(limit)},
-			"sort":  {"media.metadata.title"},
+		for page := 0; ; page++ {
+			var resp listResponse
+			params := url.Values{
+				"limit": {strconv.Itoa(listPage)},
+				"page":  {strconv.Itoa(page)},
+			}
+			if err := s.http.JSON(ctx, s.itemsPath(), params, &resp); err != nil {
+				return nil, err
+			}
+			found = append(found, resp.Results...)
+			if len(resp.Results) < listPage || len(found) >= maxListing {
+				break
+			}
 		}
-		if err := s.http.JSON(ctx, s.itemsPath(), params, &resp); err != nil {
-			return nil, err
-		}
-		found = resp.Results
 	} else {
+		// Every match, not the first few: the merge ranks them, and a cut
+		// here would be a cut in Audiobookshelf's order rather than ours.
 		var resp searchResponse
 		params := url.Values{
 			"q":     {q.Text},
-			"limit": {strconv.Itoa(limit)},
+			"limit": {strconv.Itoa(maxListing)},
 		}
 		if err := s.http.JSON(ctx, s.searchPath(), params, &resp); err != nil {
 			return nil, err
@@ -253,8 +271,19 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 		}
 		items = append(items, item)
 	}
+	if q.Text == "" {
+		s.shelf.Put("", items)
+		return media.FirstN(items, limit), nil
+	}
 	return items, nil
 }
+
+// listPage is how many library items one /items call asks for, and
+// maxListing bounds a whole listing.
+const (
+	listPage   = 500
+	maxListing = 50_000
+)
 
 // trackSeparator joins an item id to one of its file handles.
 //
@@ -592,6 +621,7 @@ func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, erro
 // way a new book is noticed - but a watcher can miss a file copied in by
 // something it did not expect, and asking costs one call.
 func (s *Source) Rescan(ctx context.Context) error {
+	s.shelf.Clear()
 	resp, err := s.http.Do(ctx, httpx.Request{
 		Method: http.MethodPost,
 		Path:   "/api/libraries/" + url.PathEscape(s.cfg.LibraryID) + "/scan",

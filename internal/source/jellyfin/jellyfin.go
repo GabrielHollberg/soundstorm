@@ -56,6 +56,7 @@ type Source struct {
 	kind      media.Kind
 	itemTypes string
 	http      *httpx.Client
+	shelf     media.ShelfCache
 }
 
 // New builds a Jellyfin source.
@@ -145,9 +146,56 @@ func (s *Source) searchParams(q media.Query) url.Values {
 	return p
 }
 
+// Search browses or searches one Jellyfin library.
+//
+// Whole listings, ordered here: Jellyfin's SortName drops a leading "The", so
+// its first N by name are not the merge's first N by title, and "The Matrix"
+// at a page boundary would repeat or vanish (see media.Less). A search is
+// returned whole for the merge to rank. Listings are cached briefly so
+// scrolling costs one fetch.
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
+	all, ok := s.shelf.Get(q.Text)
+	if !ok {
+		var err error
+		if all, err = s.fetchAll(ctx, q); err != nil {
+			return nil, err
+		}
+		s.shelf.Put(q.Text, all)
+	}
+	if q.Text == "" {
+		return media.FirstN(all, q.LimitOr(25)), nil
+	}
+	return all, nil
+}
+
+// itemsPage is how many items one /Items call asks for; maxItems bounds a
+// whole listing.
+const (
+	itemsPage = 1000
+	maxItems  = 100_000
+)
+
+func (s *Source) fetchAll(ctx context.Context, q media.Query) ([]media.Item, error) {
+	var all []media.Item
+	for start := 0; start < maxItems; start += itemsPage {
+		params := s.searchParams(q)
+		params.Set("Limit", strconv.Itoa(itemsPage))
+		params.Set("StartIndex", strconv.Itoa(start))
+		page, err := s.fetchPage(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < itemsPage {
+			break
+		}
+	}
+	return all, nil
+}
+
+func (s *Source) fetchPage(ctx context.Context, params url.Values) ([]media.Item, error) {
 	var resp itemsResponse
-	if err := s.http.JSON(ctx, "/Items", s.searchParams(q), &resp); err != nil {
+	if err := s.http.JSON(ctx, "/Items", params, &resp); err != nil {
 		return nil, err
 	}
 
@@ -360,6 +408,7 @@ func (s *Source) subtitleTracks(itemID, mediaSourceID string, streams []mediaStr
 // anyway. Verified against 12.1.0, where a made-up path under /Library answers
 // 404, so the 204 means something.
 func (s *Source) Rescan(ctx context.Context) error {
+	s.shelf.Clear()
 	resp, err := s.http.Do(ctx, httpx.Request{
 		Method:  http.MethodPost,
 		Path:    "/Library/Refresh",

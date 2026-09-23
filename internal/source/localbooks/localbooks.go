@@ -250,7 +250,15 @@ func (s *Source) scan(ctx context.Context) error {
 		return err
 	}
 
-	sort.Slice(found, func(i, j int) bool { return found[i].Title < found[j].Title })
+	// Title then path, which is exactly media.Less over the items these become:
+	// a plain title sort left two books of the same name free to swap between
+	// one page and the next.
+	sort.Slice(found, func(i, j int) bool {
+		if found[i].Title != found[j].Title {
+			return found[i].Title < found[j].Title
+		}
+		return found[i].ID < found[j].ID
+	})
 	byID := make(map[string]book, len(found))
 	for _, b := range found {
 		byID[b.ID] = b

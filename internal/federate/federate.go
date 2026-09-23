@@ -182,20 +182,16 @@ func sortItems(items []media.Item) {
 		if items[a].Score != items[b].Score {
 			return items[a].Score > items[b].Score
 		}
-		if ka, kb := sortKey(items[a]), sortKey(items[b]); ka != kb {
+		if ka, kb := items[a].OrderKey(), items[b].OrderKey(); ka != kb {
 			return ka < kb
 		}
-		return items[a].SourceID < items[b].SourceID
+		if items[a].SourceID != items[b].SourceID {
+			return items[a].SourceID < items[b].SourceID
+		}
+		// The same tiebreak a source orders itself by (media.Less), so equal
+		// keys cannot trade places between one page and the next.
+		return items[a].ID < items[b].ID
 	})
-}
-
-// sortKey is what orders items of equal relevance: the adapter's SortKey when
-// it set one, the title otherwise.
-func sortKey(i media.Item) string {
-	if i.SortKey != "" {
-		return i.SortKey
-	}
-	return i.Title
 }
 
 // Relevance scores an item against the raw query text, 0..1.

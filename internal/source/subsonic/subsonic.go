@@ -44,9 +44,10 @@ type Config struct {
 
 // Source is a Subsonic-API music server.
 type Source struct {
-	id   string
-	cfg  Config
-	http *httpx.Client
+	id    string
+	cfg   Config
+	http  *httpx.Client
+	shelf media.ShelfCache
 }
 
 // New builds a Subsonic source.
@@ -122,13 +123,62 @@ func (e *envelope) check() error {
 	return nil
 }
 
+// Search browses or searches the music library.
+//
+// The whole matching set is fetched, not the first N, because search3 returns
+// songs in an order of its own - neither by title nor by any relevance
+// SoundStorm can reproduce - and merged paging needs the first N in
+// SoundStorm's order (see media.Less). Measured before this: of the first 50
+// songs by title in a 4,413-song library, Navidrome's first 50 held none, so
+// every scroll repeated some songs and skipped others. A browse is then
+// ordered and cut here; a search is returned whole for the merge to rank.
+// Listings are cached briefly so scrolling costs one fetch.
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
+	all, ok := s.shelf.Get(q.Text)
+	if !ok {
+		var err error
+		if all, err = s.fetchAll(ctx, q.Text); err != nil {
+			return nil, err
+		}
+		s.shelf.Put(q.Text, all)
+	}
+	if q.Text == "" {
+		return media.FirstN(all, q.LimitOr(25)), nil
+	}
+	return all, nil
+}
+
+// fetchPage is how many songs one search3 call asks for.
+const fetchPage = 1000
+
+// maxSongs bounds one listing. Far past any household's library, and short
+// of letting a runaway answer eat the server's memory.
+const maxSongs = 200_000
+
+// fetchAll pages through every song matching text.
+func (s *Source) fetchAll(ctx context.Context, text string) ([]media.Item, error) {
+	var items []media.Item
+	for offset := 0; offset < maxSongs; offset += fetchPage {
+		page, err := s.fetchPage(ctx, text, offset)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, page...)
+		if len(page) < fetchPage {
+			break
+		}
+	}
+	return items, nil
+}
+
+func (s *Source) fetchPage(ctx context.Context, text string, offset int) ([]media.Item, error) {
 	params, err := s.auth()
 	if err != nil {
 		return nil, err
 	}
-	params.Set("query", q.Text)
-	params.Set("songCount", strconv.Itoa(q.LimitOr(25)))
+	params.Set("query", text)
+	params.Set("songCount", strconv.Itoa(fetchPage))
+	params.Set("songOffset", strconv.Itoa(offset))
 	params.Set("albumCount", "0")
 	params.Set("artistCount", "0")
 
@@ -201,6 +251,7 @@ func (s *Source) mediaTarget(path, id string) (source.Target, error) {
 // what changed rather than re-reading every tag, which is what makes it cheap
 // enough to fire after an upload.
 func (s *Source) Rescan(ctx context.Context) error {
+	s.shelf.Clear()
 	params, err := s.auth()
 	if err != nil {
 		return err

@@ -321,16 +321,39 @@ sort in behind ones already on screen. `TestPagesWalkTheMergedOrderExactly`
 is the property that matters - walking every page has to reproduce the single
 sorted list with nothing repeated and nothing skipped.
 
-That only holds if **every source returns its own title-first N**, because the
-globally first N can only come from the union of each source's first N. It is
-a requirement on the adapters, not an internal detail:
+That only holds if **every source returns its own first N in exactly the
+merge's order**, because the globally first N can only come from the union of
+each source's first N. It is a requirement on the adapters, and **no backend's
+own sort satisfies it** - which this file used to understate as "Navidrome can
+slip an item at a page boundary". Reported as "I'm seeing repeats in music",
+and measured on the real library by scrolling 40 pages through the real merge:
 
-- `localbooks` sorts before it cuts. It used to cut in scan order, which would
-  have made page two repeat some books and skip others.
-- Jellyfin gets `SortBy=SortName`, Audiobookshelf `sort=media.metadata.title`.
-- Navidrome's `search3` order is its own; nothing in the Subsonic API asks for
-  a sort, so a music-only browse can slip an item at a page boundary. Known,
-  and cheap to fix only if Navidrome grows the parameter.
+- **Navidrome**: 240 distinct songs and **1,760 repeats**. `search3` lists
+  songs in an order of its own; of the first 50 by title in a 4,413-song
+  library, its first 50 held none, so every page drew from a different set.
+- **Audiobookshelf**: 4 repeats and 4 books never shown, of 113. Its title
+  sort ignores case, so "How to Fast" and "How To Overcome" swap.
+- **Jellyfin**: SortName drops a leading "The"; untested live for want of
+  films, but the same shape.
+
+So there is one comparator, `media.Less` - `OrderKey` (SortKey, else title)
+and then the id, so two songs called "Intro" cannot trade places between
+pages - and the adapters that browse fetch the **whole** shelf, order it with
+that, and cut. Searches return every match and let the merge rank them, since
+a cut in the backend's relevance order is a cut in the wrong order.
+`media.ShelfCache` keeps a listing for 30 seconds and a rescan clears it, so
+scrolling fetches a shelf once: the same 40 pages of music went from 28.6s to
+3.2s. After the fix: 2,000 distinct songs, 0 repeats; all 113 audiobooks.
+
+`internal/source/*/paging_test.go` scroll each adapter through the real merge
+against a fake that orders the way its backend does - scrambled, case-blind,
+"The"-stripped - and require every item once, in order. The music one fails
+against the code before this, with the same repeat the user saw.
+
+Immich is the one exception, deliberately: photos order newest first, which
+is Immich's own order, and its SortKey *is* the rank in it (see "Pictures").
+
+`localbooks` sorts before it cuts, by title and then path.
 
 `HasMore` is not just "this page was full": a source returning exactly what it
 was asked for was probably truncated, so there is more behind it even when the
