@@ -307,6 +307,11 @@ func TestSearchStillServesWhenOneBackendIsDown(t *testing.T) {
 	if !got.Degraded {
 		t.Error("want Degraded=true so the UI can say so")
 	}
+	// Why it failed is for the log. The real error names upstream addresses,
+	// and a transport error once quoted a Subsonic URL with its credential.
+	if strings.Contains(string(body), "dial tcp") {
+		t.Errorf("the upstream error reached the browser: %s", body)
+	}
 }
 
 // An empty result must be [] and not null, or the UI's .map() breaks on the

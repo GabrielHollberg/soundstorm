@@ -26,8 +26,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/GabrielHollberg/soundstorm/internal/httpx"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
@@ -86,6 +88,7 @@ func setContentHeaders(w http.ResponseWriter, target source.Target) {
 		w.Header().Set("Content-Type", target.ContentType)
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	GuardActiveContent(w.Header())
 }
 
 type Proxy struct {
@@ -213,7 +216,7 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 		if r.Context().Err() != nil {
 			return
 		}
-		p.log.Warn("upstream fetch failed", "what", what, "err", err)
+		p.log.Warn("upstream fetch failed", "what", what, "err", httpx.Redact(err))
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		return
 	}
@@ -227,6 +230,7 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 	// Nothing upstream should be able to talk the browser into sniffing a
 	// different content type than the one it declared.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	GuardActiveContent(w.Header())
 
 	w.WriteHeader(resp.StatusCode)
 	if method == http.MethodHead {
@@ -235,4 +239,31 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 	if _, err := io.Copy(w, resp.Body); err != nil && r.Context().Err() == nil {
 		p.log.Debug("stream copy ended early", "what", what, "err", err)
 	}
+}
+
+// GuardActiveContent sandboxes a response the browser would run as a page.
+// A book, a sidecar or a backend's upload can be HTML, XHTML or SVG with a
+// script in it, and served from SoundStorm's origin that script would run
+// with the session cookie of whoever opened the link - the same threat the
+// shell's CSP answers for the reader, reached by pasting the URL instead.
+// Media, PDFs and images are left alone: Chrome's PDF viewer will not render
+// in a sandboxed document, and nothing else here can script.
+func GuardActiveContent(h http.Header) {
+	if ActiveContent(h.Get("Content-Type")) {
+		h.Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:")
+	}
+}
+
+// ActiveContent reports whether a content type is one a browser executes as a
+// document. An empty type counts: with nothing declared, the browser guesses.
+func ActiveContent(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	switch {
+	case ct == "", ct == "text/html", ct == "text/xml", ct == "application/xml",
+		ct == "text/xsl", ct == "image/svg+xml", ct == "application/octet-stream":
+		return true
+	case strings.HasSuffix(ct, "+xml"), strings.Contains(ct, "html"):
+		return true
+	}
+	return false
 }

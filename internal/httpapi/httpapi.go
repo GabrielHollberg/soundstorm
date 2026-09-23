@@ -605,8 +605,19 @@ func statusFor(err error) int {
 	return http.StatusBadRequest
 }
 
-func (s *Server) handleSetup(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
 	statuses := s.setup.Statuses()
+	// Why a backend failed is the owner's to fix and quotes upstream
+	// responses; a member is told only that it is not ready.
+	if !user.IsOwner() {
+		for i := range statuses {
+			statuses[i].Error = ""
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"allReady": s.setup.AllReady(),
 		"backends": statuses,
@@ -1105,7 +1116,24 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := federate.Search(r.Context(), s.reg, query, s.perSourceTimeout)
+	for i, st := range result.Sources {
+		if st.Error != "" {
+			s.log.Warn("source failed during search", "source", st.SourceID, "err", st.Error)
+			result.Sources[i].Error = publicSourceError(st.Error)
+		}
+	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// publicSourceError is what a failed source is reported as to the browser.
+// The real error names upstream addresses and quotes upstream bodies - and
+// once, before httpx redacted them, a Subsonic URL with its credential in the
+// query string - which is detail for the log, not for every member's screen.
+func publicSourceError(detail string) string {
+	if strings.Contains(detail, "deadline exceeded") || strings.Contains(detail, "Timeout") {
+		return "took too long to answer"
+	}
+	return "did not answer"
 }
 
 // handlePlayback answers "how do I play this".
@@ -1399,9 +1427,14 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
 	}
+	w.Header().Set("Content-Type", contentType)
+	// Only ever fetched by the reader, never navigated to, so every resource
+	// is sandboxed whatever it is: a chapter is XHTML and may carry a script,
+	// and opening this URL directly would otherwise run it on our origin.
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	// Book resources are immutable for the life of the file, and a reader
 	// fetches the same chapter every time you page back into it.
 	w.Header().Set("Cache-Control", "private, max-age=3600")

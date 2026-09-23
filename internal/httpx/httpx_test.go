@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,11 +50,6 @@ func TestURLDoesNotDoubleEncode(t *testing.T) {
 			name: "query string in the reference is preserved, not escaped",
 			ref:  "/opds/nav?offset=20",
 			want: "http://books.example.com/opds/nav?offset=20",
-		},
-		{
-			name: "absolute reference passes through",
-			ref:  "https://other.example.com/a%20b",
-			want: "https://other.example.com/a%20b",
 		},
 	}
 
@@ -163,5 +159,56 @@ func TestSnippetStaysValidUTF8(t *testing.T) {
 		if r == '�' {
 			t.Fatalf("Snippet produced an invalid rune at byte %d: %q", i, got)
 		}
+	}
+}
+
+// A reference is somebody else's text - an OPDS href, an HLS path, an item id
+// - and the request it becomes carries this backend's credential. So it may
+// not name another host, and it may not climb out of the path it was put in:
+// "videos/%2e%2e/System/Info" reached Jellyfin's admin API as a dot segment.
+func TestURLRefusesToLeaveTheBackend(t *testing.T) {
+	c, err := New("http://host.example.com/jellyfin", time.Second)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for _, ref := range []string{
+		"https://other.example.com/a",
+		"//other.example.com/a",
+		"http://169.254.169.254/latest/meta-data",
+		"/videos/../System/Info",
+		"/videos/%2e%2e/System/Info",
+		"/videos/%2E%2E/%2e%2e/Auth/Keys",
+		"./x/../../y",
+	} {
+		got := c.URL(ref, nil)
+		if !strings.HasPrefix(got, "http://host.example.com/jellyfin/") || strings.Contains(got, "System") ||
+			strings.Contains(got, "Auth") || strings.Contains(got, "169.254") || strings.Contains(got, "other.") {
+			t.Errorf("URL(%q) = %q, which leaves the backend", ref, got)
+		}
+	}
+	// Dots inside a name are not dot segments.
+	if got := c.URL("/Items/a..b/Images", nil); got != "http://host.example.com/jellyfin/Items/a..b/Images" {
+		t.Errorf("a name containing dots was refused: %q", got)
+	}
+}
+
+// Go's transport errors quote the whole request URL, and a Subsonic URL
+// carries a credential in its query string. That error used to reach every
+// member's screen as the reason a search was degraded.
+func TestTransportErrorsDoNotCarryTheURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	addr := srv.URL
+	srv.Close() // nothing listening: every request fails in the transport
+
+	c, err := New(addr, time.Second)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, err = c.Do(context.Background(), Request{Path: "/rest/search3.view", Params: url.Values{"t": {"secret-token"}, "s": {"salt"}}})
+	if err == nil {
+		t.Fatal("expected a transport error")
+	}
+	if strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), "search3") {
+		t.Errorf("error carries the request URL: %v", err)
 	}
 }

@@ -22,6 +22,16 @@ func fakeJellyfin(t *testing.T, mediaSource map[string]any) (*Source, *map[strin
 	var sent map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/Items" && r.URL.Query().Get("Ids") != "":
+			// Every id belongs to this source except the ones named as
+			// another's, which a type-filtered lookup does not return.
+			id := r.URL.Query().Get("Ids")
+			var items []any
+			if !strings.HasPrefix(id, "film-") || strings.Contains(r.URL.Query().Get("IncludeItemTypes"), "Movie") {
+				items = append(items, map[string]any{"Id": id})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": items})
 		case strings.HasSuffix(r.URL.Path, "/PlaybackInfo"):
 			body, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(body, &sent)
@@ -173,7 +183,16 @@ func TestHLSTargetMapsOntoTheVideoNamespace(t *testing.T) {
 
 func TestHLSTargetRejectsTraversal(t *testing.T) {
 	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
-	for _, bad := range []string{"", "../Users/admin", "item/../../secret"} {
+	for _, bad := range []string{
+		"", "../Users/admin", "item/../../secret",
+		// The one that worked: decoded once by the router, still a dot
+		// segment to Jellyfin.
+		"%2e%2e/System/Info", "item-1/%2e%2e/%2e%2e/System/Info",
+		// Anything that is not a playlist or a segment, however harmless
+		// it looks, reaches Jellyfin with an administrator's token.
+		"item-1/stream", "item-1", "item-1/Subtitles/0/Stream.vtt",
+		"item-1/hls1/main/0.ts?x=1", "//evil.example/x.m3u8",
+	} {
 		if _, err := s.HLSTarget(context.Background(), bad, nil); err == nil {
 			t.Errorf("HLSTarget(%q) should have been rejected", bad)
 		}
@@ -337,6 +356,40 @@ func TestSearchAsksJellyfinToLeaveOutItemsWithNoFile(t *testing.T) {
 		}
 		if got.Get("IsMissing") != "false" {
 			t.Errorf("Search(%q) sent IsMissing=%q, want \"false\"", q.Text, got.Get("IsMissing"))
+		}
+	}
+}
+
+// The two sources share one Jellyfin account, so an id is all that tells a
+// film from an episode. A member refused films must not be able to play one by
+// addressing it to the television source - every way in is checked.
+func TestAnotherSourcesItemIsRefused(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1", "Container": "mp4", "SupportsDirectPlay": true})
+	s.itemTypes = "Series,Episode"
+	ctx := context.Background()
+
+	if _, err := s.StreamTarget(ctx, "film-1"); err == nil {
+		t.Error("StreamTarget served a film from the television source")
+	}
+	if _, err := s.Playback(ctx, "film-1"); err == nil {
+		t.Error("Playback served a film from the television source")
+	}
+	if _, err := s.HLSTarget(ctx, "film-1/master.m3u8", nil); err == nil {
+		t.Error("HLSTarget served a film from the television source")
+	}
+	if _, err := s.SubtitleTarget(ctx, "film-1/ms-1/0"); err == nil {
+		t.Error("SubtitleTarget served a film from the television source")
+	}
+	if _, err := s.ArtTarget(ctx, "film-1"); err == nil {
+		t.Error("ArtTarget served a film from the television source")
+	}
+
+	if _, err := s.StreamTarget(ctx, "episode-1"); err != nil {
+		t.Errorf("an episode of its own: %v", err)
+	}
+	for _, good := range []string{"episode-1/master.m3u8", "episode-1/main.m3u8", "episode-1/hls1/main/12.ts", "episode-1/hls1/main/-1.mp4"} {
+		if _, err := s.HLSTarget(ctx, good, nil); err != nil {
+			t.Errorf("HLSTarget(%q): %v", good, err)
 		}
 	}
 }

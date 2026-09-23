@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -98,16 +99,20 @@ func (c *Client) resolve(ref string) *url.URL {
 	// the base URL (a backend reverse-proxied at /jellyfin, say) instead of
 	// replacing it.
 	parsed, err := url.Parse(strings.TrimPrefix(ref, "/"))
-	if err != nil {
-		// A malformed reference is the caller's bug. Fall back to something
-		// deterministic so it surfaces as an upstream 404 rather than a
-		// silently wrong URL.
+	// An absolute reference would change the host, a second leading slash
+	// would drop the base's path prefix, and a dot segment would climb out of
+	// the path it was meant for - "videos/%2e%2e/System/Info" reached
+	// Jellyfin's admin API with SoundStorm's own token, from a member's
+	// playlist request. No legitimate reference has any of them, and a
+	// malformed one is the caller's bug, so all of them resolve to a path
+	// nothing answers: an upstream 404 rather than a silently wrong URL.
+	if err != nil || parsed.IsAbs() || parsed.Host != "" ||
+		strings.HasPrefix(parsed.Path, "/") || hasDotSegment(parsed.Path) {
 		u := *c.base
-		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + strings.TrimPrefix(ref, "/")
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/soundstorm-refused-path"
+		u.RawPath = ""
+		u.RawQuery = ""
 		return &u
-	}
-	if parsed.IsAbs() {
-		return parsed
 	}
 	base := *c.base
 	// ResolveReference treats the last path segment as a file and drops it, so
@@ -119,6 +124,31 @@ func (c *Client) resolve(ref string) *url.URL {
 		}
 	}
 	return base.ResolveReference(parsed)
+}
+
+// hasDotSegment reports whether a decoded path has a "." or ".." segment.
+// url.Parse has already decoded %2e, which is the point: an encoded dot is
+// still a dot to the server at the other end.
+func hasDotSegment(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// Redact strips the URL out of a transport error. Go's *url.Error quotes the
+// whole request URL, and a Subsonic URL carries a replayable credential in
+// its query string - which then reached members' screens in a failed search
+// and the log in a failed stream. What remains says what went wrong, not
+// where or with what.
+func Redact(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		return fmt.Errorf("%s: %w", uerr.Op, uerr.Err)
+	}
+	return err
 }
 
 // Request is one upstream call.
@@ -190,7 +220,7 @@ func (c *Client) Do(ctx context.Context, r Request) (*Response, error) {
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, Redact(err)
 	}
 	defer resp.Body.Close()
 
@@ -217,7 +247,8 @@ func (c *Client) Open(ctx context.Context, r Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c.hc.Do(req)
+	resp, err := c.hc.Do(req)
+	return resp, Redact(err)
 }
 
 func (c *Client) request(ctx context.Context, r Request) (*http.Request, error) {

@@ -13,11 +13,14 @@ package jellyfin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/httpx"
@@ -56,6 +59,7 @@ type Source struct {
 	kind      media.Kind
 	itemTypes string
 	http      *httpx.Client
+	owned     ownedCache
 	shelf     media.ShelfCache
 }
 
@@ -241,9 +245,12 @@ func (s *Source) fetchPage(ctx context.Context, params url.Values) ([]media.Item
 //
 // The credential goes in a header, not the query string. Jellyfin 12 removed
 // the api_key query parameter that most guides on the internet still show.
-func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
+func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target, error) {
 	if itemID == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: empty item id", s.id)
+	}
+	if err := s.owns(ctx, itemID); err != nil {
+		return source.Target{}, err
 	}
 	return source.Target{
 		URL: s.http.URL("/Videos/"+url.PathEscape(itemID)+"/stream", url.Values{
@@ -420,13 +427,16 @@ func (s *Source) Rescan(ctx context.Context) error {
 	return resp.Err()
 }
 
-func (s *Source) SubtitleTarget(_ context.Context, trackID string) (source.Target, error) {
+func (s *Source) SubtitleTarget(ctx context.Context, trackID string) (source.Target, error) {
 	parts := strings.Split(trackID, "/")
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: bad subtitle track %q", s.id, trackID)
 	}
 	if _, err := strconv.Atoi(parts[2]); err != nil {
 		return source.Target{}, fmt.Errorf("jellyfin %q: subtitle index %q is not a number", s.id, parts[2])
+	}
+	if err := s.owns(ctx, parts[0]); err != nil {
+		return source.Target{}, err
 	}
 
 	ref := "/Videos/" + url.PathEscape(parts[0]) +
@@ -472,6 +482,9 @@ func firstNonEmpty(values ...string) string {
 func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, error) {
 	if itemID == "" {
 		return source.Playback{}, fmt.Errorf("jellyfin %q: empty item id", s.id)
+	}
+	if err := s.owns(ctx, itemID); err != nil {
+		return source.Playback{}, err
 	}
 
 	params := url.Values{}
@@ -561,16 +574,31 @@ func (s *Source) hlsParams(itemID, mediaSourceID string) url.Values {
 // "hls1/main/0.ts"), so as long as the client loads the master from a URL whose
 // directory mirrors this namespace, every follow-up request lands here with the
 // right path and no playlist rewriting is needed.
-func (s *Source) HLSTarget(_ context.Context, path string, query url.Values) (source.Target, error) {
+//
+// The path is matched against the handful of shapes Jellyfin's playlists
+// actually use, not merely checked for "..". It is forwarded with SoundStorm's
+// administrator token, so anything looser is a proxy onto the whole Jellyfin
+// API: "%2e%2e/System/Info" passed a ".." check, reached Jellyfin as a dot
+// segment, and answered 200. And the item has to be this source's, or a
+// member refused films could watch one by asking the television source.
+func (s *Source) HLSTarget(ctx context.Context, path string, query url.Values) (source.Target, error) {
 	clean := strings.TrimPrefix(path, "/")
-	if clean == "" || strings.Contains(clean, "..") {
+	m := hlsPath.FindStringSubmatch(clean)
+	if m == nil {
 		return source.Target{}, fmt.Errorf("jellyfin %q: bad hls path %q", s.id, path)
+	}
+	if err := s.owns(ctx, m[1]); err != nil {
+		return source.Target{}, err
 	}
 	return source.Target{
 		URL:     s.http.URL("/videos/"+clean, query),
 		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
 	}, nil
 }
+
+// hlsPath is every path a Jellyfin HLS playlist leads to: the master, the
+// variant, and its segments - MPEG-TS, or fMP4 with its -1 init segment.
+var hlsPath = regexp.MustCompile(`^([A-Za-z0-9-]{1,64})/(?:master\.m3u8|main\.m3u8|hls1/[A-Za-z0-9_]{1,32}/-?[0-9]{1,9}\.(?:ts|mp4|m4s|aac))$`)
 
 // stopTranscode tells Jellyfin to kill the ffmpeg process it started for us.
 //
@@ -597,9 +625,12 @@ func (s *Source) stopTranscode(playSessionID string) {
 }
 
 // ArtTarget builds an authenticated upstream target for a poster.
-func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
+func (s *Source) ArtTarget(ctx context.Context, artID string) (source.Target, error) {
 	if artID == "" {
 		return source.Target{}, fmt.Errorf("jellyfin %q: empty art id", s.id)
+	}
+	if err := s.owns(ctx, artID); err != nil {
+		return source.Target{}, err
 	}
 	return source.Target{
 		URL:     s.http.URL("/Items/"+url.PathEscape(artID)+"/Images/Primary", nil),
@@ -651,4 +682,61 @@ const deviceID = "soundstorm-gateway"
 // answer.
 func authHeader(token string) string {
 	return `MediaBrowser Client="soundstorm", Device="soundstorm", DeviceId="` + deviceID + `", Version="0.1.0", Token="` + token + `"`
+}
+
+// Ownership. Films and television are two sources over one Jellyfin account,
+// and an item id is just a Jellyfin id - so without this, anything addressed
+// to one source could name an item of the other, and "no films for the
+// seven-year-old" would be a hidden shelf with a working play button behind
+// every film id. The id has to come back from a query restricted to this
+// source's item types.
+
+// ownedTTL is how long an answer is remembered. Every HLS segment asks, so
+// this is what keeps a two-hour film from being two thousand lookups.
+const ownedTTL = 10 * time.Minute
+
+type ownedCache struct {
+	mu sync.Mutex
+	at map[string]time.Time
+}
+
+// errNotOwned is what a caller sees for an item of another source, and it is
+// the same for one that does not exist at all.
+var errNotOwned = errors.New("no such item")
+
+func (s *Source) owns(ctx context.Context, itemID string) error {
+	s.owned.mu.Lock()
+	at, ok := s.owned.at[itemID]
+	s.owned.mu.Unlock()
+	if ok && time.Since(at) < ownedTTL {
+		return nil
+	}
+
+	params := url.Values{
+		"Ids":              {itemID},
+		"Recursive":        {"true"},
+		"IncludeItemTypes": {s.itemTypes},
+		"Fields":           {"ParentId"},
+		"Limit":            {"1"},
+	}
+	if s.cfg.UserID != "" {
+		params.Set("userId", s.cfg.UserID)
+	}
+	var resp itemsResponse
+	if err := s.http.JSON(ctx, "/Items", params, &resp); err != nil {
+		return fmt.Errorf("jellyfin %q: look up item: %w", s.id, err)
+	}
+	// Checked, not assumed from the count: Jellyfin ignores a parameter it
+	// does not understand, and an ignored Ids would hand back some other item.
+	if len(resp.Items) == 0 || resp.Items[0].ID != itemID {
+		return errNotOwned
+	}
+
+	s.owned.mu.Lock()
+	if s.owned.at == nil || len(s.owned.at) > 4096 {
+		s.owned.at = map[string]time.Time{}
+	}
+	s.owned.at[itemID] = time.Now()
+	s.owned.mu.Unlock()
+	return nil
 }
