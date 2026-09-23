@@ -87,6 +87,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	// Which address the rate limits see for the caller, and the two headers
+	// it could have come from. Only ever the caller's own request reflected
+	// back, so nothing leaks; it exists because whether a host's proxy sets a
+	// header honestly cannot be read off its documentation - Railway's
+	// contradicted itself - only measured.
+	mux.HandleFunc("GET /v1/whoami", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"clientIP":        s.clientIP(r),
+			"x-real-ip":       r.Header.Get("X-Real-Ip"),
+			"x-forwarded-for": r.Header.Get("X-Forwarded-For"),
+		})
+	})
 	mux.HandleFunc("POST /v1/register", s.handleRegister)
 	mux.HandleFunc("PUT /v1/address", s.authed(s.handleAddress))
 	mux.HandleFunc("PUT /v1/challenge", s.authed(s.handleSetChallenge))
