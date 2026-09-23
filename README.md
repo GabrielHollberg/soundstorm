@@ -283,6 +283,41 @@ Three things it cannot do for you, and there is no way around any of them:
 SoundStorm works exactly the same with none of this. `--no-tailscale` turns
 it off again, and nothing else changes.
 
+### Keeping the library on another drive
+
+The library lives beside SoundStorm by default. To keep it somewhere else — an
+external drive with room for a photo collection, say — run the installer again
+with one more word:
+
+**Windows:**
+
+```powershell
+& "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Library "E:\Media"
+```
+
+**Linux / macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --library /mnt/media
+```
+
+Every shelf moves together, and so does the desktop "SoundStorm media"
+shortcut. Anything already in the old library stays exactly where it is — the
+installer tells you where, and moving it is yours to do: close SoundStorm,
+move the folders across, open it again. It is never done for you, because a
+script moving tens of gigabytes is exactly the kind of thing that should not
+be able to fail halfway.
+
+Two things worth knowing about external drives:
+
+- **Keep it connected.** On Windows, SoundStorm will not start without the
+  drive, which is the safe answer. On Linux, mount it at boot (an `/etc/fstab`
+  entry) — an unmounted drive leaves an empty folder behind, and an empty
+  library looks to the media servers like everything was deleted.
+- **Keep the whole library on one drive.** Uploads land in the library and
+  are moved into place, which is quickest when it all shares a drive.
+  (Splitting shelves across drives works too, just a little slower.)
+
 ### Updating
 
 **Windows:** Start menu → **Update SoundStorm**.

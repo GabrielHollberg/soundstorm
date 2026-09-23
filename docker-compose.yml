@@ -68,7 +68,7 @@ services:
       # three folders are handed to the server that indexes them.
       SOUNDSTORM_LIBRARY_DIR: /library
       # How the same folder looks to whoever ran compose, for the UI to show.
-      SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-./library}
+      SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-${SOUNDSTORM_LIBRARY_PATH:-./library}}
       SOUNDSTORM_LOG_LEVEL: info
 
       # TLS. Off by default: the only certificate SoundStorm can make by itself
@@ -102,7 +102,13 @@ services:
       - soundstorm-state:/var/lib/soundstorm
       # The whole library, writable: SoundStorm creates the folder structure on
       # first run so nobody has to read a README to learn the layout.
-      - ./library:/library
+      #
+      # Beside this file by default; SOUNDSTORM_LIBRARY_PATH in .env moves it -
+      # to an external drive, say - and every backend below follows, because
+      # they all mount their shelf from the same variable. Keep the whole
+      # library on one drive: uploads are staged in its root and moved into
+      # place.
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}:/library
     depends_on:
       - navidrome
       - jellyfin
@@ -137,7 +143,7 @@ services:
       # Nothing here should phone home; SoundStorm is the only client.
       ND_ENABLEEXTERNALSERVICES: "false"
     volumes:
-      - ./library/music:/music:ro
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}/music:/music:ro
       - navidrome-data:/data
     # Deliberately no ports. SoundStorm reaches it at http://navidrome:4533.
 
@@ -148,8 +154,8 @@ services:
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
-      - ./library/movies:/media/movies:ro
-      - ./library/tv:/media/tv:ro
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}/movies:/media/movies:ro
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}/tv:/media/tv:ro
     # Deliberately no ports. SoundStorm reaches it at http://jellyfin:8096.
 
   audiobookshelf:
@@ -157,7 +163,7 @@ services:
     container_name: soundstorm-audiobookshelf
     restart: unless-stopped
     volumes:
-      - ./library/audiobooks:/audiobooks
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}/audiobooks:/audiobooks
       - abs-config:/config
       - abs-metadata:/metadata
     # Deliberately no ports. SoundStorm reaches it at http://audiobookshelf:80.
@@ -183,7 +189,7 @@ services:
     volumes:
       # Read-only: Immich indexes the folder in place and can never move,
       # rename or delete a photo in it.
-      - ./library/pictures:/pictures:ro
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}/pictures:/pictures:ro
       # Immich's own working space - thumbnails, previews, transcoded clips.
       # A named volume, not a folder: it is regenerated from the photos.
       - immich-data:/data

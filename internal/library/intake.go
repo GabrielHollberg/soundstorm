@@ -705,12 +705,70 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	if err := os.Chmod(tmpName, 0o666); err != nil {
 		return "", fmt.Errorf("set permissions: %w", err)
 	}
-	if err := os.Rename(tmpName, dest); err != nil {
+	if err := placeFile(tmpName, dest); err != nil {
 		return "", fmt.Errorf("put the file in place: %w", err)
 	}
 
 	l.Invalidate()
 	return folderName(kind) + "/" + rel, nil
+}
+
+// rename is os.Rename, swappable so a test can stand in for a second drive.
+var rename = os.Rename
+
+// placeFile moves a finished upload from staging to its shelf.
+//
+// A rename is atomic, which is the point: a scanner watching the shelf sees
+// nothing, then the whole file. But it only works within one filesystem, and
+// the staging directory sits in the library root - so a shelf mounted from a
+// separate drive (pictures on an external disk is the usual case) failed every
+// upload with "invalid cross-device link".
+//
+// So across drives the file is copied to a hidden name beside its destination
+// and renamed from there, which is on one filesystem and atomic again. The
+// temporary name ends ".soundstorm-part", an extension no backend treats as
+// media, so nothing indexes a half-copied photo in the meantime.
+func placeFile(staged, dest string) error {
+	err := rename(staged, dest)
+	if err == nil || !crossDevice(err) {
+		return err
+	}
+	return copyThenRename(staged, dest)
+}
+
+func copyThenRename(staged, dest string) error {
+	src, err := os.Open(staged)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	tmp, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".*.soundstorm-part")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Gone whatever happens: after a successful rename there is nothing at
+	// this name to remove, and after a failure there must be nothing left.
+	defer os.Remove(tmpName)
+
+	if _, err := io.Copy(tmp, src); err != nil {
+		tmp.Close()
+		return err
+	}
+	// Flushed before the rename, or a crash could leave the file at its
+	// final name with its contents still in a cache.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o666); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, dest)
 }
 
 // within reports whether child is inside parent.

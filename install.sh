@@ -13,6 +13,7 @@
 #   --tailscale      also reach it away from home, over a tailnet
 #   --no-tailscale   stop doing that
 #   --uninstall      remove it, keeping the media library
+#   --library PATH   keep the media library somewhere else - an external drive
 #
 # Written for /bin/sh rather than bash, because a stock Debian's /bin/sh is dash
 # and an installer that only works under bash is an installer that fails on the
@@ -154,6 +155,17 @@ set_env() {
 		mv .env.new .env
 	fi
 	printf '%s=%s\n' "$1" "$2" >> .env
+}
+
+# library_path is where this install keeps its media: beside it, unless .env
+# says otherwise.
+library_path() {
+	chosen=$(get_env SOUNDSTORM_LIBRARY_PATH)
+	if [ -n "$chosen" ]; then
+		printf '%s' "$chosen"
+	else
+		printf '%s' "$DIR/library"
+	fi
 }
 
 # installed_scheme reports what this install actually serves rather than
@@ -304,7 +316,7 @@ uninstall() {
 	say "${BOLD}Removing SoundStorm${OFF}"
 	say ""
 
-	library="$DIR/library"
+	library=$(library_path)
 
 	if [ -f "$DIR/docker-compose.yml" ]; then
 		cd "$DIR"
@@ -361,6 +373,7 @@ uninstall() {
 HTTPS=''
 TAILSCALE=''
 AUTHKEY=''
+LIBRARY=''
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--uninstall|-u)
@@ -385,6 +398,11 @@ while [ $# -gt 0 ]; do
 			AUTHKEY="${1:-}"
 			[ -n "$AUTHKEY" ] || die "--auth-key needs a key after it"
 			;;
+		--library)
+			shift
+			LIBRARY="${1:-}"
+			[ -n "$LIBRARY" ] || die "--library needs a folder after it"
+			;;
 		--help|-h)
 			say "SoundStorm installer"
 			say ""
@@ -394,6 +412,7 @@ while [ $# -gt 0 ]; do
 			say "  --tailscale      also reach it away from home, over a tailnet"
 			say "  --no-tailscale   stop doing that"
 			say "  --uninstall      remove it, keeping your media library"
+			say "  --library PATH   keep the media library somewhere else"
 			say ""
 			exit 0
 			;;
@@ -459,10 +478,6 @@ else
 	note "downloaded docker-compose.yml"
 fi
 
-# The library folders are made here rather than left to Docker. A bind mount to
-# a path that does not exist is created by the daemon as root, which on Linux
-# leaves somebody unable to copy files into their own media folder.
-mkdir -p library/music library/movies library/tv library/audiobooks library/ebooks library/documents library/pictures
 
 if [ "$UPGRADE" = "0" ]; then
 	step "Choosing a port"
@@ -517,6 +532,35 @@ elif [ "$HTTPS" = "off" ]; then
 fi
 TLS_MODE=$(get_env SOUNDSTORM_TLS)
 SCHEME=$(installed_scheme)
+
+# Where the library lives: beside the install unless --library says otherwise,
+# which is how it goes on an external drive. Compose mounts every shelf from
+# the same setting, so they all follow. Existing media is never moved - that is
+# not an operation a script should risk failing halfway through - so somebody
+# moving it is told where the old files are.
+if [ -n "$LIBRARY" ]; then
+	mkdir -p "$LIBRARY" || die "Could not use $LIBRARY for the library. Check the drive is mounted, then run this again."
+	full=$(cd "$LIBRARY" && pwd)
+	previous=$(library_path)
+	set_env SOUNDSTORM_LIBRARY_PATH "$full"
+	set_env SOUNDSTORM_LIBRARY_HINT "$full"
+	note "keeping the library in $full"
+	if [ "$previous" != "$full" ] && [ -n "$(find "$previous" -type f ! -name README.txt 2>/dev/null | head -1)" ]; then
+		say ""
+		say "Your existing media is still in $previous."
+		note "To bring it across: stop SoundStorm ($COMPOSE down), move the folders"
+		note "inside it into $full, then start it again ($COMPOSE up -d)."
+		say ""
+	fi
+fi
+LIBRARY_DIR=$(library_path)
+
+# The library folders are made here rather than left to Docker. A bind mount to
+# a path that does not exist is created by the daemon as root, which on Linux
+# leaves somebody unable to copy files into their own media folder.
+for shelf in music movies tv audiobooks ebooks documents pictures; do
+	mkdir -p "$LIBRARY_DIR/$shelf"
+done
 
 # Remote access. A separate decision from --https: one is about the wifi at
 # home, the other about being away from it.
@@ -617,7 +661,7 @@ else
 	say "${GREEN}${BOLD}Ready.${OFF} Open ${BOLD}$URL${OFF} and create your account."
 fi
 say ""
-say "Your media goes in ${BOLD}$DIR/library${OFF}:"
+say "Your media goes in ${BOLD}$LIBRARY_DIR${OFF}:"
 say "    music/  movies/  tv/  audiobooks/  ebooks/  documents/  pictures/"
 say ""
 note "The media servers are still setting themselves up in the background."

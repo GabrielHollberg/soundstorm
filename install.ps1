@@ -18,6 +18,7 @@
 #   -NoTailscale   stop doing that
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
 #   -NoAutoStart   install, but do not start with Windows
+#   -Library PATH  keep the media library somewhere else - an external drive
 #
 # Updating is the same as installing: run it again. It pulls newer images and
 # restarts, and leaves everything else alone. -Https and -NoHttps work on an
@@ -47,7 +48,10 @@ param(
     [Alias('no-https')][switch]$NoHttps,
     [Alias('no-shortcuts')][switch]$NoShortcuts,
     [Alias('no-auto-start')][switch]$NoAutoStart,
-    [Alias('no-browser')][switch]$NoBrowser
+    [Alias('no-browser')][switch]$NoBrowser,
+    # No alias: --library already binds to -Library, and an alias differing
+    # only in case is an error rather than a no-op.
+    [string]$Library
 )
 
 if ($Https -and $NoHttps) {
@@ -814,6 +818,15 @@ function Get-EnvSetting([string]$Name) {
     return Get-EnvSettingIn $Dir $Name
 }
 
+# Get-LibraryPath is where this install keeps its media: the folder beside it,
+# unless .env says otherwise. Read from .env every time, so the shortcuts, the
+# folders and the uninstaller can never disagree about it.
+function Get-LibraryPath {
+    $chosen = Get-EnvSetting 'SOUNDSTORM_LIBRARY_PATH'
+    if ($chosen) { return ($chosen -replace '/', '\') }
+    return (Join-Path $Dir 'library')
+}
+
 # Get-InstalledURL is where an install answers, read from its own .env rather
 # than assumed. Falls back to the first port and plain http, which is what a
 # .env too old to carry either of them meant.
@@ -967,7 +980,7 @@ function Install-Shortcuts {
     # Somewhere to put files, one click away. The app takes a drag-and-drop
     # too, but a folder is what people reach for with a hard drive of music.
     New-Shortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'SoundStorm media.lnk') `
-        (Join-Path $Dir 'library') $null $null 'Put your music, films and books in here' $false
+        (Get-LibraryPath) $null $null 'Put your music, films and books in here' $false
 
     # Updating is re-running the installer, so the shortcut is the installer.
     New-Shortcut (Join-Path $startMenu 'Update SoundStorm.lnk') $powershell `
@@ -1046,7 +1059,7 @@ if ($Uninstall) {
     Write-Host "  Removing SoundStorm" -ForegroundColor White
     Write-Host "  -----------------------------------------------------------"
 
-    $library = Join-Path $Dir 'library'
+    $library = Get-LibraryPath
     $hasLibrary = Test-Path $library
 
     if (-not (Test-Path (Join-Path $Dir 'docker-compose.yml'))) {
@@ -1215,10 +1228,6 @@ try {
     }
 }
 
-foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks', 'documents', 'pictures') {
-    New-Item -ItemType Directory -Force -Path (Join-Path 'library' $folder) | Out-Null
-}
-
 # Always, whether or not Tailscale is wanted. compose bind-mounts this file,
 # and Docker's answer to a bind mount whose source is missing is to create a
 # *directory* with that name - after which the container fails in a way that
@@ -1273,6 +1282,42 @@ if ($Https -or ($NoHttps -eq $false -and -not $tlsNow)) {
     Note "Turning https off."
 }
 $tlsMode = Get-EnvSetting 'SOUNDSTORM_TLS'
+
+# Where the library lives. Beside the install unless -Library says otherwise,
+# which is how it goes on an external drive. Compose mounts every shelf from
+# the same setting, so they all follow.
+#
+# Existing media is never moved for anybody: tens of gigabytes shifted by a
+# script is exactly the operation that should not fail halfway. Somebody moving
+# the library is told where the old files are, and how.
+if ($Library) {
+    try {
+        $full = [IO.Path]::GetFullPath($Library)
+        New-Item -ItemType Directory -Force -Path $full -ErrorAction Stop | Out-Null
+    } catch {
+        Stop-With "  Could not use $Library for the library: $($_.Exception.Message)`n`n  Check the drive is connected, then run the setup again."
+    }
+    $previous = Get-LibraryPath
+    Set-EnvSetting 'SOUNDSTORM_LIBRARY_PATH' ($full -replace '\\', '/')
+    # What the app shows as the library's location: the path a person would
+    # type into Explorer, not the one Docker is given.
+    Set-EnvSetting 'SOUNDSTORM_LIBRARY_HINT' $full
+    Note "Keeping the library in $full"
+    if ($previous -ne $full -and (Test-Path $previous) -and
+        (Get-ChildItem $previous -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ne 'README.txt' } | Select-Object -First 1)) {
+        Write-Host ""
+        Write-Host "  Your existing media is still in $previous." -ForegroundColor Yellow
+        Write-Host "  To bring it across, close SoundStorm, move the folders inside it" -ForegroundColor DarkGray
+        Write-Host "  into $full, and open SoundStorm again." -ForegroundColor DarkGray
+        Write-Host ""
+    }
+}
+$libraryPath = Get-LibraryPath
+
+foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks', 'documents', 'pictures') {
+    New-Item -ItemType Directory -Force -Path (Join-Path $libraryPath $folder) | Out-Null
+}
 $scheme = Get-InstalledScheme
 
 # Remote access. Off unless asked for, and it stays a separate decision from

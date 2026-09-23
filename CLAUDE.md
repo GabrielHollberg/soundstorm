@@ -972,6 +972,32 @@ on this window."
 reasons - creating it, and counting files so the UI can tell those two cases
 apart. It does not index. Do not let it grow into an indexer.
 
+**Where the library lives is chosen at install time, not in the app.**
+`SOUNDSTORM_LIBRARY_PATH` in `.env` moves it - to an external drive, usually -
+and every mount in the compose file reads the same variable, so the shelves
+cannot drift apart. It is an installer option (`-Library`, `--library`) and not
+a setting, because which folders a container can see is fixed when it starts:
+changing it from inside would mean SoundStorm driving Docker, the thing it is
+deliberately denied (see "Installing, updating, removing"). The installer
+never moves existing media; it says where the old files are.
+
+On Windows a missing drive stops the stack from starting, which is the safe
+failure. On Linux an unmounted drive leaves an empty mount point, which looks
+to every backend like a library somebody emptied - and `EnsurePlaceholders`
+would write a README into it, taking away the empty-folder protection Jellyfin
+relies on (see "Telling the backends to look"). Documented rather than guarded
+for now; a guard would need to recognise "this is not the library I had" with
+no state about the media, which is the line `internal/state` does not cross.
+
+**Uploads survive a shelf on another drive.** They are staged in
+`library/.uploads` and renamed into place, and a rename cannot cross
+filesystems - found as `invalid cross-device link` while testing pictures,
+the shelf most likely to live on its own disk. `placeFile` falls back to
+copying to a hidden `.<name>.*.soundstorm-part` beside the destination and
+renaming from there: atomic again, and an extension no backend indexes.
+Verified by rerunning the exact failing setup - a shelf bind-mounted
+separately inside the container - and watching the upload land.
+
 `Hint()` is the path to show a person and `Root()` is the path SoundStorm
 sees; inside a container those are `./library` and `/library`, and only the
 first exists on anybody's computer. `/api/library` sends the hint as `root`.
