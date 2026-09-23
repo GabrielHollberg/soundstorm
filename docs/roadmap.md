@@ -95,6 +95,15 @@ browser. See `docs/names-service.md`. What is left, in order:
    prove the install is really there, or a trusted certificate on a public
    address is a phishing kit.
 
+   **Deferred, deliberately (2026-09-23).** It is the feature that most
+   directly answers Plex - a library on any device, nothing installed on it -
+   and also the one that puts SoundStorm on the open internet, where it has
+   never been. It waits for a security review of everything that faces the
+   internet (sign-in, sessions, uploads), and when it comes it is opt-in: a
+   port opened on somebody's router without asking is a breach of trust, not
+   a convenience. Tailscale covers remote access safely until then, and stays
+   afterwards for homes behind carrier-grade NAT.
+
 The rule that keeps it cheap, and must not bend: **the service never carries
 media**. A relay would scale its cost with every film watched; DNS records
 and a challenge every couple of months do not.
