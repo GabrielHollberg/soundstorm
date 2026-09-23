@@ -360,8 +360,11 @@ was asked for was probably truncated, so there is more behind it even when the
 merged page came up short. Without that, one source holding a long shelf
 answers a first page and looks exhausted.
 
-`MaxDepth` (2000) stops paging rather than serving pages that never arrive.
+`MaxDepth` (10,000) stops paging rather than serving pages that never arrive.
 The work per page grows with the offset, so there has to be an end somewhere.
+It was 2,000, which cut a real 4,413-song music shelf off halfway; with each
+shelf fetched once and cached, a deep page is a sort in memory, not a bigger
+request to a backend, so the cap moved well past a household's shelf.
 
 On the browser side an `IntersectionObserver` alone is not enough. If a page
 does not fill the screen the sentinel never leaves the viewport, so it never

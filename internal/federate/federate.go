@@ -30,7 +30,13 @@ const MaxResults = 100
 // the offset rather than staying flat - which is fine for a house's worth of
 // media and needs a stop somewhere. At the cap Search reports HasMore false
 // rather than serving empty pages forever.
-const MaxDepth = 2000
+//
+// It was 2,000, which stopped a 4,413-song music shelf halfway down. Since the
+// adapters that browse fetch their whole shelf once and cache it (see
+// media.ShelfCache), a deep page costs a sort of what is already in memory
+// rather than a bigger request to a backend, and the cap can sit well past a
+// household's shelf.
+const MaxDepth = 10_000
 
 // SourceStatus is the per-source outcome of one federated search.
 type SourceStatus struct {
