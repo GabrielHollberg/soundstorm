@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -225,4 +226,25 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// panickySweeper panics instead of answering.
+type panickySweeper struct{}
+
+func (panickySweeper) Sweep(context.Context, string, time.Duration) (SweepResult, error) {
+	panic("provider client fell over")
+}
+
+// RunSweeper is started with go, once, from main - nothing above it recovers
+// a panic the way net/http does for a request. A bug in code that parses
+// whatever a DNS provider's API answers today must not take the whole
+// service down for every install being served at that moment.
+func TestSweepRecoveredSurvivesAPanic(t *testing.T) {
+	_, err := sweepRecovered(context.Background(), panickySweeper{}, "home", 90*24*time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil {
+		t.Fatal("want an error describing the panic, got nil")
+	}
+	if !strings.Contains(err.Error(), "panicked") {
+		t.Errorf("err = %v, want it to say it panicked", err)
+	}
 }

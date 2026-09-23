@@ -3,7 +3,9 @@ package names
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -142,7 +144,7 @@ func (s *Server) RunSweeper(ctx context.Context, forgetAfter time.Duration) {
 		case <-time.After(wait):
 		}
 		wait = 24 * time.Hour
-		res, err := sw.Sweep(ctx, s.Label, forgetAfter)
+		res, err := sweepRecovered(ctx, sw, s.Label, forgetAfter, s.Log)
 		if err != nil {
 			s.Log.Error("sweep", "err", err, "installs", res.Installs)
 			continue
@@ -150,4 +152,23 @@ func (s *Server) RunSweeper(ctx context.Context, forgetAfter time.Duration) {
 		s.Log.Info("swept", "installs", res.Installs, "unstamped", res.Unstamped,
 			"forgotten", res.Forgotten, "challenges", res.Challenges)
 	}
+}
+
+// sweepRecovered calls Sweep with a panic turned into an ordinary error.
+//
+// This is started with go, once, from main, and answers to no request - the
+// service's whole reason for existing keeps running underneath it regardless
+// of what this loop does, but a panic here would still take the process down
+// for every install being served at that moment, over a bug in code that
+// parses a date stamp out of whatever a DNS provider's API happens to answer
+// today. Every other failure in this loop is logged and tried again
+// tomorrow; a panic should be no different.
+func sweepRecovered(ctx context.Context, sw Sweeper, label string, forgetAfter time.Duration, log *slog.Logger) (res SweepResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("sweep panicked; recovered", "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return sw.Sweep(ctx, label, forgetAfter)
 }

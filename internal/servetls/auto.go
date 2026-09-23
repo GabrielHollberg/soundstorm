@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -143,7 +144,7 @@ func (a *autoCert) run(ctx context.Context) {
 	retry := firstRetry
 	for {
 		wait := checkEvery
-		if err := a.step(ctx); err != nil {
+		if err := a.stepRecovered(ctx); err != nil {
 			wait = retry
 			if acme.RateLimited(err) {
 				wait = rateLimitedRetry
@@ -162,6 +163,25 @@ func (a *autoCert) run(ctx context.Context) {
 		case <-time.After(wait):
 		}
 	}
+}
+
+// stepRecovered calls step with a panic turned into an ordinary error.
+//
+// run is started with go (see Start) and answers to no request, so nothing
+// above it recovers a panic the way net/http does for a handler. step talks
+// to two things outside this process - Let's Encrypt's ACME endpoint and the
+// name service - through client code that parses their responses, and a
+// malformed one finding an edge case there would otherwise crash SoundStorm
+// entirely rather than doing what every other failure in this loop already
+// does: log it, back off, and try again next time.
+func (a *autoCert) stepRecovered(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.log.Error("certificate step panicked; recovered", "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return a.step(ctx)
 }
 
 // step does whatever is next: register, announce, obtain or renew.

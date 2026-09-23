@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -101,5 +104,30 @@ func TestStatusErrorUnwrapsThroughWrapping(t *testing.T) {
 	}
 	if !statusErr.Temporary() {
 		t.Error("503 should be temporary")
+	}
+}
+
+// run is started as its own goroutine per target (see Start) with nothing
+// above it to catch a panic - net/http only recovers the goroutine it
+// creates for a request, and this one answers to nobody. A nil store is a
+// realistic, not contrived, way for that to happen: whatever the actual
+// cause, a panic here must leave that one backend marked failed rather than
+// crashing the whole process and every other backend's provisioning with it.
+func TestRunSurvivesAPanicAndMarksTheBackendFailed(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m := New(nil, nil, log, []Target{{ID: "navidrome", Type: "navidrome"}})
+
+	m.run(context.Background(), m.targets[0]) // must not panic the test
+
+	statuses := m.Statuses()
+	if len(statuses) != 1 {
+		t.Fatalf("got %d statuses, want 1", len(statuses))
+	}
+	st := statuses[0]
+	if st.Status != StatusFailed {
+		t.Errorf("status = %q, want %q", st.Status, StatusFailed)
+	}
+	if !strings.Contains(st.Error, "panicked") {
+		t.Errorf("error = %q, want it to say it panicked", st.Error)
 	}
 }

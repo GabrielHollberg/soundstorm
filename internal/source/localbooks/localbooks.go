@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -155,7 +156,7 @@ func (s *Source) Kind() media.Kind { return s.kind }
 // "searchable". On a large library that can take a while, which is exactly why
 // provisioning already runs in the background and reports progress.
 func (s *Source) Start(ctx context.Context) error {
-	if err := s.scan(ctx); err != nil {
+	if err := s.scanRecovered(ctx); err != nil {
 		return err
 	}
 	go s.rescanLoop(ctx)
@@ -170,11 +171,37 @@ func (s *Source) rescanLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := s.scan(ctx); err != nil && ctx.Err() == nil {
+			if err := s.scanRecovered(ctx); err != nil && ctx.Err() == nil {
 				s.log.Warn("rescan failed", "err", err)
 			}
 		}
 	}
+}
+
+// scanRecovered runs scan with a panic turned into an ordinary error.
+//
+// scan's own defense is per-file (see read, called through readSafely below):
+// one bad book fails to parse and the walk continues. This is the outer net,
+// for anything that panics somewhere else in the walk - the directory read
+// itself, the final sort - which is far less likely since that is our own
+// code rather than a hand-rolled parser reading a stranger's file, but this
+// runs in a goroutine (Start's caller is itself one, and rescanLoop starts
+// another) with nothing above it to catch a panic. net/http only recovers
+// panics in the goroutine it creates for a request, and this one answers to
+// no request at all - the first scan runs during provisioning, and every
+// scan after that runs off a ticker.
+func (s *Source) scanRecovered(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// scan's own deferred cleanup (clearing s.scanning) still ran
+			// during the unwind, before this outer recover: defers in one
+			// goroutine run in order regardless of which function they were
+			// registered in.
+			s.log.Error("scan panicked; recovered", "panic", r, "stack", string(debug.Stack()))
+			err = fmt.Errorf("localbooks %q: scan panicked: %v", s.id, r)
+		}
+	}()
+	return s.scan(ctx)
 }
 
 // scan walks the root and rebuilds the index.
@@ -236,7 +263,7 @@ func (s *Source) scan(ctx context.Context) error {
 			return nil
 		}
 
-		b, err := s.read(p, id, info.Size(), info.ModTime())
+		b, err := s.readSafely(p, id, info.Size(), info.ModTime())
 		if err != nil {
 			s.log.Warn("could not read book", "path", rel, "err", err)
 			failed++
@@ -286,6 +313,28 @@ func formatOf(name string) string {
 	default:
 		return ""
 	}
+}
+
+// readSafely calls read with a panic turned into an ordinary "could not read
+// this book" error, the same as any other parse failure.
+//
+// A hand-written EPUB or PDF parser reading a file nobody but its uploader has
+// ever seen is exactly the kind of code an adversarial input finds the edge
+// of, and internal/tags' own history - syncsafe integers, unsynchronisation,
+// an MP4 atom with no siblings - is proof this class of parser gets edge
+// cases wrong until a real file finds them. Uploading is something any member
+// can do to a shelf they can see, so one crafted file must cost this scan its
+// one entry, not the whole process: the offending file is still on disk on
+// the very next tick, and an unrecovered panic here would crash-loop the
+// server on it forever.
+func (s *Source) readSafely(bookPath, id string, size int64, modTime time.Time) (b book, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("parsing a book panicked; recovered", "path", id, "panic", r, "stack", string(debug.Stack()))
+			b, err = book{}, fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	return s.read(bookPath, id, size, modTime)
 }
 
 // read builds one index entry.

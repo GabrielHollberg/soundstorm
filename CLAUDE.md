@@ -911,6 +911,66 @@ is ever logged, request-logged, or present in a URL that reaches the access
 log; and that `sameOrigin`'s CSRF check covers every route, verified by
 reading `Routes()` top to bottom rather than assuming the wrapping holds.
 
+**A third pass found the biggest thing in this whole review, and it was
+architectural rather than a single bad line.** `recover()` did not appear
+anywhere in the codebase. Go's own per-request panic recovery in `net/http`
+protects exactly one goroutine: the one it creates to serve a connection. Every
+`go func(){...}()` spawned from inside a handler, or started once at boot and
+left running, gets none of that for free - and this project spawns nine of
+them. A panic in one is not a failed request; it is the entire process going
+down, for every user, mid-search or mid-scan.
+
+- **`federate.Search` and `HealthAll`** run each source in a goroutine of its
+  own, which is the whole point - a slow backend must not hold up the others.
+  It also meant a *panicking* backend, not just a slow or erroring one, took
+  every source down with it: worse than the dead-backend case this package
+  exists to guard against, not a milder version of it. `recoverInto` catches
+  it and reports that one source as failed, same shape as an ordinary error.
+- **`internal/source/localbooks`'s background scan is the one of these eight
+  that is directly, repeatably reachable by an ordinary member.** It parses
+  whatever EPUB or PDF anyone with upload access to that shelf just dropped
+  in, on a ticker, with nobody watching - the first scan runs synchronously
+  during provisioning, every one after that from `rescanLoop`. `internal/tags`'
+  own history (syncsafe integers, unsynchronisation, an MP4 atom with no
+  siblings) is evidence this class of hand-rolled parser gets edge cases wrong
+  until a real file finds them; a panic here, unrecovered, would crash the
+  server on that one file and crash it again identically on every restart,
+  because the file is still on disk. `readSafely` catches it per file, the
+  same as a parse error; `scanRecovered` is the outer net for anything else in
+  the walk. A short, deliberate fuzz pass over `internal/epub` and
+  `internal/pdf` (empty files, zip headers with no body, PDFs with nested
+  unclosed parens, an XMP `rdf:Alt` with nothing in it) found no panic in
+  either parser as it stands today - which says the fix was still worth making
+  before one is found, not that it was unnecessary.
+- **`provision.run`, `servetls`'s certificate-renewal loop, and the names
+  service's abandoned-install sweep** are the same shape again: started once
+  with `go` and answering to no request, each parsing a response from
+  something outside the process - a media server during setup, Let's Encrypt
+  or the name service during renewal, a DNS provider during a sweep. None of
+  them needed a specific bug found to justify the fix; the fix is two lines
+  and the alternative is a process that dies from a shape of response nobody
+  anticipated in code that already, deliberately, retries every ordinary
+  failure with backoff.
+- **What did not get this treatment, and why:** `internal/tags` runs
+  synchronously inside `library.Save`, which `net/http` already protects - a
+  panic there fails one upload request rather than the process. Two of the
+  nine goroutines stay unwrapped after being read rather than assumed safe:
+  the listener that tells a TLS handshake from a plain HTTP request by its
+  first byte (`servetls.sniff.classify`) does one buffered `Peek(1)` and a
+  type switch, with nothing in it adversarial bytes can reach; and the
+  goroutine in `cmd/soundstorm`'s main that calls `srv.Serve`/
+  `ListenAndServeTLS`/`ListenAndServe` hands the actual request handling
+  straight to net/http, which already isolates a panic to the one connection
+  it happened on - a panic in this goroutine's own few lines would mean a bug
+  in `net.Listen` or the `Serve` family itself, not attacker-controlled input.
+
+Every fix above was verified against a real, not synthetic, panic where one
+was practical to produce: a nil name-service client inside the certificate
+loop, a nil sweep provider, a nil state store inside provisioning - the kind
+of bug an unrelated future change could actually introduce - each confirmed
+to leave the process running and the failure logged rather than the test
+binary crashing.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

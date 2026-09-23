@@ -8,6 +8,9 @@ package federate
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -109,6 +112,16 @@ func Search(ctx context.Context, reg *source.Registry, q media.Query, perSourceT
 		wg.Add(1)
 		go func(i int, src source.Source) {
 			defer wg.Done()
+			// The governing rule at the top of this file is about a dead
+			// source, not just a slow or erroring one. Search runs inside a
+			// goroutine of its own - not the one net/http already recovers
+			// panics in for the request that got us here - so a panic in one
+			// adapter (a malformed response shaped just wrongly enough to
+			// reach an unchecked index or a nil field) would otherwise take
+			// the process down for every source and every request in
+			// flight, not just this one's slot. recoverInto turns that back
+			// into an ordinary per-source failure.
+			defer recoverInto(&outcomes[i].status, src)
 
 			// Each source gets its own budget, derived from the caller's
 			// context so an aborted request still cancels everything.
@@ -297,6 +310,7 @@ func HealthAll(ctx context.Context, reg *source.Registry, timeout time.Duration)
 		wg.Add(1)
 		go func(i int, src source.Source) {
 			defer wg.Done()
+			defer recoverInto(&statuses[i], src)
 			sctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
@@ -316,4 +330,29 @@ func HealthAll(ctx context.Context, reg *source.Registry, timeout time.Duration)
 	}
 	wg.Wait()
 	return statuses
+}
+
+// recoverInto turns a panic during one source's Search or Health call into an
+// ordinary failed status instead of letting it propagate.
+//
+// Both callers run each source in a goroutine of its own, separate from the
+// one net/http already recovers panics in for whatever request got us here -
+// recover only unwinds the goroutine it is called from, so without this a
+// panic in one adapter (a malformed response shaped just wrongly enough to
+// reach an unchecked index or a nil field) would crash the whole process for
+// every source and every request in flight, not just degrade this one's
+// slot. That is a worse failure than the dead-backend case this package
+// exists to guard against, not a milder version of it.
+func recoverInto(status *SourceStatus, src source.Source) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	slog.Default().Error("source panicked; recovered",
+		"source", src.ID(), "kind", src.Kind(), "panic", r, "stack", string(debug.Stack()))
+	*status = SourceStatus{
+		SourceID: src.ID(),
+		Kind:     src.Kind(),
+		Error:    fmt.Sprintf("panicked: %v", r),
+	}
 }

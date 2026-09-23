@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -173,7 +174,24 @@ func (m *Manager) set(id string, status Status, detail, errMsg string) {
 }
 
 // run brings one backend from "just a URL" to "registered and searchable".
+//
+// Started as its own goroutine per target (see Start), with nothing above it
+// to catch a panic: net/http's own recovery only protects the goroutine it
+// creates for a request, and this one answers to nobody. A panic anywhere
+// under here - in this package's own retry logic, in an adapter's response
+// parsing, or in a local book library's first scan reading a file somebody
+// uploaded before this backend ever came up - would otherwise crash
+// SoundStorm entirely rather than leaving one backend marked failed, which is
+// what "SoundStorm still serves" on StatusFailed promises.
 func (m *Manager) run(ctx context.Context, t Target) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.log.Error("provisioning panicked; recovered", "backend", t.ID,
+				"panic", r, "stack", string(debug.Stack()))
+			m.set(t.ID, StatusFailed, "", fmt.Sprintf("panicked: %v", r))
+		}
+	}()
+
 	log := m.log.With("backend", t.ID)
 
 	if creds, ok := m.store.Backend(t.ID); ok {

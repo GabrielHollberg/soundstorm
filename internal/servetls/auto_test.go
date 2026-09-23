@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -458,5 +459,26 @@ func TestPebbleAutoModeEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, publicCertFile)); err != nil {
 		t.Errorf("certificate not saved: %v", err)
+	}
+}
+
+// run is started with go and answers to no request, so nothing above it
+// recovers a panic the way net/http does for a handler - step talks to two
+// things outside the process (Let's Encrypt and the name service) through
+// client code parsing their responses, and a bug reaching a nil client is a
+// realistic, not contrived, way for that to go wrong. stepRecovered must turn
+// it into an ordinary error rather than crashing the test binary.
+func TestStepRecoveredSurvivesAPanic(t *testing.T) {
+	a := &autoCert{
+		dir:   t.TempDir(),
+		names: nil, // dereferencing this inside names.Client.Register panics
+		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	err := a.stepRecovered(context.Background())
+	if err == nil {
+		t.Fatal("want an error describing the panic, got nil")
+	}
+	if !strings.Contains(err.Error(), "panicked") {
+		t.Errorf("err = %v, want it to say it panicked", err)
 	}
 }

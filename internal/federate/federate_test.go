@@ -170,3 +170,84 @@ func TestSubtitleMatchOutranksTheFloor(t *testing.T) {
 			onTheAlbum, byTitle, byArtist)
 	}
 }
+
+// panickySource panics instead of answering, however it is asked.
+type panickySource struct {
+	id   string
+	kind media.Kind
+}
+
+func (p panickySource) ID() string       { return p.id }
+func (p panickySource) Kind() media.Kind { return p.kind }
+func (p panickySource) Search(context.Context, media.Query) ([]media.Item, error) {
+	panic("adapter fell over")
+}
+func (p panickySource) Health(context.Context) error { panic("adapter fell over") }
+
+// The governing rule of this package is that a dead source must not take the
+// search down - and a panicking one is a worse failure than a dead one, not
+// a milder version, because a panic in the wrong goroutine crashes the whole
+// process rather than just failing one request. If this test itself does not
+// crash the test binary, the fix works; the assertions on top are the bonus.
+func TestAPanickingSourceDoesNotCrashTheSearch(t *testing.T) {
+	reg := source.NewRegistry(
+		panickySource{id: "broken", kind: media.KindMusic},
+		stub{id: "fine", kind: media.KindMusic, items: []media.Item{item("fine", "Survivor", media.KindMusic)}},
+	)
+
+	res := Search(context.Background(), reg, media.Query{Text: "s"}, time.Second)
+
+	if !res.Degraded {
+		t.Error("want Degraded=true with one source down")
+	}
+	if len(res.Items) != 1 || res.Items[0].Title != "Survivor" {
+		t.Errorf("the healthy source's result did not survive: %+v", res.Items)
+	}
+	var broken, fine bool
+	for _, s := range res.Sources {
+		switch s.SourceID {
+		case "broken":
+			broken = true
+			if s.OK || s.Error == "" {
+				t.Errorf("the panicking source was not reported as failed: %+v", s)
+			}
+		case "fine":
+			fine = true
+			if !s.OK {
+				t.Errorf("the healthy source was reported as failed: %+v", s)
+			}
+		}
+	}
+	if !broken || !fine {
+		t.Errorf("expected both sources reported, got %+v", res.Sources)
+	}
+}
+
+// Same rule, for the health check every backend status page runs through.
+func TestAPanickingSourceDoesNotCrashHealthAll(t *testing.T) {
+	reg := source.NewRegistry(
+		panickySource{id: "broken", kind: media.KindMusic},
+		stub{id: "fine", kind: media.KindMusic},
+	)
+
+	statuses := HealthAll(context.Background(), reg, time.Second)
+
+	var broken, fine bool
+	for _, s := range statuses {
+		switch s.SourceID {
+		case "broken":
+			broken = true
+			if s.OK || s.Error == "" {
+				t.Errorf("the panicking source was not reported as failed: %+v", s)
+			}
+		case "fine":
+			fine = true
+			if !s.OK {
+				t.Errorf("the healthy source was reported as failed: %+v", s)
+			}
+		}
+	}
+	if !broken || !fine {
+		t.Errorf("expected both sources reported, got %+v", statuses)
+	}
+}
