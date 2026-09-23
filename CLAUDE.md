@@ -175,7 +175,33 @@ moves ("0 Added"), so listening positions survived.
 
 Films and television are not restructured. Jellyfin matches on the *name*, not
 the depth, and anything dropped there is already folder-shaped; imposing a
-layout would be inventing one. Ebooks are flat on purpose.
+layout would be inventing one.
+
+**Ebooks are Author/Title too, and used to be flat.** Flat made sense while an
+epub describes itself and nothing reads the folders - until a Calibre library
+arrived as `Author/Title (id)/` with its `metadata.opf` and `cover.jpg`, and
+every other upload landed loose beside it. Calibre's shape is the one worth
+matching: it is the same as the other shelves, and flattening it would part
+1,664 books from the sidecars that carry their curated metadata and covers.
+
+The rule is the music one, not the audiobook one: **the folder above the book
+first**, because a Calibre author folder is curated and the name inside an
+epub is often the sort form ("Herbert, Frank"); then the book's own metadata;
+then the file name, which for a PDF is often all there is ("Title - Author
+(2017).pdf", parsed by `internal/pdf`). The plan uses the file name, since it
+runs before the bytes arrive. The staged file is called `part-123456789`, so
+it is always the *dropped* name that is parsed - read the staged one and every
+untagged PDF would be filed under a title of digits.
+
+**What describes itself is per shelf, not per extension.** A `.pdf` is a book
+on the ebook shelf and a companion on the audiobook one; counted as
+self-describing everywhere, an Audible PDF would read its own metadata and
+land under a different author from its m4b - the bug the companion rule
+exists to prevent. The client's upload order follows the same split.
+
+A container folder directly above a loose file - `Books/Dune.epub`,
+`Music/track.mp3` - is not taken for the book or album either. That gap was in
+the first version of the two-level rule and was caught writing this one.
 
 Tags are somebody else's text, so they go through `cleanRelPath` like any
 other path, and the separators in them are replaced rather than refused - an

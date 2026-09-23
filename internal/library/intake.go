@@ -10,7 +10,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/GabrielHollberg/soundstorm/internal/epub"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/pdf"
 	"github.com/GabrielHollberg/soundstorm/internal/tags"
 )
 
@@ -257,7 +259,7 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 					// arrived yet. Save runs the same rule with the file's
 					// own tags and can only do better - it fills in a real
 					// artist where this had to guess at a placeholder.
-					Dest: folderName(kind) + "/" + shelvePath(kind, rel, tags.Tags{}),
+					Dest: folderName(kind) + "/" + shelvePath(kind, rel, fromFilename(kind, rel)),
 				}
 			}
 		}
@@ -625,13 +627,16 @@ func (l *Library) ClearStaging() {
 //
 // Music and audiobooks are the two the backends read structurally: Navidrome
 // groups an album by its folder as well as its tags, and Audiobookshelf reads
-// Author/Title straight from the path. Films and television are already folder
-// shaped by the time anybody drops them, and Jellyfin matches on the *name*
-// rather than the depth, so imposing a layout there would be inventing one.
-// Ebooks are a flat folder on purpose.
+// Author/Title straight from the path. Ebooks are shelved the same way for the
+// person browsing the folder rather than for any backend - they were flat
+// until a Calibre library arrived as Author/Title and every other upload
+// landed loose beside it. Films and television are already folder shaped by
+// the time anybody drops them, and Jellyfin matches on the *name* rather than
+// the depth, so imposing a layout there would be inventing one.
 var structuredDepth = map[media.Kind]int{
 	media.KindMusic:     2, // Artist/Album/track
 	media.KindAudiobook: 2, // Author/Title/part
+	media.KindEbook:     2, // Author/Title/book, which is also Calibre's own layout
 }
 
 // shelveUnder files an upload as Artist/Album or Author/Title.
@@ -647,12 +652,85 @@ func shelveUnder(kind media.Kind, rel, staged, shelf string) string {
 	if _, ok := structuredDepth[kind]; !ok {
 		return rel
 	}
-	if !taggable(rel) {
+	if !describesItself(kind, rel) {
 		if beside, ok := groupFolder(kind, rel, shelf); ok {
 			return beside
 		}
 	}
-	return shelvePath(kind, rel, readTags(staged))
+	return shelvePath(kind, rel, readMeta(kind, staged, rel))
+}
+
+// describesItself reports whether a file can say where it belongs on this
+// shelf. Per shelf, not per extension: a .pdf is a book on the ebook shelf and
+// a companion on the audiobook one, where letting it read its own metadata
+// filed Audible's accompanying PDFs under a different author from their book.
+func describesItself(kind media.Kind, rel string) bool {
+	if kind == media.KindEbook {
+		switch strings.ToLower(path.Ext(rel)) {
+		case ".epub", ".pdf":
+			return true
+		}
+		return false
+	}
+	return taggable(rel)
+}
+
+// readMeta reads what a staged file says about itself, in the shape the shelf
+// rule wants: who made it and what it is called. Any failure is silence.
+//
+// For a book, whatever the file does not say is taken from the name it was
+// dropped with - "Title - Author (2017).pdf" is the usual shape, and for PDFs
+// the filename is often the only real information there is. The staged file
+// is called part-123456789, so it is the dropped path that is read, never the
+// staged one.
+func readMeta(kind media.Kind, staged, rel string) tags.Tags {
+	if kind != media.KindEbook {
+		return readTags(staged)
+	}
+	var t tags.Tags
+	switch strings.ToLower(path.Ext(rel)) {
+	case ".epub":
+		if book, err := epub.Open(staged); err == nil {
+			t.Title = book.Meta.Title
+			if len(book.Meta.Creators) > 0 {
+				t.Artist = book.Meta.Creators[0]
+			}
+			book.Close()
+		}
+	case ".pdf":
+		if m, err := pdf.Open(staged); err == nil && m.Source != "filename" {
+			t.Title = m.Title
+			if len(m.Authors) > 0 {
+				t.Artist = m.Authors[0]
+			}
+		}
+	}
+	name := fromFilename(kind, rel)
+	if t.Title == "" {
+		t.Title = name.Title
+	}
+	if t.Artist == "" {
+		t.Artist = name.Artist
+	}
+	return t
+}
+
+// fromFilename is what a book's file name says about it, for the plan - which
+// runs before the bytes arrive - and as readMeta's fallback. Only books: a
+// track's file name is "01 Airbag.mp3", which names nothing worth a folder.
+func fromFilename(kind media.Kind, rel string) tags.Tags {
+	if kind != media.KindEbook {
+		return tags.Tags{}
+	}
+	// Without its extension, whatever it is: FromFilename strips only ".pdf",
+	// and an epub's title would otherwise end ".epub".
+	base := path.Base(rel)
+	m := pdf.FromFilename(strings.TrimSuffix(base, path.Ext(base)))
+	t := tags.Tags{Title: m.Title}
+	if len(m.Authors) > 0 {
+		t.Artist = m.Authors[0]
+	}
+	return t
 }
 
 // taggable reports whether internal/tags can read this file's own metadata.
@@ -701,14 +779,18 @@ func shapeOf(rel string) dropShape {
 	if n := len(dirs); n >= 2 && discFolder.MatchString(dirs[n-1]) {
 		s.disc, dirs = dirs[n-1], dirs[:n-1]
 	}
-	if n := len(dirs); n >= 1 {
+	// A container right above the file - Books/Dune.epub, Music/track.mp3 -
+	// is not an album or a book, and a file inside one is as good as loose.
+	if n := len(dirs); n >= 1 && !isContainer(dirs[n-1]) {
 		s.group = dirs[n-1]
-		if n >= 2 && !containers[strings.ToLower(strings.TrimSpace(dirs[n-2]))] {
+		if n >= 2 && !isContainer(dirs[n-2]) {
 			s.above = dirs[n-2]
 		}
 	}
 	return s
 }
+
+func isContainer(dir string) bool { return containers[strings.ToLower(strings.TrimSpace(dir))] }
 
 // groupFolder finds where this file's group already landed, so a companion can
 // join it instead of guessing.
@@ -795,16 +877,22 @@ func shelvePath(kind media.Kind, rel string, t tags.Tags) string {
 	s := shapeOf(rel)
 
 	var who string
-	if kind == media.KindMusic {
+	switch kind {
+	case media.KindMusic:
 		who = firstOf(t.AlbumArtist, s.above, t.Artist)
-	} else {
+	case media.KindEbook:
+		// The folder above first, like music: a Calibre library's author
+		// folders are curated, and the name a book carries inside it is
+		// often an author-sort form or a publisher's mistake.
+		who = firstOf(s.above, t.Folder())
+	default:
 		who = firstOf(t.Folder(), s.above)
 	}
 
 	album := s.group
 	if album == "" {
 		album = t.Album
-		if kind == media.KindAudiobook && album == "" {
+		if kind != media.KindMusic && album == "" {
 			// Audiobookshelf reads the album tag as the book, which is what
 			// every audiobook ripper writes - but a single-file book often
 			// carries only a title.
@@ -816,7 +904,7 @@ func shelvePath(kind media.Kind, rel string, t tags.Tags) string {
 	// A file that says nothing about itself is exactly the one that needs
 	// somewhere obvious to be found and fixed.
 	first, second := "Unknown Artist", "Unknown Album"
-	if kind == media.KindAudiobook {
+	if kind != media.KindMusic {
 		first, second = "Unknown Author", "Unknown Title"
 	}
 	rebuilt, err := cleanRelPath(joinShelf(tagSegment(who, first), tagSegment(album, second), s.disc, s.base))

@@ -148,7 +148,7 @@ library/
   movies/      Arrival (2016)/Arrival (2016).mkv
   tv/          Severance (2022)/Season 01/Severance - S01E01.mkv
   audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
-  ebooks/      A Wizard of Earthsea.epub, Some Paper - Author (2017).pdf
+  ebooks/      Ursula K. Le Guin/A Wizard of Earthsea/A Wizard of Earthsea.epub
 ```
 
 Nothing to import, no library to configure.

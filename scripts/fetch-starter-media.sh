@@ -89,8 +89,10 @@ report() {
 
 echo
 echo "  Ebook - The Richest Man in Babylon, from Wikisource"
-BOOK="$DEST/ebooks/The Richest Man in Babylon - George S. Clason.epub"
-mkdir -p "$DEST/ebooks"
+# Author/Title like everything else on the shelf, so a fresh install starts out
+# in the shape every later upload is filed into.
+BOOK="$DEST/ebooks/George S. Clason/The Richest Man in Babylon/The Richest Man in Babylon - George S. Clason.epub"
+mkdir -p "$(dirname "$BOOK")"
 get "$WS/?lang=en&format=epub&page=The_Richest_Man_In_Babylon" "$work/out/book.epub"
 # Checked before it is allowed to replace anything: an epub whose zip does not
 # open is the failure this script exists to undo, and writing one into the

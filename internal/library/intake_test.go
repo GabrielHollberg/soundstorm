@@ -48,8 +48,8 @@ func TestFilesGoToTheShelfTheirNameImplies(t *testing.T) {
 		// drop names neither: the shelf is never a flat pile of tracks.
 		{"Myrrhman.flac", "music/Unknown Artist/Unknown Album/Myrrhman.flac"},
 		{"Arrival (2016).mkv", "movies/Arrival (2016).mkv"},
-		{"A Wizard of Earthsea.epub", "ebooks/A Wizard of Earthsea.epub"},
-		{"Attention Is All You Need.pdf", "ebooks/Attention Is All You Need.pdf"},
+		{"A Wizard of Earthsea.epub", "ebooks/Unknown Author/A Wizard of Earthsea/A Wizard of Earthsea.epub"},
+		{"Attention Is All You Need.pdf", "ebooks/Unknown Author/Attention Is All You Need/Attention Is All You Need.pdf"},
 		{"book.m4b", "audiobooks/Unknown Author/Unknown Title/book.m4b"},
 		// Television, in both of the forms people actually name it.
 		{"Severance - S01E01.mkv", "tv/Severance - S01E01.mkv"},

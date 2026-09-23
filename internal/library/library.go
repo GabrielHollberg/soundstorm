@@ -90,7 +90,7 @@ var layout = []Folder{
 		Kind:        media.KindEbook,
 		Name:        "ebooks",
 		Description: "EPUB and PDF files. An existing Calibre library works here too.",
-		Example:     "ebooks/A Wizard of Earthsea.epub",
+		Example:     "ebooks/Ursula K. Le Guin/A Wizard of Earthsea/book.epub",
 	},
 }
 

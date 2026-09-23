@@ -1525,7 +1525,16 @@ let lastPlanFree = null;
 //
 // Stable within a group and it does not reorder groups, so the progress list
 // still reads in the order somebody dropped things.
+//
+// Which files describe themselves depends on the shelf: a .pdf is a book on the
+// ebook shelf and a companion to an audiobook, so it goes first in one and
+// last in the other.
 const TAGGABLE = /\.(mp3|m4a|m4b|mp4|flac)$/i;
+const SELF_DESCRIBING_BOOK = /\.(epub|pdf)$/i;
+
+function describesItself(item) {
+  return (item.kind === 'ebook' ? SELF_DESCRIBING_BOOK : TAGGABLE).test(item.file.name);
+}
 
 function orderTaggableFirst(queue) {
   const groups = [];
@@ -1542,10 +1551,10 @@ function orderTaggableFirst(queue) {
   for (const key of groups) {
     const members = seen.get(key);
     for (const item of members) {
-      if (TAGGABLE.test(item.file.name)) queue[at++] = item;
+      if (describesItself(item)) queue[at++] = item;
     }
     for (const item of members) {
-      if (!TAGGABLE.test(item.file.name)) queue[at++] = item;
+      if (!describesItself(item)) queue[at++] = item;
     }
   }
 }
