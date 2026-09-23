@@ -405,9 +405,23 @@ films" is not.
 
 ### Turning on HTTPS
 
-Off by default, because on `localhost` there is nothing on the wire to protect
-and a certificate warning is a poor first screen. The moment another machine can
-reach it, turn it on by running the installer again with one extra word:
+Off by default, and for most homes that is a fine place to leave it — phones and
+other computers included.
+
+What HTTPS protects against is somebody else on your network reading what goes
+over it, including your session. If that network is your own home Wi-Fi,
+that is a small risk. If you share it with people you do not know — a
+flatshare, student housing — turn it on. To use SoundStorm away from home,
+[Tailscale](#reaching-it-from-outside-the-house) gives you HTTPS with a real
+certificate and none of what follows.
+
+What it costs: nothing outside your house can vouch for an address like
+`192.168.1.50`, so every device shows a full-page "your connection is not
+private" warning the first time, until you tell it to continue (or install
+SoundStorm's certificate, below). Reinstalling SoundStorm makes a new
+certificate, and every device warns once more.
+
+To turn it on, run the installer again with one extra word:
 
 **Windows** — paste this into PowerShell from anywhere:
 
@@ -425,11 +439,10 @@ Either one edits one line of your `.env`, restarts, and — this is the part wor
 having — prints the `https://` addresses for *this* install, so you are not
 guessing at a scheme. `-NoHttps` and `--no-https` put it back.
 
-Behind that flag, SoundStorm runs its own certificate authority. Every device
-warns on the first visit, because nothing outside your house can vouch for an
-address like `192.168.1.50`. To stop it asking: visit
-`https://<server>:8099/ca.crt`, install that file once per device, and there is
-no warning again. Nothing to renew.
+Behind that flag, SoundStorm runs its own certificate authority. To stop the
+warning: visit `https://<server>:8099/ca.crt`, install that file once per
+device, and there is no warning again. Nothing to renew — until a reinstall,
+which makes a new authority for the devices to install again.
 
 <details>
 <summary>By hand, if you would rather</summary>

@@ -1720,16 +1720,19 @@ $('intake-close').addEventListener('click', () => {
 
   const message = document.createElement('p');
   if (offline) {
-    // Almost always the certificate rather than the server: SoundStorm mints
-    // its own, and a browser that has not been told to trust it refuses the
-    // connection outright. Reloading is what applies a freshly accepted one.
+    // The page itself loaded, so this is the server going away after that,
+    // or a certificate that changed underneath an open tab. Reloading covers
+    // both: the service worker never answers a page load (see sw.js, rule 3),
+    // so a changed certificate comes back as the browser's own warning rather
+    // than this screen again. The text says so, because that warning is
+    // alarming if nobody said it was coming.
     message.textContent = 'Cannot reach SoundStorm.';
     const detail = document.createElement('p');
     detail.className = 'muted';
     detail.textContent =
-      'If this address used to work, the certificate changed when the server '
-      + 'restarted. Open it in a new tab, accept the warning, and reload. '
-      + 'Otherwise check that SoundStorm is running.';
+      'Check that the computer running it is on, then try again. If your '
+      + 'browser warns that the connection is not private, that is expected '
+      + 'after SoundStorm is reinstalled: choose Advanced, then continue.';
     const again = document.createElement('button');
     again.type = 'button';
     again.textContent = 'Try again';

@@ -139,6 +139,31 @@ func TestServiceWorkerRefusesAPIAndMedia(t *testing.T) {
 	}
 }
 
+// A page load must reach the browser's own networking, never the cache. The
+// worker used to answer a failed load with the cached shell, and a browser
+// pins a clicked-through certificate exception to one exact certificate - so
+// after a reinstall or the yearly renewal the cached shell loaded, everything
+// behind it failed TLS, and the browser's warning, the only way out, never
+// appeared. Not in a new tab either, because the worker answered that too.
+func TestServiceWorkerNeverAnswersAPageLoad(t *testing.T) {
+	h := newHarness(t)
+	_, body := h.do(t, http.MethodGet, "/sw.js", "")
+	src := string(body)
+
+	if !strings.Contains(src, "request.mode === 'navigate') return false") {
+		t.Error("sw.js no longer refuses navigations, so a changed certificate can hide behind the cache again")
+	}
+	if strings.Contains(src, "caches.match('/')") {
+		t.Error("sw.js falls back to a cached page")
+	}
+	if i := strings.Index(src, "const SHELL"); i >= 0 {
+		shell := src[i:]
+		if j := strings.Index(shell, "]"); j >= 0 && strings.Contains(shell[:j], "'/'") {
+			t.Error("the page itself is in the precache list")
+		}
+	}
+}
+
 // Registration is in the shell, so a worker that fails to install can never be
 // the reason the app does not start - and the iOS tags are the whole of what
 // iOS reads, since Safari ignores the manifest entirely.

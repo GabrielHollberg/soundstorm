@@ -330,11 +330,23 @@ last range is also where Docker and WSL put virtual adapters that reach
 nothing. On this machine that correctly picks the Ethernet address over the
 Tailscale and WSL ones.
 
-**This is the moment HTTPS stops being optional.** On localhost there is
-nothing on the wire to protect; on a shared network the session cookie and the
-Subsonic stream URLs - which carry credentials in the query string, because
-that is the protocol - are readable by anything else on it. The README says so
-where somebody is deciding to do it, not in a security section nobody reads.
+**HTTPS stays off by default, even here, and that was a reversal.** This used
+to say "this is the moment HTTPS stops being optional", and the reasoning is
+sound: on a shared network the session cookie and the Subsonic stream URLs -
+which carry credentials in the query string, because that is the protocol - are
+readable by anything else on it. What it left out is the cost to exactly the
+people this is for. The only certificate SoundStorm can make without outside
+help is one no browser trusts, so turning it on means a full-page "your
+connection is not private" on every device, behind "Advanced, continue
+(unsafe)" - which reads like being hacked to somebody who has never seen it -
+and a second one after every reinstall. Against that, the threat is somebody on
+your own Wi-Fi reading your traffic, which most households do not have.
+
+So http at home, Tailscale away from it, and self-signed HTTPS for people who
+know what the warning means. The README says this where somebody is deciding.
+**The plan that flips it** is real certificates under `soundstorm.dev` (see
+`docs/roadmap.md`): once a certificate needs no warning, HTTPS has no cost and
+should be always on, with http only as the fallback when it cannot be had.
 
 ## Getting back in
 
@@ -687,13 +699,32 @@ never stopped, because the cached page kept loading while every request behind
 it failed TLS. `server.pem` and `server-key.pem` sit beside the authority now,
 reissued only near expiry or when `SOUNDSTORM_TLS_HOSTS` changes.
 
+**Persisting it only made the change rarer, and the rare case was a dead end.**
+A certificate still changes on a reinstall (`down -v` takes the state volume
+and the authority with it) and at the yearly renewal, and every browser that
+clicked through is then refused. The service worker used to answer a failed
+page load with its cached shell, so what those browsers showed was not the
+warning but "cannot reach SoundStorm" - whose advice, "open it in a new tab and
+accept the warning", could not be followed, because the worker answered the new
+tab too. Found by resetting a real install. Now the worker never answers a page
+load at all, and the browser's own warning comes through.
+
+Verified in Chrome, both ways: with the server stopped, the old worker served a
+page titled "SoundStorm", and the new one lets `net::ERR_*` through. A string
+test in `pwa_test.go` holds the line; the browser run is what showed it
+matters. Browsers already holding the old worker stay stuck until they get past
+the warning once - clearing the site's data, or opening any `/api/` address,
+which the worker never touched.
+
 **Nothing in the UI may assume `fetch` resolves.** `api()` had no catch, so a
 failed TLS handshake, a stopped server or a dropped connection rejected
 straight through every caller - and `boot()` checked `ok` but never the
 rejection, leaving the spinner turning with "Failed to fetch" in a console
 nobody opens. It now returns `{ok: false, offline: true}` and the boot screen
-says so, with the certificate explanation first because that is the usual
-cause here.
+says so. It no longer leads with the certificate: the page itself loaded, so
+the certificate was fine a moment ago, and "try again" - a reload, which the
+service worker leaves alone - is what brings the browser's warning up if it
+has changed since. The text warns that the warning is coming.
 
 `SOUNDSTORM_TRUST_PROXY` lets `X-Forwarded-Proto` decide whether the session
 cookie is Secure, for a reverse proxy that terminates TLS. Off unless asked
@@ -1274,10 +1305,12 @@ and never point automated fetches at an origin site that has asked you not to.
   the manifest's content type: Go's mime table has no `.webmanifest`, and
   Chrome ignores a manifest not handed to it as JSON, so both are served by
   hand in `internal/webui` rather than by the file server.
-- **The service worker must never answer a range request or anything under
-  `/api/`.** Caching a search result serves stale state; answering a range
-  request without honouring `Range` breaks seeking in a way indistinguishable
-  from a corrupt file. Requests it does not handle are left alone entirely -
+- **The service worker must never answer a range request, anything under
+  `/api/`, or a page load.** Caching a search result serves stale state;
+  answering a range request without honouring `Range` breaks seeking in a way
+  indistinguishable from a corrupt file; answering a page load hides the
+  browser's certificate warning behind a cached page that cannot work (see TLS
+  above). Requests it does not handle are left alone entirely -
   it never calls `respondWith`, so the browser behaves as if no worker existed.
   It is network-first throughout, so a `docker compose pull` cannot pin anybody
   to an old build.
