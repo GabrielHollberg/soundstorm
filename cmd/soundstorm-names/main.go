@@ -87,8 +87,18 @@ func run(log *slog.Logger) error {
 		Addr:              addr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		// Every body here is capped at 4KB (readJSON), so a generous read
+		// timeout costs nothing legitimate.
+		ReadTimeout: 15 * time.Second,
 		// Long enough for a challenge PUT, which waits for the nameservers.
 		WriteTimeout: 6 * time.Minute,
+		// Without this an idle keep-alive connection is held open forever:
+		// Go falls back to ReadTimeout for idle connections when IdleTimeout
+		// is zero, and ReadTimeout was zero here too before the line above.
+		// This service is genuinely on the internet already, so a slow drip
+		// of connections opened and left idle is a real cost, not a
+		// theoretical one.
+		IdleTimeout: 60 * time.Second,
 	}
 	return srv.ListenAndServe()
 }

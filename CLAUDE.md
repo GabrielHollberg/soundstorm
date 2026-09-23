@@ -863,6 +863,54 @@ came before building any of it. What it found, and what each fix rests on:
   book at a time. `isFraction` bounds it to [0, 1]; `maxLocationLength` (2KB)
   bounds the CFI.
 
+A follow-up review, deliberately broader than the httpapi surface, looked at
+everything else a network attacker could reach and everything already exposed
+- the review found only two things worth changing, which says more about the
+amount already covered above than about this pass:
+
+- **`cmd/soundstorm-names`'s server had no `IdleTimeout` or `ReadTimeout`.**
+  Every other `http.Server` in the project has one; this is the one genuinely
+  on the internet already, where a connection opened and left idle costs a
+  real file descriptor rather than a theoretical one. Bodies here are already
+  capped at 4KB (`readJSON`), so a generous `ReadTimeout` costs nothing
+  legitimate; `WriteTimeout` stays six minutes for the challenge-wait handler.
+- **A stale claim in a log line.** `provisionCalibreWeb` warned that
+  Calibre-Web's published default password was safe because "it is
+  unreachable except through SoundStorm" - true when SoundStorm provisioned
+  its own Calibre-Web container on an isolated network, and no longer true:
+  that container is gone, and `SOUNDSTORM_CALIBREWEB_URL` now always points at
+  a server running elsewhere, which SoundStorm does not run and cannot vouch
+  for. Checked against the other four backends' compose entries to be sure
+  the claim held nowhere else it is made: `docker-compose.yml` publishes
+  exactly one port, SoundStorm's own, so it does. The warning now says the
+  honest thing - the password is safe only if the operator's own server is.
+
+Everything else this pass checked out clean and is worth recording so it is
+not re-litigated from scratch: command injection, template injection and DOM
+XSS sinks (none exist - no `exec.Command`, no template package, no
+`innerHTML`/`insertAdjacentHTML` in the client); JWS signing in the ACME
+client (fixed-width R/S encoding, not the DER `crypto/ecdsa` produces by
+default) and TLS configuration generally (no `InsecureSkipVerify` anywhere,
+`MinVersion: tls.VersionTLS12`); the names service's address
+validation (`netip.ParseAddr` rejects the leading-zero-octal and
+IPv4-mapped-IPv6 tricks that would otherwise smuggle a public address past
+`IsPrivate()`, verified by hand) and its credential comparison
+(`subtle.ConstantTimeCompare`, matching the setup code check); the sweep's
+safety valves (minimum forget-after, maximum share per run, a regex that
+cannot touch a record this service did not write); every private-key file
+written by `internal/servetls` (0600, checked one by one, including the
+authority key with `MaxPathLenZero` so it cannot mint another CA); that
+`Registry.All/Matching/ByID`'s access check is enforced per-source-kind
+rather than per-kind-by-name, which is what makes it apply to Immich and
+Documents automatically rather than needing its own test for every kind
+added since; that the hardened `httpx` client's dot-segment and
+absolute-reference refusal applies to Immich and OPDS for free, being the
+same client; EPUB zip-bomb protection (`io.LimitReader` per entry, 16MB);
+generated backend credentials (`crypto/rand`, 192 bits); that no credential
+is ever logged, request-logged, or present in a URL that reaches the access
+log; and that `sameOrigin`'s CSRF check covers every route, verified by
+reading `Routes()` top to bottom rather than assuming the wrapping holds.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

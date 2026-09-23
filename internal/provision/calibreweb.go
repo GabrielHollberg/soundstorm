@@ -36,9 +36,16 @@ var csrfPattern = regexp.MustCompile(`name="csrf_token"[^>]*value="([^"]+)"`)
 // and the self-service form accept the POST, return success, and leave the
 // password unchanged - verified against calibre-web running under linuxserver's
 // image. Posting harder risks stripping the admin role, because the same form
-// carries every permission as a checkbox and a partial post clears them. The
-// mitigation is that Calibre-Web publishes no port: only SoundStorm can reach
-// it.
+// carries every permission as a checkbox and a partial post clears them.
+//
+// This used to be mitigated by network isolation - Calibre-Web ran in
+// SoundStorm's own compose file, on a network only SoundStorm could reach.
+// That container is gone; every remaining use of this code points
+// SOUNDSTORM_CALIBREWEB_URL at "a Calibre server running elsewhere" (see
+// CLAUDE.md), which SoundStorm neither runs nor controls the exposure of. So
+// the well-known default credential this provisioner logs in with is only as
+// safe as whatever network that server actually sits on - the warning below
+// says that plainly rather than repeating the old, no-longer-true claim.
 func provisionCalibreWeb(ctx context.Context, c *httpx.Client, t Target, log *slog.Logger) (state.Backend, error) {
 	if err := c.EnableCookies(); err != nil {
 		return state.Backend{}, err
@@ -61,8 +68,9 @@ func provisionCalibreWeb(ctx context.Context, c *httpx.Client, t Target, log *sl
 		return state.Backend{}, err
 	}
 
-	log.Warn("calibre-web is using its default password; it is unreachable except through SoundStorm, " +
-		"but change it in the calibre-web UI if you ever publish its port")
+	log.Warn("calibre-web is using its published default password (admin/admin123), and SoundStorm did not " +
+		"set this server up or change that - if it is reachable by anything other than SoundStorm, change " +
+		"the password in its own UI now")
 
 	return state.Backend{
 		Type:          "calibreweb",
