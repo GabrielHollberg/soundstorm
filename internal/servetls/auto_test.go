@@ -288,13 +288,24 @@ func TestAutoModeRegistersAgainWhenTheServiceForgetsIt(t *testing.T) {
 	}
 }
 
-func TestAutoModeWithoutALANAddressIsJustSelfSigned(t *testing.T) {
+// With no LAN address there is nothing to name, so no real certificate - but
+// plain HTTP must still answer, because the installer prints an http://
+// address for auto mode whether or not it found the LAN address.
+func TestAutoModeWithoutALANAddressStillServesHTTP(t *testing.T) {
 	s, err := Load(Config{Mode: ModeAuto, Dir: t.TempDir(), Hosts: []string{"media.lan"}, Log: quietLog()})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if s.auto != nil || s.Sniffs() {
-		t.Error("auto mode started with no address to announce")
+	if s.auto != nil {
+		t.Error("auto mode tried to name an install with no address to announce")
+	}
+	if !s.Sniffs() {
+		t.Error("auto mode without an address stopped serving plain HTTP")
+	}
+	// And the other modes are unchanged: https only.
+	selfSigned, _ := Load(Config{Mode: ModeSelfSigned, Dir: t.TempDir(), Log: quietLog()})
+	if selfSigned.Sniffs() {
+		t.Error("self-signed mode started serving plain HTTP")
 	}
 }
 

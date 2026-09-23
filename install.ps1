@@ -12,8 +12,8 @@
 #
 #   -Launch        start an existing install and open it (what the shortcut runs)
 #   -Uninstall     remove SoundStorm, keeping the media library
-#   -Https         serve over https instead of http
-#   -NoHttps       go back to http
+#   -Https         real https for a soundstorm.dev name (the default already)
+#   -NoHttps       plain http only
 #   -Tailscale     also reach it away from home, over a tailnet
 #   -NoTailscale   stop doing that
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
@@ -820,9 +820,18 @@ function Get-EnvSetting([string]$Name) {
 function Get-InstalledURL([string]$Folder) {
     $port = Get-EnvSettingIn $Folder 'SOUNDSTORM_PORT'
     if ($port -notmatch '^\d+$') { $port = "$FirstPort" }
-    $tls = Get-EnvSettingIn $Folder 'SOUNDSTORM_TLS'
-    $scheme = if ($tls -and $tls -ne 'off') { 'https' } else { 'http' }
+    $scheme = ConvertTo-Scheme (Get-EnvSettingIn $Folder 'SOUNDSTORM_TLS')
     return "${scheme}://localhost:$port"
+}
+
+# ConvertTo-Scheme is the scheme to hand somebody for a TLS setting. Auto mode
+# is http: it answers http and https on the same port, http works from the
+# first second, and the page moves itself to the real https address once it
+# has checked this browser can reach it. Only self-signed and file are https
+# alone.
+function ConvertTo-Scheme([string]$Tls) {
+    if ($Tls -eq 'self-signed' -or $Tls -eq 'file') { return 'https' }
+    return 'http'
 }
 
 # Set-EnvSetting rewrites one line of .env and leaves the rest alone, because
@@ -902,9 +911,31 @@ function Get-TailnetURL {
 # assuming http. Telling somebody the wrong scheme hands them a browser error
 # with no hint in it, which is worse than telling them nothing.
 function Get-InstalledScheme {
-    $tls = Get-EnvSetting 'SOUNDSTORM_TLS'
-    if ($tls -and $tls -ne 'off') { return 'https' }
-    return 'http'
+    return ConvertTo-Scheme (Get-EnvSetting 'SOUNDSTORM_TLS')
+}
+
+# Get-SecureAddress waits briefly for auto mode's real https address, asking
+# SoundStorm itself over plain http on this machine - so no certificate is
+# involved in the asking. The name arrives within seconds of the certificate,
+# which usually takes ten or twenty; empty if it has not by the deadline, and
+# the http address works meanwhile.
+function Get-SecureAddress([int]$Port) {
+    for ($waited = 0; $waited -lt 45; $waited += 3) {
+        try {
+            $request = [Net.HttpWebRequest]::Create("http://localhost:$Port/api/session")
+            $request.Timeout = 5000
+            $response = $request.GetResponse()
+            $reader = New-Object IO.StreamReader($response.GetResponseStream())
+            $body = $reader.ReadToEnd()
+            $response.Close()
+            $name = ($body | ConvertFrom-Json).secureName
+            if ($name) { return "https://${name}:$Port" }
+        } catch {
+            # Still starting; ask again.
+        }
+        Start-Sleep -Seconds 3
+    }
+    return ''
 }
 
 # New-Shortcut writes a .lnk. WScript.Shell is the only way to do that without
@@ -1220,20 +1251,28 @@ if ($upgrade) {
 
 # After the port, so that on a fresh install this amends the file just written
 # rather than being overwritten by it.
-if ($Https) {
-    # The certificate has to name the LAN address, and only this machine can
-    # say what that is - the server sees the container's address, not the PC's.
+#
+# Auto is the default: a real certificate for a <id>.home.soundstorm.dev name,
+# with plain http still answering on the same port. It is written for a fresh
+# install and for an existing one that never chose - an absent line meant
+# "off" only because off was the default then. A choice somebody made (off,
+# self-signed, file) is left alone.
+$tlsNow = Get-EnvSetting 'SOUNDSTORM_TLS'
+if ($Https -or ($NoHttps -eq $false -and -not $tlsNow)) {
+    # Auto points its name at the LAN address, and only this machine can say
+    # what that is - the server sees the container's address, not the PC's.
     # An install from before .env carried this line has to be topped up here.
     if (-not (Get-EnvSetting 'SOUNDSTORM_TLS_HOSTS')) {
         $lan = Get-LanAddress
         if ($lan) { Set-EnvSetting 'SOUNDSTORM_TLS_HOSTS' $lan }
     }
-    Set-EnvSetting 'SOUNDSTORM_TLS' 'self-signed'
-    Note "Turning on https."
+    Set-EnvSetting 'SOUNDSTORM_TLS' 'auto'
+    if ($Https -or $upgrade) { Note "Turning on https." }
 } elseif ($NoHttps) {
     Set-EnvSetting 'SOUNDSTORM_TLS' 'off'
-    Note "Turning https back off."
+    Note "Turning https off."
 }
+$tlsMode = Get-EnvSetting 'SOUNDSTORM_TLS'
 $scheme = Get-InstalledScheme
 
 # Remote access. Off unless asked for, and it stays a separate decision from
@@ -1335,11 +1374,33 @@ Write-Host "  them in the 'SoundStorm media' folder on your desktop."
 Write-Host ""
 
 $lan = Get-LanAddress
-if ($lan) {
+$secure = ''
+if ($tlsMode -eq 'auto') {
+    Step "Getting a secure address"
+    $secure = Get-SecureAddress $port
+}
+if ($secure) {
+    # The real certificate is in: this address works with no warning on any
+    # device, and a phone can install the app from it.
+    Write-Host "  On your phone, TV or another computer on this network:"
+    Write-Host ""
+    Write-Host "    $secure" -ForegroundColor White
+    Write-Host ""
+    if ($lan) {
+        Write-Host "  If that does not load, your router is refusing the name - use" -ForegroundColor DarkGray
+        Write-Host "  http://${lan}:$port instead. Same account either way." -ForegroundColor DarkGray
+    }
+    Write-Host "  Worth saving as a bookmark." -ForegroundColor DarkGray
+    Write-Host ""
+} elseif ($lan) {
     Write-Host "  On your phone, TV or another computer on this network:"
     Write-Host ""
     Write-Host "    ${scheme}://${lan}:$port" -ForegroundColor White
     Write-Host ""
+    if ($tlsMode -eq 'auto') {
+        Write-Host "  SoundStorm is still getting its secure address, and moves there" -ForegroundColor DarkGray
+        Write-Host "  by itself when it has one." -ForegroundColor DarkGray
+    }
     Write-Host "  Same account. Worth saving as a bookmark - and worth giving this" -ForegroundColor DarkGray
     Write-Host "  PC a fixed address in your router, or that number will change." -ForegroundColor DarkGray
     Write-Host "  If nothing loads, allow SoundStorm through the Windows firewall" -ForegroundColor DarkGray
@@ -1369,7 +1430,7 @@ if ($useTailscale) {
     Write-Host ""
 }
 
-if ($scheme -eq 'https') {
+if ($tlsMode -eq 'self-signed') {
     # Said plainly and up front, because the alternative is somebody deciding
     # their own install is broken or unsafe. Nobody but this PC can vouch for a
     # certificate covering an address like 192.168.0.19, so the warning is
@@ -1388,7 +1449,7 @@ if ($scheme -eq 'https') {
     Write-Host ""
     Write-Host "  To go back to plain http, run the setup again with -NoHttps." -ForegroundColor DarkGray
     Write-Host ""
-} else {
+} elseif ($tlsMode -eq 'off') {
     Write-Host "  Run the setup again with -Https to encrypt the connection." -ForegroundColor DarkGray
     Write-Host ""
 }

@@ -74,18 +74,18 @@ other in a book. What is not built:
 Built: `SOUNDSTORM_TLS` serves HTTPS from a local certificate authority, and
 the Tailscale profile gives a real certificate.
 
-**Built, not yet live: a trusted certificate on a plain LAN address, with no
+**Built and live: a trusted certificate on a plain LAN address, with no
 account.** `SOUNDSTORM_TLS=auto` registers the install with the name service
 (`cmd/soundstorm-names`), which names it `<id>.home.soundstorm.dev`, points
 that at its LAN address through Porkbun's DNS, and publishes the DNS challenge
 Let's Encrypt checks. Rehearsed end to end against Pebble, in CI and in a real
 browser. See `docs/names-service.md`. What is left, in order:
 
-1. Deploy the name service at `names.soundstorm.dev` and run one install
-   against Let's Encrypt **staging**, which is where anything new belongs.
-2. Then production, and make `auto` what the installer writes. HTTPS becomes
-   the default at that point and not before - see "Reaching it from another
-   device" in CLAUDE.md for why the order matters.
+1. ~~Deploy the name service at `names.soundstorm.dev` and run one install
+   against Let's Encrypt staging.~~ Done 2026-09-23.
+2. ~~Then production, and make `auto` what the installer writes.~~ Done
+   2026-09-23: staging, then production, on a real install, and both
+   installers now default to auto.
 3. Apply for `soundstorm.dev` on the Public Suffix List before installs
    number in the hundreds. Until then every install shares the domain's weekly
    Let's Encrypt allowance of about fifty new certificates.

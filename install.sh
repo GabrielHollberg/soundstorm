@@ -8,8 +8,8 @@
 # is a folder you can delete.
 #
 #   (no arguments)   install, or update an existing install
-#   --https          serve over https instead of http
-#   --no-https       go back to http
+#   --https          real https for a soundstorm.dev name (the default already)
+#   --no-https       plain http only
 #   --tailscale      also reach it away from home, over a tailnet
 #   --no-tailscale   stop doing that
 #   --uninstall      remove it, keeping the media library
@@ -159,13 +159,39 @@ set_env() {
 # installed_scheme reports what this install actually serves rather than
 # assuming http. Telling somebody the wrong scheme hands them a browser error
 # with nothing in it to suggest the address was the problem.
+#
+# Auto mode is http: it answers http and https on the same port, http works
+# from the first second, and the page moves itself to the real https address
+# once it has checked the browser can reach it. Only self-signed and file are
+# https alone.
 installed_scheme() {
-	tls=$(get_env SOUNDSTORM_TLS)
-	if [ -n "$tls" ] && [ "$tls" != "off" ]; then
-		printf 'https'
-	else
-		printf 'http'
-	fi
+	case "$(get_env SOUNDSTORM_TLS)" in
+		self-signed|file) printf 'https' ;;
+		*) printf 'http' ;;
+	esac
+}
+
+# secure_address waits briefly for auto mode's real https address, asking
+# SoundStorm over plain http on this machine, so no certificate is involved in
+# the asking. Empty if it has not arrived by the deadline; http works meanwhile.
+secure_address() {
+	waited=0
+	while [ "$waited" -lt 45 ]; do
+		if command -v curl >/dev/null 2>&1; then
+			body=$(curl -fsS "http://localhost:$PORT/api/session" 2>/dev/null) || body=''
+		elif command -v wget >/dev/null 2>&1; then
+			body=$(wget -q -O - "http://localhost:$PORT/api/session" 2>/dev/null) || body=''
+		else
+			return 0
+		fi
+		name=$(printf '%s' "$body" | sed -n 's/.*"secureName":"\([^"]*\)".*/\1/p')
+		if [ -n "$name" ]; then
+			printf 'https://%s:%s' "$name" "$PORT"
+			return 0
+		fi
+		sleep 3
+		waited=$((waited + 3))
+	done
 }
 
 # write_serve_config writes the file Tailscale proxies through.
@@ -363,8 +389,8 @@ while [ $# -gt 0 ]; do
 			say "SoundStorm installer"
 			say ""
 			say "  (no arguments)   install, or update an existing install"
-			say "  --https          serve over https instead of http"
-			say "  --no-https       go back to http"
+			say "  --https          real https for a soundstorm.dev name (the default)"
+			say "  --no-https       plain http only"
 			say "  --tailscale      also reach it away from home, over a tailnet"
 			say "  --no-tailscale   stop doing that"
 			say "  --uninstall      remove it, keeping your media library"
@@ -465,22 +491,31 @@ fi
 
 # After the port, so that on a fresh install this amends the file just written
 # rather than being overwritten by it.
-if [ "$HTTPS" = "on" ]; then
-	# The certificate has to name the LAN address, and only this machine can
-	# say what that is - the server sees the container's address, not the
-	# host's. An install from before .env carried that line is topped up here.
+#
+# Auto is the default: a real certificate for a <id>.home.soundstorm.dev name,
+# with plain http still answering on the same port. Written for a fresh
+# install and for an existing one that never chose - an absent line meant
+# "off" only because off was the default then. A choice somebody made (off,
+# self-signed, file) is left alone.
+if [ "$HTTPS" = "on" ] || { [ -z "$HTTPS" ] && [ -z "$(get_env SOUNDSTORM_TLS)" ]; }; then
+	# Auto points its name at the LAN address, and only this machine can say
+	# what that is - the server sees the container's address, not the host's.
+	# An install from before .env carried that line is topped up here.
 	if [ -z "$(get_env SOUNDSTORM_TLS_HOSTS)" ]; then
 		lan=$(lan_address)
 		if [ -n "$lan" ]; then
 			set_env SOUNDSTORM_TLS_HOSTS "$lan"
 		fi
 	fi
-	set_env SOUNDSTORM_TLS self-signed
-	note "turning on https"
+	set_env SOUNDSTORM_TLS auto
+	if [ "$HTTPS" = "on" ] || [ "$UPGRADE" = "1" ]; then
+		note "turning on https"
+	fi
 elif [ "$HTTPS" = "off" ]; then
 	set_env SOUNDSTORM_TLS off
-	note "turning https back off"
+	note "turning https off"
 fi
+TLS_MODE=$(get_env SOUNDSTORM_TLS)
 SCHEME=$(installed_scheme)
 
 # Remote access. A separate decision from --https: one is about the wifi at
@@ -590,7 +625,24 @@ note "The app shows you when each one is ready - that takes a minute or two."
 say ""
 lan=$(lan_address)
 mdns=$(mdns_name)
-if [ -n "$lan" ] || [ -n "$mdns" ]; then
+secure=''
+if [ "$TLS_MODE" = "auto" ]; then
+	step "Getting a secure address"
+	secure=$(secure_address)
+fi
+if [ -n "$secure" ]; then
+	# The real certificate is in: no warning on any device, and a phone can
+	# install the app from this address.
+	say "On your phone, TV or another computer on this network:"
+	say ""
+	say "    ${BOLD}$secure${OFF}"
+	if [ -n "$lan" ]; then
+		note "http://$lan:$PORT    (if your router refuses the name)"
+	fi
+	say ""
+	note "Same account either way."
+	say ""
+elif [ -n "$lan" ] || [ -n "$mdns" ]; then
 	say "On your phone, TV or another computer on this network:"
 	say ""
 	if [ -n "$mdns" ]; then
@@ -603,10 +655,14 @@ if [ -n "$lan" ] || [ -n "$mdns" ]; then
 	fi
 	say ""
 	note "Same account. Open the port on the firewall if nothing loads."
+	if [ "$TLS_MODE" = "auto" ]; then
+		note "SoundStorm is still getting its secure address, and moves there"
+		note "by itself when it has one."
+	fi
 	say ""
 fi
 
-if [ "$SCHEME" = "https" ]; then
+if [ "$TLS_MODE" = "self-signed" ]; then
 	# Said plainly and up front, because the alternative is somebody deciding
 	# their own install is broken or unsafe. No outside authority can vouch for
 	# a certificate covering an address like 192.168.0.19, so the warning
@@ -625,7 +681,7 @@ if [ "$SCHEME" = "https" ]; then
 	say ""
 	note "Run this again with --no-https to go back to plain http."
 	say ""
-else
+elif [ "$TLS_MODE" = "off" ]; then
 	note "Run this again with --https to encrypt the connection."
 	say ""
 fi

@@ -144,6 +144,11 @@ type Server struct {
 
 	// auto is set in ModeAuto: the real certificate, when there is one.
 	auto *autoCert
+
+	// sniff serves plain HTTP beside TLS on the same port - always in ModeAuto,
+	// even when there is no address to name, because the installer prints an
+	// http:// address for auto mode and it has to answer.
+	sniff bool
 }
 
 // Start runs whatever the configuration needs in the background - in auto
@@ -165,7 +170,7 @@ func (s *Server) PublicName() string {
 
 // Sniffs reports whether this configuration serves plain HTTP and TLS on one
 // port, in which case it must be served through Listener.
-func (s *Server) Sniffs() bool { return s != nil && s.auto != nil }
+func (s *Server) Sniffs() bool { return s != nil && s.sniff }
 
 // TLSConfig returns the configuration to hand to http.Server.
 func (s *Server) TLSConfig() *tls.Config { return s.cfg }
@@ -227,10 +232,11 @@ func loadAuto(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.sniff = true
 	announce := announceAddress(cfg.Hosts)
 	if announce == "" {
-		// Not fatal: this is exactly self-signed mode, which works. But say
-		// why the real certificate will never come.
+		// Not fatal: this is self-signed mode with http beside it, which
+		// works. But say why the real certificate will never come.
 		cfg.Log.Warn("tls auto mode needs this machine's LAN address in SOUNDSTORM_TLS_HOSTS " +
 			"to name it; serving with the local authority only")
 		return s, nil

@@ -104,8 +104,9 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - **accounts**: the first visit creates the owner, who adds everyone else; each
   person keeps their own place in every book and sees only the libraries they
   are given
-- **HTTPS** on request, with a local certificate authority so there is one
-  install per device and no warning afterwards
+- **HTTPS with a real certificate, automatically**: every install gets its own
+  `*.home.soundstorm.dev` address that every browser and phone already trusts —
+  no warning, nothing to install, no account
 - one search across all four, merged and ranked
 - music, films, TV and audiobooks play **inside SoundStorm**
 - video a browser cannot decode is **transcoded by Jellyfin on the fly** and
@@ -190,9 +191,10 @@ same port:
 http://192.168.1.50:8099        <- your number will differ
 ```
 
-`https://` instead, if you turned on [HTTPS](#turning-on-https) — that is the
-one part of the address you cannot guess, so the installer prints the scheme it
-actually set rather than leaving you to try both. To find the address again:
+Within a minute of starting, SoundStorm also gets itself a secure address like
+`https://k3x9m2p7qa.home.soundstorm.dev:8099` — see [HTTPS](#https) — and the
+installer prints that one when it is ready, because it is the better one to
+type on a phone. Either works. To find the plain address again:
 
 | | |
 | --- | --- |
@@ -208,27 +210,17 @@ bookmark: its own icon, its own window, and no address bar eating the top of
 the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
 → Install app.
 
-> **Android needs a certificate it trusts**, not merely https. SoundStorm's
-> own certificate is signed by an authority only this install knows about, so
-> Chrome reports `ERR_CERT_AUTHORITY_INVALID`, treats the origin as having a
-> certificate error, and refuses to register a service worker there — which
-> is what "Install app" depends on. Clicking through the warning lets you
-> browse, but does not fix that.
+> **On Android, install it from the secure address**, the
+> `https://….home.soundstorm.dev` one. Chrome only offers "Install app" on a
+> page with a certificate it trusts, which that address has and a plain
+> `http://192.168…` address cannot. **iPhone adds it to the home screen from
+> either**, because Safari's Add to Home Screen does not depend on that.
 >
-> Two ways round it, in order of how pleasant they are:
->
-> 1. **[Tailscale](#reaching-it-from-outside-the-house)**, which serves
-> SoundStorm on a `ts.net` address with a real Let's Encrypt certificate.
-> Installs cleanly, no warning, and works away from home as a bonus.
-> 2. **Install SoundStorm's certificate authority on the phone**: open
-> `https://<server>:8099/ca.crt`, then Settings → Security → Encryption &
-> credentials → Install a certificate → CA certificate. Android will warn
-> that the network may be monitored; that warning is about user-installed
-> authorities in general, not about this one in particular.
->
-> **iPhone adds it to the home screen either way**, because Safari's Add to
-> Home Screen does not go through a service worker at all. Nothing else about
-> SoundStorm depends on any of this.
+> If the secure address does not load on your network, your router is
+> refusing names that point at home addresses (some do, as a security
+> measure); SoundStorm then simply stays on the plain address. Away from home,
+> [Tailscale](#reaching-it-from-outside-the-house) gives the same real
+> certificate.
 
 Two things worth doing:
 
@@ -403,64 +395,50 @@ What this is not: per-title or age-rating filtering. The unit is a whole
 library, so "no films for the seven-year-old" is answerable and "only these
 films" is not.
 
-### Turning on HTTPS
+### HTTPS
 
-Off by default, and for most homes that is a fine place to leave it — phones and
-other computers included.
+**On by default, and there is nothing to do.** Every install asks SoundStorm's
+name service for an address of its own — something like
+`k3x9m2p7qa.home.soundstorm.dev`, pointing at your server on your home network
+— and gets a certificate for it from Let's Encrypt, the same authority behind
+most of the web. Every browser and phone already trusts it: no warning, no
+certificate to install anywhere, and no account.
 
-What HTTPS protects against is somebody else on your network reading what goes
-over it, including your session. If that network is your own home Wi-Fi,
-that is a small risk. If you share it with people you do not know — a
-flatshare, student housing — turn it on. To use SoundStorm away from home,
-[Tailscale](#reaching-it-from-outside-the-house) gives you HTTPS with a real
-certificate and none of what follows.
+Open the plain address (`http://localhost:8099`, or the server's own address)
+and SoundStorm moves you to the secure one by itself, once it has checked your
+device can reach it. The first time, that is a new address to your browser, so
+sign in once more there.
 
-What it costs: nothing outside your house can vouch for an address like
-`192.168.1.50`, so every device shows a full-page "your connection is not
-private" warning the first time, until you tell it to continue (or install
-SoundStorm's certificate, below). Reinstalling SoundStorm makes a new
-certificate, and every device warns once more.
+What the name service does and does not see: it knows your server's *home
+network* address (`192.168…`, useless to anybody outside your house), and it
+publishes one record every couple of months to prove the name is yours. Your
+media, your searches and your password never go near it. If it is ever down,
+SoundStorm carries on with the certificate it has, and falls back to its own if
+it has to.
 
-To turn it on, run the installer again with one extra word:
+**Staying on the plain address.** Two ways it happens:
 
-**Windows** — paste this into PowerShell from anywhere:
+- **Your router refuses the name.** Some routers block any public name that
+  points at a home address, as protection against a kind of attack. SoundStorm
+  notices it cannot reach the secure address and stays where it is; nothing
+  breaks.
+- **You would rather it did not.** Run the installer again with `-NoHttps`
+  (Windows) or `--no-https` (Linux, macOS) for plain http only, and with
+  `-Https` / `--https` to come back.
 
-```powershell
-& "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Https
-```
+**No outside service at all**, if that matters to you: put
+`SOUNDSTORM_TLS=self-signed` in the `.env` file beside `docker-compose.yml`
+and run `docker compose up -d`. SoundStorm then makes its own certificate,
+which every device warns about until you install
+`https://<server>:8099/ca.crt` on it — and again after a reinstall, which
+makes a new one.
 
-**Linux / macOS:**
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --https
-```
-
-Either one edits one line of your `.env`, restarts, and — this is the part worth
-having — prints the `https://` addresses for *this* install, so you are not
-guessing at a scheme. `-NoHttps` and `--no-https` put it back.
-
-Behind that flag, SoundStorm runs its own certificate authority. To stop the
-warning: visit `https://<server>:8099/ca.crt`, install that file once per
-device, and there is no warning again. Nothing to renew — until a reinstall,
-which makes a new authority for the devices to install again.
-
-<details>
-<summary>By hand, if you would rather</summary>
-
-Put this in the `.env` file beside your `docker-compose.yml` and run
-`docker compose up -d`:
-
-```sh
-SOUNDSTORM_TLS=self-signed
-```
-
-</details>
-
-The installer records this machine's LAN address in the `.env` file as
-`SOUNDSTORM_TLS_HOSTS`, which is the list of addresses the certificate covers
-— the server is in a container and cannot work that out for itself. If the
-machine's address changes, or you reach it by a name your router hands out,
-add it:
+**If the server's address changes**, the secure name has to follow it. The
+installer records the machine's LAN address in the `.env` file as
+`SOUNDSTORM_TLS_HOSTS` — the server is in a container and cannot work that out
+for itself — and the name points wherever that says. Giving the server a fixed
+address in your router avoids the question; otherwise update the line, or add
+a name your router hands out:
 
 ```sh
 SOUNDSTORM_TLS_HOSTS=192.168.1.50,media.lan

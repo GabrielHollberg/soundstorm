@@ -342,11 +342,31 @@ connection is not private" on every device, behind "Advanced, continue
 and a second one after every reinstall. Against that, the threat is somebody on
 your own Wi-Fi reading your traffic, which most households do not have.
 
-So http at home, Tailscale away from it, and self-signed HTTPS for people who
-know what the warning means. The README says this where somebody is deciding.
-**The plan that flips it** is real certificates under `soundstorm.dev` (see
-`docs/roadmap.md`): once a certificate needs no warning, HTTPS has no cost and
-should be always on, with http only as the fallback when it cannot be had.
+**And then it flipped, as planned.** Real certificates under `soundstorm.dev`
+(see "Real certificates, and the one service SoundStorm runs") took the cost
+away: no warning, nothing to install, no account. So both installers now write
+`SOUNDSTORM_TLS=auto`, for a fresh install and for an existing one whose
+`.env` never chose - an absent line meant "off" only because off was the
+default. A choice somebody made (off, self-signed, file) is left alone, and
+`-Https` now means auto.
+
+Auto is **not** the default in `docker-compose.yml` itself. The compose-only
+install has no installer to record the LAN address, so auto there could name
+nothing; it would still serve http and self-signed https side by side, but
+that is a change of behaviour nobody using compose directly asked for.
+
+What the installers print for auto is the `http://` address, because it works
+from the first second and the page moves itself to https once it has checked
+it can. Then they wait up to 45 seconds for `secureName` from `/api/session` -
+asked over plain http on the host, so no certificate is involved in asking -
+and print the https address for phones when it arrives, because that is the
+one a phone can install the app from. The certificate-warning speech is only
+printed for self-signed, the one mode where it is true.
+
+Auto mode serves plain http beside TLS **even when it has no LAN address to
+name**. It used to fall back to plain self-signed, https only, which would
+have broken the `http://localhost` address the installer prints. Caught while
+making auto the default, before it shipped.
 
 ## Getting back in
 
