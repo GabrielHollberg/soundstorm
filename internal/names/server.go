@@ -146,17 +146,23 @@ func (s *Server) handleAddress(w http.ResponseWriter, r *http.Request, id string
 	if addr.Is6() {
 		typ, other = "AAAA", "A"
 	}
-	if err := s.DNS.Set(r.Context(), s.relative(id), typ, addr.String()); err != nil {
+	changed, err := s.DNS.Set(r.Context(), s.relative(id), typ, addr.String())
+	if err != nil {
 		s.Log.Error("set address", "id", id, "err", err)
 		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
 		return
 	}
 	// One address, not one of each family: a browser handed both would pick
 	// either, and an install moving from v4 to v6 would otherwise leave the old
-	// one answering. Best effort - a stale record of the other family is a
-	// slower lookup, not a broken one.
-	if err := s.DNS.Delete(r.Context(), s.relative(id), other); err != nil {
-		s.Log.Warn("clear other family", "id", id, "err", err)
+	// one answering. Only when something changed: an install re-announces the
+	// same address on every start, and a delete that finds nothing would
+	// double the provider calls of the common case - Porkbun meters calls per
+	// key. Best effort; a stale record of the other family is a slower lookup,
+	// not a broken one.
+	if changed {
+		if err := s.DNS.Delete(r.Context(), s.relative(id), other); err != nil {
+			s.Log.Warn("clear other family", "id", id, "err", err)
+		}
 	}
 	s.Log.Info("address set", "id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"name": s.NameFor(id), "ip": addr.String()})
@@ -199,7 +205,7 @@ func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id s
 	}
 
 	name := "_acme-challenge." + s.relative(id)
-	if err := s.DNS.Set(r.Context(), name, "TXT", body.Value); err != nil {
+	if _, err := s.DNS.Set(r.Context(), name, "TXT", body.Value); err != nil {
 		s.Log.Error("set challenge", "id", id, "err", err)
 		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
 		return

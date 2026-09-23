@@ -37,11 +37,12 @@ type memDNS struct {
 	records map[string]string
 }
 
-func (m *memDNS) Set(_ context.Context, name, typ, value string) error {
+func (m *memDNS) Set(_ context.Context, name, typ, value string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	changed := m.records[name+" "+typ] != value
 	m.records[name+" "+typ] = value
-	return nil
+	return changed, nil
 }
 
 func (m *memDNS) Delete(_ context.Context, name, typ string) error {

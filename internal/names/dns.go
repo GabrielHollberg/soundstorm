@@ -16,8 +16,12 @@ import (
 // hold exactly one value of a type, or none. Names are relative to the zone -
 // "k3x9m2p7qa.home", not the full name - because that is how every provider's
 // API addresses a record.
+//
+// Set reports whether it changed anything, so a caller can skip follow-up
+// work when the answer was already right - which, for an install announcing
+// the address it had yesterday, is nearly always.
 type DNS interface {
-	Set(ctx context.Context, name, typ, value string) error
+	Set(ctx context.Context, name, typ, value string) (changed bool, err error)
 	Delete(ctx context.Context, name, typ string) error
 }
 
@@ -104,15 +108,15 @@ func (p *Porkbun) call(ctx context.Context, path string, fields map[string]strin
 // looks first and creates when there is nothing to edit - and does nothing at
 // all when the value is already right, which is the common case for an
 // install re-announcing an address that has not changed.
-func (p *Porkbun) Set(ctx context.Context, name, typ, value string) error {
+func (p *Porkbun) Set(ctx context.Context, name, typ, value string) (bool, error) {
 	path := "/" + p.Domain + "/" + typ + "/" + name
 	got, err := p.call(ctx, "/dns/retrieveByNameType"+path, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch {
 	case len(got.Records) == 1 && got.Records[0].Content == value:
-		return nil
+		return false, nil
 	case len(got.Records) == 0:
 		_, err = p.call(ctx, "/dns/create/"+p.Domain, map[string]string{
 			"name": name, "type": typ, "content": value, "ttl": porkbunTTL,
@@ -122,7 +126,7 @@ func (p *Porkbun) Set(ctx context.Context, name, typ, value string) error {
 			"content": value, "ttl": porkbunTTL,
 		})
 	}
-	return err
+	return err == nil, err
 }
 
 // Delete removes every record of a type at a name.
@@ -166,20 +170,23 @@ func (c *ChallTestSrv) post(ctx context.Context, path string, body any) error {
 
 func (c *ChallTestSrv) fqdn(name string) string { return name + "." + c.Domain + "." }
 
-func (c *ChallTestSrv) Set(ctx context.Context, name, typ, value string) error {
+// Set always reports a change: challtestsrv cannot be asked what it holds.
+func (c *ChallTestSrv) Set(ctx context.Context, name, typ, value string) (bool, error) {
 	host := c.fqdn(name)
+	var err error
 	switch typ {
 	case "TXT":
-		if err := c.post(ctx, "/clear-txt", map[string]string{"host": host}); err != nil {
-			return err
+		if err = c.post(ctx, "/clear-txt", map[string]string{"host": host}); err == nil {
+			err = c.post(ctx, "/set-txt", map[string]string{"host": host, "value": value})
 		}
-		return c.post(ctx, "/set-txt", map[string]string{"host": host, "value": value})
 	case "A":
-		return c.post(ctx, "/add-a", map[string]any{"host": host, "addresses": []string{value}})
+		err = c.post(ctx, "/add-a", map[string]any{"host": host, "addresses": []string{value}})
 	case "AAAA":
-		return c.post(ctx, "/add-aaaa", map[string]any{"host": host, "addresses": []string{value}})
+		err = c.post(ctx, "/add-aaaa", map[string]any{"host": host, "addresses": []string{value}})
+	default:
+		err = fmt.Errorf("challtestsrv: no support for %s records", typ)
 	}
-	return fmt.Errorf("challtestsrv: no support for %s records", typ)
+	return err == nil, err
 }
 
 func (c *ChallTestSrv) Delete(ctx context.Context, name, typ string) error {

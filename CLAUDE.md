@@ -852,8 +852,17 @@ certificate survived the switch to production until renewal.
 `/v1/whoami`, not taken from Railway's docs, which contradicted themselves: it
 carries the real address and a forged one is overwritten. `X-Forwarded-For`
 arrives as `<client>, <Railway edge>`, and the service reads the last entry,
-so that header would have put every install behind one shared limit. Still
-unverified: Porkbun's API rate limits.
+so that header would have put every install behind one shared limit.
+
+**Porkbun's limits, from its OpenAPI spec rather than its docs page, which
+states none:** a general budget of 20 requests per 2 seconds per key, measured
+but not yet enforced; and **2,500 records per domain**, which is the ceiling
+that matters. Each install holds one record for good, so `soundstorm.dev`
+tops out around 2,400 installs - before Let's Encrypt's limits do - and
+nothing yet reclaims an abandoned install's record. The re-announce on every
+start used to cost a delete of the other address family as well as the
+lookup; it now deletes only when the address actually changed, which halves
+the calls of the common case.
 
 ## The folders, and the line that replaced the box
 

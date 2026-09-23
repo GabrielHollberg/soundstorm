@@ -110,8 +110,20 @@ the router is refusing to resolve a public name that points at a home address
   count. The fix is the Public Suffix List (publicsuffix.org), which makes each
   install its own domain to Let's Encrypt; apply well before it matters, as
   review takes weeks.
-- **Porkbun's API limits are not documented here** because they were not
-  checked. The service makes one lookup per install start and a write only
-  when something changed.
+- **Porkbun allows 2,500 DNS records per domain** (`ZONE_RECORD_LIMIT` in its
+  OpenAPI spec, `https://porkbun.com/api/json/v3/spec`, read 2026-09-23). Every
+  install keeps one record for good, so this is the real ceiling -
+  roughly 2,400 installs once challenges in flight are allowed for - and it is
+  lower than Let's Encrypt's. Abandoned installs never give theirs back. Plan
+  before about 2,000: clearing records no install has re-announced in months,
+  more than one zone, or moving install names to a DNS server of our own
+  (which Railway cannot host - it has no UDP - but Fly.io can).
+- **Porkbun's general request budget is 20 per 2 seconds per API key**, from
+  the same spec - and "not being enforced yet": responses carry
+  `X-RateLimit-Mode: observe`, and enforcement is to be announced before it
+  starts. An install start costs one lookup when its address has not changed
+  (a create or edit when it has), and a renewal about three calls. A refusal is
+  a 429 with `Retry-After`; the service passes it on as a 502 and the install
+  retries in five minutes.
 - **The service caps challenges** at ten per install and three hundred overall
   per day, in memory, so a restart forgets them.

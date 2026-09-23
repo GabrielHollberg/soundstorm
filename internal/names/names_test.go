@@ -22,14 +22,17 @@ type fakeDNS struct {
 
 func newFakeDNS() *fakeDNS { return &fakeDNS{records: map[string]string{}} }
 
-func (f *fakeDNS) Set(_ context.Context, name, typ, value string) error {
+func (f *fakeDNS) Set(_ context.Context, name, typ, value string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail {
-		return errors.New("provider down")
+		return false, errors.New("provider down")
+	}
+	if f.records[name+" "+typ] == value {
+		return false, nil
 	}
 	f.records[name+" "+typ] = value
-	return nil
+	return true, nil
 }
 
 func (f *fakeDNS) Delete(_ context.Context, name, typ string) error {
@@ -221,6 +224,21 @@ func TestClientAddressComesFromTheProxyNotTheClient(t *testing.T) {
 	}
 }
 
+// An install announces its address on every start, and nearly always it has
+// not changed. That must not cost a delete as well as the lookup - Porkbun
+// meters calls per key.
+func TestAnUnchangedAddressCostsNoCleanup(t *testing.T) {
+	_, dns, c := newService(t)
+	ctx := context.Background()
+	reg, _ := c.Register(ctx)
+	c.SetAddress(ctx, reg, "192.168.0.19")
+	before := len(dns.deletes)
+	c.SetAddress(ctx, reg, "192.168.0.19")
+	if got := len(dns.deletes) - before; got != 0 {
+		t.Errorf("re-announcing the same address made %d deletes, want none", got)
+	}
+}
+
 func TestAProviderFailureIsReportedNotSwallowed(t *testing.T) {
 	_, dns, c := newService(t)
 	ctx := context.Background()
@@ -263,8 +281,8 @@ func fakePorkbun(t *testing.T, existing []porkbunRecord, status string) (*Porkbu
 
 func TestPorkbunCreatesARecordThatIsNotThere(t *testing.T) {
 	p, calls := fakePorkbun(t, nil, "SUCCESS")
-	if err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil {
-		t.Fatalf("Set: %v", err)
+	if changed, err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil || !changed {
+		t.Fatalf("Set: changed=%v err=%v", changed, err)
 	}
 	if len(*calls) != 2 {
 		t.Fatalf("calls = %+v, want a lookup then a create", *calls)
@@ -290,8 +308,8 @@ func TestPorkbunCreatesARecordThatIsNotThere(t *testing.T) {
 // answer has not changed. That must cost one lookup, not a write.
 func TestPorkbunLeavesAnUnchangedRecordAlone(t *testing.T) {
 	p, calls := fakePorkbun(t, []porkbunRecord{{Content: "192.168.0.19"}}, "SUCCESS")
-	if err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil {
-		t.Fatalf("Set: %v", err)
+	if changed, err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil || changed {
+		t.Fatalf("Set: changed=%v err=%v, want an unchanged no-op", changed, err)
 	}
 	if len(*calls) != 1 {
 		t.Errorf("calls = %+v, want the lookup alone", *calls)
@@ -300,8 +318,8 @@ func TestPorkbunLeavesAnUnchangedRecordAlone(t *testing.T) {
 
 func TestPorkbunEditsARecordThatChanged(t *testing.T) {
 	p, calls := fakePorkbun(t, []porkbunRecord{{Content: "192.168.0.7"}}, "SUCCESS")
-	if err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil {
-		t.Fatalf("Set: %v", err)
+	if changed, err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil || !changed {
+		t.Fatalf("Set: changed=%v err=%v", changed, err)
 	}
 	if len(*calls) != 2 || (*calls)[1].Path != "/dns/editByNameType/soundstorm.dev/A/k3x9m2p7qa.home" {
 		t.Fatalf("calls = %+v, want a lookup then an edit", *calls)
@@ -315,7 +333,7 @@ func TestPorkbunEditsARecordThatChanged(t *testing.T) {
 // this up will see, so it has to reach the log as Porkbun said it.
 func TestPorkbunSaysWhyItRefused(t *testing.T) {
 	p, _ := fakePorkbun(t, nil, "ERROR")
-	err := p.Set(context.Background(), "x.home", "A", "192.168.0.19")
+	_, err := p.Set(context.Background(), "x.home", "A", "192.168.0.19")
 	if err == nil || !strings.Contains(err.Error(), "not opted in to API access") {
 		t.Errorf("err = %v, want Porkbun's own message", err)
 	}
