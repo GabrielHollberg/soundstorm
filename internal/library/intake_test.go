@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -332,8 +333,12 @@ func TestAwkwardNamesAreNormalisedOrRefused(t *testing.T) {
 	if got := plan(l, "CON.flac")[0]; !got.Skipped {
 		t.Errorf("a reserved Windows name was accepted as %q", got.Dest)
 	}
-	if got := plan(l, strings.Repeat("a", 300)+".flac")[0]; !got.Skipped {
-		t.Error("an absurdly long name was accepted")
+	// Too long is shortened, not refused: see
+	// TestAnAbsurdlyLongNameIsShortenedWithItsExtensionIntact.
+	if got := plan(l, strings.Repeat("a", 300)+".flac")[0]; got.Skipped {
+		t.Errorf("an over-long name was refused rather than shortened: %s", got.Reason)
+	} else if name := path.Base(got.Dest); len(name) > maxSegment || !strings.HasSuffix(name, ".flac") {
+		t.Errorf("shortened to %q", name)
 	}
 	if got := plan(l, "a/b/c/d/e/f/g/h/i/j/deep.flac")[0]; !got.Skipped {
 		t.Error("an absurdly deep path was accepted")
