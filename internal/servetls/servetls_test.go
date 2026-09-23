@@ -362,3 +362,53 @@ func TestAddingAHostReissuesTheCertificate(t *testing.T) {
 		t.Errorf("reissued certificate covers %v, not the new host", after.fallback.Leaf.IPAddresses)
 	}
 }
+
+// The point of the name constraints: a leaf the authority signs for a name or
+// address it should never vouch for must not verify, even though it chains to
+// a CA the client trusts. This is what turns a leaked ca-key.pem from
+// "intercept any site" into "impersonate this household's own server".
+func TestTheAuthorityCannotVouchForPublicNames(t *testing.T) {
+	s := selfSigned(t, t.TempDir(), "192.168.0.19")
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(s.CAPEM) {
+		t.Fatal("unusable authority")
+	}
+
+	// Names and addresses a home server legitimately answers to: accepted.
+	for _, name := range []string{"192.168.0.19", "127.0.0.1", "localhost", "media.lan", "nas.home", "box.local", "6lm2ahm6pn.home.soundstorm.dev"} {
+		cert, err := s.certFor(name, []string{name})
+		if err != nil {
+			t.Fatalf("certFor(%q): %v", name, err)
+		}
+		if _, err := cert.Leaf.Verify(x509.VerifyOptions{DNSName: name, Roots: pool}); err != nil {
+			t.Errorf("a legitimate name %q was rejected: %v", name, err)
+		}
+	}
+
+	// Public names and a public address: the signature is made, but no
+	// device that trusts the authority will accept it.
+	for _, name := range []string{"yourbank.com", "www.google.com", "8.8.8.8", "203.0.113.5"} {
+		cert, err := s.certFor("evil-"+name, []string{name})
+		if err != nil {
+			t.Fatalf("certFor(%q): %v", name, err)
+		}
+		if _, err := cert.Leaf.Verify(x509.VerifyOptions{DNSName: name, Roots: pool}); err == nil {
+			t.Errorf("the authority vouched for %q, which it must never do", name)
+		}
+	}
+}
+
+// A DNS name the operator configured is permitted, so a custom internal name
+// set through SOUNDSTORM_TLS_HOSTS keeps working.
+func TestAConfiguredNameIsPermitted(t *testing.T) {
+	s := selfSigned(t, t.TempDir(), "soundstorm.mycompany.example")
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(s.CAPEM)
+	cert, err := s.certFor("soundstorm.mycompany.example", []string{"soundstorm.mycompany.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cert.Leaf.Verify(x509.VerifyOptions{DNSName: "soundstorm.mycompany.example", Roots: pool}); err != nil {
+		t.Errorf("a configured host was not permitted: %v", err)
+	}
+}

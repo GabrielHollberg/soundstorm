@@ -1028,8 +1028,9 @@ And the rest, each traced and fixed:
   it that way across rewrites.
 
 Left for a decision rather than changed unprompted, because each is a
-tradeoff or needs testing against a live backend: the local CA has no name
-constraints (a leaked `ca-key.pem` is trusted for every domain); HSTS on the
+tradeoff or needs testing against a live backend: the local CA now carries critical
+name constraints - a leaked `ca-key.pem` is trusted only for private IP
+ranges and local-use names, not `yourbank.com`, closing the earlier gap; HSTS on the
 public name turns a lapsed certificate into a hard error; the name service's
 zone can be exhausted and its per-domain Let's Encrypt quota burned by an
 abuser (the Public Suffix List is the real fix, already noted); Immich's

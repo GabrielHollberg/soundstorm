@@ -275,7 +275,7 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("create tls directory: %w", err)
 	}
 
-	ca, caLeaf, caPEM, err := loadOrMakeCA(cfg.Dir)
+	ca, caLeaf, caPEM, err := loadOrMakeCA(cfg.Dir, cfg.Hosts)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +401,7 @@ func expiringSoon(cert *tls.Certificate) bool {
 
 // --- the authority ----------------------------------------------------------
 
-func loadOrMakeCA(dir string) (tls.Certificate, *x509.Certificate, []byte, error) {
+func loadOrMakeCA(dir string, hosts []string) (tls.Certificate, *x509.Certificate, []byte, error) {
 	certPath := filepath.Join(dir, "ca.pem")
 	keyPath := filepath.Join(dir, "ca-key.pem")
 
@@ -447,6 +447,24 @@ func loadOrMakeCA(dir string) (tls.Certificate, *x509.Certificate, []byte, error
 		IsCA:                  true,
 		MaxPathLen:            0,
 		MaxPathLenZero:        true,
+
+		// Name constraints bound what this authority is allowed to vouch for.
+		// Without them, a stolen ca-key.pem is trusted by every device that
+		// installed /ca.crt for *every* name on the internet - it could mint a
+		// certificate for a bank and intercept it. SoundStorm only ever signs
+		// certificates for a home network: private IP ranges, and a short list
+		// of names a home server legitimately answers to. Constraining the
+		// authority to exactly that turns a leaked key from "intercept
+		// anything" into "impersonate this household's own server", which the
+		// key holder could largely do anyway.
+		//
+		// Critical, so a verifier that does not understand the extension
+		// refuses the authority rather than silently ignoring the limit - the
+		// whole point is that the limit is enforced. Every modern browser and
+		// operating system understands it.
+		PermittedIPRanges:           privateIPRanges(),
+		PermittedDNSDomains:         permittedCADomains(hosts),
+		PermittedDNSDomainsCritical: true,
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
@@ -476,6 +494,52 @@ func loadOrMakeCA(dir string) (tls.Certificate, *x509.Certificate, []byte, error
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf},
 		leaf, certPEM, nil
+}
+
+// privateIPRanges is every address block a home server can live on and
+// nothing a public one can. A leaf whose IP is outside these is refused by any
+// device that trusts the authority, so a leaked key cannot mint a certificate
+// for a public address.
+func privateIPRanges() []*net.IPNet {
+	cidrs := []string{
+		"127.0.0.0/8", "::1/128", // loopback
+		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", // RFC 1918
+		"169.254.0.0/16", "fe80::/10", // link-local
+		"fc00::/7",      // IPv6 unique-local
+		"100.64.0.0/10", // carrier-grade NAT, which is also Tailscale's range
+	}
+	ranges := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			ranges = append(ranges, n)
+		}
+	}
+	return ranges
+}
+
+// permittedCADomains is the DNS names the authority may vouch for: localhost,
+// the TLDs reserved for private and local use, SoundStorm's own zone (the
+// real certificate's name falls back to the local authority before it
+// arrives), and whatever DNS names the operator configured. A permitted domain
+// covers itself and anything to its left, so "lan" covers "media.lan".
+//
+// A public name the operator did not configure is deliberately absent, which
+// is the whole protection: the authority cannot vouch for "yourbank.com".
+func permittedCADomains(hosts []string) []string {
+	domains := []string{
+		"localhost",
+		"local", "lan", "home", "home.arpa", "internal", "intranet", "corp", "test",
+		"soundstorm.dev",
+	}
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		// An IP host is covered by privateIPRanges, not here.
+		if h == "" || net.ParseIP(h) != nil {
+			continue
+		}
+		domains = append(domains, h)
+	}
+	return unique(domains)
 }
 
 // loadOrIssueFallback reuses the server certificate across restarts.
