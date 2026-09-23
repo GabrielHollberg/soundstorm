@@ -56,6 +56,10 @@ const (
 	accountFirstWait    = 2 * time.Second
 	accountMaxWait      = time.Minute
 
+	// inflightRetry is how long a request refused for concurrency is told to
+	// wait. Short: it is not a wrong password, just too many at once.
+	inflightRetry = time.Second
+
 	// maxTracked bounds memory against a flood from many addresses.
 	maxTracked = 4096
 )
@@ -97,6 +101,7 @@ type throttle struct {
 	mu       sync.Mutex
 	clients  *ledger
 	accounts *ledger
+	inflight map[string]int // guesses being hashed right now, per account
 	slots    chan struct{}
 	now      func() time.Time
 }
@@ -105,6 +110,7 @@ func newThrottle() *throttle {
 	return &throttle{
 		clients:  &ledger{free: freeFailures, first: firstWait, max: maxWait, keys: map[string]strikes{}},
 		accounts: &ledger{free: accountFreeFailures, first: accountFirstWait, max: accountMaxWait, keys: map[string]strikes{}},
+		inflight: map[string]int{},
 		slots:    make(chan struct{}, concurrentHashes),
 		now:      time.Now,
 	}
@@ -220,9 +226,20 @@ func (t *throttle) acquire(ctx context.Context) (func(), error) {
 // client's fault.
 func (t *throttle) guarded(ctx context.Context, client, account string, check func() error) error {
 	account = strings.ToLower(strings.TrimSpace(account))
-	if left := t.waitFor(client, account); left > 0 {
+
+	// The backoff above only bites once a failure has been recorded, and a
+	// failure is only recorded after the hash finishes. So a burst sent all at
+	// once all passes the wait check before any of them has failed, and only
+	// the global two-slot cap limits it - which is the whole day's guessing
+	// budget handed over at a few per second. Reserving the account here, under
+	// the same lock as the wait check, is what makes a burst against one name
+	// wait for each other: the second and later ones are turned away until the
+	// first has failed and left its strike, so the backoff catches up.
+	if left, ok := t.reserve(client, account); !ok {
 		return &ThrottledError{RetryAfter: left}
 	}
+	defer t.releaseInflight(account)
+
 	release, err := t.acquire(ctx)
 	if err != nil {
 		return err
@@ -237,4 +254,39 @@ func (t *throttle) guarded(ctx context.Context, client, account string, check fu
 		t.failFor(client, account)
 	}
 	return err
+}
+
+// reserve checks the backoff and, if a named account is being signed in to,
+// admits only one guess against it at a time. It returns how long to wait when
+// it refuses.
+func (t *throttle) reserve(client, account string) (time.Duration, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := t.now()
+	if w := t.clients.wait(client, now); w > 0 {
+		return w, false
+	}
+	if account != "" {
+		if w := t.accounts.wait(account, now); w > 0 {
+			return w, false
+		}
+		if t.inflight[account] > 0 {
+			return inflightRetry, false
+		}
+		t.inflight[account]++
+	}
+	return 0, true
+}
+
+func (t *throttle) releaseInflight(account string) {
+	if account == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if n := t.inflight[account]; n <= 1 {
+		delete(t.inflight, account)
+	} else {
+		t.inflight[account] = n - 1
+	}
 }

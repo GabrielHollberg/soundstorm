@@ -174,7 +174,7 @@ func TestDeletingAnAccountTakesEverythingWithIt(t *testing.T) {
 	if err := s.AddSession("gabe-token", owner.ID, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetProgress(member.ID+"/ebooks/dune.epub", Progress{Location: "x"}); err != nil {
+	if err := s.SetProgress(member.ID+"/ebooks/dune.epub", Progress{Location: "x"}, member.ID+"/", 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetIdentity(member.ID, "audiobookshelf", Identity{Username: "soundstorm-x"}); err != nil {

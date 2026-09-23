@@ -217,14 +217,19 @@ func TestAResetSignsThatAccountOut(t *testing.T) {
 		t.Errorf("sam is still signed in on the old password: %d", resp.StatusCode)
 	}
 
-	// Resetting their own this way must not sign the owner out of where they did it.
+	// The admin reset path refuses the owner's own account: it takes no
+	// current password, so allowing it would be a current-password-free way
+	// to change the owner password from a stolen session - exactly what
+	// ChangeOwnPassword's check exists to stop. Self-service goes through
+	// /api/account/password instead.
 	resp, body = h.do(t, http.MethodPost, "/api/users/"+h.ownID(t)+"/password",
 		`{"password":"the owner's new one"}`)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("own reset: %d %s", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("owner self-reset via the admin path should be refused, got %d %s", resp.StatusCode, body)
 	}
+	// The owner is still signed in and still on the original password.
 	if resp, _ := h.do(t, http.MethodGet, "/api/library", ""); resp.StatusCode != http.StatusOK {
-		t.Errorf("the owner signed themselves out: %d", resp.StatusCode)
+		t.Errorf("the owner was signed out by a refused reset: %d", resp.StatusCode)
 	}
 }
 
@@ -460,5 +465,39 @@ func TestReadingProgressRejectsAnOverlongLocation(t *testing.T) {
 		`{"location":"`+ok+`","fraction":0.1}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("a location right at the limit was refused: %d %s", resp.StatusCode, body)
+	}
+}
+
+// Reading position took any source/id string and wrote it straight to
+// state.json - a member with no library at all could fill the file with
+// made-up ids. It now goes through the same source check as everything else,
+// and caps how many positions one account may hold.
+func TestReadingProgressChecksTheSourceAndItsCaps(t *testing.T) {
+	h := newHarness(t, stub{id: "ebooks", kind: media.KindEbook})
+	h.signUp(t)
+
+	// A source that does not exist is refused.
+	resp, _ := h.do(t, http.MethodPut, "/api/book/progress?source=made-up&id=x",
+		`{"location":"epubcfi(/6/4!/2)","fraction":0.1}`)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown source: status %d, want 404", resp.StatusCode)
+	}
+
+	// A member who cannot see ebooks cannot store a position against it.
+	id := h.addMember(t, "sam", samPassword)
+	h.setLibraries(t, id, `{"libraries":["music"]}`)
+	sam := h.asUser(t, "sam", samPassword)
+	resp, _ = sam.do(t, http.MethodPut, "/api/book/progress?source=ebooks&id=x",
+		`{"location":"epubcfi(/6/4!/2)","fraction":0.1}`)
+	if resp.StatusCode == http.StatusOK {
+		t.Errorf("a restricted member stored progress against a forbidden source: %d", resp.StatusCode)
+	}
+
+	// An over-long id is refused before it can bloat the file.
+	huge := "?source=ebooks&id=" + strings.Repeat("a", 2000)
+	resp, _ = h.do(t, http.MethodPut, "/api/book/progress"+huge,
+		`{"location":"epubcfi(/6/4!/2)","fraction":0.1}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("over-long id: status %d, want 400", resp.StatusCode)
 	}
 }

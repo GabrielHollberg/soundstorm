@@ -971,6 +971,73 @@ of bug an unrelated future change could actually introduce - each confirmed
 to leave the process running and the failure logged rather than the test
 binary crashing.
 
+**A fourth pass - three fresh reviewers who had not seen the code or these
+notes, plus a live browser test - found one thing that mattered and several
+worth fixing.** The one that mattered:
+
+- **A stored XSS in the reader that ran as the owner, and got past the CSP.**
+  A member uploads an EPUB whose chapter contains an *absolute*
+  `<script src="https://this-install/api/book/resource?...&path=x.js">`.
+  foliate renders chapters in a same-origin blob iframe and rewrites
+  *relative* refs to `blob:` URLs the shell CSP blocks - but leaves absolute
+  ones alone, and an absolute ref to our own origin is `script-src 'self'`, so
+  it runs. `/api/book/resource` served that `.js` as `text/javascript`, and
+  the response's own `sandbox` CSP governs it as a document, not as a
+  subresource something else pulls in. When the owner opened the book the
+  script ran with their session and could call `/api/users`. Confirmed in
+  Chrome end to end (it reached `/api/users` and got 200), then confirmed
+  closed the same way. Two guards, because one alone leaves a gap: the reader
+  only ever reaches this endpoint through `fetch()` (`Sec-Fetch-Dest: empty`),
+  so a request whose dest is anything else - script, image, iframe - is
+  refused; and a JavaScript content-type is never emitted (mapped to
+  `text/plain`), so even a client sending no `Sec-Fetch-Dest` cannot get a
+  runnable script back under `nosniff`. The reader reads bytes, not
+  `<script>`, so neither guard touches it - verified a normal book, images and
+  all, still renders.
+
+And the rest, each traced and fixed:
+
+- **A concurrent burst of sign-in guesses walked past the backoff.** The wait
+  was checked before hashing and a strike recorded only after, so N requests
+  sent at once all passed the check before any failed. Only the global
+  two-hash cap limited it. Now one guess *per account* is admitted at a time
+  (`throttle.reserve`), so a burst against one name waits on itself and the
+  backoff catches up. A distributed burst against one account is serialised
+  the same way.
+- **The owner could reset their own password through the admin path**, which
+  takes no current password - handing a stolen session the persistence that
+  `ChangeOwnPassword`'s current-password check exists to deny. `ResetPassword`
+  now refuses `actor.ID == id`; your own password changes through
+  `/api/account/password`, everyone else's through the admin path.
+- **Reading position was an unauthenticated write into `state.json`.** It took
+  any `source`/`id` string, checked neither, and rewrote the whole file per
+  save - so any member could bloat it without bound. It now goes through
+  `reg.ByID` (the same access check as every other route), caps the id length,
+  and caps positions per account.
+- **A member could make Jellyfin leak our admin token over HLS.** The HLS
+  query reached Jellyfin unfiltered with our token; `SubtitleMethod=Hls` makes
+  Jellyfin write a subtitle-playlist URL carrying that token into the master
+  playlist, which is piped back. SoundStorm never asks for HLS subtitles
+  (they are a separate VTT endpoint), so every `Subtitle*` key is now stripped
+  - safe for real playback, which never sends them.
+- **Two owners could be created by two first-boot signups racing.** `AddUser`
+  now decides the role itself under the lock: the first account is the owner,
+  everyone after is a member, whatever was asked for.
+- **`.env` was world-readable on Linux** (default umask), and holds the setup
+  code and the Tailscale auth key. `install.sh` now writes it 0600 and keeps
+  it that way across rewrites.
+
+Left for a decision rather than changed unprompted, because each is a
+tradeoff or needs testing against a live backend: the local CA has no name
+constraints (a leaked `ca-key.pem` is trusted for every domain); HSTS on the
+public name turns a lapsed certificate into a hard error; the name service's
+zone can be exhausted and its per-domain Let's Encrypt quota burned by an
+abuser (the Public Suffix List is the real fix, already noted); Immich's
+Postgres uses a fixed default password reachable by a compromised sibling
+container; and the installers and compose pull by moving tag rather than
+digest. None is reachable by an ordinary internet user against a default
+install; all are recorded here so they are not rediscovered from scratch.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

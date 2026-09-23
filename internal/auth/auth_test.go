@@ -326,3 +326,72 @@ func TestAnOverlongCurrentPasswordIsRefused(t *testing.T) {
 		t.Fatalf("err = %v, want ErrWrongCurrentPassword", err)
 	}
 }
+
+// A burst of guesses sent at once for one account used to all sail past the
+// backoff, because a strike is only recorded after the hash and the wait is
+// only checked before it. Only the global two-hash cap limited it. Now one
+// guess per account is admitted at a time, so the rest are turned away and the
+// backoff catches up.
+func TestConcurrentGuessesAgainstOneAccountAreSerialised(t *testing.T) {
+	th := newThrottle()
+	const account = "owner"
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	// Hold one guess for this account in flight.
+	var firstErr error
+	done := make(chan struct{})
+	go func() {
+		firstErr = th.guarded(context.Background(), "1.1.1.1", account, func() error {
+			close(started)
+			<-release
+			return ErrInvalidCredentials
+		})
+		close(done)
+	}()
+	<-started
+
+	// A second guess for the same account, from a different address, while the
+	// first is still hashing, must be refused without being checked.
+	hashed := false
+	err := th.guarded(context.Background(), "2.2.2.2", account, func() error {
+		hashed = true
+		return ErrInvalidCredentials
+	})
+	if hashed {
+		t.Error("a concurrent guess against the same account was hashed")
+	}
+	if _, ok := IsThrottled(err); !ok {
+		t.Errorf("err = %v, want throttled", err)
+	}
+
+	close(release)
+	<-done
+	if !errors.Is(firstErr, ErrInvalidCredentials) {
+		t.Errorf("first guess err = %v", firstErr)
+	}
+
+	// Once the first has finished, a later guess is admitted again (until the
+	// per-account backoff kicks in after enough failures).
+	if _, ok := th.reserve("3.3.3.3", account); !ok {
+		t.Error("a guess after the in-flight one cleared was still refused")
+	}
+	th.releaseInflight(account)
+}
+
+// The admin reset path refuses the owner's own account, so a stolen owner
+// session cannot skip the current-password check by resetting through it.
+func TestOwnerCannotResetOwnPasswordThroughAdminPath(t *testing.T) {
+	m := newManager(t)
+	owner, err := m.Signup("gabe", "correct horse battery")
+	if err != nil {
+		t.Fatalf("signup: %v", err)
+	}
+	if err := m.ResetPassword(owner, owner.ID, "taken over now", ""); !errors.Is(err, ErrResetSelf) {
+		t.Fatalf("err = %v, want ErrResetSelf", err)
+	}
+	// The original password still works.
+	if _, _, _, err := m.Login("gabe", "correct horse battery"); err != nil {
+		t.Errorf("the refused reset changed the password anyway: %v", err)
+	}
+}

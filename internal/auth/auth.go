@@ -301,11 +301,24 @@ func (m *Manager) ChangeOwnPassword(ctx context.Context, client string, actor st
 // or password" would be a confusing thing to tell them.
 var ErrWrongCurrentPassword = errors.New("your current password is not right")
 
-// ResetPassword is the owner setting somebody's password, which signs that
-// account out everywhere - the usual reason for doing it is that somebody
-// else knows the old one. keepToken spares the owner's own session when they
-// use this on themselves.
+// ErrResetSelf refuses an owner resetting their own password through the admin
+// path, which would skip the current-password check ChangeOwnPassword makes.
+var ErrResetSelf = errors.New("use the change-password form to change your own password")
+
+// ResetPassword is the owner setting somebody else's password, which signs
+// that account out everywhere - the usual reason for doing it is that somebody
+// else knows the old one.
+//
+// It refuses the owner's own account on purpose. ChangeOwnPassword requires
+// the current password precisely so that a stolen session cookie cannot lock
+// the real owner out by changing the password without knowing it; letting the
+// owner reset *themselves* through this admin path, which takes no current
+// password, would hand that capability straight back. Your own password
+// changes through ChangeOwnPassword, everyone else's through here.
 func (m *Manager) ResetPassword(actor state.User, id, password, keepToken string) error {
+	if actor.ID == id {
+		return ErrResetSelf
+	}
 	if err := m.SetPassword(actor, id, password); err != nil {
 		return err
 	}

@@ -586,10 +586,42 @@ func (s *Source) HLSTarget(ctx context.Context, path string, query url.Values) (
 	if err := s.owns(ctx, m[1]); err != nil {
 		return source.Target{}, err
 	}
+	// The query is the client's, and it reaches Jellyfin with our
+	// administrator token. SoundStorm never asks for burned-in or delivered
+	// subtitles over HLS - subtitles are a separate VTT endpoint - so a
+	// Subtitle* key here can only have been added by a member calling this
+	// endpoint by hand. Left in, SubtitleMethod=Hls makes Jellyfin write a
+	// subtitle playlist URL carrying that token into the master playlist,
+	// which is then piped straight back to the member. Dropping every
+	// Subtitle* key removes that without touching anything real playback
+	// sends.
+	query = withoutSubtitleKeys(query)
 	return source.Target{
 		URL:     s.http.URL("/videos/"+clean, query),
 		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
 	}, nil
+}
+
+// withoutSubtitleKeys returns query with every subtitle-delivery parameter
+// removed. Returns the same value unchanged when there is nothing to strip, so
+// the common case allocates nothing.
+func withoutSubtitleKeys(query url.Values) url.Values {
+	var out url.Values
+	for k := range query {
+		if strings.HasPrefix(strings.ToLower(k), "subtitle") {
+			if out == nil {
+				out = url.Values{}
+				for k2, v2 := range query {
+					out[k2] = v2
+				}
+			}
+			delete(out, k)
+		}
+	}
+	if out == nil {
+		return query
+	}
+	return out
 }
 
 // hlsPath is every path a Jellyfin HLS playlist leads to: the master, the

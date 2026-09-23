@@ -393,3 +393,28 @@ func TestAnotherSourcesItemIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A member calling /api/hls by hand can put any query on it, and it reaches
+// Jellyfin with SoundStorm's admin token. SubtitleMethod=Hls makes Jellyfin
+// embed that token in a subtitle playlist URL inside the master, which is
+// piped back to the member. SoundStorm never asks for HLS subtitles, so every
+// Subtitle* key is dropped before the request goes out.
+func TestHLSTargetStripsSubtitleKeys(t *testing.T) {
+	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
+	q := url.Values{
+		"videoCodec":          {"h264"},
+		"SubtitleMethod":      {"Hls"},
+		"SubtitleStreamIndex": {"0"},
+		"subtitlecodec":       {"srt"},
+	}
+	target, err := s.HLSTarget(context.Background(), "item-1/master.m3u8", q)
+	if err != nil {
+		t.Fatalf("HLSTarget: %v", err)
+	}
+	if strings.Contains(strings.ToLower(target.URL), "subtitle") {
+		t.Errorf("a subtitle key survived: %s", target.URL)
+	}
+	if !strings.Contains(target.URL, "videoCodec=h264") {
+		t.Errorf("an ordinary key was dropped: %s", target.URL)
+	}
+}

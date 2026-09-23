@@ -1550,10 +1550,32 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	// A book's own content can name an absolute URL back at this endpoint -
+	// <script src="/api/book/resource?...path=x.js"> - and the reader renders
+	// chapters in a same-origin iframe, so such a script would run as us with
+	// the reader's session. foliate rewrites *relative* refs to blob: URLs the
+	// shell CSP already blocks, but leaves absolute ones alone, and an
+	// absolute ref to our own origin counts as script-src 'self'. The response
+	// CSP below does nothing about that: it governs this resource opened as a
+	// document, not this resource pulled in as a subresource by something else.
+	//
+	// Two guards close it. The reader only ever reaches this through fetch(),
+	// whose Sec-Fetch-Dest is "empty"; a <script>/<img>/<iframe> is not, so
+	// refuse anything that is not a plain fetch (absent header = an old
+	// browser or a non-browser client, allowed so the reader keeps working).
+	// And for a client that sends no Sec-Fetch-Dest at all, never hand back a
+	// runnable script content-type: with nosniff, a non-JS type cannot be
+	// executed as one, and the reader reads bytes rather than <script>-loading
+	// anything, so neutralising it costs nothing.
+	if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "empty" {
+		writeError(w, http.StatusForbidden, "book resources are for the reader, not direct loading")
+		return
+	}
+	if isScriptType(contentType) {
+		contentType = "text/plain; charset=utf-8"
+	}
 	w.Header().Set("Content-Type", contentType)
-	// Only ever fetched by the reader, never navigated to, so every resource
-	// is sandboxed whatever it is: a chapter is XHTML and may carry a script,
-	// and opening this URL directly would otherwise run it on our origin.
+	// Belt-and-suspenders for a client that opens this URL as a document.
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	// Book resources are immutable for the life of the file, and a reader
 	// fetches the same chapter every time you page back into it.
@@ -1563,15 +1585,32 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// isScriptType reports whether a browser would run this content type as
+// JavaScript. Kept deliberately broad - every alias browsers have ever
+// executed - because the cost of a false positive is a book resource served
+// as text, and the cost of a false negative is a stranger's script running as
+// the reader.
+func isScriptType(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	switch ct {
+	case "text/javascript", "application/javascript", "application/x-javascript",
+		"text/ecmascript", "application/ecmascript", "text/jscript",
+		"application/node", "module":
+		return true
+	}
+	return false
+}
+
 func (s *Server) handleGetProgress(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
-	sourceID := r.URL.Query().Get("source")
-	itemID := r.URL.Query().Get("id")
-	if sourceID == "" || itemID == "" {
-		writeError(w, http.StatusBadRequest, "source and id are required")
+	sourceID, itemID, ok := s.progressTarget(w, r)
+	if !ok {
 		return
 	}
 	p, ok := s.store.Progress(progressKey(user.ID, sourceID, itemID))
@@ -1592,10 +1631,8 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sourceID := r.URL.Query().Get("source")
-	itemID := r.URL.Query().Get("id")
-	if sourceID == "" || itemID == "" {
-		writeError(w, http.StatusBadRequest, "source and id are required")
+	sourceID, itemID, ok := s.progressTarget(w, r)
+	if !ok {
 		return
 	}
 
@@ -1632,12 +1669,47 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 		Location:  body.Location,
 		Fraction:  body.Fraction,
 		UpdatedAt: time.Now().UTC(),
-	})
+	}, user.ID+"/", maxProgressPerUser)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not save reading position")
+		writeError(w, http.StatusInsufficientStorage, "too many saved positions for this account")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"saved": true})
+}
+
+// maxProgressItemID bounds a book id in a progress key. A localbooks id is a
+// relative path, already far shorter than this; the endpoint takes it as a
+// free query parameter, so it is bounded here rather than trusted.
+const maxProgressItemID = 1024
+
+// maxProgressPerUser caps how many reading positions one account may hold.
+// state.json is rewritten whole on every save, so an unbounded number of
+// made-up ids from one member is a way to bloat it and slow every write; no
+// real reader has ten thousand books open.
+const maxProgressPerUser = 10_000
+
+// progressTarget resolves and authorises the source/id pair both progress
+// endpoints take. reg.ByID is what applies the account's library
+// restriction, exactly as on every other guarded route, and also confirms the
+// source is real - so a member cannot store or read a position against a
+// source they cannot see, or against a free-form string that is no source at
+// all.
+func (s *Server) progressTarget(w http.ResponseWriter, r *http.Request) (sourceID, itemID string, ok bool) {
+	sourceID = r.URL.Query().Get("source")
+	itemID = r.URL.Query().Get("id")
+	if sourceID == "" || itemID == "" {
+		writeError(w, http.StatusBadRequest, "source and id are required")
+		return "", "", false
+	}
+	if len(itemID) > maxProgressItemID {
+		writeError(w, http.StatusBadRequest, "id is too long")
+		return "", "", false
+	}
+	if _, found := s.reg.ByID(r.Context(), sourceID); !found {
+		writeError(w, http.StatusNotFound, "unknown source "+strconv.Quote(sourceID))
+		return "", "", false
+	}
+	return sourceID, itemID, true
 }
 
 // progressKey namespaces a bookmark by who it belongs to and which library it

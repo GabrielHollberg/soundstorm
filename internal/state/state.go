@@ -576,13 +576,14 @@ func (s *Store) AddUser(u User) (User, error) {
 	}
 
 	u.ID = newID()
-	if u.Role == "" {
-		u.Role = RoleMember
-	}
-	// The first account is always the owner, whatever it asked to be. There is
-	// no bootstrap without it.
+	// Role is decided here, under the lock, not trusted from the caller - so a
+	// second first-boot signup that raced past HasAccount and also asked to be
+	// owner cannot become a second one. The first account is always the owner;
+	// everyone after it is a member, whatever was requested.
 	if len(s.d.Users) == 0 {
 		u.Role = RoleOwner
+	} else {
+		u.Role = RoleMember
 	}
 	s.d.Users[u.ID] = u
 	return u, s.save()
@@ -718,9 +719,26 @@ func (s *Store) Progress(key string) (Progress, bool) {
 
 // SetProgress records a reading position. Callers should throttle: this writes
 // the state file, and a reader emits a location on every page turn.
-func (s *Store) SetProgress(key string, p Progress) error {
+//
+// maxKeys caps how many distinct positions one prefix (one account) may hold,
+// so a member cannot grow the state file without bound by bookmarking an
+// endless stream of made-up item ids - the whole file is rewritten on every
+// save. An existing key is always updatable; only a new one past the cap is
+// refused. A non-positive maxKeys means no cap.
+func (s *Store) SetProgress(key string, p Progress, prefix string, maxKeys int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.d.Progress[key]; !exists && maxKeys > 0 {
+		n := 0
+		for k := range s.d.Progress {
+			if strings.HasPrefix(k, prefix) {
+				n++
+			}
+		}
+		if n >= maxKeys {
+			return fmt.Errorf("too many saved positions")
+		}
+	}
 	s.d.Progress[key] = p
 	return s.save()
 }

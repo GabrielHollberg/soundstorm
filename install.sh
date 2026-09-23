@@ -151,7 +151,9 @@ get_env() {
 
 set_env() {
 	if [ -f .env ]; then
-		grep -v "^[[:space:]]*$1=" .env > .env.new || true
+		# umask 077 so the rewrite keeps .env private - mv takes the new
+		# file's permissions, and .env holds the setup code and auth key.
+		( umask 077; grep -v "^[[:space:]]*$1=" .env > .env.new ) || true
 		mv .env.new .env
 	fi
 	printf '%s=%s\n' "$1" "$2" >> .env
@@ -494,6 +496,11 @@ if [ "$UPGRADE" = "0" ]; then
 	# the moment somebody turns TLS on and cannot be worked out then: the
 	# server is in a container and sees only the container's own addresses.
 	# Better written now, by the machine that knows.
+	#
+	# Created 0600 before anything is written into it: .env holds the setup
+	# code and, with --tailscale, a reusable auth key, and the default umask
+	# would otherwise leave it world-readable for any other local account.
+	( umask 077; : > .env )
 	printf 'SOUNDSTORM_PORT=%s\n' "$PORT" > .env
 	lan=$(lan_address)
 	if [ -n "$lan" ]; then
