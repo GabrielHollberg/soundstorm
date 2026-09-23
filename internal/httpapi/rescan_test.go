@@ -69,7 +69,9 @@ func TestManyUploadsCauseOneScan(t *testing.T) {
 
 	for i := 0; i < 12; i++ {
 		name := "album/track" + string(rune('a'+i)) + ".flac"
-		if resp, body := h.upload(t, "music", name, "bytes"); resp.StatusCode != http.StatusOK {
+		// Distinct contents: twelve identical files in one album folder are
+		// eleven duplicates, and are skipped as such.
+		if resp, body := h.upload(t, "music", name, "bytes of "+name); resp.StatusCode != http.StatusOK {
 			t.Fatalf("upload %s: %d %s", name, resp.StatusCode, body)
 		}
 	}

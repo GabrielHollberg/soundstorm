@@ -928,9 +928,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	dest, err := s.library.Save(kind, path, r.Body)
 	if err != nil {
-		if errors.Is(err, library.ErrAlreadyThere) {
+		if errors.Is(err, library.ErrAlreadyThere) || library.IsDuplicate(err) {
 			// Not an error worth a stack trace in the log: re-dropping an
-			// album somebody already added is an ordinary thing to do.
+			// album somebody already added is an ordinary thing to do, and so
+			// is importing a library that bought one song twice. A 409 is a
+			// skip, not a failure, and the client shows it as one.
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error": err.Error(),
 				"path":  path,

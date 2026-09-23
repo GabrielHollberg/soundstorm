@@ -696,6 +696,14 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	if _, err := os.Stat(dest); err == nil {
 		return "", ErrAlreadyThere
 	}
+	// The same recording under another name - iTunes keeps "03 Heathens 1.m4a"
+	// beside "03 Heathens.m4a". Checked against this folder only; see
+	// duplicate.go for why that is the right scope.
+	if of, err := findDuplicate(tmpName, filepath.Dir(dest), filepath.Base(dest)); err != nil {
+		return "", fmt.Errorf("check for duplicates: %w", err)
+	} else if of != "" {
+		return "", &DuplicateError{Of: of, Audio: audioFormats[strings.ToLower(filepath.Ext(dest))]}
+	}
 
 	if err := ensureDir(filepath.Dir(dest)); err != nil {
 		return "", err

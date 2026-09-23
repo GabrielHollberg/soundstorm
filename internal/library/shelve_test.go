@@ -304,8 +304,10 @@ func TestMusicDroppedFromDeepInsideALibraryIsReShelved(t *testing.T) {
 // album-artist tag is better still.
 func TestACompilationFolderIsNotScatteredByTrackArtists(t *testing.T) {
 	l := newLibrary(t)
-	a := saved(t, l, media.KindMusic, "Various/Now 50/01.mp3", id3(map[string]string{"TPE1": "Guest One", "TALB": "Now 50"}))
-	b := saved(t, l, media.KindMusic, "Various/Now 50/02.mp3", id3(map[string]string{"TPE1": "Guest Two", "TALB": "Now 50"}))
+	// Different audio as well as different tags: two tracks with identical
+	// audio in one folder are one recording, and the second is skipped.
+	a := saved(t, l, media.KindMusic, "Various/Now 50/01.mp3", append(id3(map[string]string{"TPE1": "Guest One", "TALB": "Now 50"}), "one"...))
+	b := saved(t, l, media.KindMusic, "Various/Now 50/02.mp3", append(id3(map[string]string{"TPE1": "Guest Two", "TALB": "Now 50"}), "two"...))
 	if path.Dir(a) != path.Dir(b) {
 		t.Errorf("one album filed in two places: %q and %q", a, b)
 	}

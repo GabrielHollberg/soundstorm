@@ -258,6 +258,41 @@ renamed into place, which is atomic because it is the same filesystem, and
 invisible to the backends because a top-level dot-directory is not mounted into
 any of them. `ClearStaging` sweeps it at boot for the crash case.
 
+**The same recording under another name is skipped.** An upload was only ever
+refused when its destination name existed, and an iTunes library keeps
+repurchases side by side: `03 Heathens.m4a` and `03 Heathens 1.m4a`. Measured
+on a real library before building anything: of nine such pairs **none** were
+identical files - iTunes writes a catalog id, a purchase date and its own copy
+of the artwork into each - and five had identical audio. The other four
+differed in the audio itself, two by enough to be different versions.
+
+So audio is fingerprinted by the audio alone (`duplicate.go`): the `mdat` of an
+MP4, the frames of an MP3 between its ID3 tags, the frames of a FLAC after its
+metadata blocks. Everything else is compared whole, as is any file whose
+structure does not parse, which errs towards keeping both. A clean and an
+explicit version differ in their audio and are both kept; what is skipped is
+one recording sold under two listings. On the real files, the five same-audio
+pairs differed only by a Parental Advisory badge on one cover, or a Deluxe
+Edition cover - checked by rendering the embedded artwork side by side.
+
+The scope is deliberate and narrow: **only the destination folder**, only the
+same format, and only uploads. The same song on an album and a compilation is
+not a duplicate, and a deluxe edition in its own folder keeps every track even
+where it shares one with the standard. Hand-copying a file into the folder is
+never checked, which is also how somebody adds one anyway. Only siblings with
+exactly the same audio length are ever hashed.
+
+The staged upload is `part-123456789`, so the format comes from the dropped
+name, never the staged path - the first test of the case this exists for
+caught a staged M4A being hashed whole against an audio-only hash of the copy
+on the shelf. Same trap as PDFs above.
+
+A skip comes back as a 409 like "already in your library", and the drop panel
+shows both as *skipped*, not failed: the server declining on purpose is not an
+error, and the summary line counts them with the plan's skips. Verified by
+uploading the real `Heathens` pair (skipped, naming the original) and the real
+`Notice Me` pair (kept) through `Save`.
+
 **Every path is attacker-supplied.** One trap here cost a real bug, caught by
 its own test: `TrimRight(segment, ". ")` ran *before* the `..` check, so ".."
 became "" and was skipped - which quietly turned `../../etc/passwd.mp3` into

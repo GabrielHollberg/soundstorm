@@ -1685,6 +1685,7 @@ async function sendFiles(plan, dropped) {
 
   let done = 0;
   let sent = 0;
+  let declined = 0; // already there, or the same recording is
   for (const item of queue) {
     $('intake-title').textContent =
       `Adding ${done + 1} of ${queue.length} — ${item.file.name}`;
@@ -1694,12 +1695,14 @@ async function sendFiles(plan, dropped) {
     sent += item.file.size;
     done += 1;
     setIntakeProgress(total ? sent / total : 1);
+    if (!result.ok && result.skipped) declined += 1;
     markIntakeRow(item.path, result);
   }
 
   const failed = document.querySelectorAll('#intake-list .intake-failed').length;
-  const skipped = plan.filter((p) => p.skipped).length;
-  $('intake-title').textContent = summary(done - failed, skipped, failed);
+  // Skipped at planning, and skipped by the server as already there.
+  const skipped = plan.filter((p) => p.skipped).length + declined;
+  $('intake-title').textContent = summary(done - failed - declined, skipped, failed);
   show($('intake-bar'), false);
 
   // Counts on the folder guide have moved, and a scan is probably running.
@@ -1743,7 +1746,9 @@ function uploadOne(item, onProgress) {
       } catch {
         // A non-JSON error body is still an error; the status will do.
       }
-      resolve({ ok: false, error: message });
+      // 409 is the server declining on purpose - the file, or the same
+      // recording, is already there - which is a skip, not a failure.
+      resolve({ ok: false, skipped: request.status === 409, error: message });
     });
     request.addEventListener('error', () => resolve({ ok: false, error: 'connection lost' }));
     request.addEventListener('abort', () => resolve({ ok: false, error: 'cancelled' }));
@@ -1785,7 +1790,7 @@ function markIntakeRow(path, result) {
     dest.textContent = `${result.dest || dest.textContent} ✓`;
     return;
   }
-  li.classList.add('intake-failed');
+  li.classList.add(result.skipped ? 'intake-skipped' : 'intake-failed');
   dest.textContent = result.error;
 }
 

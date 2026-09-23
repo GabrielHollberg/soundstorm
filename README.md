@@ -169,6 +169,14 @@ folders you drop them in — `Taxes/2024` is how you find a statement.
 
 ![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png)
 
+A song you already have is not added twice, even under another name — iTunes
+libraries often hold `03 Heathens.m4a` and `03 Heathens 1.m4a`, the same track
+bought twice. SoundStorm compares the recording itself, so a clean and an
+explicit version, or a remaster, are both kept; only an identical recording in
+the same folder is skipped, and the drop panel says which file it matched.
+Copying a file into the folder yourself is never checked, so that is the way
+to keep one anyway.
+
 Anything you drop on the window is searchable within a few seconds — SoundStorm
 tells whichever server owns that shelf to look, rather than leaving the file
 sitting there until its next sweep.
