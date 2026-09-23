@@ -1283,6 +1283,19 @@ if ($Https -or ($NoHttps -eq $false -and -not $tlsNow)) {
 }
 $tlsMode = Get-EnvSetting 'SOUNDSTORM_TLS'
 
+# The first sign-up needs a setup code, so that whoever reaches the port
+# before the owner does - from the internet, once it faces it - cannot claim
+# the server. It goes into the address the browser is opened at below, so
+# nobody installing ever sees it. Kept once written: a second run must open
+# the page with the code the server already has.
+$setupCode = Get-EnvSetting 'SOUNDSTORM_SETUP_CODE'
+if (-not $setupCode) {
+    $bytes = New-Object byte[] 10
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $setupCode = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    Set-EnvSetting 'SOUNDSTORM_SETUP_CODE' $setupCode
+}
+
 # Where the library lives. Beside the install unless -Library says otherwise,
 # which is how it goes on an external drive. Compose mounts every shelf from
 # the same setting, so they all follow.
@@ -1506,4 +1519,6 @@ if (-not $NoShortcuts) {
 }
 Write-Host ""
 
-Start-Process $url
+# With the setup code, which the page takes out of the address as it loads.
+# Harmless once an account exists: it is only ever read by the first sign-up.
+Start-Process "$url/?setup=$setupCode"

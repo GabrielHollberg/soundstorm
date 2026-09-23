@@ -31,6 +31,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +65,7 @@ const maxProgressBody = 8 << 10
 
 // Server wires everything to HTTP handlers.
 type Server struct {
+	setupCode        string
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -108,6 +110,9 @@ type Config struct {
 	// PublicName reports the install's real certificate name, or "" while it
 	// has none - see servetls auto mode. Nil when that mode is off.
 	PublicName func() string
+
+	// SetupCode is what the first sign-up must present. See handleSignup.
+	SetupCode string
 }
 
 // New builds the HTTP server.
@@ -128,6 +133,7 @@ func New(cfg Config) *Server {
 		caPEM:            cfg.CAPEM,
 		lanHosts:         cfg.LANHosts,
 		publicName:       cfg.PublicName,
+		setupCode:        NormalizeSetupCode(cfg.SetupCode),
 		rescanTimers:     map[media.Kind]*time.Timer{},
 	}
 }
@@ -276,6 +282,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"hasAccount": s.auth.HasAccount(),
 		"signedIn":   false,
 	}
+	if !s.auth.HasAccount() {
+		answer["setupCodeRequired"] = true
+	}
 	if user, ok := s.auth.UserFor(r); ok {
 		answer["signedIn"] = true
 		answer["user"] = publicUser(user)
@@ -318,8 +327,9 @@ func publicUser(u state.User) map[string]any {
 }
 
 type credentials struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	SetupCode string `json:"setupCode"`
 }
 
 func decodeCredentials(r *http.Request) (credentials, error) {
@@ -334,7 +344,15 @@ func decodeCredentials(r *http.Request) (credentials, error) {
 func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	// Signup is open exactly once. After that it is a 409 forever, so a
 	// stranger who finds the port cannot create the account you have not
-	// created yet... but note that until you do, they can. Claim it right away.
+	// created yet.
+	//
+	// Until then it needs the setup code, because until then whoever reaches
+	// the port first owns the server - and once it faces the internet, that
+	// may not be whoever installed it. "Only from the home network" was the
+	// first answer and cannot be checked: under Docker Desktop every
+	// connection, local or forwarded from the internet, arrives from Docker's
+	// own 172.20.0.1. Measured, not assumed. The installer puts the code in
+	// the address it opens, so the person installing never sees it.
 	if s.auth.HasAccount() {
 		writeError(w, http.StatusConflict, "an account already exists; sign in instead")
 		return
@@ -342,6 +360,16 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	creds, err := decodeCredentials(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	given := NormalizeSetupCode(creds.SetupCode)
+	if s.setupCode == "" || subtle.ConstantTimeCompare([]byte(given), []byte(s.setupCode)) != 1 {
+		s.log.Warn("sign-up refused: wrong setup code", "remote", r.RemoteAddr)
+		msg := "that setup code is not right"
+		if given == "" {
+			msg = "a setup code is needed to create the first account"
+		}
+		writeError(w, http.StatusForbidden, msg)
 		return
 	}
 	owner, err := s.auth.Signup(creds.Username, creds.Password)
@@ -1570,4 +1598,17 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// NormalizeSetupCode makes a typed code compare equal to the printed one:
+// case, spaces and dashes are presentation.
+func NormalizeSetupCode(code string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(code) {
+		if r == '-' || r == ' ' || r == '	' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

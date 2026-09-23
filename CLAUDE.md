@@ -650,6 +650,22 @@ server. After that only the owner adds accounts. There are no invite links and
 no open registration, because this thing is meant to be reachable from outside
 a house.
 
+**Until that first account exists, whoever reaches the port owns the server**,
+so the first sign-up needs a setup code. "Only from the home network" was the
+first answer and cannot be checked: under Docker Desktop every connection -
+`localhost`, the LAN address, and anything a router forwards from the internet
+- arrives from Docker's own `172.20.0.1`. Measured with a failed sign-in from
+each, not assumed; Linux keeps the real address, Windows and macOS do not.
+
+The code costs the person installing nothing. The installers generate it into
+`.env` (`SOUNDSTORM_SETUP_CODE`) and open the browser at `/?setup=<code>`; the
+page takes it out of the address as it loads, so it is not left in history or a
+bookmark, and the move to the https name keeps the query so it survives that.
+`install.sh` prints it in the addresses it shows, for a headless box. With no
+installer - compose alone - SoundStorm makes one up at each start and logs it
+until an account exists. The form only asks for it when the address did not
+carry it. Eighty random bits, so there is no throttle on guessing it.
+
 **Which shelves somebody can see is per account.** `User.Libraries` is a list
 of media kinds, and nil means all of them - which is what every account created
 before the field existed has, and the default for a new one. The owner is always

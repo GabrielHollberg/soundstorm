@@ -105,7 +105,7 @@ func TestSignupIsClosedOnceThereIsAnAccount(t *testing.T) {
 	h.signUp(t)
 
 	resp, _ := h.do(t, http.MethodPost, "/api/signup",
-		`{"username":"intruder","password":"`+samPassword+`"}`)
+		`{"setupCode":"`+testSetupCode+`","username":"intruder","password":"`+samPassword+`"}`)
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("status = %d, want 409", resp.StatusCode)
 	}
@@ -393,7 +393,7 @@ func TestAccountsNeverLeakPasswordMaterial(t *testing.T) {
 func TestSignupReturnsTheAccountItJustCreated(t *testing.T) {
 	h := newHarness(t)
 	resp, body := h.do(t, http.MethodPost, "/api/signup",
-		`{"username":"gabe","password":"`+samPassword+`"}`)
+		`{"setupCode":"`+testSetupCode+`","username":"gabe","password":"`+samPassword+`"}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d: %s", resp.StatusCode, body)
 	}

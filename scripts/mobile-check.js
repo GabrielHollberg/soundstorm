@@ -42,6 +42,9 @@ try {
 }
 
 const BASE = process.env.SHOT_BASE || 'http://localhost:8199';
+// A fresh instance needs its setup code for the first sign-up: run it with
+// SOUNDSTORM_SETUP_CODE set and pass the same value here as SETUP_CODE.
+const SIGNUP_URL = BASE + '/?setup=' + encodeURIComponent(process.env.SETUP_CODE || '');
 const OUT = process.env.SHOT_OUT || path.join(process.cwd(), 'mobile-shots');
 const USER = process.env.SHOT_USER || 'mobilecheck';
 const PASS = process.env.SHOT_PASS || 'mobilecheckpassword';
@@ -115,7 +118,7 @@ async function check(page, name) {
   });
 
   console.log(`\n=== ${PHONE.width}x${PHONE.height} ===`);
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(SIGNUP_URL, { waitUntil: 'networkidle' });
   await page.waitForSelector('#gate:not(.hidden)', { timeout: 10000 });
   await check(page, 'signup');
 

@@ -38,6 +38,13 @@
       <label for="gate-password">Password</label>
       <input id="gate-password" name="password" type="password" required>
 
+      <div id="gate-setup" class="hidden">
+        <label for="gate-setup-code">Setup code</label>
+        <input id="gate-setup-code" name="setup-code" autocomplete="off" spellcheck="false">
+        <p class="setup-detail">Setup opened this page with the code already in it. Opened some
+          other way? It is in SoundStorm's log: <code>docker compose logs soundstorm</code></p>
+      </div>
+
       <p id="gate-error" class="error hidden" role="alert"></p>
 
       <button id="gate-submit" type="submit">Continue</button>

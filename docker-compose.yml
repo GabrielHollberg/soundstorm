@@ -98,6 +98,10 @@ services:
       # decide whether the session cookie is marked Secure. Any client can send
       # that header, so only turn it on when a proxy is stripping incoming ones.
       SOUNDSTORM_TRUST_PROXY: ${SOUNDSTORM_TRUST_PROXY:-false}
+      # What the first sign-up must present. The installer writes one and
+      # opens the browser with it in the address; left empty, SoundStorm makes
+      # one up at start and prints it in its log until an account exists.
+      SOUNDSTORM_SETUP_CODE: ${SOUNDSTORM_SETUP_CODE:-}
     volumes:
       - soundstorm-state:/var/lib/soundstorm
       # The whole library, writable: SoundStorm creates the folder structure on

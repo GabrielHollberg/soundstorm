@@ -33,6 +33,9 @@ try {
 }
 
 const BASE = process.env.SHOT_BASE || 'http://localhost:8199';
+// A fresh instance needs its setup code for the first sign-up: run it with
+// SOUNDSTORM_SETUP_CODE set and pass the same value here as SETUP_CODE.
+const SIGNUP_URL = BASE + '/?setup=' + encodeURIComponent(process.env.SETUP_CODE || '');
 const USER = process.env.SHOT_USER || 'swipecheck';
 const PASS = process.env.SHOT_PASS || 'swipecheckpassword';
 const BOOK = process.env.SWIPE_BOOK || 'alice';
@@ -47,7 +50,7 @@ const ROUNDS = 3;
   const page = await ctx.newPage();
   const cdp = await ctx.newCDPSession(page);
 
-  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.goto(SIGNUP_URL, { waitUntil: 'networkidle' });
   await page.fill('#gate-username', USER);
   await page.fill('#gate-password', PASS);
   await page.click('#gate-submit');

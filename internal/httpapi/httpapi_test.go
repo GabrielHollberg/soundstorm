@@ -99,6 +99,7 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 		Setup:            provision.New(store, reg, log, nil),
 		PerSourceTimeout: time.Second,
 		Log:              log,
+		SetupCode:        testSetupCode,
 	})
 
 	srv := httptest.NewServer(api.Routes())
@@ -139,7 +140,7 @@ func (h *harness) do(t *testing.T, method, path, body string) (*http.Response, [
 // signUp creates the account and leaves the harness signed in.
 func (h *harness) signUp(t *testing.T) {
 	t.Helper()
-	resp, body := h.do(t, http.MethodPost, "/api/signup", `{"username":"gabe","password":"correct horse"}`)
+	resp, body := h.do(t, http.MethodPost, "/api/signup", `{"setupCode":"`+testSetupCode+`","username":"gabe","password":"correct horse"}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("signup failed: %d %s", resp.StatusCode, body)
 	}
@@ -200,7 +201,7 @@ func TestSignupIsOnlyAvailableOnce(t *testing.T) {
 	h := newHarness(t)
 	h.signUp(t)
 
-	resp, _ := h.do(t, http.MethodPost, "/api/signup", `{"username":"someone","password":"else entirely"}`)
+	resp, _ := h.do(t, http.MethodPost, "/api/signup", `{"setupCode":"`+testSetupCode+`","username":"someone","password":"else entirely"}`)
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("second signup = %d, want 409", resp.StatusCode)
 	}
@@ -208,7 +209,7 @@ func TestSignupIsOnlyAvailableOnce(t *testing.T) {
 
 func TestSignupRejectsWeakPassword(t *testing.T) {
 	h := newHarness(t)
-	resp, body := h.do(t, http.MethodPost, "/api/signup", `{"username":"gabe","password":"short"}`)
+	resp, body := h.do(t, http.MethodPost, "/api/signup", `{"setupCode":"`+testSetupCode+`","username":"gabe","password":"short"}`)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 (body %s)", resp.StatusCode, body)
 	}
@@ -239,7 +240,7 @@ func TestLoginAndLogout(t *testing.T) {
 	}
 
 	// Right password gets back in.
-	resp, _ = h.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"correct horse"}`)
+	resp, _ = h.do(t, http.MethodPost, "/api/login", `{"setupCode":"`+testSetupCode+`","username":"gabe","password":"correct horse"}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("good password = %d, want 200", resp.StatusCode)
 	}
@@ -702,5 +703,46 @@ func TestSavingAPositionToASourceThatCannotIsRefusedClearly(t *testing.T) {
 	resp, _ := h.do(t, http.MethodPut, "/api/playback/nd/song", `{"seconds":30}`)
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Errorf("status = %d, want 501", resp.StatusCode)
+	}
+}
+
+// testSetupCode is what the harness's server expects, written the way the
+// installer prints one.
+const testSetupCode = "k7qm-2xfp-9rtd-h4wn"
+
+// Until an account exists, whoever reaches the port first owns the server -
+// and once it faces the internet that may not be whoever installed it. So the
+// first sign-up needs the code the installer put in the address it opened.
+func TestTheFirstSignupNeedsTheSetupCode(t *testing.T) {
+	h := newHarness(t)
+
+	_, body := h.do(t, http.MethodGet, "/api/session", "")
+	if !strings.Contains(string(body), `"setupCodeRequired": true`) {
+		t.Errorf("the page is not told a code is needed: %s", body)
+	}
+
+	for _, code := range []string{"", "wrong-code-here-xxxx", "k7qm-2xfp-9rtd-h4w"} {
+		resp, _ := h.do(t, http.MethodPost, "/api/signup",
+			`{"setupCode":"`+code+`","username":"stranger","password":"correct horse"}`)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("setup code %q: status %d, want 403", code, resp.StatusCode)
+		}
+	}
+	resp, _ := h.do(t, http.MethodGet, "/api/session", "")
+	_ = resp
+	if h.api.auth.HasAccount() {
+		t.Fatal("a refused sign-up created an account")
+	}
+
+	// Typed from a log rather than carried in the address: case and dashes
+	// are presentation.
+	resp, body = h.do(t, http.MethodPost, "/api/signup",
+		`{"setupCode":"K7QM 2XFP 9RTD H4WN","username":"gabe","password":"correct horse"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the right code was refused: %d %s", resp.StatusCode, body)
+	}
+	_, body = h.do(t, http.MethodGet, "/api/session", "")
+	if strings.Contains(string(body), "setupCodeRequired") {
+		t.Errorf("still asking for a code after the owner exists: %s", body)
 	}
 }

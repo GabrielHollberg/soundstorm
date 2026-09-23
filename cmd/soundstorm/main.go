@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -192,6 +193,19 @@ func run(log *slog.Logger) error {
 		caPEM = tlsServer.CAPEM
 	}
 
+	// The first sign-up needs this. The installer writes one into .env and
+	// opens the browser with it in the address; without an installer there is
+	// none, so one is made up here and printed where the owner will look.
+	setupCode := strings.TrimSpace(os.Getenv("SOUNDSTORM_SETUP_CODE"))
+	if setupCode == "" {
+		setupCode = newSetupCode()
+	}
+	if store.UserCount() == 0 {
+		log.Warn("no account yet: the first sign-up needs this setup code",
+			"code", setupCode,
+			"or add to the address", "/?setup="+httpapi.NormalizeSetupCode(setupCode))
+	}
+
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
 		Store:            store,
@@ -206,6 +220,7 @@ func run(log *slog.Logger) error {
 		// the host - was ever in a position to find it out.
 		LANHosts:   splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
 		PublicName: tlsServer.PublicName,
+		SetupCode:  setupCode,
 	})
 
 	srv := &http.Server{
@@ -394,4 +409,22 @@ func logLevel(s string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// newSetupCode is 80 random bits in a form somebody can read off a log and
+// type: sixteen characters from an alphabet with no 0/o or 1/l to confuse.
+func newSetupCode() string {
+	const alphabet = "23456789abcdefghijkmnpqrstuvwxyz"
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // crypto/rand does not fail on any supported platform
+	}
+	var out strings.Builder
+	for i, c := range b {
+		if i > 0 && i%4 == 0 {
+			out.WriteByte('-')
+		}
+		out.WriteByte(alphabet[int(c)%len(alphabet)])
+	}
+	return out.String()
 }

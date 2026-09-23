@@ -96,7 +96,20 @@ const streamPath = (item) =>
 
 /* ------------------------------------------------------------------- gate */
 
-function showGate(hasAccount) {
+// The setup code arrives in the address the installer opened, and is taken
+// out of it straight away so it is not left in the history or a bookmark.
+// It survives the move to the https name because that keeps the query.
+const setupFromAddress = (() => {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('setup');
+  if (code === null) return '';
+  params.delete('setup');
+  const rest = params.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  return code;
+})();
+
+function showGate(hasAccount, setupCodeRequired) {
   show($('boot'), false);
   show($('app'), false);
   show($('gate'), true);
@@ -106,6 +119,10 @@ function showGate(hasAccount) {
     : 'Create the account for this server. You will not need any API keys.';
   $('gate-submit').textContent = hasAccount ? 'Sign in' : 'Create account';
   $('gate-form').dataset.mode = hasAccount ? 'login' : 'signup';
+  // Asked for only when the address did not carry it, which is the unusual
+  // case: somebody opened the page by hand instead of from setup.
+  $('gate-setup-code').value = setupFromAddress;
+  show($('gate-setup'), !hasAccount && setupCodeRequired && !setupFromAddress);
   $('gate-username').focus();
 }
 
@@ -125,6 +142,7 @@ $('gate-form').addEventListener('submit', async (event) => {
     body: JSON.stringify({
       username: $('gate-username').value,
       password: $('gate-password').value,
+      ...(mode === 'signup' ? { setupCode: $('gate-setup-code').value } : {}),
     }),
   });
 
@@ -1832,7 +1850,7 @@ async function moveToSecureName(name) {
   if (ok && body) {
     if (body.secureName && await moveToSecureName(body.secureName)) return;
     if (body.signedIn) showApp(body.user);
-    else showGate(body.hasAccount);
+    else showGate(body.hasAccount, body.setupCodeRequired);
     return;
   }
 

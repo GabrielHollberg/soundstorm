@@ -507,6 +507,23 @@ fi
 # After the port, so that on a fresh install this amends the file just written
 # rather than being overwritten by it.
 #
+# The first sign-up needs a setup code, so that whoever reaches the port
+# before the owner does - from the internet, once it faces it - cannot claim
+# the server. It goes into the addresses printed and opened below, so nobody
+# installing has to type it. Kept once written: a second run must hand out
+# the code the server already has.
+SETUP_CODE=$(get_env SOUNDSTORM_SETUP_CODE)
+if [ -z "$SETUP_CODE" ]; then
+	SETUP_CODE=$(od -An -N10 -tx1 /dev/urandom | tr -d ' 
+')
+	set_env SOUNDSTORM_SETUP_CODE "$SETUP_CODE"
+fi
+# Only a fresh install shows it: an existing one already has its owner.
+SETUP_QS=''
+if [ "$UPGRADE" != "1" ]; then
+	SETUP_QS="/?setup=$SETUP_CODE"
+fi
+
 # Auto is the default: a real certificate for a <id>.home.soundstorm.dev name,
 # with plain http still answering on the same port. Written for a fresh
 # install and for an existing one that never chose - an absent line meant
@@ -658,7 +675,7 @@ say ""
 if [ "$UPGRADE" = "1" ]; then
 	say "${GREEN}${BOLD}Up to date.${OFF} SoundStorm is running at ${BOLD}$URL${OFF}."
 else
-	say "${GREEN}${BOLD}Ready.${OFF} Open ${BOLD}$URL${OFF} and create your account."
+	say "${GREEN}${BOLD}Ready.${OFF} Open ${BOLD}$URL$SETUP_QS${OFF} and create your account."
 fi
 say ""
 say "Your media goes in ${BOLD}$LIBRARY_DIR${OFF}:"
@@ -679,7 +696,7 @@ if [ -n "$secure" ]; then
 	# install the app from this address.
 	say "On your phone, TV or another computer on this network:"
 	say ""
-	say "    ${BOLD}$secure${OFF}"
+	say "    ${BOLD}$secure$SETUP_QS${OFF}"
 	if [ -n "$lan" ]; then
 		note "http://$lan:$PORT    (if your router refuses the name)"
 	fi
@@ -690,12 +707,12 @@ elif [ -n "$lan" ] || [ -n "$mdns" ]; then
 	say "On your phone, TV or another computer on this network:"
 	say ""
 	if [ -n "$mdns" ]; then
-		say "    ${BOLD}$SCHEME://$mdns:$PORT${OFF}"
+		say "    ${BOLD}$SCHEME://$mdns:$PORT$SETUP_QS${OFF}"
 		if [ -n "$lan" ]; then
 			note "$SCHEME://$lan:$PORT    (if the name does not work)"
 		fi
 	else
-		say "    ${BOLD}$SCHEME://$lan:$PORT${OFF}"
+		say "    ${BOLD}$SCHEME://$lan:$PORT$SETUP_QS${OFF}"
 	fi
 	say ""
 	note "Same account. Open the port on the firewall if nothing loads."
@@ -735,4 +752,9 @@ say "${DIM}logs:    cd $DIR && $COMPOSE logs -f${OFF}"
 say "${DIM}upgrade: run this installer again${OFF}"
 say ""
 
-open_browser "$URL"
+if [ -n "$SETUP_QS" ]; then
+	note "The first address you open creates the owner account; the code at"
+	note "the end of it is what lets it. After that, plain addresses work."
+	say ""
+fi
+open_browser "$URL$SETUP_QS"
