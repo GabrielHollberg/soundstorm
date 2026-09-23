@@ -1,4 +1,5 @@
-# The name service, as deployed on Railway. Built from the repository root:
+# The name service, as deployed on Railway (which finds this file through
+# RAILWAY_DOCKERFILE_PATH). Built from the repository root:
 #
 #   docker build -f cmd/soundstorm-names/Dockerfile .
 #

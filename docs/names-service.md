@@ -23,18 +23,21 @@ website or mail on it is untouched: installs live under `home.soundstorm.dev`.
 
 ## 2. Railway
 
-1. **New service → GitHub repo** → this repository.
-2. **Settings → Config file path:** `cmd/soundstorm-names/railway.toml`. That
-   points the build at the service's own Dockerfile rather than SoundStorm's.
-3. **Variables:**
+1. **New service → GitHub repo** → this repository. Its first build will use
+   the root Dockerfile, which is SoundStorm itself; the variable below fixes
+   that. Leave **Root Directory** empty: the build needs the whole repository.
+2. **Variables:**
 
    | Variable | Value |
    | --- | --- |
+   | `RAILWAY_DOCKERFILE_PATH` | `cmd/soundstorm-names/Dockerfile` - which image to build. A variable rather than Railway's config-file setting, which was deprecated between writing this and first using it; a variable is visible beside the others and does not depend on a Railway file format. |
    | `NAMES_SECRET` | 48 random bytes: `openssl rand -base64 48`. Keep a copy somewhere safe - changing it makes every install register again. |
    | `PORKBUN_API_KEY` | the `pk1_...` half |
    | `PORKBUN_SECRET_API_KEY` | the `sk1_...` half |
    | `NAMES_CLIENT_IP_HEADER` | `X-Real-IP` - the header Railway's proxy puts the caller's address in, used for rate limiting. **Unverified**; if registration starts refusing everybody at once, this is why. |
 
+3. **Settings → Deploy → Healthcheck path:** `/healthz`, if the setting is
+   there. Optional; it lets Railway tell a working deploy from a broken one.
 4. **Settings → Networking → Custom domain:** `names.soundstorm.dev`. Railway
    shows a CNAME target; add that record at Porkbun (**DNS** for
    `soundstorm.dev`, type CNAME, host `names`). Railway issues the
