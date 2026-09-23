@@ -11,6 +11,9 @@
 //	PORKBUN_API_KEY          Porkbun credentials, with API access switched on
 //	PORKBUN_SECRET_API_KEY   for NAMES_ZONE only
 //	NAMES_CLIENT_IP_HEADER   header the hosting proxy puts the client address in
+//	NAMES_FORGET_AFTER_DAYS  delete an install's record once it has been silent
+//	                         this long (default 180); it comes back, same name,
+//	                         the next time that install starts
 //	PORT                     where to listen (default 8080; Railway sets it)
 //
 // For a local rehearsal against Pebble instead of Porkbun and Let's Encrypt:
@@ -20,10 +23,13 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +73,13 @@ func run(log *slog.Logger) error {
 	if ns := os.Getenv("NAMES_NAMESERVERS"); ns != "" {
 		s.Nameservers = strings.Split(ns, ",")
 	}
+
+	days, err := strconv.Atoi(env("NAMES_FORGET_AFTER_DAYS", "180"))
+	if err != nil || days < 30 {
+		return fmt.Errorf("NAMES_FORGET_AFTER_DAYS must be a whole number of days, at least 30; got %q",
+			os.Getenv("NAMES_FORGET_AFTER_DAYS"))
+	}
+	go s.RunSweeper(context.Background(), time.Duration(days)*24*time.Hour)
 
 	addr := ":" + env("PORT", "8080")
 	log.Info("soundstorm-names listening", "addr", addr, "zone", zone, "label", s.Label)

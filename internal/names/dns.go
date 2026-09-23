@@ -43,6 +43,10 @@ type Porkbun struct {
 	// to api.porkbun.com, so it is a setting rather than a constant.
 	Base string
 	HTTP *http.Client
+
+	// Now is the clock the last-seen stamps are written with. Nil is
+	// time.Now; tests set it.
+	Now func() time.Time
 }
 
 // porkbunTTL is Porkbun's minimum. Nothing here benefits from a longer one:
@@ -54,6 +58,43 @@ type porkbunRecord struct {
 	Name    string `json:"name"`
 	Type    string `json:"type"`
 	Content string `json:"content"`
+	Notes   string `json:"notes"`
+}
+
+// Every record this service writes carries the date its install was last
+// heard from, in Porkbun's notes field - stored with the record, never served
+// in DNS. It is the only state the service has, and it lives where the
+// records do, so nothing else has to be kept anywhere.
+//
+// It is what lets abandoned installs be swept: Porkbun allows 2,500 records
+// per domain, and without a date there is no telling a server switched off
+// for good from one that has not restarted since last week.
+const seenPrefix = "soundstorm last-seen "
+
+// restampAfter is how stale a stamp may get before re-announcing the same
+// address rewrites it. A running install announces twice a day; rewriting
+// every time would turn a free lookup into a paid write, and a stamp a month
+// old is plenty precise for a sweep measured in months.
+const restampAfter = 30 * 24 * time.Hour
+
+func (p *Porkbun) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
+}
+
+func (p *Porkbun) stamp() string { return seenPrefix + p.now().UTC().Format("2006-01-02") }
+
+// lastSeen reads a stamp back. ok is false for a record with none - one
+// written before stamps existed, or by hand - which a sweep leaves alone.
+func lastSeen(notes string) (time.Time, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(notes), seenPrefix)
+	if !ok {
+		return time.Time{}, false
+	}
+	t, err := time.Parse("2006-01-02", rest)
+	return t, err == nil
 }
 
 type porkbunReply struct {
@@ -103,27 +144,37 @@ func (p *Porkbun) call(ctx context.Context, path string, fields map[string]strin
 	return reply, nil
 }
 
-// Set makes name hold exactly value. Porkbun's "edit by name and type"
-// changes records that exist and does nothing for ones that do not, so it
-// looks first and creates when there is nothing to edit - and does nothing at
-// all when the value is already right, which is the common case for an
-// install re-announcing an address that has not changed.
+// Set makes name hold exactly value, stamped as seen today. Porkbun's "edit
+// by name and type" changes records that exist and does nothing for ones that
+// do not, so it looks first and creates when there is nothing to edit - and
+// does nothing at all when the value is already right and the stamp recent,
+// which is the common case for an install re-announcing an address that has
+// not changed.
+//
+// changed reports whether the value changed; refreshing a stale stamp on the
+// same value is a write, but not a change.
 func (p *Porkbun) Set(ctx context.Context, name, typ, value string) (bool, error) {
 	path := "/" + p.Domain + "/" + typ + "/" + name
 	got, err := p.call(ctx, "/dns/retrieveByNameType"+path, nil)
 	if err != nil {
 		return false, err
 	}
-	switch {
-	case len(got.Records) == 1 && got.Records[0].Content == value:
-		return false, nil
-	case len(got.Records) == 0:
-		_, err = p.call(ctx, "/dns/create/"+p.Domain, map[string]string{
-			"name": name, "type": typ, "content": value, "ttl": porkbunTTL,
-		})
-	default:
+	if len(got.Records) == 1 && got.Records[0].Content == value {
+		if seen, ok := lastSeen(got.Records[0].Notes); ok && p.now().Sub(seen) < restampAfter {
+			return false, nil
+		}
 		_, err = p.call(ctx, "/dns/editByNameType"+path, map[string]string{
-			"content": value, "ttl": porkbunTTL,
+			"content": value, "ttl": porkbunTTL, "notes": p.stamp(),
+		})
+		return false, err
+	}
+	if len(got.Records) == 0 {
+		_, err = p.call(ctx, "/dns/create/"+p.Domain, map[string]string{
+			"name": name, "type": typ, "content": value, "ttl": porkbunTTL, "notes": p.stamp(),
+		})
+	} else {
+		_, err = p.call(ctx, "/dns/editByNameType"+path, map[string]string{
+			"content": value, "ttl": porkbunTTL, "notes": p.stamp(),
 		})
 	}
 	return err == nil, err

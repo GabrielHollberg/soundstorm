@@ -112,12 +112,12 @@ the router is refusing to resolve a public name that points at a home address
   review takes weeks.
 - **Porkbun allows 2,500 DNS records per domain** (`ZONE_RECORD_LIMIT` in its
   OpenAPI spec, `https://porkbun.com/api/json/v3/spec`, read 2026-09-23). Every
-  install keeps one record for good, so this is the real ceiling -
-  roughly 2,400 installs once challenges in flight are allowed for - and it is
-  lower than Let's Encrypt's. Abandoned installs never give theirs back. Plan
-  before about 2,000: clearing records no install has re-announced in months,
-  more than one zone, or moving install names to a DNS server of our own
-  (which Railway cannot host - it has no UDP - but Fly.io can).
+  install keeps one record while it is in use, so this is the real ceiling -
+  roughly 2,400 installs running at once - and it is lower than Let's
+  Encrypt's. Abandoned installs are swept (next section), so the ceiling is on
+  installs in use, not installs ever made. Past about 2,000 of those: more
+  than one zone, or install names on a DNS server of our own (which Railway
+  cannot host - it has no UDP - but Fly.io can).
 - **Porkbun's general request budget is 20 per 2 seconds per API key**, from
   the same spec - and "not being enforced yet": responses carry
   `X-RateLimit-Mode: observe`, and enforcement is to be announced before it
@@ -127,3 +127,26 @@ the router is refusing to resolve a public name that points at a home address
   retries in five minutes.
 - **The service caps challenges** at ten per install and three hundred overall
   per day, in memory, so a restart forgets them.
+
+## Abandoned installs are swept, and come back by themselves
+
+Every record the service writes carries the date its install was last heard
+from, in Porkbun's notes field - stored with the record, never served in DNS.
+A running install re-announces twice a day, and the date is refreshed when it
+is a month old, which costs about one extra call per install per month.
+
+Once a day the service deletes install records not heard from in 180 days
+(`NAMES_FORGET_AFTER_DAYS`, at least 30), and challenge records left over for
+a week by an install that crashed mid-renewal. Nothing needs undoing when such
+a server comes back: its registration is not a record but an id and a token,
+valid for ever, so its first announce recreates the record under **the same
+name**, and a certificate that expired meanwhile renews within a minute.
+
+It only ever touches names shaped exactly like an install's under
+`home.soundstorm.dev` - never the apex, a website, `names`, or anything else -
+and skips any record without a date, such as one written before dates
+existed; that install's next announce dates it. It **refuses to run** if it
+would delete more than a quarter of all installs at once (or twenty, for a
+young service): that is far likelier a clock or a bug than a mass exodus, and
+being wrong would cost everybody's name together. The refusal is logged as
+`sweep refused`; look before overriding anything.

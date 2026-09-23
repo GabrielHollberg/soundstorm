@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeDNS records what the service asked a provider to do.
@@ -307,12 +308,29 @@ func TestPorkbunCreatesARecordThatIsNotThere(t *testing.T) {
 // An install re-announces its address on every start, and nearly always the
 // answer has not changed. That must cost one lookup, not a write.
 func TestPorkbunLeavesAnUnchangedRecordAlone(t *testing.T) {
-	p, calls := fakePorkbun(t, []porkbunRecord{{Content: "192.168.0.19"}}, "SUCCESS")
+	fresh := seenPrefix + time.Now().UTC().AddDate(0, 0, -5).Format("2006-01-02")
+	p, calls := fakePorkbun(t, []porkbunRecord{{Content: "192.168.0.19", Notes: fresh}}, "SUCCESS")
 	if changed, err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19"); err != nil || changed {
 		t.Fatalf("Set: changed=%v err=%v, want an unchanged no-op", changed, err)
 	}
 	if len(*calls) != 1 {
 		t.Errorf("calls = %+v, want the lookup alone", *calls)
+	}
+}
+
+// The same address with a stamp a month old, or none at all, is rewritten
+// once to refresh the date - and reported as unchanged, because the address is.
+func TestPorkbunRefreshesAStaleStamp(t *testing.T) {
+	stale := seenPrefix + time.Now().UTC().AddDate(0, 0, -40).Format("2006-01-02")
+	for name, notes := range map[string]string{"stale": stale, "unstamped": ""} {
+		p, calls := fakePorkbun(t, []porkbunRecord{{Content: "192.168.0.19", Notes: notes}}, "SUCCESS")
+		changed, err := p.Set(context.Background(), "k3x9m2p7qa.home", "A", "192.168.0.19")
+		if err != nil || changed {
+			t.Errorf("%s: changed=%v err=%v, want an unchanged refresh", name, changed, err)
+		}
+		if len(*calls) != 2 || !strings.HasPrefix((*calls)[1].Body["notes"], seenPrefix+time.Now().UTC().Format("2006-01-02")) {
+			t.Errorf("%s: calls = %+v, want a lookup then a restamping edit", name, *calls)
+		}
 	}
 }
 

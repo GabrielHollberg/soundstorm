@@ -858,8 +858,18 @@ so that header would have put every install behind one shared limit.
 states none:** a general budget of 20 requests per 2 seconds per key, measured
 but not yet enforced; and **2,500 records per domain**, which is the ceiling
 that matters. Each install holds one record for good, so `soundstorm.dev`
-tops out around 2,400 installs - before Let's Encrypt's limits do - and
-nothing yet reclaims an abandoned install's record. The re-announce on every
+tops out around 2,400 installs in use - before Let's Encrypt's limits do.
+
+**Abandoned installs are swept, and nothing is lost by it.** The service has
+no state, so the date an install was last heard from lives in Porkbun's notes
+field on its own record, refreshed monthly by the twice-daily re-announce.
+Records silent for 180 days are deleted daily. The registration is not a
+record - it is an id and an HMAC, valid for ever - so a server switched back
+on after a year recreates its record, same name, on its first announce. The
+sweep only matches install-shaped names, skips undated records, and refuses
+outright if it would delete more than a quarter of installs at once: a wrong
+clock or a misread stamp would otherwise cost every name together, and a
+refusal is cheap to investigate. The re-announce on every
 start used to cost a delete of the other address family as well as the
 lookup; it now deletes only when the address actually changed, which halves
 the calls of the common case.
