@@ -798,9 +798,31 @@ admits the name for exactly this, or the check is refused before it leaves.
 Verified in Chrome against the whole system in containers: with the name
 resolvable it moved and the app loaded; without, it stayed on http.
 
-What is not verified: anything against the real Let's Encrypt or Porkbun,
-because neither is set up yet. `docs/names-service.md` has the steps, and
-staging comes before production.
+**Verified live on 2026-09-23**, Railway, Porkbun and Let's Encrypt all real:
+an install registered `6lm2ahm6pn.home.soundstorm.dev`, got a staging
+certificate in 13 seconds, then a production one after the switch, and an
+ordinary client with the system trust store fetched it by name. The home
+router resolved the name, so the rebinding fallback was not exercised there.
+The first real run found three things the Pebble rehearsal could not:
+
+- **Compose passes settings by name.** The two new variables were missing
+  from `docker-compose.yml`, so staging could not have been selected at all.
+  Any new `SOUNDSTORM_` setting has to be added there too.
+- **"Service busy; retry later" is typed `rateLimited`** and sent as a 503
+  when Let's Encrypt sheds load. Taken for a real limit, it silenced the
+  install for a day. Only a 429 is a limit.
+- **A push to main redeploys the Railway service**, and a request in flight
+  gets a bare 502 from Railway's proxy. The install retries in five minutes,
+  which is correct, but do not test right after pushing. Railway's own
+  certificate for the custom domain also lagged its "active" badge by about
+  half a minute.
+
+Changing the ACME directory now forces a new certificate: the issuer is
+recorded beside it (`public-issuer.txt`), because otherwise a staging
+certificate survived the switch to production until renewal.
+
+Still unverified: that `X-Real-IP` is the header Railway sets, and Porkbun's
+API rate limits.
 
 ## The folders, and the line that replaced the box
 
