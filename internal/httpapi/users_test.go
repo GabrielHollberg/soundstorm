@@ -139,16 +139,119 @@ func TestAnyoneCanChangeTheirOwnPassword(t *testing.T) {
 	sam := h.asUser(t, "sam", samPassword)
 
 	resp, body := sam.do(t, http.MethodPost, "/api/account/password",
-		`{"password":"a different long one"}`)
+		`{"current":"`+samPassword+`","password":"a different long one"}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d: %s", resp.StatusCode, body)
 	}
 	h.asUser(t, "sam", "a different long one")
 
 	// And a short one is still refused, or the rule only applied at signup.
-	resp, _ = sam.do(t, http.MethodPost, "/api/account/password", `{"password":"short"}`)
+	resp, _ = sam.do(t, http.MethodPost, "/api/account/password",
+		`{"current":"a different long one","password":"short"}`)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a five character password was accepted: %d", resp.StatusCode)
+	}
+}
+
+// A session alone must not be enough to take an account over: somebody who
+// finds a signed-in browser could otherwise change the password and keep it.
+func TestChangingYourPasswordNeedsTheCurrentOne(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	h.addMember(t, "sam", samPassword)
+	sam := h.asUser(t, "sam", samPassword)
+
+	for _, body := range []string{
+		`{"password":"taken over by someone"}`,
+		`{"current":"a wrong guess","password":"taken over by someone"}`,
+	} {
+		resp, out := sam.do(t, http.MethodPost, "/api/account/password", body)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status = %d, want 403: %s", body, resp.StatusCode, out)
+		}
+	}
+	// The old password must still be the one that works.
+	h.asUser(t, "sam", samPassword)
+}
+
+// Changing a password is what somebody does when they think it is known, so
+// every other device goes - and the one they did it on stays.
+func TestChangingYourPasswordSignsOutEverywhereElse(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	h.addMember(t, "sam", samPassword)
+	phone := h.asUser(t, "sam", samPassword)
+	laptop := h.asUser(t, "sam", samPassword)
+
+	resp, body := phone.do(t, http.MethodPost, "/api/account/password",
+		`{"current":"`+samPassword+`","password":"a different long one"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("change: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := phone.do(t, http.MethodGet, "/api/library", ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("the device that changed it was signed out: %d", resp.StatusCode)
+	}
+	if resp, _ := laptop.do(t, http.MethodGet, "/api/library", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("another device is still signed in: %d", resp.StatusCode)
+	}
+	// Nobody else is touched.
+	if resp, _ := h.do(t, http.MethodGet, "/api/library", ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("the owner was signed out by somebody else's change: %d", resp.StatusCode)
+	}
+}
+
+// An owner resetting somebody's password signs that person out everywhere,
+// since the usual reason is that the old one got out.
+func TestAResetSignsThatAccountOut(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	memberID := h.addMember(t, "sam", samPassword)
+	sam := h.asUser(t, "sam", samPassword)
+
+	resp, body := h.do(t, http.MethodPost, "/api/users/"+memberID+"/password",
+		`{"password":"the one the owner chose"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reset: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := sam.do(t, http.MethodGet, "/api/library", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("sam is still signed in on the old password: %d", resp.StatusCode)
+	}
+
+	// Resetting their own this way must not sign the owner out of where they did it.
+	resp, body = h.do(t, http.MethodPost, "/api/users/"+h.ownID(t)+"/password",
+		`{"password":"the owner's new one"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("own reset: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := h.do(t, http.MethodGet, "/api/library", ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("the owner signed themselves out: %d", resp.StatusCode)
+	}
+}
+
+// Guessing has to get slower, and the refusal has to cost nothing and say
+// when to come back.
+func TestRepeatedWrongPasswordsAreThrottled(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+
+	wrong := `{"username":"gabe","password":"not the password"}`
+	for i := 0; i < 5; i++ {
+		if resp, _ := h.do(t, http.MethodPost, "/api/login", wrong); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: status = %d, want 401", i+1, resp.StatusCode)
+		}
+	}
+	resp, body := h.do(t, http.MethodPost, "/api/login", wrong)
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("sixth attempt: status = %d, want 429: %s", resp.StatusCode, body)
+	}
+	if resp.Header.Get("Retry-After") == "" {
+		t.Error("a throttled sign-in does not say when to retry")
+	}
+	// Even the right password waits: otherwise the throttle is only a
+	// throttle on wrong answers, which a guesser can tell apart for free.
+	resp, _ = h.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"correct horse"}`)
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("the right password skipped the wait: %d", resp.StatusCode)
 	}
 }
 

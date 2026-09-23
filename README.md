@@ -379,6 +379,12 @@ everyone else: a name and a password, and that is the whole ceremony. There is
 no open registration and no invite link, deliberately — a server that might be
 reachable from outside a house should not let a stranger create an account.
 
+Changing your password under **Account** asks for the current one and signs you
+out on every other device. When the owner resets somebody's password, that
+person is signed out everywhere too. Repeated wrong passwords at the sign-in
+screen make it wait before accepting another try: a second after the fifth,
+doubling to at most five minutes.
+
 Everybody keeps their own **place in every book**, both for reading and for
 listening. The audiobook side of that is real per-person state on the backend,
 not a note in a file: SoundStorm quietly gives each person their own

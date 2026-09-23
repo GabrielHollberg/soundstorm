@@ -90,8 +90,9 @@ self-describing and does need transcoding, so it stays delegated. That is the
 same rule that said drop Calibre-Web, so it is cutting both ways.
 
 The honest cost is API churn (Jellyfin 12 broke two documented auth methods
-under us) and a 2.5GB image next to Navidrome's 348MB. That trade only clearly
-pays off once SoundStorm uses Jellyfin's transcoding, which it still does not.
+under us) and a 2.5GB image next to Navidrome's 348MB. That trade pays off
+because SoundStorm uses Jellyfin's transcoding: video a browser cannot decode is
+transcoded on the fly and served as HLS (see Gotchas).
 
 ## One backend, two sources
 
@@ -548,6 +549,29 @@ surfaces from them differs per person, so an account each would be four times
 the provisioning for no visible gain. Revisit when watched-state or favourites
 reach the UI.
 
+**Signing in is throttled, because it is the one unauthenticated endpoint
+that costs real CPU.** Each attempt is 600,000 rounds of PBKDF2, which slows
+guessing and is also enough to pin every core of a Pi with a handful of
+parallel requests. `internal/auth/throttle.go` answers the two separately: at
+most two hashes run at once whoever asks, and past five wrong passwords a client
+waits one second, doubling, capped at five minutes. A throttled request is
+refused *before* hashing, and refused even with the right password - otherwise
+the 429 only fires for wrong answers and a guesser learns something for free.
+
+Clients are told apart by address, and behind Docker Desktop or the Tailscale
+sidecar everybody can share one. That is why it is capped backoff and never a
+lockout: a script slowing the household down for a few minutes is acceptable,
+a household locked out of its own server is not. `Login` itself is unthrottled
+for the CLI and for signup; anything answering the network goes through
+`SignIn`.
+
+**Changing your own password needs the current one, and signs out every other
+device.** A session is only a cookie; without the check, a browser left signed
+in is enough to take the account over. An owner resetting somebody's password
+signs *that* account out everywhere. The `reset-password` command still leaves
+sessions alone, as described under "Getting back in" - it is recovery, not a
+response to a leak.
+
 `source.WithUserID` carries the account id to the adapters, and it lives in
 `internal/source` rather than `internal/auth` so an adapter can find out who is
 asking without depending on how signing in works.
@@ -937,9 +961,10 @@ Two things learned by testing the installer rather than reasoning about it:
   falls through to "assume free". So the real backstop is parsing `compose up`'s
   output for "already allocated" and saying which port and how to change it.
 
-Nothing here is a substitute for the two gaps that actually stop this being a
-product for other people: it is **single-user and has no HTTPS**. The README
-says so plainly next to the install instructions rather than burying it.
+The two gaps that once stopped this being a product for other people - one
+user and no HTTPS - are both closed: see "Accounts" and "TLS without anybody
+running openssl". What remains is signing: an unsigned setup file is what
+Smart App Control blocks (see Gotchas).
 
 ## The starter library
 

@@ -199,17 +199,19 @@ function note(el, message, isError) {
 
 $('password-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const current = $('current-password');
   const field = $('new-password');
   const { ok, body } = await api('/api/account/password', {
     method: 'POST',
-    body: JSON.stringify({ password: field.value }),
+    body: JSON.stringify({ current: current.value, password: field.value }),
   });
   if (!ok) {
     note($('password-note'), (body && body.error) || 'Could not change it.', true);
     return;
   }
+  current.value = '';
   field.value = '';
-  note($('password-note'), 'Changed. Your other devices stay signed in.', false);
+  note($('password-note'), 'Changed. Your other devices will need to sign in again.', false);
 });
 
 async function loadPeople() {
