@@ -53,3 +53,16 @@ func TestPostAsGetHasAnEmptyPayload(t *testing.T) {
 		t.Errorf("POST-as-GET payload is not empty: %s", raw)
 	}
 }
+
+// "Service busy" arrives dressed as a rate limit and is not one. Treating it as
+// one silenced the first real staging run for a day.
+func TestServiceBusyIsNotARateLimit(t *testing.T) {
+	busy := &Problem{Type: "urn:ietf:params:acme:error:rateLimited", Detail: "Service busy; retry later.", Status: 503}
+	limited := &Problem{Type: "urn:ietf:params:acme:error:rateLimited", Detail: "too many certificates", Status: 429}
+	if RateLimited(busy) {
+		t.Error("a 503 service-busy reply was taken for a rate limit")
+	}
+	if !RateLimited(limited) {
+		t.Error("a 429 rate limit was not recognised")
+	}
+}

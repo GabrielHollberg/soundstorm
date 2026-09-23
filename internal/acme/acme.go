@@ -86,11 +86,19 @@ func (p *Problem) Error() string {
 	return "acme: " + msg
 }
 
-// RateLimited reports whether err is the authority saying "not now". Retrying
-// sooner makes it worse, so the caller should back off for a long while.
+// RateLimited reports whether err is the authority saying "not now" about this
+// account or name. Retrying sooner makes it worse, so the caller should back
+// off for a long while.
+//
+// Let's Encrypt also sends the rateLimited type, with status 503 and "Service
+// busy; retry later", when it is shedding load - which has nothing to do with
+// the caller and passes in seconds. The first run against staging got exactly
+// that and, taking it for a real limit, went quiet for a day. A real limit is
+// a 429.
 func RateLimited(err error) bool {
 	var p *Problem
-	return errors.As(err, &p) && strings.HasSuffix(p.Type, ":rateLimited")
+	return errors.As(err, &p) && strings.HasSuffix(p.Type, ":rateLimited") &&
+		p.Status != http.StatusServiceUnavailable
 }
 
 // --- the flow ------------------------------------------------------------------
@@ -340,11 +348,14 @@ func (c *Client) send(ctx context.Context, url string, payload any, accept strin
 		if resp.StatusCode < 300 {
 			return resp, data, nil
 		}
-		prob := &Problem{Status: resp.StatusCode}
+		prob := &Problem{}
 		if json.Unmarshal(data, prob) != nil || prob.Type == "" {
 			prob.Type = "unknown"
 			prob.Detail = fmt.Sprintf("status %d from %s", resp.StatusCode, url)
 		}
+		// The HTTP status, whatever the body says: it is what tells a real
+		// rate limit (429) from an authority shedding load (503).
+		prob.Status = resp.StatusCode
 		if strings.HasSuffix(prob.Type, ":badNonce") && attempt < 10 {
 			continue
 		}

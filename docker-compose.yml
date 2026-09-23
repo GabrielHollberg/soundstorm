@@ -69,22 +69,29 @@ services:
       SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-./library}
       SOUNDSTORM_LOG_LEVEL: info
 
-      # TLS. Off by default, deliberately: on localhost there is nothing on the
-      # wire to protect, and a certificate warning is a poor first screen.
-      # Turn it on the moment this is reachable from another machine.
+      # TLS. Off by default: the only certificate SoundStorm can make by itself
+      # is one no browser trusts, and a full-page warning on every device is a
+      # poor trade on a home network. See the README before turning it on.
       #
       #   SOUNDSTORM_TLS=self-signed   SoundStorm runs its own certificate
       #                                authority. Install http://host:8099/ca.crt
-      #                                once per device and there is no warning,
-      #                                at any address, forever.
+      #                                once per device to stop the warning.
+      #   SOUNDSTORM_TLS=auto          as self-signed, plus a real certificate
+      #                                for a <id>.home.soundstorm.dev name, and
+      #                                http and https on the same port.
       #   SOUNDSTORM_TLS=file          bring your own, with _CERT and _KEY.
       #
-      # SOUNDSTORM_TLS_HOSTS is optional - certificates are minted for whatever
-      # address a client actually dials, including a bare LAN IP.
+      # SOUNDSTORM_TLS_HOSTS is the machine's LAN address, written by the
+      # installer: a bare IP gets no name in the handshake, so it has to be
+      # told, and auto mode points its name there.
       SOUNDSTORM_TLS: ${SOUNDSTORM_TLS:-off}
       SOUNDSTORM_TLS_CERT: ${SOUNDSTORM_TLS_CERT:-}
       SOUNDSTORM_TLS_KEY: ${SOUNDSTORM_TLS_KEY:-}
       SOUNDSTORM_TLS_HOSTS: ${SOUNDSTORM_TLS_HOSTS:-}
+      # Auto mode's two outside services; empty means the real ones. Set the
+      # directory to Let's Encrypt staging for a first run.
+      SOUNDSTORM_ACME_DIRECTORY: ${SOUNDSTORM_ACME_DIRECTORY:-}
+      SOUNDSTORM_NAMES_URL: ${SOUNDSTORM_NAMES_URL:-}
       # Behind a reverse proxy that terminates TLS: lets X-Forwarded-Proto
       # decide whether the session cookie is marked Secure. Any client can send
       # that header, so only turn it on when a proxy is stripping incoming ones.
