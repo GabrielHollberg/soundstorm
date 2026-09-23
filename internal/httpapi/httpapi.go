@@ -1872,15 +1872,32 @@ func sameOrigin(next http.Handler) http.Handler {
 //     every browser trusts, so promising https for it can only help; on an
 //     IP address, localhost or a self-signed name it would be a promise the
 //     next reinstall breaks.
+//
+// hstsMaxAgeSeconds is one week - see secureHeaders for why it is not a year.
+const hstsMaxAgeSeconds = 7 * 24 * 60 * 60
+
 func (s *Server) secureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "SAMEORIGIN")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
+		// HSTS, but only on the real certificate's name and only while a valid
+		// one is actually loaded - currentPublicName is empty otherwise, so it
+		// is never promised over the local-authority fallback.
+		//
+		// A week, not the usual year. A home server's certificate can genuinely
+		// lapse - the name service, Let's Encrypt or Railway being unreachable
+		// through the whole renewal window - and once it does, the fallback is
+		// the untrusted local authority, which a pinned browser refuses with no
+		// way through. A year of that is a bricked install; a week self-heals,
+		// and each visit while the certificate works pushes the week back out,
+		// so a regularly-used server always carries the protection. No
+		// includeSubDomains (a sibling install is a subdomain) and no preload
+		// (that is the permanence this is avoiding).
 		if r.TLS != nil {
 			if name := s.currentPublicName(); name != "" && strings.EqualFold(requestHostname(r), name) {
-				h.Set("Strict-Transport-Security", "max-age=31536000")
+				h.Set("Strict-Transport-Security", "max-age="+strconv.Itoa(hstsMaxAgeSeconds))
 			}
 		}
 		next.ServeHTTP(w, r)

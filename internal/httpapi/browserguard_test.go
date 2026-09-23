@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -86,5 +87,51 @@ func TestASlowBodyIsCutOff(t *testing.T) {
 	}
 	if time.Since(start) > 1500*time.Millisecond {
 		t.Errorf("took %v; the deadline did not fire", time.Since(start))
+	}
+}
+
+// HSTS is promised only on the real certificate's name, over TLS, and with a
+// self-healing one-week life - never a year, because a home certificate can
+// lapse and a year-long pin would brick a pinned browser with no way through.
+func TestHSTSIsScopedAndShortLived(t *testing.T) {
+	const name = "abc123.home.soundstorm.dev"
+	s := &Server{publicName: func() string { return name }}
+	h := s.secureHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+
+	// Over TLS, addressed to the real name: present, one week, no
+	// includeSubDomains, no preload.
+	r := httptest.NewRequest(http.MethodGet, "https://"+name+":8099/", nil)
+	r.TLS = &tls.ConnectionState{}
+	r.Host = name + ":8099"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	got := w.Header().Get("Strict-Transport-Security")
+	if got != "max-age=604800" {
+		t.Errorf("HSTS = %q, want exactly max-age=604800 (one week)", got)
+	}
+	if strings.Contains(got, "includeSubDomains") || strings.Contains(got, "preload") {
+		t.Errorf("HSTS carries includeSubDomains or preload: %q", got)
+	}
+
+	// Over TLS but addressed to something other than the real name: absent.
+	r2 := httptest.NewRequest(http.MethodGet, "https://192.168.0.19:8099/", nil)
+	r2.TLS = &tls.ConnectionState{}
+	r2.Host = "192.168.0.19:8099"
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, r2)
+	if w2.Header().Get("Strict-Transport-Security") != "" {
+		t.Error("HSTS was sent for an address that is not the real certificate's name")
+	}
+
+	// No real certificate loaded (name empty): absent even on TLS.
+	none := &Server{publicName: func() string { return "" }}
+	hn := none.secureHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	r3 := httptest.NewRequest(http.MethodGet, "https://"+name+"/", nil)
+	r3.TLS = &tls.ConnectionState{}
+	r3.Host = name
+	w3 := httptest.NewRecorder()
+	hn.ServeHTTP(w3, r3)
+	if w3.Header().Get("Strict-Transport-Security") != "" {
+		t.Error("HSTS was promised while no real certificate was loaded")
 	}
 }
