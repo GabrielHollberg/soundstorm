@@ -21,13 +21,13 @@ import (
 func provisionLocalBooks(_ context.Context, t Target, log *slog.Logger) (state.Backend, error) {
 	info, err := os.Stat(t.MediaPath)
 	if err != nil {
-		return state.Backend{}, fmt.Errorf("ebook folder %s: %w", t.MediaPath, err)
+		return state.Backend{}, fmt.Errorf("%s folder %s: %w", t.ID, t.MediaPath, err)
 	}
 	if !info.IsDir() {
-		return state.Backend{}, fmt.Errorf("ebook folder %s is not a directory", t.MediaPath)
+		return state.Backend{}, fmt.Errorf("%s folder %s is not a directory", t.ID, t.MediaPath)
 	}
 
-	log.Info("ebook library folder ready", "path", t.MediaPath)
+	log.Info("library folder ready", "path", t.MediaPath)
 	return state.Backend{
 		Type:          "localbooks",
 		BaseURL:       "file://" + t.MediaPath,

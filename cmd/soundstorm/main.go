@@ -312,6 +312,18 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 			ID:        "ebooks",
 			Type:      "localbooks",
 			MediaPath: dir,
+			Kind:      media.KindEbook,
+		})
+	}
+	// Documents are the same kind of folder read the same way - a PDF opens
+	// in the browser's own viewer whichever shelf it is on - so the same
+	// source serves them, told only which kind it holds.
+	if dir := lib.PathFor(media.KindDocument); dir != "" {
+		targets = append(targets, provision.Target{
+			ID:        "documents",
+			Type:      "localbooks",
+			MediaPath: dir,
+			Kind:      media.KindDocument,
 		})
 	}
 	// Escape hatch for an existing Calibre server elsewhere on the network.

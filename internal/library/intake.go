@@ -299,12 +299,30 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		hasAudio   bool
 		hasMP3     bool
 		episodes   bool
+		hasPDF     bool
+		hasOPF     bool
+		pdfSays    media.Kind
 	)
 
 	for _, i := range members {
 		rel := cleaned[i]
 		ext := strings.ToLower(path.Ext(rel))
+		if ext == ".opf" {
+			// Calibre writes a metadata.opf beside every book it manages.
+			hasOPF = true
+		}
 		if ext == "" || companionExtensions[ext] {
+			continue
+		}
+
+		// A PDF is a book or a document and the file does not say which, so
+		// it waits for the rest of the group - an audiobook's PDF companion
+		// must not send the audiobook to a book shelf.
+		if ext == ".pdf" {
+			hasPDF = true
+			if pdfSays == "" {
+				pdfSays = pdfEvidence(rel)
+			}
 			continue
 		}
 
@@ -360,8 +378,46 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 	case hasAudio:
 		// flac, wav, m4a and the rest are music in practice.
 		return media.KindMusic, nil
+	case hasPDF && hasOPF:
+		// A Calibre library: every book in it has a metadata.opf beside it.
+		return media.KindEbook, nil
+	case hasPDF && pdfSays != "":
+		return pdfSays, nil
+	case hasPDF:
+		return "", []media.Kind{media.KindEbook, media.KindDocument}
 	}
 	return "", nil
+}
+
+// Folder names that say what a PDF is. Matched as whole path segments, so a
+// book called "Paperback Writer" is not taken for a document by "paper".
+var (
+	bookFolders = map[string]bool{
+		"books": true, "ebooks": true, "e-books": true, "calibre": true,
+		"calibre library": true, "novels": true, "textbooks": true,
+	}
+	documentFolders = map[string]bool{
+		"documents": true, "docs": true, "papers": true, "manuals": true,
+		"paperwork": true, "statements": true, "receipts": true, "invoices": true,
+		"scans": true, "forms": true, "taxes": true, "contracts": true,
+		"my documents": true,
+	}
+)
+
+// pdfEvidence reads what the dropped path says a PDF is, or "" when it says
+// nothing - which is when the drop is asked about rather than guessed at.
+func pdfEvidence(rel string) media.Kind {
+	segments := strings.Split(strings.ToLower(rel), "/")
+	for _, s := range segments[:len(segments)-1] {
+		s = strings.TrimSpace(s)
+		switch {
+		case bookFolders[s]:
+			return media.KindEbook
+		case documentFolders[s]:
+			return media.KindDocument
+		}
+	}
+	return ""
 }
 
 // looksLikeEpisode reports whether a path names television.

@@ -89,8 +89,14 @@ var layout = []Folder{
 	{
 		Kind:        media.KindEbook,
 		Name:        "ebooks",
-		Description: "EPUB and PDF files. An existing Calibre library works here too.",
+		Description: "EPUB and PDF books. An existing Calibre library works here too.",
 		Example:     "ebooks/Ursula K. Le Guin/A Wizard of Earthsea/book.epub",
+	},
+	{
+		Kind:        media.KindDocument,
+		Name:        "documents",
+		Description: "PDFs that are not books - papers, manuals, statements - kept in whatever folders you give them.",
+		Example:     "documents/Manuals/Dishwasher.pdf",
 	},
 }
 
@@ -116,6 +122,9 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 	},
 	media.KindEbook: {
 		".epub": true, ".mobi": true, ".azw3": true, ".pdf": true, ".cbz": true,
+	},
+	media.KindDocument: {
+		".pdf": true,
 	},
 }
 

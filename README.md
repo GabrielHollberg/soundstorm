@@ -149,13 +149,18 @@ library/
   tv/          Severance (2022)/Season 01/Severance - S01E01.mkv
   audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
   ebooks/      Ursula K. Le Guin/A Wizard of Earthsea/A Wizard of Earthsea.epub
+  documents/   Manuals/Dishwasher.pdf, Taxes/2024/statement.pdf
 ```
 
 Nothing to import, no library to configure.
 
 **When it genuinely cannot tell, it asks.** An mp3 is a song or a chapter of an
 audiobook and nothing in the file says which, so it asks — once for the whole
-folder, not once per chapter.
+folder, not once per chapter. A PDF is the same: a book or a document (a paper,
+a manual, a statement). One dropped from a folder called `Papers` or `Manuals`
+goes to Documents, one from `Books` or a Calibre library goes to Ebooks, and
+only a loose one with nothing to go on gets asked about. Documents keep the
+folders you drop them in — `Taxes/2024` is how you find a statement.
 
 ![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png)
 

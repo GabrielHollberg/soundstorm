@@ -11,7 +11,7 @@
 # first boot.
 #
 #   library/
-#     music/   movies/   tv/   audiobooks/   ebooks/
+#     music/   movies/   tv/   audiobooks/   ebooks/   documents/
 #
 # The important line in this file is the one that is missing. None of the three
 # backends publishes a port. They are reachable only on the internal compose

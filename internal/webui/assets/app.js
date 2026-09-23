@@ -298,6 +298,7 @@ const LIBRARY_LABELS = [
   ['tv', 'TV'],
   ['audiobook', 'Audiobooks'],
   ['ebook', 'Ebooks'],
+  ['document', 'Documents'],
 ];
 
 async function saveLibraries(person, chosen, wrap) {
@@ -444,7 +445,7 @@ $('rescan').addEventListener('click', async () => {
 // follow - and it is the first line of the app. Asked of the pointer rather
 // than the width, because a narrow desktop window still has a mouse.
 if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-  $('hint-add').textContent = 'Add music, films, audiobooks or ebooks:';
+  $('hint-add').textContent = 'Add music, films, books or documents:';
 }
 
 $('choose-files').addEventListener('click', () => $('file-picker').click());
@@ -625,7 +626,7 @@ function renderResults(result, append) {
     // this is now the whole of the first-run guidance, since the box that used
     // to carry it is gone. It has to say what to do, not just what happened.
     $('status').textContent =
-      'Nothing here yet. Drag music, films, audiobooks or ebooks anywhere on this window.';
+      'Nothing here yet. Drag music, films, books or documents anywhere on this window.';
   } else if (browsing) {
     // Empty shelf, full library: they filtered to a kind they have none of,
     // or its backend is still doing its first scan.
@@ -758,6 +759,7 @@ const GLYPHS = {
   music: '♪',
   audiobook: '🎧',
   ebook: '📖',
+  document: '📄',
 };
 
 function fallbackArt(item) {
@@ -775,6 +777,9 @@ function play(item) {
       playVideo(item);
       break;
     case 'ebook':
+    case 'document':
+      // A document is always a PDF, and opens in the same viewer a PDF book
+      // does; the shelves differ in what is on them, not how it is read.
       readBook(item);
       break;
     default:
@@ -1306,6 +1311,7 @@ const LIBRARY_NAMES = {
   tv: 'TV',
   audiobook: 'Audiobooks',
   ebook: 'Ebooks',
+  document: 'Documents',
 };
 
 // dragDepth counts enter/leave pairs. Moving the pointer between two elements

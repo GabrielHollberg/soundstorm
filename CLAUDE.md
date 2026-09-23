@@ -1021,6 +1021,42 @@ Existing Calibre libraries still work, with no SQLite driver: Calibre writes a
 `metadata.opf` sidecar beside every book in exactly the format an EPUB carries
 internally, so one parser reads both.
 
+## Documents, and the second shelf SoundStorm owns
+
+A PDF is a book or it is a gas bill, and the ebook shelf used to hold both.
+Documents is its own kind (`media.KindDocument`, folder `documents/`), with
+its own chip, its own access checkbox, and its own rescan - everything a kind
+gets, because a half-kind that shares ebooks' permission would be a shelf you
+can see into from the wrong account.
+
+It passes the ownership rule above for the same reason ebooks do: a PDF needs
+no transcoding, and what it says about itself is read the way PDF books
+already are. It is served by the same source type as ebooks -
+`localbooks.Config.Kind` picks EPUB-and-PDF or PDF-only - because a document
+is opened exactly as a PDF book is; the difference is which shelf it is on.
+Two instances, `ebooks` and `documents`, are two backends to provisioning.
+
+**Deciding book or document is the mp3 problem again**, and gets the same
+answer: evidence first, a question only without it. A PDF next to a
+`metadata.opf` or an epub is a book (Calibre); one under a folder called
+`Books`, `Ebooks`, `Calibre`... is a book; one under `Papers`, `Manuals`,
+`Taxes`, `Statements`... is a document - whole folder names only, so
+"Paperback Writer" is not a paper. A loose PDF with none of that is asked
+about, once per dropped folder. A PDF waits for the rest of its group before
+deciding anything, or an Audible book's companion PDF would send the whole
+audiobook to a book shelf.
+
+Documents are **not** restructured. A tax form has no author to file by, and
+`Taxes/2024/` is exactly how somebody finds it again.
+
+**Pictures come next, and this is the template.** A pictures shelf will need
+its own kind and folder like this one, but not this source: images want
+thumbnails and a grid, not a reader. Whether it passes the ownership rule is a
+decision to make then rather than assume now - images are self-describing
+(EXIF) and need no transcoding, but a thumbnail is a resize, and a photo
+library of any size is exactly the scanning-and-indexing job this project
+exists not to rebuild. Immich is the backend to weigh it against.
+
 ## The reader
 
 Rendering is foliate-js (MIT), vendored under `internal/webui/assets/vendor/`.

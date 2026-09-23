@@ -1215,7 +1215,7 @@ try {
     }
 }
 
-foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks') {
+foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks', 'documents') {
     New-Item -ItemType Directory -Force -Path (Join-Path 'library' $folder) | Out-Null
 }
 

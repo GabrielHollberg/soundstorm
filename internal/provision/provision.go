@@ -81,6 +81,10 @@ type Target struct {
 	// Jellyfin is the only one: films and series need separate libraries
 	// because it scrapes and models them differently.
 	TVPath string
+
+	// Kind is what a local folder holds, for the one backend type that
+	// serves more than one: "localbooks" is ebooks or documents.
+	Kind media.Kind
 }
 
 // BackendStatus is one backend's setup state, for the UI.
@@ -310,7 +314,7 @@ func (m *Manager) provision(ctx context.Context, t Target, log *slog.Logger) {
 func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger) (state.Backend, error) {
 	// A local folder has no host to talk to, so it never gets an HTTP client.
 	if t.Type == "localbooks" {
-		m.set(t.ID, StatusProvisioning, "reading the ebook folder", "")
+		m.set(t.ID, StatusProvisioning, "reading the folder", "")
 		return provisionLocalBooks(ctx, t, log)
 	}
 
@@ -451,6 +455,7 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 		s, err := localbooks.New(localbooks.Config{
 			ID:   t.ID,
 			Root: t.MediaPath,
+			Kind: t.Kind,
 			Log:  m.log,
 		})
 		return one(s, err)

@@ -46,6 +46,12 @@ type Config struct {
 	Root string // directory SoundStorm scans
 	Log  *slog.Logger
 
+	// Kind is what the folder holds: ebooks (EPUB and PDF), or documents
+	// (PDF only). Empty means ebooks. One source type serves both because a
+	// document is read exactly the way a PDF book is - the difference is the
+	// shelf it is browsed on, not how it is opened.
+	Kind media.Kind
+
 	RescanInterval time.Duration
 }
 
@@ -82,9 +88,11 @@ type coverSource struct {
 
 // Source is a directory of ebooks.
 type Source struct {
-	id   string
-	root string
-	log  *slog.Logger
+	id      string
+	root    string
+	log     *slog.Logger
+	kind    media.Kind
+	formats map[string]bool // formatOf results this folder serves
 
 	rescanInterval time.Duration
 
@@ -115,17 +123,31 @@ func New(cfg Config) (*Source, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+	kind := cfg.Kind
+	if kind == "" {
+		kind = media.KindEbook
+	}
+	formats := map[string]bool{"epub": true, "pdf": true}
+	switch kind {
+	case media.KindEbook:
+	case media.KindDocument:
+		formats = map[string]bool{"pdf": true}
+	default:
+		return nil, fmt.Errorf("localbooks %q: cannot serve %s", cfg.ID, kind)
+	}
 	return &Source{
 		id:             cfg.ID,
 		root:           cfg.Root,
 		log:            log.With("source", cfg.ID),
+		kind:           kind,
+		formats:        formats,
 		rescanInterval: interval,
 		byID:           map[string]book{},
 	}, nil
 }
 
 func (s *Source) ID() string       { return s.id }
-func (s *Source) Kind() media.Kind { return media.KindEbook }
+func (s *Source) Kind() media.Kind { return s.kind }
 
 // Start performs the first scan, then rescans on a ticker.
 //
@@ -192,7 +214,7 @@ func (s *Source) scan(ctx context.Context) error {
 			}
 			return nil
 		}
-		if formatOf(d.Name()) == "" {
+		if !s.formats[formatOf(d.Name())] {
 			return nil
 		}
 
@@ -399,7 +421,7 @@ func (s *Source) Search(_ context.Context, q media.Query) ([]media.Item, error) 
 	matched := make([]media.Item, 0, len(s.books))
 	for _, b := range s.books {
 		if matches(b, terms) {
-			matched = append(matched, b.item(s.id))
+			matched = append(matched, b.item(s.id, s.kind))
 		}
 	}
 	sort.SliceStable(matched, func(a, b int) bool {
@@ -429,7 +451,7 @@ func matches(b book, terms []string) bool {
 	return true
 }
 
-func (b book) item(sourceID string) media.Item {
+func (b book) item(sourceID string, kind media.Kind) media.Item {
 	format := b.Format
 	if format == "" {
 		format = "epub"
@@ -437,7 +459,7 @@ func (b book) item(sourceID string) media.Item {
 	item := media.Item{
 		ID:       b.ID,
 		SourceID: sourceID,
-		Kind:     media.KindEbook,
+		Kind:     kind,
 		Title:    b.Title,
 		Creators: b.Creators,
 		Year:     b.Year,

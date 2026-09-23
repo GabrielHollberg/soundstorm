@@ -17,13 +17,17 @@ const (
 	KindMusic     Kind = "music"
 	KindAudiobook Kind = "audiobook"
 	KindEbook     Kind = "ebook"
-	KindVideo     Kind = "video" // films
-	KindTV        Kind = "tv"    // series and episodes
+	// KindDocument is a PDF that is not a book: a paper, a manual, a
+	// statement. Kept apart from ebooks because it is browsed differently
+	// and promises less - no reflow, no reading position, no cover.
+	KindDocument Kind = "document"
+	KindVideo    Kind = "video" // films
+	KindTV       Kind = "tv"    // series and episodes
 )
 
 // AllKinds is the set of kinds SoundStorm understands.
 func AllKinds() []Kind {
-	return []Kind{KindMusic, KindAudiobook, KindEbook, KindVideo, KindTV}
+	return []Kind{KindMusic, KindAudiobook, KindEbook, KindDocument, KindVideo, KindTV}
 }
 
 // Valid reports whether k is a kind SoundStorm knows about.
