@@ -244,8 +244,9 @@ func loadAuto(cfg Config) (*Server, error) {
 		directory = acme.LetsEncrypt
 	}
 	s.auto = &autoCert{
-		dir:      cfg.Dir,
-		announce: announce,
+		dir:       cfg.Dir,
+		announce:  announce,
+		directory: directory,
 		names:    &names.Client{Base: namesURL},
 		newACME: func(key *ecdsa.PrivateKey) issuer {
 			return &acme.Client{Directory: directory, Key: key, HTTP: cfg.ACMEHTTP}

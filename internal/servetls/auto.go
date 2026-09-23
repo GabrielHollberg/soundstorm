@@ -49,6 +49,11 @@ const (
 	accountKeyFile   = "acme-account-key.pem"
 	publicCertFile   = "public.pem"
 	publicKeyFile    = "public-key.pem"
+	// issuerFile records which authority issued the certificate. Without it,
+	// moving from Let's Encrypt's staging environment to the real one kept
+	// the staging certificate - which no browser trusts - until renewal, two
+	// months later.
+	issuerFile = "public-issuer.txt"
 )
 
 // issuer is what gets a certificate: acme.Client in life, a stub in tests.
@@ -70,8 +75,9 @@ var (
 )
 
 type autoCert struct {
-	dir      string
-	announce string // the LAN address the name should point at
+	dir       string
+	announce  string // the LAN address the name should point at
+	directory string // the ACME directory certificates come from
 	names    *names.Client
 	newACME  func(key *ecdsa.PrivateKey) issuer
 	log      *slog.Logger
@@ -121,6 +127,11 @@ func (a *autoCert) load() {
 	}
 	leaf, err := x509.ParseCertificate(pair.Certificate[0])
 	if err != nil || leaf.VerifyHostname(a.reg.Name) != nil {
+		return
+	}
+	if issuer, err := os.ReadFile(filepath.Join(a.dir, issuerFile)); err != nil || strings.TrimSpace(string(issuer)) != a.directory {
+		// From some other authority, or from before this was recorded: get
+		// one from the authority configured now.
 		return
 	}
 	pair.Leaf = leaf
@@ -223,6 +234,9 @@ func (a *autoCert) step(ctx context.Context) error {
 		return err
 	}
 	if err := writeFileAtomic(filepath.Join(a.dir, publicCertFile), chain, 0o644); err != nil {
+		return err
+	}
+	if err := writeFileAtomic(filepath.Join(a.dir, issuerFile), []byte(a.directory), 0o644); err != nil {
 		return err
 	}
 

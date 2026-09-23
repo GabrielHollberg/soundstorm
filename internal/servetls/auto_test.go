@@ -177,6 +177,48 @@ func TestAutoModeGetsAndServesARealCertificate(t *testing.T) {
 	}
 }
 
+// Staging first, then production, is the documented order - and a staging
+// certificate kept after the switch is trusted by no browser, for the two
+// months until it would have been renewed.
+func TestChangingAuthorityGetsANewCertificate(t *testing.T) {
+	dir := t.TempDir()
+	namesURL, _, registrations := nameService(t, "a-secret-that-is-long-enough-to-use")
+	authority := newStubAuthority(t)
+
+	load := func(directory string) *Server {
+		s, err := Load(Config{Mode: ModeAuto, Dir: dir, Hosts: []string{"192.168.0.19"},
+			NamesURL: namesURL, ACMEDirectory: directory, Log: quietLog()})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		s.auto.newACME = func(*ecdsa.PrivateKey) issuer { return authority }
+		return s
+	}
+
+	staging := load(acme.LetsEncryptStaging)
+	if err := staging.auto.step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	name := staging.PublicName()
+
+	production := load(acme.LetsEncrypt)
+	if production.PublicName() != "" {
+		t.Error("a certificate from staging was offered as current after switching to production")
+	}
+	if err := production.auto.step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if authority.issued.Load() != 2 || production.PublicName() != name || registrations.Load() != 1 {
+		t.Errorf("issued = %d, name %q -> %q, registrations = %d; want a new certificate for the same name",
+			authority.issued.Load(), name, production.PublicName(), registrations.Load())
+	}
+
+	// And the same authority again is still a restart, not a reissue.
+	if again := load(acme.LetsEncrypt); again.PublicName() != name {
+		t.Error("a restart on the same authority dropped its certificate")
+	}
+}
+
 func TestAutoModeRenewsWithAThirdOfTheLifeLeft(t *testing.T) {
 	now := time.Now()
 	leaf := &x509.Certificate{NotBefore: now.Add(-50 * 24 * time.Hour), NotAfter: now.Add(40 * 24 * time.Hour)}
