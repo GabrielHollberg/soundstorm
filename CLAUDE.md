@@ -627,10 +627,17 @@ must not stop somebody being removed.
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.
 `docker compose --profile tailscale up -d` runs a Tailscale sidecar that puts
-it on a tailnet at `https://<hostname>.<tailnet>.ts.net`, with a **real
-certificate** - which also removes the warning the local authority cannot
-avoid. `--tailscale` in both installers writes the auth key into `.env`,
-generates the serve config and turns the profile on.
+it on a tailnet at `https://<hostname>.<tailnet>.ts.net`. `--tailscale` in
+both installers writes the auth key into `.env`, generates the serve config
+and turns the profile on.
+
+It used to be sold as the way to get a real certificate as well, and for a
+while it was the only one. Auto mode does that now, at home, with no account;
+Tailscale's job is **away from home**, and nothing else. The name service
+deliberately names only private addresses, so auto mode cannot do this part.
+Even once SoundStorm can point a name at a home's public address (roadmap),
+Tailscale stays: it works behind carrier-grade NAT, where there is no port to
+forward, and for anybody who would rather not put a server on the internet.
 
 **It is opt-in, and that is the Plex decision applied again.** Plex was
 rejected because it "cannot be provisioned without a human logging into a
@@ -1407,9 +1414,10 @@ and never point automated fetches at an origin site that has asked you not to.
   it is meant to catch is worse than no check, because it is believed. The
   script now says what it does and does not prove.
 
-  Two fixes, and Tailscale is the better one: a `ts.net` address carries a real
-  Let's Encrypt certificate, so it installs with no warning and works away from
-  home as well. Otherwise `/ca.crt` has to be installed on each device, which
+  Fixed by auto mode, now the default: the `….home.soundstorm.dev` address
+  carries a real Let's Encrypt certificate, so Android installs from it with
+  no warning. Away from home a Tailscale `ts.net` address does the same. In
+  self-signed mode `/ca.crt` still has to be installed on each device, which
   Android accompanies with a standing "network may be monitored" notice.
   iPhone is unaffected: Safari's Add to Home Screen does not go through a
   service worker.

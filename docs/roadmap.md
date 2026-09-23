@@ -72,7 +72,7 @@ other in a book. What is not built:
 ## 6. HTTPS
 
 Built: `SOUNDSTORM_TLS` serves HTTPS from a local certificate authority, and
-the Tailscale profile gives a real certificate.
+the Tailscale profile gives remote access over a tailnet.
 
 **Built and live: a trusted certificate on a plain LAN address, with no
 account.** `SOUNDSTORM_TLS=auto` registers the install with the name service

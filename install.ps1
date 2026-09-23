@@ -1416,8 +1416,8 @@ if ($useTailscale) {
         Write-Host ""
         Write-Host "    $tailnet" -ForegroundColor White
         Write-Host ""
-        Write-Host "  That address has a real certificate, so no warning - and it works" -ForegroundColor DarkGray
-        Write-Host "  away from the house with nothing forwarded on your router." -ForegroundColor DarkGray
+        Write-Host "  It works away from the house, with nothing forwarded on your" -ForegroundColor DarkGray
+        Write-Host "  router." -ForegroundColor DarkGray
     } else {
         Write-Host "  Tailscale is starting but has not reported an address yet." -ForegroundColor Yellow
         Write-Host "  Check the Tailscale admin console, or run:" -ForegroundColor DarkGray

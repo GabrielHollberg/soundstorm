@@ -236,10 +236,12 @@ Two things worth doing:
 > on the server itself and nowhere else — which is a worse thing to be handed
 > than a number.
 
-**From outside the house** is a different question, and the answer is not
-"forward a port". Run SoundStorm on a [Tailscale](https://tailscale.com)
-tailnet instead — nothing is exposed to the internet, and there is no port
-forwarding at all:
+**From outside the house** is a different question. The secure
+`….home.soundstorm.dev` address points at your server's *home network*
+address, so it only works on your own Wi-Fi — on purpose. For everywhere
+else, the answer is not "forward a port". Run SoundStorm on a
+[Tailscale](https://tailscale.com) tailnet instead — nothing is exposed to the
+internet, and there is no port forwarding at all:
 
 **Windows:**
 
@@ -255,8 +257,10 @@ curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/ins
 
 It asks for a Tailscale auth key, starts a Tailscale container beside
 SoundStorm, and prints the address it lands on — something like
-`https://soundstorm.your-tailnet.ts.net`. That address has a **real
-certificate**, so unlike the LAN one it shows no browser warning.
+`https://soundstorm.your-tailnet.ts.net`. It works from anywhere your devices
+are signed into Tailscale, including behind the kind of internet connection
+where forwarding a port is impossible anyway, and has a real certificate like
+the home address does.
 
 Three things it cannot do for you, and there is no way around any of them:
 
