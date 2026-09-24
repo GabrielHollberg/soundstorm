@@ -417,6 +417,11 @@ matters: it lets your shell write the file, so it is yours and private, where
 writing it from inside the container would leave it owned by the container's
 user and readable only by root.
 
+If `soundstorm-backup.json` comes out as a few lines of text beginning "Backed
+up to" rather than a file starting with `{`, your SoundStorm is older than this
+form — [update it](#updating) and run the command again. Restoring would refuse
+that file, but it is better to find out now than on the day you need it.
+
 To put it back — on a new machine, or after a `docker compose down -v`:
 
 **Linux / macOS:**
