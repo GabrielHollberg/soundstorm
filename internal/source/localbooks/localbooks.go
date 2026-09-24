@@ -706,3 +706,12 @@ func (s *Source) ItemFiles(_ context.Context, itemID string) ([]string, error) {
 	}
 	return []string{filepath.ToSlash(rel)}, nil
 }
+
+// ItemByID describes one book, as a search would.
+func (s *Source) ItemByID(_ context.Context, itemID string) (media.Item, bool) {
+	b, ok := s.lookup(itemID)
+	if !ok {
+		return media.Item{}, false
+	}
+	return b.item(s.id, s.kind), true
+}

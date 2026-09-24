@@ -311,6 +311,31 @@ silently truncates a large folder - the classic way to lose half an album. There
 is a test for it that builds a fake entry tree, because a synthetic DataTransfer
 gets no filesystem entries and no automated drag can produce real ones.
 
+## The Continue row
+
+What this person is part way through, newest first, above the library on
+Everything and on the audiobook, ebook and documents shelves. It is hidden
+while searching or selecting.
+
+**Two places know, and neither is new.** A book's position is SoundStorm's own
+(`state.Progress`, keyed `userID/sourceID/itemID`). An audiobook's belongs to
+Audiobookshelf, per person, through the per-member account `TokenFor` already
+makes. So a book started in its phone app is in the row. `source.InProgressLister`
+is the optional interface for a backend that remembers.
+`source.ItemGetter` turns a stored book id back into a card. Both go through
+the registry, so a shelf an account may no longer see drops out of the row.
+
+Audiobookshelf's half is two calls, checked against 2.36.1.
+`/api/me/items-in-progress` lists the books, in the search shape, with
+`progressLastUpdate`. `/api/me`'s `mediaProgress` has the fraction. The
+adapter leaves out finished books, ones hidden from continue listening in
+Audiobookshelf's own UI, missing ones, and podcast episodes.
+
+A position under half a percent or over 98.5% is "not started" or
+"finished", not something to carry on with. **Films and TV are not in it:**
+SoundStorm does not report playback back to Jellyfin, so there is no position
+to show. Doing that is the next step if they are wanted.
+
 ## Deleting, into a bin
 
 The owner can select items and delete them. Two decisions shape it:

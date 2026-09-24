@@ -504,3 +504,25 @@ func RelativeTo(root, reported string) (string, error) {
 	}
 	return rel, nil
 }
+
+// Started is something one person has begun and not finished, for the
+// "Continue" row.
+type Started struct {
+	Item     media.Item
+	Fraction float64   // how far in, 0 to 1
+	At       time.Time // when they were last in it
+}
+
+// InProgressLister is an optional interface for a source that remembers, per
+// person, what they are part way through. The person is the one on ctx (see
+// WithUserID), and the answer is newest first.
+type InProgressLister interface {
+	InProgress(ctx context.Context, limit int) ([]Started, error)
+}
+
+// ItemGetter is an optional interface for a source that can describe one item
+// by id, for a place that knows an id but not what it looks like - a reading
+// position is stored as an id, and the Continue row shows a cover and a title.
+type ItemGetter interface {
+	ItemByID(ctx context.Context, itemID string) (media.Item, bool)
+}

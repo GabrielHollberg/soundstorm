@@ -258,6 +258,14 @@
     <p id="degraded" class="banner hidden" role="status"></p>
     <!-- The count, and for the owner a Select button: deleting is theirs
          alone, since every other account shares these shelves. -->
+    <!-- What this person is part way through, newest first: the home screen
+         says "carry on" before it says "here is everything". Books and
+         audiobooks only - see continue.go for why films are not here yet. -->
+    <section id="continue" class="continue hidden" aria-labelledby="continue-title">
+      <h2 id="continue-title">Continue</h2>
+      <div id="continue-row" class="continue-row"></div>
+    </section>
+
     <div id="results-bar" class="results-bar">
       <p id="status" class="muted"></p>
       <button id="select-toggle" class="ghost small hidden" type="button">Select</button>

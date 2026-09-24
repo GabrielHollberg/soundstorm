@@ -462,6 +462,7 @@ header {
 #app.viewing-account #setup,
 #app.viewing-account #intake,
 #app.viewing-account #degraded,
+#app.viewing-account #continue,
 #app.viewing-account #results-bar,
 #app.viewing-account #select-bar,
 #app.viewing-account #status,
@@ -1028,4 +1029,34 @@ button.danger {
   color: #1d0707;
   border-color: var(--error);
   font-weight: 600;
+}
+
+/* Continue --------------------------------------------------------------- */
+
+.continue { margin: 14px 20px 4px; }
+.continue h2 { margin: 0 0 10px; font-size: 16px; }
+/* One row that scrolls sideways, so carrying on never pushes the library off
+   the first screen. The cards are the library's own, a little smaller. */
+.continue-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 150px;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+.progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 5px;
+  background: rgba(6, 9, 14, 0.7);
+}
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+@media (max-width: 620px) {
+  .continue-row { grid-auto-columns: 132px; }
 }

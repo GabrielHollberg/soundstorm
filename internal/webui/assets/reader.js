@@ -234,6 +234,8 @@ export async function close() {
 
   $('reader-host').replaceChildren();
   $('reader-overlay').classList.add('hidden');
+  // The position was just saved, so the app's Continue row can catch up.
+  window.dispatchEvent(new Event('soundstorm:reader-closed'));
 }
 
 function turn(direction) {

@@ -674,3 +674,91 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 	}
 	return []string{item.RelPath}, nil
 }
+
+// InProgress is what this person is part way through, newest first, as
+// Audiobookshelf records it - the same list its own apps show as "continue
+// listening", so a book started on a phone is here too.
+//
+// Two calls, both checked against 2.36.1: /api/me/items-in-progress lists the
+// books (in the same shape a search returns, so they convert the same way),
+// and /api/me's mediaProgress carries how far into each one. Anything finished,
+// or hidden from continue listening in Audiobookshelf's own UI, is left out.
+func (s *Source) InProgress(ctx context.Context, limit int) ([]source.Started, error) {
+	headers, err := s.actAs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var listed struct {
+		LibraryItems []struct {
+			libraryItem
+			ProgressLastUpdate int64 `json:"progressLastUpdate"`
+		} `json:"libraryItems"`
+	}
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Path:    "/api/me/items-in-progress",
+		Params:  url.Values{"limit": {strconv.Itoa(limit)}},
+		Headers: headers,
+	})
+	if err == nil {
+		err = resp.Err()
+	}
+	if err == nil {
+		err = resp.JSON(&listed)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("audiobookshelf %q: in progress: %w", s.id, err)
+	}
+
+	var me struct {
+		MediaProgress []struct {
+			LibraryItemID             string     `json:"libraryItemId"`
+			EpisodeID                 *string    `json:"episodeId"`
+			Progress                  looseFloat `json:"progress"`
+			IsFinished                looseBool  `json:"isFinished"`
+			HideFromContinueListening looseBool  `json:"hideFromContinueListening"`
+		} `json:"mediaProgress"`
+	}
+	resp, err = s.http.Do(ctx, httpx.Request{Path: "/api/me", Headers: headers})
+	if err == nil {
+		err = resp.Err()
+	}
+	if err == nil {
+		err = resp.JSON(&me)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("audiobookshelf %q: progress: %w", s.id, err)
+	}
+	type how struct {
+		fraction float64
+		skip     bool
+	}
+	progress := map[string]how{}
+	for _, p := range me.MediaProgress {
+		if p.EpisodeID != nil && *p.EpisodeID != "" {
+			continue // a podcast episode, not a book
+		}
+		f := float64(p.Progress)
+		if f < 0 || f > 1 || f != f {
+			f = 0
+		}
+		progress[p.LibraryItemID] = how{fraction: f, skip: bool(p.IsFinished) || bool(p.HideFromContinueListening)}
+	}
+
+	var out []source.Started
+	for _, found := range listed.LibraryItems {
+		p, ok := progress[found.ID]
+		if !ok || p.skip {
+			continue
+		}
+		items := convertItems(s.id, []libraryItem{found.libraryItem})
+		if len(items) == 0 {
+			continue // missing from disk
+		}
+		out = append(out, source.Started{
+			Item:     items[0],
+			Fraction: p.fraction,
+			At:       time.UnixMilli(found.ProgressLastUpdate),
+		})
+	}
+	return out, nil
+}

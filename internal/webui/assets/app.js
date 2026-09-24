@@ -773,6 +773,7 @@ async function runSearch() {
     // to be listed is the thing they describe.
     loadLibrary();
   }
+  refreshContinue();
 
   // Keep only the newest response: debounced typing means several can be in
   // flight and they do not necessarily come back in order.
@@ -1526,7 +1527,11 @@ $('audio-player').addEventListener('timeupdate', () => {
 });
 
 // Pausing is the clearest "I am stopping here" a player ever gets.
-$('audio-player').addEventListener('pause', () => savePosition());
+$('audio-player').addEventListener('pause', () => {
+  savePosition();
+  // Give the position a moment to reach Audiobookshelf before asking again.
+  setTimeout(refreshContinue, 1500);
+});
 
 // The whole point of a track list: chapter 1 ending means chapter 2 starting,
 // not silence.
@@ -2110,6 +2115,9 @@ function selectionKey(item) {
 
 function setSelecting(on) {
   state.selecting = on;
+  // Selecting is for the library below; the Continue row is not part of it.
+  if (on) show($('continue'), false);
+  else refreshContinue();
   if (!on) state.selected.clear();
   $('results').classList.toggle('selecting', on);
   for (const card of $('results').querySelectorAll('.item.selected')) {
@@ -2260,3 +2268,45 @@ async function undoDelete() {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.selecting) setSelecting(false);
 });
+
+/* --------------------------------------------------------------- continue */
+
+// The kinds the Continue row can hold; on any other shelf it stays hidden.
+const CONTINUE_KINDS = new Set(['audiobook', 'ebook', 'document']);
+
+// refreshContinue shows what this person is part way through, when they are
+// looking at a shelf rather than searching: on Everything, or on the one shelf
+// an item belongs to.
+async function refreshContinue() {
+  const section = $('continue');
+  const browsing = !state.query && !state.selecting;
+  const kindFits = !state.kind || CONTINUE_KINDS.has(state.kind);
+  if (!browsing || !kindFits) {
+    show(section, false);
+    return;
+  }
+  const seq = (state.continueSeq = (state.continueSeq || 0) + 1);
+  const { ok, body } = await api('/api/continue');
+  if (seq !== state.continueSeq) return; // a newer refresh is on its way
+  const items = ((ok && body && body.items) || [])
+    .filter((item) => !state.kind || item.kind === state.kind);
+
+  const row = $('continue-row');
+  row.replaceChildren();
+  for (const item of items) {
+    const card = renderItem(item);
+    card.classList.add('continue-item');
+    // How far in, along the bottom of the cover.
+    const bar = document.createElement('span');
+    bar.className = 'progress';
+    const fill = document.createElement('span');
+    fill.style.width = `${Math.round(item.progress * 100)}%`;
+    bar.append(fill);
+    card.querySelector('.art-wrap').append(bar);
+    card.title = `${Math.round(item.progress * 100)}% of the way through`;
+    row.append(card);
+  }
+  show(section, items.length > 0 && !state.query && !state.selecting);
+}
+
+window.addEventListener('soundstorm:reader-closed', () => setTimeout(refreshContinue, 300));

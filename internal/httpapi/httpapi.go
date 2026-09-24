@@ -265,6 +265,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/book/manifest", s.handleBookManifest)
 	guarded.HandleFunc("GET /api/book/resource", s.handleBookResource)
 	guarded.HandleFunc("GET /api/book/progress", s.handleGetProgress)
+	guarded.HandleFunc("GET /api/continue", s.handleContinue)
 	guarded.HandleFunc("PUT /api/book/progress", s.handlePutProgress)
 	// Account management is the one thing the owner can do and a member
 	// cannot, so it gets its own guard rather than a check inside each handler.

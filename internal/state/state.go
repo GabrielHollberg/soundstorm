@@ -796,6 +796,20 @@ func (s *Store) Progress(key string) (Progress, bool) {
 	return p, ok
 }
 
+// ProgressWithPrefix returns every reading position whose key starts with
+// prefix - one account's, for the Continue row.
+func (s *Store) ProgressWithPrefix(prefix string) map[string]Progress {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]Progress{}
+	for k, p := range s.d.Progress {
+		if strings.HasPrefix(k, prefix) {
+			out[k] = p
+		}
+	}
+	return out
+}
+
 // SetProgress records a reading position. Callers should throttle: this writes
 // the state file, and a reader emits a location on every page turn.
 //
