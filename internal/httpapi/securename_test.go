@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -86,5 +87,12 @@ func TestTheShareAddressIsTheSecureNameOnceOnIt(t *testing.T) {
 	r.Host = "localhost:8099"
 	if got := h.api.shareURL(r); got != "http://192.168.0.19:8099" {
 		t.Errorf("shareURL from localhost = %q, want the LAN address as before", got)
+	}
+
+	// A page on https://localhost still hands on http for the address: the
+	// other device does not trust the local authority's certificate for it.
+	r.TLS = &tls.ConnectionState{}
+	if got := h.api.shareURL(r); got != "http://192.168.0.19:8099" {
+		t.Errorf("shareURL from https://localhost = %q, want plain http for the address", got)
 	}
 }

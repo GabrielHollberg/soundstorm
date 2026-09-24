@@ -1010,6 +1010,15 @@ func (s *Server) shareURL(r *http.Request) string {
 		host = reqHost
 	}
 
+	// In auto mode a bare address never gets the https scheme, even when this
+	// page arrived over TLS (https://localhost, say). The only certificate for
+	// an address is the local authority's, which the other device does not
+	// trust, so https://192.168.0.19 opens on a warning. Auto mode always
+	// answers plain http there too, and the page moves itself to the trusted
+	// name once it has checked it can - so http is the address that works.
+	if s.publicName != nil {
+		scheme = "http"
+	}
 	if port == "" {
 		return scheme + "://" + host
 	}
