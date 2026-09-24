@@ -101,6 +101,11 @@ services:
       # port to confirm is reachable and a remote URL carries the right one.
       SOUNDSTORM_REMOTE_ACCESS: ${SOUNDSTORM_REMOTE_ACCESS:-off}
       SOUNDSTORM_PORT: ${SOUNDSTORM_PORT:-8099}
+      # The home router's LAN address, so remote access can open the port
+      # automatically (NAT-PMP/PCP). The installer discovers it on the host and
+      # writes it here; the container cannot, since its own default route is the
+      # Docker bridge. Empty means the port must be forwarded by hand.
+      SOUNDSTORM_GATEWAY: ${SOUNDSTORM_GATEWAY:-}
       # Behind a reverse proxy that terminates TLS: lets X-Forwarded-Proto
       # decide whether the session cookie is marked Secure. Any client can send
       # that header, so only turn it on when a proxy is stripping incoming ones.

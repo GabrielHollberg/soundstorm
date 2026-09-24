@@ -352,6 +352,32 @@ function Get-LanAddress {
     return $null
 }
 
+# Get-Gateway is the home router's LAN address - the default route's next hop -
+# so remote access can ask it to open the port (NAT-PMP/PCP). The container
+# cannot find this itself, for the same reason it cannot find the LAN address:
+# its own default route is the Docker bridge, not the router.
+#
+# The same private-range order as Get-LanAddress, because Docker's and WSL's
+# virtual adapters have default routes of their own in the 172 range that reach
+# nothing. A real gateway is on-link and never 0.0.0.0.
+function Get-Gateway {
+    try {
+        $routes = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' } |
+            Sort-Object RouteMetric, InterfaceMetric
+
+        foreach ($pattern in @('192.168.*', '10.*', '172.*')) {
+            $match = $routes | Where-Object { $_.NextHop -like $pattern } | Select-Object -First 1
+            if ($match) { return $match.NextHop }
+        }
+        if ($routes) { return ($routes | Select-Object -First 1).NextHop }
+    } catch {
+        # Not worth a failed install; remote access just falls back to a manual
+        # port-forward.
+    }
+    return $null
+}
+
 # There is deliberately no ".local" name printed on Windows.
 #
 # An earlier version printed "<computer>.local" as the address to use, having
@@ -1308,6 +1334,16 @@ if ($Remote) {
 } elseif ($NoRemote) {
     Set-EnvSetting 'SOUNDSTORM_REMOTE_ACCESS' 'off'
     Note "Keeping it to the home network."
+}
+
+# The router address, for opening the port automatically when remote access is
+# on. Written whether or not remote access is on yet, for the same reason as the
+# LAN address: by the time somebody turns it on from inside the app, nothing on
+# the host is running to work it out. An existing value is left alone, so a
+# manual override stands.
+if (-not (Get-EnvSetting 'SOUNDSTORM_GATEWAY')) {
+    $gateway = Get-Gateway
+    if ($gateway) { Set-EnvSetting 'SOUNDSTORM_GATEWAY' $gateway }
 }
 
 # The first sign-up needs a setup code, so that whoever reaches the port

@@ -120,6 +120,36 @@ Remove the manual step where the router allows it.
 - If no method works, fall back to Stage 1's manual instructions with the exact
   port to forward.
 
+**Built so far: NAT-PMP and PCP** (`internal/portmap`), with UPnP still to come.
+Both are pure stdlib and tested against a fake gateway. PCP is tried first and
+NAT-PMP is the fallback, because PCP carries a client-address field a strict
+gateway checks against the packet source — and behind Docker's own NAT that
+source is SNATed from `172.20.x` to the host's LAN address, so a strict router
+answers ADDRESS_MISMATCH. NAT-PMP has no such field and maps the right box. The
+name service's reachability probe, not the protocol's own reply, is the final
+word on whether the port actually opened.
+
+**The gateway is discovered by the installer, not the container** — the same
+division that already has the installer, not the container, find the LAN
+address. Inside the container the process's own default route is the Docker
+bridge (`172.20.0.1`), not the home router, so a request "to the gateway" from
+in there would reach a bridge that does not answer. The installer runs on the
+host, discovers the default route's next hop, and writes `SOUNDSTORM_GATEWAY`
+into `.env` (best effort; absent just means no automatic forward). A NAT-PMP
+request to that address leaves the container, is SNATed to the host's LAN
+address by Docker, and reaches the router as if the host sent it — which is
+exactly the address the mapping should point at. The mapper opens the port
+immediately when remote access is switched on (before the reachability probe
+runs) and refreshes it on its own timer, because a router lease is measured in
+hours while the certificate loop only wakes every twelve.
+
+Where no gateway was found, or the router speaks neither protocol, remote access
+still works with a hand-forwarded port — the automatic step just does nothing.
+UPnP, the widest-reaching fallback, would extend this but needs SSDP multicast
+discovery, which does not traverse the Docker bridge from inside the container;
+like the gateway address, its control URL would have to be discovered on the
+host and passed in. That is the next piece.
+
 ### Stage 3 — IPv6
 
 Often the simplest ingress of all: many ISPs hand out public IPv6, which has no

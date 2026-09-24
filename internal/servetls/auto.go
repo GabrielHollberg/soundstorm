@@ -23,6 +23,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/acme"
 	"github.com/GabrielHollberg/soundstorm/internal/names"
+	"github.com/GabrielHollberg/soundstorm/internal/portmap"
 )
 
 // Auto mode: a real certificate, for a real name, with nobody signing up for
@@ -92,6 +93,11 @@ type autoCert struct {
 	// kick nudges run to take a step at once, so a toggle takes effect now
 	// rather than at the next scheduled check. Buffered so a send never blocks.
 	kick chan struct{}
+
+	// portMapper opens the inbound port on the home router when remote access is
+	// on, or nil when the installer found no gateway to aim it at (see
+	// internal/portmap) - in which case the port is forwarded by hand.
+	portMapper *portmap.Maintainer
 
 	mu         sync.RWMutex
 	reg        names.Registration
@@ -290,6 +296,17 @@ func (a *autoCert) step(ctx context.Context) error {
 	domains := []string{reg.Name}
 	publicName := ""
 	if a.remoteOn() {
+		// Open the port on the router first, so the reachability probe that
+		// SetPublic triggers finds it already open on the first try instead of
+		// after a manual forward. Best effort: where no gateway was configured,
+		// or the router speaks neither protocol, this does nothing and the probe
+		// falls back to whatever the owner forwarded by hand.
+		if a.portMapper != nil {
+			if _, err := a.portMapper.EnsureNow(ctx); err != nil {
+				a.log.Info("could not open the port automatically; a manual forward may be needed",
+					"port", a.port, "err", err)
+			}
+		}
 		if name, err := a.names.SetPublic(ctx, reg, a.port); err != nil {
 			a.log.Warn("remote access is not reachable; serving on the LAN name only",
 				"err", err)
@@ -303,9 +320,12 @@ func (a *autoCert) step(ctx context.Context) error {
 		had := a.publicName
 		a.mu.RUnlock()
 		if had != "" {
-			// Remote access was just turned off. Take the public record down so
-			// the name stops resolving; best effort, since the LAN name working
-			// does not depend on it.
+			// Remote access was just turned off. Close the port and take the
+			// public record down so the name stops resolving; both best effort,
+			// since the LAN name working does not depend on either.
+			if a.portMapper != nil {
+				a.portMapper.DropNow(ctx)
+			}
 			if err := a.names.ClearPublic(ctx, reg); err != nil {
 				a.log.Warn("could not remove the public name", "err", err)
 			} else {

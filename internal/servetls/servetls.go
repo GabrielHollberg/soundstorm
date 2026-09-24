@@ -49,6 +49,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/acme"
 	"github.com/GabrielHollberg/soundstorm/internal/names"
+	"github.com/GabrielHollberg/soundstorm/internal/portmap"
 )
 
 const (
@@ -127,6 +129,14 @@ type Config struct {
 	// remote access.
 	Port int
 
+	// Gateway is the home router's LAN address, for opening the port
+	// automatically when remote access is on (see internal/portmap). The
+	// installer discovers it on the host and passes it in; the container cannot,
+	// because its own default route is the Docker bridge, not the router. Zero
+	// means no automatic port-forward - remote access then needs the port
+	// forwarded by hand.
+	Gateway netip.Addr
+
 	// ACMEHTTP talks to the authority. Nil is an ordinary client; the
 	// rehearsal against Pebble needs one that accepts Pebble's own
 	// certificate.
@@ -170,6 +180,12 @@ type Server struct {
 func (s *Server) Start(ctx context.Context) {
 	if s != nil && s.auto != nil {
 		go s.auto.run(ctx)
+		if s.auto.portMapper != nil {
+			// Its own loop, on its own cadence: a router lease is measured in
+			// hours, far shorter than the 12-hour certificate check, so the
+			// mapping cannot be refreshed off the same timer.
+			go s.auto.portMapper.Run(ctx, s.auto.remoteOn)
+		}
 	}
 }
 
@@ -303,6 +319,19 @@ func loadAuto(cfg Config) (*Server, error) {
 			return &acme.Client{Directory: directory, Key: key, HTTP: cfg.ACMEHTTP}
 		},
 		log: cfg.Log,
+	}
+	// A port-mapper only when the installer found a gateway to aim it at, and a
+	// port to open. Without one, remote access still works with a hand-forwarded
+	// port; the mapper just is not there to do it automatically.
+	if cfg.Gateway.IsValid() && cfg.Port > 0 {
+		s.auto.portMapper = &portmap.Maintainer{
+			Gateway:      cfg.Gateway,
+			Proto:        portmap.TCP,
+			InternalPort: uint16(cfg.Port),
+			ExternalPort: uint16(cfg.Port),
+			Lifetime:     2 * time.Hour,
+			Log:          cfg.Log,
+		}
 	}
 	s.auto.load()
 	if name := s.auto.name(); name != "" {

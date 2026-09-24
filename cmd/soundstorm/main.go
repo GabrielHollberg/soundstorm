@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -173,6 +174,19 @@ func run(log *slog.Logger) error {
 		return remoteDefault
 	}
 
+	// The home router's LAN address, for opening the port automatically when
+	// remote access is on. The installer discovers it on the host and writes it
+	// here; the container cannot, since its own default route is the Docker
+	// bridge. An empty or unparseable value just means no automatic forward.
+	var gateway netip.Addr
+	if g := strings.TrimSpace(os.Getenv("SOUNDSTORM_GATEWAY")); g != "" {
+		if addr, err := netip.ParseAddr(g); err == nil {
+			gateway = addr
+		} else {
+			log.Warn("ignoring SOUNDSTORM_GATEWAY: not an IP address", "value", g)
+		}
+	}
+
 	tlsServer, err := servetls.Load(servetls.Config{
 		Mode:     env("SOUNDSTORM_TLS", servetls.ModeOff),
 		CertFile: os.Getenv("SOUNDSTORM_TLS_CERT"),
@@ -186,6 +200,7 @@ func run(log *slog.Logger) error {
 		// and only meaningful in auto mode (it needs the name service).
 		RemoteEnabled: remoteEnabled,
 		Port:          publicPort,
+		Gateway:       gateway,
 		Log:           log,
 	})
 	if err != nil {

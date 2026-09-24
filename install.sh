@@ -278,6 +278,24 @@ lan_address() {
 	fi
 }
 
+# gateway_address is the home router's LAN address - the default route's next
+# hop - so remote access can ask it to open the port. The container cannot find
+# this itself, for the same reason it cannot find the LAN address: its own
+# default route is the Docker bridge, not the router.
+gateway_address() {
+	if command -v ip >/dev/null 2>&1; then
+		ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="via") {print $(i+1); exit}}'
+		return
+	fi
+	if command -v route >/dev/null 2>&1; then
+		route -n get default 2>/dev/null | awk '/gateway:/{print $2; exit}'
+		return
+	fi
+	if command -v netstat >/dev/null 2>&1; then
+		netstat -rn 2>/dev/null | awk '$1=="default" || $1=="0.0.0.0" {print $2; exit}'
+	fi
+}
+
 # mdns_name is the name other devices can use instead of an IP address.
 #
 # macOS always answers for "<hostname>.local"; Linux does when avahi is
@@ -580,6 +598,17 @@ if [ "$REMOTE" = "on" ]; then
 elif [ "$REMOTE" = "off" ]; then
 	set_env SOUNDSTORM_REMOTE_ACCESS off
 	note "keeping it to the home network"
+fi
+
+# The router address, for opening the port automatically when remote access is
+# on (NAT-PMP/PCP). Written whether or not remote access is on yet, for the same
+# reason as the LAN address: by the time somebody turns it on from inside the
+# app, nothing on the host is running to work it out. An existing value stands.
+if [ -z "$(get_env SOUNDSTORM_GATEWAY)" ]; then
+	gw=$(gateway_address)
+	if [ -n "$gw" ]; then
+		set_env SOUNDSTORM_GATEWAY "$gw"
+	fi
 fi
 
 # Where the library lives: beside the install unless --library says otherwise,
