@@ -24,10 +24,8 @@ rem Arguments are passed straight through, so a typed command or a shortcut
 rem can say SoundStorm-Setup.cmd --https and have it reach the installer.
 rem
 rem No console stays open. A double-clicked .cmd always gets one - Windows
-rem gives it no choice - so this one says nothing, lives only as long as the
-rem download takes, and hands over to PowerShell started minimised and hidden,
-rem which opens the setup window itself. The only console left on screen is
-rem the one explaining a failed download, because then there is no window.
+rem gives it no choice - so this one says nothing and does nothing but start
+rem PowerShell minimised and hidden, then closes: a blink.
 
 setlocal
 
@@ -40,33 +38,16 @@ if exist "%LOCAL%" (
 
 if "%SOUNDSTORM_REPO%"=="" set "SOUNDSTORM_REPO=GabrielHollberg/soundstorm"
 if "%SOUNDSTORM_BRANCH%"=="" set "SOUNDSTORM_BRANCH=main"
-set "URL=https://raw.githubusercontent.com/%SOUNDSTORM_REPO%/%SOUNDSTORM_BRANCH%/install.ps1"
-set "SAVED=%TEMP%\soundstorm-install.ps1"
+set "SOUNDSTORM_SETUP_URL=https://raw.githubusercontent.com/%SOUNDSTORM_REPO%/%SOUNDSTORM_BRANCH%/install.ps1"
+set "SOUNDSTORM_SETUP_ARGS=%*"
 
-rem curl.exe has shipped with Windows since 10 build 1803.
-curl.exe -fsSL "%URL%" -o "%SAVED%" 2>nul
-
-if not exist "%SAVED%" (
-    rem Older Windows, or no curl: have PowerShell save it. Still to a file -
-    rem what must not happen is running it straight out of memory.
-    "%PS%" -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri '%URL%' -OutFile '%SAVED%' -UseBasicParsing"
-)
-
-if not exist "%SAVED%" (
-    echo.
-    echo   Could not download the installer from:
-    echo     %URL%
-    echo.
-    echo   Check the internet connection and try again.
-    goto :done
-)
-
-rem Not waited for: the setup opens its own window, and this console closes
-rem now. The downloaded file stays in %TEMP% and is overwritten next time.
-start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%SAVED%" %*
+rem The download happens in the hidden PowerShell, not here, so this console
+rem closes the moment PowerShell has started instead of waiting for it. Two
+rem steps, as before: save the installer to a file, then start that file as
+rem its own process - never run it straight out of memory, which is what
+rem Defender blocks. A failed download says so in a message box, because
+rem there is no console left to say it in. SOUNDSTORM_WINDOW tells the
+rem installer it is already hidden, so it opens its window without first
+rem relaunching itself.
+start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $f = Join-Path $env:TEMP 'soundstorm-install.ps1'; try { Invoke-WebRequest -UseBasicParsing -Uri $env:SOUNDSTORM_SETUP_URL -OutFile $f } catch { Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show('SoundStorm could not download its installer. Check the internet connection and try again.', 'SoundStorm Setup'); exit 1 }; $env:SOUNDSTORM_WINDOW = '1'; $q = [char]34; Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -WindowStyle Hidden -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -STA -File ' + $q + $f + $q + ' ' + $env:SOUNDSTORM_SETUP_ARGS)"
 exit /b 0
-
-:done
-echo.
-echo Press any key to close this window.
-pause >nul

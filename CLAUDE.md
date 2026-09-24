@@ -1105,13 +1105,18 @@ reached the "already installed in another folder" refusal and displayed it,
 and wrote nothing.
 
 **No console stays open, from the double-click on.** The setup file hands
-straight to PowerShell started minimised and hidden, and closes; the
+straight to PowerShell started minimised and hidden, and closes - it does not
+even download: the hidden PowerShell saves the installer to a file and starts
+that file as its own process (never from memory, which Defender blocks; no
+detection on this machine), with `SOUNDSTORM_WINDOW` set so it opens its
+window without relaunching itself, and a message box if the download fails; the
 elevated WSL and Docker steps run hidden; the Update, Move library, Tailscale
 and startup shortcuts and the uninstall entry all start hidden. What cannot
 be removed is Windows opening a console for a double-clicked .cmd at all:
 measured on this machine (Windows Terminal as the default console) at about
-0.7 seconds, blank, then gone, with the setup window up two seconds after
-the click. An .exe would have no console, and an unsigned one is what Smart
+0.6 seconds, blank - Terminal's own start-up, since the file does nothing but
+start PowerShell - with the setup window up 2.5 seconds after the click,
+download included. An .exe would have no console, and an unsigned one is what Smart
 App Control blocks outright.
 
 **No message the window can show tells anybody to type a command.** "Show
