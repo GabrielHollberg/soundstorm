@@ -18,16 +18,17 @@ import (
 //
 // Two places know. A book's reading position is SoundStorm's own, in the state
 // file; an audiobook's listening position is Audiobookshelf's, per person (see
-// "Accounts, and the one thing that is per person" in CLAUDE.md). Films and
-// television are not here: SoundStorm does not report playback back to
-// Jellyfin yet, so there is nothing honest to show.
+// "Accounts, and the one thing that is per person" in CLAUDE.md). A film's or
+// an episode's is SoundStorm's too, kept like a book's, because the house
+// shares one Jellyfin account and a position there would be everybody's.
 
 const (
 	continueLimit = 12
 	// A position this close to either end is "not started" or "finished",
 	// not something to carry on with.
-	continueMin = 0.005
-	continueMax = 0.985
+	continueMin      = 0.005
+	continueMax      = 0.985
+	continueMaxVideo = 0.93
 )
 
 type continueItem struct {
@@ -50,7 +51,13 @@ func (s *Server) handleContinue(w http.ResponseWriter, r *http.Request) {
 		wg  sync.WaitGroup
 	)
 	add := func(item media.Item, fraction float64, at time.Time) {
-		if fraction < continueMin || fraction > continueMax {
+		limit := continueMax
+		if item.Kind == media.KindVideo || item.Kind == media.KindTV {
+			// A film is over at the credits, which can be the last few
+			// minutes: stopping there is finishing, not stopping part way.
+			limit = continueMaxVideo
+		}
+		if fraction < continueMin || fraction > limit {
 			return
 		}
 		mu.Lock()

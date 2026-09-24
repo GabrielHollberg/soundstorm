@@ -1886,9 +1886,21 @@ func (s *Server) progressTarget(w http.ResponseWriter, r *http.Request) (sourceI
 	// takes - so one member could slow the server for everybody. A source that
 	// cannot say which books it has (none today but the book shelves read here)
 	// keeps no reading positions.
-	books, ok := src.(interface{ HasBook(string) bool })
-	if !ok || !books.HasBook(itemID) {
-		writeError(w, http.StatusNotFound, "no such book")
+	//
+	// A film or an episode can have one too - how far into it somebody
+	// watched, kept here rather than in Jellyfin, because SoundStorm shares one
+	// Jellyfin account across the house and a position there would be
+	// everybody's at once. Jellyfin says whether an id is one of its items.
+	known := false
+	if books, ok := src.(interface{ HasBook(string) bool }); ok {
+		known = books.HasBook(itemID)
+	} else if videos, ok := src.(interface {
+		HasItem(context.Context, string) bool
+	}); ok {
+		known = videos.HasItem(r.Context(), itemID)
+	}
+	if !known {
+		writeError(w, http.StatusNotFound, "no such item")
 		return "", "", false
 	}
 	return sourceID, itemID, true

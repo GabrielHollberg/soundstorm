@@ -1142,6 +1142,7 @@ function detachHls() {
 async function playVideo(item) {
   stopAudio();
   detachHls();
+  startWatching(item);
 
   const player = $('video-player');
   $('video-caption').textContent = [item.title, subtitleFor(item)]
@@ -1245,6 +1246,9 @@ $('subtitle-select').addEventListener('change', (event) => {
 });
 
 function closeVideo() {
+  // Before the source goes: once it does, currentTime is back to nothing.
+  saveWatchPosition(true);
+  state.watching = null;
   detachHls();
   const player = $('video-player');
   player.pause();
@@ -1256,6 +1260,71 @@ function closeVideo() {
 }
 
 $('video-close').addEventListener('click', closeVideo);
+
+/* Where you are in a film or an episode.
+ *
+ * Kept by SoundStorm, per person, in the same record as a book's place - not
+ * in Jellyfin, because the house shares one Jellyfin account and a position
+ * there would be everybody's. The location is the time, "t=1234.5"; the
+ * fraction is what the Continue row draws. Saved every half minute while
+ * playing, on pause and on close - often enough to be where you left it,
+ * rarely enough not to rewrite the state file on every frame. */
+
+const WATCH_SAVE_EVERY = 30000;
+
+function watchParams(item) {
+  return new URLSearchParams({ source: item.sourceId, id: item.id });
+}
+
+// startWatching remembers what is playing and, once the player knows how long
+// it is, jumps to where this person stopped last time.
+async function startWatching(item) {
+  const watching = { item, lastSave: 0 };
+  state.watching = watching;
+  const { ok, body } = await api(`/api/book/progress?${watchParams(item)}`);
+  if (state.watching !== watching || !ok || !body || !body.found) return;
+  const match = /^t=([0-9.]+)$/.exec(body.location || '');
+  if (!match) return;
+  const seconds = Number(match[1]);
+  const player = $('video-player');
+  const jump = () => {
+    if (state.watching !== watching) return;
+    const length = player.duration || item.durationSeconds || 0;
+    // Not from the very start, and not into the credits: both are a fresh
+    // start rather than a place to carry on from.
+    if (seconds > 10 && (!length || seconds < length * 0.93)) {
+      player.currentTime = seconds;
+    }
+  };
+  if (player.readyState >= 1) jump();
+  else player.addEventListener('loadedmetadata', jump, { once: true });
+}
+
+async function saveWatchPosition(force) {
+  const watching = state.watching;
+  const player = $('video-player');
+  if (!watching || !player.src && !hls) return;
+  const now = Date.now();
+  if (!force && now - watching.lastSave < WATCH_SAVE_EVERY) return;
+  const seconds = player.currentTime;
+  // A progressive transcode reports no length until it has finished, so the
+  // backend's own runtime stands in for it.
+  const length = Number.isFinite(player.duration) && player.duration > 0
+    ? player.duration : (watching.item.durationSeconds || 0);
+  if (!(seconds > 5) || !(length > 0)) return;
+  watching.lastSave = now;
+  await api(`/api/book/progress?${watchParams(watching.item)}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      location: `t=${seconds.toFixed(1)}`,
+      fraction: Math.min(1, Math.max(0, seconds / length)),
+    }),
+  });
+  if (force) setTimeout(refreshContinue, 300);
+}
+
+$('video-player').addEventListener('timeupdate', () => saveWatchPosition(false));
+$('video-player').addEventListener('pause', () => saveWatchPosition(true));
 $('video-overlay').addEventListener('click', (event) => {
   if (event.target === $('video-overlay')) closeVideo();
 });
@@ -2272,7 +2341,7 @@ document.addEventListener('keydown', (event) => {
 /* --------------------------------------------------------------- continue */
 
 // The kinds the Continue row can hold; on any other shelf it stays hidden.
-const CONTINUE_KINDS = new Set(['audiobook', 'ebook', 'document']);
+const CONTINUE_KINDS = new Set(['video', 'tv', 'audiobook', 'ebook', 'document']);
 
 // refreshContinue shows what this person is part way through, when they are
 // looking at a shelf rather than searching: on Everything, or on the one shelf

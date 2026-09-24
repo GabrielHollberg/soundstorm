@@ -332,9 +332,28 @@ adapter leaves out finished books, ones hidden from continue listening in
 Audiobookshelf's own UI, missing ones, and podcast episodes.
 
 A position under half a percent or over 98.5% is "not started" or
-"finished", not something to carry on with. **Films and TV are not in it:**
-SoundStorm does not report playback back to Jellyfin, so there is no position
-to show. Doing that is the next step if they are wanted.
+"finished", not something to carry on with; for a film or an episode the top
+is 93%, because the credits are the end.
+
+**Film and TV positions are SoundStorm's, not Jellyfin's, and that is the
+"revisit when watched-state reaches the UI" moment in "Accounts".** The house
+shares one Jellyfin account, so a position kept there would be everybody's:
+one person's half-watched film in another's row. Per-member Jellyfin accounts
+would fix that at the cost of a second provisioning path, and buy nothing,
+since nobody ever sees Jellyfin's own resume. So a video's place is kept like
+a book's, in `state.Progress`: the location is the time (`t=1234.5`), so the
+state format did not change. The player saves every 30s while playing, on
+pause and on close, and on open jumps back (not from the first ten seconds,
+and not into the credits). `progressTarget` accepts a Jellyfin id through
+`HasItem`, the cached ownership check every Jellyfin target already makes, so
+a made-up id still cannot grow the state file. `ItemByID` turns the id back
+into a card.
+
+Verified against a real Jellyfin in a throwaway stack that SoundStorm
+provisioned itself, with a generated two-minute film. Played, stopped at one
+minute and closed, the film was in Continue at 51%, and reopening it resumed
+at 61s. The same stack confirmed Jellyfin's side of deleting, which had been
+untested: the preview named exactly the film's file, byte for byte.
 
 ## Deleting, into a bin
 
@@ -361,8 +380,8 @@ differently, checked against the live servers rather than their docs:
   the adapter trims its `MediaRoot` with `source.RelativeTo`. That refuses
   anything outside the root, so an asset uploaded to Immich's own storage can
   never be named.
-- **Jellyfin** is the same shape as Immich. It is untested live, for want of
-  films on the development machine.
+- **Jellyfin** is the same shape as Immich, checked later against a real
+  Jellyfin (see "The Continue row").
 
 `library.Resolve` decides what goes with an item. A folder goes whole. A file
 takes its same-named companions: `Dune.mkv` takes `Dune.en.srt` but not

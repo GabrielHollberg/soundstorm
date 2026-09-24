@@ -206,35 +206,40 @@ func (s *Source) fetchPage(ctx context.Context, params url.Values) ([]media.Item
 
 	items := make([]media.Item, 0, len(resp.Items))
 	for _, it := range resp.Items {
-		item := media.Item{
-			ID:       it.ID,
-			SourceID: s.id,
-			Kind:     s.kind,
-			Title:    it.Name,
-			Subtitle: it.SeriesName,
-			Year:     it.ProductionYear,
-			Extra:    map[string]string{"type": it.Type},
-		}
-		if it.RunTimeTicks > 0 {
-			item.DurationSeconds = float64(it.RunTimeTicks) / ticksPerSecond
-		}
-		if it.Overview != "" {
-			item.Extra["overview"] = truncate(it.Overview, 400)
-		}
-		if it.CommunityRating > 0 {
-			item.Extra["rating"] = strconv.FormatFloat(it.CommunityRating, 'f', 1, 64)
-		}
-		if tag, ok := it.ImageTags["Primary"]; ok && tag != "" {
-			item.ArtID = it.ID
-		}
-		// "S01E04" is how people refer to an episode, and without it an episode
-		// row is just a filename. Jellyfin only fills these in for episodes.
-		if it.ParentIndexNumber != nil && it.IndexNumber != nil {
-			item.Extra["episode"] = fmt.Sprintf("S%02dE%02d", *it.ParentIndexNumber, *it.IndexNumber)
-		}
-		items = append(items, item)
+		items = append(items, s.toItem(it))
 	}
 	return items, nil
+}
+
+// toItem is one Jellyfin item as SoundStorm shows it.
+func (s *Source) toItem(it jfItem) media.Item {
+	item := media.Item{
+		ID:       it.ID,
+		SourceID: s.id,
+		Kind:     s.kind,
+		Title:    it.Name,
+		Subtitle: it.SeriesName,
+		Year:     it.ProductionYear,
+		Extra:    map[string]string{"type": it.Type},
+	}
+	if it.RunTimeTicks > 0 {
+		item.DurationSeconds = float64(it.RunTimeTicks) / ticksPerSecond
+	}
+	if it.Overview != "" {
+		item.Extra["overview"] = truncate(it.Overview, 400)
+	}
+	if it.CommunityRating > 0 {
+		item.Extra["rating"] = strconv.FormatFloat(it.CommunityRating, 'f', 1, 64)
+	}
+	if tag, ok := it.ImageTags["Primary"]; ok && tag != "" {
+		item.ArtID = it.ID
+	}
+	// "S01E04" is how people refer to an episode, and without it an episode
+	// row is just a filename. Jellyfin only fills these in for episodes.
+	if it.ParentIndexNumber != nil && it.IndexNumber != nil {
+		item.Extra["episode"] = fmt.Sprintf("S%02dE%02d", *it.ParentIndexNumber, *it.IndexNumber)
+	}
+	return item
 }
 
 // StreamTarget hands over the original file.
@@ -797,4 +802,29 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 		return nil, fmt.Errorf("jellyfin %q: %w", s.id, err)
 	}
 	return []string{rel}, nil
+}
+
+// HasItem reports whether an id is one of this source's items - a film for the
+// film source, an episode or series for the television one. It is what lets a
+// watch position be kept for it: without the check the id is a free string,
+// and every made-up one would be a new entry in the state file. Cached, like
+// every other ownership check here.
+func (s *Source) HasItem(ctx context.Context, itemID string) bool {
+	return itemID != "" && s.owns(ctx, itemID) == nil
+}
+
+// ItemByID describes one item as a search would, for the Continue row, which
+// knows a watched film only by the id its position was saved under.
+func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
+	if !s.HasItem(ctx, itemID) {
+		return media.Item{}, false
+	}
+	params := s.searchParams(media.Query{})
+	params.Del("SortBy")
+	params.Set("Ids", itemID)
+	items, err := s.fetchPage(ctx, params)
+	if err != nil || len(items) == 0 {
+		return media.Item{}, false
+	}
+	return items[0], true
 }

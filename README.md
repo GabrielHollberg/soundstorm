@@ -242,12 +242,12 @@ authors, with no SQLite driver and no Calibre-Web container.
 
 ### Carrying on where you left off
 
-The home screen opens with a **Continue** row: the books and audiobooks you
-are part way through, newest first, each with a bar showing how far in you
-are. Tap one to carry on. It is yours alone; everybody in the house has their
-own. An audiobook you started in Audiobookshelf's phone app is there too,
-because it is the same record of where you are. Films and TV are not in it
-yet.
+The home screen opens with a **Continue** row: the films, episodes, books and
+audiobooks you are part way through, newest first, each with a bar showing how
+far in you are. Tap one to carry on from where you stopped. It is yours alone;
+everybody in the house has their own. An audiobook you started in
+Audiobookshelf's phone app is there too, because it is the same record of
+where you are. A film counts as finished once you reach the credits.
 
 ### Deleting things
 
