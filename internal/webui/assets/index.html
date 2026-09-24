@@ -111,6 +111,21 @@
               aria-expanded="false" aria-controls="devices">Use on your phone or TV</button>
     </div>
 
+    <!-- Under the Music chip: songs, albums or artists. -->
+    <div id="music-tabs" class="music-tabs hidden" role="tablist" aria-label="Browse music by">
+      <button type="button" role="tab" data-view="songs">Songs</button>
+      <button type="button" role="tab" data-view="albums">Albums</button>
+      <button type="button" role="tab" data-view="artists">Artists</button>
+      <select id="album-order" class="album-order hidden" aria-label="Order albums by">
+        <option value="name">A to Z</option>
+        <option value="newest">Recently added</option>
+        <option value="artist">By artist</option>
+        <option value="recent">Recently played</option>
+        <option value="frequent">Most played</option>
+        <option value="random">Random</option>
+      </select>
+    </div>
+
     <!-- Only when the library's disk is getting full: said before an upload
          fails on it, not after. -->
     <p id="space-warning" class="space-warning hidden" role="status"></p>
@@ -279,6 +294,9 @@
     </div>
 
     <section id="results" class="grid"></section>
+
+    <!-- Albums and artists, and one of either, in place of the song grid. -->
+    <section id="music-view" class="music-view hidden"></section>
 
     <!-- Playlists: the list of them, or one of them, in place of the grid. -->
     <section id="playlists-view" class="playlists-view hidden"></section>

@@ -526,3 +526,47 @@ type InProgressLister interface {
 type ItemGetter interface {
 	ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 }
+
+// Album is one album, as a music shelf lists it.
+type Album struct {
+	ID              string  `json:"id"`
+	SourceID        string  `json:"sourceId"`
+	Title           string  `json:"title"`
+	Artist          string  `json:"artist"`
+	ArtistID        string  `json:"artistId,omitempty"`
+	Year            int     `json:"year,omitempty"`
+	SongCount       int     `json:"songCount"`
+	DurationSeconds float64 `json:"durationSeconds,omitempty"`
+	ArtID           string  `json:"artId,omitempty"`
+}
+
+// Artist is one artist, as a music shelf lists them.
+type Artist struct {
+	ID         string `json:"id"`
+	SourceID   string `json:"sourceId"`
+	Name       string `json:"name"`
+	AlbumCount int    `json:"albumCount"`
+	ArtID      string `json:"artId,omitempty"`
+}
+
+// Album orders, for MusicBrowser.Albums.
+const (
+	AlbumsByName   = "name"
+	AlbumsNewest   = "newest"
+	AlbumsByArtist = "artist"
+	AlbumsRecent   = "recent"
+	AlbumsFrequent = "frequent"
+	AlbumsRandom   = "random"
+)
+
+// MusicBrowser is an optional interface for a music source that knows albums
+// and artists, not just songs - which is how anybody actually browses a music
+// library. A search box over four thousand song titles is not a music app.
+type MusicBrowser interface {
+	Albums(ctx context.Context, order string, offset, limit int) ([]Album, error)
+	Album(ctx context.Context, id string) (Album, []media.Item, error)
+	Artists(ctx context.Context) ([]Artist, error)
+	Artist(ctx context.Context, id string) (Artist, []Album, error)
+	// SearchMusic finds albums and artists by name.
+	SearchMusic(ctx context.Context, text string) ([]Album, []Artist, error)
+}

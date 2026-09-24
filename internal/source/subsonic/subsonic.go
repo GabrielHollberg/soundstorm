@@ -94,9 +94,21 @@ type envelope struct {
 			Message string `json:"message"`
 		} `json:"error"`
 		SearchResult3 struct {
-			Song []song `json:"song"`
+			Song   []song        `json:"song"`
+			Album  []albumEntry  `json:"album"`
+			Artist []artistEntry `json:"artist"`
 		} `json:"searchResult3"`
-		Song *song `json:"song"`
+		Song       *song `json:"song"`
+		AlbumList2 struct {
+			Album []albumEntry `json:"album"`
+		} `json:"albumList2"`
+		Album   *albumEntry `json:"album"`
+		Artists struct {
+			Index []struct {
+				Artist []artistEntry `json:"artist"`
+			} `json:"index"`
+		} `json:"artists"`
+		Artist *artistEntry `json:"artist"`
 	} `json:"subsonic-response"`
 }
 
@@ -323,4 +335,156 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 		return media.Item{}, false
 	}
 	return s.songItem(*env.Response.Song), true
+}
+
+// albumEntry is an album as Subsonic describes it - in getAlbumList2,
+// getAlbum (with its songs) and getArtist (inside an artist).
+type albumEntry struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	ArtistID  string `json:"artistId"`
+	Year      int    `json:"year"`
+	SongCount int    `json:"songCount"`
+	Duration  int    `json:"duration"`
+	CoverArt  string `json:"coverArt"`
+	Song      []song `json:"song"`
+}
+
+type artistEntry struct {
+	ID         string       `json:"id"`
+	Name       string       `json:"name"`
+	AlbumCount int          `json:"albumCount"`
+	CoverArt   string       `json:"coverArt"`
+	Album      []albumEntry `json:"album"`
+}
+
+func (s *Source) album(a albumEntry) source.Album {
+	return source.Album{
+		ID: a.ID, SourceID: s.id, Title: a.Name, Artist: a.Artist, ArtistID: a.ArtistID,
+		Year: a.Year, SongCount: a.SongCount, DurationSeconds: float64(a.Duration), ArtID: a.CoverArt,
+	}
+}
+
+func (s *Source) artist(a artistEntry) source.Artist {
+	return source.Artist{ID: a.ID, SourceID: s.id, Name: a.Name, AlbumCount: a.AlbumCount, ArtID: a.CoverArt}
+}
+
+// call makes one authenticated Subsonic request and checks its envelope.
+func (s *Source) call(ctx context.Context, path string, set func(url.Values)) (envelope, error) {
+	params, err := s.auth()
+	if err != nil {
+		return envelope{}, err
+	}
+	if set != nil {
+		set(params)
+	}
+	var env envelope
+	if err := s.http.JSON(ctx, path, params, &env); err != nil {
+		return envelope{}, fmt.Errorf("subsonic %q: %s: %w", s.id, path, err)
+	}
+	return env, env.check()
+}
+
+var albumListTypes = map[string]string{
+	source.AlbumsByName:   "alphabeticalByName",
+	source.AlbumsNewest:   "newest",
+	source.AlbumsByArtist: "alphabeticalByArtist",
+	source.AlbumsRecent:   "recent",
+	source.AlbumsFrequent: "frequent",
+	source.AlbumsRandom:   "random",
+}
+
+// Albums lists albums in one of Subsonic's orders. Paged by the caller; each
+// call asks for at most 500, which is the protocol's own ceiling.
+func (s *Source) Albums(ctx context.Context, order string, offset, limit int) ([]source.Album, error) {
+	kind, ok := albumListTypes[order]
+	if !ok {
+		kind = albumListTypes[source.AlbumsByName]
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	env, err := s.call(ctx, "/rest/getAlbumList2.view", func(p url.Values) {
+		p.Set("type", kind)
+		p.Set("size", strconv.Itoa(limit))
+		p.Set("offset", strconv.Itoa(max(0, offset)))
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]source.Album, 0, len(env.Response.AlbumList2.Album))
+	for _, a := range env.Response.AlbumList2.Album {
+		out = append(out, s.album(a))
+	}
+	return out, nil
+}
+
+// Album is one album and its songs, in track order.
+func (s *Source) Album(ctx context.Context, id string) (source.Album, []media.Item, error) {
+	env, err := s.call(ctx, "/rest/getAlbum.view", func(p url.Values) { p.Set("id", id) })
+	if err != nil {
+		return source.Album{}, nil, err
+	}
+	if env.Response.Album == nil {
+		return source.Album{}, nil, fmt.Errorf("subsonic %q: no album %q", s.id, id)
+	}
+	songs := make([]media.Item, 0, len(env.Response.Album.Song))
+	for _, sg := range env.Response.Album.Song {
+		songs = append(songs, s.songItem(sg))
+	}
+	return s.album(*env.Response.Album), songs, nil
+}
+
+// Artists is every artist, as Subsonic's index lists them.
+func (s *Source) Artists(ctx context.Context) ([]source.Artist, error) {
+	env, err := s.call(ctx, "/rest/getArtists.view", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []source.Artist
+	for _, index := range env.Response.Artists.Index {
+		for _, a := range index.Artist {
+			out = append(out, s.artist(a))
+		}
+	}
+	return out, nil
+}
+
+// Artist is one artist and their albums.
+func (s *Source) Artist(ctx context.Context, id string) (source.Artist, []source.Album, error) {
+	env, err := s.call(ctx, "/rest/getArtist.view", func(p url.Values) { p.Set("id", id) })
+	if err != nil {
+		return source.Artist{}, nil, err
+	}
+	if env.Response.Artist == nil {
+		return source.Artist{}, nil, fmt.Errorf("subsonic %q: no artist %q", s.id, id)
+	}
+	albums := make([]source.Album, 0, len(env.Response.Artist.Album))
+	for _, a := range env.Response.Artist.Album {
+		albums = append(albums, s.album(a))
+	}
+	return s.artist(*env.Response.Artist), albums, nil
+}
+
+// SearchMusic finds albums and artists whose names match.
+func (s *Source) SearchMusic(ctx context.Context, text string) ([]source.Album, []source.Artist, error) {
+	env, err := s.call(ctx, "/rest/search3.view", func(p url.Values) {
+		p.Set("query", text)
+		p.Set("songCount", "0")
+		p.Set("albumCount", "100")
+		p.Set("artistCount", "50")
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	var albums []source.Album
+	for _, a := range env.Response.SearchResult3.Album {
+		albums = append(albums, s.album(a))
+	}
+	var artists []source.Artist
+	for _, a := range env.Response.SearchResult3.Artist {
+		artists = append(artists, s.artist(a))
+	}
+	return albums, artists, nil
 }

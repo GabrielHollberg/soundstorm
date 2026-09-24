@@ -795,8 +795,18 @@ async function runSearch() {
 
   // The two personal views are not a search of a shelf.
   const own = state.kind === 'favourites' || state.kind === 'playlists';
+  const musicBrowse = state.kind === 'music' && state.musicView !== 'songs';
+  show($('music-tabs'), state.kind === 'music');
+  show($('album-order'), state.kind === 'music' && state.musicView === 'albums');
+  show($('music-view'), musicBrowse);
   show($('playlists-view'), state.kind === 'playlists');
-  show($('results'), state.kind !== 'playlists');
+  show($('results'), state.kind !== 'playlists' && !musicBrowse);
+  if (musicBrowse) {
+    show($('select-toggle'), false);
+    state.hasMore = false;
+    await showMusicView(seq);
+    return;
+  }
   show($('select-toggle'), Boolean(state.me && state.me.owner) && !own);
   if (state.kind === 'favourites') {
     await showFavourites(seq);
@@ -3076,4 +3086,292 @@ if (hasMediaSession) {
   player.addEventListener('loadedmetadata', () => { syncPosition(); updateMediaSession(); });
   player.addEventListener('seeked', syncPosition);
   player.addEventListener('ratechange', syncPosition);
+}
+
+/* ---------------------------------------------------------- albums, artists */
+
+// Under the Music chip, three ways in: songs (the search grid), albums and
+// artists. Album and artist pages open in place and "back" returns to the grid
+// they came from.
+state.musicView = 'songs';
+state.albumOrder = 'name';
+
+for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
+  tab.addEventListener('click', () => {
+    state.musicView = tab.dataset.view;
+    runSearch();
+  });
+}
+$('album-order').addEventListener('change', (event) => {
+  state.albumOrder = event.target.value;
+  runSearch();
+});
+
+function markMusicTabs() {
+  for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
+    const on = tab.dataset.view === state.musicView;
+    tab.classList.toggle('active', on);
+    tab.setAttribute('aria-selected', String(on));
+  }
+}
+
+function artUrl(sourceId, artId) {
+  return artId ? `/api/art/${encodeURIComponent(sourceId)}/${escapeId(artId)}` : '';
+}
+
+function formatLength(seconds) {
+  if (!seconds) return '';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
+}
+
+async function showMusicView(seq) {
+  markMusicTabs();
+  const view = $('music-view');
+  $('status').textContent = 'Loading…';
+  const q = state.query ? `q=${encodeURIComponent(state.query)}` : '';
+  if (state.musicView === 'albums') {
+    const params = q || `order=${encodeURIComponent(state.albumOrder)}`;
+    const { ok, body } = await api(`/api/music/albums?${params}`);
+    if (seq !== state.searchSeq) return;
+    const albums = (ok && body && body.albums) || [];
+    view.replaceChildren(albumGrid(albums));
+    $('status').textContent = albums.length
+      ? `${albums.length} album${albums.length === 1 ? '' : 's'}`
+      : (state.query ? 'No albums match.' : 'No albums yet.');
+    return;
+  }
+  const { ok, body } = await api(`/api/music/artists?${q}`);
+  if (seq !== state.searchSeq) return;
+  const artists = (ok && body && body.artists) || [];
+  view.replaceChildren(artistGrid(artists));
+  $('status').textContent = artists.length
+    ? `${artists.length} artist${artists.length === 1 ? '' : 's'}`
+    : (state.query ? 'No artists match.' : 'No artists yet.');
+}
+
+function coverArt(src, label, round) {
+  const wrap = document.createElement('div');
+  wrap.className = `art-wrap${round ? ' round' : ''}`;
+  if (src) {
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.addEventListener('error', () => img.replaceWith(initials(label)));
+    wrap.append(img);
+  } else {
+    wrap.append(initials(label));
+  }
+  return wrap;
+}
+
+// initials stand in for a missing cover: the name's first letters on a colour
+// taken from the name, so the same album is always the same colour.
+function initials(label) {
+  const span = document.createElement('span');
+  span.className = 'initials';
+  span.textContent = (label || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  let hash = 0;
+  for (const ch of label || '') hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+  span.style.background = `hsl(${hash} 35% 28%)`;
+  return span;
+}
+
+function albumCard(album) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'item album-card';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const title = document.createElement('span');
+  title.className = 'title';
+  title.textContent = album.title;
+  title.title = album.title;
+  const sub = document.createElement('span');
+  sub.className = 'sub';
+  sub.textContent = [album.artist, album.year].filter(Boolean).join(' · ');
+  meta.append(title, sub);
+  card.append(coverArt(artUrl(album.sourceId, album.artId), album.title), meta);
+  card.addEventListener('click', () => showAlbum(album.sourceId, album.id));
+  return card;
+}
+
+function albumGrid(albums) {
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...albums.map(albumCard));
+  return grid;
+}
+
+function artistGrid(artists) {
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid artist-grid';
+  for (const artist of artists) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'item artist-card';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('span');
+    name.className = 'title';
+    name.textContent = artist.name;
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = `${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'}`;
+    meta.append(name, sub);
+    card.append(coverArt(artUrl(artist.sourceId, artist.artId), artist.name, true), meta);
+    card.addEventListener('click', () => showArtist(artist.sourceId, artist.id));
+    grid.append(card);
+  }
+  return grid;
+}
+
+function backButton(label, action) {
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'back';
+  back.textContent = `\u2190 ${label}`;
+  back.addEventListener('click', action);
+  return back;
+}
+
+function shuffled(items) {
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function playButtons(getSongs) {
+  const row = document.createElement('div');
+  row.className = 'play-row';
+  const play = document.createElement('button');
+  play.type = 'button';
+  play.className = 'play-main';
+  play.textContent = '\u25B6  Play';
+  play.addEventListener('click', async () => {
+    const songs = await getSongs();
+    if (songs.length) playQueue(songs, 0);
+  });
+  const shuffle = document.createElement('button');
+  shuffle.type = 'button';
+  shuffle.className = 'ghost';
+  shuffle.textContent = 'Shuffle';
+  shuffle.addEventListener('click', async () => {
+    const songs = await getSongs();
+    if (songs.length) playQueue(shuffled(songs), 0);
+  });
+  row.append(play, shuffle);
+  return row;
+}
+
+async function showAlbum(sourceId, id) {
+  const view = $('music-view');
+  const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
+  if (!ok || !body) return;
+  const { album, songs } = body;
+  $('status').textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'album-head';
+  const cover = coverArt(artUrl(album.sourceId, album.artId), album.title);
+  cover.classList.add('album-cover');
+  const text = document.createElement('div');
+  text.className = 'album-text';
+  const kind = document.createElement('span');
+  kind.className = 'album-kind';
+  kind.textContent = 'Album';
+  const title = document.createElement('h2');
+  title.textContent = album.title;
+  const artist = document.createElement('button');
+  artist.type = 'button';
+  artist.className = 'album-artist';
+  artist.textContent = album.artist;
+  artist.disabled = !album.artistId;
+  artist.addEventListener('click', () => showArtist(album.sourceId, album.artistId));
+  const facts = document.createElement('span');
+  facts.className = 'muted';
+  facts.textContent = [album.year, `${songs.length} song${songs.length === 1 ? '' : 's'}`,
+    formatLength(album.durationSeconds)].filter(Boolean).join(' · ');
+  text.append(kind, title, artist, facts, playButtons(async () => songs));
+  head.append(cover, text);
+
+  const list = document.createElement('ol');
+  list.className = 'track-rows';
+  songs.forEach((song, i) => list.append(trackRow(song, i, songs)));
+
+  view.replaceChildren(backButton(state.musicView === 'artists' ? 'Artists' : 'Albums', () => runSearch()), head, list);
+  window.scrollTo(0, 0);
+}
+
+function trackRow(song, index, songs) {
+  const li = document.createElement('li');
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'item track-row';
+  const number = document.createElement('span');
+  number.className = 'track-no';
+  number.textContent = String(index + 1);
+  const name = document.createElement('span');
+  name.className = 'track-title';
+  name.textContent = song.title;
+  const length = document.createElement('span');
+  length.className = 'track-length';
+  length.textContent = formatDuration(song.durationSeconds);
+  row.append(number, name, length);
+  row.dataset.key = selectionKey(song);
+  row.addEventListener('click', (event) => {
+    if (state.suppressClick) {
+      state.suppressClick = false;
+      event.stopPropagation();
+      return;
+    }
+    playQueue(songs, index);
+  });
+  // The same hold-down / right-click menu as a card: favourites, playlists.
+  attachItemMenuGestures(row, song);
+  li.append(row);
+  return li;
+}
+
+async function showArtist(sourceId, id) {
+  const view = $('music-view');
+  const { ok, body } = await api(`/api/music/artists/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
+  if (!ok || !body) return;
+  const { artist, albums } = body;
+  $('status').textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'album-head artist-head';
+  const photo = coverArt(artUrl(artist.sourceId || sourceId, artist.artId), artist.name, true);
+  photo.classList.add('album-cover');
+  const text = document.createElement('div');
+  text.className = 'album-text';
+  const kind = document.createElement('span');
+  kind.className = 'album-kind';
+  kind.textContent = 'Artist';
+  const name = document.createElement('h2');
+  name.textContent = artist.name;
+  const facts = document.createElement('span');
+  facts.className = 'muted';
+  facts.textContent = `${albums.length} album${albums.length === 1 ? '' : 's'}`;
+  // Every song by the artist: each album's songs, in album order.
+  const everySong = async () => {
+    const lists = await Promise.all(albums.map((a) =>
+      api(`/api/music/albums/${encodeURIComponent(a.sourceId || sourceId)}/${escapeId(a.id)}`)));
+    return lists.flatMap((r) => (r.ok && r.body && r.body.songs) || []);
+  };
+  text.append(kind, name, facts, playButtons(everySong));
+  head.append(photo, text);
+
+  const heading = document.createElement('h3');
+  heading.className = 'section-title';
+  heading.textContent = 'Albums';
+  view.replaceChildren(backButton(state.musicView === 'albums' ? 'Albums' : 'Artists', () => runSearch()),
+    head, heading, albumGrid(albums.map((a) => ({ ...a, sourceId: a.sourceId || sourceId }))));
+  window.scrollTo(0, 0);
 }

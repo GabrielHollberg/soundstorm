@@ -272,6 +272,11 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/book/resource", s.handleBookResource)
 	guarded.HandleFunc("GET /api/book/progress", s.handleGetProgress)
 	guarded.HandleFunc("GET /api/continue", s.handleContinue)
+	// Albums and artists. See music.go.
+	guarded.HandleFunc("GET /api/music/albums", s.handleAlbums)
+	guarded.HandleFunc("GET /api/music/albums/{source}/{id}", s.handleAlbum)
+	guarded.HandleFunc("GET /api/music/artists", s.handleArtists)
+	guarded.HandleFunc("GET /api/music/artists/{source}/{id}", s.handleArtist)
 	// Favourites and playlists, per person. See favourites.go.
 	guarded.HandleFunc("GET /api/favourites", s.handleFavourites)
 	guarded.HandleFunc("PUT /api/favourites", s.handleAddFavourite)
