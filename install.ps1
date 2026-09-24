@@ -1280,6 +1280,123 @@ function Get-LibraryPath {
     return (Join-Path $Dir 'library')
 }
 
+# Format-Size is a byte count the way Explorer shows one.
+function Format-Size([double]$Bytes) {
+    if ($Bytes -ge 1TB) { return ('{0:N1} TB' -f ($Bytes / 1TB)) }
+    return ('{0:N0} GB' -f ($Bytes / 1GB))
+}
+
+# Select-LibraryLocation asks, on a first install, where the media should go,
+# and returns the folder chosen - or $null to keep the default beside the
+# install.
+#
+# -Library could always do this, but nothing ever asked, so only somebody who
+# had read the README knew it was possible - and the library is the one part of
+# this that outgrows a laptop's disk, where moving it later means moving every
+# file. So the question comes before anything is put there, with the free space
+# on each drive beside it, since that is what the answer turns on.
+#
+# A folder picker rather than a typed path: typing C:\Users\... is not
+# something the person this is for should have to do. Typing still works, as
+# the fallback when no dialog can be shown.
+function Select-LibraryLocation([string]$Default) {
+    $drives = @()
+    try {
+        # Fixed and removable drives with a letter. Network drives are left
+        # out on purpose: Docker Desktop cannot see a mapped drive letter, so
+        # offering one would be offering a library the media servers cannot
+        # read.
+        $drives = @(Get-CimInstance Win32_LogicalDisk -ErrorAction Stop |
+            Where-Object { ($_.DriveType -eq 2 -or $_.DriveType -eq 3) -and $_.Size -gt 0 })
+    } catch {
+    }
+
+    $lines = @(
+        'Your music, films and books will be kept in:',
+        "*  $Default",
+        ''
+    )
+    if ($drives.Count -gt 1) {
+        $lines += 'Free space on this PC:'
+        foreach ($drive in $drives) {
+            $label = if ($drive.VolumeName) { " ($($drive.VolumeName))" } else { '' }
+            $lines += "   $($drive.DeviceID)$label  $(Format-Size $drive.FreeSpace) free of $(Format-Size $drive.Size)"
+        }
+        $lines += ''
+    }
+    $lines += @(
+        'A film collection can need hundreds of GB. To keep it on another',
+        'drive - an external one, say - choose a folder there now. Moving it',
+        'later means moving every file.'
+    )
+    Callout 'Where should your library go?' $lines 'Cyan'
+
+    $answer = ''
+    try {
+        $answer = Read-Host '    Press Enter to keep it there, or type C to choose another folder'
+    } catch {
+        return $null
+    }
+    if ($answer -notmatch '^\s*c') { return $null }
+
+    $picked = $null
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = 'Choose where SoundStorm keeps your music, films and books. A new folder called SoundStorm is made inside the one you pick.'
+        $dialog.ShowNewFolderButton = $true
+        # Owned by a topmost form, or the dialog opens behind this window and
+        # the setup looks as if it has stopped.
+        $owner = New-Object System.Windows.Forms.Form
+        $owner.TopMost = $true
+        try {
+            if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+                $picked = $dialog.SelectedPath
+            } else {
+                Note "No folder chosen - keeping the library in $Default."
+                return $null
+            }
+        } finally {
+            $owner.Dispose()
+            $dialog.Dispose()
+        }
+    } catch {
+        try {
+            $picked = Read-Host '    Type the folder to use, for example E:\Media'
+        } catch {
+            return $null
+        }
+    }
+    if (-not $picked -or -not $picked.Trim()) { return $null }
+    $picked = $picked.Trim().Trim('"')
+
+    # A network location looks like any other folder in the picker, and the
+    # media servers cannot read one: Docker Desktop does not see mapped drives
+    # or \\server\share paths. Better said now than as an empty library later.
+    $isNetwork = $picked.StartsWith('\\')
+    if (-not $isNetwork -and $picked -match '^([A-Za-z]:)') {
+        try {
+            $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($Matches[1].ToUpper())'" -ErrorAction Stop
+            $isNetwork = ($disk.DriveType -eq 4)
+        } catch {
+        }
+    }
+    if ($isNetwork) {
+        Important "That is a network location, which the media servers cannot read."
+        Note "Keeping the library in $Default. Choose a drive plugged into this PC instead."
+        return $null
+    }
+
+    # Its own folder inside whatever was picked. Somebody who picks E:\ does
+    # not mean "scatter seven shelves across the root of my drive", and
+    # somebody who picks an existing Media folder does not mean "mix these in
+    # with what is there".
+    if ([IO.Path]::GetFileName($picked.TrimEnd('\')) -ne 'SoundStorm') {
+        $picked = Join-Path $picked 'SoundStorm'
+    }
+    return $picked
+}
+
 # Get-InstalledURL is where an install answers, read from its own .env rather
 # than assumed. Falls back to the first port and plain http, which is what a
 # .env too old to carry either of them meant.
@@ -1922,6 +2039,14 @@ Protect-SecretFile (Join-Path $Dir '.env')
 # Existing media is never moved for anybody: tens of gigabytes shifted by a
 # script is exactly the operation that should not fail halfway. Somebody moving
 # the library is told where the old files are, and how.
+#
+# On a first install with no -Library, the person is asked. Never on an update:
+# the library already has media in it by then, and a question whose honest
+# answer is "move every file yourself" is not one to ask on every update.
+if (-not $Library -and $firstInstall -and -not (Get-EnvSetting 'SOUNDSTORM_LIBRARY_PATH')) {
+    $choice = Select-LibraryLocation (Get-LibraryPath)
+    if ($choice) { $Library = $choice }
+}
 if ($Library) {
     try {
         $full = [IO.Path]::GetFullPath($Library)

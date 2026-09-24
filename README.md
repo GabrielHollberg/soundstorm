@@ -27,6 +27,11 @@ when it is finished. Along the way:
   need a Docker account: click **Accept** on the agreement, then **Skip** on the
   sign-in and on the questions about you. Close that window afterwards if you
   like; Docker keeps running, and the setup carries on by itself.
+- **It asks where to keep your library**, showing the free space on each
+  drive. Press Enter to keep it in your SoundStorm folder, or type **C** to
+  pick a folder, for example on an external drive. Decide now: moving it later
+  means moving every file. Network drives are not offered, because Docker
+  cannot read them.
 - **A "Windows Security Alert" may appear** for Docker Desktop Backend. Click
   **Allow access**. If the setup then asks **"Is this your home network?"**,
   answer **Y** at home: Windows treats new Wi-Fi networks as public, which
