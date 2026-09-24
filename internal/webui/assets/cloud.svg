@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="176.5 177.0 148.0 72.0">
+  <!-- The SoundStorm cloud, cropped tight. Drawn by scripts/make-icons.py. -->
+  <clipPath id="flat"><rect x="0" y="0" width="1000" height="249.0"/></clipPath>
+  <g clip-path="url(#flat)">
+    <circle cx="234.0" cy="220.5" r="43.5"/>
+    <circle cx="283.0" cy="212.7" r="23.7"/>
+    <rect x="176.5" y="207.0" width="148.0" height="42.0" rx="21.0"/>
+  </g>
+</svg>

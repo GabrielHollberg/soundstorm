@@ -2294,6 +2294,16 @@ carries the display form, which is the one place the distinction is checked.
 
 It was called atrium until the rename. Nothing in the repo should say so.
 
+**The logo is a cloud, and it is drawn, not pasted.** It arrived as a
+500x500 PNG with the cloud 150 pixels wide - too small to enlarge into a
+512px icon. The cloud is three shapes (two circles and a rounded bar, cut
+flat along the bottom), measured off that image, and `scripts/make-icons.py`
+draws every icon from them: the favicon (black, white in a dark browser),
+`cloud.svg` for the wordmark, and the PNG app icons, black on white as in
+the logo. Change the icons by changing the script, not by editing the PNGs.
+The wordmark is the cloud as a CSS mask in the text's colour, then the name
+in heavy italic, matching the logo.
+
 ## How it gets installed
 
 The install is `docker-compose.yml` plus an installer script, and the split

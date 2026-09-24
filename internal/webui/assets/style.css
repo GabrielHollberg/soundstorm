@@ -55,10 +55,26 @@ a:hover { color: var(--text); }
 /* Wordmark ---------------------------------------------------------------- */
 
 .wordmark {
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  /* The logo: the cloud, then the name in heavy italic. The cloud is a mask
+     painted in the text's colour, so it is white on the dark app wherever
+     it appears. */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: -0.01em;
   margin: 0 0 4px;
   font-size: 28px;
+}
+.wordmark::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 1.45em;
+  height: 0.7em;
+  background: currentColor;
+  -webkit-mask: url(/static/cloud.svg) center / contain no-repeat;
+  mask: url(/static/cloud.svg) center / contain no-repeat;
 }
 .wordmark.small { font-size: 18px; white-space: nowrap; }
 
