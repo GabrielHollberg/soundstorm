@@ -337,8 +337,9 @@ song, a film, a book or a photo. The **♥ Favourites** chip shows them all.
 
 For songs, the same menu offers **Add to playlist**. Pick a playlist or type
 a name to start a new one. The **Playlists** chip lists them. Open one to play
-it all, play from any song, move songs up and down, remove them, rename the
-playlist or delete it. A playlist plays one song after another, with back and
+or shuffle it, play from any song, **drag songs by their handle** to reorder
+them, remove one (with **Undo**), tap the name to rename it, or delete the
+playlist. A playlist plays one song after another, with back and
 forward buttons in the player.
 
 Favourites and playlists are yours; everybody in the house has their own.

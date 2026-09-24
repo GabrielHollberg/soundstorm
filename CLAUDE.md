@@ -455,6 +455,38 @@ Checked in Chrome against a real Navidrome with a generated library: two
 artists, three albums with covers and ReplayGain tags of 0, -5 and +8 dB.
 Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
 
+## Music, phase 3: data saver, sleep timer, playlists, crossfade
+
+- **Streaming quality is per device** (localStorage, Account > Playback on
+  this device), because a phone on mobile data and the computer on the
+  Wi-Fi want different things. `?kbps=` on `/api/stream` - only 96, 128,
+  192, 256 or 320 are honoured - becomes Navidrome's `maxBitRate` with
+  `format=mp3` (its default, Opus, is patchy on iPhones) and
+  `estimateContentLength=true`, which gives the converted stream a length and
+  Range support: checked, a request from byte 100,000 answered 206. Downloads
+  use `streamPath`, never `playPath`, so they keep the original.
+- **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
+  handler instead of advancing - a chapter, for an audiobook.
+- **A fade is not the listener moving the volume.** The levelling code reads
+  every volumechange as the listener's choice, so the sleep timer's fade left
+  their volume at zero afterwards. `audio.fading` now guards it; crossfade
+  uses the same flag.
+- **Crossfade uses a second, hidden audio element for the fade-in only.**
+  Everything else - lyrics, lock screen, queue, levelling - listens to the one
+  `audio-player`, so when the song ends the main element takes the next song
+  over from where the hidden one reached (`takeCrossfade`, usually a blob in
+  memory) and the hidden one stops. Not within an album playing in order, on
+  repeat-one, before a sleep-timer stop, or where volume cannot be set (the
+  probe sets 0.5 and reads it back; an iPhone reads 1). Measured on a real
+  Navidrome: the handover landed at 5.3s, at the song's own level.
+- **Playlists open like albums**: rows with a drag handle (pointer events, so
+  finger and mouse alike; arrow keys on the handle), remove with Undo (the
+  add endpoint answers the new count, so the song goes back at count - 1 and
+  is moved into place), rename in place, delete on a second tap.
+- **Casting is not built yet**: a Chromecast fetches the media itself,
+  without the session cookie, so it needs short-lived per-song URLs kept out
+  of the access log - and nothing here has a cast device to prove it on.
+
 ## Artists and albums are the folders
 
 Asked for by the owner: Navidrome groups by tags, and on a real 4,408-song
