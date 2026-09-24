@@ -23,8 +23,11 @@ BIG = (234.0, 220.5, 43.5)      # centre x, centre y, radius
 SMALL = (283.0, 212.7, 23.7)
 BAR = (176.5, 207.0, 324.5, 249.0, 21.0)  # left, top, right, bottom, corner radius
 BOX = (176.5, 177.0, 324.5, 249.0)
-INK = (0, 0, 0, 255)
-PAPER = (255, 255, 255, 255)
+# App icons: a white cloud on the app's own dark background, so the home
+# screen icon looks like the app it opens. (The favicon keeps the logo's black,
+# turning white in a dark browser.)
+INK = (255, 255, 255, 255)
+PAPER = (14, 17, 22, 255)  # #0e1116, the app's background
 
 
 def cloud_svg():
@@ -63,7 +66,7 @@ def cloud_mark_svg():
 
 
 def icon(size, cloud_width):
-    """A square icon, white, with the cloud centred and cloud_width of it wide."""
+    """A square dark icon with the white cloud centred, cloud_width of it wide."""
     scale = 4  # drawn large and scaled down, for smooth edges
     s = size * scale
     img = Image.new("RGBA", (s, s), PAPER)
@@ -96,7 +99,7 @@ def main():
     icon(512, 0.68).save(icons / "icon-512.png", optimize=True)
     icon(512, 0.64).save(icons / "icon-maskable-512.png", optimize=True)
     # iPhone rounds the corners itself and fills transparency with black, so
-    # this one is opaque white like the rest.
+    # this one is opaque like the rest.
     icon(180, 0.66).save(icons / "apple-touch-icon.png", optimize=True)
     print("wrote favicon.svg, cloud.svg and 4 icons")
 

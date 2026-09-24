@@ -1659,14 +1659,18 @@ body.np-open { overflow: hidden; }
 .np-lyric.gap.current i:nth-child(2) { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - 1, 1)); }
 .np-lyric.gap.current i:nth-child(3) { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - 2, 1)); }
 @keyframes np-breathe { 50% { transform: scale(1.18); } }
-/* The blurred cover behind drifts slowly while the words go by. */
-.now-playing.panel-on .np-backdrop { animation: np-drift 38s ease-in-out infinite alternate; }
+/* The blurred cover behind drifts slowly, in every view. It used to drift
+   only beside the full lyrics, so switching to the big cover stopped it and
+   the background snapped back to where it started - behind everything, so
+   the whole screen seemed to glitch. It is also held still for the moment of
+   the cover-to-lyrics transition (np-backdrop below). */
+.now-playing .np-backdrop { animation: np-drift 38s ease-in-out infinite alternate; }
 @keyframes np-drift {
   from { transform: scale(1.1) rotate(0deg); }
   to { transform: scale(1.35) rotate(8deg) translate(3%, -2%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .now-playing.panel-on .np-backdrop, .np-lyric.gap.current { animation: none; }
+  .now-playing .np-backdrop, .np-lyric.gap.current { animation: none; }
 }
 .np-lyrics.unsynced .np-lyric { color: rgba(255, 255, 255, 0.85); font-size: 19px; font-weight: 600; }
 @media (max-width: 760px) {
@@ -2027,3 +2031,9 @@ body.np-open { overflow: hidden; }
   -webkit-tap-highlight-color: transparent;
 }
 .icon-only .icon { width: 20px; height: 20px; }
+/* The background is not part of the change: captured on its own and shown
+   still, rather than cross-faded against itself where it would double up. */
+.now-playing .np-backdrop { view-transition-name: np-backdrop; }
+::view-transition-old(np-backdrop) { animation: none; opacity: 0; }
+::view-transition-new(np-backdrop) { animation: none; }
+::view-transition-group(np-backdrop) { animation: none; }
