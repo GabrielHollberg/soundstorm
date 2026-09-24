@@ -1944,6 +1944,20 @@ the address as a raw URL in a code font. Now:
 - **Check for new files** lives on the account page. Uploads trigger a scan
   and the backends watch their folders, so it is rarely wanted.
 
+**Then the line went altogether.** The main screen is now the header (search
+and one Account button), the filters and the library. Everything the line
+carried moved to the account page, at the owner's request, for a cleaner
+first screen:
+- **Add media** (was Choose files), first on the page, beside Check for new
+  files. Dropping still works anywhere on the window.
+- **Use on your phone or TV** is a card there, shown whenever the server has
+  an address to give, not a button that opens a panel.
+- **Sign out** sits beside the page's title, so the header has one button.
+
+What is left under the filters is only "Indexing new files...", while it is
+true. The empty library message now carries the way in for a phone, which
+cannot drag: "Open Account and choose Add media".
+
 The setup box names **shelves, never servers** ("Films and TV: Getting ready",
 not "jellyfin: waiting for jellyfin (attempt 6)"). It was the one place a
 person setting SoundStorm up learned what runs behind it, along with "No API

@@ -83,7 +83,6 @@
       </form>
       <button id="account-toggle" class="ghost" type="button" aria-expanded="false"
               aria-controls="account">Account</button>
-      <button id="logout" class="ghost" type="button">Sign out</button>
     </header>
 
     <nav id="filters" aria-label="Filter by kind">
@@ -100,28 +99,13 @@
       <button class="chip chip-own" data-kind="playlists">Playlists</button>
     </nav>
 
-    <!-- One line, not a box.
-
-         Dropping works anywhere on the window, so the only thing that needs
-         saying is that it does. What shares the line with it is what has
-         nowhere else to live: a file picker, because a phone cannot drag
-         anything, and the way to open SoundStorm on another device, which is
-         the question people ask most.
-
-         Two real buttons rather than underlined words and a raw address in a
-         code font: the line used to mix four styles in one sentence. The
-         rescan moved to the account page - uploads trigger a scan anyway, and
-         the backends watch their folders, so it is rarely wanted. -->
+    <!-- Nothing lives under the filters any more but this: shown only while a
+         backend is still working through what arrived, so "nothing has been
+         added" and "a scan is still running" do not look alike. Adding media,
+         the address for another device and signing out are on the account
+         page; dropping files works anywhere on the window regardless. -->
     <div id="hints" class="hints">
-      <span id="hint-add">Drag files anywhere on this window to add them, or</span>
-      <button id="choose-files" class="ghost small" type="button">Choose files</button>
-      <input id="file-picker" type="file" multiple hidden>
-      <!-- Only while a backend is still working through what arrived, so the
-           one signal worth keeping from the old counts does not become
-           permanent furniture. -->
-      <span id="library-indexing" class="hidden">indexing&hellip;</span>
-      <button id="devices-toggle" class="ghost small hidden" type="button"
-              aria-expanded="false" aria-controls="devices">Use on your phone or TV</button>
+      <span id="library-indexing" class="hidden">Indexing new files&hellip;</span>
     </div>
 
     <!-- Under the Music chip: songs, albums or artists. -->
@@ -145,28 +129,6 @@
          fails on it, not after. -->
     <p id="space-warning" class="space-warning hidden" role="status"></p>
 
-    <!-- The address for another device, opened from the line above. Its own
-         small panel rather than a URL in the middle of a sentence: it is read
-         off one screen and typed into another, so it gets room, a large
-         readable font and a Copy button. The away-from-home address joins it
-         when remote access is on and working. -->
-    <section id="devices" class="card devices hidden" aria-labelledby="devices-title">
-      <h2 id="devices-title">Use SoundStorm on your phone or TV</h2>
-      <p class="muted">Open this in the browser on a phone, tablet, TV or another
-        computer on the same Wi-Fi, and sign in with the same account.</p>
-      <div class="address-row">
-        <a id="library-share-url" class="address" href="#"></a>
-        <button class="ghost small copy" type="button" data-copy="library-share-url">Copy</button>
-      </div>
-      <div id="devices-away" class="hidden">
-        <p class="muted">Away from home:</p>
-        <div class="address-row">
-          <a id="devices-away-url" class="address" href="#"></a>
-          <button class="ghost small copy" type="button" data-copy="devices-away-url">Copy</button>
-        </div>
-      </div>
-    </section>
-
     <!-- Provisioning progress. Visible until every shelf is ready, because
          until then an empty search result is expected rather than broken.
          Told as shelves, never as the servers behind them: somebody setting
@@ -187,8 +149,47 @@
          control is presentation, not a permission. -->
     <section id="account" class="account hidden">
       <button id="account-back" class="back" type="button">&larr; Back to your library</button>
-      <h1>Account</h1>
+      <div class="account-head">
+        <h1>Account</h1>
+        <button id="logout" class="ghost" type="button">Sign out</button>
+      </div>
       <p id="account-who" class="muted"></p>
+
+      <div class="account-section card">
+        <h2>Add media</h2>
+        <p class="muted">Music, films, TV, audiobooks, ebooks, documents or
+          photos. SoundStorm puts each one on the right shelf. You can also drag
+          files or whole folders anywhere onto the SoundStorm window.</p>
+        <div class="account-actions">
+          <button id="choose-files" type="button">Add media</button>
+          <input id="file-picker" type="file" multiple hidden>
+          <button id="rescan" class="ghost" type="button">Check for new files</button>
+        </div>
+        <p class="muted small-print">Check for new files is for anything copied into
+          the library folder some other way. Files added here appear by themselves.</p>
+        <p id="rescan-note" class="muted hidden" role="status"></p>
+      </div>
+
+      <!-- The address for another device: read off this screen and typed
+           into another, so it gets room, a large readable font and a Copy
+           button. The away-from-home address joins it when remote access is
+           on and working. -->
+      <div id="devices" class="account-section card hidden">
+        <h2>Use on your phone or TV</h2>
+        <p class="muted">Open this in the browser on a phone, tablet, TV or another
+          computer on the same Wi-Fi, and sign in with the same account.</p>
+        <div class="address-row">
+          <a id="library-share-url" class="address" href="#"></a>
+          <button class="ghost small copy" type="button" data-copy="library-share-url">Copy</button>
+        </div>
+        <div id="devices-away" class="hidden">
+          <p class="muted">Away from home:</p>
+          <div class="address-row">
+            <a id="devices-away-url" class="address" href="#"></a>
+            <button class="ghost small copy" type="button" data-copy="devices-away-url">Copy</button>
+          </div>
+        </div>
+      </div>
 
       <div class="account-section card">
         <h2>Change password</h2>
@@ -206,13 +207,6 @@
         <p id="password-note" class="muted hidden" role="status"></p>
       </div>
 
-      <div class="account-section card">
-        <h2>New files</h2>
-        <p class="muted">Files you drop on SoundStorm appear by themselves. If you
-          copied some into the folder another way, ask SoundStorm to look now.</p>
-        <button id="rescan" class="ghost" type="button">Check for new files</button>
-        <p id="rescan-note" class="muted hidden" role="status"></p>
-      </div>
 
       <!-- Putting the server on the internet. Owner-only, and only shown when
            auto HTTPS is on - without a real certificate there is nothing to

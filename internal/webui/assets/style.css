@@ -458,7 +458,6 @@ header {
    but the account", so the audio dock and the players keep working. */
 #app.viewing-account #filters,
 #app.viewing-account #hints,
-#app.viewing-account #devices,
 #app.viewing-account #setup,
 #app.viewing-account #intake,
 #app.viewing-account #degraded,
@@ -855,11 +854,8 @@ header {
 }
 .hint-sep { opacity: 0.5; }
 
-/* The phone and TV button goes to the end of the line where there is room,
-   and onto its own line where there is not. */
-#devices-toggle { margin-left: auto; }
+.hints:not(:has(:not(.hidden))) { display: none; }
 @media (max-width: 620px) {
-  #devices-toggle { margin-left: 0; }
   /* A remote address is ~45 characters; at 17px it broke mid-word. */
   .address { font-size: 15px; }
 }
@@ -882,9 +878,9 @@ header {
 /* An address somebody reads off this screen and types into another: large,
    in the ordinary font rather than a code font, allowed to wrap on a phone
    rather than run off the edge, with a Copy button beside it. */
-.devices { margin: 12px 20px 0; max-width: 640px; }
-.devices h2 { margin: 0 0 6px; font-size: 17px; }
-.devices > p { margin: 0 0 12px; }
+.account-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
+#devices > p { margin: 0 0 12px; }
 .address-row {
   display: flex;
   flex-wrap: wrap;

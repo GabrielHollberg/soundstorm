@@ -354,6 +354,7 @@ function setAccountOpen(opening) {
   $('account-toggle').setAttribute('aria-expanded', String(opening));
   if (opening) {
     renderAccount();
+    refreshDevices();
     window.scrollTo(0, 0);
   } else {
     clearTimeout(state.remotePoll); // stop polling once the page is closed
@@ -569,7 +570,7 @@ async function loadLibrary() {
     link.textContent = body.shareURL;
     link.href = body.shareURL;
   }
-  show($('devices-toggle'), Boolean(body.shareURL));
+  show($('devices'), Boolean(body.shareURL));
 
   // The disk the library is on, when it is getting full.
   const space = body.space;
@@ -587,12 +588,9 @@ async function loadLibrary() {
 // "Use on your phone or TV": the home address, and the away-from-home one when
 // remote access is on and working. Only the owner's session carries the latter,
 // so a member sees the home address alone.
-$('devices-toggle').addEventListener('click', async () => {
-  const panel = $('devices');
-  const opening = panel.classList.contains('hidden');
-  show(panel, opening);
-  $('devices-toggle').setAttribute('aria-expanded', String(opening));
-  if (!opening) return;
+// The away-from-home address, filled in each time the account page opens:
+// only the owner's session carries it, so a member sees the home address alone.
+async function refreshDevices() {
   const { ok, body } = await api('/api/session');
   const remote = ok && body && body.remote;
   const away = remote && remote.enabled && remote.reachable && remote.name;
@@ -602,7 +600,7 @@ $('devices-toggle').addEventListener('click', async () => {
     $('devices-away-url').href = href;
   }
   show($('devices-away'), Boolean(away));
-});
+}
 
 // Copy buttons, beside every address somebody has to carry to another device.
 // The clipboard API only exists in a secure context; on plain http the buttons
@@ -669,9 +667,6 @@ $('rescan').addEventListener('click', async () => {
 // A phone cannot drag anything, so telling one to is an instruction it cannot
 // follow - and it is the first line of the app. Asked of the pointer rather
 // than the width, because a narrow desktop window still has a mouse.
-if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-  $('hint-add').textContent = 'Add music, films, books, documents or photos:';
-}
 
 $('choose-files').addEventListener('click', () => $('file-picker').click());
 
@@ -904,8 +899,10 @@ function renderResults(result, append) {
     // "Nothing matched" is a lie when there is nothing to match against - and
     // this is now the whole of the first-run guidance, since the box that used
     // to carry it is gone. It has to say what to do, not just what happened.
-    $('status').textContent =
-      'Nothing here yet. Drag music, films, books, documents or photos anywhere on this window.';
+    // A phone cannot drag anything, so it is pointed at the button instead.
+    $('status').textContent = matchMedia('(pointer: coarse)').matches
+      ? 'Nothing here yet. Open Account and choose Add media to add music, films, books, documents or photos.'
+      : 'Nothing here yet. Drag music, films, books, documents or photos anywhere on this window, or use Add media in Account.';
   } else if (browsing) {
     // Empty shelf, full library: they filtered to a kind they have none of,
     // or its backend is still doing its first scan.
