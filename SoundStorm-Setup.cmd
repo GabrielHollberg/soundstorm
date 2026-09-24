@@ -22,24 +22,26 @@ rem nothing about the machine and nothing after this window closes.
 rem
 rem Arguments are passed straight through, so a typed command or a shortcut
 rem can say SoundStorm-Setup.cmd --https and have it reach the installer.
+rem
+rem No console stays open. A double-clicked .cmd always gets one - Windows
+rem gives it no choice - so this one says nothing, lives only as long as the
+rem download takes, and hands over to PowerShell started minimised and hidden,
+rem which opens the setup window itself. The only console left on screen is
+rem the one explaining a failed download, because then there is no window.
 
 setlocal
 
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "LOCAL=%~dp0install.ps1"
 if exist "%LOCAL%" (
-    "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%LOCAL%" %*
-    if errorlevel 99 if not errorlevel 100 goto :window
-    goto :done
+    start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%LOCAL%" %*
+    exit /b 0
 )
 
 if "%SOUNDSTORM_REPO%"=="" set "SOUNDSTORM_REPO=GabrielHollberg/soundstorm"
 if "%SOUNDSTORM_BRANCH%"=="" set "SOUNDSTORM_BRANCH=main"
 set "URL=https://raw.githubusercontent.com/%SOUNDSTORM_REPO%/%SOUNDSTORM_BRANCH%/install.ps1"
 set "SAVED=%TEMP%\soundstorm-install.ps1"
-
-echo.
-echo   Fetching the SoundStorm installer...
 
 rem curl.exe has shipped with Windows since 10 build 1803.
 curl.exe -fsSL "%URL%" -o "%SAVED%" 2>nul
@@ -59,17 +61,9 @@ if not exist "%SAVED%" (
     goto :done
 )
 
-"%PS%" -NoProfile -ExecutionPolicy Bypass -File "%SAVED%" %*
-if errorlevel 99 if not errorlevel 100 goto :window
-del "%SAVED%" >nul 2>&1
-goto :done
-
-rem Exit code 99 means the setup relaunched itself as a window and has
-rem nothing more to say here. Waiting for a key would leave this console open
-rem beside the window for no reason. The window runs a copy of its own, made
-rem before this one exited, so the download can go.
-:window
-if defined SAVED del "%SAVED%" >nul 2>&1
+rem Not waited for: the setup opens its own window, and this console closes
+rem now. The downloaded file stays in %TEMP% and is overwritten next time.
+start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%SAVED%" %*
 exit /b 0
 
 :done

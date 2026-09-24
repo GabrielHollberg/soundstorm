@@ -1406,8 +1406,10 @@ function Invoke-Elevated([string]$File, [string[]]$Arguments) {
         return (Invoke-Native $File $Arguments -Show).ExitCode
     }
     try {
+        # Hidden: the setup window says what is happening, and a console
+        # behind it is only something to wonder about.
         $process = Start-Process -FilePath $File -ArgumentList $Arguments `
-            -Verb RunAs -PassThru -ErrorAction Stop
+            -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop
         # Waited on here rather than with -Wait, which would freeze the setup
         # window for as long as the command runs.
         $null = Wait-ProcessPumped $process
@@ -1528,7 +1530,7 @@ function Install-Docker {
         Important "Windows will ask for permission to install it - click Yes."
         try {
             $process = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs `
-                -Verb RunAs -PassThru -ErrorAction Stop
+                -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop
             # Waited on here rather than with -Wait, which would freeze the
             # setup window for the minutes Docker Desktop takes to install.
             $null = Wait-ProcessPumped $process
@@ -2442,27 +2444,27 @@ function Install-Shortcuts {
 
     # Updating is re-running the installer, so the shortcut is the installer.
     New-Shortcut (Join-Path $startMenu 'Update SoundStorm.lnk') $powershell `
-        "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`"" $Dir `
+        "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`"" $Dir `
         'Get the newest version of SoundStorm' $true
 
     # Moving the library is the one change somebody may want long after
     # installing, and -Library is a command-line option. A shortcut that opens
     # the same window a first install shows means nobody has to type it.
     New-Shortcut (Join-Path $startMenu 'Move SoundStorm library.lnk') $powershell `
-        "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -ChooseLibrary" $Dir `
+        "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -ChooseLibrary" $Dir `
         'Keep your music, films and books in a different folder or drive' $true
 
     # Tailscale is offered where it is needed - the account panel points here
     # when remote access cannot work on a connection - not asked about during
     # every install. This is the click-through way in; -Tailscale is the same.
     New-Shortcut (Join-Path $startMenu 'Set up Tailscale.lnk') $powershell `
-        "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Tailscale" $Dir `
+        "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -Tailscale" $Dir `
         'Reach SoundStorm privately from your own devices, from anywhere' $true
 
     if (-not $NoAutoStart) {
         $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
         New-Shortcut (Join-Path $startup 'SoundStorm.lnk') $powershell `
-            "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Launch -NoBrowser" $Dir `
+            "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -Launch -NoBrowser" $Dir `
             'Start SoundStorm with Windows' $true
     }
     Register-Uninstaller
@@ -2494,7 +2496,7 @@ function Register-Uninstaller {
             Publisher       = 'SoundStorm'
             InstallLocation = $Dir
             URLInfoAbout    = 'https://github.com/GabrielHollberg/soundstorm'
-            UninstallString = "`"$powershell`" -NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Uninstall"
+            UninstallString = "`"$powershell`" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -Uninstall"
         }
         foreach ($name in $strings.Keys) {
             New-ItemProperty -Path $uninstallKey -Name $name -Value $strings[$name] `

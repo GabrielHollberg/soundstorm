@@ -1104,6 +1104,16 @@ into a scratch folder. It relaunched, hid its console, showed the window,
 reached the "already installed in another folder" refusal and displayed it,
 and wrote nothing.
 
+**No console stays open, from the double-click on.** The setup file hands
+straight to PowerShell started minimised and hidden, and closes; the
+elevated WSL and Docker steps run hidden; the Update, Move library, Tailscale
+and startup shortcuts and the uninstall entry all start hidden. What cannot
+be removed is Windows opening a console for a double-clicked .cmd at all:
+measured on this machine (Windows Terminal as the default console) at about
+0.7 seconds, blank, then gone, with the setup window up two seconds after
+the click. An .exe would have no console, and an unsigned one is what Smart
+App Control blocks outright.
+
 **No message the window can show tells anybody to type a command.** "Show
 this to whoever gave you the app: `cd <folder>; docker compose logs`" became
 "restart and try again; if it happens again, send this file". The setup first
