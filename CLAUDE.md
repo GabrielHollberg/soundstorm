@@ -408,8 +408,10 @@ judged on in its first minute:
 
   The owner did not like the strip, so the manifest went back to
   `standalone`: the app opens with the status bar showing in its own colour,
-  as any app does, and the first tap takes it full screen. No black strip,
-  at the cost of the page moving up a little on that tap.
+  as any app does. Full screen is now a small button beside Account, on
+  Android only, rather than any tap: asked for, never assumed. It hides both
+  bars together - Chrome gives a page no way to hide the navigation bar and
+  keep the status bar.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.

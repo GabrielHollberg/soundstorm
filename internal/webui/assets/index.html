@@ -81,6 +81,10 @@
         <input id="search-input" type="search" placeholder="Search everything&hellip;"
                autocomplete="off" aria-label="Search your library">
       </form>
+      <!-- Android only: the one place a web page can hide the status and
+           navigation bars. Asked for by button, never by any tap. -->
+      <button id="fullscreen-toggle" class="ghost icon-only hidden" type="button"
+              aria-label="Full screen" aria-pressed="false" title="Full screen"></button>
       <button id="account-toggle" class="ghost" type="button" aria-expanded="false"
               aria-controls="account">Account</button>
     </header>

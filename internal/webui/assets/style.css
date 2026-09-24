@@ -1999,3 +1999,15 @@ body.np-open { overflow: hidden; }
    keyboard's :focus-visible ring is untouched. */
 .now-playing, .now-playing *, .dock, .dock * { -webkit-tap-highlight-color: transparent; }
 .np-lyrics:focus, .np-lyric:focus:not(:focus-visible) { outline: none; }
+
+/* A button that is only an icon, the size of its neighbours. */
+.icon-only {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.icon-only .icon { width: 20px; height: 20px; }
