@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="internal/webui/assets/icons/icon-192.png" width="96" alt="">
+</p>
+
 # SoundStorm
 
 **One login and one search box over your whole media library.** Films, music,
@@ -17,7 +21,9 @@ window. No API keys, no second login, nothing to configure.
 It installs Docker for you if you do not have it, starts it if it is not
 running, and leaves a SoundStorm icon on your desktop.
 
-**What to expect.** A setup window opens and ticks through four steps. The
+**What to expect.** A blank window blinks for a moment — Windows opens one for
+any `.cmd` file — and then the setup window opens and ticks through four
+steps. There are no console windows to read or close. The
 first install takes 10 to 30 minutes, mostly downloading. Leave it open: it
 says when it is finished, and ends with your setup code and an **Open
 SoundStorm** button. If something goes wrong it says what, in the same window,
@@ -170,9 +176,13 @@ place is listed with the reason rather than dumped somewhere.
 ![Dragging files onto the window](docs/shots/15-drop.png)
 
 The app opens on your library rather than on a form, so there is nothing to
-go looking for. One line under the filters says so, and carries the two
-other things worth having to hand: **choose files**, for a phone or anything
-else that cannot drag, and the address to give everybody else in the house.
+go looking for: a search box, one **Account** button, the shelves, and your
+media. The search box says what it will search — *Search music*, *Search
+albums*, *Search your playlists* — for whichever page you are on.
+
+On a phone, or anything else that cannot drag, open **Account** and choose
+**Add media**. The same card has **Check for new files**, for anything copied
+into the folders some other way.
 
 ![The screen a new install opens on](docs/shots/1-library.png)
 
@@ -256,10 +266,19 @@ ordered A to Z, recently added, by artist, recently played, most played or at
 random. An album page has **Play** and **Shuffle** and its track list, and an
 artist page has their albums and plays everything they made.
 
-Tap the song in the player to open **Now Playing**: the cover, big, with
-shuffle, repeat (all or one) and **Up next**. Hold down on any song, or
-right-click it, for **Play next** and **Add to queue**. On a phone the player
-at the bottom is a mini-player: tap it for Now Playing.
+Playing a song opens **Now Playing**: the cover, big, with the lyrics being
+sung underneath it, and shuffle, repeat (all or one) and a seek bar. **Tap the
+lyrics** and they fill the screen, a line at a time as they are sung; **tap
+the small cover** to go back. The button in the top corner shows **Up next**.
+Drag Now Playing down, or tap the arrow, to get back to your library while
+the music carries on. Hold down on any song, or right-click it, for **Play
+next** and **Add to queue**.
+
+While something plays, a small player floats at the bottom of the screen, with
+the cover blurred behind it and the song's progress along its edge. On a
+computer it has previous, play, next, a seek bar and volume. On a phone it has
+play and next: **swipe it up** for Now Playing, **swipe it down** to stop.
+A song or album with no cover of its own shows the SoundStorm cloud.
 
 - **Lock screen and headphones.** The song, artist and cover show on your
   phone's lock screen and in the notification shade. Play, pause and skip
@@ -280,9 +299,10 @@ Music opens on **Mixes**: your most played, recently played, Rediscover
 and a mix for each genre and decade in your library. Every artist page has an
 **Artist mix**. What you listen to is remembered for you alone.
 
-In Now Playing, the **lyrics** button shows the words, lit up line by line as
-they are sung, when a song has a `.lrc` file beside it or lyrics in its tags.
-Tap a line to jump there.
+Now Playing shows the words by itself whenever a song has them — a `.lrc` file
+beside it, or lyrics in its tags — lit up line by line as they are sung, with
+breathing dots through the instrumental breaks. In the full-screen lyrics, tap
+a line to jump there.
 
 For songs without any, the owner can turn on **Find missing lyrics online** in
 Account. SoundStorm then asks [LRCLIB](https://lrclib.net), a free lyrics
@@ -358,6 +378,10 @@ type on a phone. Either works. To find the plain address again:
 | macOS | `ipconfig getifaddr en0` |
 | Linux | `hostname -I` |
 
+**Account → Use on your phone or TV** shows the address to type, with a Copy
+button, and the away-from-home one too once [remote access](#from-outside-the-house)
+is on.
+
 Same account, same library, same everything. Type it once per device and then
 **add it to the home screen** — nobody types their media server address twice.
 
@@ -365,6 +389,11 @@ SoundStorm is a progressive web app, so that gives you a real app rather than a
 bookmark: its own icon, its own window, and no address bar eating the top of
 the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
 → Install app.
+
+**On Android**, the button with four corners, next to Account, makes
+SoundStorm full screen: the status bar and the navigation bar go until you tap
+it again. (A web app can only hide both together, and an iPhone does not let a
+web page hide either.)
 
 > **On Android, install it from the secure address**, the
 > `https://….home.soundstorm.dev` one. Chrome only offers "Install app" on a
