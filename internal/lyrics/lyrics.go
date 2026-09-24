@@ -152,6 +152,8 @@ func (f *Finder) ask(ctx context.Context, song Song) (source.Lyrics, bool, error
 
 // A time tag, [mm:ss], [mm:ss.xx] or [mm:ss.xxx]. A line may carry several,
 // for a chorus sung more than once.
+var wordTag = regexp.MustCompile(`<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>`)
+
 var lrcTag = regexp.MustCompile(`\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]`)
 
 // ParseLRC reads the .lrc format - each line's words after the times they are
@@ -163,7 +165,8 @@ func ParseLRC(text string) source.Lyrics {
 		if len(tags) == 0 {
 			continue // [ar:...] and other metadata, or a blank line
 		}
-		words := strings.TrimSpace(raw[tags[len(tags)-1][1]:])
+		// Enhanced LRC times each word as well (<mm:ss.xx>); those are not words.
+		words := strings.Join(strings.Fields(wordTag.ReplaceAllString(raw[tags[len(tags)-1][1]:], "")), " ")
 		for _, t := range tags {
 			min, _ := strconv.Atoi(raw[t[2]:t[3]])
 			sec, _ := strconv.Atoi(raw[t[4]:t[5]])

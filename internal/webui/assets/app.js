@@ -3977,20 +3977,6 @@ function renderLyrics() {
       el.classList.add('gap');
       el.setAttribute('aria-label', 'Instrumental');
       for (let d = 0; d < 3; d++) el.append(document.createElement('i'));
-    } else if (audio.lyrics.synced) {
-      // Words, so the line being sung can light up as it goes. Each word's
-      // share of the line is its share of the letters, which is closer to
-      // how long it takes to sing than an equal split.
-      const words = text.split(/\s+/);
-      const total = words.reduce((n, w) => n + w.length, 0) || 1;
-      let upTo = 0;
-      words.forEach((w, k) => {
-        const span = document.createElement('span');
-        span.textContent = w;
-        span.dataset.at = String(upTo / total);
-        upTo += w.length;
-        el.append(span, k < words.length - 1 ? ' ' : '');
-      });
     } else {
       el.textContent = text || '\u00A0';
     }
@@ -4014,10 +4000,14 @@ function renderLyrics() {
   syncLyrics(true);
 }
 
+const LYRIC_LEAD_MS = 150;
+
 function syncLyrics(force) {
   const lyrics = audio.lyrics;
   if (!lyrics || !lyrics.synced || !audio.showLyrics || $('now-playing').classList.contains('hidden')) return;
-  const ms = $('audio-player').currentTime * 1000;
+  // A touch early: the eye needs a moment to find the line, and the fade in
+  // takes a moment more, so a line lit exactly on time reads as late.
+  const ms = $('audio-player').currentTime * 1000 + LYRIC_LEAD_MS;
   let index = -1;
   for (let i = 0; i < lyrics.lines.length; i++) {
     if (lyrics.lines[i].start <= ms) index = i;
@@ -4033,30 +4023,29 @@ function syncLyrics(force) {
     el.classList.toggle('past', i < index);
     // Distance from the line being sung, for the blur that falls off around it.
     el.style.setProperty('--d', String(Math.min(Math.abs(i - index), 4)));
-    if (i !== index) for (const w of el.querySelectorAll('span.lit')) w.classList.remove('lit');
   }
   if (index >= 0) fillLyric(box, lyrics, index, ms);
   const current = box.querySelector('.np-lyric.current');
   if (current) {
-    // Kept in the middle of the box, as the words go by.
-    box.scrollTo({ top: current.offsetTop - box.clientHeight / 2 + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
+    // Kept a little above the middle of the box, as the words go by. Measured
+    // against the box itself: offsetTop counts from the nearest positioned
+    // ancestor, which is not the box, and parked the line near the top.
+    const offset = current.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTo({ top: offset - box.clientHeight * 0.42 + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
   }
 }
 
-// How far through the current line the song is: its words light up in turn,
-// or, for a break, its dots fill.
+// How far through an instrumental break the song is, for its dots. Lines
+// themselves light up whole: lyrics carry a time per line, not per word, and
+// guessing the words drifted visibly from the singing.
 function fillLyric(box, lyrics, index, ms) {
-  const el = box.querySelector(`.np-lyric[data-index="${index}"]`);
+  const el = box.querySelector(`.np-lyric.gap[data-index="${index}"]`);
   if (!el) return;
   const start = lyrics.lines[index].start;
   const next = lyrics.lines[index + 1];
   const end = next ? next.start : start + 4000;
-  // A line is sung in the first part of its slot, not stretched across the
-  // pause after it: roughly a third of a second a word.
-  const span = el.classList.contains('gap') ? end - start : Math.min(end - start, 400 + 320 * el.childElementCount);
-  const p = Math.max(0, Math.min(1, (ms - start) / Math.max(span, 1)));
+  const p = Math.max(0, Math.min(1, (ms - start) / Math.max(end - start, 1)));
   el.style.setProperty('--p', p.toFixed(3));
-  for (const w of el.querySelectorAll('span')) w.classList.toggle('lit', p > Number(w.dataset.at));
 }
 
 $('np-lyrics-toggle').addEventListener('click', () => {

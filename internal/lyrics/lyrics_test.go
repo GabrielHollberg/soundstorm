@@ -9,11 +9,11 @@ import (
 )
 
 func TestParseLRC(t *testing.T) {
-	l := ParseLRC("[ar:Somebody]\n[00:04.00]Second\n[00:00.50]First\n[01:02.5][01:30.25]Chorus\n\n")
+	l := ParseLRC("[ar:Somebody]\n[00:04.00]Second\n[00:00.50]First\n[01:02.5][01:30.25]Chorus\n[02:00.00]<02:00.00>Word <02:00.50>by <02:01.00>word\n\n")
 	want := []struct {
 		start int
 		text  string
-	}{{500, "First"}, {4000, "Second"}, {62500, "Chorus"}, {90250, "Chorus"}}
+	}{{500, "First"}, {4000, "Second"}, {62500, "Chorus"}, {90250, "Chorus"}, {120000, "Word by word"}}
 	if !l.Synced || len(l.Lines) != len(want) {
 		t.Fatalf("got %+v", l)
 	}

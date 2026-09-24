@@ -1667,10 +1667,9 @@ body.np-open { overflow: hidden; }
   color: rgba(255, 255, 255, 0.34);
   /* Lines further from the one being sung soften, the way a camera's focus falls off. */
   filter: blur(calc(min(var(--d, 0), 3) * 0.4px));
-  transition: color 0.35s ease, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.45s ease;
+  transition: color 0.2s ease, text-shadow 0.3s ease, transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.4s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.np-lyric span { transition: color 0.18s linear, text-shadow 0.3s ease; }
 /* Hover only where there is a mouse, and never on the line being sung: a tap
    on a phone leaves :hover stuck on the line tapped, and its grey won over
    the current line's white, so the line you had just jumped to looked like
@@ -1680,13 +1679,10 @@ body.np-open { overflow: hidden; }
 }
 .np-lyric.past { color: rgba(255, 255, 255, 0.4); }
 .np-lyric.current {
-  color: rgba(255, 255, 255, 0.5);
+  color: #fff;
   filter: none;
   transform: scale(1.04);
   transform-origin: left center;
-}
-.np-lyric.current span.lit {
-  color: #fff;
   text-shadow: 0 0 18px rgba(255, 255, 255, 0.45), 0 0 2px rgba(255, 255, 255, 0.4);
 }
 /* An instrumental break: three dots that fill in turn and breathe. */
