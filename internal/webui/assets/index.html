@@ -82,6 +82,9 @@
       <button class="chip" data-kind="ebook">Ebooks</button>
       <button class="chip" data-kind="document">Documents</button>
       <button class="chip" data-kind="picture">Pictures</button>
+      <!-- Not shelves: this person's own lists, across every shelf. -->
+      <button class="chip chip-own" data-kind="favourites">&#9829; Favourites</button>
+      <button class="chip chip-own" data-kind="playlists">Playlists</button>
     </nav>
 
     <!-- One line, not a box.
@@ -273,6 +276,14 @@
 
     <section id="results" class="grid"></section>
 
+    <!-- Playlists: the list of them, or one of them, in place of the grid. -->
+    <section id="playlists-view" class="playlists-view hidden"></section>
+
+    <!-- The menu behind every card's "..." button: one element, moved to
+         whichever card asked, so a thousand cards do not carry a thousand
+         menus. -->
+    <div id="item-menu" class="item-menu hidden" role="menu"></div>
+
     <!-- While selecting: how many, and what to do with them. The same bar asks
          for confirmation, saying exactly what goes, and afterwards offers the
          undo - so a delete never happens anywhere the person is not looking. -->
@@ -379,6 +390,12 @@
     <audio id="audio-player" controls></audio>
     <!-- Only shown for something made of more than one file, which in practice
          means an audiobook ripped a chapter at a time. -->
+    <!-- Only while playing a playlist: the queue it is working through. -->
+    <span id="audio-queue" class="dock-queue hidden">
+      <button id="audio-prev" class="ghost small" type="button" aria-label="Previous song">&#9198;</button>
+      <span id="audio-queue-pos" class="muted"></span>
+      <button id="audio-next" class="ghost small" type="button" aria-label="Next song">&#9197;</button>
+    </span>
     <button id="audio-tracks-toggle" class="ghost hidden" type="button"
             aria-expanded="false" aria-controls="audio-tracks">Chapters</button>
     <button id="audio-close" class="ghost" type="button" aria-label="Stop">&times;</button>

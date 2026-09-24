@@ -762,3 +762,19 @@ func (s *Source) InProgress(ctx context.Context, limit int) ([]source.Started, e
 	}
 	return out, nil
 }
+
+// ItemByID describes one book, for a favourite, which knows it only by id.
+func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
+	if itemID == "" {
+		return media.Item{}, false
+	}
+	item, err := s.fetchItem(ctx, itemID)
+	if err != nil {
+		return media.Item{}, false
+	}
+	items := convertItems(s.id, []libraryItem{item})
+	if len(items) == 0 {
+		return media.Item{}, false // missing from disk
+	}
+	return items[0], true
+}

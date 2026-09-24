@@ -305,3 +305,22 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 	}
 	return []string{rel}, nil
 }
+
+// ItemByID describes one photo or clip, for a favourite, which knows it only
+// by id. Its sort key is left empty: a favourites list is ordered by when
+// something was added, not by Immich's timeline.
+func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
+	if itemID == "" {
+		return media.Item{}, false
+	}
+	var a asset
+	if err := s.http.JSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
+		return media.Item{}, false
+	}
+	if a.IsTrashed || a.IsOffline {
+		return media.Item{}, false
+	}
+	it := s.item(a, 0)
+	it.SortKey = ""
+	return it, true
+}

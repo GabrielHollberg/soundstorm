@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
+	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/federate"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -70,6 +71,7 @@ const maxProgressBody = 8 << 10
 // Server wires everything to HTTP handlers.
 type Server struct {
 	setupCode        string
+	collections      *collections.Store
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -141,6 +143,9 @@ type Config struct {
 
 	// SetupCode is what the first sign-up must present. See handleSignup.
 	SetupCode string
+
+	// Collections holds each person's favourites and playlists.
+	Collections *collections.Store
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -192,6 +197,7 @@ func New(cfg Config) *Server {
 		remoteStatus:     cfg.RemoteStatus,
 		setRemoteAccess:  cfg.SetRemoteAccess,
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
+		collections:      cfg.Collections,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 	}
@@ -266,6 +272,18 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/book/resource", s.handleBookResource)
 	guarded.HandleFunc("GET /api/book/progress", s.handleGetProgress)
 	guarded.HandleFunc("GET /api/continue", s.handleContinue)
+	// Favourites and playlists, per person. See favourites.go.
+	guarded.HandleFunc("GET /api/favourites", s.handleFavourites)
+	guarded.HandleFunc("PUT /api/favourites", s.handleAddFavourite)
+	guarded.HandleFunc("DELETE /api/favourites", s.handleRemoveFavourite)
+	guarded.HandleFunc("GET /api/playlists", s.handlePlaylists)
+	guarded.HandleFunc("POST /api/playlists", s.handleCreatePlaylist)
+	guarded.HandleFunc("GET /api/playlists/{id}", s.handlePlaylist)
+	guarded.HandleFunc("PATCH /api/playlists/{id}", s.handleRenamePlaylist)
+	guarded.HandleFunc("DELETE /api/playlists/{id}", s.handleDeletePlaylist)
+	guarded.HandleFunc("POST /api/playlists/{id}/items", s.handleAddToPlaylist)
+	guarded.HandleFunc("DELETE /api/playlists/{id}/items/{position}", s.handleRemoveFromPlaylist)
+	guarded.HandleFunc("POST /api/playlists/{id}/move", s.handleMoveInPlaylist)
 	guarded.HandleFunc("PUT /api/book/progress", s.handlePutProgress)
 	// Account management is the one thing the owner can do and a member
 	// cannot, so it gets its own guard rather than a check inside each handler.
@@ -673,6 +691,13 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	// after that nothing knows what to clean up - the orphan would sit there
 	// with somebody's listening history in it.
 	s.setup.ForgetUser(r.Context(), id)
+	// Their favourites and playlists go with them. Best effort, like the
+	// backend accounts: a file that will not delete must not stop the removal.
+	if s.collections != nil {
+		if err := s.collections.Forget(id); err != nil {
+			s.log.Warn("could not remove a person's favourites and playlists", "err", err)
+		}
+	}
 
 	if err := s.auth.DeleteUser(actor, id); err != nil {
 		writeError(w, statusFor(err), err.Error())

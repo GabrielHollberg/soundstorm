@@ -249,6 +249,20 @@ everybody in the house has their own. An audiobook you started in
 Audiobookshelf's phone app is there too, because it is the same record of
 where you are. A film counts as finished once you reach the credits.
 
+### Favourites and playlists
+
+Every card has a **⋯** button (hover over it on a computer; it is always there
+on a phone). Use it to add something to your **favourites**, whatever it is: a
+song, a film, a book or a photo. The **♥ Favourites** chip shows them all.
+
+For songs, the same button offers **Add to playlist**. Pick a playlist or type
+a name to start a new one. The **Playlists** chip lists them. Open one to play
+it all, play from any song, move songs up and down, remove them, rename the
+playlist or delete it. A playlist plays one song after another, with back and
+forward buttons in the player.
+
+Favourites and playlists are yours; everybody in the house has their own.
+
 ### Deleting things
 
 If you set SoundStorm up (the owner account), there is a **Select** button

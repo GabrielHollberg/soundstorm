@@ -60,6 +60,7 @@ func newRemoteHarness(t *testing.T, rs *remoteState) *harness {
 		PerSourceTimeout: time.Second,
 		Log:              log,
 		SetupCode:        testSetupCode,
+		Collections:      testCollections(t),
 		RemoteStatus: func() RemoteState {
 			return RemoteState{
 				Available: rs.available,

@@ -192,29 +192,34 @@ func (s *Source) fetchPage(ctx context.Context, text string, offset int) ([]medi
 
 	items := make([]media.Item, 0, len(env.Response.SearchResult3.Song))
 	for _, sg := range env.Response.SearchResult3.Song {
-		item := media.Item{
-			ID:              sg.ID,
-			SourceID:        s.id,
-			Kind:            media.KindMusic,
-			Title:           sg.Title,
-			Subtitle:        sg.Album,
-			Year:            sg.Year,
-			ArtID:           sg.CoverArt,
-			DurationSeconds: float64(sg.Duration),
-			Extra:           map[string]string{},
-		}
-		if sg.Artist != "" {
-			item.Creators = []string{sg.Artist}
-		}
-		if sg.Album != "" {
-			item.Extra["album"] = sg.Album
-		}
-		if sg.Suffix != "" {
-			item.Extra["format"] = sg.Suffix
-		}
-		items = append(items, item)
+		items = append(items, s.songItem(sg))
 	}
 	return items, nil
+}
+
+// songItem is one Navidrome song as SoundStorm shows it.
+func (s *Source) songItem(sg song) media.Item {
+	item := media.Item{
+		ID:              sg.ID,
+		SourceID:        s.id,
+		Kind:            media.KindMusic,
+		Title:           sg.Title,
+		Subtitle:        sg.Album,
+		Year:            sg.Year,
+		ArtID:           sg.CoverArt,
+		DurationSeconds: float64(sg.Duration),
+		Extra:           map[string]string{},
+	}
+	if sg.Artist != "" {
+		item.Creators = []string{sg.Artist}
+	}
+	if sg.Album != "" {
+		item.Extra["album"] = sg.Album
+	}
+	if sg.Suffix != "" {
+		item.Extra["format"] = sg.Suffix
+	}
+	return item
 }
 
 // StreamTarget builds an authenticated upstream target for a track.
@@ -297,4 +302,25 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 		return nil, fmt.Errorf("subsonic %q: no file for %q", s.id, itemID)
 	}
 	return []string{env.Response.Song.Path}, nil
+}
+
+// ItemByID describes one song, for a favourite or a playlist entry, which know
+// it only by id.
+func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
+	if itemID == "" {
+		return media.Item{}, false
+	}
+	params, err := s.auth()
+	if err != nil {
+		return media.Item{}, false
+	}
+	params.Set("id", itemID)
+	var env envelope
+	if err := s.http.JSON(ctx, "/rest/getSong.view", params, &env); err != nil || env.check() != nil {
+		return media.Item{}, false
+	}
+	if env.Response.Song == nil {
+		return media.Item{}, false
+	}
+	return s.songItem(*env.Response.Song), true
 }

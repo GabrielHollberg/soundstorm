@@ -1060,3 +1060,93 @@ button.danger {
 @media (max-width: 620px) {
   .continue-row { grid-auto-columns: 132px; }
 }
+
+/* Favourites, playlists and the item menu ---------------------------------- */
+
+.item-holder { position: relative; display: flex; flex-direction: column; }
+.item-more {
+  position: absolute;
+  top: 7px; right: 7px;
+  width: 30px; height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: rgba(6, 9, 14, 0.72);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.item-holder:hover .item-more, .item-more:focus-visible { opacity: 1; }
+@media (pointer: coarse) { .item-more { opacity: 1; min-height: 30px; } }
+/* Selecting uses the same corner for its tick. */
+.grid.selecting .item-more { display: none; }
+
+/* A small heart on anything favourited. */
+.art-wrap.is-favourite::after {
+  content: "\2665";
+  position: absolute;
+  bottom: 7px; left: 8px;
+  color: #ff7a9a;
+  font-size: 16px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.item-menu {
+  position: absolute;
+  z-index: 60;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  display: grid;
+  gap: 2px;
+}
+.item-menu button[role="menuitem"] {
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 500;
+}
+.item-menu button[role="menuitem"]:hover { background: var(--surface-2); filter: none; }
+.item-menu-heading { margin: 4px 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.item-menu-new { display: flex; gap: 6px; padding: 6px 4px 2px; }
+.item-menu-new input { padding: 6px 8px; font-size: 13.5px; }
+.item-menu-note { margin: 4px 10px; font-size: 12.5px; color: var(--error); }
+
+.chip-own { border-style: dashed; }
+
+.playlists-view { margin: 8px 20px 40px; max-width: 760px; }
+.playlists-view h2 { margin: 6px 0 12px; font-size: 18px; }
+.playlist-list, .playlist-songs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.playlist-list li, .playlist-songs li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.playlist-open, .playlist-song {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 4px 0;
+  text-align: left;
+  font-weight: 600;
+  flex: 1 1 200px;
+}
+.playlist-song { display: grid; gap: 2px; font-weight: 400; }
+.playlist-song .muted { font-size: 13px; }
+.playlist-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.playlist-head h2 { margin: 0; }
+.playlist-controls { display: flex; gap: 6px; }
+
+.dock-queue { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }

@@ -187,6 +187,7 @@ async function showApp(me) {
   $('search-input').focus();
   applyLibraryTabs();
   renderAccount();
+  await loadFavouriteKeys();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
   // Awaited before the first browse so that libraryEmpty is known by the time
@@ -733,7 +734,7 @@ function applyLibraryTabs() {
 
   for (const chip of document.querySelectorAll('.chip')) {
     const kind = chip.dataset.kind;
-    const visible = everything || kind === '' || allowed.includes(kind);
+    const visible = everything || kind === '' || chip.classList.contains('chip-own') || allowed.includes(kind);
     show(chip, visible);
     // If the active filter just became invisible, fall back to everything
     // rather than leaving a search pinned to a library that is not there.
@@ -778,6 +779,22 @@ async function runSearch() {
   // Keep only the newest response: debounced typing means several can be in
   // flight and they do not necessarily come back in order.
   const seq = ++state.searchSeq;
+
+  // The two personal views are not a search of a shelf.
+  const own = state.kind === 'favourites' || state.kind === 'playlists';
+  show($('playlists-view'), state.kind === 'playlists');
+  show($('results'), state.kind !== 'playlists');
+  show($('select-toggle'), Boolean(state.me && state.me.owner) && !own);
+  if (state.kind === 'favourites') {
+    await showFavourites(seq);
+    return;
+  }
+  if (state.kind === 'playlists') {
+    $('status').textContent = '';
+    state.hasMore = false;
+    await showPlaylists();
+    return;
+  }
   $('status').textContent = query ? 'Searching…' : 'Loading…';
 
   // Back to the top of the list. Anything already on screen belongs to the
@@ -976,7 +993,23 @@ function renderItem(item) {
     if (state.selecting) toggleSelected(item, card);
     else play(item);
   });
-  return card;
+  if (state.favourites.has(key)) wrap.classList.add('is-favourite');
+
+  // The card is itself a button, and a button cannot hold another, so the
+  // "..." sits beside it in a wrapper, positioned over the cover.
+  const holder = document.createElement('div');
+  holder.className = 'item-holder';
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'item-more';
+  more.setAttribute('aria-label', `More for ${item.title}`);
+  more.textContent = '\u22EF';
+  more.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openItemMenu(item, more);
+  });
+  holder.append(card, more);
+  return holder;
 }
 
 const GLYPHS = {
@@ -1359,7 +1392,10 @@ const audio = {
 // is not worth that.
 const SAVE_EVERY_MS = 10000;
 
-function playAudio(item) {
+function playAudio(item, fromQueue) {
+  // Anything started by hand ends a playlist; the queue only carries on
+  // through its own songs.
+  if (!fromQueue) audio.queue = null;
   closeVideo();
   // Whatever was playing is being abandoned; record where it got to before
   // the state that describes it is overwritten.
@@ -1387,6 +1423,7 @@ function playAudio(item) {
   }
 
   renderTracks();
+  renderQueue();
   showDock(true);
 
   // A song starts now: a round trip before the first note is felt, and nothing
@@ -1611,6 +1648,10 @@ $('audio-player').addEventListener('ended', () => {
   }
   // The end of the last file is the end of the book.
   savePosition({ finished: true });
+  // And in a playlist, the next song.
+  if (audio.queue && audio.queue.index + 1 < audio.queue.items.length) {
+    playQueueAt(audio.queue.index + 1);
+  }
 });
 
 // pagehide rather than unload: it is the one that fires on a phone when the
@@ -2285,7 +2326,7 @@ $('select-delete').addEventListener('click', async () => {
   // Gone from the screen now; the backends catch up with a rescan.
   for (const key of deleted) {
     const card = $('results').querySelector(`.item[data-key="${CSS.escape(key)}"]`);
-    if (card) card.remove();
+    if (card) (card.closest('.item-holder') || card).remove();
   }
   state.items = (state.items || []).filter((item) => !deleted.includes(selectionKey(item)));
   setSelecting(false);
@@ -2379,3 +2420,335 @@ async function refreshContinue() {
 }
 
 window.addEventListener('soundstorm:reader-closed', () => setTimeout(refreshContinue, 300));
+
+/* ---------------------------------------------------- favourites, playlists */
+
+// Each person's own, kept by SoundStorm (see internal/collections). The set
+// of favourite keys is loaded once and kept current, so a card can show its
+// heart and the menu can say "remove" without asking the server per card.
+state.favourites = new Set();
+
+async function loadFavouriteKeys() {
+  const { ok, body } = await api('/api/favourites');
+  if (!ok || !body) return [];
+  state.favourites = new Set(body.items.map(selectionKey));
+  return body.items;
+}
+
+async function showFavourites(seq) {
+  $('status').textContent = 'Loading…';
+  const items = await loadFavouriteKeys();
+  if (seq !== state.searchSeq) return;
+  // Typing narrows the list, as it does a shelf.
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = items.filter((item) => {
+    const text = [item.title, item.subtitle, ...(item.creators || [])].join(' ').toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+  state.hasMore = false;
+  const grid = $('results');
+  grid.replaceChildren(...shown.map(renderItem));
+  state.items = shown;
+  $('status').textContent = items.length
+    ? `${shown.length} favourite${shown.length === 1 ? '' : 's'}`
+    : 'Nothing here yet. Use the \u22EF on anything to add it to your favourites.';
+  show($('loading-more'), false);
+}
+
+async function setFavourite(item, on) {
+  const q = new URLSearchParams({ source: item.sourceId, id: item.id });
+  const { ok, body } = await api(`/api/favourites?${q}`, { method: on ? 'PUT' : 'DELETE' });
+  if (!ok) return (body && body.error) || 'Could not change that.';
+  const key = selectionKey(item);
+  if (on) state.favourites.add(key);
+  else state.favourites.delete(key);
+  for (const card of document.querySelectorAll(`.item[data-key="${CSS.escape(key)}"]`)) {
+    card.querySelector('.art-wrap').classList.toggle('is-favourite', on);
+  }
+  // Taken off the list while looking at the list: it goes.
+  if (!on && state.kind === 'favourites') runSearch();
+  return '';
+}
+
+// --- the "..." menu -----------------------------------------------------------
+
+function menuButton(label, action) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.setAttribute('role', 'menuitem');
+  b.textContent = label;
+  b.addEventListener('click', action);
+  return b;
+}
+
+function closeItemMenu() {
+  show($('item-menu'), false);
+  state.menuFor = null;
+}
+
+async function openItemMenu(item, anchor) {
+  const menu = $('item-menu');
+  if (state.menuFor === item && !menu.classList.contains('hidden')) {
+    closeItemMenu();
+    return;
+  }
+  state.menuFor = item;
+  const note = document.createElement('p');
+  note.className = 'item-menu-note hidden';
+  const say = (text) => { note.textContent = text; show(note, Boolean(text)); };
+
+  const faved = state.favourites.has(selectionKey(item));
+  const entries = [menuButton(faved ? '\u2665 Remove from favourites' : '\u2661 Add to favourites', async () => {
+    const problem = await setFavourite(item, !faved);
+    if (problem) say(problem);
+    else closeItemMenu();
+  })];
+
+  if (item.kind === 'music') {
+    entries.push(menuButton('Add to playlist\u2026', async () => {
+      const { ok, body } = await api('/api/playlists');
+      const lists = (ok && body && body.playlists) || [];
+      menu.replaceChildren(...playlistPicker(item, lists, say), note);
+    }));
+  }
+  menu.replaceChildren(...entries, note);
+  placeMenu(menu, anchor);
+}
+
+// playlistPicker is the second page of the menu: the playlists to add to, and
+// a box for a new one.
+function playlistPicker(item, lists, say) {
+  const out = [];
+  const heading = document.createElement('p');
+  heading.className = 'item-menu-heading';
+  heading.textContent = 'Add to playlist';
+  out.push(heading);
+  for (const list of lists) {
+    out.push(menuButton(`${list.name} (${list.count})`, async () => {
+      const { ok, body } = await api(`/api/playlists/${encodeURIComponent(list.id)}/items`, {
+        method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }),
+      });
+      if (!ok) say((body && body.error) || 'Could not add it.');
+      else closeItemMenu();
+    }));
+  }
+  const form = document.createElement('form');
+  form.className = 'item-menu-new';
+  const input = document.createElement('input');
+  input.placeholder = lists.length ? 'Or a new playlist' : 'Name your first playlist';
+  input.maxLength = 100;
+  const create = document.createElement('button');
+  create.type = 'submit';
+  create.className = 'small';
+  create.textContent = 'Create';
+  form.append(input, create);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const { ok, body } = await api('/api/playlists', {
+      method: 'POST', body: JSON.stringify({ name: input.value }),
+    });
+    if (!ok || !body) {
+      say((body && body.error) || 'Could not make it.');
+      return;
+    }
+    const added = await api(`/api/playlists/${encodeURIComponent(body.id)}/items`, {
+      method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }),
+    });
+    if (!added.ok) say((added.body && added.body.error) || 'Could not add it.');
+    else closeItemMenu();
+  });
+  out.push(form);
+  setTimeout(() => input.focus(), 0);
+  return out;
+}
+
+function placeMenu(menu, anchor) {
+  show(menu, true);
+  const box = anchor.getBoundingClientRect();
+  const width = menu.offsetWidth;
+  const left = Math.min(Math.max(8, box.right - width), window.innerWidth - width - 8);
+  menu.style.left = `${left + window.scrollX}px`;
+  menu.style.top = `${box.bottom + window.scrollY + 4}px`;
+}
+
+document.addEventListener('click', (event) => {
+  const menu = $('item-menu');
+  if (!menu.classList.contains('hidden') && !menu.contains(event.target)) closeItemMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeItemMenu();
+});
+
+// --- playlists ----------------------------------------------------------------
+
+async function showPlaylists() {
+  const view = $('playlists-view');
+  const { ok, body } = await api('/api/playlists');
+  const lists = (ok && body && body.playlists) || [];
+  view.replaceChildren();
+
+  const title = document.createElement('h2');
+  title.textContent = 'Playlists';
+  view.append(title);
+
+  if (!lists.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No playlists yet. Use the \u22EF on any song and choose Add to playlist.';
+    view.append(empty);
+    return;
+  }
+  const ul = document.createElement('ul');
+  ul.className = 'playlist-list';
+  for (const list of lists) {
+    const li = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'playlist-open';
+    open.textContent = list.name;
+    open.addEventListener('click', () => showPlaylist(list.id));
+    const count = document.createElement('span');
+    count.className = 'muted';
+    count.textContent = `${list.count} song${list.count === 1 ? '' : 's'}`;
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'small';
+    play.textContent = 'Play';
+    play.disabled = !list.count;
+    play.addEventListener('click', async () => {
+      const got = await api(`/api/playlists/${encodeURIComponent(list.id)}`);
+      if (got.ok && got.body) playQueue(got.body.items, 0);
+    });
+    li.append(open, count, play);
+    ul.append(li);
+  }
+  view.append(ul);
+}
+
+async function showPlaylist(id) {
+  const view = $('playlists-view');
+  const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}`);
+  if (!ok || !body) {
+    showPlaylists();
+    return;
+  }
+  const path = `/api/playlists/${encodeURIComponent(id)}`;
+  view.replaceChildren();
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'back';
+  back.textContent = '\u2190 All playlists';
+  back.addEventListener('click', showPlaylists);
+
+  const head = document.createElement('div');
+  head.className = 'playlist-head';
+  const name = document.createElement('h2');
+  name.textContent = body.name;
+  const count = document.createElement('span');
+  count.className = 'muted';
+  count.textContent = `${body.items.length} song${body.items.length === 1 ? '' : 's'}`;
+  const playAll = document.createElement('button');
+  playAll.type = 'button';
+  playAll.textContent = 'Play all';
+  playAll.disabled = !body.items.length;
+  playAll.addEventListener('click', () => playQueue(body.items, 0));
+  const rename = document.createElement('button');
+  rename.type = 'button';
+  rename.className = 'ghost small';
+  rename.textContent = 'Rename';
+  rename.addEventListener('click', async () => {
+    const next = window.prompt('New name for this playlist', body.name);
+    if (!next) return;
+    await api(path, { method: 'PATCH', body: JSON.stringify({ name: next }) });
+    showPlaylist(id);
+  });
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'ghost small';
+  remove.textContent = 'Delete playlist';
+  remove.addEventListener('click', async () => {
+    if (!window.confirm(`Delete the playlist "${body.name}"? The songs stay in your library.`)) return;
+    await api(path, { method: 'DELETE' });
+    showPlaylists();
+  });
+  head.append(name, count, playAll, rename, remove);
+  view.append(back, head);
+
+  const ol = document.createElement('ol');
+  ol.className = 'playlist-songs';
+  body.items.forEach((song, i) => {
+    const li = document.createElement('li');
+    const playOne = document.createElement('button');
+    playOne.type = 'button';
+    playOne.className = 'playlist-song';
+    const t = document.createElement('strong');
+    t.textContent = song.title;
+    const sub = document.createElement('span');
+    sub.className = 'muted';
+    sub.textContent = subtitleFor(song);
+    playOne.append(t, sub);
+    playOne.addEventListener('click', () => playQueue(body.items, i));
+
+    const controls = document.createElement('span');
+    controls.className = 'playlist-controls';
+    const move = (label, to) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ghost small';
+      b.textContent = label;
+      b.disabled = to < 0 || to >= body.items.length;
+      b.addEventListener('click', async () => {
+        await api(`${path}/move`, { method: 'POST', body: JSON.stringify({ from: song.position, to: body.items[to].position }) });
+        showPlaylist(id);
+      });
+      return b;
+    };
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'ghost small';
+    drop.textContent = 'Remove';
+    drop.addEventListener('click', async () => {
+      await api(`${path}/items/${song.position}`, { method: 'DELETE' });
+      showPlaylist(id);
+    });
+    const up = move('\u2191', i - 1);
+    up.setAttribute('aria-label', 'Move up');
+    const down = move('\u2193', i + 1);
+    down.setAttribute('aria-label', 'Move down');
+    controls.append(up, down, drop);
+    li.append(playOne, controls);
+    ol.append(li);
+  });
+  view.append(ol);
+}
+
+// --- the queue ------------------------------------------------------------------
+
+function playQueue(items, start) {
+  if (!items.length) return;
+  audio.queue = { items, index: 0 };
+  playQueueAt(start);
+}
+
+function playQueueAt(index) {
+  if (!audio.queue) return;
+  audio.queue.index = index;
+  playAudio(audio.queue.items[index], true);
+}
+
+function renderQueue() {
+  const q = audio.queue;
+  show($('audio-queue'), Boolean(q));
+  if (!q) return;
+  $('audio-queue-pos').textContent = `${q.index + 1} of ${q.items.length}`;
+  $('audio-prev').disabled = q.index === 0;
+  $('audio-next').disabled = q.index + 1 >= q.items.length;
+}
+
+$('audio-prev').addEventListener('click', () => {
+  if (audio.queue && audio.queue.index > 0) playQueueAt(audio.queue.index - 1);
+});
+$('audio-next').addEventListener('click', () => {
+  if (audio.queue && audio.queue.index + 1 < audio.queue.items.length) playQueueAt(audio.queue.index + 1);
+});

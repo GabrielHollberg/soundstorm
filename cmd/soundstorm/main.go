@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
+	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/httpapi"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -143,6 +144,13 @@ func run(log *slog.Logger) error {
 	// will ever finish, and they are invisible - the directory is hidden and
 	// no backend has it mounted.
 	lib.ClearStaging()
+
+	// Each person's favourites and playlists, a file each beside the state
+	// file. See internal/collections for why they are not in it.
+	collectionStore, err := collections.Open(filepath.Join(stateDir, "collections"))
+	if err != nil {
+		return err
+	}
 
 	// Empty the bin of anything deleted more than thirty days ago: now, and
 	// once a day after. Recovered, like every goroutine started once and left
@@ -314,7 +322,8 @@ func run(log *slog.Logger) error {
 			tlsServer.Refresh() // act on the change now, not at the next check
 			return nil
 		},
-		SetupCode: setupCode,
+		SetupCode:   setupCode,
+		Collections: collectionStore,
 	})
 
 	srv := &http.Server{

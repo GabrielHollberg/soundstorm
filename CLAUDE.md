@@ -355,6 +355,44 @@ minute and closed, the film was in Continue at 51%, and reopening it resumed
 at 61s. The same stack confirmed Jellyfin's side of deleting, which had been
 untested: the preview named exactly the film's file, byte for byte.
 
+## Favourites and playlists
+
+Per person, and kept by SoundStorm (`internal/collections`) rather than by
+Navidrome, which has both built in. The house shares one Navidrome account, so
+they would be everybody's at once: the same reasoning as film positions, and
+the "revisit when favourites reach the UI" moment from "Accounts".
+
+**A file per person, not state.json.** That file is rewritten whole on every
+sign-in and session change, under the lock every request takes, and a
+household's playlists in it would slow all of those. Here one change writes
+one small file, to a temporary name and renamed over. Limits: 5,000
+favourites, 200 playlists, 5,000 songs in each, names up to 100 characters.
+Removing a person removes their file.
+
+Each entry is a snapshot of the item as its backend described it
+(`source.ItemGetter`, now on every adapter). It is never what the browser
+sent, and it means a list of 500 songs is one file read, not 500 backend
+calls. Playing still goes by id, so a deleted song fails to play rather than
+playing something else. Lists are filtered through the registry each time they
+are shown, so a favourite on a shelf an account has since lost is hidden. It
+is not a way back in.
+
+**Favourites are for anything; playlists are songs only.** A playlist plays in
+the audio dock as a queue, advancing on `ended`, with back and forward. A
+playlist of films has no player to play it in.
+
+The UI adds a "⋯" button beside each card. The card is itself a `<button>`, so
+the two sit in an `.item-holder` wrapper, since a button cannot contain
+another. There is one shared menu element, moved to whichever card asked.
+
+**Not in `soundstorm backup` yet.** The backup is state.json alone, so a
+reinstall that restores it brings back accounts but not favourites or
+playlists.
+
+Verified in Chrome against a throwaway stack with a real Navidrome that
+SoundStorm provisioned: favourite, the heart, the Favourites chip, a playlist
+built from the menu, Play all, next, and advancing when a song ends.
+
 ## Deleting, into a bin
 
 The owner can select items and delete them. Two decisions shape it:

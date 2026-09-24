@@ -110,6 +110,7 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 		PerSourceTimeout: time.Second,
 		Log:              log,
 		SetupCode:        testSetupCode,
+		Collections:      testCollections(t),
 	})
 
 	srv := httptest.NewServer(api.Routes())
