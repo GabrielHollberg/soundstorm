@@ -17,6 +17,21 @@ window. No API keys, no second login, nothing to configure.
 It installs Docker for you if you do not have it, starts it if it is not
 running, and leaves a SoundStorm icon on your desktop.
 
+**What to expect.** A window walks through four steps. The first install takes
+10 to 30 minutes, mostly downloading — keep the window open, and it tells you
+when it is finished. Along the way:
+
+- **Windows asks for permission** to install Docker, and sometimes Windows
+  Subsystem for Linux. Click **Yes**.
+- **Docker Desktop opens a window of its own** the first time. You do **not**
+  need a Docker account: click **Accept** on the agreement, then **Skip** on the
+  sign-in and on the questions about you. Close that window afterwards if you
+  like; Docker keeps running, and the setup carries on by itself.
+- **At the end your browser opens SoundStorm.** Choose a username and password —
+  that is your account. If the page asks for a **setup code**, it is in the
+  yellow box at the bottom of the setup window, and saved in the `.env` file in
+  your SoundStorm folder.
+
 > **Why the Unblock step?** Windows Smart App Control refuses to run *any*
 > script downloaded from the web — you get "An Application Control policy has
 > blocked this file" with no way to continue. That is about the file extension,

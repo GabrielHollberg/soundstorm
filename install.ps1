@@ -103,9 +103,66 @@ $ScriptUrl  = if ($env:SOUNDSTORM_SCRIPT_URL) { $env:SOUNDSTORM_SCRIPT_URL } els
 $Dir       = if ($env:SOUNDSTORM_DIR) { $env:SOUNDSTORM_DIR } else { Join-Path $env:USERPROFILE 'SoundStorm' }
 $FirstPort = if ($env:SOUNDSTORM_PORT) { [int]$env:SOUNDSTORM_PORT } else { 8099 }
 
-function Step($text) { Write-Host ""; Write-Host "  $text" -ForegroundColor White }
-function Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
+# Output. Notes are Gray, not the DarkGray they used to be: on Windows
+# PowerShell's default dark-blue console DarkGray is close to unreadable, and
+# nearly everything this script says is something the person needs to read.
+# Steps are Cyan so the numbered progress stands out from the detail under it.
+function Step($text) { Write-Host ""; Write-Host "  $text" -ForegroundColor Cyan }
+function Note($text) { Write-Host "    $text" -ForegroundColor Gray }
 function Good($text) { Write-Host "    $text" -ForegroundColor Green }
+function Important($text) { Write-Host "    $text" -ForegroundColor Yellow }
+
+# Callout frames the few things somebody has to act on - what to click in
+# Docker's windows, the code to type into the first screen - so they cannot be
+# lost among the progress lines scrolling past. A line starting with "*" is the
+# thing itself (a code, an address) and is drawn in the frame's colour.
+#
+# ASCII only, like the rest of this file: it has no byte order mark, so
+# Windows PowerShell reads it in the system code page, where box-drawing
+# characters and dashes come out as mojibake.
+function Callout([string]$Title, [string[]]$Lines, [ConsoleColor]$Color = 'Yellow') {
+    Write-Host ""
+    Write-Host ("  +--- " + $Title + " " + ('-' * [Math]::Max(4, 62 - $Title.Length))) -ForegroundColor $Color
+    foreach ($line in $Lines) {
+        Write-Host "  |  " -ForegroundColor $Color -NoNewline
+        if ($line.StartsWith('*')) {
+            Write-Host $line.Substring(1) -ForegroundColor $Color
+        } else {
+            Write-Host $line -ForegroundColor White
+        }
+    }
+    Write-Host ("  +" + ('-' * 69)) -ForegroundColor $Color
+    Write-Host ""
+}
+
+# Show-DockerGuide says what Docker Desktop is about to ask, before it asks.
+#
+# Its first start opens a window of its own - terms, then an offer to sign in or
+# create an account, then a survey - in front of a setup that is waiting on it.
+# Somebody who has never heard of Docker cannot tell which of those matter, or
+# whether the account is needed (it is not), or whether closing the window
+# breaks something (it does not). Shown once per run, whichever comes first of
+# installing Docker (which opens itself when it finishes) or starting it.
+$script:dockerGuideShown = $false
+function Show-DockerGuide {
+    if ($script:dockerGuideShown) { return }
+    $script:dockerGuideShown = $true
+    Callout 'Docker Desktop may open a window' @(
+        'SoundStorm runs inside a free program called Docker. The first time',
+        'it starts, Docker asks a few questions.',
+        '*You do NOT need a Docker account.',
+        '',
+        '*  1. Subscription Service Agreement   ->  click Accept',
+        '*  2. Sign in / create an account      ->  click Skip',
+        '*  3. Questions about you or your work ->  click Skip',
+        '',
+        'No Skip button? Choose "Continue without signing in" instead.',
+        '',
+        'Then come back to THIS window. You can minimise or close the Docker',
+        'window - Docker keeps running in the background, and this setup',
+        'carries on by itself as soon as Docker is ready.'
+    ) 'Cyan'
+}
 
 # Stop says why it stopped and what to do about it. An installer that reports
 # "error: 1" has failed twice.
@@ -511,10 +568,10 @@ function Test-WSL {
 function Install-WSL {
     if (Test-WSL) { return }
 
-    Step "Setting up Windows Subsystem for Linux"
-    Note "Docker runs on this, and it is missing or out of date."
+    Note "Setting up Windows Subsystem for Linux - Docker runs on it, and it is"
+    Note "missing or out of date on this PC."
     if (-not (Test-Administrator)) {
-        Note "Windows will ask for permission - say yes."
+        Important "Windows will ask for permission - click Yes."
     }
 
     # --no-distribution because Docker brings its own. Without it Windows also
@@ -575,6 +632,9 @@ function Install-Docker {
 
     Note "Docker Desktop is not installed. Getting it now."
     Note "This is a big download and takes a few minutes."
+    # Docker opens itself the moment its installer finishes, so this is the
+    # last chance to say what it is going to ask.
+    Show-DockerGuide
 
     # Written before the install as well as after it. Docker Desktop launches
     # itself the moment its installer finishes, which is too early for anything
@@ -591,7 +651,7 @@ function Install-Docker {
     if (Test-Administrator) {
         $code = (Invoke-Native 'winget' $wingetArgs -Show).ExitCode
     } else {
-        Note "Windows will ask for permission to install it - say yes."
+        Important "Windows will ask for permission to install it - click Yes."
         try {
             $process = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs `
                 -Verb RunAs -PassThru -Wait -ErrorAction Stop
@@ -720,16 +780,23 @@ function Start-Docker {
 "@
     }
 
-    Note "Starting Docker Desktop. This takes a minute on a cold start."
-    Note "If it opens a window asking you to accept its terms, say yes -"
-    Note "SoundStorm will carry on by itself once you have."
+    Show-DockerGuide
+    Note "Starting Docker Desktop. This takes a minute or two."
     Start-Process -FilePath $exe | Out-Null
 
     $waited = 0
     while (-not (Test-DockerRunning)) {
         Start-Sleep -Seconds 3
         $waited += 3
-        if ($waited % 30 -eq 0) { Note "still starting... ($waited seconds)" }
+        if ($waited % 30 -eq 0) {
+            Note "Docker is still starting... ($waited seconds). This is normal."
+            # By a minute in, a window waiting on a click is the likeliest
+            # reason, and the box that said what to click has scrolled away.
+            if ($waited -eq 60) {
+                Important "If a Docker window is waiting on you, see the box above:"
+                Important "Accept the terms, and Skip the sign-in and the questions."
+            }
+        }
         if ($waited -gt 420) {
             # Docker was already installed when this run started, so the
             # check above never ran. It is worth asking now: an engine that
@@ -870,8 +937,12 @@ function Wait-ForSoundStorm([string]$Url) {
     try {
         $waited = 0
         while (-not (Test-Healthz $Url)) {
+            if ($waited -eq 0) { Note "Waiting for SoundStorm to answer - usually under a minute." }
             Start-Sleep -Seconds 2
             $waited += 2
+            # Up to three minutes with nothing on screen is exactly when
+            # somebody decides it has hung and closes the window.
+            if ($waited % 20 -eq 0) { Note "still starting... ($waited seconds). This is normal the first time." }
             if ($waited -gt 180) {
                 Stop-With "  SoundStorm started but never answered on $Url.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs soundstorm"
             }
@@ -1049,6 +1120,42 @@ function Get-InstalledScheme {
 # involved in the asking. The name arrives within seconds of the certificate,
 # which usually takes ten or twenty; empty if it has not by the deadline, and
 # the http address works meanwhile.
+# Get-HasAccount asks the running server whether the first account exists yet.
+# $true or $false, or $null when it cannot tell - the setup code is only worth
+# showing while nobody has signed up, since it is read by the first sign-up
+# alone.
+function Get-HasAccount([string]$Url) {
+    $priorCallback = $null
+    $bypassed = $false
+    if ($Url -like 'https://*') {
+        # A certificate this PC minted, on this PC; same reasoning as
+        # Wait-ForSoundStorm.
+        $priorCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        $bypassed = $true
+    }
+    try {
+        $request = [Net.HttpWebRequest]::Create("$Url/api/session")
+        $request.Timeout = 5000
+        $response = $request.GetResponse()
+        $reader = New-Object IO.StreamReader($response.GetResponseStream())
+        $body = $reader.ReadToEnd()
+        $response.Close()
+        return [bool](($body | ConvertFrom-Json).hasAccount)
+    } catch {
+        return $null
+    } finally {
+        if ($bypassed) { [Net.ServicePointManager]::ServerCertificateValidationCallback = $priorCallback }
+    }
+}
+
+# Format-SetupCode groups the code in fours so it can be read off the screen and
+# typed. The server ignores case, spaces and dashes, so this is presentation.
+function Format-SetupCode([string]$Code) {
+    $plain = ($Code -replace '[-\s]', '').ToUpperInvariant()
+    return (($plain -split '(.{4})' | Where-Object { $_ }) -join '-')
+}
+
 function Get-SecureAddress([int]$Port) {
     for ($waited = 0; $waited -lt 45; $waited += 3) {
         try {
@@ -1269,7 +1376,16 @@ if ($Launch) {
     Wait-ForSoundStorm $url
     # At startup there is nobody watching yet, so the browser stays shut; the
     # desktop icon is what opens it.
-    if (-not $NoBrowser) { Start-Process $url }
+    if (-not $NoBrowser) {
+        # With the setup code while nobody has signed up yet. Somebody who
+        # closed the tab setup opened reaches for this icon next, and without
+        # the code the first screen asks for one they have no idea where to
+        # find.
+        $open = $url
+        $code = Get-EnvSetting 'SOUNDSTORM_SETUP_CODE'
+        if ($code -and (Get-HasAccount $url) -ne $true) { $open = "$url/?setup=$code" }
+        Start-Process $open
+    }
     exit 0
 }
 
@@ -1280,11 +1396,28 @@ Write-Host "  SoundStorm" -ForegroundColor White -NoNewline
 Write-Host " - all your music, films, books and audiobooks in one place"
 Write-Host "  -----------------------------------------------------------"
 
-Step "Checking for Docker"
-Initialize-Docker
-Note (Invoke-Native 'docker' @('--version')).Output
+# Said before anything happens, because the two questions somebody has from
+# here on are "is it still working?" and "what am I supposed to do?" - and on a
+# first install the honest answer to the first is "for a while yet".
+$firstInstall = -not (Test-Path (Join-Path $Dir 'docker-compose.yml'))
+Write-Host ""
+if ($firstInstall) {
+    Write-Host "  This sets everything up by itself, in 4 steps. The first time takes" -ForegroundColor White
+    Write-Host "  about 10 to 30 minutes, mostly downloading." -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Keep this window open. It tells you when it is finished and exactly" -ForegroundColor Yellow
+    Write-Host "  what to do next. You can use the computer while it works." -ForegroundColor Yellow
+} else {
+    Write-Host "  Updating SoundStorm. Your library, accounts and settings are kept." -ForegroundColor White
+    Write-Host "  Keep this window open until it says it is finished." -ForegroundColor Yellow
+}
 
-Step "Setting up $Dir"
+Step "Step 1 of 4 - Getting Docker ready"
+Initialize-Docker
+Good "Docker is ready. ($((Invoke-Native 'docker' @('--version')).Output))"
+
+Step "Step 2 of 4 - Preparing the SoundStorm folder"
+Note $Dir
 
 # The compose project name is fixed, so a second install in a second folder
 # adopts the first one's containers and then points at an empty library.
@@ -1483,8 +1616,8 @@ if ($Library) {
             Where-Object { $_.Name -ne 'README.txt' } | Select-Object -First 1)) {
         Write-Host ""
         Write-Host "  Your existing media is still in $previous." -ForegroundColor Yellow
-        Write-Host "  To bring it across, close SoundStorm, move the folders inside it" -ForegroundColor DarkGray
-        Write-Host "  into $full, and open SoundStorm again." -ForegroundColor DarkGray
+        Write-Host "  To bring it across, close SoundStorm, move the folders inside it" -ForegroundColor Gray
+        Write-Host "  into $full, and open SoundStorm again." -ForegroundColor Gray
         Write-Host ""
     }
 }
@@ -1540,10 +1673,11 @@ $composeArgs = @()
 if ($useTailscale) { $composeArgs = @('--profile', 'tailscale') }
 
 if ($upgrade) {
-    Step "Checking for a newer version"
+    Step "Step 3 of 4 - Checking for a newer version"
 } else {
-    Step "Downloading the media servers"
+    Step "Step 3 of 4 - Downloading the media servers"
     Note "About 8GB the first time. This is the long part - leave it running."
+    Note "A line appears every half minute to show it is still going."
 }
 # Shown rather than captured: this is the part that takes minutes, and a
 # silent window is how somebody decides it has hung.
@@ -1552,7 +1686,7 @@ if ($pull.ExitCode -ne 0) {
     Stop-With "  Could not download the media servers. That is almost always the`n  internet connection. Try again - anything already downloaded is kept."
 }
 
-Step "Starting SoundStorm"
+Step "Step 4 of 4 - Starting SoundStorm"
 $start = Invoke-Docker (@('compose') + $composeArgs + @('up', '-d')) -Capture
 if ($start.ExitCode -ne 0) {
     Write-Host $start.Output
@@ -1566,7 +1700,7 @@ $url = "${scheme}://localhost:$port"
 Wait-ForSoundStorm $url
 
 if (-not $NoShortcuts) {
-    Step "Adding shortcuts"
+    Note "Adding shortcuts to the desktop and the Start menu."
     try {
         Install-Shortcuts
     } catch {
@@ -1576,29 +1710,30 @@ if (-not $NoShortcuts) {
     }
 }
 
-Write-Host ""
-Write-Host "  -----------------------------------------------------------"
-if ($upgrade) {
-    Write-Host "  Up to date." -ForegroundColor Green -NoNewline
-    Write-Host " SoundStorm is running at $url"
-} else {
-    Write-Host "  Done." -ForegroundColor Green -NoNewline
-    Write-Host " SoundStorm is running at $url"
-}
-Write-Host ""
-Write-Host "  Opening it now. Pick a username and password on the first screen -"
-Write-Host "  that is your account, and nobody else can create one."
-Write-Host ""
-Write-Host "  To add music, films or books: drag them onto the window, or put"
-Write-Host "  them in the 'SoundStorm media' folder on your desktop."
-Write-Host ""
-
+# The waiting happens before anything says "finished". It used to come after
+# "Opening it now", which then sat for up to 45 seconds with nothing opening.
 $lan = Get-LanAddress
 $secure = ''
 if ($tlsMode -eq 'auto') {
-    Step "Getting a secure address"
+    Note "Finishing up: getting a secure address for phones and other devices."
+    Note "This can take up to a minute."
     $secure = Get-SecureAddress $port
 }
+
+Write-Host ""
+Write-Host "  ======================================================================" -ForegroundColor Green
+if ($upgrade) {
+    Write-Host "   UPDATED." -ForegroundColor Green -NoNewline
+    Write-Host " SoundStorm is up to date and running." -ForegroundColor White
+} else {
+    Write-Host "   FINISHED." -ForegroundColor Green -NoNewline
+    Write-Host " SoundStorm is installed and running." -ForegroundColor White
+}
+Write-Host "  ======================================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "  To add music, films or books: drag them onto the SoundStorm window, or"
+Write-Host "  put them in the 'SoundStorm media' folder on your desktop."
+Write-Host ""
 if ($secure) {
     # The real certificate is in: this address works with no warning on any
     # device, and a phone can install the app from it.
@@ -1607,10 +1742,10 @@ if ($secure) {
     Write-Host "    $secure" -ForegroundColor White
     Write-Host ""
     if ($lan) {
-        Write-Host "  If that does not load, your router is refusing the name - use" -ForegroundColor DarkGray
-        Write-Host "  http://${lan}:$port instead. Same account either way." -ForegroundColor DarkGray
+        Write-Host "  If that does not load, your router is refusing the name - use" -ForegroundColor Gray
+        Write-Host "  http://${lan}:$port instead. Same account either way." -ForegroundColor Gray
     }
-    Write-Host "  Worth saving as a bookmark." -ForegroundColor DarkGray
+    Write-Host "  Worth saving as a bookmark." -ForegroundColor Gray
     Write-Host ""
 } elseif ($lan) {
     Write-Host "  On your phone, TV or another computer on this network:"
@@ -1618,17 +1753,17 @@ if ($secure) {
     Write-Host "    ${scheme}://${lan}:$port" -ForegroundColor White
     Write-Host ""
     if ($tlsMode -eq 'auto') {
-        Write-Host "  SoundStorm is still getting its secure address, and moves there" -ForegroundColor DarkGray
-        Write-Host "  by itself when it has one." -ForegroundColor DarkGray
+        Write-Host "  SoundStorm is still getting its secure address, and moves there" -ForegroundColor Gray
+        Write-Host "  by itself when it has one." -ForegroundColor Gray
     }
-    Write-Host "  Same account. Worth saving as a bookmark - and worth giving this" -ForegroundColor DarkGray
-    Write-Host "  PC a fixed address in your router, or that number will change." -ForegroundColor DarkGray
-    Write-Host "  If nothing loads, allow SoundStorm through the Windows firewall" -ForegroundColor DarkGray
-    Write-Host "  for private networks." -ForegroundColor DarkGray
+    Write-Host "  Same account. Worth saving as a bookmark - and worth giving this" -ForegroundColor Gray
+    Write-Host "  PC a fixed address in your router, or that number will change." -ForegroundColor Gray
+    Write-Host "  If nothing loads, allow SoundStorm through the Windows firewall" -ForegroundColor Gray
+    Write-Host "  for private networks." -ForegroundColor Gray
     Write-Host ""
 }
 if ($useTailscale) {
-    Step "Connecting to your tailnet"
+    Note "Connecting to your tailnet."
     $tailnet = Get-TailnetURL
     Write-Host ""
     if ($tailnet) {
@@ -1636,17 +1771,17 @@ if ($useTailscale) {
         Write-Host ""
         Write-Host "    $tailnet" -ForegroundColor White
         Write-Host ""
-        Write-Host "  It works away from the house, with nothing forwarded on your" -ForegroundColor DarkGray
-        Write-Host "  router." -ForegroundColor DarkGray
+        Write-Host "  It works away from the house, with nothing forwarded on your" -ForegroundColor Gray
+        Write-Host "  router." -ForegroundColor Gray
     } else {
         Write-Host "  Tailscale is starting but has not reported an address yet." -ForegroundColor Yellow
-        Write-Host "  Check the Tailscale admin console, or run:" -ForegroundColor DarkGray
+        Write-Host "  Check the Tailscale admin console, or run:" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "    docker logs soundstorm-tailscale" -ForegroundColor DarkGray
+        Write-Host "    docker logs soundstorm-tailscale" -ForegroundColor Gray
     }
     Write-Host ""
-    Write-Host "  Every device that should reach it needs the Tailscale app and the" -ForegroundColor DarkGray
-    Write-Host "  same account. There is no way around that part." -ForegroundColor DarkGray
+    Write-Host "  Every device that should reach it needs the Tailscale app and the" -ForegroundColor Gray
+    Write-Host "  same account. There is no way around that part." -ForegroundColor Gray
     Write-Host ""
 }
 
@@ -1657,9 +1792,9 @@ if ($tlsMode -eq 'self-signed') {
     # unavoidable without a real domain name - but it is fixable per device,
     # and that fix is the useful half of this message.
     Write-Host "  The first visit shows a certificate warning on every device." -ForegroundColor Yellow
-    Write-Host "  That is expected: the certificate was made by this PC, and no" -ForegroundColor DarkGray
-    Write-Host "  outside authority can vouch for a home network address." -ForegroundColor DarkGray
-    Write-Host "  Choose Advanced, then continue." -ForegroundColor DarkGray
+    Write-Host "  That is expected: the certificate was made by this PC, and no" -ForegroundColor Gray
+    Write-Host "  outside authority can vouch for a home network address." -ForegroundColor Gray
+    Write-Host "  Choose Advanced, then continue." -ForegroundColor Gray
     Write-Host ""
     $caHost = if ($lan) { $lan } else { 'localhost' }
     Write-Host "  To stop it asking, open this on each device and install the"
@@ -1667,20 +1802,48 @@ if ($tlsMode -eq 'self-signed') {
     Write-Host ""
     Write-Host "    https://${caHost}:$port/ca.crt" -ForegroundColor White
     Write-Host ""
-    Write-Host "  To go back to plain http, run the setup again with -NoHttps." -ForegroundColor DarkGray
+    Write-Host "  To go back to plain http, run the setup again with -NoHttps." -ForegroundColor Gray
     Write-Host ""
 } elseif ($tlsMode -eq 'off') {
-    Write-Host "  Run the setup again with -Https to encrypt the connection." -ForegroundColor DarkGray
+    Write-Host "  Run the setup again with -Https to encrypt the connection." -ForegroundColor Gray
     Write-Host ""
 }
 if (-not $NoShortcuts) {
-    Write-Host "  Next time, click the SoundStorm icon on your desktop." -ForegroundColor DarkGray
+    Write-Host "  Next time, click the SoundStorm icon on your desktop." -ForegroundColor Gray
     if (-not $NoAutoStart) {
-        Write-Host "  It also starts by itself when you turn the PC on." -ForegroundColor DarkGray
+        Write-Host "  It also starts by itself when you turn the PC on." -ForegroundColor Gray
     }
 }
 Write-Host ""
 
-# With the setup code, which the page takes out of the address as it loads.
-# Harmless once an account exists: it is only ever read by the first sign-up.
-Start-Process "$url/?setup=$setupCode"
+# The one thing to act on goes last, so it is what is on screen when the
+# window stops scrolling - and it carries the setup code in full. The code
+# used to travel only inside the address the browser was opened at, so
+# somebody whose page lost it (or who closed the tab, or opened the desktop
+# icon instead) was asked for a code nothing had ever shown them.
+$hasAccount = Get-HasAccount $url
+if ($hasAccount -ne $true -and $setupCode) {
+    Callout 'NEXT: create your account' @(
+        'Your web browser is opening SoundStorm now. On the first screen, choose',
+        'a username and password - that is your account for SoundStorm.',
+        '',
+        'If the page asks for a SETUP CODE, type this one:',
+        '',
+        "*        $(Format-SetupCode $setupCode)",
+        '',
+        'Capitals and dashes do not matter.',
+        '',
+        "Browser did not open?  Go to:  $url",
+        "The code is also saved in:     $(Join-Path $Dir '.env')"
+    ) 'Yellow'
+    # With the code in the address too, so the page usually fills it in by
+    # itself; it takes it out of the address once it has it.
+    Start-Process "$url/?setup=$setupCode"
+} else {
+    Callout 'NEXT: open SoundStorm' @(
+        'Your web browser is opening SoundStorm now. Sign in as usual.',
+        '',
+        "Browser did not open?  Go to:  $url"
+    ) 'Green'
+    Start-Process $url
+}

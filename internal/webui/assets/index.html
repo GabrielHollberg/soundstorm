@@ -41,8 +41,17 @@
       <div id="gate-setup" class="hidden">
         <label for="gate-setup-code">Setup code</label>
         <input id="gate-setup-code" name="setup-code" autocomplete="off" spellcheck="false">
-        <p class="setup-detail">Setup opened this page with the code already in it. Opened some
-          other way? It is in SoundStorm's log: <code>docker compose logs soundstorm</code></p>
+        <!-- Somebody who reaches this has usually closed the tab setup opened,
+             and a log is the last place a non-technical person should be sent,
+             so the places are in the order they are easiest to find. -->
+        <p class="setup-detail">The setup window showed this code when it finished, under
+          <strong>Your setup code</strong>. Capitals and dashes do not matter.</p>
+        <p class="setup-detail">Closed that window? The code is saved in the
+          <strong>SoundStorm</strong> folder (on Windows, inside your user folder). Open the
+          file called <code>.env</code> with Notepad or any text editor, and copy what comes
+          after <code>SOUNDSTORM_SETUP_CODE=</code>.</p>
+        <p class="setup-detail">Set up with docker compose alone? Run
+          <code>docker compose logs soundstorm</code> and look for “setup code”.</p>
       </div>
 
       <p id="gate-error" class="error hidden" role="alert"></p>

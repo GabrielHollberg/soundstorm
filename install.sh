@@ -33,14 +33,43 @@ FIRST_PORT="${SOUNDSTORM_PORT:-8099}"
 # produce escape codes, and `curl | sh` is a very normal way to run it.
 if [ -t 1 ]; then
 	BOLD=$(printf '\033[1m'); DIM=$(printf '\033[2m')
-	RED=$(printf '\033[31m'); GREEN=$(printf '\033[32m'); OFF=$(printf '\033[0m')
+	RED=$(printf '\033[31m'); GREEN=$(printf '\033[32m'); YELLOW=$(printf '\033[33m')
+	CYAN=$(printf '\033[36m'); OFF=$(printf '\033[0m')
 else
-	BOLD=''; DIM=''; RED=''; GREEN=''; OFF=''
+	BOLD=''; DIM=''; RED=''; GREEN=''; YELLOW=''; CYAN=''; OFF=''
 fi
 
+# Notes are plain, not dimmed: a dim line is easy to skim past, and most of
+# what this says is something the person needs to read. DIM is kept for the
+# reference lines at the very end that nobody needs on a first read.
 say()  { printf '%s\n' "$*"; }
-step() { printf '%s==>%s %s\n' "$BOLD" "$OFF" "$*"; }
-note() { printf '    %s%s%s\n' "$DIM" "$*" "$OFF"; }
+step() { printf '\n%s%s==>%s %s%s\n' "$CYAN" "$BOLD" "$OFF$BOLD" "$*" "$OFF"; }
+note() { printf '    %s\n' "$*"; }
+important() { printf '    %s%s%s\n' "$YELLOW" "$*" "$OFF"; }
+
+# frame draws a box around the one thing somebody has to act on, so it cannot
+# be lost among the lines above it. Arguments are lines; one starting with "*"
+# is the thing itself (a code, an address) and is drawn in yellow.
+frame() {
+	_frame_title=$1
+	shift
+	_frame_dashes=$(printf '%s' "--------------------------------------------------------------------" |
+		cut -c1-$((62 - ${#_frame_title})))
+	printf '\n  %s+--- %s %s%s\n' "$YELLOW$BOLD" "$_frame_title" "$_frame_dashes" "$OFF"
+	for _frame_line in "$@"; do
+		case "$_frame_line" in
+			\**) printf '  %s|%s  %s%s%s\n' "$YELLOW$BOLD" "$OFF" "$YELLOW$BOLD" "${_frame_line#?}" "$OFF" ;;
+			*)   printf '  %s|%s  %s\n' "$YELLOW$BOLD" "$OFF" "$_frame_line" ;;
+		esac
+	done
+	printf '  %s+%s%s\n\n' "$YELLOW$BOLD" "---------------------------------------------------------------------" "$OFF"
+}
+
+# format_code groups the setup code in fours so it can be read and typed. The
+# server ignores case, spaces and dashes, so this is only presentation.
+format_code() {
+	printf '%s' "$1" | tr 'a-f' 'A-F' | sed 's/\(....\)/\1-/g; s/-$//'
+}
 
 # die prints why it stopped and, more importantly, what to do about it. An
 # installer that says "error: 1" has failed twice.
@@ -525,6 +554,15 @@ done
 say ""
 say "${BOLD}SoundStorm${OFF} - one login and one search box over your media library"
 say ""
+# Said before anything happens: "is it still working?" is the question for the
+# next ten minutes, and the honest answer on a first install is "for a while".
+if [ -f "$DIR/docker-compose.yml" ]; then
+	say "Updating SoundStorm. Your library, accounts and settings are kept."
+else
+	say "This sets everything up by itself. The first time takes about 10 to 30"
+	say "minutes, mostly downloading."
+fi
+say "${YELLOW}${BOLD}Leave this running.${OFF}${YELLOW} It says when it is finished and what to do next.${OFF}"
 
 step "Checking Docker"
 need_docker
@@ -799,8 +837,13 @@ fi
 step "Waiting for SoundStorm to answer"
 URL="$SCHEME://localhost:$PORT"
 waited=0
+note "Waiting for SoundStorm to answer - usually under a minute."
 until health_ok "$URL/healthz"; do
 	waited=$((waited + 2))
+	# Two minutes with nothing on screen is when somebody decides it has hung.
+	if [ $((waited % 20)) -eq 0 ]; then
+		note "still starting... (${waited}s). This is normal the first time."
+	fi
 	if [ "$waited" -gt 120 ]; then
 		die "SoundStorm started but never answered on $URL.
 
@@ -890,9 +933,22 @@ say "${DIM}logs:    cd $DIR && $COMPOSE logs -f${OFF}"
 say "${DIM}upgrade: run this installer again${OFF}"
 say ""
 
+# The one thing to act on goes last, so it is what is on screen when the output
+# stops - with the setup code in full. It used to appear only inside the
+# addresses above, so anybody who opened a plain address instead was asked for
+# a code this never showed them on its own.
 if [ -n "$SETUP_QS" ]; then
-	note "The first address you open creates the owner account; the code at"
-	note "the end of it is what lets it. After that, plain addresses work."
-	say ""
+	frame "NEXT: create your account" \
+		"Open SoundStorm and choose a username and password on the first" \
+		"screen - that is your account." \
+		"" \
+		"*    $URL" \
+		"" \
+		"If the page asks for a SETUP CODE, type this one:" \
+		"" \
+		"*        $(format_code "$SETUP_CODE")" \
+		"" \
+		"Capitals and dashes do not matter. It is also saved in:" \
+		"    $DIR/.env"
 fi
 open_browser "$URL$SETUP_QS"

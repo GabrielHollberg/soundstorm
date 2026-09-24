@@ -96,18 +96,27 @@ const streamPath = (item) =>
 
 /* ------------------------------------------------------------------- gate */
 
-// The setup code arrives in the address the installer opened, and is taken
-// out of it straight away so it is not left in the history or a bookmark.
-// It survives the move to the https name because that keeps the query.
-const setupFromAddress = (() => {
+// The setup code arrives in the address the installer opened. It is read here,
+// but only taken out of the address once the page knows it is staying - see
+// forgetSetupCodeInAddress.
+const setupFromAddress = new URLSearchParams(location.search).get('setup') || '';
+
+// forgetSetupCodeInAddress takes the setup code out of the address, so it is
+// not left in the history or a bookmark.
+//
+// Not at load, which is when it used to happen. The page moves itself to the
+// https name as soon as it has one (moveToSecureName), carrying the query
+// across - and by then the code had already been stripped, so it arrived on
+// the new page as nothing. The installer waits for that name before opening
+// the browser, so on a fresh install the move nearly always happened, and the
+// first screen asked for a setup code the person had never been shown.
+function forgetSetupCodeInAddress() {
   const params = new URLSearchParams(location.search);
-  const code = params.get('setup');
-  if (code === null) return '';
+  if (!params.has('setup')) return;
   params.delete('setup');
   const rest = params.toString();
   history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
-  return code;
-})();
+}
 
 function showGate(hasAccount, setupCodeRequired) {
   show($('boot'), false);
@@ -1936,11 +1945,15 @@ async function moveToSecureName(name) {
 (async function boot() {
   const { ok, body, offline } = await api('/api/session');
   if (ok && body) {
+    // Moving keeps the whole address, setup code included; staying is when
+    // it can come out of the address.
     if (body.secureName && await moveToSecureName(body.secureName)) return;
+    forgetSetupCodeInAddress();
     if (body.signedIn) showApp(body.user);
     else showGate(body.hasAccount, body.setupCodeRequired);
     return;
   }
+  forgetSetupCodeInAddress();
 
   // Whatever went wrong, stop spinning. A spinner that never resolves is the
   // one failure that tells somebody nothing at all.

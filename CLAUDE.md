@@ -659,12 +659,47 @@ each, not assumed; Linux keeps the real address, Windows and macOS do not.
 
 The code costs the person installing nothing. The installers generate it into
 `.env` (`SOUNDSTORM_SETUP_CODE`) and open the browser at `/?setup=<code>`; the
-page takes it out of the address as it loads, so it is not left in history or a
-bookmark, and the move to the https name keeps the query so it survives that.
-`install.sh` prints it in the addresses it shows, for a headless box. With no
-installer - compose alone - SoundStorm makes one up at each start and logs it
-until an account exists. The form only asks for it when the address did not
-carry it. Eighty random bits, so there is no throttle on guessing it.
+page takes it out of the address once it knows it is staying, so it is not left
+in history or a bookmark. With no installer - compose alone - SoundStorm makes
+one up at each start and logs it until an account exists. The form only asks
+for it when the address did not carry it. Eighty random bits, so there is no
+throttle on guessing it.
+
+**That paragraph used to say the code survived the move to the https name,
+and it did not.** The page stripped `?setup=` at load, *then* moved itself to
+the secure name carrying `location.search` - by then empty. The installer
+waits up to 45 seconds for that name before opening the browser, so on a fresh
+auto-mode install the move nearly always happened, and the first screen asked
+for a code the installer had never shown. Reported from a real laptop install
+as "the code didn't show up, and it was too hard to find in the logs" - and the
+form's own help text sent people to the logs. `forgetSetupCodeInAddress` now
+runs only on the paths that stay. Checked in Chrome against the real
+`index.html` and `app.js` behind a stand-in server doing HTTP and TLS on one
+port: the committed code arrived at the https page with the field empty and
+the code requested; the fix arrived with it filled in and gone from the
+address.
+
+Because the code can still go astray - a closed tab, the desktop icon opened
+instead - it is no longer only ever in an address. Both installers end on a
+framed "NEXT: create your account" box showing it in full, grouped in fours
+(case, spaces and dashes are ignored); the desktop icon opens with the code
+while no account exists; and the form says where to find it in the order a
+person would look: the setup window, then `.env` with Notepad, then, for a
+compose-only install, the logs.
+
+**The installer is written for somebody who has never seen a terminal, and
+the laptop report was about more than the code.** It said Docker Desktop's
+first-run windows were confusing - does the account matter, is it safe to
+skip - and that it was hard to tell whether anything was working. So: a
+banner up front with how long it takes and "keep this window open"; numbered
+steps ("Step 1 of 4"); a box saying what to click in each Docker window
+(Accept, Skip, Skip - no account needed, closing it is fine) shown before
+Docker opens itself; heartbeats during every wait that could be silent; and
+notes in Gray rather than DarkGray, which is close to invisible on Windows
+PowerShell's default blue console. The one thing to act on is the last thing
+printed, so it is what is on screen when the scrolling stops. `install.ps1`
+has no byte order mark, so it stays pure ASCII - box-drawing characters and
+em dashes would come out as mojibake in Windows PowerShell 5.1.
 
 **Which shelves somebody can see is per account.** `User.Libraries` is a list
 of media kinds, and nil means all of them - which is what every account created
