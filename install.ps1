@@ -304,14 +304,35 @@ function Invoke-Docker {
             # What was shown is kept, so a failure can be told apart by what
             # it said - a rate limit wants waiting out, not a new connection.
             $kept = New-Object System.Collections.Generic.List[string]
+            # Which images are still coming, by name. The heartbeat used to
+            # say only "still downloading...", right under the last image
+            # that had *finished* - so that one looked like the slow one.
+            # Somebody asked why Valkey, the smallest image of all, took for
+            # ever.
+            $pending = New-Object System.Collections.Generic.List[string]
+            $total = 0
             & docker @Arguments 2>&1 | ForEach-Object {
                 $line = "$_"
+                if ($line -match '^\s*(?:Image\s+)?(\S+)\s+(Pulling|Pulled|Interrupted|Error)\s*$') {
+                    $image = $Matches[1]
+                    if ($Matches[2] -eq 'Pulling') {
+                        if (-not $pending.Contains($image)) { $pending.Add($image); $total++ }
+                    } else {
+                        [void]$pending.Remove($image)
+                    }
+                }
                 if (Test-DockerChurn $line) {
                     # Swallowed, but not silently: a download this long with
                     # nothing on screen is how somebody decides it has hung
                     # and closes the window.
                     if (((Get-Date) - $lastBeat).TotalSeconds -ge 30) {
-                        Note "still downloading..."
+                        if ($pending.Count -gt 0) {
+                            # "jellyfin", not "jellyfin/jellyfin:latest".
+                            $names = @($pending | ForEach-Object { ($_ -split '/')[-1] -replace ':.*$', '' })
+                            Note "still downloading $($pending.Count) of ${total}: $($names -join ', ')"
+                        } else {
+                            Note "still downloading..."
+                        }
                         $lastBeat = Get-Date
                     }
                     return
