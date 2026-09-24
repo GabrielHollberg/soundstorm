@@ -7,7 +7,9 @@ package source
 
 import (
 	"context"
+	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -468,4 +470,37 @@ func (r *Registry) Len() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.sources)
+}
+
+// FileLister is an optional interface for a source whose items are files in
+// SoundStorm's library, so that the owner can delete them.
+//
+// ItemFiles names the files and folders an item is made of, relative to the
+// shelf's own folder and slash-separated: "Artist/Album/01 Song.mp3", or
+// "Author/Title" for an audiobook that is a folder. Normalization at the edge
+// again - every backend reports a path differently (Navidrome relative to the
+// music folder, Audiobookshelf relative and absolute both, Jellyfin and Immich
+// as their own container sees it), and only the adapter knows which.
+//
+// It only ever reports. Working out an item's companions (a film's subtitles,
+// a book's sidecar), and moving anything, is internal/library's job, which is
+// also what checks every path stays inside the shelf.
+type FileLister interface {
+	ItemFiles(ctx context.Context, itemID string) ([]string, error)
+}
+
+// RelativeTo turns a path a backend reported, as its own container sees it,
+// into one relative to the shelf. It refuses a path outside root rather than
+// guessing, so an asset from somewhere the shelf does not own can never be
+// named for deletion.
+func RelativeTo(root, reported string) (string, error) {
+	root = strings.TrimRight(root, "/")
+	if root == "" || !strings.HasPrefix(reported, root+"/") {
+		return "", fmt.Errorf("%q is not inside %q", reported, root)
+	}
+	rel := strings.TrimPrefix(reported, root+"/")
+	if rel == "" {
+		return "", fmt.Errorf("%q is the shelf itself", reported)
+	}
+	return rel, nil
 }

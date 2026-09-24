@@ -209,6 +209,7 @@ function renderAccount() {
   // Hiding the controls is presentation, not permission - the server refuses
   // these calls for a member whether or not the form is on screen.
   show($('people-block'), Boolean(me.owner));
+  show($('select-toggle'), Boolean(me.owner));
   if (me.owner) {
     loadPeople();
     refreshRemote();
@@ -959,7 +960,21 @@ function renderItem(item) {
 
   meta.append(title, sub);
   card.append(wrap, meta);
-  card.addEventListener('click', () => play(item));
+
+  // A tick, shown only while selecting.
+  const check = document.createElement('span');
+  check.className = 'check';
+  check.setAttribute('aria-hidden', 'true');
+  check.textContent = '\u2713';
+  wrap.append(check);
+
+  const key = selectionKey(item);
+  card.dataset.key = key;
+  card.classList.toggle('selected', state.selected.has(key));
+  card.addEventListener('click', () => {
+    if (state.selecting) toggleSelected(item, card);
+    else play(item);
+  });
   return card;
 }
 
@@ -2077,3 +2092,171 @@ async function moveToSecureName(name) {
     boot.append(message);
   }
 })();
+
+/* -------------------------------------------------------------- selecting */
+
+// Selecting and deleting, for the owner. The server refuses a member anyway;
+// the button is simply not offered to one.
+//
+// Nothing is deleted at once. Files go to the library's bin for thirty days,
+// and the bar that confirmed the delete offers an undo straight after.
+
+state.selecting = false;
+state.selected = new Map();
+
+function selectionKey(item) {
+  return `${item.sourceId}\n${item.id}`;
+}
+
+function setSelecting(on) {
+  state.selecting = on;
+  if (!on) state.selected.clear();
+  $('results').classList.toggle('selecting', on);
+  for (const card of $('results').querySelectorAll('.item.selected')) {
+    card.classList.remove('selected');
+  }
+  $('select-toggle').textContent = on ? 'Done' : 'Select';
+  show($('select-bar'), on);
+  resetSelectBar();
+}
+
+function toggleSelected(item, card) {
+  const key = selectionKey(item);
+  if (state.selected.has(key)) state.selected.delete(key);
+  else state.selected.set(key, item);
+  card.classList.toggle('selected', state.selected.has(key));
+  resetSelectBar();
+}
+
+// resetSelectBar puts the bar back to "N selected" with its ordinary buttons,
+// out of the confirm or undo state it may have been in.
+function resetSelectBar() {
+  const n = state.selected.size;
+  $('select-count').textContent = n
+    ? `${n} selected`
+    : 'Tap the things you want to delete';
+  show($('select-all'), true);
+  show($('select-cancel'), true);
+  const del = $('select-delete');
+  del.textContent = 'Delete';
+  del.disabled = n === 0;
+  state.confirming = false;
+}
+
+function formatBytes(n) {
+  if (n >= 1e12) return `${(n / 1e12).toFixed(1)} TB`;
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+  if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)} KB`;
+  return `${n} bytes`;
+}
+
+function selectedPayload() {
+  return JSON.stringify({
+    items: [...state.selected.values()].map((item) => ({
+      source: item.sourceId, id: item.id, title: item.title,
+    })),
+  });
+}
+
+$('select-toggle').addEventListener('click', () => setSelecting(!state.selecting));
+$('select-cancel').addEventListener('click', () => setSelecting(false));
+
+$('select-all').addEventListener('click', () => {
+  for (const item of state.items || []) state.selected.set(selectionKey(item), item);
+  for (const card of $('results').querySelectorAll('.item')) card.classList.add('selected');
+  resetSelectBar();
+});
+
+$('select-delete').addEventListener('click', async () => {
+  const del = $('select-delete');
+  // The same button is Undo for a few seconds after a delete.
+  if (state.undoEntry) {
+    await undoDelete();
+    return;
+  }
+  if (!state.confirming) {
+    // First press: ask the server exactly what would go, and say it.
+    del.disabled = true;
+    const { ok, body } = await api('/api/delete/preview', { method: 'POST', body: selectedPayload() });
+    del.disabled = false;
+    if (!ok || !body) {
+      $('select-count').textContent = (body && body.error) || 'Could not work out what that would delete.';
+      return;
+    }
+    const n = body.items;
+    $('select-count').textContent =
+      `Delete ${n} item${n === 1 ? '' : 's'}? ${body.files} file${body.files === 1 ? '' : 's'}, ` +
+      `${formatBytes(body.bytes)}. They stay in the bin for 30 days.`;
+    show($('select-all'), false);
+    del.textContent = `Delete ${n}`;
+    state.confirming = true;
+    return;
+  }
+
+  // Second press: delete.
+  del.disabled = true;
+  const deleted = [...state.selected.keys()];
+  const { ok, body } = await api('/api/delete', { method: 'POST', body: selectedPayload() });
+  del.disabled = false;
+  if (!ok || !body) {
+    $('select-count').textContent = (body && body.error) || 'Could not delete.';
+    state.confirming = false;
+    del.textContent = 'Delete';
+    return;
+  }
+  // Gone from the screen now; the backends catch up with a rescan.
+  for (const key of deleted) {
+    const card = $('results').querySelector(`.item[data-key="${CSS.escape(key)}"]`);
+    if (card) card.remove();
+  }
+  state.items = (state.items || []).filter((item) => !deleted.includes(selectionKey(item)));
+  setSelecting(false);
+  offerUndo(body);
+});
+
+// offerUndo shows the undo in the same bar, for long enough to notice.
+function offerUndo(result) {
+  state.undoEntry = result.entry;
+  show($('select-bar'), true);
+  const n = result.items;
+  $('select-count').textContent = `Deleted ${n} item${n === 1 ? '' : 's'}.`;
+  show($('select-all'), false);
+  show($('select-cancel'), false);
+  const del = $('select-delete');
+  del.disabled = false;
+  del.textContent = 'Undo';
+  del.classList.replace('danger', 'ghost');
+  clearTimeout(state.undoTimer);
+  state.undoTimer = setTimeout(endUndo, 12000);
+}
+
+// endUndo puts the bar back to what it was before the undo was offered.
+function endUndo() {
+  clearTimeout(state.undoTimer);
+  state.undoEntry = null;
+  $('select-delete').classList.replace('ghost', 'danger');
+  show($('select-bar'), state.selecting);
+  resetSelectBar();
+}
+
+async function undoDelete() {
+  const entry = state.undoEntry;
+  $('select-delete').disabled = true;
+  const { ok, body } = await api('/api/delete/undo', {
+    method: 'POST', body: JSON.stringify({ entry }),
+  });
+  endUndo();
+  if (!ok) {
+    show($('select-bar'), true);
+    $('select-count').textContent = (body && body.error) || 'Could not undo.';
+    setTimeout(() => show($('select-bar'), state.selecting), 6000);
+    return;
+  }
+  // Back on disk now; give the shelf a moment to notice before listing it.
+  setTimeout(runSearch, 3000);
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.selecting) setSelecting(false);
+});

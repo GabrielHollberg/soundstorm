@@ -240,6 +240,24 @@ an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
 sidecars, so a library you already curate keeps its series, tags and corrected
 authors, with no SQLite driver and no Calibre-Web container.
 
+### Deleting things
+
+If you set SoundStorm up (the owner account), there is a **Select** button
+above your library. Tap the things you want gone, then **Delete**. It first
+says exactly what that removes, for example "Delete 3 items? 41 files, 2.3 GB",
+and asks you to press Delete again.
+
+Nothing is deleted straight away. The files go into a hidden bin inside your
+library folder (`library/.trash`) for 30 days, and **Undo** appears for a few
+seconds after a delete. After 30 days the bin empties itself. To get something
+back later than that Undo, look in `library/.trash`: each delete is a folder
+holding the files exactly where they were.
+
+A film takes its whole folder, subtitles and poster included, and an audiobook
+its whole book folder. A song goes on its own, unless it was the last one in its
+album folder, in which case the album's cover goes with it. Only the owner can
+delete, because everyone else shares the same shelves.
+
 ### Using it from your phone, TV or another computer
 
 It already works — nothing to enable. Use the server computer's address, on the

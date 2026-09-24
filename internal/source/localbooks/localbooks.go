@@ -691,3 +691,18 @@ func normalize(s string) string {
 	}
 	return strings.Join(strings.Fields(b.String()), " ")
 }
+
+// ItemFiles is the book's file relative to the shelf. Its sidecars (a Calibre
+// metadata.opf and cover) are internal/library's to find, the same as a
+// film's subtitles.
+func (s *Source) ItemFiles(_ context.Context, itemID string) ([]string, error) {
+	b, ok := s.lookup(itemID)
+	if !ok {
+		return nil, fmt.Errorf("localbooks %q: no book %q", s.id, itemID)
+	}
+	rel, err := filepath.Rel(s.root, b.Path)
+	if err != nil {
+		return nil, err
+	}
+	return []string{filepath.ToSlash(rel)}, nil
+}

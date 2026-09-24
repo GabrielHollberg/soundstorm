@@ -256,9 +256,26 @@
     </section>
 
     <p id="degraded" class="banner hidden" role="status"></p>
-    <p id="status" class="muted"></p>
+    <!-- The count, and for the owner a Select button: deleting is theirs
+         alone, since every other account shares these shelves. -->
+    <div id="results-bar" class="results-bar">
+      <p id="status" class="muted"></p>
+      <button id="select-toggle" class="ghost small hidden" type="button">Select</button>
+    </div>
 
     <section id="results" class="grid"></section>
+
+    <!-- While selecting: how many, and what to do with them. The same bar asks
+         for confirmation, saying exactly what goes, and afterwards offers the
+         undo - so a delete never happens anywhere the person is not looking. -->
+    <div id="select-bar" class="select-bar hidden" role="region" aria-label="Selected items">
+      <span id="select-count" class="select-count"></span>
+      <span class="select-actions">
+        <button id="select-all" class="ghost small" type="button">Select all shown</button>
+        <button id="select-delete" class="danger small" type="button" disabled>Delete</button>
+        <button id="select-cancel" class="ghost small" type="button">Cancel</button>
+      </span>
+    </div>
 
     <!-- Watched by an IntersectionObserver: when this scrolls into view the
          next page is fetched and appended. Zero height, so it changes no

@@ -425,6 +425,7 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			Kind:      media.KindVideo,
 			ItemTypes: "Movie",
 			Timeout:   15 * time.Second,
+			MediaRoot: t.MediaPath,
 		})
 		if err != nil {
 			return nil, err
@@ -442,6 +443,7 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			Kind:      media.KindTV,
 			ItemTypes: "Series,Episode",
 			Timeout:   15 * time.Second,
+			MediaRoot: t.TVPath,
 		})
 		if err != nil {
 			return nil, err
@@ -470,6 +472,7 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			APIKey:    creds.Token,
 			LibraryID: creds.LibraryID,
 			Timeout:   15 * time.Second,
+			MediaRoot: t.MediaPath,
 		})
 		return one(s, err)
 

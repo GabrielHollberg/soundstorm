@@ -144,6 +144,21 @@ func run(log *slog.Logger) error {
 	// no backend has it mounted.
 	lib.ClearStaging()
 
+	// Empty the bin of anything deleted more than thirty days ago: now, and
+	// once a day after. Recovered, like every goroutine started once and left
+	// running - a panic here would take the whole server down with it.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("bin sweep panicked; the bin will be emptied at the next start", "panic", r)
+			}
+		}()
+		for {
+			lib.SweepBin(time.Now(), library.BinKeep)
+			time.Sleep(24 * time.Hour)
+		}
+	}()
+
 	targets, err := targetsFromEnv(lib)
 	if err != nil {
 		return err

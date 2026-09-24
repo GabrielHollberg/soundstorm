@@ -97,6 +97,11 @@ type listResponse struct {
 type libraryItem struct {
 	ID string `json:"id"`
 
+	// RelPath is the item relative to the library folder - a book's folder,
+	// or the file itself when IsFile. Checked against 2.36.1.
+	RelPath string `json:"relPath"`
+	IsFile  bool   `json:"isFile"`
+
 	// IsMissing is Audiobookshelf's answer to "the files this item was made
 	// from are no longer on disk". It does not delete the item - it flags it and
 	// carries on serving it from both /search and /items, so a book somebody
@@ -654,4 +659,18 @@ func (s *Source) Health(ctx context.Context) error {
 		}
 	}
 	return fmt.Errorf("library %q not found on this server", s.cfg.LibraryID)
+}
+
+// ItemFiles is the book: its folder, or the one file when a book is a single
+// file on the shelf. Audiobookshelf reports that relative to the library
+// folder already.
+func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error) {
+	item, err := s.fetchItem(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	if item.RelPath == "" {
+		return nil, fmt.Errorf("audiobookshelf %q: no folder for %q", s.id, itemID)
+	}
+	return []string{item.RelPath}, nil
 }

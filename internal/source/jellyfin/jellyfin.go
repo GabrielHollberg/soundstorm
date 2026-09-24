@@ -50,6 +50,11 @@ type Config struct {
 
 	// ItemTypes is Jellyfin's IncludeItemTypes filter. Defaults to films.
 	ItemTypes string
+
+	// MediaRoot is this source's folder as Jellyfin's container sees it
+	// ("/media/movies"), which is how Jellyfin reports an item's path. Empty
+	// means this source cannot name its files, so its items cannot be deleted.
+	MediaRoot string
 }
 
 // Source is a Jellyfin server serving video.
@@ -767,4 +772,29 @@ func (s *Source) owns(ctx context.Context, itemID string) error {
 	s.owned.at[itemID] = time.Now()
 	s.owned.mu.Unlock()
 	return nil
+}
+
+// ItemFiles is the item's path relative to the shelf: a film's file, an
+// episode's file, or a series' folder. Only for an item this source owns - the
+// same check every other target makes, since one Jellyfin account serves both
+// the film and the television source.
+func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error) {
+	if s.cfg.MediaRoot == "" {
+		return nil, fmt.Errorf("jellyfin %q: no media folder configured", s.id)
+	}
+	if err := s.owns(ctx, itemID); err != nil {
+		return nil, err
+	}
+	var item struct {
+		Path string `json:"Path"`
+	}
+	path := "/Users/" + url.PathEscape(s.cfg.UserID) + "/Items/" + url.PathEscape(itemID)
+	if err := s.http.JSON(ctx, path, url.Values{"Fields": {"Path"}}, &item); err != nil {
+		return nil, fmt.Errorf("jellyfin %q: item path: %w", s.id, err)
+	}
+	rel, err := source.RelativeTo(s.cfg.MediaRoot, item.Path)
+	if err != nil {
+		return nil, fmt.Errorf("jellyfin %q: %w", s.id, err)
+	}
+	return []string{rel}, nil
 }

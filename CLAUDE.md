@@ -311,6 +311,47 @@ silently truncates a large folder - the classic way to lose half an album. There
 is a test for it that builds a fake entry tree, because a synthetic DataTransfer
 gets no filesystem entries and no automated drag can produce real ones.
 
+## Deleting, into a bin
+
+The owner can select items and delete them. Two decisions shape it:
+
+- **Owner only.** Every other account shares these shelves with the rest of
+  the house, so a member who could delete could empty one everybody uses. The
+  routes are on the owner mux. The Select button is not shown to a member, but
+  that is presentation; the server refuses either way.
+- **Never at once.** Files move to `library/.trash/<entry>/files/<path>`, with
+  an `entry.json` saying what they were, for `library.BinKeep` (30 days). An
+  undo puts them back, and a daily sweep in `main` empties old entries. A
+  top-level dot-directory for the same reason as `.uploads`: no backend has it
+  mounted, so a binned item leaves every backend's view at once. Undo never
+  overwrites: a path whose place has been taken since stays in the bin and is
+  reported.
+
+**Normalization at the edge again.** `source.FileLister` asks each adapter
+which files an item is, relative to its shelf. Each backend reports a path
+differently, checked against the live servers rather than their docs:
+- **Navidrome's** `getSong` path is relative to the music folder.
+- **Audiobookshelf** gives `relPath`, the book folder.
+- **Immich's** `originalPath` is as its container sees it (`/pictures/...`), so
+  the adapter trims its `MediaRoot` with `source.RelativeTo`. That refuses
+  anything outside the root, so an asset uploaded to Immich's own storage can
+  never be named.
+- **Jellyfin** is the same shape as Immich. It is untested live, for want of
+  films on the development machine.
+
+`library.Resolve` decides what goes with an item. A folder goes whole. A file
+takes its same-named companions: `Dune.mkv` takes `Dune.en.srt` but not
+`Dune Part Two.mkv`, because the character after the shared stem must end the
+name. When nothing of the shelf's kind would be left in the folder, the folder
+goes instead, so a film, a Calibre book or an album's last track does not leave
+its cover and sidecars behind. Every path must stay inside the shelf and may
+never be the shelf itself, the same care `Save` takes with an upload. Emptied
+parent folders are removed up to, never including, the shelf.
+
+Verified in Chrome against a throwaway server. The starter ebook was selected,
+the preview said "1 file, 193 KB", the delete moved its book folder into the
+bin, and undo put it back and on screen.
+
 ## Browsing, which is searching for nothing
 
 An empty query is a request to see the shelf, not a request for nothing.

@@ -96,6 +96,7 @@ type envelope struct {
 		SearchResult3 struct {
 			Song []song `json:"song"`
 		} `json:"searchResult3"`
+		Song *song `json:"song"`
 	} `json:"subsonic-response"`
 }
 
@@ -108,6 +109,9 @@ type song struct {
 	Duration int    `json:"duration"` // seconds
 	CoverArt string `json:"coverArt"`
 	Suffix   string `json:"suffix"`
+	// Path is relative to the music folder - checked against Navidrome
+	// 0.64: "Artist/Album/01 - Title.mp3".
+	Path string `json:"path"`
 }
 
 // check turns a Subsonic envelope into an error when the server reported one.
@@ -269,4 +273,28 @@ func (s *Source) Health(ctx context.Context) error {
 		return err
 	}
 	return env.check()
+}
+
+// ItemFiles is the track's file, relative to the music folder, which is how
+// Navidrome reports it.
+func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error) {
+	if itemID == "" {
+		return nil, fmt.Errorf("subsonic %q: empty id", s.id)
+	}
+	params, err := s.auth()
+	if err != nil {
+		return nil, err
+	}
+	params.Set("id", itemID)
+	var env envelope
+	if err := s.http.JSON(ctx, "/rest/getSong.view", params, &env); err != nil {
+		return nil, fmt.Errorf("subsonic %q: get song: %w", s.id, err)
+	}
+	if err := env.check(); err != nil {
+		return nil, err
+	}
+	if env.Response.Song == nil || env.Response.Song.Path == "" {
+		return nil, fmt.Errorf("subsonic %q: no file for %q", s.id, itemID)
+	}
+	return []string{env.Response.Song.Path}, nil
 }

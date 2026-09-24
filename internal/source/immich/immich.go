@@ -27,6 +27,11 @@ type Config struct {
 	APIKey    string
 	LibraryID string
 	Timeout   time.Duration
+
+	// MediaRoot is the pictures folder as Immich's container sees it
+	// ("/pictures"), which is how Immich reports an asset's original path.
+	// Empty means this source cannot name its files.
+	MediaRoot string
 }
 
 // Source is one Immich external library.
@@ -67,6 +72,8 @@ type asset struct {
 	Width            int    `json:"width"`
 	Height           int    `json:"height"`
 	IsOffline        bool   `json:"isOffline"`
+	OriginalPath     string `json:"originalPath"`
+	LibraryID        string `json:"libraryId"`
 	IsTrashed        bool   `json:"isTrashed"`
 	ExifInfo         *struct {
 		City    string `json:"city"`
@@ -272,4 +279,29 @@ func (s *Source) Health(ctx context.Context) error {
 		return fmt.Errorf("library %q not found on this server", s.cfg.LibraryID)
 	}
 	return nil
+}
+
+// ItemFiles is the photo or clip's original file. Only for an asset in the
+// external library SoundStorm made: anything uploaded to Immich some other
+// way lives in Immich's own storage, which is not the pictures folder and not
+// SoundStorm's to delete.
+func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error) {
+	if s.cfg.MediaRoot == "" {
+		return nil, fmt.Errorf("immich %q: no media folder configured", s.id)
+	}
+	if itemID == "" {
+		return nil, fmt.Errorf("immich %q: empty item id", s.id)
+	}
+	var a asset
+	if err := s.http.JSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
+		return nil, err
+	}
+	if a.LibraryID != "" && a.LibraryID != s.cfg.LibraryID {
+		return nil, fmt.Errorf("immich %q: %q is not in the pictures folder", s.id, itemID)
+	}
+	rel, err := source.RelativeTo(s.cfg.MediaRoot, a.OriginalPath)
+	if err != nil {
+		return nil, fmt.Errorf("immich %q: %w", s.id, err)
+	}
+	return []string{rel}, nil
 }
