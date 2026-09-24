@@ -17,9 +17,12 @@ window. No API keys, no second login, nothing to configure.
 It installs Docker for you if you do not have it, starts it if it is not
 running, and leaves a SoundStorm icon on your desktop.
 
-**What to expect.** A window walks through four steps. The first install takes
-10 to 30 minutes, mostly downloading — keep the window open, and it tells you
-when it is finished. Along the way:
+**What to expect.** A setup window opens and ticks through four steps. The
+first install takes 10 to 30 minutes, mostly downloading. Leave it open: it
+says when it is finished, and ends with your setup code and an **Open
+SoundStorm** button. If something goes wrong it says what, in the same window,
+and **Show details** has the full log (also saved as `SoundStorm-setup.log` in
+your temp folder). Along the way:
 
 - **Windows asks for permission** to install Docker, and sometimes Windows
   Subsystem for Linux. Click **Yes**.

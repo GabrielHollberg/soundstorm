@@ -737,6 +737,54 @@ printed, so it is what is on screen when the scrolling stops. `install.ps1`
 has no byte order mark, so it stays pure ASCII - box-drawing characters and
 em dashes would come out as mojibake in Windows PowerShell 5.1.
 
+**Then the console went, because it was still a console.** Numbered steps
+and yellow boxes made it legible, but "typical users are put off by command
+prompt" was about the black window itself. An interactive run now relaunches
+itself with its console hidden and shows a Windows Forms window instead. The
+window has the four steps ticking off, a status line, a progress bar, the
+callouts as a coloured panel, and at the end the setup code, the phone address
+and an Open SoundStorm button. Errors show in the same window with the log's
+path. The console text survives under "Show details" and in
+`%TEMP%\SoundStorm-setup.log`. The library and home-network questions are
+windows too. Neither `-Launch` (the desktop icon) nor `-Console` gets the
+window.
+
+How it is built, and why:
+
+- **One thread, pumped.** The window runs on the setup's own thread, and
+  every place the script waits keeps it painted: `Write-Host` and
+  `Start-Sleep` are wrapped, process waits go through `Wait-ProcessPumped`,
+  and each line docker prints calls `Update-Gui`. Windows Forms wants every
+  dialog on one thread, and this keeps the setup's logic unchanged. The
+  alternatives were a second runspace, which would have to marshal every
+  dialog, or a compiled helper, which Smart App Control blocks on exactly
+  these PCs. The cost is a window that can stop repainting during a silent
+  docker call of a few seconds.
+- **`-Wait` is gone from the elevated calls.** It blocked the thread for as
+  long as winget took to install Docker Desktop, which is minutes of a window
+  marked "Not responding".
+- **The relaunched copy is its own temp file.** The file the parent ran may be
+  a downloaded copy its own parent is about to delete. The parent exits 99,
+  and `SoundStorm-Setup.cmd` skips "Press any key" for that code.
+- **A window that cannot be built** restarts the setup visibly in a console,
+  rather than leaving a hidden process running with nothing on screen.
+- **Shown twice, on purpose.** A process started with `-WindowStyle Hidden`
+  has "hidden" applied to the first window it shows. That is meant for the
+  console, but PowerShell's console belongs to conhost, so the first window
+  was the setup's own. The first end-to-end run sat on its error screen,
+  invisible. A probe started the same way reproduced it: shown once, not
+  visible; hidden and shown again, visible. Only a real hidden launch shows
+  this. Rendering the window in-process, as the layout checks did, cannot.
+- **Screenshots of it need `CopyFromScreen`.** `DrawToBitmap` leaves a
+  RichTextBox blank, so the first layout check showed an empty panel that
+  was fine on screen.
+
+Verified by driving every state (Docker guide, downloading, finished with
+code, failed) and capturing the screen, then by running the real installer
+into a scratch folder. It relaunched, hid its console, showed the window,
+reached the "already installed in another folder" refusal and displayed it,
+and wrote nothing.
+
 **Which shelves somebody can see is per account.** `User.Libraries` is a list
 of media kinds, and nil means all of them - which is what every account created
 before the field existed has, and the default for a new one. The owner is always

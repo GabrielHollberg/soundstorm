@@ -23,6 +23,7 @@
 #   -Library PATH  keep the media library somewhere else - an external drive
 #   -ChooseLibrary ask, in a window, where the library should go (what the
 #                  "Move SoundStorm library" shortcut runs)
+#   -Console       show progress in this console instead of a window
 #
 # Updating is the same as installing: run it again. It pulls newer images and
 # restarts, and leaves everything else alone. -Https and -NoHttps work on an
@@ -60,7 +61,8 @@ param(
     # No alias: --library already binds to -Library, and an alias differing
     # only in case is an error rather than a no-op.
     [string]$Library,
-    [Alias('choose-library')][switch]$ChooseLibrary
+    [Alias('choose-library')][switch]$ChooseLibrary,
+    [switch]$Console
 )
 
 if ($Https -and $NoHttps) {
@@ -168,14 +170,479 @@ if (-not $Launch -and $env:SOUNDSTORM_FRESH -ne '1' -and
     Remove-Item -LiteralPath $fresh -Force -ErrorAction SilentlyContinue
 }
 
+# --- the setup window -----------------------------------------------------------
+#
+# The people this is for are put off by a console, and the console used to be
+# the whole experience: twenty minutes of a black window with text scrolling
+# in it. So an interactive setup relaunches itself with its console hidden and
+# shows a window instead - the four steps ticking off, what it is doing now, a
+# progress bar, what to click in the windows Docker opens, and at the end the
+# setup code and an Open SoundStorm button. The console output is still all
+# there, under "Show details", and in a log file for whoever is helping.
+#
+# The window runs on the same thread as the setup, pumped from every place the
+# script waits (Write-Host, Start-Sleep, waiting on a process, each line docker
+# prints). That keeps every dialog - the folder picker, the network question -
+# owned by one thread, which Windows Forms requires, and changes none of the
+# setup's own logic. The cost is a window that can stop repainting for the few
+# seconds of a docker call that prints nothing, which is far better than the
+# alternatives of a second thread or a compiled helper that Smart App Control
+# would block.
+#
+# ASCII only, like the rest of this file: the tick and arrow characters are
+# made from their code points at run time.
+
+$script:Gui = $null
+$script:SetupLog = Join-Path $env:TEMP 'SoundStorm-setup.log'
+
+# Update-Gui lets the window repaint and answer clicks. A no-op without one.
+function Update-Gui {
+    if ($script:Gui) { [System.Windows.Forms.Application]::DoEvents() }
+}
+
+# Write-Host is wrapped, not replaced: everything this script prints still goes
+# to the console when there is one, and to the log file always - and, with the
+# window up, into its details box instead of a console nobody can see.
+function Write-Host {
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)] $Object,
+        [ConsoleColor] $ForegroundColor,
+        [ConsoleColor] $BackgroundColor,
+        [switch] $NoNewline,
+        $Separator = ' '
+    )
+    $text = if ($null -eq $Object) { '' } else { (@($Object) | ForEach-Object { "$_" }) -join $Separator }
+    $end = if ($NoNewline) { '' } else { "`r`n" }
+    try { [IO.File]::AppendAllText($script:SetupLog, $text + $end) } catch { }
+    if ($script:Gui) {
+        Add-GuiDetail ($text + $end)
+        return
+    }
+    $pass = @{ Object = $text; NoNewline = $NoNewline }
+    if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $pass.ForegroundColor = $ForegroundColor }
+    if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $pass.BackgroundColor = $BackgroundColor }
+    Microsoft.PowerShell.Utility\Write-Host @pass
+}
+
+# Start-Sleep keeps the window alive while it waits. Every wait in this script
+# is a sleep in a loop, so this one wrapper covers them all.
+function Start-Sleep {
+    param([Parameter(Position = 0)][double]$Seconds = 0, [int]$Milliseconds = 0)
+    $total = [int]($Seconds * 1000) + $Milliseconds
+    if (-not $script:Gui) {
+        Microsoft.PowerShell.Utility\Start-Sleep -Milliseconds $total
+        return
+    }
+    $until = (Get-Date).AddMilliseconds($total)
+    while ((Get-Date) -lt $until) {
+        Update-Gui
+        Microsoft.PowerShell.Utility\Start-Sleep -Milliseconds 50
+    }
+}
+
+# Wait-ProcessPumped waits for a process to exit, keeping the window alive.
+# Returns $false if TimeoutSeconds passed first (0 waits for ever).
+#
+# Reading .Handle is not a no-op and is not optional. Start-Process -PassThru
+# hands back a Process with no cached handle, and without one WaitForExit never
+# observes the exit - it times out on a program that finished in a second.
+function Wait-ProcessPumped($Process, [int]$TimeoutSeconds = 0) {
+    $null = $Process.Handle
+    $deadline = if ($TimeoutSeconds -gt 0) { (Get-Date).AddSeconds($TimeoutSeconds) } else { [DateTime]::MaxValue }
+    while (-not $Process.WaitForExit(100)) {
+        Update-Gui
+        if ((Get-Date) -gt $deadline) { return $false }
+    }
+    return $true
+}
+
+# Read-Text asks for one line of text: in a box with the window up, since a
+# hidden console cannot be typed into, and on the console otherwise.
+function Read-Text([string]$Prompt, [string]$Title = 'SoundStorm Setup') {
+    if ($script:Gui) {
+        Add-Type -AssemblyName Microsoft.VisualBasic
+        return [Microsoft.VisualBasic.Interaction]::InputBox($Prompt, $Title, '')
+    }
+    return (Read-Host "  $Prompt")
+}
+
+function New-GuiFont([float]$Size, [System.Drawing.FontStyle]$Style = 'Regular', [string]$Family = 'Segoe UI') {
+    return (New-Object System.Drawing.Font($Family, $Size, $Style))
+}
+
+# New-SetupWindow builds the window and shows it, without waiting on it.
+function New-SetupWindow([string]$Heading, [string]$Subheading, [string[]]$StepNames) {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    $g = @{
+        Running = $true
+        Closed  = $false
+        OpenUrl = ''
+        Steps   = @()
+        Current = 0
+        Expanded = $false
+    }
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'SoundStorm Setup'
+    $form.StartPosition = 'CenterScreen'
+    $form.FormBorderStyle = 'FixedSingle'
+    $form.MaximizeBox = $false
+    $form.AutoScaleMode = 'Dpi'
+    $form.Font = New-GuiFont 10
+    $form.BackColor = [System.Drawing.Color]::White
+    $form.ClientSize = New-Object System.Drawing.Size(640, 552)
+    $g.Form = $form
+
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text = $Heading
+    $title.Font = New-GuiFont 16 'Bold'
+    $title.Location = New-Object System.Drawing.Point(24, 16)
+    $title.Size = New-Object System.Drawing.Size(592, 36)
+    $form.Controls.Add($title)
+    $g.Title = $title
+
+    $sub = New-Object System.Windows.Forms.Label
+    $sub.Text = $Subheading
+    $sub.ForeColor = [System.Drawing.Color]::DimGray
+    $sub.Location = New-Object System.Drawing.Point(24, 54)
+    $sub.Size = New-Object System.Drawing.Size(592, 44)
+    $form.Controls.Add($sub)
+    $g.Sub = $sub
+
+    for ($i = 0; $i -lt $StepNames.Count; $i++) {
+        $label = New-Object System.Windows.Forms.Label
+        $label.Location = New-Object System.Drawing.Point(24, (104 + $i * 28))
+        $label.Size = New-Object System.Drawing.Size(592, 26)
+        $label.Tag = $StepNames[$i]
+        $form.Controls.Add($label)
+        $g.Steps += $label
+    }
+
+    $status = New-Object System.Windows.Forms.Label
+    $status.Location = New-Object System.Drawing.Point(24, 222)
+    $status.Size = New-Object System.Drawing.Size(592, 44)
+    $status.AutoEllipsis = $true
+    $form.Controls.Add($status)
+    $g.Status = $status
+
+    $bar = New-Object System.Windows.Forms.ProgressBar
+    $bar.Location = New-Object System.Drawing.Point(24, 268)
+    $bar.Size = New-Object System.Drawing.Size(592, 14)
+    $bar.Style = 'Marquee'
+    $bar.MarqueeAnimationSpeed = 30
+    $form.Controls.Add($bar)
+    $g.Bar = $bar
+
+    $message = New-Object System.Windows.Forms.RichTextBox
+    $message.Location = New-Object System.Drawing.Point(24, 298)
+    $message.Size = New-Object System.Drawing.Size(592, 192)
+    $message.ReadOnly = $true
+    $message.BorderStyle = 'None'
+    $message.ScrollBars = 'Vertical'
+    $message.DetectUrls = $true
+    $message.TabStop = $false
+    $message.Visible = $false
+    $message.Add_LinkClicked({ param($s, $e) try { Start-Process $e.LinkText } catch { } })
+    $form.Controls.Add($message)
+    $g.Message = $message
+
+    $toggle = New-Object System.Windows.Forms.LinkLabel
+    $toggle.Text = 'Show details'
+    $toggle.Location = New-Object System.Drawing.Point(24, 510)
+    $toggle.Size = New-Object System.Drawing.Size(200, 24)
+    $form.Controls.Add($toggle)
+    $g.Toggle = $toggle
+
+    $open = New-Object System.Windows.Forms.Button
+    $open.Text = 'Open SoundStorm'
+    $open.Location = New-Object System.Drawing.Point(344, 504)
+    $open.Size = New-Object System.Drawing.Size(160, 34)
+    $open.Visible = $false
+    $open.Add_Click({ if ($script:Gui.OpenUrl) { Start-Process $script:Gui.OpenUrl } })
+    $form.Controls.Add($open)
+    $g.Open = $open
+
+    $close = New-Object System.Windows.Forms.Button
+    $close.Text = 'Cancel'
+    $close.Location = New-Object System.Drawing.Point(516, 504)
+    $close.Size = New-Object System.Drawing.Size(100, 34)
+    $close.Add_Click({ $script:Gui.Form.Close() })
+    $form.Controls.Add($close)
+    $g.Close = $close
+
+    $details = New-Object System.Windows.Forms.TextBox
+    $details.Multiline = $true
+    $details.ReadOnly = $true
+    $details.ScrollBars = 'Vertical'
+    $details.Font = New-GuiFont 9 'Regular' 'Consolas'
+    $details.BackColor = [System.Drawing.Color]::FromArgb(24, 24, 24)
+    $details.ForeColor = [System.Drawing.Color]::Gainsboro
+    $details.Location = New-Object System.Drawing.Point(24, 552)
+    $details.Size = New-Object System.Drawing.Size(592, 220)
+    $details.Visible = $false
+    $details.MaxLength = 0
+    $form.Controls.Add($details)
+    $g.Details = $details
+
+    $toggle.Add_LinkClicked({
+        $w = $script:Gui
+        $w.Expanded = -not $w.Expanded
+        $w.Details.Visible = $w.Expanded
+        $w.Toggle.Text = if ($w.Expanded) { 'Hide details' } else { 'Show details' }
+        $height = if ($w.Expanded) { 788 } else { 552 }
+        $w.Form.ClientSize = New-Object System.Drawing.Size(640, $height)
+        if ($w.Expanded) {
+            $w.Details.SelectionStart = $w.Details.TextLength
+            $w.Details.ScrollToCaret()
+        }
+    })
+
+    # Closing while it works asks first, and means it: the setup stops. What
+    # was downloaded is kept, so running it again carries on from there.
+    $form.Add_FormClosing({
+        param($sender, $e)
+        if ($script:Gui.Running) {
+            $answer = [System.Windows.Forms.MessageBox]::Show($sender,
+                "SoundStorm is still being set up.`r`n`r`nStop now? Anything already downloaded is kept, and running the setup again carries on from there.",
+                'SoundStorm Setup',
+                [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                [System.Windows.Forms.MessageBoxIcon]::Warning)
+            if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+                $e.Cancel = $true
+                return
+            }
+            try { [IO.File]::AppendAllText($script:SetupLog, "Stopped from the window.`r`n") } catch { }
+            [Environment]::Exit(1)
+        }
+        $script:Gui.Closed = $true
+    })
+
+    $script:Gui = $g
+    Set-GuiStepMarks
+    # Shown twice, and the first is not a mistake. This process was started
+    # hidden (so its console never appears), and Windows applies "hidden" to
+    # the first window a process shows - which here is this one, since the
+    # console belongs to another process. Shown once, the setup ran with its
+    # window invisible; checked with a probe started the same way: shown once,
+    # not visible; hidden and shown again, visible.
+    $form.Show()
+    $form.Hide()
+    $form.Show()
+    $form.Activate()
+    Update-Gui
+}
+
+# Set-GuiStepMarks draws each step as done, current or still to come.
+function Set-GuiStepMarks([switch]$Failed) {
+    $w = $script:Gui
+    $done = [string][char]0x2714
+    $now = [string][char]0x25B6
+    $todo = [string][char]0x25CB
+    $bad = [string][char]0x2716
+    for ($i = 0; $i -lt $w.Steps.Count; $i++) {
+        $label = $w.Steps[$i]
+        $n = $i + 1
+        if ($n -lt $w.Current) {
+            $label.Text = "  $done   $($label.Tag)"
+            $label.ForeColor = [System.Drawing.Color]::SeaGreen
+            $label.Font = New-GuiFont 10
+        } elseif ($n -eq $w.Current) {
+            $mark = if ($Failed) { $bad } else { $now }
+            $label.Text = "  $mark   $($label.Tag)"
+            $label.ForeColor = if ($Failed) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::FromArgb(0, 90, 180) }
+            $label.Font = New-GuiFont 10 'Bold'
+        } else {
+            $label.Text = "  $todo   $($label.Tag)"
+            $label.ForeColor = [System.Drawing.Color]::Gray
+            $label.Font = New-GuiFont 10
+        }
+    }
+}
+
+# Set-GuiStep moves the window on to "Step N of M - what it is doing".
+function Set-GuiStep([string]$Text) {
+    if (-not $script:Gui) { return }
+    if ($Text -match 'Step (\d+) of \d+ - (.+)$') {
+        $n = [int]$Matches[1]
+        if ($n -ge 1 -and $n -le $script:Gui.Steps.Count) {
+            $script:Gui.Steps[$n - 1].Tag = $Matches[2]
+            $script:Gui.Current = $n
+        }
+    }
+    # A new step is a new stage, and what the last one said to do is over.
+    $script:Gui.Message.Visible = $false
+    $script:Gui.Status.Text = ''
+    Set-GuiStepMarks
+    Update-Gui
+}
+
+# Set-GuiStatus is the one line under the steps saying what is happening now.
+function Set-GuiStatus([string]$Text, [string]$Kind = 'Note') {
+    if (-not $script:Gui) { return }
+    $script:Gui.Status.Text = $Text.Trim()
+    $script:Gui.Status.ForeColor = switch ($Kind) {
+        'Good' { [System.Drawing.Color]::SeaGreen }
+        'Important' { [System.Drawing.Color]::FromArgb(176, 96, 0) }
+        default { [System.Drawing.Color]::Black }
+    }
+    Update-Gui
+}
+
+function Add-GuiDetail([string]$Text) {
+    $box = $script:Gui.Details
+    $box.AppendText($Text)
+    Update-Gui
+}
+
+# Set-GuiMessage shows a callout - what to click in Docker's windows, the setup
+# code - as a panel in the window. A line starting with "*" is the thing
+# itself, an address or a code, and is drawn large.
+function Set-GuiMessage([string]$Title, [string[]]$Lines, [string]$Color = 'Yellow') {
+    if (-not $script:Gui) { return }
+    $box = $script:Gui.Message
+    $box.BackColor = switch ($Color) {
+        'Cyan' { [System.Drawing.Color]::FromArgb(232, 243, 252) }
+        'Green' { [System.Drawing.Color]::FromArgb(231, 245, 234) }
+        'Red' { [System.Drawing.Color]::FromArgb(252, 234, 234) }
+        default { [System.Drawing.Color]::FromArgb(255, 248, 225) }
+    }
+    $box.Clear()
+    $box.SelectionFont = New-GuiFont 11 'Bold'
+    $box.AppendText("$Title`n")
+    foreach ($line in $Lines) {
+        if ($line.StartsWith('*')) {
+            # Large for the thing itself - a code, an address. A whole
+            # sentence at that size is shouting, so a long one is only bold.
+            $thing = $line.Substring(1).Trim()
+            $size = if ($thing.Length -le 44) { 14 } else { 10 }
+            $box.SelectionFont = New-GuiFont $size 'Bold'
+            $box.AppendText($thing + "`n")
+        } else {
+            $box.SelectionFont = New-GuiFont 10
+            $box.AppendText("$line`n")
+        }
+    }
+    $box.SelectionStart = 0
+    $box.ScrollToCaret()
+    $box.Visible = $true
+    Update-Gui
+}
+
+# Expand-GuiMessage gives the panel the room the progress line had, once there
+# is no more progress to show - the finished box carries the code, a link and
+# the phone address, and scrolling to find any of them is a poor last screen.
+function Expand-GuiMessage {
+    $w = $script:Gui
+    $w.Status.Visible = $false
+    $w.Bar.Visible = $false
+    $w.Message.Location = New-Object System.Drawing.Point(24, 222)
+    $w.Message.Size = New-Object System.Drawing.Size(592, 268)
+}
+
+# Wait-GuiClosed keeps the window up until the person closes it.
+function Wait-GuiClosed {
+    $script:Gui.Form.Activate()
+    while (-not $script:Gui.Closed -and $script:Gui.Form.Visible) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Microsoft.PowerShell.Utility\Start-Sleep -Milliseconds 50
+    }
+    # The relaunched copy is its own temporary file; it has been read.
+    if ($PSCommandPath -and ([IO.Path]::GetFileName($PSCommandPath) -like 'soundstorm-setup-*.ps1')) {
+        Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Complete-Gui([string]$Heading, [string]$Subheading, [string]$OpenUrl) {
+    if (-not $script:Gui) { return }
+    $w = $script:Gui
+    $w.Running = $false
+    $w.Current = $w.Steps.Count + 1
+    Set-GuiStepMarks
+    $w.Title.Text = $Heading
+    $w.Title.ForeColor = [System.Drawing.Color]::SeaGreen
+    $w.Sub.Text = $Subheading
+    $w.Status.Text = ''
+    Expand-GuiMessage
+    $w.OpenUrl = $OpenUrl
+    $w.Open.Visible = [bool]$OpenUrl
+    $w.Close.Text = 'Close'
+    $w.Form.AcceptButton = if ($OpenUrl) { $w.Open } else { $w.Close }
+    Wait-GuiClosed
+}
+
+function Stop-Gui([string]$Text) {
+    $w = $script:Gui
+    $w.Running = $false
+    Set-GuiStepMarks -Failed
+    $w.Title.Text = 'SoundStorm could not finish'
+    $w.Title.ForeColor = [System.Drawing.Color]::Firebrick
+    $w.Sub.Text = 'Nothing is lost - running the setup again carries on from where it stopped.'
+    $w.Status.Text = ''
+    Expand-GuiMessage
+    $lines = @($Text -split "`r?`n" | ForEach-Object { $_ -replace '^  ', '' })
+    $lines += @('', "A full log is saved in $script:SetupLog")
+    Set-GuiMessage 'What went wrong' $lines 'Red'
+    $w.Close.Text = 'Close'
+    Wait-GuiClosed
+}
+
+# ConvertTo-ArgumentList turns this run's parameters back into arguments, for
+# the relaunch to receive exactly what this run was given.
+function ConvertTo-ArgumentList($Bound) {
+    $list = @()
+    foreach ($key in $Bound.Keys) {
+        $value = $Bound[$key]
+        if ($value -is [System.Management.Automation.SwitchParameter]) {
+            if ($value.IsPresent) { $list += "-$key" }
+        } else {
+            $list += "-$key"
+            $list += ('"' + ("$value" -replace '"', '') + '"')
+        }
+    }
+    return $list
+}
+
+# The relaunch. An interactive setup - not the desktop icon (-Launch), not
+# -Console, not somewhere a window cannot be shown - starts itself again with
+# its console hidden and the window as its face, and this console says so and
+# goes. Exit code 99 tells SoundStorm-Setup.cmd not to wait for a key press
+# under a message pointing somewhere else.
+#
+# The copy it runs is its own temporary file, because the file this run came
+# from may be a downloaded copy its parent is about to delete.
+$script:WindowWanted = (-not $Launch) -and (-not $Console) -and ($env:SOUNDSTORM_CONSOLE -ne '1') -and [Environment]::UserInteractive
+if ($script:WindowWanted -and $env:SOUNDSTORM_WINDOW -ne '1' -and $PSCommandPath) {
+    $canShow = $false
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+        $canShow = $true
+    } catch {
+    }
+    if ($canShow) {
+        $copy = Join-Path $env:TEMP "soundstorm-setup-$PID.ps1"
+        Copy-Item -LiteralPath $PSCommandPath $copy -Force
+        $env:SOUNDSTORM_WINDOW = '1'
+        $env:SOUNDSTORM_FRESH = '1'
+        $powershellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        Start-Process -FilePath $powershellExe -WindowStyle Hidden -ArgumentList (@(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$copy`"") +
+            (ConvertTo-ArgumentList $PSBoundParameters))
+        Microsoft.PowerShell.Utility\Write-Host ""
+        Microsoft.PowerShell.Utility\Write-Host "  SoundStorm setup has opened in its own window." -ForegroundColor Green
+        exit 99
+    }
+}
+
 # Output. Notes are Gray, not the DarkGray they used to be: on Windows
 # PowerShell's default dark-blue console DarkGray is close to unreadable, and
 # nearly everything this script says is something the person needs to read.
 # Steps are Cyan so the numbered progress stands out from the detail under it.
-function Step($text) { Write-Host ""; Write-Host "  $text" -ForegroundColor Cyan }
-function Note($text) { Write-Host "    $text" -ForegroundColor Gray }
-function Good($text) { Write-Host "    $text" -ForegroundColor Green }
-function Important($text) { Write-Host "    $text" -ForegroundColor Yellow }
+function Step($text) { Write-Host ""; Write-Host "  $text" -ForegroundColor Cyan; Set-GuiStep $text }
+function Note($text) { Write-Host "    $text" -ForegroundColor Gray; Set-GuiStatus $text 'Note' }
+function Good($text) { Write-Host "    $text" -ForegroundColor Green; Set-GuiStatus $text 'Good' }
+function Important($text) { Write-Host "    $text" -ForegroundColor Yellow; Set-GuiStatus $text 'Important' }
 
 # Callout frames the few things somebody has to act on - what to click in
 # Docker's windows, the code to type into the first screen - so they cannot be
@@ -186,6 +653,7 @@ function Important($text) { Write-Host "    $text" -ForegroundColor Yellow }
 # Windows PowerShell reads it in the system code page, where box-drawing
 # characters and dashes come out as mojibake.
 function Callout([string]$Title, [string[]]$Lines, [ConsoleColor]$Color = 'Yellow') {
+    Set-GuiMessage $Title $Lines "$Color"
     Write-Host ""
     Write-Host ("  +--- " + $Title + " " + ('-' * [Math]::Max(4, 62 - $Title.Length))) -ForegroundColor $Color
     foreach ($line in $Lines) {
@@ -243,6 +711,7 @@ function Stop-With($text) {
     Write-Host $text
     Write-Host ""
     if ($Launch) { Show-Problem $text }
+    if ($script:Gui) { Stop-Gui $text }
     exit 1
 }
 
@@ -275,8 +744,7 @@ function Invoke-DockerBounded {
     # the deadline for a program that finished in a second. The symptom is
     # every launch taking exactly as long as the timeout and then reporting
     # failure, with the containers running perfectly well behind it.
-    $null = $process.Handle
-    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    if (-not (Wait-ProcessPumped $process $TimeoutSeconds)) {
         try { $process.Kill() } catch {}
         return 1
     }
@@ -296,7 +764,7 @@ function Invoke-Docker {
     $ErrorActionPreference = 'Continue'
     try {
         if ($Capture) {
-            $lines = & docker @Arguments 2>&1 | ForEach-Object { "$_" }
+            $lines = & docker @Arguments 2>&1 | ForEach-Object { Update-Gui; "$_" }
             return [pscustomobject]@{
                 ExitCode = $LASTEXITCODE
                 Output   = ($lines -join [Environment]::NewLine)
@@ -315,6 +783,7 @@ function Invoke-Docker {
             $pending = New-Object System.Collections.Generic.List[string]
             $total = 0
             & docker @Arguments 2>&1 | ForEach-Object {
+                Update-Gui
                 $line = "$_"
                 if ($line -match '^\s*(?:Image\s+)?(\S+)\s+(Pulling|Pulled|Interrupted|Error)\s*$') {
                     $image = $Matches[1]
@@ -401,7 +870,7 @@ function Invoke-Native {
             & $Command @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
             return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = '' }
         }
-        $lines = & $Command @Arguments 2>&1 | ForEach-Object { "$_" }
+        $lines = & $Command @Arguments 2>&1 | ForEach-Object { Update-Gui; "$_" }
         return [pscustomobject]@{
             ExitCode = $LASTEXITCODE
             Output   = ($lines -join [Environment]::NewLine)
@@ -824,10 +1293,10 @@ function Invoke-Elevated([string]$File, [string[]]$Arguments) {
     }
     try {
         $process = Start-Process -FilePath $File -ArgumentList $Arguments `
-            -Verb RunAs -PassThru -Wait -ErrorAction Stop
-        # Reading .Handle caches it; without one ExitCode is unreliable on a
-        # process started this way. Same trap as Invoke-DockerBounded.
-        $null = $process.Handle
+            -Verb RunAs -PassThru -ErrorAction Stop
+        # Waited on here rather than with -Wait, which would freeze the setup
+        # window for as long as the command runs.
+        $null = Wait-ProcessPumped $process
         return $process.ExitCode
     } catch {
         return $null
@@ -945,10 +1414,10 @@ function Install-Docker {
         Important "Windows will ask for permission to install it - click Yes."
         try {
             $process = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs `
-                -Verb RunAs -PassThru -Wait -ErrorAction Stop
-            # Reading .Handle caches it; without one ExitCode is unreliable on
-            # a process started this way.
-            $null = $process.Handle
+                -Verb RunAs -PassThru -ErrorAction Stop
+            # Waited on here rather than with -Wait, which would freeze the
+            # setup window for the minutes Docker Desktop takes to install.
+            $null = Wait-ProcessPumped $process
             $code = $process.ExitCode
         } catch {
             Stop-With @"
@@ -1740,7 +2209,9 @@ function New-Shortcut($Path, $Target, $Arguments, $WorkingDirectory, $Descriptio
 function Install-Shortcuts {
     $localScript = Join-Path $Dir 'soundstorm.ps1'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Launch"
+    # -WindowStyle Hidden as well as the minimised shortcut: minimised still
+    # puts a console on the taskbar for the second it takes.
+    $arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -Launch"
 
     $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
     New-Shortcut (Join-Path $startMenu 'SoundStorm.lnk') $powershell $arguments $Dir `
@@ -1756,14 +2227,14 @@ function Install-Shortcuts {
     # Updating is re-running the installer, so the shortcut is the installer.
     New-Shortcut (Join-Path $startMenu 'Update SoundStorm.lnk') $powershell `
         "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`"" $Dir `
-        'Get the newest version of SoundStorm' $false
+        'Get the newest version of SoundStorm' $true
 
     # Moving the library is the one change somebody may want long after
     # installing, and -Library is a command-line option. A shortcut that opens
     # the same window a first install shows means nobody has to type it.
     New-Shortcut (Join-Path $startMenu 'Move SoundStorm library.lnk') $powershell `
         "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -ChooseLibrary" $Dir `
-        'Keep your music, films and books in a different folder or drive' $false
+        'Keep your music, films and books in a different folder or drive' $true
 
     if (-not $NoAutoStart) {
         $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
@@ -1949,6 +2420,31 @@ if ($Launch) {
 
 # --- installing -----------------------------------------------------------------
 
+$firstInstall = -not (Test-Path (Join-Path $Dir 'docker-compose.yml'))
+try { [IO.File]::WriteAllText($script:SetupLog, '') } catch { }
+if ($env:SOUNDSTORM_WINDOW -eq '1' -and $script:WindowWanted) {
+    try {
+        if ($firstInstall) {
+            New-SetupWindow 'Setting up SoundStorm' `
+                'This sets everything up by itself. The first time takes about 10 to 30 minutes, mostly downloading. You can use the computer while it works.' `
+                @('Getting Docker ready', 'Preparing the SoundStorm folder', 'Downloading the media servers', 'Starting SoundStorm')
+        } else {
+            New-SetupWindow 'Updating SoundStorm' `
+                'Your library, accounts and settings are kept.' `
+                @('Getting Docker ready', 'Preparing the SoundStorm folder', 'Checking for a newer version', 'Starting SoundStorm')
+        }
+    } catch {
+        # A window that cannot be built must not leave a hidden setup running
+        # with nothing on screen: start again, visibly, in a console.
+        $script:Gui = $null
+        $env:SOUNDSTORM_CONSOLE = '1'
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+            -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', "`"$PSCommandPath`"") +
+                (ConvertTo-ArgumentList $PSBoundParameters))
+        exit 1
+    }
+}
+
 Write-Host ""
 Write-Host "  SoundStorm" -ForegroundColor White -NoNewline
 Write-Host " - all your music, films, books and audiobooks in one place"
@@ -1957,7 +2453,6 @@ Write-Host "  -----------------------------------------------------------"
 # Said before anything happens, because the two questions somebody has from
 # here on are "is it still working?" and "what am I supposed to do?" - and on a
 # first install the honest answer to the first is "for a while yet".
-$firstInstall = -not (Test-Path (Join-Path $Dir 'docker-compose.yml'))
 Write-Host ""
 if ($firstInstall) {
     Write-Host "  This sets everything up by itself, in 4 steps. The first time takes" -ForegroundColor White
@@ -2220,8 +2715,8 @@ if ($Tailscale) {
         Write-Host ""
         # The one prompt in this whole script, and only on a flag somebody
         # typed on purpose. A double-click install never reaches it.
-        $key = Read-Host "  Paste the auth key here"
-        $key = $key.Trim()
+        $key = Read-Text 'Paste the Tailscale auth key here' 'SoundStorm - Tailscale'
+        $key = "$key".Trim()
     }
     if (-not $key) {
         Stop-With @"
@@ -2437,8 +2932,16 @@ Write-Host ""
 # somebody whose page lost it (or who closed the tab, or opened the desktop
 # icon instead) was asked for a code nothing had ever shown them.
 $hasAccount = Get-HasAccount $url
+# The address for a phone, in the box too: in the window it is the only place
+# it would otherwise be, under "Show details".
+$phoneLines = @()
+$phoneAddress = if ($secure) { $secure } elseif ($lan) { "${scheme}://${lan}:$port" } else { '' }
+if ($phoneAddress) {
+    $phoneLines = @('', 'On your phone, TV or another computer on the same Wi-Fi:', "*  $phoneAddress")
+}
+$openUrl = $url
 if ($hasAccount -ne $true -and $setupCode) {
-    Callout 'NEXT: create your account' @(
+    Callout 'NEXT: create your account' (@(
         'Your web browser is opening SoundStorm now. On the first screen, choose',
         'a username and password - that is your account for SoundStorm.',
         '',
@@ -2450,17 +2953,19 @@ if ($hasAccount -ne $true -and $setupCode) {
         '',
         "Browser did not open?  Go to:  $url",
         "The code is also saved in:     $(Join-Path $Dir '.env')"
-    ) 'Yellow'
+    ) + $phoneLines) 'Yellow'
     # With the code in the address too, so the page usually fills it in by
     # itself; it takes it out of the address once it has it.
     Start-Process "$url/?setup=$setupCode"
+    $openUrl = "$url/?setup=$setupCode"
 } else {
-    Callout 'NEXT: open SoundStorm' @(
+    Callout 'NEXT: open SoundStorm' (@(
         'Your web browser is opening SoundStorm now. Sign in as usual.',
         '',
         "Browser did not open?  Go to:  $url"
-    ) 'Green'
+    ) + $phoneLines) 'Green'
     Start-Process $url
+    $openUrl = $url
 }
 
 # After a move, the old files are still where they were - moving them for
@@ -2486,4 +2991,12 @@ if ($movedFrom) {
     } catch {
         # The console already said where both folders are.
     }
+}
+
+# The window stays up with the result until it is closed: the setup code and
+# the address are in it, and closing it is the person's decision, not ours.
+if ($upgrade) {
+    Complete-Gui 'SoundStorm is up to date' 'It is running. Your library, accounts and settings are as they were.' $openUrl
+} else {
+    Complete-Gui 'SoundStorm is ready' 'It is installed and running, and starts by itself when you turn the PC on.' $openUrl
 }

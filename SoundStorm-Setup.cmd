@@ -29,6 +29,7 @@ set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "LOCAL=%~dp0install.ps1"
 if exist "%LOCAL%" (
     "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%LOCAL%" %*
+    if errorlevel 99 if not errorlevel 100 goto :window
     goto :done
 )
 
@@ -59,7 +60,17 @@ if not exist "%SAVED%" (
 )
 
 "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%SAVED%" %*
+if errorlevel 99 if not errorlevel 100 goto :window
 del "%SAVED%" >nul 2>&1
+goto :done
+
+rem Exit code 99 means the setup relaunched itself as a window and has
+rem nothing more to say here. Waiting for a key would leave this console open
+rem beside the window for no reason. The window runs a copy of its own, made
+rem before this one exited, so the download can go.
+:window
+if defined SAVED del "%SAVED%" >nul 2>&1
+exit /b 0
 
 :done
 echo.
