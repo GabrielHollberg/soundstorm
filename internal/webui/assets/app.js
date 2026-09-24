@@ -3597,7 +3597,6 @@ function openNowPlaying() {
   audio.lyricsBig = false;
   renderLyrics();
   show($('now-playing'), true);
-  enterImmersive();
   document.body.classList.add('np-open');
   renderNowPlaying();
 }
@@ -3606,23 +3605,34 @@ function closeNowPlaying() {
   show($('now-playing'), false);
   document.body.classList.remove('np-open');
   $('now-playing').style.transform = '';
-  exitImmersive();
 }
 
-// On a phone the player asks for the whole screen, so the status bar and the
-// navigation bar go while it is open and come back when it closes. Only a
-// request: the browser grants it after a tap (which is how the player opens),
-// Android honours it, and an iPhone, which offers it only to video, ignores it.
-function enterImmersive() {
+// A phone is all SoundStorm: no status bar, no navigation bar. Installed, the
+// manifest's display: fullscreen does that from launch. In a browser tab a
+// page may only ask after a tap, so every tap asks while it is not already
+// full screen - the first one on opening, and the next one after the system's
+// back gesture or a video's own full screen has dropped it. An iPhone offers
+// full screen only to video and ignores the request.
+(function alwaysFullScreen() {
   const root = document.documentElement;
-  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement || !root.requestFullscreen) return;
-  state.immersive = true;
-  root.requestFullscreen({ navigationUI: 'hide' }).catch(() => { state.immersive = false; });
-}
-function exitImmersive() {
-  if (!state.immersive) return;
-  state.immersive = false;
-  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  if (!root.requestFullscreen || !matchMedia('(pointer: coarse)').matches) return;
+  if (matchMedia('(display-mode: fullscreen)').matches) return; // installed: already
+  document.addEventListener('pointerup', () => {
+    if (document.fullscreenElement) return;
+    root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+  }, true);
+})();
+
+// Moving between the big cover and the full lyrics is one smooth change, not
+// a jump: the cover shrinks into the small one by the title (and back), and
+// everything else slides to its new place. Browsers without view transitions
+// simply switch.
+function npTransition(update) {
+  if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    update();
+    return;
+  }
+  document.startViewTransition(update);
 }
 
 // The strip grows into the full lyrics when tapped - a tap there never jumps
@@ -3632,13 +3642,17 @@ $('np-lyrics').addEventListener('click', (event) => {
   if (audio.npMode !== 'strip') return;
   event.stopPropagation();
   event.preventDefault();
-  audio.lyricsBig = true;
-  renderLyrics();
+  npTransition(() => {
+    audio.lyricsBig = true;
+    renderLyrics();
+  });
 }, true);
 document.querySelector('#now-playing .np-head').addEventListener('click', () => {
   if (audio.npMode !== 'lyrics' || !matchMedia('(max-width: 760px)').matches) return;
-  audio.lyricsBig = false;
-  renderLyrics();
+  npTransition(() => {
+    audio.lyricsBig = false;
+    renderLyrics();
+  });
 });
 
 // Drag down to put the full player away, on a touch screen. The panel follows

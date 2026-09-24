@@ -1963,3 +1963,30 @@ body.np-open { overflow: hidden; }
   .now-playing.strip-on .np-progress { order: 3; }
   .now-playing.strip-on .np-controls { order: 4; }
 }
+
+/* The move between the big cover and the full lyrics, as a view transition.
+   The big cover and the small one share a name - only one is ever on screen -
+   so the browser morphs one into the other; the title, the lyrics and the
+   controls each glide to where they now sit. */
+@media (max-width: 760px) {
+  .now-playing .np-cover { view-transition-name: np-art; }
+  .now-playing .np-thumb { view-transition-name: np-art; }
+  .now-playing .np-text { view-transition-name: np-title; }
+  .now-playing .np-lyrics { view-transition-name: np-lyrics; }
+  .now-playing .np-progress { view-transition-name: np-progress; }
+  .now-playing .np-controls { view-transition-name: np-controls; }
+}
+::view-transition-group(*) {
+  animation-duration: 0.42s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-old(np-lyrics), ::view-transition-new(np-lyrics) {
+  /* The strip and the full lyrics are different heights; keep the text its
+     own size and cross-fade rather than stretching one into the other. */
+  height: 100%;
+  object-fit: none;
+  object-position: center;
+}
+/* The old lyrics and title leave quickly, so the two sets of words do not
+   sit on top of each other for long. */
+::view-transition-old(np-lyrics), ::view-transition-old(np-title) { animation-duration: 0.16s; }

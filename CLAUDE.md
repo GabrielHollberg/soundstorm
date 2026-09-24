@@ -393,6 +393,14 @@ judged on in its first minute:
   document, made from the tap that opened the player; Android grants it,
   iPhone Safari offers full screen only to video and ignores it. A web page
   has no other way to hide either bar.
+
+  Then made permanent: the manifest says `display: fullscreen`, so the
+  installed app launches with neither bar; in a browser tab every tap asks
+  again while the page is not full screen, since a page may only ask from a
+  tap and the back gesture or a video's own full screen can drop it.
+- **Cover to lyrics is a view transition**: the big cover and the small one
+  share a `view-transition-name`, only one ever on screen, so the browser
+  morphs one into the other. Browsers without them just switch.
 - **Gapless, measured.** The next song is fetched whole into a Blob while the
   current one plays. Gaps were measured by polling `currentTime` every 4ms;
   `timeupdate` fires only every ~250ms, and the first measurement, taken on
