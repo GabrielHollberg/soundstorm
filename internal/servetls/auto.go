@@ -142,7 +142,10 @@ func (a *autoCert) reachabilityAnswer(nonce string) (string, bool) {
 	a.mu.RLock()
 	token := a.reg.Token
 	a.mu.RUnlock()
-	if token == "" {
+	// Only when remote access is on: the probe is part of publishing a public
+	// name, which only happens then, so there is no reason to answer - and no
+	// reason to expose the endpoint at all - otherwise.
+	if !a.remote || token == "" {
 		return "", false
 	}
 	return names.Reachability(token, nonce), true
