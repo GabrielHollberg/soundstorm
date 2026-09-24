@@ -399,17 +399,37 @@ sign in to — and reinstalling does not help, because they are already set up.
 
 From the install folder:
 
+**Linux / macOS:**
+
 ```sh
-docker compose run --rm -v "$PWD:/backup" soundstorm backup /backup/soundstorm-backup.json
+(umask 077; docker compose run --rm -T soundstorm backup - > soundstorm-backup.json)
+```
+
+**Windows** (PowerShell):
+
+```powershell
+docker compose run --rm -v "${PWD}:/backup" soundstorm backup /backup/soundstorm-backup.json
 ```
 
 Keep the result somewhere that is not this machine. It is worth as much as the
-server: anyone holding it holds every backend password.
+server: anyone holding it holds every backend password. On Linux the form above
+matters: it lets your shell write the file, so it is yours and private, where
+writing it from inside the container would leave it owned by the container's
+user and readable only by root.
 
 To put it back — on a new machine, or after a `docker compose down -v`:
 
+**Linux / macOS:**
+
 ```sh
-docker compose run --rm -v "$PWD:/backup" soundstorm restore /backup/soundstorm-backup.json
+docker compose run --rm -T soundstorm restore - < soundstorm-backup.json
+docker compose up -d
+```
+
+**Windows** (PowerShell):
+
+```powershell
+docker compose run --rm -v "${PWD}:/backup" soundstorm restore /backup/soundstorm-backup.json
 docker compose up -d
 ```
 
@@ -419,10 +439,10 @@ Every ordinary write already leaves a `.bak` beside the state, which covers a
 bad write but not a deleted volume — that is what this is for.
 
 **Uninstalling saves one automatically** into the install folder before it
-removes anything, and leaves it behind when it cleans up. That copy, like the
-`.env` file beside it — which holds the first sign-up's setup code and any
-Tailscale key — is written so that other people's accounts on the same computer
-cannot read it, wherever the install folder lives.
+removes anything, and leaves it behind when it cleans up. That copy is yours to
+move off the machine, and like the `.env` file beside it — which holds the
+first sign-up's setup code and any Tailscale key — other people's accounts on
+the same computer cannot read it, wherever the install folder lives.
 
 ### Forgotten your password
 

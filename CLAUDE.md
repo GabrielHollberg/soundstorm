@@ -2042,6 +2042,21 @@ and never point automated fetches at an origin site that has asked you not to.
   `/var/lib/soundstorm` inherits 10001 from the image, because the Dockerfile
   chowns that path and declares it a VOLUME. Mount it anywhere else and the
   directory is root's, which is what made the first attempt look broken.
+
+  **A backup written through a bind mount was unreadable to whoever asked for
+  it, on Linux.** The container writes it as its own user, uid 10001, mode 0600
+  - and neither side can fix that afterwards: the installer runs as the user and
+  cannot chown a file it does not own, and the container is not root and cannot
+  hand the file to a uid it is not. So `backup -` writes to standard output and
+  `restore -` reads standard input, and the host shell creates the file, as the
+  user, under `umask 077`. `install.sh` does exactly that, checks the output
+  starts with `{` - an image from before `-` prints its human summary there
+  instead - and falls back to the old bind-mount form for such an image, since a
+  backup only root can read beats none. `backup -` refuses a terminal: the
+  passwords would scroll past on screen, and a pseudo-terminal turns newlines
+  into CRLF, which is why the documented form passes `-T`. On macOS and Windows,
+  Docker Desktop presents a bind-mounted file as the host user's, so
+  `install.ps1` keeps the bind mount (plus `Protect-SecretFile`).
 - **Reconnecting is not provisioning, and conflating them destroys credentials.**
   On restart SoundStorm beats the backends to listening. A failed health check then
   looks like "wrong password" unless you check what kind of failure it was, and

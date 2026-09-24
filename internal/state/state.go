@@ -529,6 +529,13 @@ func RestoreFrom(backup, path string) error {
 	if err != nil {
 		return fmt.Errorf("read backup: %w", err)
 	}
+	return RestoreBytes(raw, backup, path)
+}
+
+// RestoreBytes is RestoreFrom for a backup already read - from standard input,
+// say. name is what to call it in an error.
+func RestoreBytes(raw []byte, name, path string) error {
+	backup := name
 	var probe data
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return fmt.Errorf("%s is not a SoundStorm backup: %w", backup, err)

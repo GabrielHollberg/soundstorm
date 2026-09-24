@@ -374,6 +374,31 @@ open_browser() {
 
 # --- removing it -------------------------------------------------------------
 
+# save_backup writes the state backup to $1, owned by whoever runs this and
+# readable by nobody else.
+#
+# Through standard output ("backup -"), so this shell creates the file. Written
+# through a bind mount instead, it belonged to the container's user (uid 10001)
+# with mode 0600 - so on Linux the person uninstalling could not read or copy
+# the one file they were told to carry off the machine, without root.
+#
+# The output must start with "{" before it replaces anything: an image older
+# than "backup -" prints its summary there rather than the backup. For such an
+# image the old bind-mount form is used - a backup only root can read is far
+# better than none, at the one moment nothing else holds these passwords.
+save_backup() {
+	part="$1.part"
+	rm -f "$part"
+	if (umask 077 && $COMPOSE run --rm -T soundstorm backup - >"$part" 2>/dev/null) &&
+		[ "$(head -c 1 "$part" 2>/dev/null)" = "{" ]; then
+		mv -f "$part" "$1"
+		return 0
+	fi
+	rm -f "$part"
+	$COMPOSE run --rm -v "$DIR:/backup" soundstorm backup "/backup/$(basename "$1")" >/dev/null 2>&1 &&
+		[ -f "$1" ]
+}
+
 uninstall() {
 	say ""
 	say "${BOLD}Removing SoundStorm${OFF}"
@@ -388,8 +413,7 @@ uninstall() {
 			# deleted. This is the exact moment the credentials for four
 			# backends stop existing anywhere.
 			step "Saving your accounts first"
-			if $COMPOSE run --rm -v "$DIR:/backup" soundstorm backup 				/backup/soundstorm-backup.json >/dev/null 2>&1 &&
-				[ -f "$DIR/soundstorm-backup.json" ]; then
+			if save_backup "$DIR/soundstorm-backup.json"; then
 				note "saved to $DIR/soundstorm-backup.json"
 				note "keep it if you might reinstall - it is the only copy of the"
 				note "passwords SoundStorm made on the media servers"
