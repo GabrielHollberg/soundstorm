@@ -3607,19 +3607,17 @@ function closeNowPlaying() {
   $('now-playing').style.transform = '';
 }
 
-// A phone is all SoundStorm: no status bar, no navigation bar. Installed, the
-// manifest's display: fullscreen does that from launch. In a browser tab a
-// page may only ask after a tap, so every tap asks while it is not already
-// full screen - the first one on opening, and the next one after the system's
-// back gesture or a video's own full screen has dropped it. An iPhone offers
-// full screen only to video and ignores the request.
+// A phone is all SoundStorm: no status bar, no navigation bar. A page may only
+// ask for that from a tap, so every tap asks while it is not already full
+// screen - the first one on opening, and the next one after the system's back
+// gesture or a video's own full screen has dropped it. Until then the app opens
+// like any other, status bar showing in the app's own colour: launching full
+// screen from the manifest instead left the camera cutout letterboxed in black
+// until that same first tap. An iPhone offers full screen only to video and
+// ignores the request.
 (function alwaysFullScreen() {
   const root = document.documentElement;
   if (!root.requestFullscreen || !matchMedia('(pointer: coarse)').matches) return;
-  // Asked even by the installed app, which already launches full screen:
-  // Android letterboxes the camera cutout in black for a full-screen app, and
-  // lets the page draw into it (viewport-fit=cover) only once the page itself
-  // is full screen.
   document.addEventListener('pointerup', () => {
     if (document.fullscreenElement) return;
     root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});

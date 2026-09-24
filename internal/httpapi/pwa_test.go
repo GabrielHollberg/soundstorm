@@ -49,9 +49,8 @@ func TestManifestIsInstallable(t *testing.T) {
 	if m.StartURL != "/" || m.Scope != "/" {
 		t.Errorf("start_url = %q, scope = %q, want both /", m.StartURL, m.Scope)
 	}
-	// fullscreen, since a phone should be all SoundStorm: no status bar, no
-	// navigation bar. Chrome installs either; a browser that cannot do
-	// fullscreen falls back to standalone by itself.
+	// standalone; the bars are hidden from the first tap instead (see
+	// alwaysFullScreen in app.js). Chrome would install fullscreen too.
 	if m.Display != "fullscreen" && m.Display != "standalone" {
 		t.Errorf("display = %q, want fullscreen or standalone - anything else keeps the browser chrome", m.Display)
 	}

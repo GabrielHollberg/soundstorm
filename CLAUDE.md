@@ -405,6 +405,11 @@ judged on in its first minute:
   it (viewport-fit=cover) only once the page itself has requested full
   screen, and that needs a tap. So the installed app asks on the first tap
   too, and the strip goes then. Nothing a page does at load can remove it.
+
+  The owner did not like the strip, so the manifest went back to
+  `standalone`: the app opens with the status bar showing in its own colour,
+  as any app does, and the first tap takes it full screen. No black strip,
+  at the cost of the page moving up a little on that tap.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.
