@@ -261,7 +261,10 @@ where you are. A film counts as finished once you reach the credits.
 
 ### Listening to music
 
-Pick **Music** and choose **Songs**, **Albums** or **Artists**. Albums can be
+Pick **Music** and choose **Songs**, **Albums** or **Artists**. Artists and
+albums are your folders — `Artist/Album/` — rather than whatever each file's
+tags claim, so a guest appearance does not create a new artist and an album
+does not split in two because its tracks disagree about the year. Albums can be
 ordered A to Z, recently added, by artist, recently played, most played or at
 random. An album page has **Play** and **Shuffle** and its track list, and an
 artist page has their albums and plays everything they made.

@@ -152,6 +152,12 @@ services:
     environment:
       ND_MUSICFOLDER: /music
       ND_DATAFOLDER: /data
+      # Report each song's real path. Without this Navidrome sends a path made
+      # up from the tags ("Artist tag/Album tag/01 - Title.mp3"), which looks
+      # real whenever tags and folders agree and names no file when they do
+      # not - and SoundStorm uses the path to show artists and albums as the
+      # folders they are, and to find a song's file when deleting it.
+      ND_SUBSONIC_DEFAULTREPORTREALPATH: "true"
       # Rescan often enough that dropping a file in feels immediate.
       #
       # ND_SCANINTERVAL, not ND_SCANSCHEDULE: Navidrome renamed this and

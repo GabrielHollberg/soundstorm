@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/httpx"
@@ -31,7 +32,17 @@ import (
 
 const (
 	apiVersion = "1.16.1"
-	clientName = "soundstorm"
+	// clientName is how SoundStorm introduces itself to Navidrome, which
+	// keeps a "player" record per client name and sets its "report real
+	// path" switch once, when the record is created, from
+	// ND_SUBSONIC_DEFAULTREPORTREALPATH. Records made under the old name,
+	// "soundstorm", predate that setting and keep sending paths made up from
+	// the tags - checked on a real install: the same song came back as
+	// "2CELLOS/2Cellos/01-06 - The Resistance.m4a" under the old name and
+	// "/music/2CELLOS/2Cellos/06 The Resistance.m4a" under a new one. A new
+	// name gets every install a record with real paths, without reaching
+	// into Navidrome's own admin API.
+	clientName = "soundstorm-app"
 )
 
 // Config configures a Subsonic source.
@@ -41,7 +52,15 @@ type Config struct {
 	Username string
 	Password string
 	Timeout  time.Duration
+	// MediaRoot is the music folder as Navidrome sees it, "/music" unless
+	// set. Song paths are real paths under it (ND_SUBSONIC_DEFAULTREPORTREALPATH)
+	// and are made relative to it before anything uses them.
+	MediaRoot string
 }
+
+// defaultMediaRoot is where docker-compose.yml mounts the music folder in
+// Navidrome's container.
+const defaultMediaRoot = "/music"
 
 // Source is a Subsonic-API music server.
 type Source struct {
@@ -49,6 +68,9 @@ type Source struct {
 	cfg   Config
 	http  *httpx.Client
 	shelf media.ShelfCache
+	// folders is the song list grouped into artist and album folders; see
+	// folders.go.
+	folders folderCache
 }
 
 // New builds a Subsonic source.
@@ -59,6 +81,9 @@ func New(cfg Config) (*Source, error) {
 	c, err := httpx.New(cfg.BaseURL, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("subsonic %q: %w", cfg.ID, err)
+	}
+	if cfg.MediaRoot == "" {
+		cfg.MediaRoot = defaultMediaRoot
 	}
 	return &Source{id: cfg.ID, cfg: cfg, http: c}, nil
 }
@@ -142,8 +167,17 @@ type song struct {
 	Suffix   string `json:"suffix"`
 	Genre    string `json:"genre"`
 	// Path is relative to the music folder - checked against Navidrome
-	// 0.64: "Artist/Album/01 - Title.mp3".
-	Path string `json:"path"`
+	// 0.64: "Artist/Album/01 - Title.mp3". Artists and albums are the
+	// folders in it (folders.go).
+	Path       string `json:"path"`
+	Track      int    `json:"track"`
+	DiscNumber int    `json:"discNumber"`
+	Created    string `json:"created"` // when Navidrome first saw the file
+	PlayCount  int    `json:"playCount"`
+	Played     string `json:"played"` // last played
+	ArtistID   string `json:"artistId"`
+	// AlbumArtist is OpenSubsonic's display form of the album artist tag.
+	AlbumArtist string `json:"displayAlbumArtist"`
 	// ReplayGain is OpenSubsonic's: how loud the track and its album are,
 	// from the file's own tags. Checked against Navidrome 0.64.1, which
 	// reports it for a tagged MP3 and leaves it out for an untagged one.
@@ -213,6 +247,36 @@ func (s *Source) fetchAll(ctx context.Context, text string) ([]media.Item, error
 }
 
 func (s *Source) fetchPage(ctx context.Context, text string, offset int) ([]media.Item, error) {
+	songs, err := s.fetchSongsPage(ctx, text, offset)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]media.Item, 0, len(songs))
+	for _, sg := range songs {
+		items = append(items, s.songItem(sg))
+	}
+	return items, nil
+}
+
+// fetchAllSongs pages through every song matching text, as Navidrome
+// describes them - paths and play counts included, which is what grouping
+// them into folders needs.
+func (s *Source) fetchAllSongs(ctx context.Context, text string) ([]song, error) {
+	var all []song
+	for offset := 0; offset < maxSongs; offset += fetchPage {
+		page, err := s.fetchSongsPage(ctx, text, offset)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < fetchPage {
+			break
+		}
+	}
+	return all, nil
+}
+
+func (s *Source) fetchSongsPage(ctx context.Context, text string, offset int) ([]song, error) {
 	params, err := s.auth()
 	if err != nil {
 		return nil, err
@@ -231,11 +295,7 @@ func (s *Source) fetchPage(ctx context.Context, text string, offset int) ([]medi
 		return nil, err
 	}
 
-	items := make([]media.Item, 0, len(env.Response.SearchResult3.Song))
-	for _, sg := range env.Response.SearchResult3.Song {
-		items = append(items, s.songItem(sg))
-	}
-	return items, nil
+	return env.Response.SearchResult3.Song, nil
 }
 
 // songItem is one Navidrome song as SoundStorm shows it.
@@ -313,6 +373,7 @@ func (s *Source) mediaTarget(path, id string) (source.Target, error) {
 // enough to fire after an upload.
 func (s *Source) Rescan(ctx context.Context) error {
 	s.shelf.Clear()
+	s.folders.clear()
 	params, err := s.auth()
 	if err != nil {
 		return err
@@ -357,7 +418,30 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 	if env.Response.Song == nil || env.Response.Song.Path == "" {
 		return nil, fmt.Errorf("subsonic %q: no file for %q", s.id, itemID)
 	}
-	return []string{env.Response.Song.Path}, nil
+	rel, ok := s.realPath(env.Response.Song.Path)
+	if !ok {
+		// A path Navidrome made up from the tags names a file that may not
+		// exist; deleting by it would miss, or worse.
+		return nil, fmt.Errorf("subsonic %q: Navidrome is not reporting real file paths", s.id)
+	}
+	return []string{rel}, nil
+}
+
+// realPath turns a song's path into one relative to the music folder, and
+// says whether it is a real one. Navidrome reports the file's actual path
+// only when told to (ND_SUBSONIC_DEFAULTREPORTREALPATH); otherwise it sends
+// one built from the tags - "Artist tag/Album tag/01 - Title.mp3" - which
+// looks exactly like a real path whenever tags and folders agree, and names
+// no file whenever they do not. A real path starts at Navidrome's music folder.
+func (s *Source) realPath(p string) (string, bool) {
+	if !strings.HasPrefix(p, "/") {
+		return p, false
+	}
+	rel, err := source.RelativeTo(s.cfg.MediaRoot, p)
+	if err != nil {
+		return "", false
+	}
+	return rel, true
 }
 
 // ItemByID describes one song, for a favourite or a playlist entry, which know
@@ -430,42 +514,9 @@ func (s *Source) call(ctx context.Context, path string, set func(url.Values)) (e
 	return env, env.check()
 }
 
-var albumListTypes = map[string]string{
-	source.AlbumsByName:   "alphabeticalByName",
-	source.AlbumsNewest:   "newest",
-	source.AlbumsByArtist: "alphabeticalByArtist",
-	source.AlbumsRecent:   "recent",
-	source.AlbumsFrequent: "frequent",
-	source.AlbumsRandom:   "random",
-}
-
-// Albums lists albums in one of Subsonic's orders. Paged by the caller; each
-// call asks for at most 500, which is the protocol's own ceiling.
-func (s *Source) Albums(ctx context.Context, order string, offset, limit int) ([]source.Album, error) {
-	kind, ok := albumListTypes[order]
-	if !ok {
-		kind = albumListTypes[source.AlbumsByName]
-	}
-	if limit <= 0 || limit > 500 {
-		limit = 500
-	}
-	env, err := s.call(ctx, "/rest/getAlbumList2.view", func(p url.Values) {
-		p.Set("type", kind)
-		p.Set("size", strconv.Itoa(limit))
-		p.Set("offset", strconv.Itoa(max(0, offset)))
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]source.Album, 0, len(env.Response.AlbumList2.Album))
-	for _, a := range env.Response.AlbumList2.Album {
-		out = append(out, s.album(a))
-	}
-	return out, nil
-}
-
-// Album is one album and its songs, in track order.
-func (s *Source) Album(ctx context.Context, id string) (source.Album, []media.Item, error) {
+// tagAlbum is one of Navidrome's own (tag-grouped) albums, for an id saved
+// before albums followed folders.
+func (s *Source) tagAlbum(ctx context.Context, id string) (source.Album, []media.Item, error) {
 	env, err := s.call(ctx, "/rest/getAlbum.view", func(p url.Values) { p.Set("id", id) })
 	if err != nil {
 		return source.Album{}, nil, err
@@ -480,23 +531,9 @@ func (s *Source) Album(ctx context.Context, id string) (source.Album, []media.It
 	return s.album(*env.Response.Album), songs, nil
 }
 
-// Artists is every artist, as Subsonic's index lists them.
-func (s *Source) Artists(ctx context.Context) ([]source.Artist, error) {
-	env, err := s.call(ctx, "/rest/getArtists.view", nil)
-	if err != nil {
-		return nil, err
-	}
-	var out []source.Artist
-	for _, index := range env.Response.Artists.Index {
-		for _, a := range index.Artist {
-			out = append(out, s.artist(a))
-		}
-	}
-	return out, nil
-}
-
-// Artist is one artist and their albums.
-func (s *Source) Artist(ctx context.Context, id string) (source.Artist, []source.Album, error) {
+// tagArtist is one of Navidrome's own (tag-grouped) artists, for an id saved
+// before artists followed folders.
+func (s *Source) tagArtist(ctx context.Context, id string) (source.Artist, []source.Album, error) {
 	env, err := s.call(ctx, "/rest/getArtist.view", func(p url.Values) { p.Set("id", id) })
 	if err != nil {
 		return source.Artist{}, nil, err
@@ -509,28 +546,6 @@ func (s *Source) Artist(ctx context.Context, id string) (source.Artist, []source
 		albums = append(albums, s.album(a))
 	}
 	return s.artist(*env.Response.Artist), albums, nil
-}
-
-// SearchMusic finds albums and artists whose names match.
-func (s *Source) SearchMusic(ctx context.Context, text string) ([]source.Album, []source.Artist, error) {
-	env, err := s.call(ctx, "/rest/search3.view", func(p url.Values) {
-		p.Set("query", text)
-		p.Set("songCount", "0")
-		p.Set("albumCount", "100")
-		p.Set("artistCount", "50")
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	var albums []source.Album
-	for _, a := range env.Response.SearchResult3.Album {
-		albums = append(albums, s.album(a))
-	}
-	var artists []source.Artist
-	for _, a := range env.Response.SearchResult3.Artist {
-		artists = append(artists, s.artist(a))
-	}
-	return albums, artists, nil
 }
 
 // RandomSongs draws songs at random: from the whole library, one genre, or a

@@ -455,6 +455,44 @@ Checked in Chrome against a real Navidrome with a generated library: two
 artists, three albums with covers and ReplayGain tags of 0, -5 and +8 dB.
 Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
 
+## Artists and albums are the folders
+
+Asked for by the owner: Navidrome groups by tags, and on a real 4,408-song
+library that made **1,467 albums out of 551 album folders** - an album whose
+tracks disagree about the year or the album artist splits, and "Artist feat.
+Someone" becomes an artist. SoundStorm files every upload as Artist/Album/
+track, so the folders are the tidy version, and the music browser now shows
+them (`internal/source/subsonic/folders.go`): the first folder of a song's
+path is the artist, the second the album, a disc folder below stays in its
+album, and a song loose in an artist folder is one of their Singles. It is a
+grouping of Navidrome's own song list, cached like the song shelf - nothing
+reads the disk or keeps an index. Ids are `f:` plus the folder path; an old
+Navidrome id still resolves through its tag-based album or artist.
+
+The names are the folders', spelled as the tags spell them when they are the
+same name with case and punctuation set aside: a folder cannot be "AC/DC" or
+end in a dot, so `AC-DC` shows as AC/DC and `Fun` as Fun. A folder the tags
+genuinely disagree with ("Tidewater" against "Tidewater (Deluxe)") keeps its
+own. iTunes LP and Extras bundles (`.itlp`, `.ite`) are not artists.
+
+**Navidrome's paths were made up, and that was a latent bug.** Unless told
+otherwise it reports a path built from the tags - `2CELLOS/2Cellos/01-06 -
+The Resistance.m4a` for a file really called `06 The Resistance.m4a` - which
+looks real exactly when tags and folders agree, the case every test library
+had. Deleting a song used that path, so it could miss the file. Two things
+fix it, both checked on the real install:
+
+- `ND_SUBSONIC_DEFAULTREPORTREALPATH: "true"` in compose. Real paths are
+  absolute in Navidrome's container (`/music/...`) and are made relative to
+  `subsonic.Config.MediaRoot`; a path that is not real groups by tags, as
+  before, and deletion refuses it rather than guessing.
+- **The setting is read once per client, when Navidrome first meets it.** Its
+  record for the old client name kept sending made-up paths after the
+  setting was on; a new name got real ones straight away. So SoundStorm now
+  introduces itself as `soundstorm-app`, which every install meets fresh.
+  Navidrome's getIndexes/getMusicDirectory were no help: in 0.64 they answer
+  with tag-based artists and albums under folder-shaped names.
+
 ## Music, phase 2: mixes, lyrics, downloads
 
 - **Listening history is SoundStorm's, per person**, in the collections file:
