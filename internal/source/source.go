@@ -584,3 +584,23 @@ type MixSource interface {
 	RandomSongs(ctx context.Context, n int, genre string, fromYear, toYear int) ([]media.Item, error)
 	Genres(ctx context.Context) ([]Genre, error)
 }
+
+// LyricLine is one line of a song's words. Start is when it is sung, in
+// milliseconds, or -1 when the lyrics carry no timings.
+type LyricLine struct {
+	Start int    `json:"start"`
+	Text  string `json:"text"`
+}
+
+// Lyrics are a song's words, synced to the music when the source has
+// timings for them.
+type Lyrics struct {
+	Synced bool        `json:"synced"`
+	Lines  []LyricLine `json:"lines"`
+}
+
+// LyricsSource is an optional interface for a music source that can give a
+// song's lyrics - from a .lrc file beside it, or the file's own tags.
+type LyricsSource interface {
+	Lyrics(ctx context.Context, songID string) (Lyrics, error)
+}

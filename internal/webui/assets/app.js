@@ -2531,6 +2531,7 @@ const ICONS = {
   shuffle: '<path d="M3 7h3c4 0 6 10 10 10h5M17 14l3 3-3 3M3 17h3c1.6 0 2.8-1.6 3.9-3.5M13.5 9.2C14.5 8 15.3 7 16 7h5M17 4l3 3-3 3"/>',
   repeat: '<path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
+  lyrics: '<path d="M4 6h16M4 10h16M4 14h10M4 18h7M17 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM19.5 18.5V11"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
 };
 
@@ -3533,6 +3534,7 @@ function setIcon(button, name, filled) {
 }
 
 setIcon($('np-close'), 'down');
+setIcon($('np-lyrics-toggle'), 'lyrics');
 setIcon($('dock-play'), 'play', true);
 $('dock-play').addEventListener('click', () => {
   const player = $('audio-player');
@@ -3598,6 +3600,7 @@ function renderNowPlaying() {
     list.append(li);
   });
   show($('np-queue-empty'), upcoming.length === 0);
+  loadLyrics(item);
   syncNowPlayingTime();
 }
 
@@ -3649,7 +3652,10 @@ $('np-seek').addEventListener('change', () => {
 for (const event of ['play', 'pause', 'loadedmetadata']) {
   $('audio-player').addEventListener(event, renderNowPlaying);
 }
-$('audio-player').addEventListener('timeupdate', syncNowPlayingTime);
+$('audio-player').addEventListener('timeupdate', () => {
+  syncNowPlayingTime();
+  syncLyrics();
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !$('now-playing').classList.contains('hidden')) closeNowPlaying();
 });
@@ -3853,3 +3859,90 @@ $('audio-player').addEventListener('timeupdate', () => {
     api('/api/history', { method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }) });
   }
 });
+
+/* ------------------------------------------------------------------ lyrics */
+
+// Synced lyrics in Now Playing: the line being sung lights up and stays in the
+// middle; tap a line to go to it. Words without timings simply show. They come
+// from a .lrc file beside the song or the file's own tags, through Navidrome.
+audio.lyrics = null;    // { key, synced, lines }
+audio.showLyrics = false;
+
+async function loadLyrics(item) {
+  const key = selectionKey(item);
+  if (audio.lyrics && audio.lyrics.key === key) return;
+  audio.lyrics = { key, synced: false, lines: [], loading: true };
+  renderLyrics();
+  if (item.kind !== 'music') return;
+  const { ok, body } = await api(`/api/music/lyrics/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+  if (!audio.lyrics || audio.lyrics.key !== key) return;
+  audio.lyrics = { key, synced: Boolean(ok && body && body.synced), lines: (ok && body && body.lines) || [] };
+  renderLyrics();
+}
+
+function renderLyrics() {
+  const has = Boolean(audio.lyrics && audio.lyrics.lines.length);
+  const toggle = $('np-lyrics-toggle');
+  toggle.disabled = !has;
+  toggle.title = has ? 'Lyrics' : 'No lyrics for this song';
+  const showing = audio.showLyrics && has;
+  toggle.classList.toggle('on', showing);
+  toggle.setAttribute('aria-pressed', String(showing));
+  show($('np-lyrics'), showing);
+  show($('np-next-block'), !showing);
+  const box = $('np-lyrics');
+  box.replaceChildren();
+  if (!has) return;
+  box.classList.toggle('unsynced', !audio.lyrics.synced);
+  audio.lyrics.lines.forEach((line, i) => {
+    const el = document.createElement(audio.lyrics.synced ? 'button' : 'p');
+    el.className = 'np-lyric';
+    el.textContent = line.text || '\u00A0';
+    el.dataset.index = String(i);
+    if (audio.lyrics.synced) {
+      el.type = 'button';
+      el.addEventListener('click', () => {
+        $('audio-player').currentTime = line.start / 1000;
+        syncLyrics(true);
+      });
+    }
+    box.append(el);
+  });
+  audio.lyricIndex = -1;
+  syncLyrics(true);
+}
+
+function syncLyrics(force) {
+  const lyrics = audio.lyrics;
+  if (!lyrics || !lyrics.synced || !audio.showLyrics || $('now-playing').classList.contains('hidden')) return;
+  const ms = $('audio-player').currentTime * 1000;
+  let index = -1;
+  for (let i = 0; i < lyrics.lines.length; i++) {
+    if (lyrics.lines[i].start <= ms) index = i;
+    else break;
+  }
+  if (index === audio.lyricIndex && !force) return;
+  audio.lyricIndex = index;
+  const box = $('np-lyrics');
+  for (const el of box.querySelectorAll('.np-lyric')) {
+    const i = Number(el.dataset.index);
+    el.classList.toggle('current', i === index);
+    el.classList.toggle('past', i < index);
+  }
+  const current = box.querySelector('.np-lyric.current');
+  if (current) {
+    // Kept in the middle of the box, as the words go by.
+    box.scrollTo({ top: current.offsetTop - box.clientHeight / 2 + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
+  }
+}
+
+$('np-lyrics-toggle').addEventListener('click', () => {
+  audio.showLyrics = !audio.showLyrics;
+  renderLyrics();
+});
+// timeupdate comes four times a second; a line change between them would lag,
+// so while lyrics are showing they are also checked on every frame.
+(function lyricFrame() {
+  if (audio.showLyrics && !$('audio-player').paused) syncLyrics();
+  requestAnimationFrame(lyricFrame);
+})();

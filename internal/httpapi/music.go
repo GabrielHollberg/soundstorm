@@ -137,3 +137,26 @@ func nonNil[T any](v []T) []T {
 	}
 	return v
 }
+
+// handleLyrics is a song's words, synced where the file has timings.
+func (s *Server) handleLyrics(w http.ResponseWriter, r *http.Request) {
+	src, ok := s.reg.ByID(r.Context(), r.PathValue("source"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "no such music library")
+		return
+	}
+	ls, ok := src.(source.LyricsSource)
+	if !ok {
+		writeJSON(w, http.StatusOK, source.Lyrics{Lines: []source.LyricLine{}})
+		return
+	}
+	lyrics, err := ls.Lyrics(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.musicError(w, err)
+		return
+	}
+	if lyrics.Lines == nil {
+		lyrics.Lines = []source.LyricLine{}
+	}
+	writeJSON(w, http.StatusOK, lyrics)
+}

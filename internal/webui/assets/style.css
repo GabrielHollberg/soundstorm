@@ -1639,3 +1639,49 @@ body.np-open { overflow: hidden; }
 .mix-play .icon { width: 20px; height: 20px; fill: currentColor; stroke: none; }
 .mix-card:hover .mix-play, .mix-card:focus-visible .mix-play { opacity: 1; transform: none; }
 @media (pointer: coarse) { .mix-play { opacity: 1; transform: none; width: 36px; height: 36px; } }
+
+/* Lyrics -------------------------------------------------------------------- */
+
+.np-lyrics {
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 18vh 0;
+  mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+  -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+  scrollbar-width: none;
+}
+.np-lyrics::-webkit-scrollbar { display: none; }
+.np-lyric {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.38);
+  transition: color 0.25s ease, transform 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Hover only where there is a mouse, and never on the line being sung: a tap
+   on a phone leaves :hover stuck on the line tapped, and its grey won over
+   the current line's white, so the line you had just jumped to looked like
+   every other. */
+@media (hover: hover) {
+  button.np-lyric:not(.current):hover { color: rgba(255, 255, 255, 0.72); filter: none; }
+}
+.np-lyric.past { color: rgba(255, 255, 255, 0.45); }
+.np-lyric.current {
+  color: #fff;
+  transform: scale(1.04);
+  transform-origin: left center;
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.25);
+}
+.np-lyrics.unsynced .np-lyric { color: rgba(255, 255, 255, 0.85); font-size: 19px; font-weight: 600; }
+@media (max-width: 760px) {
+  .np-lyric { font-size: 21px; }
+  .np-lyrics { max-height: 50vh; }
+}

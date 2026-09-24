@@ -113,6 +113,15 @@ type envelope struct {
 		RandomSongs struct {
 			Song []song `json:"song"`
 		} `json:"randomSongs"`
+		LyricsList struct {
+			StructuredLyrics []struct {
+				Synced bool `json:"synced"`
+				Line   []struct {
+					Start *int   `json:"start"`
+					Value string `json:"value"`
+				} `json:"line"`
+			} `json:"structuredLyrics"`
+		} `json:"lyricsList"`
 		Genres struct {
 			Genre []struct {
 				Value     string `json:"value"`
@@ -563,6 +572,37 @@ func (s *Source) Genres(ctx context.Context) ([]source.Genre, error) {
 		if g.Value != "" {
 			out = append(out, source.Genre{Name: g.Value, SongCount: g.SongCount})
 		}
+	}
+	return out, nil
+}
+
+// Lyrics asks for a song's lyrics through OpenSubsonic's songLyrics extension,
+// which Navidrome 0.64.1 lists and answers from a .lrc file beside the song
+// (checked) or the file's own tags. Synced lyrics are preferred when there
+// is a choice. A song with none answers an empty list, not an error.
+func (s *Source) Lyrics(ctx context.Context, songID string) (source.Lyrics, error) {
+	env, err := s.call(ctx, "/rest/getLyricsBySongId.view", func(p url.Values) { p.Set("id", songID) })
+	if err != nil {
+		return source.Lyrics{}, err
+	}
+	all := env.Response.LyricsList.StructuredLyrics
+	if len(all) == 0 {
+		return source.Lyrics{Lines: []source.LyricLine{}}, nil
+	}
+	pick := all[0]
+	for _, l := range all {
+		if l.Synced {
+			pick = l
+			break
+		}
+	}
+	out := source.Lyrics{Synced: pick.Synced, Lines: make([]source.LyricLine, 0, len(pick.Line))}
+	for _, line := range pick.Line {
+		start := -1
+		if pick.Synced && line.Start != nil {
+			start = *line.Start
+		}
+		out.Lines = append(out.Lines, source.LyricLine{Start: start, Text: line.Value})
 	}
 	return out, nil
 }

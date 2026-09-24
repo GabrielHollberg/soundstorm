@@ -280,6 +280,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/artists/{source}/{id}", s.handleArtist)
 	// Mixes and listening history. See mixes.go.
 	guarded.HandleFunc("GET /api/music/mixes", s.handleMixes)
+	guarded.HandleFunc("GET /api/music/lyrics/{source}/{id}", s.handleLyrics)
 	guarded.HandleFunc("GET /api/music/mixes/{id}", s.handleMix)
 	guarded.HandleFunc("POST /api/history", s.handleRecordPlay)
 	// Favourites and playlists, per person. See favourites.go.
