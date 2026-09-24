@@ -122,9 +122,25 @@ func findIGD(ctx context.Context, client *http.Client, location string, gateway 
 		}
 		return describeIGD(ctx, client, location)
 	}
-	locations, err := ssdpSearch(ctx, 2*time.Second)
-	if err != nil {
-		return igd{}, err
+	// Asked of the gateway directly first, then of the whole LAN. Inside the
+	// ordinary bridged container a multicast search never leaves Docker's
+	// network, but a unicast one to the router's own address does - Docker
+	// NATs it like any other packet - and UPnP devices answer a search
+	// addressed to them. Checked against a real router from inside a
+	// container: it came back with the description URL. That is what lets
+	// UPnP work with no SOUNDSTORM_UPNP_URL at all.
+	var locations []string
+	if gateway.IsValid() {
+		if found, err := ssdpSearchAt(ctx, net.JoinHostPort(gateway.String(), "1900"), 2*time.Second); err == nil {
+			locations = append(locations, found...)
+		}
+	}
+	if len(locations) == 0 {
+		found, err := ssdpSearch(ctx, 2*time.Second)
+		if err != nil {
+			return igd{}, err
+		}
+		locations = found
 	}
 	var lastErr error
 	for _, loc := range locations {
@@ -149,19 +165,25 @@ func findIGD(ctx context.Context, client *http.Client, location string, gateway 
 // or native process - so on the ordinary bridged container it returns nothing
 // and the configured URL is used instead.
 func ssdpSearch(ctx context.Context, timeout time.Duration) ([]string, error) {
+	return ssdpSearchAt(ctx, ssdpAddr, timeout)
+}
+
+// ssdpSearchAt sends the M-SEARCH to one address: the multicast group, or a
+// single device for a unicast search.
+func ssdpSearchAt(ctx context.Context, addr string, timeout time.Duration) ([]string, error) {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	dst, err := net.ResolveUDPAddr("udp4", ssdpAddr)
+	dst, err := net.ResolveUDPAddr("udp4", addr)
 	if err != nil {
 		return nil, err
 	}
 	for _, st := range []string{upnpDevIGD1, upnpDevIGD2} {
 		msg := "M-SEARCH * HTTP/1.1\r\n" +
-			"HOST: " + ssdpAddr + "\r\n" +
+			"HOST: " + addr + "\r\n" +
 			"MAN: \"ssdp:discover\"\r\n" +
 			"MX: 2\r\n" +
 			"ST: " + st + "\r\n\r\n"

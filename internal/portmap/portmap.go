@@ -99,6 +99,16 @@ func mapVia(ctx context.Context, server netip.AddrPort, proto Protocol, internal
 	return mapTarget(ctx, target{gateway: server}, proto, internalPort, externalPort, lifetime)
 }
 
+// udpMethodBudget is how long PCP and NAT-PMP each get before the next method
+// is tried. A router that does not speak one usually says nothing at all - no
+// port-unreachable, just silence - and the RFC's retransmissions would wait
+// out whatever deadline they were handed. They were handed the whole attempt's,
+// so on a real UPnP-only router PCP and NAT-PMP spent all twenty seconds of it
+// and UPnP, the one method that router speaks, ran out of time before it
+// started. Four seconds is four retransmissions, which is plenty for a router
+// on the same LAN that is going to answer at all.
+var udpMethodBudget = 4 * time.Second // a variable only so a test can shorten it
+
 // mapTarget tries every configured method in order - PCP, NAT-PMP, then UPnP -
 // and returns the first mapping that succeeds.
 func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
@@ -109,16 +119,21 @@ func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, exte
 		if _, err := rand.Read(nonce[:]); err != nil {
 			return Mapping{}, err
 		}
-		if m, err := pcpMap(ctx, t.gateway, proto, internalPort, externalPort, lifetime, nonce); err == nil {
+		pcpCtx, cancel := context.WithTimeout(ctx, udpMethodBudget)
+		m, err := pcpMap(pcpCtx, t.gateway, proto, internalPort, externalPort, lifetime, nonce)
+		cancel()
+		if err == nil {
 			return m, nil
-		} else {
-			attempts = append(attempts, "pcp: "+err.Error())
 		}
-		if m, err := natpmpMap(ctx, t.gateway, proto, internalPort, externalPort, lifetime); err == nil {
+		attempts = append(attempts, "pcp: "+err.Error())
+
+		pmpCtx, cancel := context.WithTimeout(ctx, udpMethodBudget)
+		m, err = natpmpMap(pmpCtx, t.gateway, proto, internalPort, externalPort, lifetime)
+		cancel()
+		if err == nil {
 			return m, nil
-		} else {
-			attempts = append(attempts, "nat-pmp: "+err.Error())
 		}
+		attempts = append(attempts, "nat-pmp: "+err.Error())
 	}
 
 	if t.internalClient.IsValid() {
@@ -413,7 +428,10 @@ func (mt *Maintainer) ExternalAddress(ctx context.Context) (netip.Addr, error) {
 	t := mt.target()
 	var attempts []string
 	if t.gateway.IsValid() {
-		if addr, err := natpmpExternalAddr(ctx, t.gateway); err == nil && addr.IsValid() && !addr.IsUnspecified() {
+		pmpCtx, cancel := context.WithTimeout(ctx, udpMethodBudget)
+		addr, err := natpmpExternalAddr(pmpCtx, t.gateway)
+		cancel()
+		if err == nil && addr.IsValid() && !addr.IsUnspecified() {
 			return addr, nil
 		} else if err != nil {
 			attempts = append(attempts, "nat-pmp: "+err.Error())
@@ -434,4 +452,25 @@ func (mt *Maintainer) ExternalAddress(ctx context.Context) (netip.Addr, error) {
 		return netip.Addr{}, ErrNoGateway
 	}
 	return netip.Addr{}, fmt.Errorf("the router did not say its internet address (%s)", strings.Join(attempts, "; "))
+}
+
+// GuessGateway is where the home router almost certainly is, given this host's
+// LAN address: the first address of its /24, which is what nearly every home
+// router takes. It is the fallback for when nothing configured the gateway -
+// an install run by compose alone, with no installer to look it up on the
+// host. A wrong guess costs nothing: PCP and NAT-PMP time out, UPnP finds no
+// device there, and the ordinary advice to forward the port by hand stands.
+// Invalid when there is nothing sensible to guess from.
+func GuessGateway(lan netip.Addr) netip.Addr {
+	lan = lan.Unmap()
+	if !lan.Is4() || !lan.IsPrivate() {
+		return netip.Addr{}
+	}
+	b := lan.As4()
+	if b[3] == 1 {
+		// This host is the .1 itself, so the router is somewhere else.
+		return netip.Addr{}
+	}
+	b[3] = 1
+	return netip.AddrFrom4(b)
 }

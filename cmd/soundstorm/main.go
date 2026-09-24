@@ -35,6 +35,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/httpapi"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/portmap"
 	"github.com/GabrielHollberg/soundstorm/internal/provision"
 	"github.com/GabrielHollberg/soundstorm/internal/servetls"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
@@ -184,6 +185,21 @@ func run(log *slog.Logger) error {
 			gateway = addr
 		} else {
 			log.Warn("ignoring SOUNDSTORM_GATEWAY: not an IP address", "value", g)
+		}
+	}
+	// With nothing configured - compose alone, no installer to look it up -
+	// guess from the LAN address: nearly every home router is the .1 of its
+	// network. Without this, remote access on such an install could never
+	// open its own port, and nobody would know why.
+	if !gateway.IsValid() {
+		for _, h := range splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")) {
+			if lan, err := netip.ParseAddr(h); err == nil {
+				if guess := portmap.GuessGateway(lan); guess.IsValid() {
+					gateway = guess
+					log.Info("no SOUNDSTORM_GATEWAY set; assuming the router is at the usual address", "gateway", guess)
+					break
+				}
+			}
 		}
 	}
 

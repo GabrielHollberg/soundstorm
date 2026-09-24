@@ -3,6 +3,7 @@ package portmap
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -309,6 +310,93 @@ func TestMapTargetFallsThroughToUPnP(t *testing.T) {
 		upnpLocation:   f.location,
 	}
 	m, err := mapTarget(context.Background(), t2, TCP, 8080, 8099, time.Hour)
+	if err != nil {
+		t.Fatalf("mapTarget: %v", err)
+	}
+	if m.Method != "UPnP" {
+		t.Errorf("method = %q, want UPnP", m.Method)
+	}
+}
+
+// A router answers an M-SEARCH sent straight to it - the search that still
+// works from inside the bridged container, where multicast never leaves
+// Docker's network. The fake here only answers unicast, on loopback.
+func TestUnicastSearchFindsTheRoutersDescription(t *testing.T) {
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer conn.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, from, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			if !strings.HasPrefix(string(buf[:n]), "M-SEARCH") {
+				continue
+			}
+			reply := "HTTP/1.1 200 OK\r\nCache-Control: max-age=1900\r\n" +
+				"Location: http://192.168.0.1:80/RootDevice.xml\r\n" +
+				"ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
+			_, _ = conn.WriteToUDP([]byte(reply), from)
+		}
+	}()
+
+	found, err := ssdpSearchAt(context.Background(), conn.LocalAddr().String(), 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("ssdpSearchAt: %v", err)
+	}
+	if len(found) != 1 || found[0] != "http://192.168.0.1:80/RootDevice.xml" {
+		t.Errorf("found %q, want the router's one description URL", found)
+	}
+}
+
+func TestGuessGateway(t *testing.T) {
+	cases := map[string]string{
+		"192.168.0.19": "192.168.0.1",
+		"10.0.4.200":   "10.0.4.1",
+		"172.20.9.9":   "172.20.9.1",
+		"192.168.1.1":  "", // this host is the .1
+		"81.2.69.160":  "", // public: no LAN to guess within
+		"fd00::5":      "", // no IPv6 guesses
+	}
+	for in, want := range cases {
+		got := GuessGateway(netip.MustParseAddr(in))
+		if want == "" {
+			if got.IsValid() {
+				t.Errorf("GuessGateway(%s) = %s, want no guess", in, got)
+			}
+			continue
+		}
+		if got.String() != want {
+			t.Errorf("GuessGateway(%s) = %s, want %s", in, got, want)
+		}
+	}
+}
+
+// The development machine's router, exactly: silent on PCP and NAT-PMP, and
+// answering UPnP. Before each UDP method had its own budget, PCP's
+// retransmissions spent the whole attempt's deadline and UPnP never ran. Here
+// the attempt's deadline is far shorter than PCP would wait on its own, so this
+// fails unless PCP and NAT-PMP give way in time.
+func TestSilentPCPAndNATPMPLeaveTimeForUPnP(t *testing.T) {
+	saved := udpMethodBudget
+	udpMethodBudget = 150 * time.Millisecond
+	t.Cleanup(func() { udpMethodBudget = saved })
+
+	gw := newFakeGateway(t)
+	gw.set(func(g *fakeGateway) { g.pcp = false; g.pmp = false })
+	igd := newFakeIGD(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	m, err := mapTarget(ctx, target{
+		gateway:        gw.addr,
+		internalClient: netip.MustParseAddr("192.168.1.50"),
+		upnpLocation:   igd.location,
+	}, TCP, 8080, 8099, time.Hour)
 	if err != nil {
 		t.Fatalf("mapTarget: %v", err)
 	}

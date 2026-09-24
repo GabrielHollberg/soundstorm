@@ -1048,39 +1048,57 @@ function Get-Gateway {
 # does not cross the Docker bridge into the container - the same reason the
 # gateway is discovered here. The SOAP that uses this URL later is ordinary
 # unicast and does work from the container.
-function Get-UpnpUrl {
-    $udp = $null
-    try {
-        $udp = New-Object System.Net.Sockets.UdpClient
-        $udp.Client.ReceiveTimeout = 3000
-        $dst = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Parse('239.255.255.250')), 1900
-        $msg = "M-SEARCH * HTTP/1.1`r`n" +
-               "HOST: 239.255.255.250:1900`r`n" +
-               "MAN: `"ssdp:discover`"`r`n" +
-               "MX: 2`r`n" +
-               "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1`r`n`r`n"
-        $bytes = [System.Text.Encoding]::ASCII.GetBytes($msg)
-        [void]$udp.Send($bytes, $bytes.Length, $dst)
+function Get-UpnpUrl([string]$Gateway = '') {
+    if (-not $Gateway) { $Gateway = Get-EnvSetting 'SOUNDSTORM_GATEWAY' }
+    # Asked of the router directly first, then of the whole network. The
+    # multicast search goes out whichever adapter Windows picks for multicast,
+    # which on a PC with Tailscale or WSL is often not the one the router is
+    # on - on the development machine it found nothing while the router
+    # answered a search sent straight to it at once. An answer only counts
+    # when it comes from the gateway: anything else on the network that
+    # answers is not the router whose port is being opened.
+    $targets = @()
+    if ($Gateway) { $targets += $Gateway }
+    $targets += '239.255.255.250'
+    foreach ($target in $targets) {
+        $udp = $null
+        try {
+            $udp = New-Object System.Net.Sockets.UdpClient
+            $udp.Client.ReceiveTimeout = 2000
+            $dst = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Parse($target)), 1900
+            $msg = "M-SEARCH * HTTP/1.1`r`n" +
+                   "HOST: ${target}:1900`r`n" +
+                   "MAN: `"ssdp:discover`"`r`n" +
+                   "MX: 2`r`n" +
+                   "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1`r`n`r`n"
+            $bytes = [System.Text.Encoding]::ASCII.GetBytes($msg)
+            [void]$udp.Send($bytes, $bytes.Length, $dst)
 
-        $deadline = (Get-Date).AddSeconds(3)
-        while ((Get-Date) -lt $deadline) {
-            try {
-                $from = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any), 0
-                $data = $udp.Receive([ref]$from)
-            } catch {
-                break  # receive timeout: nothing more is coming
-            }
-            $text = [System.Text.Encoding]::ASCII.GetString($data)
-            foreach ($line in ($text -split "`r`n")) {
-                if ($line -match '(?i)^location:\s*(\S+)') {
-                    return $Matches[1].Trim()
+            $deadline = (Get-Date).AddSeconds(3)
+            while ((Get-Date) -lt $deadline) {
+                try {
+                    $from = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any), 0
+                    $data = $udp.Receive([ref]$from)
+                } catch {
+                    break  # receive timeout: nothing more is coming
+                }
+                $text = [System.Text.Encoding]::ASCII.GetString($data)
+                foreach ($line in ($text -split "`r`n")) {
+                    if ($line -match '(?i)^location:\s*(\S+)') {
+                        $location = $Matches[1].Trim()
+                        $locationHost = ''
+                        try { $locationHost = ([Uri]$location).Host } catch { }
+                        if (-not $Gateway -or $locationHost -eq $Gateway) {
+                            return $location
+                        }
+                    }
                 }
             }
+        } catch {
+            # UPnP is a best-effort fallback; NAT-PMP/PCP or a manual forward remain.
+        } finally {
+            if ($udp) { $udp.Close() }
         }
-    } catch {
-        # UPnP is a best-effort fallback; NAT-PMP/PCP or a manual forward remain.
-    } finally {
-        if ($udp) { $udp.Close() }
     }
     return $null
 }
@@ -1278,6 +1296,56 @@ function Update-LanAddress {
     $parts[0] = $current
     Set-EnvSetting 'SOUNDSTORM_TLS_HOSTS' ($parts -join ',')
     return $true
+}
+
+# Update-RouterSettings keeps the router's address and UPnP URL in .env
+# current. They used to be written only when missing, so a laptop that moved
+# kept asking the old house's router to open its port, and a replaced router
+# was never found - the same stale-value bug the LAN address had. Returns $true
+# when anything changed.
+#
+# The gateway is only replaced when it is no longer a route this machine has,
+# so a value somebody set by hand stands for as long as it means anything. The
+# UPnP URL is dropped when it points at a router that is no longer the gateway,
+# and looked for again. -Quick (the desktop icon) only searches for it when the
+# gateway changed: the search waits three seconds for answers, and the server
+# can now find the router's UPnP by asking it directly anyway.
+function Update-RouterSettings([switch]$Quick) {
+    $changed = $false
+    $stored = Get-EnvSetting 'SOUNDSTORM_GATEWAY'
+    $hops = @()
+    try {
+        $hops = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 -ErrorAction Stop |
+            ForEach-Object { $_.NextHop } | Where-Object { $_ -and $_ -ne '0.0.0.0' })
+    } catch {
+    }
+    if (-not $stored -or ($hops.Count -gt 0 -and $hops -notcontains $stored)) {
+        $gateway = Get-Gateway
+        if ($gateway -and $gateway -ne $stored) {
+            Set-EnvSetting 'SOUNDSTORM_GATEWAY' $gateway
+            $changed = $true
+        }
+    }
+
+    $url = Get-EnvSetting 'SOUNDSTORM_UPNP_URL'
+    $gatewayNow = Get-EnvSetting 'SOUNDSTORM_GATEWAY'
+    if ($url -and $gatewayNow) {
+        $urlHost = ''
+        try { $urlHost = ([Uri]$url).Host } catch { }
+        if ($urlHost -ne $gatewayNow) {
+            Set-EnvSetting 'SOUNDSTORM_UPNP_URL' ''
+            $url = ''
+            $changed = $true
+        }
+    }
+    if (-not $url -and (-not $Quick -or $changed)) {
+        $found = Get-UpnpUrl
+        if ($found) {
+            Set-EnvSetting 'SOUNDSTORM_UPNP_URL' $found
+            $changed = $true
+        }
+    }
+    return $changed
 }
 
 # Show-LanAdvice ends the summary with what to do if a phone still cannot
@@ -2551,8 +2619,10 @@ if ($Launch) {
     Set-Location $Dir
     Initialize-Docker
     # A laptop that moved to another network: point the secure name at where
-    # it is now. compose sees the changed .env and recreates the container.
+    # it is now, and the port opening at the router it is behind now. compose
+    # sees the changed .env and recreates the container.
     $null = Update-LanAddress
+    $null = Update-RouterSettings -Quick
     if ((Invoke-DockerBounded @('compose', 'up', '-d')) -ne 0) {
         Save-SoundStormLog
         Stop-With "  SoundStorm would not start.`n`n$(Get-HelpAdvice)"
@@ -2769,23 +2839,12 @@ if ($Remote) {
     Note "Keeping it to the home network."
 }
 
-# The router address, for opening the port automatically when remote access is
-# on. Written whether or not remote access is on yet, for the same reason as the
-# LAN address: by the time somebody turns it on from inside the app, nothing on
-# the host is running to work it out. An existing value is left alone, so a
-# manual override stands.
-if (-not (Get-EnvSetting 'SOUNDSTORM_GATEWAY')) {
-    $gateway = Get-Gateway
-    if ($gateway) { Set-EnvSetting 'SOUNDSTORM_GATEWAY' $gateway }
-}
-
-# The router's UPnP URL, the fallback for routers that do not speak NAT-PMP/PCP.
-# Same reasoning as the gateway: discovered on the host, left alone if already
-# set, best effort.
-if (-not (Get-EnvSetting 'SOUNDSTORM_UPNP_URL')) {
-    $upnp = Get-UpnpUrl
-    if ($upnp) { Set-EnvSetting 'SOUNDSTORM_UPNP_URL' $upnp }
-}
+# The router address and its UPnP URL, for opening the port automatically when
+# remote access is on. Written whether or not remote access is on yet, for the
+# same reason as the LAN address: by the time somebody turns it on from inside
+# the app, nothing on the host is running to work it out. Kept current on every
+# run, not only written once - see Update-RouterSettings.
+$null = Update-RouterSettings
 
 # The first sign-up needs a setup code, so that whoever reaches the port
 # before the owner does - from the internet, once it faces it - cannot claim
