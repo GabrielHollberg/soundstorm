@@ -146,6 +146,37 @@ func TestUPnPDescribeFindsNestedRelativeControlURL(t *testing.T) {
 	}
 }
 
+// A device description that points the control URL at another host (a blind
+// SSRF if it were honoured) is refused: the control endpoint must be on the same
+// host the description was fetched from.
+func TestUPnPRejectsCrossHostControlURL(t *testing.T) {
+	desc := `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:InternetGatewayDevice:1</deviceType>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>
+        <controlURL>http://169.254.169.254/latest/meta-data</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/xml")
+		io.WriteString(w, desc)
+	}))
+	defer srv.Close()
+
+	_, err := describeIGD(context.Background(), &http.Client{Timeout: 5 * time.Second}, srv.URL+"/rootDesc.xml")
+	if err == nil {
+		t.Fatal("a control URL on another host was accepted; SSRF")
+	}
+	if !strings.Contains(err.Error(), "not the gateway") {
+		t.Errorf("error = %v, want it to name the host mismatch", err)
+	}
+}
+
 func TestUPnPMapSendsTheMappingAndReadsTheWANIP(t *testing.T) {
 	f := newFakeIGD(t)
 	client := netip.MustParseAddr("192.168.1.50")

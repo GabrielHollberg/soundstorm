@@ -192,6 +192,14 @@ func describeIGD(ctx context.Context, client *http.Client, location string) (igd
 		return igd{}, fmt.Errorf("upnp: parse device description: %w", err)
 	}
 
+	// The URL actually fetched - the operator/installer-provided one - is the
+	// trust anchor for where SOAP may be sent. URLBase and the control URL both
+	// come out of the device description, which a hostile device on the LAN could
+	// have answered, so neither may move the target off this host (see below).
+	locURL, err := url.Parse(location)
+	if err != nil {
+		return igd{}, fmt.Errorf("upnp: bad location %q: %w", location, err)
+	}
 	base := strings.TrimSpace(root.URLBase)
 	if base == "" {
 		base = location
@@ -208,6 +216,17 @@ func describeIGD(ctx context.Context, client *http.Client, location string) (igd
 	ctrl, err := baseURL.Parse(strings.TrimSpace(svc.ControlURL))
 	if err != nil {
 		return igd{}, fmt.Errorf("upnp: bad control URL %q: %w", svc.ControlURL, err)
+	}
+	// The control endpoint is always on the gateway itself. A device description
+	// (which an SSDP responder on the LAN, not necessarily the real router,
+	// supplies) that points the control URL at another host or a non-HTTP scheme
+	// is trying to make us POST somewhere we should not - a blind SSRF. Pin it to
+	// the host we fetched the description from, and to HTTP(S).
+	if ctrl.Scheme != "http" && ctrl.Scheme != "https" {
+		return igd{}, fmt.Errorf("upnp: control URL scheme %q not allowed", ctrl.Scheme)
+	}
+	if !strings.EqualFold(ctrl.Hostname(), locURL.Hostname()) {
+		return igd{}, fmt.Errorf("upnp: control URL host %q is not the gateway %q", ctrl.Hostname(), locURL.Hostname())
 	}
 	return igd{controlURL: ctrl.String(), serviceType: svc.ServiceType}, nil
 }
