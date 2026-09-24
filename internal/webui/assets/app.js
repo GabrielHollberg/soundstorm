@@ -816,6 +816,7 @@ async function runSearch() {
 
   // The two personal views are not a search of a shelf.
   const own = state.kind === 'favourites' || state.kind === 'playlists';
+  renderSearchHint();
   const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
     && !(state.musicView === 'mixes' && state.query);
   show($('music-tabs'), state.kind === 'music');
@@ -2792,10 +2793,28 @@ window.addEventListener('resize', () => {
 
 // --- playlists ----------------------------------------------------------------
 
+// The search box says what it will search: the shelf on screen, and under
+// Music the tab - albums and artists are searched as albums and artists.
+function renderSearchHint() {
+  const shelves = {
+    '': 'everything', music: 'music', video: 'films', tv: 'TV', audiobook: 'audiobooks',
+    ebook: 'ebooks', document: 'documents', picture: 'pictures',
+    favourites: 'your favourites', playlists: 'your playlists',
+  };
+  let what = shelves[state.kind] || 'everything';
+  if (state.kind === 'music' && ['songs', 'albums', 'artists'].includes(state.musicView)) what = state.musicView;
+  const hint = `Search ${what}\u2026`;
+  $('search-input').placeholder = hint;
+  $('search-input').setAttribute('aria-label', hint.slice(0, -1));
+}
+
 async function showPlaylists() {
   const view = $('playlists-view');
   const { ok, body } = await api('/api/playlists');
-  const lists = (ok && body && body.playlists) || [];
+  const all = (ok && body && body.playlists) || [];
+  // Typing narrows the playlists by name, as it narrows every other page.
+  const words = (state.query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const lists = all.filter((list) => words.every((w) => list.name.toLowerCase().includes(w)));
   view.replaceChildren();
 
   const title = document.createElement('h2');
@@ -2805,7 +2824,9 @@ async function showPlaylists() {
   if (!lists.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = `No playlists yet. ${MENU_HOW} any song and choose Add to playlist.`;
+    empty.textContent = all.length
+      ? 'No playlists match.'
+      : `No playlists yet. ${MENU_HOW} any song and choose Add to playlist.`;
     view.append(empty);
     return;
   }
