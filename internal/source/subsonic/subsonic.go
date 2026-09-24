@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"time"
@@ -124,6 +125,15 @@ type song struct {
 	// Path is relative to the music folder - checked against Navidrome
 	// 0.64: "Artist/Album/01 - Title.mp3".
 	Path string `json:"path"`
+	// ReplayGain is OpenSubsonic's: how loud the track and its album are,
+	// from the file's own tags. Checked against Navidrome 0.64.1, which
+	// reports it for a tagged MP3 and leaves it out for an untagged one.
+	ReplayGain *struct {
+		TrackGain *float64 `json:"trackGain"`
+		AlbumGain *float64 `json:"albumGain"`
+		TrackPeak *float64 `json:"trackPeak"`
+		AlbumPeak *float64 `json:"albumPeak"`
+	} `json:"replayGain"`
 }
 
 // check turns a Subsonic envelope into an error when the server reported one.
@@ -230,6 +240,18 @@ func (s *Source) songItem(sg song) media.Item {
 	}
 	if sg.Suffix != "" {
 		item.Extra["format"] = sg.Suffix
+	}
+	// For volume levelling in the player, which is the only thing that
+	// reads these.
+	if rg := sg.ReplayGain; rg != nil {
+		for key, v := range map[string]*float64{
+			"trackGain": rg.TrackGain, "albumGain": rg.AlbumGain,
+			"trackPeak": rg.TrackPeak, "albumPeak": rg.AlbumPeak,
+		} {
+			if v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) {
+				item.Extra[key] = strconv.FormatFloat(*v, 'f', 2, 64)
+			}
+		}
 	}
 	return item
 }

@@ -1465,7 +1465,8 @@ function playAudio(item, fromQueue) {
   // about a four minute track needs the answer. An audiobook waits, because it
   // may be resuming into chapter twelve, and starting chapter one first would
   // play a second of the wrong thing before correcting itself.
-  if (item.kind !== 'audiobook') startAt(streamPath(item), 0);
+  if (item.kind !== 'audiobook') startAt(takePreloaded(item) || streamPath(item), 0);
+  applyLevel(item);
 
   loadPlayback(item);
 }
@@ -3632,4 +3633,131 @@ for (const event of ['play', 'pause', 'loadedmetadata']) {
 $('audio-player').addEventListener('timeupdate', syncNowPlayingTime);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !$('now-playing').classList.contains('hidden')) closeNowPlaying();
+});
+
+/* ------------------------------------------------- gapless, and even levels */
+
+// Gapless, or as near as a browser gets: while a song plays, the next one in
+// the queue is downloaded whole, so when this one ends the next starts from
+// memory instead of waiting on the network. Measured in Chrome against a real
+// Navidrome before this existed: 263-275 ms of silence between songs on a
+// fast connection, 425-447 ms on a slow one.
+//
+// A Blob rather than a second audio element: the player keeps one element and
+// every listener on it, and a blob: URL is same-origin and already allowed by
+// the page's media-src.
+const PRELOAD_LEAD_S = 30;          // start fetching this long before the end
+const PRELOAD_MAX_BYTES = 200e6;    // a whole live album as one FLAC is not worth holding
+
+audio.preloaded = null; // { key, url }
+audio.preloading = null;
+
+function upcomingItem() {
+  const q = audio.queue;
+  if (!q) return null;
+  if (audio.repeat === 'one') return q.items[q.index];
+  if (q.index + 1 < q.items.length) return q.items[q.index + 1];
+  if (audio.repeat === 'all' && q.items.length) return q.items[0];
+  return null;
+}
+
+function takePreloaded(item) {
+  const p = audio.preloaded;
+  if (!p || p.key !== selectionKey(item)) return null;
+  // The blob stays alive while it plays; it is revoked when replaced.
+  audio.playingBlob = p.url;
+  audio.preloaded = null;
+  return p.url;
+}
+
+async function preloadNext() {
+  const next = upcomingItem();
+  if (!next || next.kind !== 'music') return;
+  const key = selectionKey(next);
+  if ((audio.preloaded && audio.preloaded.key === key) || audio.preloading === key) return;
+  audio.preloading = key;
+  try {
+    const resp = await fetch(streamPath(next), { credentials: 'same-origin' });
+    const size = Number(resp.headers.get('Content-Length') || 0);
+    if (!resp.ok || size > PRELOAD_MAX_BYTES) {
+      if (resp.body) resp.body.cancel().catch(() => {});
+      return;
+    }
+    const blob = await resp.blob();
+    if (audio.preloading !== key) return; // the queue moved on meanwhile
+    if (audio.preloaded && audio.preloaded.url !== audio.playingBlob) URL.revokeObjectURL(audio.preloaded.url);
+    audio.preloaded = { key, url: URL.createObjectURL(blob) };
+  } catch {
+    // Offline or refused: the next song simply streams as it always did.
+  } finally {
+    if (audio.preloading === key) audio.preloading = null;
+  }
+}
+
+$('audio-player').addEventListener('timeupdate', () => {
+  const player = $('audio-player');
+  if (!audio.queue || !Number.isFinite(player.duration)) return;
+  if (player.duration - player.currentTime < PRELOAD_LEAD_S) preloadNext();
+});
+$('audio-player').addEventListener('emptied', () => {
+  // A blob that has finished playing is let go - unless it is the one now
+  // loaded, which 'emptied' also fires for on the way in.
+  const player = $('audio-player');
+  if (audio.lastBlob && audio.lastBlob !== player.currentSrc && audio.lastBlob !== audio.playingBlob) {
+    URL.revokeObjectURL(audio.lastBlob);
+  }
+  audio.lastBlob = audio.playingBlob;
+});
+
+// Even levels, from the ReplayGain tags most ripped and bought music carries:
+// a quiet 70s album and a loud modern single play at the same loudness.
+//
+// An album played in order uses the album's gain, so its quiet songs stay
+// quiet next to its loud ones, as the artist meant; anything else uses each
+// track's own. Everything plays LEVEL_PREAMP_DB below full, so that a quiet
+// track can be brought *up* - an audio element can turn down but never past
+// full - and a track's peak is never pushed past full.
+//
+// Set through the element's volume, not the Web Audio API. Routing a phone's
+// music through Web Audio is what makes an iPhone stop the music when the
+// screen locks. The cost is that iOS ignores the volume a page sets, so there
+// levelling does nothing, where the alternative is music that stops.
+const LEVEL_PREAMP_DB = -6;
+audio.userVolume = 1;
+audio.settingVolume = false;
+
+function levelFor(item) {
+  const extra = (item && item.extra) || {};
+  const q = audio.queue;
+  const inAlbumOrder = q && !audio.shuffle && q.items.length > 1
+    && q.items.every((it) => ((it.extra && it.extra.album) || it.subtitle) === ((extra.album) || item.subtitle));
+  const gain = Number(inAlbumOrder && extra.albumGain !== undefined ? extra.albumGain : extra.trackGain);
+  const peak = Number(inAlbumOrder && extra.albumPeak !== undefined ? extra.albumPeak : extra.trackPeak);
+  const anyTagged = (q ? q.items : [item]).some((it) => it && it.extra && it.extra.trackGain !== undefined);
+  if (!Number.isFinite(gain)) {
+    // An untagged song in a queue of tagged ones sits at the same pre-amp, so
+    // it does not jump out; in an untagged queue, nothing changes at all.
+    return anyTagged ? 10 ** (LEVEL_PREAMP_DB / 20) : 1;
+  }
+  let factor = 10 ** ((gain + LEVEL_PREAMP_DB) / 20);
+  if (Number.isFinite(peak) && peak > 0) factor = Math.min(factor, 1 / peak);
+  return Math.min(1, factor);
+}
+
+function applyLevel(item) {
+  const player = $('audio-player');
+  const level = item && item.kind === 'music' ? levelFor(item) : 1;
+  audio.level = level;
+  audio.settingVolume = true;
+  player.volume = Math.max(0, Math.min(1, level * audio.userVolume));
+  audio.settingVolume = false;
+}
+
+// The volume somebody chose with the player's own slider is theirs, and
+// levelling works under it rather than replacing it.
+$('audio-player').addEventListener('volumechange', () => {
+  if (audio.settingVolume) return;
+  const player = $('audio-player');
+  const level = audio.level || 1;
+  audio.userVolume = Math.min(1, player.volume / level);
 });

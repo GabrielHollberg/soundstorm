@@ -355,6 +355,54 @@ minute and closed, the film was in Continue at 51%, and reopening it resumed
 at 61s. The same stack confirmed Jellyfin's side of deleting, which had been
 untested: the preview named exactly the film's file, byte for byte.
 
+## Music, towards Plexamp
+
+Asked for as "competitive with Plexamp". The first phase is what a music app is
+judged on in its first minute:
+
+- **Lock screen, headphones, car (Media Session).** Title, artist, album and
+  cover, and the buttons: next and previous step through the queue or an
+  audiobook's chapters. Previous more than 3s in restarts the song. With
+  neither, the lock screen gets 15s skips.
+- **Albums and artists.** `source.MusicBrowser`, which Navidrome answers from
+  getAlbumList2, getAlbum, getArtists, getArtist and search3, behind
+  `/api/music`, access-checked like everything else.
+- **Now Playing and a real queue.** Every song is in a queue. Play next and
+  Add to queue turn one song into a queue. Shuffle rearranges only what is
+  still to come and restores the order when turned off. Repeat is all or one.
+  On a phone the dock is a mini-player, since the browser's controls are too
+  small for a thumb.
+- **Gapless, measured.** The next song is fetched whole into a Blob while the
+  current one plays. Gaps were measured by polling `currentTime` every 4ms;
+  `timeupdate` fires only every ~250ms, and the first measurement, taken on
+  it, reported ~270ms before and after, which was the event's floor rather
+  than the gap. Real numbers: 20-23ms before and 11-16ms after on a fast
+  network, 180-195ms before and 15-17ms after on a throttled one. The win is
+  on a phone.
+- **Levelling from ReplayGain**, which Navidrome 0.64.1 passes through as
+  OpenSubsonic `replayGain` (checked). Album gain when an album plays in
+  order, track gain otherwise. A -6dB pre-amp lets a quiet track come *up*,
+  capped by its peak. It is set through `audio.volume`, **not Web Audio**:
+  routing a phone's music through Web Audio is what stops it when an iPhone
+  locks, and iOS ignoring a page's volume is the cheaper loss. The user's own
+  slider is kept and levelled under.
+
+Not attempted, and why: **sonic analysis** (Plexamp's "sonically similar", its
+DJs) is ML over every track's audio, the expensive layer this project does not
+own. **CarPlay and Android Auto** need a native app, the graveyard; Media
+Session reaches a car over Bluetooth.
+
+Two traps from building it:
+- A class named `dock-open` on the dock's cover button collided with
+  `body.dock-open`, the page-level class set while the player shows. Its
+  `background: none` made the whole page transparent.
+- The Now Playing bar is a `<header>`, so the app header's rule gave it a
+  background until overridden.
+
+Checked in Chrome against a real Navidrome with a generated library: two
+artists, three albums with covers and ReplayGain tags of 0, -5 and +8 dB.
+Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
+
 ## Favourites and playlists
 
 Per person, and kept by SoundStorm (`internal/collections`) rather than by

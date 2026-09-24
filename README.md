@@ -249,6 +249,30 @@ everybody in the house has their own. An audiobook you started in
 Audiobookshelf's phone app is there too, because it is the same record of
 where you are. A film counts as finished once you reach the credits.
 
+### Listening to music
+
+Pick **Music** and choose **Songs**, **Albums** or **Artists**. Albums can be
+ordered A to Z, recently added, by artist, recently played, most played or at
+random. An album page has **Play** and **Shuffle** and its track list, and an
+artist page has their albums and plays everything they made.
+
+Tap the song in the player to open **Now Playing**: the cover, big, with
+shuffle, repeat (all or one) and **Up next**. Hold down on any song, or
+right-click it, for **Play next** and **Add to queue**. On a phone the player
+at the bottom is a mini-player: tap it for Now Playing.
+
+- **Lock screen and headphones.** The song, artist and cover show on your
+  phone's lock screen and in the notification shade. Play, pause and skip
+  work from there, from Bluetooth headphones and from a car stereo.
+- **No gaps between songs.** The next song downloads while this one plays, so
+  a live album or a mix flows straight on. That matters most on a phone
+  away from your router.
+- **Even volume.** Songs carrying ReplayGain tags (most ripped and bought
+  music does) play at the same loudness, whole albums keeping their own
+  shape. Everything plays a little below full so quiet songs can be turned
+  up, so you may want your volume a notch higher. iPhones do not let a web
+  page set the volume, so there it has no effect.
+
 ### Favourites and playlists
 
 On a phone, **hold down** on anything and a menu pops up beside it. On a
