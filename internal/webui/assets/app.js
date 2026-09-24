@@ -3594,8 +3594,10 @@ function queueChanged() {
 function openNowPlaying() {
   if (!audio.item) return;
   audio.showQueue = false;
+  audio.lyricsBig = false;
   renderLyrics();
   show($('now-playing'), true);
+  enterImmersive();
   document.body.classList.add('np-open');
   renderNowPlaying();
 }
@@ -3604,7 +3606,40 @@ function closeNowPlaying() {
   show($('now-playing'), false);
   document.body.classList.remove('np-open');
   $('now-playing').style.transform = '';
+  exitImmersive();
 }
+
+// On a phone the player asks for the whole screen, so the status bar and the
+// navigation bar go while it is open and come back when it closes. Only a
+// request: the browser grants it after a tap (which is how the player opens),
+// Android honours it, and an iPhone, which offers it only to video, ignores it.
+function enterImmersive() {
+  const root = document.documentElement;
+  if (!matchMedia('(pointer: coarse)').matches || document.fullscreenElement || !root.requestFullscreen) return;
+  state.immersive = true;
+  root.requestFullscreen({ navigationUI: 'hide' }).catch(() => { state.immersive = false; });
+}
+function exitImmersive() {
+  if (!state.immersive) return;
+  state.immersive = false;
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+}
+
+// The strip grows into the full lyrics when tapped - a tap there never jumps
+// to a line, since the lines are too small a target to aim at. The small
+// cover at the top shrinks them back.
+$('np-lyrics').addEventListener('click', (event) => {
+  if (audio.npMode !== 'strip') return;
+  event.stopPropagation();
+  event.preventDefault();
+  audio.lyricsBig = true;
+  renderLyrics();
+}, true);
+document.querySelector('#now-playing .np-head').addEventListener('click', () => {
+  if (audio.npMode !== 'lyrics' || !matchMedia('(max-width: 760px)').matches) return;
+  audio.lyricsBig = false;
+  renderLyrics();
+});
 
 // Drag down to put the full player away, on a touch screen. The panel follows
 // the finger, and goes if it was dragged far enough or flicked; otherwise it
@@ -4137,12 +4172,25 @@ function renderLyrics() {
   const toggle = $('np-queue-toggle');
   toggle.classList.toggle('on', audio.showQueue);
   toggle.setAttribute('aria-pressed', String(audio.showQueue));
-  const showing = has && !audio.showQueue;
+  // Four ways the screen can be laid out:
+  //   queue  - Up next in the middle, a small cover beside the title;
+  //   lyrics - the lyrics in the middle, the same small cover;
+  //   strip  - a phone's default: the big cover, and under the title a strip
+  //            of the few lines around the one being sung (tap it for lyrics);
+  //   cover  - no lyrics at all: the big cover and nothing else.
+  // A computer has room for the cover beside the lyrics, so it never strips.
+  const phone = matchMedia('(max-width: 760px)').matches;
+  const mode = audio.showQueue ? 'queue'
+    : !has ? 'cover'
+    : (audio.lyricsBig || !phone) ? 'lyrics' : 'strip';
+  audio.npMode = mode;
+  const showing = mode === 'lyrics' || mode === 'strip';
   show($('np-lyrics'), showing);
-  show($('np-next-block'), audio.showQueue);
+  show($('np-next-block'), mode === 'queue');
   // The panel layout - title at the top, the middle for lyrics or the queue,
-  // controls at the bottom - whenever there is something for the middle.
-  $('now-playing').classList.toggle('panel-on', showing || audio.showQueue);
+  // controls at the bottom - whenever the middle is not the cover.
+  $('now-playing').classList.toggle('panel-on', mode === 'lyrics' || mode === 'queue');
+  $('now-playing').classList.toggle('strip-on', mode === 'strip');
   const box = $('np-lyrics');
   box.replaceChildren();
   if (!has) return;
@@ -4211,7 +4259,8 @@ function syncLyrics(force) {
     // against the box itself: offsetTop counts from the nearest positioned
     // ancestor, which is not the box, and parked the line near the top.
     const offset = current.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
-    box.scrollTo({ top: offset - box.clientHeight * 0.42 + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
+    const at = audio.npMode === 'strip' ? 0.5 : 0.42;
+    box.scrollTo({ top: offset - box.clientHeight * at + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
   }
 }
 

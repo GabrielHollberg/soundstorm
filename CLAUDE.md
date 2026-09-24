@@ -384,6 +384,15 @@ judged on in its first minute:
   cover on the left; a phone puts a small one beside the title. The top-right
   button is Up next, which takes the lyrics' place. A song with no lyrics
   shows its cover in the middle instead - there is nothing else to put there.
+  On a phone the default is the big cover with a strip of the few lines around
+  the one being sung under the centred title; tapping the strip grows it into
+  the full lyrics (a tap there never seeks), and tapping the small cover at
+  the top shrinks it back.
+- **The player asks for the whole screen on a phone**, hiding the status and
+  navigation bars while it is open. It is `requestFullscreen` on the
+  document, made from the tap that opened the player; Android grants it,
+  iPhone Safari offers full screen only to video and ignores it. A web page
+  has no other way to hide either bar.
 - **Gapless, measured.** The next song is fetched whole into a Blob while the
   current one plays. Gaps were measured by polling `currentTime` every 4ms;
   `timeupdate` fires only every ~250ms, and the first measurement, taken on

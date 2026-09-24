@@ -1915,3 +1915,51 @@ body.np-open { overflow: hidden; }
   .dock-progress { left: 12px; right: 12px; height: 2px; }
 }
 @media (pointer: coarse) { .dock-volume { display: none; } }
+
+/* Centred, to match the lyrics: the title, and on a computer the controls. */
+.np-head { justify-content: center; }
+.np-text { text-align: center; }
+.now-playing.panel-on .np-head .np-text { text-align: left; }
+.np-controls { margin-left: auto; margin-right: auto; width: 100%; }
+@media (min-width: 761px) {
+  .now-playing .np-text, .now-playing.panel-on .np-head .np-text { text-align: center; }
+}
+.now-playing.panel-on .np-head { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+/* A phone's default: the big cover, the title under it, and a strip of the
+   lines around the one being sung. Everything fits one screen. */
+@media (max-width: 760px) {
+  .now-playing.strip-on .np-inner { overflow: hidden; }
+  .now-playing.strip-on .np-main {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  .now-playing.strip-on .np-cover { width: min(100%, 40vh); }
+  .now-playing.strip-on .np-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+    min-height: 0;
+    justify-content: flex-end;
+  }
+  .now-playing.strip-on .np-head { order: 1; }
+  .now-playing.strip-on .np-lyrics {
+    order: 2;
+    flex: 1;
+    min-height: 96px;
+    max-height: 150px;
+    padding: 60px 0;
+    cursor: pointer;
+    mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+    -webkit-mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+  }
+  .now-playing.strip-on .np-lyric { font-size: 20px; padding: 3px 4%; }
+  .now-playing.strip-on .np-lyric.gap { padding: 10px 0; }
+  .now-playing.strip-on .np-lyrics-credit { display: none; }
+  .now-playing.strip-on .np-progress { order: 3; }
+  .now-playing.strip-on .np-controls { order: 4; }
+}
