@@ -785,6 +785,22 @@ into a scratch folder. It relaunched, hid its console, showed the window,
 reached the "already installed in another folder" refusal and displayed it,
 and wrote nothing.
 
+**No message the window can show tells anybody to type a command.** "Show
+this to whoever gave you the app: `cd <folder>; docker compose logs`" became
+"restart and try again; if it happens again, send this file". The setup first
+appends SoundStorm's own last 200 log lines to the setup log
+(`Save-SoundStormLog`), and the failure window gets a Show log file button
+that opens Explorer with the file selected. It is **SoundStorm's log only**:
+it is written never to carry a credential, and the media servers' logs are
+not held to that (a Subsonic request carries its credential in the query
+string), and this is a file people are told to send to somebody. The other
+rewrites:
+- "Installed in another folder" now says to uninstall from Settings, Apps.
+- The WSL fallback now uses the Windows Features checkboxes.
+- The Tailscale hint now points at its admin console.
+`-Https`, `-NoHttps` and `-Tailscale` are still named, but only to people who
+typed them.
+
 **Which shelves somebody can see is per account.** `User.Libraries` is a list
 of media kinds, and nil means all of them - which is what every account created
 before the field existed has, and the default for a new one. The owner is always

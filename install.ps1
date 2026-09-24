@@ -360,7 +360,14 @@ function New-SetupWindow([string]$Heading, [string]$Subheading, [string[]]$StepN
     $open.Location = New-Object System.Drawing.Point(344, 504)
     $open.Size = New-Object System.Drawing.Size(160, 34)
     $open.Visible = $false
-    $open.Add_Click({ if ($script:Gui.OpenUrl) { Start-Process $script:Gui.OpenUrl } })
+    $open.Add_Click({
+        if ($script:Gui.ShowLog) {
+            # Explorer with the file selected: the thing to send, found.
+            Start-Process explorer.exe -ArgumentList "/select,`"$script:SetupLog`""
+        } elseif ($script:Gui.OpenUrl) {
+            Start-Process $script:Gui.OpenUrl
+        }
+    })
     $form.Controls.Add($open)
     $g.Open = $open
 
@@ -582,8 +589,13 @@ function Stop-Gui([string]$Text) {
     $w.Status.Text = ''
     Expand-GuiMessage
     $lines = @($Text -split "`r?`n" | ForEach-Object { $_ -replace '^  ', '' })
-    $lines += @('', "A full log is saved in $script:SetupLog")
+    if ($Text -notmatch [regex]::Escape($script:SetupLog)) {
+        $lines += @('', "A full log is saved in $script:SetupLog")
+    }
     Set-GuiMessage 'What went wrong' $lines 'Red'
+    $w.ShowLog = $true
+    $w.Open.Text = 'Show log file'
+    $w.Open.Visible = $true
     $w.Close.Text = 'Close'
     Wait-GuiClosed
 }
@@ -713,6 +725,40 @@ function Stop-With($text) {
     if ($Launch) { Show-Problem $text }
     if ($script:Gui) { Stop-Gui $text }
     exit 1
+}
+
+# Save-SoundStormLog puts SoundStorm's own recent log into the setup log, so
+# that when it will not start, the one file somebody is asked to send already
+# has what whoever helps them needs. The alternative was printing
+# "cd <folder>; docker compose logs" at a person who has never opened a
+# terminal.
+#
+# SoundStorm's log only: it is written never to carry a credential. The media
+# servers' logs are not held to that - a Subsonic request carries its
+# credential in the query string - and this file is one people are told to
+# send to somebody.
+function Save-SoundStormLog {
+    try {
+        $logs = Invoke-Docker @('compose', '--project-directory', $Dir, 'logs', '--no-color', '--tail', '200', 'soundstorm') -Capture
+        [IO.File]::AppendAllText($script:SetupLog,
+            "`r`n----- SoundStorm's own log (last 200 lines) -----`r`n$($logs.Output)`r`n")
+    } catch {
+        # The setup log still says what the setup saw.
+    }
+}
+
+# Get-HelpAdvice is what to do when SoundStorm will not start, in words rather
+# than commands.
+function Get-HelpAdvice {
+    $open = if ($script:Gui) { " - the Show log file button opens the folder it is in" } else { '' }
+    return @"
+  Restart the PC and run this setup again - that fixes it more often than
+  not, and nothing you have downloaded is lost.
+
+  If it happens again, send this file to whoever helps you with SoundStorm${open}:
+
+    $script:SetupLog
+"@
 }
 
 function Show-Problem($text) {
@@ -1370,11 +1416,11 @@ function Install-WSL {
     2. Run this setup again - it picks up where it left off, and nothing
        you have already downloaded is lost.
 
-  If it stops here a second time, open PowerShell as Administrator, run
+  If it stops here a second time, switch it on by hand:
 
-    wsl --install --no-distribution
-
-  then restart and run this setup again.
+    1. Open the Start menu and type:  Turn Windows features on or off
+    2. Tick "Windows Subsystem for Linux" and "Virtual Machine Platform".
+    3. Click OK, restart the PC, and run this setup again.
 "@
 }
 
@@ -1704,7 +1750,8 @@ function Wait-ForSoundStorm([string]$Url) {
             # somebody decides it has hung and closes the window.
             if ($waited % 20 -eq 0) { Note "still starting... ($waited seconds). This is normal the first time." }
             if ($waited -gt 180) {
-                Stop-With "  SoundStorm started but never answered on $Url.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs soundstorm"
+                Save-SoundStormLog
+                Stop-With "  SoundStorm started but never answered.`n`n$(Get-HelpAdvice)"
             }
         }
     } finally {
@@ -2398,7 +2445,8 @@ if ($Launch) {
     # it is now. compose sees the changed .env and recreates the container.
     $null = Update-LanAddress
     if ((Invoke-DockerBounded @('compose', 'up', '-d')) -ne 0) {
-        Stop-With "  SoundStorm would not start.`n`n  Try turning the PC off and on again. If it keeps happening, show`n  this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
+        Save-SoundStormLog
+        Stop-With "  SoundStorm would not start.`n`n$(Get-HelpAdvice)"
     }
     $port = Get-InstalledPort
     $url = "$(Get-InstalledScheme)://localhost:$port"
@@ -2499,12 +2547,15 @@ if ($elsewhere -and $env:SOUNDSTORM_FORCE -ne '1') {
   drive the same containers, and this one would point at an empty library, so
   your media would look like it had vanished.
 
-  To move it here instead, remove the old one first: open a terminal in the
-  folder above and run
+  To install it here instead, remove the other copy first:
 
-    docker compose down
+    1. Open Settings, then Apps, then Installed apps.
+    2. Find SoundStorm and choose Uninstall. Your music, films and books
+       are never deleted - it only removes the app.
+    3. Run this setup again.
 
-  then run this setup again.
+  If SoundStorm is not in that list, it was set up by hand - ask whoever
+  did that to remove it.
 "@
 }
 
@@ -2803,7 +2854,8 @@ if ($start.ExitCode -ne 0) {
     if ($start.Output -match 'already allocated|address already in use|forbidden by its access permissions') {
         Stop-With "  Port $port is already being used by another program on this PC.`n`n  Show this to whoever gave you the app."
     }
-    Stop-With "  SoundStorm would not start.`n`n  Show this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
+    Save-SoundStormLog
+    Stop-With "  SoundStorm would not start.`n`n$(Get-HelpAdvice)"
 }
 
 $url = "${scheme}://localhost:$port"
@@ -2885,9 +2937,8 @@ if ($useTailscale) {
         Write-Host "  router." -ForegroundColor Gray
     } else {
         Write-Host "  Tailscale is starting but has not reported an address yet." -ForegroundColor Yellow
-        Write-Host "  Check the Tailscale admin console, or run:" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "    docker logs soundstorm-tailscale" -ForegroundColor Gray
+        Write-Host "  Check the Tailscale admin console: this PC should appear there as" -ForegroundColor Gray
+        Write-Host "  'soundstorm' within a minute or two." -ForegroundColor Gray
     }
     Write-Host ""
     Write-Host "  Every device that should reach it needs the Tailscale app and the" -ForegroundColor Gray
