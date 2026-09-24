@@ -570,3 +570,17 @@ type MusicBrowser interface {
 	// SearchMusic finds albums and artists by name.
 	SearchMusic(ctx context.Context, text string) ([]Album, []Artist, error)
 }
+
+// Genre is one genre in a music library, and how much of it there is.
+type Genre struct {
+	Name      string `json:"name"`
+	SongCount int    `json:"songCount"`
+}
+
+// MixSource is an optional interface for a music source that can draw songs at
+// random - across the whole library, within a genre, or within a span of years
+// - which is what a genre or decade mix is made of.
+type MixSource interface {
+	RandomSongs(ctx context.Context, n int, genre string, fromYear, toYear int) ([]media.Item, error)
+	Genres(ctx context.Context) ([]Genre, error)
+}

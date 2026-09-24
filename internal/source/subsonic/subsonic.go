@@ -109,7 +109,16 @@ type envelope struct {
 				Artist []artistEntry `json:"artist"`
 			} `json:"index"`
 		} `json:"artists"`
-		Artist *artistEntry `json:"artist"`
+		Artist      *artistEntry `json:"artist"`
+		RandomSongs struct {
+			Song []song `json:"song"`
+		} `json:"randomSongs"`
+		Genres struct {
+			Genre []struct {
+				Value     string `json:"value"`
+				SongCount int    `json:"songCount"`
+			} `json:"genre"`
+		} `json:"genres"`
 	} `json:"subsonic-response"`
 }
 
@@ -122,6 +131,7 @@ type song struct {
 	Duration int    `json:"duration"` // seconds
 	CoverArt string `json:"coverArt"`
 	Suffix   string `json:"suffix"`
+	Genre    string `json:"genre"`
 	// Path is relative to the music folder - checked against Navidrome
 	// 0.64: "Artist/Album/01 - Title.mp3".
 	Path string `json:"path"`
@@ -240,6 +250,9 @@ func (s *Source) songItem(sg song) media.Item {
 	}
 	if sg.Suffix != "" {
 		item.Extra["format"] = sg.Suffix
+	}
+	if sg.Genre != "" {
+		item.Extra["genre"] = sg.Genre
 	}
 	// For volume levelling in the player, which is the only thing that
 	// reads these.
@@ -509,4 +522,47 @@ func (s *Source) SearchMusic(ctx context.Context, text string) ([]source.Album, 
 		artists = append(artists, s.artist(a))
 	}
 	return albums, artists, nil
+}
+
+// RandomSongs draws songs at random: from the whole library, one genre, or a
+// span of years (zero means no bound). Subsonic caps a draw at 500.
+func (s *Source) RandomSongs(ctx context.Context, n int, genre string, fromYear, toYear int) ([]media.Item, error) {
+	if n <= 0 || n > 500 {
+		n = 500
+	}
+	env, err := s.call(ctx, "/rest/getRandomSongs.view", func(p url.Values) {
+		p.Set("size", strconv.Itoa(n))
+		if genre != "" {
+			p.Set("genre", genre)
+		}
+		if fromYear > 0 {
+			p.Set("fromYear", strconv.Itoa(fromYear))
+		}
+		if toYear > 0 {
+			p.Set("toYear", strconv.Itoa(toYear))
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]media.Item, 0, len(env.Response.RandomSongs.Song))
+	for _, sg := range env.Response.RandomSongs.Song {
+		out = append(out, s.songItem(sg))
+	}
+	return out, nil
+}
+
+// Genres lists the library's genres, with how many songs each has.
+func (s *Source) Genres(ctx context.Context) ([]source.Genre, error) {
+	env, err := s.call(ctx, "/rest/getGenres.view", nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]source.Genre, 0, len(env.Response.Genres.Genre))
+	for _, g := range env.Response.Genres.Genre {
+		if g.Value != "" {
+			out = append(out, source.Genre{Name: g.Value, SongCount: g.SongCount})
+		}
+	}
+	return out, nil
 }

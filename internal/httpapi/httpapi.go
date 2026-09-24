@@ -72,6 +72,7 @@ const maxProgressBody = 8 << 10
 type Server struct {
 	setupCode        string
 	collections      *collections.Store
+	libMixes         libraryMixes
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -277,6 +278,10 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/albums/{source}/{id}", s.handleAlbum)
 	guarded.HandleFunc("GET /api/music/artists", s.handleArtists)
 	guarded.HandleFunc("GET /api/music/artists/{source}/{id}", s.handleArtist)
+	// Mixes and listening history. See mixes.go.
+	guarded.HandleFunc("GET /api/music/mixes", s.handleMixes)
+	guarded.HandleFunc("GET /api/music/mixes/{id}", s.handleMix)
+	guarded.HandleFunc("POST /api/history", s.handleRecordPlay)
 	// Favourites and playlists, per person. See favourites.go.
 	guarded.HandleFunc("GET /api/favourites", s.handleFavourites)
 	guarded.HandleFunc("PUT /api/favourites", s.handleAddFavourite)

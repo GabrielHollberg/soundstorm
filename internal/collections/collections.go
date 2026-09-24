@@ -65,7 +65,24 @@ type Playlist struct {
 type collection struct {
 	Favourites []Entry     `json:"favourites"`
 	Playlists  []*Playlist `json:"playlists"`
+	// History is what this person has listened to, keyed "source/id", for
+	// Recently played, Most played and Rediscover. Per person for the same
+	// reason as everything else here: Navidrome's play counts would be the
+	// whole house's, and only count plays somebody reported to it.
+	History map[string]*Play `json:"history,omitempty"`
 }
+
+// Play is how often and when one song was listened to.
+type Play struct {
+	Item  media.Item `json:"item"`
+	Count int        `json:"count"`
+	First time.Time  `json:"first"`
+	Last  time.Time  `json:"last"`
+}
+
+// MaxHistory bounds one person's history; past it, the songs least recently
+// played are forgotten first.
+const MaxHistory = 5000
 
 // Store holds everybody's collections, one file each under dir.
 type Store struct {
@@ -448,4 +465,51 @@ func Validate(files map[string]json.RawMessage) error {
 		}
 	}
 	return nil
+}
+
+// RecordPlay notes that somebody listened to a song.
+func (s *Store) RecordPlay(userID string, item media.Item, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.load(userID)
+	if err != nil {
+		return err
+	}
+	if c.History == nil {
+		c.History = map[string]*Play{}
+	}
+	key := item.SourceID + "/" + item.ID
+	p, ok := c.History[key]
+	if !ok {
+		if len(c.History) >= MaxHistory {
+			oldest, oldestAt := "", at
+			for k, v := range c.History {
+				if v.Last.Before(oldestAt) {
+					oldest, oldestAt = k, v.Last
+				}
+			}
+			delete(c.History, oldest)
+		}
+		p = &Play{First: at}
+		c.History[key] = p
+	}
+	p.Item = item
+	p.Count++
+	p.Last = at
+	return s.save(userID, c)
+}
+
+// History is one person's plays, in no particular order.
+func (s *Store) History(userID string) ([]Play, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.load(userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Play, 0, len(c.History))
+	for _, p := range c.History {
+		out = append(out, *p)
+	}
+	return out, nil
 }

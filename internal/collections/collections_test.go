@@ -153,3 +153,22 @@ func TestImportRefusesADamagedBackupBeforeWritingAnything(t *testing.T) {
 		t.Errorf("%d files written before the refusal", len(entries))
 	}
 }
+
+func TestHistoryCountsAndForgetsTheOldestFirst(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	_ = s.RecordPlay("u1", song("a"), t0)
+	_ = s.RecordPlay("u1", song("a"), t0.Add(time.Hour))
+	_ = s.RecordPlay("u1", song("b"), t0.Add(2*time.Hour))
+	plays, _ := s.History("u1")
+	counts := map[string]int{}
+	for _, p := range plays {
+		counts[p.Item.ID] = p.Count
+	}
+	if counts["a"] != 2 || counts["b"] != 1 {
+		t.Fatalf("counts = %v", counts)
+	}
+	if other, _ := s.History("u2"); len(other) != 0 {
+		t.Errorf("u2 has %d plays of u1's", len(other))
+	}
+}

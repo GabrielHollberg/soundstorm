@@ -735,7 +735,6 @@ header {
   .dock-meta { display: grid; flex: 1; min-width: 0; }
   .dock audio { display: none; }
   .dock-queue { display: none !important; }
-  .dock-play { display: grid; flex: 0 0 auto; }
 
   #status, #degraded { margin-left: 14px; margin-right: 14px; }
 }
@@ -1451,7 +1450,11 @@ body.dock-open .hold-tip { bottom: calc(var(--dock-space) + 12px); }
   -webkit-tap-highlight-color: transparent;
 }
 .dock-cover:hover { filter: none; }
-.dock-play { display: none; color: var(--text); }
+/* Only on a phone. Scoped to .dock so it outranks .np-icon's display: grid,
+   which comes later in this file and was showing it beside the browser's own
+   controls on a computer. */
+.dock .dock-play { display: none; color: var(--text); }
+@media (max-width: 620px) { .dock .dock-play { display: grid; flex: 0 0 auto; } }
 .dock-play .icon { width: 28px; height: 28px; }
 #audio-meta { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 #audio-meta:hover strong { text-decoration: underline; }
@@ -1610,3 +1613,29 @@ body.np-open { overflow: hidden; }
   .np-controls { max-width: none; }
   #np-queue { max-height: none; }
 }
+
+/* Mixes -------------------------------------------------------------------- */
+
+.mix-cover.collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.mix-cover.collage img { width: 100%; height: 100%; object-fit: cover; }
+.mix-play {
+  position: absolute;
+  right: 10px; bottom: 10px;
+  width: 42px; height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #08131f;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.mix-play .icon { width: 20px; height: 20px; fill: currentColor; stroke: none; }
+.mix-card:hover .mix-play, .mix-card:focus-visible .mix-play { opacity: 1; transform: none; }
+@media (pointer: coarse) { .mix-play { opacity: 1; transform: none; width: 36px; height: 36px; } }

@@ -795,7 +795,8 @@ async function runSearch() {
 
   // The two personal views are not a search of a shelf.
   const own = state.kind === 'favourites' || state.kind === 'playlists';
-  const musicBrowse = state.kind === 'music' && state.musicView !== 'songs';
+  const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
+    && !(state.musicView === 'mixes' && state.query);
   show($('music-tabs'), state.kind === 'music');
   show($('album-order'), state.kind === 'music' && state.musicView === 'albums');
   show($('music-view'), musicBrowse);
@@ -1426,6 +1427,7 @@ const audio = {
 const SAVE_EVERY_MS = 10000;
 
 function playAudio(item, fromQueue) {
+  audio.counted = false;
   // Anything started by hand ends a playlist; the queue only carries on
   // through its own songs.
   if (!fromQueue) audio.queue = null;
@@ -3119,7 +3121,8 @@ if (hasMediaSession) {
 // Under the Music chip, three ways in: songs (the search grid), albums and
 // artists. Album and artist pages open in place and "back" returns to the grid
 // they came from.
-state.musicView = 'songs';
+// Mixes first: what a music app opens on is something to play, not a list.
+state.musicView = 'mixes';
 state.albumOrder = 'name';
 
 for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
@@ -3157,6 +3160,14 @@ async function showMusicView(seq) {
   const view = $('music-view');
   $('status').textContent = 'Loading…';
   const q = state.query ? `q=${encodeURIComponent(state.query)}` : '';
+  if (state.musicView === 'mixes') {
+    const { ok, body } = await api('/api/music/mixes');
+    if (seq !== state.searchSeq) return;
+    const mixes = (ok && body && body.mixes) || [];
+    view.replaceChildren(mixGrid(mixes));
+    $('status').textContent = mixes.length ? '' : 'No music yet.';
+    return;
+  }
   if (state.musicView === 'albums') {
     const params = q || `order=${encodeURIComponent(state.albumOrder)}`;
     const { ok, body } = await api(`/api/music/albums?${params}`);
@@ -3391,7 +3402,15 @@ async function showArtist(sourceId, id) {
       api(`/api/music/albums/${encodeURIComponent(a.sourceId || sourceId)}/${escapeId(a.id)}`)));
     return lists.flatMap((r) => (r.ok && r.body && r.body.songs) || []);
   };
-  text.append(kind, name, facts, playButtons(everySong));
+  const buttons = playButtons(everySong);
+  const radio = document.createElement('button');
+  radio.type = 'button';
+  radio.className = 'ghost';
+  radio.textContent = 'Artist mix';
+  radio.title = 'Their songs, with others from the same genres';
+  radio.addEventListener('click', () => playMix(`artist:${id}`));
+  buttons.append(radio);
+  text.append(kind, name, facts, buttons);
   head.append(photo, text);
 
   const heading = document.createElement('h3');
@@ -3760,4 +3779,77 @@ $('audio-player').addEventListener('volumechange', () => {
   const player = $('audio-player');
   const level = audio.level || 1;
   audio.userVolume = Math.min(1, player.volume / level);
+});
+
+/* -------------------------------------------------------------------- mixes */
+
+// A mix is a queue made for you: tap it and it plays. Its cover is a collage
+// of four of the covers in it.
+function mixCover(mix) {
+  const wrap = document.createElement('div');
+  wrap.className = 'art-wrap mix-cover';
+  const art = (mix.covers || []).slice(0, 4);
+  if (art.length >= 4) {
+    wrap.classList.add('collage');
+    for (const id of art) {
+      const img = document.createElement('img');
+      img.src = artUrl(mix.sourceId, id);
+      img.alt = '';
+      img.loading = 'lazy';
+      wrap.append(img);
+    }
+  } else if (art.length) {
+    const img = document.createElement('img');
+    img.src = artUrl(mix.sourceId, art[0]);
+    img.alt = '';
+    wrap.append(img);
+  } else {
+    wrap.append(initials(mix.title));
+  }
+  const play = document.createElement('span');
+  play.className = 'mix-play';
+  play.append(icon('play', true));
+  wrap.append(play);
+  return wrap;
+}
+
+function mixGrid(mixes) {
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid mix-grid';
+  for (const mix of mixes) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'item mix-card';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = mix.title;
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = mix.subtitle;
+    meta.append(title, sub);
+    card.append(mixCover(mix), meta);
+    card.addEventListener('click', () => playMix(mix.id));
+    grid.append(card);
+  }
+  return grid;
+}
+
+async function playMix(id) {
+  const { ok, body } = await api(`/api/music/mixes/${encodeURIComponent(id)}`);
+  const songs = (ok && body && body.songs) || [];
+  if (songs.length) playQueue(songs, 0);
+}
+
+// A play counts once half the song, or four minutes, has been heard - the
+// rule most music services use - and once per time it is started.
+$('audio-player').addEventListener('timeupdate', () => {
+  const player = $('audio-player');
+  const item = audio.item;
+  if (!item || item.kind !== 'music' || audio.counted || !Number.isFinite(player.duration)) return;
+  if (player.currentTime >= Math.min(240, player.duration / 2)) {
+    audio.counted = true;
+    api('/api/history', { method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }) });
+  }
 });
