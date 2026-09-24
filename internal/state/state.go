@@ -193,6 +193,13 @@ type data struct {
 	// same reason User.Libraries is careful about nil. Once the owner toggles
 	// it in the app, their choice is what stands.
 	RemoteAccess *bool `json:"remoteAccess,omitempty"`
+
+	// DeviceKey signs the tokens that mark a browser as one an account has
+	// signed in on before (see auth.Manager.SignIn). Made on first use; a
+	// secret like the credentials beside it, since whoever holds it could mint
+	// a token that skips the sign-in backoff - though never one that skips the
+	// password.
+	DeviceKey []byte `json:"deviceKey,omitempty"`
 }
 
 // Store is the on-disk state, guarded for concurrent use.
@@ -345,6 +352,25 @@ func newID() string {
 		panic("state: no randomness available: " + err.Error())
 	}
 	return hex.EncodeToString(raw)
+}
+
+// DeviceKey returns the secret device tokens are signed with, making and saving
+// one the first time it is asked for.
+func (s *Store) DeviceKey() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.d.DeviceKey) == 0 {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("generate device key: %w", err)
+		}
+		s.d.DeviceKey = key
+		if err := s.save(); err != nil {
+			s.d.DeviceKey = nil
+			return nil, err
+		}
+	}
+	return append([]byte(nil), s.d.DeviceKey...), nil
 }
 
 // encodeState renders the state as indented JSON without HTML escaping. The

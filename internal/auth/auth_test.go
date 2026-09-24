@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,6 +86,136 @@ func TestSessionCookieUsesHostPrefixOverTLS(t *testing.T) {
 	got := w.Result().Cookies()
 	if len(got) != 1 || got[0].Name != CookieName || got[0].Secure {
 		t.Errorf("over plain HTTP want one plain cookie, got %+v", got)
+	}
+}
+
+// stranger spends the account's free guesses and puts it into backoff, from a
+// fresh address each time so that it is the account, not an address, that is
+// being held.
+func stranger(t *testing.T, m *Manager, name string) {
+	t.Helper()
+	ctx := context.Background()
+	for i := 0; i <= accountFreeFailures; i++ {
+		_, _, _, err := m.SignIn(ctx, fmt.Sprintf("203.0.113.%d", i+1), name, "not the password")
+		if err != nil && !errors.Is(err, ErrInvalidCredentials) {
+			if _, ok := IsThrottled(err); ok {
+				return
+			}
+			t.Fatalf("stranger guess %d: %v", i, err)
+		}
+	}
+}
+
+// The lockout a stranger could cause: guessing at a known name held its new
+// sign-ins in backoff, the owner's included, right password or not. A browser
+// that has signed in as the account before is not refused because of it.
+func TestAStrangerCannotLockOutATrustedDevice(t *testing.T) {
+	m := newManager(t)
+	owner, err := m.Signup("gabe", "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := m.DeviceToken(owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stranger(t, m, "gabe")
+	ctx := context.Background()
+
+	if _, _, _, err := m.SignIn(ctx, "198.51.100.9", "gabe", "correct horse"); err == nil {
+		t.Fatal("the account was not in backoff; the test proves nothing")
+	} else if _, ok := IsThrottled(err); !ok {
+		t.Fatalf("a new device got %v, want throttled", err)
+	}
+	if _, _, _, err := m.SignIn(ctx, "198.51.100.9", "gabe", "correct horse", device); err != nil {
+		t.Errorf("a trusted device was refused while a stranger guessed: %v", err)
+	}
+}
+
+// Only a token this account issued, still valid, earns the exemption.
+func TestOnlyAGoodDeviceTokenIsTrusted(t *testing.T) {
+	m := newManager(t)
+	owner, _ := m.Signup("gabe", "correct horse")
+	sam, _ := m.CreateUser(owner, "sam", "sam's password", "")
+	samDevice, _ := m.DeviceToken(sam)
+	good, _ := m.DeviceToken(owner)
+	parts := strings.Split(good, ".")
+
+	stranger(t, m, "gabe")
+	ctx := context.Background()
+	for name, tok := range map[string]string{
+		"another account's": samDevice,
+		"forged":            parts[0] + "." + parts[1] + "." + parts[2] + ".AAAA",
+		"expired":           expiredToken(t, m, owner),
+		"garbage":           "not-a-token",
+	} {
+		_, _, _, err := m.SignIn(ctx, "198.51.100.9", "gabe", "correct horse", tok)
+		if _, ok := IsThrottled(err); !ok {
+			t.Errorf("%s token skipped the backoff: err = %v", name, err)
+		}
+	}
+}
+
+func expiredToken(t *testing.T, m *Manager, user state.User) string {
+	t.Helper()
+	issued := strconv.FormatInt(time.Now().Add(-deviceTTL-time.Hour).Unix(), 10)
+	mac, err := m.deviceMAC(user, issued, "nonce")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return user.ID + "." + issued + ".nonce." + mac
+}
+
+// A password change retires every device token issued before it: they are bound
+// to the old password's salt.
+func TestAPasswordChangeRetiresDeviceTokens(t *testing.T) {
+	m := newManager(t)
+	owner, _ := m.Signup("gabe", "correct horse")
+	old, _ := m.DeviceToken(owner)
+	if err := m.ChangeOwnPassword(context.Background(), "c", owner, "correct horse", "battery staple", ""); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := m.store.User(owner.ID)
+	if _, ok := m.verifyDevice(old, updated, time.Now()); ok {
+		t.Error("a device token survived a password change")
+	}
+}
+
+// A stolen device token is no faster a guessing channel than one address: it has
+// its own free failures and then its own doubling wait.
+func TestADeviceTokenHasItsOwnBackoff(t *testing.T) {
+	m := newManager(t)
+	owner, _ := m.Signup("gabe", "correct horse")
+	device, _ := m.DeviceToken(owner)
+	ctx := context.Background()
+	for i := 0; i < freeFailures; i++ {
+		if _, _, _, err := m.SignIn(ctx, fmt.Sprintf("192.0.2.%d", i+1), "gabe", "wrong", device); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("guess %d: %v", i, err)
+		}
+	}
+	_, _, _, err := m.SignIn(ctx, "192.0.2.99", "gabe", "correct horse", device)
+	if _, ok := IsThrottled(err); !ok {
+		t.Errorf("a device token past its free failures was not throttled: %v", err)
+	}
+}
+
+// Behind Docker Desktop everybody arrives from one address, so a stranger's
+// wrong guesses put that address - and with it every household sign-in - into
+// backoff. A household device that has signed in before is not affected.
+func TestASharedAddressInBackoffDoesNotRefuseATrustedDevice(t *testing.T) {
+	m := newManager(t)
+	owner, _ := m.Signup("gabe", "correct horse")
+	device, _ := m.DeviceToken(owner)
+	const bridge = "172.20.0.1"
+	ctx := context.Background()
+	for i := 0; i < freeFailures; i++ {
+		m.SignIn(ctx, bridge, "nobody", "guess")
+	}
+	if _, _, _, err := m.SignIn(ctx, bridge, "gabe", "correct horse"); err == nil {
+		t.Fatal("the shared address was not in backoff; the test proves nothing")
+	}
+	if _, _, _, err := m.SignIn(ctx, bridge, "gabe", "correct horse", device); err != nil {
+		t.Errorf("a trusted device behind the shared address was refused: %v", err)
 	}
 }
 

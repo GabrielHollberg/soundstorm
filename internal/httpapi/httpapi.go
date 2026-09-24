@@ -532,6 +532,11 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
+	// The browser that created the account is one the owner uses; mark it, as
+	// a sign-in would.
+	if err := s.auth.SetDeviceCookie(w, r, owner); err != nil {
+		s.log.Warn("could not mark this device as trusted", "err", err)
+	}
 	// The account comes back here as well as from /api/login: the UI needs to
 	// know it is the owner straight away, and without this it would not find
 	// out until the page was reloaded.
@@ -547,7 +552,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	token, expiry, user, err := s.auth.SignIn(r.Context(), clientOf(r), creds.Username, creds.Password)
+	token, expiry, user, err := s.auth.SignIn(r.Context(), clientOf(r), creds.Username, creds.Password,
+		auth.DeviceTokens(r)...)
 	if t, ok := auth.IsThrottled(err); ok {
 		s.log.Warn("sign-in throttled", "remote", r.RemoteAddr)
 		writeThrottled(w, t)
@@ -559,6 +565,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
+	// Mark this browser as one the account uses, so a stranger guessing at its
+	// name cannot hold its next sign-in in backoff. Best effort: without it the
+	// sign-in still worked, it just has no protection from that next time.
+	if err := s.auth.SetDeviceCookie(w, r, user); err != nil {
+		s.log.Warn("could not mark this device as trusted", "err", err)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"signedIn": true,
 		"user":     publicUser(user),
@@ -754,6 +766,14 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.log.Info("password changed", "id", actor.ID)
+	// The new password retired every device token issued under the old one,
+	// this browser's included; give this one a fresh token, since it is the
+	// device that just proved it knows both.
+	if updated, ok := s.store.User(actor.ID); ok {
+		if err := s.auth.SetDeviceCookie(w, r, updated); err != nil {
+			s.log.Warn("could not mark this device as trusted", "err", err)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"changed": true})
 }
 

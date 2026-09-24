@@ -729,6 +729,24 @@ a household locked out of its own server is not. `Login` itself is unthrottled
 for the CLI and for signup; anything answering the network goes through
 `SignIn`.
 
+**A device that has signed in before is judged on its own record.** Capped
+backoff still let a stranger guessing at a known name once a minute hold that
+account's sign-ins in backoff for as long as they liked - the owner's included,
+because the throttle refuses before hashing, right password or not - and let a
+stranger's wrong guesses on Docker Desktop's one shared address slow the whole
+household. So every successful sign-in (and sign-up, and password change) leaves
+a device cookie, `soundstorm_device` (`__Host-` over TLS), holding
+`id.issued.nonce.HMAC`. The HMAC is keyed by `state.DeviceKey` and covers the
+account's current salt, so any password change or reset retires every token
+issued before it. A sign-in carrying a valid one for the account being signed
+in to skips the address's and the account's backoff and is counted against
+that device alone: the same five free failures and doubling wait an address
+gets, one guess in flight at a time. A stolen token is therefore no faster a
+guessing channel than one address, and the stranger, who has never signed in,
+has no token at all. What stays exposed is a brand-new device signing in while
+an attack is actually running. Sign-out keeps the device cookie on purpose:
+the device is still one the account uses.
+
 **Changing your own password needs the current one, and signs out every other
 device.** A session is only a cookie; without the check, a browser left signed
 in is enough to take the account over. An owner resetting somebody's password
@@ -1143,11 +1161,17 @@ tests were checked to fail with `Unwrap` removed, and the trickle test to fail
 against the old push-on-every-read logic. Same lesson as the PWA check: a test
 that cannot see the failure is believed anyway.
 
-Checked and left for a decision: a stranger holding sign-in for a known name in
-backoff indefinitely by guessing once a minute (the per-account throttle is
-short for exactly this reason, and a per-account lockout any stranger can
-trigger is the tradeoff that bought); and the Windows `.env` having no explicit
-ACL (the profile directory's defaults already exclude other users).
+**The sign-in lockout, fixed without weakening the throttle.** A stranger
+guessing once a minute could hold a known account's sign-ins in backoff
+indefinitely, the owner's included, and behind Docker Desktop one stranger's
+wrong guesses slowed every household sign-in. The per-account limit could not
+simply go - it is what stops guessing from many addresses - so a browser that
+has signed in before now carries a device token and is judged on its own record
+instead (see "Accounts"). The end-to-end test runs every client from 127.0.0.1,
+the Docker Desktop case exactly, and fails with the exemption disabled.
+
+Checked and left for a decision: the Windows `.env` having no explicit ACL (the
+profile directory's defaults already exclude other users).
 
 ## Tailscale, and why it is a profile rather than a service
 

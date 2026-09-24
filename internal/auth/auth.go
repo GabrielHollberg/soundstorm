@@ -14,14 +14,17 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +71,16 @@ const (
 	// why plain HTTP on the LAN keeps the old name - and that is no loss, because
 	// a cookie scoped to the shared domain never reaches a bare LAN address.
 	SecureCookieName = "__Host-soundstorm_session"
+
+	// DeviceCookieName and SecureDeviceCookieName carry the token that marks a
+	// browser as one an account has signed in on before - see SignIn. Named in
+	// two forms for the same reason as the session cookie.
+	DeviceCookieName       = "soundstorm_device"
+	SecureDeviceCookieName = "__Host-soundstorm_device"
+
+	// deviceTTL is how long a device stays trusted without signing in again.
+	// Every successful sign-in renews it.
+	deviceTTL = 365 * 24 * time.Hour
 )
 
 // ErrInvalidCredentials is returned for both a wrong name and a wrong
@@ -395,18 +408,142 @@ var decoySalt = make([]byte, saltLen)
 // that neither guessing nor the cost of hashing is free. client identifies who
 // is asking, normally their address. A refusal from the throttle is a
 // *ThrottledError, and costs no hash.
-func (m *Manager) SignIn(ctx context.Context, client, name, password string) (string, time.Time, state.User, error) {
+//
+// devices are the device tokens the request carried (see DeviceTokens). One
+// that this account issued - to a browser that signed in as it before - takes
+// the sign-in out of the address's and the account's backoff and judges it on
+// that device's record instead, so a stranger's guessing cannot refuse the
+// people who actually use the account. Without one, every limit applies.
+func (m *Manager) SignIn(ctx context.Context, client, name, password string, devices ...string) (string, time.Time, state.User, error) {
 	var (
 		token  string
 		expiry time.Time
 		user   state.User
 	)
-	err := m.throttle.guarded(ctx, client, name, func() error {
+	check := func() error {
 		var err error
 		token, expiry, user, err = m.Login(name, password)
 		return err
-	})
+	}
+	var err error
+	if device, ok := m.trustedDevice(name, devices); ok {
+		err = m.throttle.guardedTrusted(ctx, device, check)
+	} else {
+		err = m.throttle.guarded(ctx, client, name, check)
+	}
 	return token, expiry, user, err
+}
+
+// trustedDevice finds, among the tokens a request carried, one this account
+// issued and that is still good, returning the part that identifies the device.
+//
+// Looking the account up before hashing does not reveal whether a name exists:
+// without a valid token - which only a successful sign-in hands out - every
+// request takes the ordinary path, found or not.
+func (m *Manager) trustedDevice(name string, devices []string) (string, bool) {
+	if len(devices) == 0 {
+		return "", false
+	}
+	user, found := m.store.UserByName(name)
+	if !found {
+		return "", false
+	}
+	for _, tok := range devices {
+		if device, ok := m.verifyDevice(tok, user, time.Now()); ok {
+			return device, true
+		}
+	}
+	return "", false
+}
+
+// DeviceToken issues a token marking the current browser as one user has signed
+// in on. It is bound to the account's current password (through its salt, which
+// every password change replaces), so a changed or reset password retires every
+// token issued before it.
+func (m *Manager) DeviceToken(user state.User) (string, error) {
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	issued := strconv.FormatInt(time.Now().Unix(), 10)
+	n := base64.RawURLEncoding.EncodeToString(nonce)
+	mac, err := m.deviceMAC(user, issued, n)
+	if err != nil {
+		return "", err
+	}
+	return user.ID + "." + issued + "." + n + "." + mac, nil
+}
+
+func (m *Manager) deviceMAC(user state.User, issued, nonce string) (string, error) {
+	key, err := m.store.DeviceKey()
+	if err != nil {
+		return "", err
+	}
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte("soundstorm device v1\x00" + user.ID + "\x00" + issued + "\x00" + nonce + "\x00"))
+	h.Write(user.Salt)
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)), nil
+}
+
+// verifyDevice checks a token against an account, returning the device's nonce -
+// what its failures are counted against - when it is good.
+func (m *Manager) verifyDevice(tok string, user state.User, now time.Time) (string, bool) {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 4 || parts[0] != user.ID {
+		return "", false
+	}
+	secs, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return "", false
+	}
+	issued := time.Unix(secs, 0)
+	if now.Sub(issued) > deviceTTL || issued.After(now.Add(time.Hour)) {
+		return "", false
+	}
+	want, err := m.deviceMAC(user, parts[1], parts[2])
+	if err != nil || subtle.ConstantTimeCompare([]byte(parts[3]), []byte(want)) != 1 {
+		return "", false
+	}
+	return parts[2], true
+}
+
+// DeviceTokens returns the device tokens a request carried, the __Host- ones
+// first for the same reason as the session cookie.
+func DeviceTokens(r *http.Request) []string {
+	var out []string
+	for _, name := range []string{SecureDeviceCookieName, DeviceCookieName} {
+		for _, c := range r.Cookies() {
+			if c.Name == name && c.Value != "" {
+				out = append(out, c.Value)
+			}
+		}
+	}
+	return out
+}
+
+// SetDeviceCookie marks this browser as one user has signed in on, renewing the
+// mark if it had one. It is kept through sign-out - that is the point: the
+// device is still one the account uses - and dies with a password change.
+func (m *Manager) SetDeviceCookie(w http.ResponseWriter, r *http.Request, user state.User) error {
+	tok, err := m.DeviceToken(user)
+	if err != nil {
+		return err
+	}
+	secure := m.OverTLS(r)
+	name := DeviceCookieName
+	if secure {
+		name = SecureDeviceCookieName
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    tok,
+		Path:     "/",
+		MaxAge:   int(deviceTTL / time.Second),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	})
+	return nil
 }
 
 // Login verifies credentials and returns a new session token.

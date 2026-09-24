@@ -520,3 +520,36 @@ func TestReadingProgressChecksTheSourceAndItsCaps(t *testing.T) {
 		t.Errorf("over-long id: status %d, want 400", resp.StatusCode)
 	}
 }
+
+// End to end, and the Docker Desktop case exactly: every client here arrives
+// from 127.0.0.1. A stranger guessing at the owner's name puts both the address
+// and the account into backoff, which used to refuse the owner too. The owner's
+// browser, which has signed in before and carries the device cookie, still gets
+// in; a browser that never has is still held back.
+func TestAStrangerGuessingDoesNotLockTheOwnerOut(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t) // the owner's browser: signing up marks it as a device the account uses
+
+	jar, _ := cookiejar.New(nil)
+	attacker := &harness{srv: h.srv, client: &http.Client{Jar: jar}, root: h.root}
+	throttled := false
+	for i := 0; i < 20 && !throttled; i++ {
+		resp, _ := attacker.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"not it"}`)
+		throttled = resp.StatusCode == http.StatusTooManyRequests
+	}
+	if !throttled {
+		t.Fatal("the stranger was never throttled; the test proves nothing")
+	}
+
+	jar2, _ := cookiejar.New(nil)
+	newDevice := &harness{srv: h.srv, client: &http.Client{Jar: jar2}, root: h.root}
+	if resp, _ := newDevice.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"correct horse"}`); resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("a never-seen device = %d, want 429 while an attack runs", resp.StatusCode)
+	}
+
+	h.do(t, http.MethodPost, "/api/logout", "")
+	resp, body := h.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"correct horse"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("the owner's own browser = %d, want 200 despite the stranger: %s", resp.StatusCode, body)
+	}
+}

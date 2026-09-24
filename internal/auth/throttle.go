@@ -29,9 +29,18 @@ import (
 // The account being guessed at is counted too, whoever is asking. An
 // address-only limit is five free guesses per address, which from the
 // internet is five per address an attacker can borrow; per account it is a
-// guess a minute however many there are. That cost falls on the real owner
-// only while somebody is actively guessing their name, is at most a minute,
-// and never touches a device that is already signed in.
+// guess a minute however many there are.
+//
+// Both of those limits also land on people who did nothing wrong. A stranger
+// guessing once a minute holds an account's new sign-ins in backoff for as long
+// as they care to keep going - the owner included, because the backoff refuses
+// before hashing, right password or not - and behind Docker Desktop, where every
+// client arrives from one address, a stranger's wrong guesses slow the whole
+// household. So a browser that has signed in to the account before carries a
+// device token, and a sign-in with one is judged on that device's own record
+// alone (see guardedTrusted): the stranger, who has never signed in, has no
+// token and cannot touch it. What remains exposed is only a brand-new device
+// signing in while an attack is actually running.
 const (
 	// freeFailures is how many wrong passwords cost nothing extra.
 	freeFailures = 5
@@ -98,21 +107,25 @@ type ledger struct {
 }
 
 type throttle struct {
-	mu       sync.Mutex
-	clients  *ledger
-	accounts *ledger
-	inflight map[string]int // guesses being hashed right now, per account
-	slots    chan struct{}
-	now      func() time.Time
+	mu          sync.Mutex
+	clients     *ledger
+	accounts    *ledger
+	devices     *ledger
+	inflight    map[string]int // guesses being hashed right now, per account
+	devInflight map[string]int // and per trusted device
+	slots       chan struct{}
+	now         func() time.Time
 }
 
 func newThrottle() *throttle {
 	return &throttle{
-		clients:  &ledger{free: freeFailures, first: firstWait, max: maxWait, keys: map[string]strikes{}},
-		accounts: &ledger{free: accountFreeFailures, first: accountFirstWait, max: accountMaxWait, keys: map[string]strikes{}},
-		inflight: map[string]int{},
-		slots:    make(chan struct{}, concurrentHashes),
-		now:      time.Now,
+		clients:     &ledger{free: freeFailures, first: firstWait, max: maxWait, keys: map[string]strikes{}},
+		accounts:    &ledger{free: accountFreeFailures, first: accountFirstWait, max: accountMaxWait, keys: map[string]strikes{}},
+		devices:     &ledger{free: freeFailures, first: firstWait, max: maxWait, keys: map[string]strikes{}},
+		inflight:    map[string]int{},
+		devInflight: map[string]int{},
+		slots:       make(chan struct{}, concurrentHashes),
+		now:         time.Now,
 	}
 }
 
@@ -276,6 +289,63 @@ func (t *throttle) reserve(client, account string) (time.Duration, bool) {
 		t.inflight[account]++
 	}
 	return 0, true
+}
+
+// guardedTrusted is guarded for a sign-in from a device the account has signed
+// in on before. It is judged on that device's record alone - not the address's,
+// which it may share with everybody behind the same NAT, and not the account's,
+// which a stranger can hold in backoff - so nobody else's failures can refuse it.
+//
+// It is still limited, in case the token is stolen: the device gets the same
+// free failures and doubling wait an address does, and one guess in flight at a
+// time. A stolen token is therefore a guessing channel no faster than a single
+// address, and a password change invalidates it outright. It still waits for a
+// hashing slot like everybody else, since those exist to protect the CPU.
+func (t *throttle) guardedTrusted(ctx context.Context, device string, check func() error) error {
+	if left, ok := t.reserveDevice(device); !ok {
+		return &ThrottledError{RetryAfter: left}
+	}
+	defer t.releaseDevice(device)
+
+	release, err := t.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	err = check()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	switch {
+	case err == nil:
+		delete(t.devices.keys, device)
+	case errors.Is(err, ErrInvalidCredentials):
+		t.devices.fail(device, t.now())
+	}
+	return err
+}
+
+func (t *throttle) reserveDevice(device string) (time.Duration, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if w := t.devices.wait(device, t.now()); w > 0 {
+		return w, false
+	}
+	if t.devInflight[device] > 0 {
+		return inflightRetry, false
+	}
+	t.devInflight[device]++
+	return 0, true
+}
+
+func (t *throttle) releaseDevice(device string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if n := t.devInflight[device]; n <= 1 {
+		delete(t.devInflight, device)
+	} else {
+		t.devInflight[device] = n - 1
+	}
 }
 
 func (t *throttle) releaseInflight(account string) {
