@@ -1596,12 +1596,13 @@ body.np-open { overflow: hidden; }
   /* 1/1.04 of the box, so the current line, scaled up 4% from its left
      edge, still ends inside it rather than widening the column. */
   width: calc(100% / 1.04);
-  margin: 0;
-  /* Room on the right for the current line's growth. */
-  padding: 8px 6% 8px 0;
+  /* Centred, and scaled from the centre, so the current line's growth is
+     shared by both sides and still ends inside the box. */
+  margin: 0 auto;
+  padding: 8px 4%;
   border: none;
   background: none;
-  text-align: left;
+  text-align: center;
   font-size: 32px;
   font-weight: 800;
   letter-spacing: -0.015em;
@@ -1624,11 +1625,11 @@ body.np-open { overflow: hidden; }
   color: #fff;
   filter: none;
   transform: scale(1.04);
-  transform-origin: left center;
+  transform-origin: center;
   text-shadow: 0 0 18px rgba(255, 255, 255, 0.45), 0 0 2px rgba(255, 255, 255, 0.4);
 }
 /* An instrumental break: three dots that fill in turn and breathe. */
-.np-lyric.gap { display: flex; gap: 10px; padding: 18px 0; }
+.np-lyric.gap { display: flex; justify-content: center; gap: 10px; padding: 18px 0; }
 .np-lyric.gap i {
   width: 12px; height: 12px;
   border-radius: 50%;
@@ -1636,7 +1637,7 @@ body.np-open { overflow: hidden; }
 }
 .np-lyric.gap:not(.current) { padding: 6px 0; }
 .np-lyric.gap:not(.current) i { width: 6px; height: 6px; }
-.np-lyric.gap.current { color: #fff; animation: np-breathe 2.4s ease-in-out infinite; transform-origin: left center; }
+.np-lyric.gap.current { color: #fff; animation: np-breathe 2.4s ease-in-out infinite; transform-origin: center; }
 .np-lyric.gap.current i { transition: opacity 0.3s ease; }
 .np-lyric.gap.current i:nth-child(1) { opacity: calc(0.25 + 0.75 * min(1, var(--p, 0) * 3)); }
 .np-lyric.gap.current i:nth-child(2) { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - 1, 1)); }
@@ -1761,7 +1762,7 @@ body.np-open { overflow: hidden; }
 .offline-bar .ghost { margin-left: auto; }
 .offline-note { margin: 12px 20px 0; }
 
-.np-lyrics-credit { font-size: 12px; opacity: 0.55; margin: 24px 0 8px; }
+.np-lyrics-credit { font-size: 12px; opacity: 0.55; margin: 24px 0 8px; text-align: center; }
 
 /* The mini-player ------------------------------------------------------------
    A floating card that is Now Playing in miniature: the blurred cover behind,
