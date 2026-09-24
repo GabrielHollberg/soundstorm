@@ -85,6 +85,10 @@ type Server struct {
 	remoteStatus     func() RemoteState
 	setRemoteAccess  func(bool) error
 
+	// uploads counts each account's in-flight uploads; see takeUploadSlot.
+	uploadsMu sync.Mutex
+	uploads   map[string]int
+
 	// rescans coalesces "look at your folder now" requests, keyed by kind,
 	// and lastRescan is when one last actually fired - see scheduleRescan.
 	rescanMu     sync.Mutex
@@ -1121,6 +1125,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInsufficientStorage, "the library disk is nearly full")
 		return
 	}
+	user, _ := auth.FromContext(r.Context())
+	release, ok := s.takeUploadSlot(user.ID)
+	if !ok {
+		writeError(w, http.StatusTooManyRequests, "too many uploads at once; wait for one to finish")
+		return
+	}
+	defer release()
+
 	// A rolling deadline rather than a fixed one: a film on a slow uplink can
 	// take an hour, and that is fine as long as it keeps moving.
 	body := &stallReader{r: r.Body, rc: http.NewResponseController(w)}
@@ -1148,7 +1160,6 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, _ := auth.FromContext(r.Context())
 	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
 
 	// Ask whoever indexes that shelf to look, rather than leaving the file
@@ -1893,6 +1904,14 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the real connection through the
+// recorder. Without it SetReadDeadline answers ErrNotSupported - and every read
+// deadline set behind this middleware (bodyDeadline's thirty seconds, an
+// upload's rolling window) silently did nothing, because each caller discards
+// that error. Their unit tests built the handler without this middleware and so
+// never saw it; a test through the real route chain did.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 // Flush lets the recorder sit in front of a streaming response without
 // swallowing flushes.
 func (r *statusRecorder) Flush() {
@@ -1944,26 +1963,74 @@ func bodyDeadline(next http.Handler) http.Handler {
 	})
 }
 
-// bodyTimeout is a variable only so a test can wait for it.
-var bodyTimeout = bodyTimeoutDefault
+// bodyTimeout and uploadStall are variables only so a test can wait for them.
+var (
+	bodyTimeout = bodyTimeoutDefault
+	uploadStall = uploadStallDefault
+)
 
 const (
 	bodyTimeoutDefault = 30 * time.Second
-	// uploadStall is how long an upload may send nothing before it is
-	// dropped. Pushed back on every read, so a slow connection moving a big
-	// film is fine and one that has stopped is not.
-	uploadStall = time.Minute
+	// uploadStallDefault is the window an upload must make progress in, and
+	// uploadMinProgress is how much counts as progress. A slow connection
+	// moving a big film is fine; one that has stopped, or is sending a byte at
+	// a time to keep the connection open, is not.
+	uploadStallDefault = time.Minute
+	uploadMinProgress  = 16 << 10
+	// maxUploadsPerUser caps how many uploads one account has in flight. The
+	// app sends one file at a time, so this leaves room for a few tabs or
+	// devices at once and none for opening connections by the hundred.
+	maxUploadsPerUser = 4
 )
 
-// stallReader extends the connection's read deadline each time data arrives.
+// stallReader gives an upload a rolling read deadline that only moves forward
+// when the upload is actually moving.
+//
+// It used to push the deadline back on every read, however little arrived - so
+// one byte every fifty-nine seconds held an upload open for ever, and with it a
+// connection, a goroutine, a staging file and a file descriptor. Now the
+// deadline moves only once uploadMinProgress bytes have arrived since it last
+// did: sixteen kilobytes a minute, which a bad mobile link manages easily and a
+// trickle never does.
 type stallReader struct {
-	r  io.Reader
-	rc *http.ResponseController
+	r        io.Reader
+	rc       *http.ResponseController
+	started  bool
+	progress int
 }
 
 func (s *stallReader) Read(p []byte) (int, error) {
-	_ = s.rc.SetReadDeadline(time.Now().Add(uploadStall))
-	return s.r.Read(p)
+	if !s.started {
+		s.started = true
+		_ = s.rc.SetReadDeadline(time.Now().Add(uploadStall))
+	}
+	n, err := s.r.Read(p)
+	if s.progress += n; s.progress >= uploadMinProgress {
+		s.progress = 0
+		_ = s.rc.SetReadDeadline(time.Now().Add(uploadStall))
+	}
+	return n, err
+}
+
+// takeUploadSlot reserves one of an account's in-flight uploads, reporting
+// false when it already has maxUploadsPerUser. The returned func gives it back.
+func (s *Server) takeUploadSlot(userID string) (func(), bool) {
+	s.uploadsMu.Lock()
+	defer s.uploadsMu.Unlock()
+	if s.uploads == nil {
+		s.uploads = map[string]int{}
+	}
+	if s.uploads[userID] >= maxUploadsPerUser {
+		return nil, false
+	}
+	s.uploads[userID]++
+	return func() {
+		s.uploadsMu.Lock()
+		defer s.uploadsMu.Unlock()
+		if s.uploads[userID]--; s.uploads[userID] <= 0 {
+			delete(s.uploads, userID)
+		}
+	}, true
 }
 
 // sameOrigin refuses a state-changing request that another site's page sent.

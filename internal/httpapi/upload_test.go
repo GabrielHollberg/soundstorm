@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
@@ -376,5 +379,140 @@ func TestFilesystemPathsDoNotReachTheBrowserOnAFailedUpload(t *testing.T) {
 	plain := errors.New("there is no music library")
 	if got := desensitizeFSError(plain); got != plain.Error() {
 		t.Errorf("a plain message was altered: %q", got)
+	}
+}
+
+// startUpload sends an upload whose body is fed by the returned writer, so a test
+// can pace it. The response arrives on the returned channel.
+func (h *harness) startUpload(t *testing.T, path string) (*io.PipeWriter, <-chan int) {
+	t.Helper()
+	pr, pw := io.Pipe()
+	q := url.Values{"path": {path}, "kind": {"music"}}
+	req, err := http.NewRequest(http.MethodPut, h.srv.URL+"/api/upload?"+q.Encode(), pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		resp, err := h.client.Do(req)
+		if err != nil {
+			done <- -1
+			return
+		}
+		resp.Body.Close()
+		done <- resp.StatusCode
+	}()
+	t.Cleanup(func() { pw.Close() })
+	return pw, done
+}
+
+// An upload sending a byte at a time is cut off. Each read used to push the
+// deadline back however little arrived, so a trickle held a connection, a
+// staging file and a file descriptor open for ever.
+func TestATrickledUploadIsCutOff(t *testing.T) {
+	old := uploadStall
+	uploadStall = 300 * time.Millisecond
+	defer func() { uploadStall = old }()
+
+	h := newHarness(t)
+	h.signUp(t)
+	pw, done := h.startUpload(t, "trickle.mp3")
+	go func() {
+		for i := 0; i < 60; i++ {
+			if _, err := pw.Write([]byte{'x'}); err != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		pw.Close()
+	}()
+
+	select {
+	case code := <-done:
+		if code == http.StatusOK {
+			t.Error("a trickled upload was accepted")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a trickled upload was still open long after its window closed")
+	}
+	if _, err := os.Stat(filepath.Join(h.libraryRoot(t), "music", "Unknown Artist", "Unknown Album", "trickle.mp3")); err == nil {
+		t.Error("a trickled upload landed in the library")
+	}
+}
+
+// A slow upload that keeps making real progress is not cut off, however long
+// it takes in total.
+func TestASlowButSteadyUploadCompletes(t *testing.T) {
+	old := uploadStall
+	uploadStall = 300 * time.Millisecond
+	defer func() { uploadStall = old }()
+
+	h := newHarness(t)
+	h.signUp(t)
+	pw, done := h.startUpload(t, "steady.mp3")
+	go func() {
+		chunk := bytes.Repeat([]byte("s"), uploadMinProgress+1024)
+		// Longer in total than several windows, but each window sees progress.
+		for i := 0; i < 6; i++ {
+			if _, err := pw.Write(chunk); err != nil {
+				return
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+		pw.Close()
+	}()
+
+	select {
+	case code := <-done:
+		if code != http.StatusOK {
+			t.Errorf("a steady upload = %d, want 200", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a steady upload never finished")
+	}
+}
+
+// One account cannot hold uploads open by the hundred: past the cap, another
+// is refused until one finishes.
+func TestUploadsPerAccountAreCapped(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+
+	var writers []*io.PipeWriter
+	for i := 0; i < maxUploadsPerUser; i++ {
+		pw, _ := h.startUpload(t, fmt.Sprintf("held-%d.mp3", i))
+		writers = append(writers, pw)
+	}
+	inFlight := func() int {
+		h.api.uploadsMu.Lock()
+		defer h.api.uploadsMu.Unlock()
+		n := 0
+		for _, c := range h.api.uploads {
+			n += c
+		}
+		return n
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for inFlight() < maxUploadsPerUser && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := inFlight(); got != maxUploadsPerUser {
+		t.Fatalf("%d uploads in flight, want %d", got, maxUploadsPerUser)
+	}
+
+	resp, _ := h.upload(t, "music", "one-too-many.mp3", "x")
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("upload past the cap = %d, want 429", resp.StatusCode)
+	}
+
+	// Finishing one frees its slot.
+	writers[0].Write([]byte("done"))
+	writers[0].Close()
+	deadline = time.Now().Add(3 * time.Second)
+	for inFlight() >= maxUploadsPerUser && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if resp, out := h.upload(t, "music", "after.mp3", "x"); resp.StatusCode != http.StatusOK {
+		t.Errorf("upload after one finished = %d, want 200: %s", resp.StatusCode, out)
 	}
 }

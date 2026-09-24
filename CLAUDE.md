@@ -789,7 +789,11 @@ came before building any of it. What it found, and what each fix rests on:
 - **No global `ReadTimeout`, deliberately.** A read deadline that expires
   while a response is being written cancels the request's context, and a film
   stops with it. Bodies get 30 seconds of their own (`bodyDeadline`), uploads a
-  deadline pushed back on every read, and headers the existing 10.
+  rolling window that only moves when 16KB has arrived in the last minute (see
+  the fifth pass, below), and headers the existing 10. Both body deadlines are
+  set through `http.ResponseController`, which only reaches the connection if
+  every wrapper in front of it has `Unwrap` - for months the logging
+  middleware's did not, and both were silently no-ops.
 - **Cross-site writes are refused on origin, not site.** The cookie is
   SameSite=Lax, and every install's name is under `soundstorm.dev` - so until
   the zone is on the Public Suffix List, another install *is* the same site.
@@ -1119,12 +1123,31 @@ authority. The persisted `server.pem` is now also reissued when the current
 authority did not sign it; without that it would have kept chaining to the one
 just replaced.
 
+**The trickled upload, and the bug it was hiding.** An upload's rolling
+deadline was pushed back on every read however little arrived, so one byte
+every fifty-nine seconds held a connection, a goroutine, a staging file and a
+descriptor open for ever. Now the window only moves once `uploadMinProgress`
+(16KB) has arrived in it - a bad mobile link manages that easily, a trickle
+never does - and an account may have at most four uploads in flight (the app
+sends one file at a time).
+
+Writing the test for it through the real route chain found something larger:
+**no read deadline set behind the logging middleware had ever worked.**
+`statusRecorder` wrapped the ResponseWriter without an `Unwrap`, so
+`http.NewResponseController(w).SetReadDeadline` answered `ErrNotSupported` -
+to `bodyDeadline` and to the upload window alike - and both callers discarded
+the error. `TestASlowBodyIsCutOff` built `bodyDeadline` on its own, without the
+middleware, and so passed the whole time. The recorder now has `Unwrap`, and
+`TestASlowBodyIsCutOffThroughTheRealRoutes` goes through `Routes()`; both new
+tests were checked to fail with `Unwrap` removed, and the trickle test to fail
+against the old push-on-every-read logic. Same lesson as the PWA check: a test
+that cannot see the failure is believed anyway.
+
 Checked and left for a decision: a stranger holding sign-in for a known name in
 backoff indefinitely by guessing once a minute (the per-account throttle is
 short for exactly this reason, and a per-account lockout any stranger can
-trigger is the tradeoff that bought); the Windows `.env` having no explicit ACL
-(the profile directory's defaults already exclude other users); and a trickled
-upload being able to hold a connection open indefinitely.
+trigger is the tradeoff that bought); and the Windows `.env` having no explicit
+ACL (the profile directory's defaults already exclude other users).
 
 ## Tailscale, and why it is a profile rather than a service
 

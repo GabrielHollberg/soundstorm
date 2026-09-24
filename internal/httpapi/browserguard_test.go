@@ -90,6 +90,41 @@ func TestASlowBodyIsCutOff(t *testing.T) {
 	}
 }
 
+// The same, through the real route chain. The test above builds bodyDeadline on
+// its own, and so passed for as long as the deadline was a no-op in production:
+// the logging middleware's recorder had no Unwrap, so SetReadDeadline answered
+// ErrNotSupported to every handler behind it and the error was discarded.
+func TestASlowBodyIsCutOffThroughTheRealRoutes(t *testing.T) {
+	old := bodyTimeout
+	bodyTimeout = 300 * time.Millisecond
+	defer func() { bodyTimeout = old }()
+
+	h := newHarness(t)
+	pr, pw := io.Pipe()
+	go func() {
+		pw.Write([]byte(`{"username":`))
+		time.Sleep(3 * time.Second)
+		pw.Close()
+	}()
+	req, _ := http.NewRequest(http.MethodPost, h.srv.URL+"/api/login", pr)
+	start := time.Now()
+	done := make(chan struct{})
+	go func() {
+		if resp, err := h.client.Do(req); err == nil {
+			resp.Body.Close()
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+		if took := time.Since(start); took > 1500*time.Millisecond {
+			t.Errorf("took %v; the deadline did not fire through the real routes", took)
+		}
+	case <-time.After(2500 * time.Millisecond):
+		t.Fatal("a trickled body held the request open; the deadline is not reaching the connection")
+	}
+}
+
 // HSTS is promised only on the real certificate's name, over TLS, and with a
 // self-healing one-week life - never a year, because a home certificate can
 // lapse and a year-long pin would brick a pinned browser with no way through.
