@@ -1535,8 +1535,11 @@ function playAudio(item, fromQueue) {
   // may be resuming into chapter twelve, and starting chapter one first would
   // play a second of the wrong thing before correcting itself.
   if (item.kind !== 'audiobook') {
-    const preloaded = takePreloaded(item);
-    if (preloaded) {
+    const handoff = takeCrossfade(item);
+    const preloaded = handoff ? null : takePreloaded(item);
+    if (handoff) {
+      startAt(handoff.url, handoff.at);
+    } else if (preloaded) {
       startAt(preloaded, 0);
     } else if (isDownloaded(item)) {
       // From the device: through a tunnel, out of Wi-Fi range, on a plane.
@@ -4869,3 +4872,129 @@ document.addEventListener('click', () => {
   $('np-sleep').setAttribute('aria-expanded', 'false');
 });
 renderSleep();
+
+/* --------------------------------------------------------------- crossfade */
+
+// Crossfade: the last few seconds of a song blend into the next, as a radio
+// does. The page has one audio element, and everything in it - the lyrics,
+// the lock screen, the queue, the levelling - listens to that one. So a second,
+// hidden element plays only the fade-in; when the first song ends, the main
+// element takes the next song over from exactly where the hidden one has got
+// to (it is usually a blob already in memory, so that is instant), and the
+// hidden one stops. The rest of the app never learns there were two.
+//
+// Not between consecutive songs of one album, which should flow as the album
+// does; not on repeat-one; not when the sleep timer is to stop after this
+// song; and not on an iPhone, which ignores a page's volume and would simply
+// play both songs over each other at full volume.
+const FADE_KEY = 'soundstorm.crossfade';
+const canSetVolume = (() => {
+  const probe = document.createElement('audio');
+  probe.volume = 0.5;
+  return probe.volume === 0.5;
+})();
+function crossfadeSeconds() {
+  return canSetVolume ? Number(localStorage.getItem(FADE_KEY) || 0) : 0;
+}
+
+const xfade = { el: null, key: null, started: 0, secs: 0, from: 1, to: 1, handingOff: false };
+
+function fadeElement() {
+  if (!xfade.el) {
+    xfade.el = document.createElement('audio');
+    xfade.el.preload = 'auto';
+  }
+  return xfade.el;
+}
+
+function albumOf(item) {
+  const extra = (item && item.extra) || {};
+  return `${(item.creators || [])[0] || ''}\u0000${extra.album || item.subtitle || ''}`;
+}
+
+function maybeStartCrossfade() {
+  const secs = crossfadeSeconds();
+  if (!secs || xfade.key || sleep.atSongEnd || audio.repeat === 'one') return;
+  const player = $('audio-player');
+  if (player.paused || !audio.item || audio.item.kind !== 'music' || !Number.isFinite(player.duration)) return;
+  const left = player.duration - player.currentTime;
+  if (left > secs || left < 1) return;
+  const next = upcomingItem();
+  if (!next || next.kind !== 'music' || isDownloaded(next) || albumOf(next) === albumOf(audio.item)) return;
+  const key = selectionKey(next);
+  const el = fadeElement();
+  el.src = audio.preloaded && audio.preloaded.key === key ? audio.preloaded.url : playPath(next);
+  el.volume = 0;
+  el.play().catch(() => {});
+  Object.assign(xfade, {
+    key, started: performance.now(), secs: left, from: player.volume, handingOff: false,
+    to: Math.max(0, Math.min(1, levelFor(next) * audio.userVolume)),
+  });
+  audio.fading = true;
+  const step = () => {
+    if (xfade.key !== key || xfade.handingOff) return;
+    const t = Math.min(1, (performance.now() - xfade.started) / (xfade.secs * 1000));
+    // Equal power: the two together stay as loud as one through the middle.
+    player.volume = xfade.from * Math.cos((t * Math.PI) / 2);
+    el.volume = xfade.to * Math.sin((t * Math.PI) / 2);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// takeCrossfade hands the fading-in song to the main player: its address and
+// where it has got to, allowing a moment for the main element to load it.
+function takeCrossfade(item) {
+  if (!xfade.key) return null;
+  if (xfade.key !== selectionKey(item)) {
+    cancelCrossfade(false);
+    return null;
+  }
+  const el = fadeElement();
+  const url = el.currentSrc || el.src;
+  if (audio.preloaded && audio.preloaded.url === url) {
+    audio.playingBlob = url;
+    audio.preloaded = null;
+  }
+  xfade.handingOff = true;
+  return { url, at: el.currentTime + 0.08 };
+}
+
+function finishCrossfade() {
+  const el = fadeElement();
+  el.pause();
+  el.removeAttribute('src');
+  el.load();
+  xfade.key = null;
+  xfade.handingOff = false;
+  setTimeout(() => { audio.fading = false; }, 0);
+}
+
+// cancelCrossfade stops a fade part way: a skip, a pause, a seek. The song
+// playing comes back to its own level.
+function cancelCrossfade(restore = true) {
+  if (!xfade.key) return;
+  finishCrossfade();
+  if (restore && audio.item) applyLevel(audio.item);
+}
+
+$('audio-player').addEventListener('timeupdate', maybeStartCrossfade);
+$('audio-player').addEventListener('playing', () => {
+  if (xfade.handingOff) finishCrossfade();
+});
+$('audio-player').addEventListener('pause', () => {
+  // A song reaching its end pauses too, and that is when the handover
+  // happens, not a reason to stop the fade.
+  if (!$('audio-player').ended && !xfade.handingOff) cancelCrossfade();
+});
+$('audio-player').addEventListener('seeking', () => {
+  if (!xfade.handingOff) cancelCrossfade();
+});
+
+$('crossfade-select').value = String(crossfadeSeconds());
+$('crossfade-select').disabled = !canSetVolume;
+show($('crossfade-unavailable'), !canSetVolume);
+$('crossfade-select').addEventListener('change', (event) => {
+  localStorage.setItem(FADE_KEY, event.target.value);
+  note($('playback-note'), 'Saved.', false);
+});

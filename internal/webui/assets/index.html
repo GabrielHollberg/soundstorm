@@ -192,8 +192,22 @@
             <option value="96">Data saver (96 kbps)</option>
           </select>
         </label>
+        <label class="setting-row">
+          <span>Crossfade between songs</span>
+          <select id="crossfade-select">
+            <option value="0">Off</option>
+            <option value="3">3 seconds</option>
+            <option value="5">5 seconds</option>
+            <option value="8">8 seconds</option>
+            <option value="12">12 seconds</option>
+          </select>
+        </label>
+        <p id="crossfade-unavailable" class="muted small-print hidden">This browser does not let
+          a web page set the volume (every iPhone), so it cannot crossfade.</p>
         <p class="muted small-print">Lower qualities use less data and start faster
-          on a slow connection. Downloads always keep the original.
+          on a slow connection. Downloads always keep the original. Crossfade
+          leaves an album that is playing in order alone, so it still flows as
+          the album does.
           "Lower on mobile data" works on Android; an iPhone cannot tell its
           browser which connection it is on.</p>
         <p id="playback-note" class="muted hidden" role="status"></p>
