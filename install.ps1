@@ -94,6 +94,27 @@ $ErrorActionPreference = 'Stop'
 $Repo       = if ($env:SOUNDSTORM_REPO) { $env:SOUNDSTORM_REPO } else { 'GabrielHollberg/soundstorm' }
 $Branch     = if ($env:SOUNDSTORM_BRANCH) { $env:SOUNDSTORM_BRANCH } else { 'main' }
 $RawBase    = "https://raw.githubusercontent.com/$Repo/$Branch"
+
+# raw.githubusercontent.com caches a branch URL for five minutes, and ignores a
+# query string when it does - checked: a never-seen random query came back
+# "X-Cache: HIT". So a fix pushed a minute ago reached a laptop as the version
+# before it, and the setup showed the exact error the push had fixed. A commit
+# URL cannot be stale, so the branch is resolved to its newest commit first,
+# through the API (whose answer is fresh), and the branch URL is only the
+# fallback when the API cannot be asked. Not on -Launch: opening the app must
+# not wait on GitHub.
+if (-not $Launch -and -not $env:SOUNDSTORM_COMPOSE_URL -and -not $env:SOUNDSTORM_SCRIPT_URL) {
+    try {
+        $commit = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/$Branch" `
+            -Headers @{ 'User-Agent' = 'soundstorm-installer'; 'Accept' = 'application/vnd.github+json' } `
+            -TimeoutSec 15 -UseBasicParsing
+        if ("$($commit.sha)" -match '^[0-9a-f]{40}$') {
+            $RawBase = "https://raw.githubusercontent.com/$Repo/$($commit.sha)"
+        }
+    } catch {
+        # Rate-limited or offline: the branch URL, at worst five minutes old.
+    }
+}
 $ComposeUrl = if ($env:SOUNDSTORM_COMPOSE_URL) { $env:SOUNDSTORM_COMPOSE_URL } else { "$RawBase/docker-compose.yml" }
 $ScriptUrl  = if ($env:SOUNDSTORM_SCRIPT_URL) { $env:SOUNDSTORM_SCRIPT_URL } else { "$RawBase/install.ps1" }
 
@@ -102,6 +123,47 @@ $ScriptUrl  = if ($env:SOUNDSTORM_SCRIPT_URL) { $env:SOUNDSTORM_SCRIPT_URL } els
 # hard drive of music into without a permission prompt.
 $Dir       = if ($env:SOUNDSTORM_DIR) { $env:SOUNDSTORM_DIR } else { Join-Path $env:USERPROFILE 'SoundStorm' }
 $FirstPort = if ($env:SOUNDSTORM_PORT) { [int]$env:SOUNDSTORM_PORT } else { 8099 }
+
+# Updating runs the newest installer, not the one saved last time.
+#
+# "Update SoundStorm" runs the copy of this script saved beside the install,
+# and the setup file runs whatever it just downloaded - so each update used to
+# run the *previous* version's logic, and a fix to the installer itself only
+# took effect on the update after the one that fetched it. So a saved or
+# downloaded copy fetches the newest script and, when it differs, hands over to
+# it with the same arguments. Only those two copies: a checkout being tested
+# runs as it is. SOUNDSTORM_FRESH stops the new copy doing the same again.
+$selfName = if ($PSCommandPath) { [IO.Path]::GetFileName($PSCommandPath) } else { '' }
+if (-not $Launch -and $env:SOUNDSTORM_FRESH -ne '1' -and
+    ($selfName -eq 'soundstorm.ps1' -or $selfName -eq 'soundstorm-install.ps1')) {
+    $fresh = Join-Path $env:TEMP "soundstorm-fresh-$PID.ps1"
+    $handOver = $false
+    try {
+        Invoke-WebRequest -Uri $ScriptUrl -OutFile $fresh -UseBasicParsing -TimeoutSec 30
+        $newText = [IO.File]::ReadAllText($fresh)
+        $oldText = [IO.File]::ReadAllText($PSCommandPath)
+        $handOver = ($newText -ne $oldText -and $newText -match 'SOUNDSTORM_FRESH')
+    } catch {
+        # Offline, or GitHub unreachable: carry on with this copy, which is
+        # what would have happened before.
+    }
+    if ($handOver) {
+        # Outside the try above on purpose: a failure inside the new copy must
+        # end here, not fall back to running this old one as well.
+        $env:SOUNDSTORM_FRESH = '1'
+        $code = 1
+        try {
+            & $fresh @PSBoundParameters
+            $code = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+        } catch {
+            Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+        } finally {
+            Remove-Item -LiteralPath $fresh -Force -ErrorAction SilentlyContinue
+        }
+        exit $code
+    }
+    Remove-Item -LiteralPath $fresh -Force -ErrorAction SilentlyContinue
+}
 
 # Output. Notes are Gray, not the DarkGray they used to be: on Windows
 # PowerShell's default dark-blue console DarkGray is close to unreadable, and

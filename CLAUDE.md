@@ -1270,6 +1270,25 @@ retried after 30, 60 and 120 seconds. A rate limit gets its own message. An
 *update* whose pull fails starts the version already installed instead of
 stopping, since nothing about the install is broken.
 
+**Neither fix reached the laptop on the first try, for two separate reasons.**
+The setup file downloads `install.ps1` from raw.githubusercontent.com. That
+host caches a branch URL for five minutes and **ignores the query string**
+when it does: a never-before-seen random query came back `X-Cache: HIT`. So
+the usual cache-busting trick does nothing there. The installer now asks the
+GitHub API for the branch's newest commit and downloads from that commit's
+URL, which cannot be stale. It falls back to the branch URL when the API
+cannot be reached.
+
+Separately, "Update SoundStorm" ran the copy of the script saved by the
+*previous* install, so a fix to the installer only took effect on the update
+after the one that fetched it. A saved or downloaded copy
+(`soundstorm.ps1`, `soundstorm-install.ps1`) now fetches the newest script
+and, when it differs, hands over to it with the same arguments. A local
+checkout runs as it is. `SOUNDSTORM_FRESH` stops the chain. A failure inside
+the new copy ends the run rather than falling back to the old copy. That,
+the argument passing and the exit code were checked with a harness around
+the real block.
+
 Nothing from the fifth pass is left open.
 
 ## Tailscale, and why it is a profile rather than a service
