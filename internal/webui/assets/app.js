@@ -1476,6 +1476,9 @@ function playAudio(item, fromQueue) {
 
   const art = $('audio-art');
   const src = artPath(item);
+  const backdrop = $('dock-backdrop');
+  if (src) backdrop.src = src;
+  else backdrop.removeAttribute('src');
   if (src) {
     art.src = src;
     art.onerror = () => {
@@ -2580,6 +2583,7 @@ const ICONS = {
   down: '<path d="M6 9l6 6 6-6"/>',
   lyrics: '<path d="M4 6h16M4 10h16M4 14h10M4 18h7M17 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM19.5 18.5V11"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  volume: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
 };
 
@@ -3583,6 +3587,7 @@ function cycleRepeat() {
 
 function queueChanged() {
   renderQueue();
+  renderDockButtons();
   updateMediaSession();
   renderNowPlaying();
 }
@@ -3672,6 +3677,113 @@ function setIcon(button, name, filled) {
 setIcon($('np-close'), 'down');
 setIcon($('np-lyrics-toggle'), 'lyrics');
 setIcon($('dock-play'), 'play', true);
+setIcon($('dock-prev'), 'prev', true);
+setIcon($('dock-next'), 'skip', true);
+setIcon($('audio-close'), 'close');
+$('dock-volume-icon').replaceChildren(icon('volume'));
+
+// The card's own previous and next do what Now Playing's do.
+$('dock-prev').addEventListener('click', () => mediaPrevious());
+$('dock-next').addEventListener('click', () => $('np-next').click());
+
+function renderDockButtons() {
+  const q = audio.queue;
+  const more = q
+    ? q.index + 1 < q.items.length || audio.repeat !== 'off'
+    : audio.index + 1 < audio.tracks.length;
+  $('dock-next').disabled = !more;
+}
+
+// Where the song is, on the card: the line along its bottom edge, and on a
+// computer the seek bar and the times.
+function renderDockProgress() {
+  const player = $('audio-player');
+  const length = Number.isFinite(player.duration) ? player.duration : audio.duration || 0;
+  const at = player.currentTime || 0;
+  $('dock-progress-fill').style.width = length ? `${Math.min(100, (at / length) * 100)}%` : '0';
+  if (!state.dockSeeking) {
+    $('dock-seek').value = length ? String(Math.round((at / length) * 1000)) : '0';
+    $('dock-time').textContent = formatDuration(at) || '0:00';
+  }
+  $('dock-length').textContent = formatDuration(length) || '0:00';
+}
+for (const event of ['timeupdate', 'loadedmetadata', 'emptied']) {
+  $('audio-player').addEventListener(event, renderDockProgress);
+}
+for (const event of ['play', 'loadedmetadata']) {
+  $('audio-player').addEventListener(event, renderDockButtons);
+}
+$('dock-seek').addEventListener('input', () => {
+  state.dockSeeking = true;
+  const player = $('audio-player');
+  if (Number.isFinite(player.duration)) {
+    $('dock-time').textContent = formatDuration((Number($('dock-seek').value) / 1000) * player.duration) || '0:00';
+  }
+});
+$('dock-seek').addEventListener('change', () => {
+  const player = $('audio-player');
+  if (Number.isFinite(player.duration)) player.currentTime = (Number($('dock-seek').value) / 1000) * player.duration;
+  state.dockSeeking = false;
+});
+
+// Volume is the listener's own level, under the ReplayGain levelling that
+// sets the element's real volume.
+$('dock-volume').addEventListener('input', () => {
+  audio.userVolume = Number($('dock-volume').value) / 100;
+  if (audio.item) applyLevel(audio.item);
+});
+$('audio-player').addEventListener('volumechange', () => {
+  $('dock-volume').value = String(Math.round((audio.userVolume || 0) * 100));
+});
+
+// On a phone: swipe the card up for Now Playing, down to put it away.
+(function dockSwipe() {
+  const dock = $('audio-dock');
+  let startY = 0;
+  let dy = 0;
+  let active = false;
+  dock.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1 || !matchMedia('(max-width: 760px)').matches) return;
+    active = true;
+    dy = 0;
+    startY = event.touches[0].clientY;
+    dock.style.transition = 'none';
+  }, { passive: true });
+  dock.addEventListener('touchmove', (event) => {
+    if (!active) return;
+    dy = event.touches[0].clientY - startY;
+    if (dy > 0) {
+      dock.style.transform = `translateY(${dy}px)`;
+      dock.style.opacity = String(Math.max(0.2, 1 - dy / 160));
+    }
+  }, { passive: true });
+  const end = () => {
+    if (!active) return;
+    active = false;
+    dock.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out';
+    if (dy < -30) {
+      dock.style.transform = '';
+      dock.style.opacity = '';
+      openNowPlaying();
+    } else if (dy > 70) {
+      dock.style.transform = 'translateY(140%)';
+      dock.style.opacity = '0';
+      setTimeout(() => {
+        stopAudio();
+        dock.style.transform = '';
+        dock.style.opacity = '';
+        dock.style.transition = '';
+      }, 200);
+      return;
+    } else {
+      dock.style.transform = '';
+      dock.style.opacity = '';
+    }
+    setTimeout(() => { dock.style.transition = ''; }, 200);
+  };
+  dock.addEventListener('touchend', end);
+  dock.addEventListener('touchcancel', end);
+})();
 $('dock-play').addEventListener('click', () => {
   const player = $('audio-player');
   if (player.paused) player.play().catch(() => {});

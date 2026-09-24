@@ -371,7 +371,13 @@ judged on in its first minute:
   Add to queue turn one song into a queue. Shuffle rearranges only what is
   still to come and restores the order when turned off. Repeat is all or one.
   On a phone the dock is a mini-player, since the browser's controls are too
-  small for a thumb.
+  small for a thumb. It is now a floating card that is Now Playing in
+  miniature everywhere - the blurred cover behind, the same icons, progress
+  along its bottom edge - and the browser's own `<audio controls>` is gone,
+  because its white pill clashed with everything. A computer gets previous,
+  play, next, a seek bar and volume on the card; a phone gets play and next,
+  swipe up for Now Playing and swipe down to stop. Starting music by hand
+  opens Now Playing; dragging it down closes it.
 - **Gapless, measured.** The next song is fetched whole into a Blob while the
   current one plays. Gaps were measured by polling `currentTime` every 4ms;
   `timeupdate` fires only every ~250ms, and the first measurement, taken on

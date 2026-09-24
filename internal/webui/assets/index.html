@@ -443,29 +443,55 @@
 
   <!-- Audio dock -------------------------------------------------------- -->
   <div id="audio-dock" class="dock hidden">
-    <!-- The cover and the song open Now Playing. -->
-    <button id="audio-open" class="dock-cover" type="button" aria-label="Open Now Playing">
-      <img id="audio-art" alt="">
-    </button>
-    <div class="dock-meta" id="audio-meta" role="button" tabindex="0" aria-label="Open Now Playing">
-      <strong id="audio-title"></strong>
-      <span id="audio-sub" class="muted"></span>
+    <!-- The card's own background: the cover again, blurred, the way Now
+         Playing takes its colour from the album. In a clipped layer of its
+         own, so the chapter list can still open above the card. -->
+    <div class="dock-bg" aria-hidden="true">
+      <img id="dock-backdrop" alt="">
+      <div class="dock-progress"><i id="dock-progress-fill"></i></div>
     </div>
-    <audio id="audio-player" controls></audio>
-    <!-- On a phone the browser's controls give way to one big play button:
-         the rest of the controls are a tap away, in Now Playing. -->
-    <button id="dock-play" class="np-icon dock-play" type="button" aria-label="Play or pause"></button>
-    <!-- Only shown for something made of more than one file, which in practice
-         means an audiobook ripped a chapter at a time. -->
-    <!-- Only while playing a playlist: the queue it is working through. -->
+    <!-- The cover and the song open Now Playing. -->
+    <div class="dock-left">
+      <button id="audio-open" class="dock-cover" type="button" aria-label="Open Now Playing">
+        <img id="audio-art" alt="">
+      </button>
+      <div class="dock-meta" id="audio-meta" role="button" tabindex="0" aria-label="Open Now Playing">
+        <strong id="audio-title"></strong>
+        <span id="audio-sub"></span>
+      </div>
+    </div>
+    <div class="dock-center">
+      <div class="dock-buttons">
+        <button id="dock-prev" class="np-icon dock-btn" type="button" aria-label="Previous"></button>
+        <button id="dock-play" class="np-icon dock-play" type="button" aria-label="Play or pause"></button>
+        <button id="dock-next" class="np-icon dock-btn" type="button" aria-label="Next"></button>
+      </div>
+      <div class="dock-seek">
+        <span id="dock-time">0:00</span>
+        <input id="dock-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
+        <span id="dock-length">0:00</span>
+      </div>
+    </div>
+    <!-- No controls attribute: the card is the controls. Hidden, it still plays. -->
+    <audio id="audio-player"></audio>
+    <!-- Superseded by the card's own previous and next; kept for the code that
+         still counts the queue. -->
     <span id="audio-queue" class="dock-queue hidden">
       <button id="audio-prev" class="ghost small" type="button" aria-label="Previous song">&#9198;</button>
       <span id="audio-queue-pos" class="muted"></span>
       <button id="audio-next" class="ghost small" type="button" aria-label="Next song">&#9197;</button>
     </span>
-    <button id="audio-tracks-toggle" class="ghost hidden" type="button"
-            aria-expanded="false" aria-controls="audio-tracks">Chapters</button>
-    <button id="audio-close" class="ghost" type="button" aria-label="Stop">&times;</button>
+    <div class="dock-end">
+      <label class="dock-volume" title="Volume">
+        <span id="dock-volume-icon" aria-hidden="true"></span>
+        <input id="dock-volume" type="range" min="0" max="100" value="100" aria-label="Volume">
+      </label>
+      <!-- Only shown for something made of more than one file, which in
+           practice means an audiobook ripped a chapter at a time. -->
+      <button id="audio-tracks-toggle" class="dock-chip hidden" type="button"
+              aria-expanded="false" aria-controls="audio-tracks">Chapters</button>
+      <button id="audio-close" class="np-icon dock-btn dock-close" type="button" aria-label="Stop"></button>
+    </div>
 
     <!-- Inside the dock so it can be positioned against it. Thirty chapters
          will not fit in a dock, so the list is a panel above it. -->
