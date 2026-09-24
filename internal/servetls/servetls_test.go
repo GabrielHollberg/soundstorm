@@ -1,17 +1,23 @@
 package servetls
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"io"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func testLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -374,8 +380,10 @@ func TestTheAuthorityCannotVouchForPublicNames(t *testing.T) {
 		t.Fatal("unusable authority")
 	}
 
-	// Names and addresses a home server legitimately answers to: accepted.
-	for _, name := range []string{"192.168.0.19", "127.0.0.1", "localhost", "media.lan", "nas.home", "box.local", "6lm2ahm6pn.home.soundstorm.dev"} {
+	// Names and addresses a home server legitimately answers to: accepted,
+	// including another address in the configured one's network, so the router
+	// handing out a new address does not mean a new authority.
+	for _, name := range []string{"192.168.0.19", "192.168.200.7", "127.0.0.1", "localhost", "media.lan", "nas.home", "nas.home.arpa", "box.local"} {
 		cert, err := s.certFor(name, []string{name})
 		if err != nil {
 			t.Fatalf("certFor(%q): %v", name, err)
@@ -385,9 +393,16 @@ func TestTheAuthorityCannotVouchForPublicNames(t *testing.T) {
 		}
 	}
 
-	// Public names and a public address: the signature is made, but no
-	// device that trusts the authority will accept it.
-	for _, name := range []string{"yourbank.com", "www.google.com", "8.8.8.8", "203.0.113.5"} {
+	// Public names and addresses, and - because a laptop that trusts this
+	// authority also goes to the office - corporate names and the private
+	// ranges offices use, plus every other install's name under soundstorm.dev
+	// and the name service's own: the signature is made, but no device that
+	// trusts the authority will accept it.
+	for _, name := range []string{
+		"yourbank.com", "www.google.com", "8.8.8.8", "203.0.113.5",
+		"wiki.corp", "git.internal", "portal.intranet", "10.1.2.3", "172.16.0.5",
+		"6lm2ahm6pn.home.soundstorm.dev", "names.soundstorm.dev",
+	} {
 		cert, err := s.certFor("evil-"+name, []string{name})
 		if err != nil {
 			t.Fatalf("certFor(%q): %v", name, err)
@@ -395,6 +410,113 @@ func TestTheAuthorityCannotVouchForPublicNames(t *testing.T) {
 		if _, err := cert.Leaf.Verify(x509.VerifyOptions{DNSName: name, Roots: pool}); err == nil {
 			t.Errorf("the authority vouched for %q, which it must never do", name)
 		}
+	}
+}
+
+// writeOldAuthority puts an authority in dir the way an earlier version made
+// one: permitting whatever domains and ranges it is given, or - with both nil -
+// unconstrained entirely, as every authority made before constraints existed is.
+func writeOldAuthority(t *testing.T, dir string, domains []string, cidrs []string) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(42),
+		Subject:               pkix.Name{CommonName: "SoundStorm local authority"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+	}
+	if domains != nil || cidrs != nil {
+		tmpl.PermittedDNSDomains = domains
+		tmpl.PermittedDNSDomainsCritical = true
+		for _, c := range cidrs {
+			_, n, _ := net.ParseCIDR(c)
+			tmpl.PermittedIPRanges = append(tmpl.PermittedIPRanges, n)
+		}
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, _ := x509.MarshalECPrivateKey(key)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(filepath.Join(dir, "ca.pem"), certPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ca-key.pem"),
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return certPEM
+}
+
+// An authority permitted more than this install needs - unconstrained, made
+// before constraints existed, or under the earlier, broader policy - is
+// replaced, and the server's certificate is reissued from the new one rather
+// than left chaining to the old.
+func TestABroaderAuthorityIsReplaced(t *testing.T) {
+	for name, old := range map[string]struct {
+		domains, cidrs []string
+	}{
+		"unconstrained": {},
+		"earlier policy": {
+			domains: []string{"localhost", "local", "lan", "home", "home.arpa", "internal", "intranet", "corp", "test", "soundstorm.dev"},
+			cidrs: []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+				"169.254.0.0/16", "fe80::/10", "fc00::/7", "100.64.0.0/10"},
+		},
+	} {
+		dir := t.TempDir()
+		oldPEM := writeOldAuthority(t, dir, old.domains, old.cidrs)
+
+		s := selfSigned(t, dir, "192.168.0.19")
+		if string(s.CAPEM) == string(oldPEM) {
+			t.Errorf("%s: the old authority was kept", name)
+			continue
+		}
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(s.CAPEM)
+		if _, err := s.fallback.Leaf.Verify(x509.VerifyOptions{DNSName: "192.168.0.19", Roots: pool}); err != nil {
+			t.Errorf("%s: the server certificate does not chain to the new authority: %v", name, err)
+		}
+	}
+}
+
+// An authority already constrained to exactly this install's needs is kept -
+// replacing it for no reason would make every device install it again.
+func TestAMatchingAuthorityIsKept(t *testing.T) {
+	dir := t.TempDir()
+	first := selfSigned(t, dir, "192.168.0.19", "media.lan")
+	again := selfSigned(t, dir, "192.168.0.19", "media.lan")
+	if string(first.CAPEM) != string(again.CAPEM) {
+		t.Error("a matching authority was replaced on restart")
+	}
+	// A new address in the same network is still covered, so still kept.
+	moved := selfSigned(t, dir, "192.168.4.7", "media.lan")
+	if string(first.CAPEM) != string(moved.CAPEM) {
+		t.Error("an address change within the network replaced the authority")
+	}
+}
+
+// An address in a network the authority cannot vouch for means a new
+// authority: the old one could never sign for it, so every device would warn
+// regardless.
+func TestMovingToAnotherNetworkReplacesTheAuthority(t *testing.T) {
+	dir := t.TempDir()
+	before := selfSigned(t, dir, "192.168.0.19")
+	after := selfSigned(t, dir, "10.0.0.20")
+	if string(before.CAPEM) == string(after.CAPEM) {
+		t.Fatal("the authority was kept although it cannot vouch for the new network")
+	}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(after.CAPEM)
+	if _, err := after.fallback.Leaf.Verify(x509.VerifyOptions{DNSName: "10.0.0.20", Roots: pool}); err != nil {
+		t.Errorf("the new address does not verify: %v", err)
 	}
 }
 

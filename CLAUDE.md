@@ -1029,8 +1029,9 @@ And the rest, each traced and fixed:
 
 Left for a decision rather than changed unprompted, because each is a
 tradeoff or needs testing against a live backend: the local CA now carries critical
-name constraints - a leaked `ca-key.pem` is trusted only for private IP
-ranges and local-use names, not `yourbank.com`, closing the earlier gap; HSTS on the public
+name constraints - a leaked `ca-key.pem` is trusted only for this install's own
+networks and local-use names, not `yourbank.com` (narrowed further in the fifth
+pass, below), closing the earlier gap; HSTS on the public
 name is now a self-healing week rather than a year and is sent only while a
 real certificate is actually loaded, so a lapse un-bricks itself instead of
 locking a pinned browser out for a year; the name service's
@@ -1098,13 +1099,30 @@ was real:
   endpoint made a member unrestricted, because `*[]string` cannot tell an absent
   key from null; it is now refused.
 
+Then, decided rather than left: **the local CA's constraints were narrowed to
+this install**, accepting that every device which installed `/ca.crt` installs
+it once more. It had permitted all of `soundstorm.dev` (every other install's
+name, and the name service's), corporate-style TLDs, and every private range -
+and a laptop that trusts it goes to the office, where `wiki.corp` and
+`10.0.0.0/8` are somebody else's intranet. Now it permits `localhost`,
+`.local`, `.lan`, `.home`, `home.arpa` and configured names; loopback; and for
+each configured address its /16 (/48 for IPv6), or exactly itself if public.
+Dropping `soundstorm.dev` costs nothing real: the page only moves to the real
+name once the real certificate answers there.
+
+`loadOrMakeCA` replaces an authority whose constraints are not exactly the
+current policy - an unconstrained one from before constraints existed, the
+earlier broad one, or one that cannot cover an address configured since - and
+logs a warning naming why, since every device that installed it will warn until
+it installs the new one. An address change within the same /16 keeps the
+authority. The persisted `server.pem` is now also reissued when the current
+authority did not sign it; without that it would have kept chaining to the one
+just replaced.
+
 Checked and left for a decision: a stranger holding sign-in for a known name in
 backoff indefinitely by guessing once a minute (the per-account throttle is
 short for exactly this reason, and a per-account lockout any stranger can
-trigger is the tradeoff that bought); the local CA's permitted names including
-all of `soundstorm.dev` and corporate-style TLDs, and a CA created before name
-constraints existed being kept unconstrained - regenerating it would break every
-device that installed the old one; the Windows `.env` having no explicit ACL
+trigger is the tradeoff that bought); the Windows `.env` having no explicit ACL
 (the profile directory's defaults already exclude other users); and a trickled
 upload being able to hold a connection open indefinitely.
 

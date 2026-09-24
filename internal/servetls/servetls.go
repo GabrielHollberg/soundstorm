@@ -395,9 +395,13 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("create tls directory: %w", err)
 	}
 
-	ca, caLeaf, caPEM, err := loadOrMakeCA(cfg.Dir, cfg.Hosts)
+	ca, caLeaf, caPEM, replaced, err := loadOrMakeCA(cfg.Dir, cfg.Hosts)
 	if err != nil {
 		return nil, err
+	}
+	if replaced != "" {
+		cfg.Log.Warn("made a new local certificate authority; any device that installed /ca.crt "+
+			"will warn until it installs the new one", "because", replaced)
 	}
 
 	s := &Server{
@@ -521,9 +525,16 @@ func expiringSoon(cert *tls.Certificate) bool {
 
 // --- the authority ----------------------------------------------------------
 
-func loadOrMakeCA(dir string, hosts []string) (tls.Certificate, *x509.Certificate, []byte, error) {
+// loadOrMakeCA returns the local authority, making one if there is none usable.
+// replaced says why an existing one was thrown away ("" when it was kept, or
+// when there was none), because replacing it means every device that installed
+// /ca.crt has to install it again - which is worth saying loudly.
+func loadOrMakeCA(dir string, hosts []string) (ca tls.Certificate, caLeaf *x509.Certificate, caPEM []byte, replaced string, err error) {
 	certPath := filepath.Join(dir, "ca.pem")
 	keyPath := filepath.Join(dir, "ca-key.pem")
+
+	domains := permittedCADomains(hosts)
+	ranges := permittedCAIPRanges(hosts)
 
 	certPEM, certErr := os.ReadFile(certPath)
 	keyPEM, keyErr := os.ReadFile(keyPath)
@@ -531,23 +542,34 @@ func loadOrMakeCA(dir string, hosts []string) (tls.Certificate, *x509.Certificat
 		pair, err := tls.X509KeyPair(certPEM, keyPEM)
 		if err == nil {
 			leaf, err := x509.ParseCertificate(pair.Certificate[0])
+			switch {
+			case err != nil:
 			// A CA that expires while in use would break every device that
 			// trusts it, so it is replaced well before that - which does mean
 			// re-installing it, once a decade.
-			if err == nil && time.Now().Add(renewBefore).Before(leaf.NotAfter) {
+			case !time.Now().Add(renewBefore).Before(leaf.NotAfter):
+				replaced = "it was about to expire"
+			// The authority may vouch for exactly what this install needs and
+			// no more. One made before the constraints existed, or under a
+			// broader policy, or that cannot cover an address configured since,
+			// is replaced rather than kept: a stolen key for it is trusted for
+			// more than this household's own server.
+			case !constraintsMatch(leaf, domains, ranges):
+				replaced = "what it may vouch for no longer matches this install's names and addresses"
+			default:
 				pair.Leaf = leaf
-				return pair, leaf, certPEM, nil
+				return pair, leaf, certPEM, "", nil
 			}
 		}
 	}
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return tls.Certificate{}, nil, nil, fmt.Errorf("generate authority key: %w", err)
+		return tls.Certificate{}, nil, nil, "", fmt.Errorf("generate authority key: %w", err)
 	}
 	serial, err := serialNumber()
 	if err != nil {
-		return tls.Certificate{}, nil, nil, err
+		return tls.Certificate{}, nil, nil, "", err
 	}
 
 	template := &x509.Certificate{
@@ -571,65 +593,89 @@ func loadOrMakeCA(dir string, hosts []string) (tls.Certificate, *x509.Certificat
 		// Name constraints bound what this authority is allowed to vouch for.
 		// Without them, a stolen ca-key.pem is trusted by every device that
 		// installed /ca.crt for *every* name on the internet - it could mint a
-		// certificate for a bank and intercept it. SoundStorm only ever signs
-		// certificates for a home network: private IP ranges, and a short list
-		// of names a home server legitimately answers to. Constraining the
-		// authority to exactly that turns a leaked key from "intercept
-		// anything" into "impersonate this household's own server", which the
-		// key holder could largely do anyway.
+		// certificate for a bank and intercept it. With them, a leaked key can
+		// impersonate this household's own server and very little else, which
+		// the key holder could largely do anyway.
+		//
+		// "Very little else" is kept narrow on purpose, because a device that
+		// installed the authority does not stay at home: a laptop that trusts it
+		// goes to the office, where names like wiki.corp and addresses in
+		// 10.0.0.0/8 are somebody else's intranet. See permittedCADomains and
+		// permittedCAIPRanges.
 		//
 		// Critical, so a verifier that does not understand the extension
 		// refuses the authority rather than silently ignoring the limit - the
 		// whole point is that the limit is enforced. Every modern browser and
 		// operating system understands it.
-		PermittedIPRanges:           privateIPRanges(),
-		PermittedDNSDomains:         permittedCADomains(hosts),
+		PermittedIPRanges:           ranges,
+		PermittedDNSDomains:         domains,
 		PermittedDNSDomainsCritical: true,
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
-		return tls.Certificate{}, nil, nil, fmt.Errorf("create authority certificate: %w", err)
+		return tls.Certificate{}, nil, nil, "", fmt.Errorf("create authority certificate: %w", err)
 	}
 
 	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
-		return tls.Certificate{}, nil, nil, fmt.Errorf("encode authority key: %w", err)
+		return tls.Certificate{}, nil, nil, "", fmt.Errorf("encode authority key: %w", err)
 	}
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 
 	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
-		return tls.Certificate{}, nil, nil, fmt.Errorf("write authority certificate: %w", err)
+		return tls.Certificate{}, nil, nil, "", fmt.Errorf("write authority certificate: %w", err)
 	}
 	// 0600: this key can mint a certificate for any name, so it is the one
 	// genuinely sensitive file SoundStorm writes.
 	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-		return tls.Certificate{}, nil, nil, fmt.Errorf("write authority key: %w", err)
+		return tls.Certificate{}, nil, nil, "", fmt.Errorf("write authority key: %w", err)
 	}
 
 	leaf, err := x509.ParseCertificate(der)
 	if err != nil {
-		return tls.Certificate{}, nil, nil, err
+		return tls.Certificate{}, nil, nil, "", err
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf},
-		leaf, certPEM, nil
+		leaf, certPEM, replaced, nil
 }
 
-// privateIPRanges is every address block a home server can live on and
-// nothing a public one can. A leaf whose IP is outside these is refused by any
-// device that trusts the authority, so a leaked key cannot mint a certificate
-// for a public address.
-func privateIPRanges() []*net.IPNet {
-	cidrs := []string{
-		"127.0.0.0/8", "::1/128", // loopback
-		"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", // RFC 1918
-		"169.254.0.0/16", "fe80::/10", // link-local
-		"fc00::/7",      // IPv6 unique-local
-		"100.64.0.0/10", // carrier-grade NAT, which is also Tailscale's range
+// permittedCAIPRanges is the addresses the authority may vouch for: loopback,
+// and for each address the operator configured, the network it sits in.
+//
+// Not every private range. A certificate for a bare IP is only ever issued for
+// a configured address (browsers send no name to mint one from), so the
+// authority needs to cover those and nothing else - and "every private range"
+// includes 10.0.0.0/8 and 172.16.0.0/12, which is where offices keep their
+// intranets. A home address gets its /16 (its /48, for IPv6) rather than
+// exactly itself, so the router handing out a different address in the same
+// network does not mean a new authority for every device. A public address the
+// operator configured gets exactly itself.
+func permittedCAIPRanges(hosts []string) []*net.IPNet {
+	cidrs := []string{"127.0.0.0/8", "::1/128"}
+	for _, h := range hosts {
+		addr, err := netip.ParseAddr(strings.TrimSpace(h))
+		if err != nil {
+			continue
+		}
+		addr = addr.Unmap().WithZone("")
+		if addr.IsLoopback() {
+			continue
+		}
+		bits := addr.BitLen()
+		if addr.IsPrivate() || addr.IsLinkLocalUnicast() || cgnatRange.Contains(addr) {
+			bits = 16
+			if addr.Is6() {
+				bits = 48
+			}
+		}
+		if p, err := addr.Prefix(bits); err == nil {
+			cidrs = append(cidrs, p.String())
+		}
 	}
 	ranges := make([]*net.IPNet, 0, len(cidrs))
-	for _, c := range cidrs {
+	for _, c := range unique(cidrs) {
 		if _, n, err := net.ParseCIDR(c); err == nil {
 			ranges = append(ranges, n)
 		}
@@ -637,29 +683,95 @@ func privateIPRanges() []*net.IPNet {
 	return ranges
 }
 
+// cgnatRange is shared address space: what Tailscale hands out, and what some
+// ISPs put a whole home behind.
+var cgnatRange = netip.MustParsePrefix("100.64.0.0/10")
+
 // permittedCADomains is the DNS names the authority may vouch for: localhost,
-// the TLDs reserved for private and local use, SoundStorm's own zone (the
-// real certificate's name falls back to the local authority before it
-// arrives), and whatever DNS names the operator configured. A permitted domain
-// covers itself and anything to its left, so "lan" covers "media.lan".
+// the names home networks actually use - mDNS's .local, the .lan and .home
+// routers hand out, and home.arpa, the one reserved for exactly this - and
+// whatever DNS names the operator configured. A permitted domain covers itself
+// and anything to its left, so "lan" covers "media.lan".
 //
-// A public name the operator did not configure is deliberately absent, which
-// is the whole protection: the authority cannot vouch for "yourbank.com".
+// What is deliberately absent matters as much. A public name the operator did
+// not configure is the original protection: the authority cannot vouch for
+// "yourbank.com". Corporate-style names (corp, internal, intranet) are gone
+// because a laptop that trusts this authority also goes to work. And
+// soundstorm.dev is gone because it is every other install's name and the name
+// service's own - the real certificate covers this install's name, and when it
+// has not arrived yet the page simply stays on plain http rather than needing
+// the local authority to stand in.
 func permittedCADomains(hosts []string) []string {
-	domains := []string{
-		"localhost",
-		"local", "lan", "home", "home.arpa", "internal", "intranet", "corp", "test",
-		"soundstorm.dev",
-	}
+	domains := []string{"localhost", "local", "lan", "home", "home.arpa"}
 	for _, h := range hosts {
-		h = strings.TrimSpace(h)
-		// An IP host is covered by privateIPRanges, not here.
-		if h == "" || net.ParseIP(h) != nil {
+		h = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(h), "."))
+		// An IP host is covered by permittedCAIPRanges, not here; a name under
+		// a domain already permitted adds nothing.
+		if h == "" || net.ParseIP(h) != nil || coveredBy(h, domains) {
 			continue
 		}
 		domains = append(domains, h)
 	}
-	return unique(domains)
+	return domains
+}
+
+// coveredBy reports whether a permitted domain already covers name.
+func coveredBy(name string, domains []string) bool {
+	for _, d := range domains {
+		if name == d || strings.HasSuffix(name, "."+d) {
+			return true
+		}
+	}
+	return false
+}
+
+// constraintsMatch reports whether an authority is constrained to exactly the
+// given names and ranges - no more, which would leave a stolen key trusted for
+// more than this install needs, and no less, which would leave it unable to
+// vouch for an address the install now uses.
+func constraintsMatch(ca *x509.Certificate, domains []string, ranges []*net.IPNet) bool {
+	if !ca.PermittedDNSDomainsCritical ||
+		len(ca.ExcludedDNSDomains) > 0 || len(ca.ExcludedIPRanges) > 0 {
+		return false
+	}
+	return sameSet(lowerAll(ca.PermittedDNSDomains), lowerAll(domains)) &&
+		sameSet(rangeStrings(ca.PermittedIPRanges), rangeStrings(ranges))
+}
+
+func lowerAll(in []string) []string {
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.ToLower(s)
+	}
+	return out
+}
+
+func rangeStrings(in []*net.IPNet) []string {
+	out := make([]string, len(in))
+	for i, n := range in {
+		out[i] = n.String()
+	}
+	return out
+}
+
+func sameSet(a, b []string) bool {
+	set := map[string]bool{}
+	for _, s := range a {
+		set[s] = true
+	}
+	other := map[string]bool{}
+	for _, s := range b {
+		other[s] = true
+	}
+	if len(set) != len(other) {
+		return false
+	}
+	for s := range other {
+		if !set[s] {
+			return false
+		}
+	}
+	return true
 }
 
 // loadOrIssueFallback reuses the server certificate across restarts.
@@ -684,7 +796,11 @@ func loadOrIssueFallback(dir string, ca tls.Certificate, caLeaf *x509.Certificat
 		if pair, err := tls.X509KeyPair(certPEM, keyPEM); err == nil {
 			if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
 				pair.Leaf = leaf
-				if time.Now().Add(renewBefore).Before(leaf.NotAfter) && sameNames(leaf, names) {
+				// Signed by the current authority, too: when the authority is
+				// replaced, a certificate from the old one would chain to
+				// something no device is being asked to trust any more.
+				if time.Now().Add(renewBefore).Before(leaf.NotAfter) && sameNames(leaf, names) &&
+					leaf.CheckSignatureFrom(caLeaf) == nil {
 					return &pair, nil
 				}
 			}

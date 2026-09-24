@@ -526,7 +526,11 @@ it has to.
 and run `docker compose up -d`. SoundStorm then makes its own certificate,
 which every device warns about until you install
 `https://<server>:8099/ca.crt` on it — and again after a reinstall, which
-makes a new one.
+makes a new one, or after moving the server to a different network. That
+certificate is only allowed to vouch for your own server — local names like
+`.lan` and `.local` and your home network's addresses, never a public site or
+an office intranet — so a device that trusts it trusts nothing else because of
+it.
 
 **If the server's address changes**, the secure name has to follow it. The
 installer records the machine's LAN address in the `.env` file as
