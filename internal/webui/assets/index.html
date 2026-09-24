@@ -523,7 +523,20 @@
     <div class="np-inner">
       <header class="np-bar">
         <button id="np-close" class="np-icon" type="button" aria-label="Close Now Playing"></button>
-        <span class="np-label">Now Playing</span>
+        <span class="np-label">Now Playing<span id="np-sleep-left" class="np-sleep-left hidden"></span></span>
+        <div class="np-sleep-wrap">
+          <button id="np-sleep" class="np-icon np-toggle" type="button" aria-label="Sleep timer"
+                  aria-haspopup="true" aria-expanded="false" title="Sleep timer"></button>
+          <div id="np-sleep-menu" class="np-sleep-menu hidden" role="menu" aria-label="Sleep timer">
+            <p>Stop playing</p>
+            <button type="button" role="menuitem" data-minutes="15">In 15 minutes</button>
+            <button type="button" role="menuitem" data-minutes="30">In 30 minutes</button>
+            <button type="button" role="menuitem" data-minutes="45">In 45 minutes</button>
+            <button type="button" role="menuitem" data-minutes="60">In 1 hour</button>
+            <button type="button" role="menuitem" data-minutes="song">At the end of this song</button>
+            <button type="button" role="menuitem" data-minutes="off" id="np-sleep-off">Turn off</button>
+          </div>
+        </div>
         <button id="np-queue-toggle" class="np-icon np-toggle" type="button"
                 aria-label="Up next" aria-pressed="false"></button>
       </header>

@@ -2063,3 +2063,49 @@ body.np-open { overflow: hidden; }
   padding: 7px 10px;
   font: inherit;
 }
+
+/* The sleep timer: a moon beside Up next, a small menu under it, and the time
+   left under "Now Playing". */
+.np-sleep-wrap { position: relative; }
+.np-sleep-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(20, 23, 30, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  backdrop-filter: blur(12px);
+}
+.np-sleep-menu p {
+  margin: 4px 10px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+.np-sleep-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: #fff;
+  font: inherit;
+  text-align: left;
+}
+.np-sleep-menu button:hover { background: rgba(255, 255, 255, 0.08); filter: none; }
+#np-sleep-off { color: #ff9b9b; }
+.np-label { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.np-sleep-left {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}

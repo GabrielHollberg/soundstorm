@@ -1761,6 +1761,14 @@ $('audio-player').addEventListener('pause', () => {
 // The whole point of a track list: chapter 1 ending means chapter 2 starting,
 // not silence.
 $('audio-player').addEventListener('ended', () => {
+  if (sleep.atSongEnd) {
+    // The sleep timer said "at the end of this song": it has ended, so stop
+    // here rather than going on to the next song or chapter.
+    if (audio.index + 1 >= audio.tracks.length) savePosition({ finished: true });
+    else savePosition();
+    setSleep(null);
+    return;
+  }
   if (audio.index + 1 < audio.tracks.length) {
     selectTrack(audio.index + 1);
     return;
@@ -2619,6 +2627,7 @@ const ICONS = {
   down: '<path d="M6 9l6 6 6-6"/>',
   lyrics: '<path d="M4 6h16M4 10h16M4 14h10M4 18h7M17 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM19.5 18.5V11"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
   volume: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
 };
@@ -4159,7 +4168,9 @@ function applyLevel(item) {
 // The volume somebody chose with the player's own slider is theirs, and
 // levelling works under it rather than replacing it.
 $('audio-player').addEventListener('volumechange', () => {
-  if (audio.settingVolume) return;
+  // A fade (the sleep timer's, a crossfade) is not the listener moving the
+  // volume; counted as one, it left their volume at zero afterwards.
+  if (audio.settingVolume || audio.fading) return;
   const player = $('audio-player');
   const level = audio.level || 1;
   audio.userVolume = Math.min(1, player.volume / level);
@@ -4635,3 +4646,99 @@ async function showOfflineApp() {
 }
 
 $('offline-retry').addEventListener('click', () => location.reload());
+
+/* ------------------------------------------------------------- sleep timer */
+
+// A sleep timer, in Now Playing: stop in 15, 30, 45 or 60 minutes, or at the
+// end of the song (or audiobook chapter). The time left shows under "Now
+// Playing". When it runs out the music fades over eight seconds rather than
+// cutting off, then pauses; on an iPhone, which does not let a page set the
+// volume, it simply pauses.
+const sleep = { until: 0, atSongEnd: false, tick: 0, fading: false };
+const SLEEP_FADE_MS = 8000;
+
+function setSleep(choice) {
+  clearInterval(sleep.tick);
+  sleep.until = 0;
+  sleep.atSongEnd = false;
+  if (choice === 'song') {
+    sleep.atSongEnd = true;
+  } else if (Number(choice) > 0) {
+    sleep.until = Date.now() + Number(choice) * 60000;
+    sleep.tick = setInterval(sleepTick, 1000);
+  }
+  renderSleep();
+}
+
+function sleepTick() {
+  const left = sleep.until - Date.now();
+  if (left <= 0) {
+    setSleep(null);
+    fadeOutAndPause();
+    return;
+  }
+  renderSleep();
+}
+
+function renderSleep() {
+  const on = Boolean(sleep.until || sleep.atSongEnd);
+  $('np-sleep').classList.toggle('on', on);
+  $('np-sleep').setAttribute('aria-pressed', String(on));
+  show($('np-sleep-off'), on);
+  const label = $('np-sleep-left');
+  if (sleep.atSongEnd) {
+    label.textContent = 'Stops after this song';
+  } else if (sleep.until) {
+    const secs = Math.max(0, Math.ceil((sleep.until - Date.now()) / 1000));
+    label.textContent = `Stops in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  }
+  show(label, on);
+}
+
+function fadeOutAndPause() {
+  const player = $('audio-player');
+  if (player.paused || sleep.fading) return;
+  const start = player.volume;
+  const began = performance.now();
+  sleep.fading = true;
+  audio.fading = true;
+  const step = () => {
+    const t = Math.min(1, (performance.now() - began) / SLEEP_FADE_MS);
+    player.volume = start * (1 - t);
+    if (t < 1 && !player.paused) {
+      requestAnimationFrame(step);
+      return;
+    }
+    player.pause();
+    sleep.fading = false;
+    // Back to the listener's own level for next time. The fade's own
+    // volumechange events are still queued; released only after they have
+    // been seen, so none of them is taken for the listener's choice.
+    if (audio.item) applyLevel(audio.item);
+    else player.volume = start;
+    setTimeout(() => { audio.fading = false; }, 0);
+  };
+  requestAnimationFrame(step);
+}
+
+setIcon($('np-sleep'), 'moon');
+$('np-sleep').addEventListener('click', (event) => {
+  event.stopPropagation();
+  const menu = $('np-sleep-menu');
+  const opening = menu.classList.contains('hidden');
+  show(menu, opening);
+  $('np-sleep').setAttribute('aria-expanded', String(opening));
+});
+for (const choice of document.querySelectorAll('#np-sleep-menu [data-minutes]')) {
+  choice.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setSleep(choice.dataset.minutes === 'off' ? null : choice.dataset.minutes);
+    show($('np-sleep-menu'), false);
+    $('np-sleep').setAttribute('aria-expanded', 'false');
+  });
+}
+document.addEventListener('click', () => {
+  show($('np-sleep-menu'), false);
+  $('np-sleep').setAttribute('aria-expanded', 'false');
+});
+renderSleep();
