@@ -264,8 +264,16 @@ func run(log *slog.Logger) error {
 		LANHosts:           splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
 		PublicName:         tlsServer.PublicName,
 		RemoteReachability: tlsServer.ReachabilityAnswer,
-		RemoteStatus: func() (bool, bool, string) {
-			return tlsServer.SupportsRemote(), remoteEnabled(), tlsServer.RemoteName()
+		RemoteStatus: func() httpapi.RemoteState {
+			method, mapped := tlsServer.RemoteMapping()
+			return httpapi.RemoteState{
+				Available: tlsServer.SupportsRemote(),
+				Enabled:   remoteEnabled(),
+				Name:      tlsServer.RemoteName(),
+				Port:      tlsServer.RemotePort(),
+				Mapped:    mapped,
+				Method:    method,
+			}
 		},
 		SetRemoteAccess: func(on bool) error {
 			if err := store.SetRemoteAccess(on); err != nil {

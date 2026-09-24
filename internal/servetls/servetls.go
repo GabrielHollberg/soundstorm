@@ -219,6 +219,30 @@ func (s *Server) RemoteName() string {
 	return s.auto.remoteNameNow()
 }
 
+// RemotePort is the port the world reaches this install on - the one to forward
+// by hand when the automatic methods cannot. Zero outside auto mode.
+func (s *Server) RemotePort() int {
+	if s == nil || s.auto == nil {
+		return 0
+	}
+	return s.auto.port
+}
+
+// RemoteMapping reports how the inbound port was opened automatically, if it
+// was: the method ("UPnP", "PCP", "NAT-PMP") and whether a mapping is currently
+// held. Empty and false when nothing was mapped - either remote access is off,
+// no method worked, or the port is forwarded by hand.
+func (s *Server) RemoteMapping() (method string, mapped bool) {
+	if s == nil || s.auto == nil || s.auto.portMapper == nil {
+		return "", false
+	}
+	m, ok := s.auto.portMapper.Current()
+	if !ok {
+		return "", false
+	}
+	return m.Method, true
+}
+
 // ReachabilityAnswer answers a name-service reachability challenge, or reports
 // that there is no registration to answer with (not auto mode, or not yet
 // registered). It is what the install's /api/remote-reachable route serves.

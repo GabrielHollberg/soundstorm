@@ -81,7 +81,7 @@ type Server struct {
 	lanHosts         []string
 	publicName       func() string
 	remoteReach      func(nonce string) (string, bool)
-	remoteStatus     func() (bool, bool, string)
+	remoteStatus     func() RemoteState
 	setRemoteAccess  func(bool) error
 
 	// rescans coalesces "look at your folder now" requests, keyed by kind,
@@ -126,10 +126,9 @@ type Config struct {
 	// install. Nil when remote access is not configured.
 	RemoteReachability func(nonce string) (string, bool)
 
-	// RemoteStatus reports whether remote access can be offered at all
-	// (available, i.e. auto TLS is on), whether the owner has it on, and the
-	// name to reach the install by from away once it is up.
-	RemoteStatus func() (available, enabled bool, name string)
+	// RemoteStatus reports the current state of remote access, for the account
+	// panel. See RemoteState.
+	RemoteStatus func() RemoteState
 
 	// SetRemoteAccess turns remote access on or off: it persists the choice and
 	// nudges the certificate loop to act on it. Owner-only at the handler.
@@ -137,6 +136,28 @@ type Config struct {
 
 	// SetupCode is what the first sign-up must present. See handleSignup.
 	SetupCode string
+}
+
+// RemoteState is the current state of remote access, for the account panel. It
+// tells the owner not just whether it is on, but whether it actually worked -
+// and if not, what to do about it (forward the port).
+type RemoteState struct {
+	// Available is whether remote access can be offered at all - it needs auto
+	// TLS, the only mode with a name service and a real certificate.
+	Available bool
+	// Enabled is whether the owner has turned it on.
+	Enabled bool
+	// Name is the address to reach the install by from away, set only once it is
+	// actually reachable there. Empty while off or not yet reachable.
+	Name string
+	// Port is the port the world reaches the install on - the one to forward by
+	// hand when the automatic methods cannot.
+	Port int
+	// Mapped is whether the inbound port was opened automatically, and Method is
+	// how ("UPnP", "PCP", "NAT-PMP"). Both empty/false when the port was not
+	// mapped - remote access off, no method worked, or a hand-forwarded port.
+	Mapped bool
+	Method string
 }
 
 // New builds the HTTP server.
@@ -355,12 +376,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		// away once it is up. Only to a signed-in account - it is config, not
 		// something an anonymous visitor needs.
 		if s.remoteStatus != nil {
-			available, enabled, name := s.remoteStatus()
-			remote := map[string]any{"available": available, "enabled": enabled}
-			if name != "" {
-				remote["name"] = name
-			}
-			answer["remote"] = remote
+			answer["remote"] = remoteJSON(s.remoteStatus())
 		}
 	}
 	// The install's real https address, offered to a page that is not already
@@ -388,7 +404,7 @@ func (s *Server) handleSetRemote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "remote access is not available")
 		return
 	}
-	if available, _, _ := s.remoteStatus(); !available {
+	if !s.remoteStatus().Available {
 		writeError(w, http.StatusPreconditionFailed, "remote access needs auto HTTPS to be on")
 		return
 	}
@@ -399,8 +415,28 @@ func (s *Server) handleSetRemote(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := auth.FromContext(r.Context())
 	s.log.Info("remote access changed", "enabled", body.Enabled, "by", user.Name)
-	available, enabled, name := s.remoteStatus()
-	writeJSON(w, http.StatusOK, map[string]any{"available": available, "enabled": enabled, "name": name})
+	writeJSON(w, http.StatusOK, remoteJSON(s.remoteStatus()))
+}
+
+// remoteJSON is the wire shape of remote-access state, shared by the session and
+// the toggle response so the account panel reads one thing. Reachable is derived
+// (a name is only set once the install actually answers there), so the UI does
+// not have to infer it.
+func remoteJSON(st RemoteState) map[string]any {
+	remote := map[string]any{
+		"available": st.Available,
+		"enabled":   st.Enabled,
+		"reachable": st.Name != "",
+		"port":      st.Port,
+		"mapped":    st.Mapped,
+	}
+	if st.Name != "" {
+		remote["name"] = st.Name
+	}
+	if st.Method != "" {
+		remote["method"] = st.Method
+	}
+	return remote
 }
 
 // publicUser is what an account looks like over the wire. The salt, the hash

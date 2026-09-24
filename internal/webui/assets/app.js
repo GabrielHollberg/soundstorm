@@ -164,6 +164,7 @@ $('logout').addEventListener('click', async () => {
   closeVideo();
   await api('/api/logout', { method: 'POST' });
   if (state.setupTimer) clearInterval(state.setupTimer);
+  clearTimeout(state.remotePoll);
   location.reload();
 });
 
@@ -215,15 +216,28 @@ async function refreshRemote() {
   const { ok, body } = await api('/api/session');
   const remote = ok && body && body.remote;
   show($('remote-block'), Boolean(remote && remote.available));
-  if (!remote || !remote.available) return;
+  if (!remote || !remote.available) {
+    clearTimeout(state.remotePoll);
+    return;
+  }
   renderRemote(remote);
+
+  // While it is on but not yet reachable, reachability is still being
+  // established (a certificate, a DNS record, the port opening), so re-check for
+  // a while - but only while the panel is open, and never in a tight loop.
+  clearTimeout(state.remotePoll);
+  if (remote.enabled && !remote.reachable && !$('account').classList.contains('hidden')) {
+    state.remotePoll = setTimeout(refreshRemote, 8000);
+  }
 }
 
 function renderRemote(remote) {
   $('remote-toggle').checked = Boolean(remote.enabled);
   const share = $('remote-share');
   const url = $('remote-share-url');
-  if (remote.enabled && remote.name) {
+  const status = $('remote-status');
+
+  if (remote.enabled && remote.reachable && remote.name) {
     const href = `https://${remote.name}`;
     url.textContent = href;
     url.href = href;
@@ -231,6 +245,25 @@ function renderRemote(remote) {
   } else {
     show(share, false);
   }
+
+  if (!remote.enabled) {
+    show(status, false);
+    return;
+  }
+  // On: say whether it actually worked, and if not, exactly what to do.
+  if (remote.reachable) {
+    status.textContent = remote.mapped
+      ? `Reachable. The port was opened automatically${remote.method ? ` (${remote.method})` : ''}.`
+      : 'Reachable.';
+  } else if (remote.mapped) {
+    status.textContent = 'Opening the door… the port was opened on your router; '
+      + 'waiting for it to be reachable from the internet. This can take a minute.';
+  } else {
+    const port = remote.port || 8099;
+    status.textContent = 'Not reachable from the internet yet. If it stays this way, '
+      + `forward port ${port} (TCP) to this computer on your router, then check again.`;
+  }
+  show(status, true);
 }
 
 $('remote-toggle').addEventListener('change', async (event) => {
@@ -245,7 +278,6 @@ $('remote-toggle').addEventListener('change', async (event) => {
     note($('remote-note'), (body && body.error) || 'Could not change it.', true);
     return;
   }
-  renderRemote(body);
   note(
     $('remote-note'),
     enabled
@@ -253,6 +285,8 @@ $('remote-toggle').addEventListener('change', async (event) => {
       : 'Off. Your server is only reachable on your home network again.',
     false,
   );
+  // Render and, while it comes up, keep checking (refreshRemote schedules the poll).
+  refreshRemote();
 });
 
 $('account-toggle').addEventListener('click', () => {
@@ -260,6 +294,7 @@ $('account-toggle').addEventListener('click', () => {
   show($('account'), opening);
   $('account-toggle').setAttribute('aria-expanded', String(opening));
   if (opening) renderAccount();
+  else clearTimeout(state.remotePoll); // stop polling once the panel is closed
 });
 
 function note(el, message, isError) {

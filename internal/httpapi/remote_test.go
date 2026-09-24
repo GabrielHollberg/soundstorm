@@ -25,6 +25,9 @@ type remoteState struct {
 	available bool
 	enabled   bool
 	name      string
+	port      int
+	mapped    bool
+	method    string
 	setErr    error // when non-nil, SetRemoteAccess fails
 	sets      int   // how many times the toggle was actually applied
 }
@@ -56,8 +59,15 @@ func newRemoteHarness(t *testing.T, rs *remoteState) *harness {
 		PerSourceTimeout: time.Second,
 		Log:              log,
 		SetupCode:        testSetupCode,
-		RemoteStatus: func() (bool, bool, string) {
-			return rs.available, rs.enabled, rs.name
+		RemoteStatus: func() RemoteState {
+			return RemoteState{
+				Available: rs.available,
+				Enabled:   rs.enabled,
+				Name:      rs.name,
+				Port:      rs.port,
+				Mapped:    rs.mapped,
+				Method:    rs.method,
+			}
 		},
 		SetRemoteAccess: func(on bool) error {
 			if rs.setErr != nil {
@@ -82,7 +92,10 @@ func newRemoteHarness(t *testing.T, rs *remoteState) *harness {
 // The session tells a signed-in owner whether remote access is available, on,
 // and where it can be reached - which is what the account panel paints.
 func TestSessionCarriesRemoteStatus(t *testing.T) {
-	rs := &remoteState{available: true, enabled: true, name: "abc.net.soundstorm.dev"}
+	rs := &remoteState{
+		available: true, enabled: true, name: "abc.net.soundstorm.dev",
+		port: 8099, mapped: true, method: "UPnP",
+	}
 	h := newRemoteHarness(t, rs)
 	h.signUp(t)
 
@@ -90,7 +103,11 @@ func TestSessionCarriesRemoteStatus(t *testing.T) {
 		Remote *struct {
 			Available bool   `json:"available"`
 			Enabled   bool   `json:"enabled"`
+			Reachable bool   `json:"reachable"`
 			Name      string `json:"name"`
+			Port      int    `json:"port"`
+			Mapped    bool   `json:"mapped"`
+			Method    string `json:"method"`
 		} `json:"remote"`
 	}
 	_, body := h.do(t, http.MethodGet, "/api/session", "")
@@ -103,8 +120,17 @@ func TestSessionCarriesRemoteStatus(t *testing.T) {
 	if !out.Remote.Available || !out.Remote.Enabled {
 		t.Errorf("remote = %+v, want available and enabled", *out.Remote)
 	}
+	if !out.Remote.Reachable {
+		t.Error("a name was set but reachable was not reported true")
+	}
 	if out.Remote.Name != rs.name {
 		t.Errorf("remote name = %q, want %q", out.Remote.Name, rs.name)
+	}
+	if out.Remote.Port != rs.port {
+		t.Errorf("remote port = %d, want %d", out.Remote.Port, rs.port)
+	}
+	if !out.Remote.Mapped || out.Remote.Method != rs.method {
+		t.Errorf("remote mapping = (%v, %q), want the port opened via %q", out.Remote.Mapped, out.Remote.Method, rs.method)
 	}
 }
 
