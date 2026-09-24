@@ -920,6 +920,9 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		// guard like the rest of this endpoint, and omitted rather than
 		// guessed when nothing here knows it.
 		"shareURL": s.shareURL(r),
+		// How full the library's disk is, when it can be told: a warning
+		// before an upload fails on it, rather than after.
+		"space": spaceJSON(s.library),
 		// The root as the user sees it, so the UI can name the one folder
 		// everything lives under without stitching it back together from the
 		// five paths below.
@@ -2177,4 +2180,16 @@ func (s *Server) secureHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func spaceJSON(lib *library.Library) map[string]any {
+	space, ok := lib.Space()
+	if !ok {
+		return nil
+	}
+	return map[string]any{
+		"free":  space.Free,
+		"total": space.Total,
+		"level": string(space.Level),
+	}
 }

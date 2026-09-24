@@ -305,3 +305,23 @@ func TestThePlaceholderNamesNoBackend(t *testing.T) {
 		}
 	}
 }
+
+func TestSpaceLevel(t *testing.T) {
+	const gb = 1 << 30
+	cases := []struct {
+		free, total uint64
+		want        SpaceLevel
+	}{
+		{800 * gb, 931 * gb, SpaceFine},
+		{20 * gb, 931 * gb, SpaceLow},      // under 25 GB and a fifth of the disk
+		{20 * gb, 64 * gb, SpaceFine},      // a small disk that is simply small
+		{4 * gb, 64 * gb, SpaceCritical},   // a film will not fit
+		{4 * gb, 4000 * gb, SpaceCritical}, // whatever the size of the disk
+		{100 * gb, 4000 * gb, SpaceFine},   // plenty, even at 2.5%
+	}
+	for _, c := range cases {
+		if got := spaceLevel(c.free, c.total); got != c.want {
+			t.Errorf("spaceLevel(%d GB free of %d GB) = %q, want %q", c.free/gb, c.total/gb, got, c.want)
+		}
+	}
+}

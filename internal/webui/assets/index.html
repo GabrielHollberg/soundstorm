@@ -111,6 +111,10 @@
               aria-expanded="false" aria-controls="devices">Use on your phone or TV</button>
     </div>
 
+    <!-- Only when the library's disk is getting full: said before an upload
+         fails on it, not after. -->
+    <p id="space-warning" class="space-warning hidden" role="status"></p>
+
     <!-- The address for another device, opened from the line above. Its own
          small panel rather than a URL in the middle of a sentence: it is read
          off one screen and typed into another, so it gets room, a large
@@ -282,6 +286,7 @@
     <!-- The menu behind every card's "..." button: one element, moved to
          whichever card asked, so a thousand cards do not carry a thousand
          menus. -->
+    <div id="item-menu-backdrop" class="item-menu-backdrop hidden"></div>
     <div id="item-menu" class="item-menu hidden" role="menu"></div>
 
     <!-- While selecting: how many, and what to do with them. The same bar asks

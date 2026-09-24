@@ -462,6 +462,7 @@ header {
 #app.viewing-account #setup,
 #app.viewing-account #intake,
 #app.viewing-account #degraded,
+#app.viewing-account #space-warning,
 #app.viewing-account #continue,
 #app.viewing-account #results-bar,
 #app.viewing-account #select-bar,
@@ -1063,62 +1064,194 @@ button.danger {
 
 /* Favourites, playlists and the item menu ---------------------------------- */
 
+/* Cards are buttons, and the browser's default treatment of a button was the
+   square that flashed on a tap: Chrome's tap highlight covers the whole
+   element as a rectangle, whatever the rounded cover inside it looks like.
+   It is switched off, and a press shows as the cover settling instead - the
+   same on a phone and a mouse. The hover brightening every button gets is
+   off here too; the accent border already says "this one". */
+.item, .item-more, .chip, .menu-item, .menu-back, .menu-create {
+  -webkit-tap-highlight-color: transparent;
+}
+.item:hover { filter: none; }
+.item .art-wrap { transition: transform 0.12s ease, border-color 0.12s ease; }
+.item:active .art-wrap { transform: scale(0.97); }
+.item:focus-visible { outline: none; }
+.item:focus-visible .art-wrap { box-shadow: 0 0 0 2px var(--accent); }
+
+.icon {
+  width: 18px; height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-more { fill: currentColor; stroke: none; }
+
 .item-holder { position: relative; display: flex; flex-direction: column; }
 .item-more {
   position: absolute;
-  top: 7px; right: 7px;
-  width: 30px; height: 30px;
+  top: 8px; right: 8px;
+  width: 32px; height: 32px;
   padding: 0;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
-  border: none;
-  background: rgba(6, 9, 14, 0.72);
-  color: var(--text);
-  font-size: 18px;
-  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 13, 18, 0.62);
+  backdrop-filter: blur(6px);
+  color: #fff;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity 0.12s ease, background 0.12s ease, transform 0.1s ease;
 }
+.item-more:hover { filter: none; background: rgba(10, 13, 18, 0.85); }
+.item-more:active { transform: scale(0.92); }
+.item-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .item-holder:hover .item-more, .item-more:focus-visible { opacity: 1; }
-@media (pointer: coarse) { .item-more { opacity: 1; min-height: 30px; } }
+@media (pointer: coarse) { .item-more { opacity: 1; min-height: 32px; } }
 /* Selecting uses the same corner for its tick. */
 .grid.selecting .item-more { display: none; }
 
-/* A small heart on anything favourited. */
+/* A small heart on anything favourited, drawn like the menu's. */
 .art-wrap.is-favourite::after {
-  content: "\2665";
+  content: "";
   position: absolute;
-  bottom: 7px; left: 8px;
-  color: #ff7a9a;
-  font-size: 16px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  bottom: 8px; left: 8px;
+  width: 16px; height: 16px;
+  background: #ff6b8e;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 20.5s-7.5-4.6-9.2-9.1C1.6 8.2 3.6 5 6.9 5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.3 0 5.3 3.2 4.1 6.4C19.5 15.9 12 20.5 12 20.5z'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 20.5s-7.5-4.6-9.2-9.1C1.6 8.2 3.6 5 6.9 5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.3 0 5.3 3.2 4.1 6.4C19.5 15.9 12 20.5 12 20.5z'/></svg>") center / contain no-repeat;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
 
 .item-menu {
   position: absolute;
   z-index: 60;
-  min-width: 220px;
-  max-width: 280px;
+  width: 260px;
   padding: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  display: grid;
+  background: #1a1f28;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
   gap: 2px;
+  animation: menu-in 0.12s ease-out;
 }
-.item-menu button[role="menuitem"] {
-  background: none;
-  border: none;
-  color: var(--text);
-  text-align: left;
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+
+.menu-head {
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  min-width: 0;
+}
+.menu-head strong, .menu-head span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu-head strong { font-size: 14px; }
+.menu-head span { font-size: 12.5px; color: var(--muted); }
+
+.menu-item, .menu-back {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
   padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
   font-weight: 500;
+  font-size: 14px;
+  text-align: left;
 }
-.item-menu button[role="menuitem"]:hover { background: var(--surface-2); filter: none; }
-.item-menu-heading { margin: 4px 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.item-menu-new { display: flex; gap: 6px; padding: 6px 4px 2px; }
-.item-menu-new input { padding: 6px 8px; font-size: 13.5px; }
-.item-menu-note { margin: 4px 10px; font-size: 12.5px; color: var(--error); }
+.menu-item:hover, .menu-item:focus-visible, .menu-back:hover {
+  background: rgba(255, 255, 255, 0.06);
+  filter: none;
+  outline: none;
+}
+.menu-item:active { background: rgba(255, 255, 255, 0.1); }
+.menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-detail { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.menu-item .icon-chevron { width: 16px; height: 16px; color: var(--muted); }
+.menu-favourite .icon-heart { color: #ff6b8e; }
+.menu-favourite .icon-heart.filled { fill: #ff6b8e; }
+
+.menu-back { color: var(--muted); font-weight: 600; font-size: 13px; }
+.menu-back .icon { width: 16px; height: 16px; }
+.menu-scroll { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+
+.menu-new {
+  display: flex;
+  gap: 6px;
+  padding: 8px 4px 4px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.menu-new input { padding: 8px 10px; font-size: 14px; border-radius: 8px; }
+.menu-create {
+  flex: 0 0 auto;
+  width: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+}
+.menu-create .icon { stroke: #08131f; stroke-width: 2.4; }
+.menu-note { margin: 6px 10px 2px; font-size: 12.5px; color: var(--error); }
+
+/* On a touch screen: a sheet from the bottom, over a dimmed page. */
+.item-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(0, 0, 0, 0.45);
+  animation: fade-in 0.15s ease-out;
+}
+@keyframes fade-in { from { opacity: 0; } }
+.item-menu.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  width: auto;
+  padding: 8px 10px calc(14px + env(safe-area-inset-bottom));
+  border-radius: 16px 16px 0 0;
+  animation: sheet-in 0.18s ease-out;
+}
+@keyframes sheet-in { from { transform: translateY(24px); opacity: 0.4; } }
+.item-menu.sheet::before {
+  content: "";
+  align-self: center;
+  width: 36px; height: 4px;
+  margin: 2px 0 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.item-menu.sheet .menu-item, .item-menu.sheet .menu-back { min-height: 48px; font-size: 15px; }
+.item-menu.sheet .menu-new input { font-size: 16px; }
+
+/* The library drive filling up. */
+.space-warning {
+  margin: 10px 20px 0;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  background: rgba(255, 182, 72, 0.1);
+  border: 1px solid rgba(255, 182, 72, 0.35);
+  color: #ffd592;
+}
+.space-warning.critical {
+  background: rgba(255, 107, 107, 0.1);
+  border-color: rgba(255, 107, 107, 0.45);
+  color: #ffb3b3;
+}
 
 .chip-own { border-style: dashed; }
 

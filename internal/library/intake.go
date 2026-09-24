@@ -1299,3 +1299,49 @@ func tagSegment(value, fallback string) string {
 	}
 	return value
 }
+
+// SpaceLevel says how worried to be about the library's disk.
+type SpaceLevel string
+
+const (
+	SpaceFine     SpaceLevel = ""
+	SpaceLow      SpaceLevel = "low"
+	SpaceCritical SpaceLevel = "critical"
+)
+
+const (
+	// Below this, uploads are close to the 1 GB they always leave free, and a
+	// film will not fit.
+	criticalFree = 5 << 30
+	// Below this, and under a fifth of the disk, it is time to say so - early
+	// enough to do something about it. The fraction keeps a small card that is
+	// simply small from warning for ever.
+	lowFree     = 25 << 30
+	lowFraction = 0.20
+)
+
+// Space is the library disk's free and total bytes, and how worried to be.
+type Space struct {
+	Free  uint64
+	Total uint64
+	Level SpaceLevel
+}
+
+// Space reports how full the library's disk is, or false where it cannot tell.
+func (l *Library) Space() (Space, bool) {
+	free, total, ok := diskSize(l.root)
+	if !ok || total == 0 {
+		return Space{}, false
+	}
+	return Space{Free: free, Total: total, Level: spaceLevel(free, total)}, true
+}
+
+func spaceLevel(free, total uint64) SpaceLevel {
+	switch {
+	case free < criticalFree:
+		return SpaceCritical
+	case free < lowFree && float64(free) < lowFraction*float64(total):
+		return SpaceLow
+	}
+	return SpaceFine
+}

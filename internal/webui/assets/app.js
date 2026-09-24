@@ -543,6 +543,18 @@ async function loadLibrary() {
     link.href = body.shareURL;
   }
   show($('devices-toggle'), Boolean(body.shareURL));
+
+  // The disk the library is on, when it is getting full.
+  const space = body.space;
+  const warning = $('space-warning');
+  if (space && space.level) {
+    const left = formatBytes(space.free);
+    warning.textContent = space.level === 'critical'
+      ? `The library drive is almost full: ${left} left. Large files like films won't fit.`
+      : `The library drive is getting full: ${left} left.`;
+    warning.classList.toggle('critical', space.level === 'critical');
+  }
+  show(warning, Boolean(space && space.level));
 }
 
 // "Use on your phone or TV": the home address, and the away-from-home one when
@@ -1003,7 +1015,7 @@ function renderItem(item) {
   more.type = 'button';
   more.className = 'item-more';
   more.setAttribute('aria-label', `More for ${item.title}`);
-  more.textContent = '\u22EF';
+  more.append(icon('more'));
   more.addEventListener('click', (event) => {
     event.stopPropagation();
     openItemMenu(item, more);
@@ -2472,75 +2484,147 @@ async function setFavourite(item, on) {
 
 // --- the "..." menu -----------------------------------------------------------
 
-function menuButton(label, action) {
+// Icons are drawn as SVG rather than typed as characters: "\u22EF" came out
+// as three dashes in the UI font, and a heart glyph sits on a different
+// baseline in every font that has one.
+const ICONS = {
+  more: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>',
+  heart: '<path d="M12 20.5s-7.5-4.6-9.2-9.1C1.6 8.2 3.6 5 6.9 5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.3 0 5.3 3.2 4.1 6.4C19.5 15.9 12 20.5 12 20.5z"/>',
+  playlist: '<path d="M4 6h11M4 11h11M4 16h7M17 14v6M14 17h6"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
+  back: '<path d="M15 6l-6 6 6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+};
+
+function icon(name, filled) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('icon', `icon-${name}`);
+  if (filled) svg.classList.add('filled');
+  // Markup is ours and fixed, never data: parsed from the constant above.
+  const doc = new DOMParser().parseFromString(
+    `<svg xmlns="http://www.w3.org/2000/svg">${ICONS[name]}</svg>`, 'image/svg+xml');
+  for (const child of [...doc.documentElement.childNodes]) svg.append(document.importNode(child, true));
+  return svg;
+}
+
+function menuItem(iconName, label, action, opts = {}) {
   const b = document.createElement('button');
   b.type = 'button';
   b.setAttribute('role', 'menuitem');
-  b.textContent = label;
+  b.className = 'menu-item';
+  if (opts.className) b.classList.add(opts.className);
+  b.append(icon(iconName, opts.filled));
+  const text = document.createElement('span');
+  text.className = 'menu-label';
+  text.textContent = label;
+  b.append(text);
+  if (opts.detail) {
+    const detail = document.createElement('span');
+    detail.className = 'menu-detail';
+    detail.textContent = opts.detail;
+    b.append(detail);
+  }
+  if (opts.chevron) b.append(icon('chevron'));
   b.addEventListener('click', action);
   return b;
 }
 
+function menuHeader(item) {
+  const head = document.createElement('div');
+  head.className = 'menu-head';
+  const title = document.createElement('strong');
+  title.textContent = item.title;
+  const sub = document.createElement('span');
+  sub.textContent = subtitleFor(item);
+  head.append(title, sub);
+  return head;
+}
+
 function closeItemMenu() {
   show($('item-menu'), false);
+  show($('item-menu-backdrop'), false);
   state.menuFor = null;
 }
 
-async function openItemMenu(item, anchor) {
+function openItemMenu(item, anchor) {
   const menu = $('item-menu');
   if (state.menuFor === item && !menu.classList.contains('hidden')) {
     closeItemMenu();
     return;
   }
   state.menuFor = item;
-  const note = document.createElement('p');
-  note.className = 'item-menu-note hidden';
-  const say = (text) => { note.textContent = text; show(note, Boolean(text)); };
-
-  const faved = state.favourites.has(selectionKey(item));
-  const entries = [menuButton(faved ? '\u2665 Remove from favourites' : '\u2661 Add to favourites', async () => {
-    const problem = await setFavourite(item, !faved);
-    if (problem) say(problem);
-    else closeItemMenu();
-  })];
-
-  if (item.kind === 'music') {
-    entries.push(menuButton('Add to playlist\u2026', async () => {
-      const { ok, body } = await api('/api/playlists');
-      const lists = (ok && body && body.playlists) || [];
-      menu.replaceChildren(...playlistPicker(item, lists, say), note);
-    }));
-  }
-  menu.replaceChildren(...entries, note);
+  state.menuAnchor = anchor;
+  renderMainMenu(item);
   placeMenu(menu, anchor);
 }
 
-// playlistPicker is the second page of the menu: the playlists to add to, and
-// a box for a new one.
-function playlistPicker(item, lists, say) {
-  const out = [];
-  const heading = document.createElement('p');
-  heading.className = 'item-menu-heading';
-  heading.textContent = 'Add to playlist';
-  out.push(heading);
-  for (const list of lists) {
-    out.push(menuButton(`${list.name} (${list.count})`, async () => {
-      const { ok, body } = await api(`/api/playlists/${encodeURIComponent(list.id)}/items`, {
-        method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }),
-      });
-      if (!ok) say((body && body.error) || 'Could not add it.');
+function menuNote() {
+  const note = document.createElement('p');
+  note.className = 'menu-note hidden';
+  return note;
+}
+
+function renderMainMenu(item) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const say = (text) => { note.textContent = text; show(note, Boolean(text)); };
+  const faved = state.favourites.has(selectionKey(item));
+  const entries = [
+    menuHeader(item),
+    menuItem('heart', faved ? 'Remove from favourites' : 'Add to favourites', async () => {
+      const problem = await setFavourite(item, !faved);
+      if (problem) say(problem);
       else closeItemMenu();
-    }));
+    }, { filled: faved, className: 'menu-favourite' }),
+  ];
+  if (item.kind === 'music') {
+    entries.push(menuItem('playlist', 'Add to playlist', async () => {
+      const { ok, body } = await api('/api/playlists');
+      renderPlaylistMenu(item, (ok && body && body.playlists) || []);
+    }, { chevron: true }));
   }
+  menu.replaceChildren(...entries, note);
+}
+
+// renderPlaylistMenu is the second page: which playlist, or a new one.
+function renderPlaylistMenu(item, lists) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const say = (text) => { note.textContent = text; show(note, Boolean(text)); };
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const backLabel = document.createElement('span');
+  backLabel.textContent = 'Add to playlist';
+  back.append(backLabel);
+  back.addEventListener('click', () => renderMainMenu(item));
+
+  const add = async (id) => {
+    const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}/items`, {
+      method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }),
+    });
+    if (!ok) say((body && body.error) || 'Could not add it.');
+    else closeItemMenu();
+  };
+
+  const rows = lists.map((list) => menuItem('playlist', list.name, () => add(list.id),
+    { detail: `${list.count}` }));
+
   const form = document.createElement('form');
-  form.className = 'item-menu-new';
+  form.className = 'menu-new';
   const input = document.createElement('input');
-  input.placeholder = lists.length ? 'Or a new playlist' : 'Name your first playlist';
+  input.placeholder = lists.length ? 'New playlist' : 'Name your first playlist';
   input.maxLength = 100;
+  input.setAttribute('aria-label', 'New playlist name');
   const create = document.createElement('button');
   create.type = 'submit';
-  create.className = 'small';
-  create.textContent = 'Create';
+  create.className = 'menu-create';
+  create.setAttribute('aria-label', 'Create playlist');
+  create.append(icon('plus'));
   form.append(input, create);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -2551,32 +2635,54 @@ function playlistPicker(item, lists, say) {
       say((body && body.error) || 'Could not make it.');
       return;
     }
-    const added = await api(`/api/playlists/${encodeURIComponent(body.id)}/items`, {
-      method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }),
-    });
-    if (!added.ok) say((added.body && added.body.error) || 'Could not add it.');
-    else closeItemMenu();
+    await add(body.id);
   });
-  out.push(form);
-  setTimeout(() => input.focus(), 0);
-  return out;
+
+  const list = document.createElement('div');
+  list.className = 'menu-scroll';
+  list.append(...rows);
+  menu.replaceChildren(back, list, form, note);
+  // A keyboard lands in the box; a phone does not pop its keyboard over the
+  // list somebody is about to tap.
+  if (!state.sheetMenus) setTimeout(() => input.focus(), 0);
 }
 
+// On a touch screen the menu is a sheet from the bottom of the screen, where a
+// thumb is; with a mouse it opens beside the button that asked.
+state.sheetMenus = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+
 function placeMenu(menu, anchor) {
+  menu.classList.toggle('sheet', state.sheetMenus);
+  show($('item-menu-backdrop'), state.sheetMenus);
   show(menu, true);
+  if (state.sheetMenus) {
+    menu.style.left = '';
+    menu.style.top = '';
+    return;
+  }
   const box = anchor.getBoundingClientRect();
   const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
   const left = Math.min(Math.max(8, box.right - width), window.innerWidth - width - 8);
+  // Below the button, or above it when there is no room below.
+  const below = box.bottom + 6;
+  const top = below + height > window.innerHeight - 8 ? Math.max(8, box.top - height - 6) : below;
   menu.style.left = `${left + window.scrollX}px`;
-  menu.style.top = `${box.bottom + window.scrollY + 4}px`;
+  menu.style.top = `${top + window.scrollY}px`;
 }
 
 document.addEventListener('click', (event) => {
   const menu = $('item-menu');
-  if (!menu.classList.contains('hidden') && !menu.contains(event.target)) closeItemMenu();
+  if (!menu.classList.contains('hidden') && !menu.contains(event.target)
+      && !event.target.closest('.item-more')) closeItemMenu();
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeItemMenu();
+});
+window.addEventListener('resize', () => {
+  if (!$('item-menu').classList.contains('hidden') && state.menuAnchor) {
+    placeMenu($('item-menu'), state.menuAnchor);
+  }
 });
 
 // --- playlists ----------------------------------------------------------------

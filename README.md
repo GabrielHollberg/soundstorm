@@ -263,6 +263,13 @@ forward buttons in the player.
 
 Favourites and playlists are yours; everybody in the house has their own.
 
+### When the drive fills up
+
+If the drive your library is on gets low (under 25 GB), a line above your
+library says how much is left. It turns red under 5 GB, when a film will no
+longer fit. SoundStorm always keeps the last 1 GB free, so a full library
+never stops the rest of the computer from working.
+
 ### Deleting things
 
 If you set SoundStorm up (the owner account), there is a **Select** button

@@ -404,6 +404,34 @@ Verified in Chrome against a throwaway stack with a real Navidrome that
 SoundStorm provisioned: favourite, the heart, the Favourites chip, a playlist
 built from the menu, Play all, next, and advancing when a song ends.
 
+## The free-space warning, and what a card does when pressed
+
+**Free space** is read from the filesystem the library is on (`statfs`). On
+Docker Desktop for Windows that is the real drive, not Docker's disk: `df` in
+a container reported the same 826 GB free of 931 GB that Windows did for the
+bind-mounted folder. `/api/library` carries it, and a line under the drop line
+says so:
+- **Low** is under 25 GB *and* under a fifth of the disk. The fraction keeps a
+  small card that is simply small from warning for ever.
+- **Critical** is under 5 GB, whatever the disk. Uploads stop at 1 GB, so
+  "large files won't fit" is the honest wording, not "nothing can be added".
+
+**The square flash on a tap was Chrome's tap highlight.** The cards are
+`<button>`s, and the highlight covers a button's whole box as a rectangle,
+however rounded the cover inside it is. It cannot be screenshotted, since the
+compositor draws it, so it is switched off by name
+(`-webkit-tap-highlight-color`) on the cards, the "⋯", the chips and the menu.
+Each gets its own press feedback: the cover settles to 97%. The hover
+brightening every button gets is off on cards too; a filter on a rounded,
+clipped element is one more way to get a square repaint.
+
+**Icons are SVG, never characters.** The "⋯" (U+22EF) rendered as three
+dashes in the UI font, and a heart glyph sits on a different baseline in every
+font that has one. The menu has a header naming the item, 40px rows (48 on a
+touch screen), a filled pink heart for a favourite, and a second page for
+playlists with a back arrow. On a coarse pointer it is a bottom sheet over a
+dimmed page, where a thumb is.
+
 ## Deleting, into a bin
 
 The owner can select items and delete them. Two decisions shape it:
