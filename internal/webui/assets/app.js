@@ -3616,7 +3616,10 @@ function closeNowPlaying() {
 (function alwaysFullScreen() {
   const root = document.documentElement;
   if (!root.requestFullscreen || !matchMedia('(pointer: coarse)').matches) return;
-  if (matchMedia('(display-mode: fullscreen)').matches) return; // installed: already
+  // Asked even by the installed app, which already launches full screen:
+  // Android letterboxes the camera cutout in black for a full-screen app, and
+  // lets the page draw into it (viewport-fit=cover) only once the page itself
+  // is full screen.
   document.addEventListener('pointerup', () => {
     if (document.fullscreenElement) return;
     root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
