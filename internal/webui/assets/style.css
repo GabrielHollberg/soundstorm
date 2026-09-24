@@ -1655,7 +1655,8 @@ body.np-open { overflow: hidden; }
   display: block;
   width: 100%;
   margin: 0;
-  padding: 6px 0;
+  /* Room on the right for the current line's 4% growth. */
+  padding: 6px 5% 6px 0;
   border: none;
   background: none;
   text-align: left;
@@ -1683,7 +1684,35 @@ body.np-open { overflow: hidden; }
 .np-lyrics.unsynced .np-lyric { color: rgba(255, 255, 255, 0.85); font-size: 19px; font-weight: 600; }
 @media (max-width: 760px) {
   .np-lyric { font-size: 21px; }
-  .np-lyrics { max-height: 50vh; }
+}
+
+/* While lyrics show, they take the room between the title and the controls,
+   rather than trailing below the controls and off the bottom of the screen.
+   The panel stops scrolling as a whole; only the lyrics scroll. On a phone
+   the cover steps aside, since there is no room for both. */
+.now-playing.lyrics-on .np-inner { overflow: hidden; }
+.now-playing.lyrics-on .np-main { min-height: 0; align-items: stretch; }
+.now-playing.lyrics-on .np-cover-wrap { align-self: center; }
+.now-playing.lyrics-on .np-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+.now-playing.lyrics-on .np-text { order: 1; }
+.now-playing.lyrics-on .np-lyrics {
+  order: 2;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 25vh 0;
+}
+.now-playing.lyrics-on .np-progress { order: 3; }
+.now-playing.lyrics-on .np-controls { order: 4; }
+@media (max-width: 760px) {
+  .now-playing.lyrics-on .np-cover-wrap { display: none; }
+  .now-playing.lyrics-on .np-main { display: flex; padding-bottom: 0; }
+  .now-playing.lyrics-on .np-side { flex: 1; width: 100%; }
 }
 
 /* Downloads and offline ------------------------------------------------------- */

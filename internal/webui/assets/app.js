@@ -3957,6 +3957,7 @@ function renderLyrics() {
   toggle.classList.toggle('on', showing);
   toggle.setAttribute('aria-pressed', String(showing));
   show($('np-lyrics'), showing);
+  $('now-playing').classList.toggle('lyrics-on', showing);
   show($('np-next-block'), !showing);
   const box = $('np-lyrics');
   box.replaceChildren();
