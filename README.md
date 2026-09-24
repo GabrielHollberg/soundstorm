@@ -289,6 +289,13 @@ A song or album with no cover of its own shows the SoundStorm cloud.
 - **No gaps between songs.** The next song downloads while this one plays, so
   a live album or a mix flows straight on. That matters most on a phone
   away from your router.
+- **Crossfade and data saver.** Under **Account → Playback on this
+  device**: blend songs into each other over 3 to 12 seconds (an album
+  playing in order still flows gaplessly), and stream at 96 to 256 kbps, or
+  lower only on mobile data, to save data. Downloads keep the original.
+  iPhones do not let a web page set the volume, so they cannot crossfade.
+- **Sleep timer.** The moon in Now Playing stops the music in 15 minutes to
+  an hour, or at the end of the song, fading out rather than cutting off.
 - **Even volume.** Songs carrying ReplayGain tags (most ripped and bought
   music does) play at the same loudness, whole albums keeping their own
   shape. Everything plays a little below full so quiet songs can be turned
