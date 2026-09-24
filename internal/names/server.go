@@ -2,11 +2,18 @@ package names
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +38,18 @@ type Server struct {
 	// the domain is used for.
 	Zone, Label string
 
+	// PublicLabel is the level for remote-access names, which point at a home's
+	// public address rather than its LAN one: an install is
+	// <id>.<PublicLabel>.<Zone>. Separate from Label so a device on the LAN and
+	// a device away from home resolve different records - many routers cannot
+	// loop a LAN client back through the public IP. Defaults to "net".
+	PublicLabel string
+
 	DNS DNS
+
+	// probe verifies an install is reachable at a public address before a name
+	// is pointed there. Nil uses the real HTTP prober; tests set their own.
+	probe func(ctx context.Context, addr netip.Addr, port int, id string) error
 
 	// Nameservers are asked whether a challenge is visible before its PUT
 	// returns. Empty skips the wait, which is only right for a test server
@@ -65,7 +83,12 @@ var (
 	addressRate         = rate{20, time.Hour}      // per install
 	challengeRate       = rate{10, 24 * time.Hour} // per install
 	globalChallengeRate = rate{300, 24 * time.Hour}
+	publicRate          = rate{20, time.Hour} // per install; each triggers an outbound probe
 )
+
+// reachTimeout bounds the outbound reachability probe: a short dial and read,
+// so a slow or black-holed address cannot tie the handler up.
+const reachTimeout = 6 * time.Second
 
 // challengeWait bounds how long a challenge PUT waits for the nameservers.
 // Porkbun usually serves a new record within a minute or two.
@@ -76,6 +99,12 @@ func (s *Server) init() {
 		s.limits = newLimits()
 		if s.Log == nil {
 			s.Log = slog.Default()
+		}
+		if s.PublicLabel == "" {
+			s.PublicLabel = "net"
+		}
+		if s.probe == nil {
+			s.probe = s.reachable
 		}
 	})
 }
@@ -101,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/register", s.handleRegister)
 	mux.HandleFunc("PUT /v1/address", s.authed(s.handleAddress))
+	mux.HandleFunc("PUT /v1/public", s.authed(s.handlePublic))
 	mux.HandleFunc("PUT /v1/challenge", s.authed(s.handleSetChallenge))
 	mux.HandleFunc("DELETE /v1/challenge", s.authed(s.handleClearChallenge))
 	return mux
@@ -110,6 +140,11 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) NameFor(id string) string { return id + "." + s.Label + "." + s.Zone }
 
 func (s *Server) relative(id string) string { return id + "." + s.Label }
+
+// PublicNameFor is the full remote-access name an id answers to.
+func (s *Server) PublicNameFor(id string) string { return id + "." + s.PublicLabel + "." + s.Zone }
+
+func (s *Server) publicRelative(id string) string { return id + "." + s.PublicLabel }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if !s.limits.allow("register:"+s.clientIP(r), registerRate) {
@@ -166,6 +201,120 @@ func (s *Server) handleAddress(w http.ResponseWriter, r *http.Request, id string
 	}
 	s.Log.Info("address set", "id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"name": s.NameFor(id), "ip": addr.String()})
+}
+
+// handlePublic points an install's remote-access name at its public address,
+// for reaching the server from outside the house.
+//
+// The address is not taken from the request body - it is the request's own
+// source address. That is the whole SSRF defence: the service can only ever be
+// asked to probe and name whoever is calling, never a victim, a metadata
+// endpoint, or the host's own network. The install supplies only the port it
+// serves, which is only ever combined with that source address, so it cannot
+// be used to reach a third party either. The address must additionally be a
+// public one, or remote access is not available on this network (that is what
+// Tailscale is for), which also means the probe never touches an internal
+// range even if a request somehow arrives from one.
+func (s *Server) handlePublic(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		Port int `json:"port"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if body.Port < 1 || body.Port > 65535 {
+		writeError(w, http.StatusUnprocessableEntity, "port must be between 1 and 65535")
+		return
+	}
+	addr, err := publicAddress(s.clientIP(r))
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity,
+			"this network has no public address the internet can reach; reach it from away with Tailscale instead")
+		return
+	}
+	if !s.limits.allow("public:"+id, publicRate) {
+		writeError(w, http.StatusTooManyRequests, "too many remote-access checks; try again later")
+		return
+	}
+
+	// Prove the install is actually reachable at that address and port, and is
+	// this install. This is what stops a dead or wrong record being published,
+	// and gives the caller something it can act on when a port is not open.
+	ctx, cancel := context.WithTimeout(r.Context(), reachTimeout)
+	defer cancel()
+	if err := s.probe(ctx, addr, body.Port, id); err != nil {
+		s.Log.Info("remote reachability failed", "id", id, "err", err)
+		writeError(w, http.StatusFailedDependency,
+			fmt.Sprintf("could not reach this server from the internet at %s port %d; open that port on the router and try again", addr, body.Port))
+		return
+	}
+
+	typ, other := "A", "AAAA"
+	if addr.Is6() {
+		typ, other = "AAAA", "A"
+	}
+	changed, err := s.DNS.Set(ctx, s.publicRelative(id), typ, addr.String())
+	if err != nil {
+		s.Log.Error("set public address", "id", id, "err", err)
+		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
+		return
+	}
+	if changed {
+		if err := s.DNS.Delete(ctx, s.publicRelative(id), other); err != nil {
+			s.Log.Warn("clear other family", "id", id, "err", err)
+		}
+	}
+	s.Log.Info("public address set", "id", id)
+	writeJSON(w, http.StatusOK, map[string]string{"name": s.PublicNameFor(id), "ip": addr.String()})
+}
+
+// reachable is the default probe: fetch the install's reachability endpoint at
+// its own address and port over plain HTTP, and check it answers with the
+// challenge only this install can compute.
+func (s *Server) reachable(ctx context.Context, addr netip.Addr, port int, id string) error {
+	nonce, err := newNonce()
+	if err != nil {
+		return err
+	}
+	want := Reachability(tokenFor(s.Secret, id), nonce)
+
+	u := "http://" + net.JoinHostPort(addr.String(), strconv.Itoa(port)) + ReachablePath + "?nonce=" + nonce
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{
+		Timeout: reachTimeout,
+		// Never follow a redirect: the address is a validated public IP, and a
+		// redirect is the one way the thing answering could send this probe
+		// somewhere else. Returning the 3xx as-is makes it a failed check.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("could not connect: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("answered %d, not 200", resp.StatusCode)
+	}
+	got, err := io.ReadAll(io.LimitReader(resp.Body, 512))
+	if err != nil {
+		return err
+	}
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(string(got))), []byte(want)) != 1 {
+		return fmt.Errorf("the server there is not this install")
+	}
+	return nil
+}
+
+// newNonce is a fresh random challenge nonce.
+func newNonce() (string, error) {
+	b := make([]byte, 16)
+	if _, err := cryptorand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // validChallenge accepts exactly what an ACME DNS-01 value is - the unpadded

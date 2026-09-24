@@ -33,7 +33,15 @@ Most of #2 already exists and is indifferent to public vs private:
 - **Public-IP discovery is free.** The name service already sees each install's
   public IP as the source address of its calls (`/v1/whoami`, `clientIP`).
 - **The certificate is DNS-01**, which proves control of the *name* and does not
-  care where the name points — so issuance is unchanged for a public address.
+  care where the name points — so issuance itself is unchanged for a public
+  address. One open point: the remote name is separate from the LAN name (see
+  below), so the install needs a certificate for it too. Rather than a second
+  certificate — which would double each install's draw on the shared
+  soundstorm.dev Let's Encrypt quota, the very pressure point the review
+  flagged — the plan is **one certificate carrying both names as SANs**: one
+  order, one renewal, two DNS-01 challenge records (one per name). This needs
+  the ACME client to handle two authorizations in an order, and the name
+  service's challenge endpoint to publish under either label.
 - **Dynamic DNS already exists** — the install re-announces on a timer, so a
   changing home IP is a solved problem.
 

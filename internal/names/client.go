@@ -35,6 +35,20 @@ func (c *Client) SetAddress(ctx context.Context, reg Registration, ip string) er
 	return c.do(ctx, http.MethodPut, "/v1/address", reg.Credential(), map[string]string{"ip": ip}, nil)
 }
 
+// SetPublic points the registration's remote-access name at the install's
+// public address, which the service takes from the request's source - the
+// install does not name it. port is the port the install serves, which the
+// service probes to confirm it is reachable before publishing. Returns the
+// public name, or an error the caller can show (a closed port, no public
+// address, the provider refusing).
+func (c *Client) SetPublic(ctx context.Context, reg Registration, port int) (string, error) {
+	var out struct {
+		Name string `json:"name"`
+	}
+	err := c.do(ctx, http.MethodPut, "/v1/public", reg.Credential(), map[string]int{"port": port}, &out)
+	return out.Name, err
+}
+
 // SetChallenge publishes an ACME DNS-01 value, returning once the service
 // reports it visible - which can take minutes.
 func (c *Client) SetChallenge(ctx context.Context, reg Registration, value string) error {

@@ -98,6 +98,24 @@ func tokenFor(secret []byte, id string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
+// ReachablePath is where an install answers the reachability challenge, over
+// plain HTTP on the port it serves. The name service fetches it before it will
+// point a public name at the install (see server.go). Unauthenticated and
+// public: the value it returns is an HMAC of a nonce, which reveals nothing.
+const ReachablePath = "/api/remote-reachable"
+
+// Reachability is the value an install returns for a challenge nonce, and the
+// value the service expects: an HMAC of the nonce under the install's own
+// token. Only an install holding that token can produce it, so a stranger who
+// happens to answer at the same address cannot pass. Both sides compute it -
+// the install from its token, the service from tokenFor - so it is here, in
+// the one place that defines the protocol.
+func Reachability(token, nonce string) string {
+	mac := hmac.New(sha256.New, []byte(token))
+	mac.Write([]byte("soundstorm-reachable v1\x00" + nonce))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
 // errUnauthorized is any credential that does not check out. One error for
 // every reason, so a caller learns nothing about which part was wrong.
 var errUnauthorized = errors.New("not a valid registration")
@@ -141,4 +159,29 @@ func checkAddress(s string) (netip.Addr, error) {
 		return addr, nil
 	}
 	return netip.Addr{}, fmt.Errorf("%s is not a private address; only home-network addresses can be named", addr)
+}
+
+// publicAddress is checkAddress inverted, for remote access: the address must
+// be one the internet can route to, and specifically NOT anything internal.
+// It is only ever called on an install's own source address (see handlePublic),
+// so this is not what stops the service being aimed at a victim - source-IP
+// binding is. It is what stops the service ever probing its own host's private
+// network or a cloud metadata endpoint if a request somehow arrives from one.
+func publicAddress(s string) (netip.Addr, error) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("%q is not an IP address", s)
+	}
+	addr = addr.Unmap()
+	if addr.Zone() != "" {
+		return netip.Addr{}, fmt.Errorf("%s has a zone, which DNS cannot carry", addr)
+	}
+	switch {
+	case !addr.IsGlobalUnicast():
+		// Loopback, link-local, multicast, unspecified.
+		return netip.Addr{}, fmt.Errorf("%s is not a public address", addr)
+	case addr.IsPrivate(), cgnat.Contains(addr), addr.IsLinkLocalUnicast():
+		return netip.Addr{}, fmt.Errorf("%s is not a public address", addr)
+	}
+	return addr, nil
 }
