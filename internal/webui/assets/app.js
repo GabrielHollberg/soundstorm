@@ -168,7 +168,7 @@ $('gate-form').addEventListener('submit', async (event) => {
 });
 
 $('logout').addEventListener('click', async () => {
-  show($('account'), false);
+  setAccountOpen(false);
   stopAudio();
   closeVideo();
   await api('/api/logout', { method: 'POST' });
@@ -203,7 +203,7 @@ function renderAccount() {
   if (!me) return;
 
   $('account-who').textContent = me.owner
-    ? `Signed in as ${me.name}. You set this server up, so you can add and remove people.`
+    ? `Signed in as ${me.name}, the owner of this server.`
     : `Signed in as ${me.name}.`;
 
   // Hiding the controls is presentation, not permission - the server refuses
@@ -316,13 +316,25 @@ $('remote-toggle').addEventListener('change', async (event) => {
   refreshRemote();
 });
 
-$('account-toggle').addEventListener('click', () => {
-  const opening = $('account').classList.contains('hidden');
+// The account is a page of its own: the library steps aside while it is open,
+// rather than the account being pushed in between the setup box and the
+// results, where it read as part of the library.
+function setAccountOpen(opening) {
   show($('account'), opening);
+  $('app').classList.toggle('viewing-account', opening);
   $('account-toggle').setAttribute('aria-expanded', String(opening));
-  if (opening) renderAccount();
-  else clearTimeout(state.remotePoll); // stop polling once the panel is closed
+  if (opening) {
+    renderAccount();
+    window.scrollTo(0, 0);
+  } else {
+    clearTimeout(state.remotePoll); // stop polling once the page is closed
+  }
+}
+
+$('account-toggle').addEventListener('click', () => {
+  setAccountOpen($('account').classList.contains('hidden'));
 });
+$('account-back').addEventListener('click', () => setAccountOpen(false));
 
 function note(el, message, isError) {
   el.textContent = message;
@@ -521,18 +533,55 @@ async function loadLibrary() {
     (f) => typeof f.indexed === 'number' && f.indexed < f.files);
   show($('library-indexing'), indexing);
 
-  // Two places, one answer: the hint line, and the account panel.
-  for (const [row, anchor] of [
-    ['library-share', 'library-share-url'],
-    ['account-share', 'account-share-url'],
-  ]) {
-    const link = $(anchor);
-    if (body.shareURL) {
-      link.textContent = body.shareURL;
-      link.href = body.shareURL;
-    }
-    show($(row), Boolean(body.shareURL));
+  // The address for another device lives behind one button, and the button
+  // only exists when the server has an honest answer to put there.
+  const link = $('library-share-url');
+  if (body.shareURL) {
+    link.textContent = body.shareURL;
+    link.href = body.shareURL;
   }
+  show($('devices-toggle'), Boolean(body.shareURL));
+}
+
+// "Use on your phone or TV": the home address, and the away-from-home one when
+// remote access is on and working. Only the owner's session carries the latter,
+// so a member sees the home address alone.
+$('devices-toggle').addEventListener('click', async () => {
+  const panel = $('devices');
+  const opening = panel.classList.contains('hidden');
+  show(panel, opening);
+  $('devices-toggle').setAttribute('aria-expanded', String(opening));
+  if (!opening) return;
+  const { ok, body } = await api('/api/session');
+  const remote = ok && body && body.remote;
+  const away = remote && remote.enabled && remote.reachable && remote.name;
+  if (away) {
+    const href = `https://${remote.name}`;
+    $('devices-away-url').textContent = href;
+    $('devices-away-url').href = href;
+  }
+  show($('devices-away'), Boolean(away));
+});
+
+// Copy buttons, beside every address somebody has to carry to another device.
+// The clipboard API only exists in a secure context; on plain http the buttons
+// go, and the address - large and selectable - is still there to copy by hand.
+for (const button of document.querySelectorAll('button.copy')) {
+  if (!(navigator.clipboard && window.isSecureContext)) {
+    button.remove();
+    continue;
+  }
+  button.addEventListener('click', async () => {
+    const text = $(button.dataset.copy).textContent.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = 'Copied';
+    } catch {
+      button.textContent = 'Could not copy';
+    }
+    setTimeout(() => { button.textContent = 'Copy'; }, 1800);
+  });
 }
 
 
@@ -594,6 +643,17 @@ $('file-picker').addEventListener('change', (event) => {
   intake({ items: [], files });
 });
 
+// What each backend is to the person using SoundStorm: a shelf.
+const SETUP_SHELVES = {
+  navidrome: 'Music',
+  jellyfin: 'Films and TV',
+  audiobookshelf: 'Audiobooks',
+  immich: 'Pictures',
+  ebooks: 'Ebooks',
+  documents: 'Documents',
+  calibreweb: 'Calibre library',
+};
+
 async function pollSetup() {
   const { ok, body } = await api('/api/setup');
   if (!ok || !body) return;
@@ -610,18 +670,32 @@ async function pollSetup() {
     else if (backend.status === 'failed') dot.classList.add('failed');
     else dot.classList.add('working');
 
+    // The shelf, never the server behind it. Somebody setting this up never
+    // learns Jellyfin exists, and this list is where they used to.
     const name = document.createElement('span');
     name.className = 'setup-name';
-    name.textContent = backend.id;
+    name.textContent = SETUP_SHELVES[backend.id] || 'Your library';
 
     const detail = document.createElement('span');
     detail.className = 'setup-detail';
     detail.textContent =
-      backend.status === 'ready'
-        ? 'ready'
-        : backend.error || backend.detail || backend.status;
+      backend.status === 'ready' ? 'Ready'
+        : backend.status === 'failed' ? 'Needs attention'
+          : 'Getting ready\u2026';
 
     li.append(dot, name, detail);
+    // Why a shelf failed is the owner's to fix, and only the owner's session
+    // carries it. Folded away, because it quotes the server behind the shelf.
+    if (backend.status === 'failed' && backend.error) {
+      const why = document.createElement('details');
+      why.className = 'setup-why';
+      const summary = document.createElement('summary');
+      summary.textContent = 'Details';
+      const text = document.createElement('p');
+      text.textContent = `${backend.error} Restarting SoundStorm usually clears this.`;
+      why.append(summary, text);
+      li.append(why);
+    }
     list.append(li);
   }
 

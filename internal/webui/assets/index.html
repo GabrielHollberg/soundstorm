@@ -85,92 +85,116 @@
     </nav>
 
     <!-- One line, not a box.
-         
+
          Dropping works anywhere on the window, so the only thing that needs
-         saying is that it does. What shares the line with it is everything
-         that has nowhere else to live: a file picker, because a phone cannot
-         drag anything and this is still the app that wants files; the rescan,
-         for media copied in some other way; and the address to hand to
-         another device, which is the question people ask most.
-         
-         What used to be here and is not any more: a glyph, a heading, a
-         sentence listing what it accepts, the per-kind file counts and the
-         folder path. A screen whose job is to get out of the way should not
-         open with a box explaining itself. -->
-    <p id="hints" class="hints">
-      <span id="hint-add">Drag files anywhere on this window to add them</span>
-      <button id="choose-files" class="linkish" type="button">choose files</button>
-      <button id="rescan" class="linkish" type="button">check for new files</button>
+         saying is that it does. What shares the line with it is what has
+         nowhere else to live: a file picker, because a phone cannot drag
+         anything, and the way to open SoundStorm on another device, which is
+         the question people ask most.
+
+         Two real buttons rather than underlined words and a raw address in a
+         code font: the line used to mix four styles in one sentence. The
+         rescan moved to the account page - uploads trigger a scan anyway, and
+         the backends watch their folders, so it is rarely wanted. -->
+    <div id="hints" class="hints">
+      <span id="hint-add">Drag files anywhere on this window to add them, or</span>
+      <button id="choose-files" class="ghost small" type="button">Choose files</button>
       <input id="file-picker" type="file" multiple hidden>
       <!-- Only while a backend is still working through what arrived, so the
            one signal worth keeping from the old counts does not become
            permanent furniture. -->
       <span id="library-indexing" class="hidden">indexing&hellip;</span>
-      <!-- Hidden rather than guessed at when the server has no honest answer. -->
-      <span id="library-share" class="hidden">
-        <span class="hint-sep" aria-hidden="true">&middot;</span>
-        on this network
-        <a id="library-share-url" href="#"></a>
-      </span>
-    </p>
-    <p id="rescan-note" class="muted hidden" role="status"></p>
+      <button id="devices-toggle" class="ghost small hidden" type="button"
+              aria-expanded="false" aria-controls="devices">Use on your phone or TV</button>
+    </div>
 
-    <!-- Provisioning progress. Visible until every backend is ready, because
-         until then an empty search result is expected rather than broken. -->
+    <!-- The address for another device, opened from the line above. Its own
+         small panel rather than a URL in the middle of a sentence: it is read
+         off one screen and typed into another, so it gets room, a large
+         readable font and a Copy button. The away-from-home address joins it
+         when remote access is on and working. -->
+    <section id="devices" class="card devices hidden" aria-labelledby="devices-title">
+      <h2 id="devices-title">Use SoundStorm on your phone or TV</h2>
+      <p class="muted">Open this in the browser on a phone, tablet, TV or another
+        computer on the same Wi-Fi, and sign in with the same account.</p>
+      <div class="address-row">
+        <a id="library-share-url" class="address" href="#"></a>
+        <button class="ghost small copy" type="button" data-copy="library-share-url">Copy</button>
+      </div>
+      <div id="devices-away" class="hidden">
+        <p class="muted">Away from home:</p>
+        <div class="address-row">
+          <a id="devices-away-url" class="address" href="#"></a>
+          <button class="ghost small copy" type="button" data-copy="devices-away-url">Copy</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Provisioning progress. Visible until every shelf is ready, because
+         until then an empty search result is expected rather than broken.
+         Told as shelves, never as the servers behind them: somebody setting
+         this up never learns Jellyfin exists, and this box is the one place
+         that used to tell them (with attempt counts, and "No API keys
+         needed" - a line for developers). -->
     <section id="setup" class="card hidden">
-      <h2>Setting up your library</h2>
-      <p class="muted">SoundStorm is configuring your media servers. No API keys needed.</p>
+      <h2>Getting your library ready</h2>
+      <p class="muted">This happens once, and takes a few minutes. Until it
+        finishes, some shelves may look empty.</p>
       <ul id="setup-list"></ul>
     </section>
 
-    <!-- Accounts. Everyone gets the top half; only the owner sees the rest,
+    <!-- The account page. Its own page rather than a card pushed in between
+         the setup box and the library, which made it read as part of the
+         library. Everyone gets the top half; only the owner sees the rest,
          and only because the server refuses the calls either way - hiding a
          control is presentation, not a permission. -->
-    <section id="account" class="card hidden">
-      <h2>Your account</h2>
+    <section id="account" class="account hidden">
+      <button id="account-back" class="back" type="button">&larr; Back to your library</button>
+      <h1>Account</h1>
       <p id="account-who" class="muted"></p>
 
-      <!-- The address for other devices lives here as well as on the first
-           screen, because that screen goes away the moment the library has
-           something in it - and this is the question somebody asks long
-           after that. Hidden when the server has no honest answer. -->
-      <p id="account-share" class="library-share hidden">
-        <span class="muted">On another device on this network:</span>
-        <a id="account-share-url" href="#"></a>
-      </p>
+      <div class="account-section card">
+        <h2>Change password</h2>
+        <form id="password-form" class="stack-form">
+          <label>
+            <span>Current password</span>
+            <input id="current-password" type="password" autocomplete="current-password" required>
+          </label>
+          <label>
+            <span>New password</span>
+            <input id="new-password" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <button type="submit">Change password</button>
+        </form>
+        <p id="password-note" class="muted hidden" role="status"></p>
+      </div>
 
-      <form id="password-form" class="inline-form">
-        <label for="current-password">Current password</label>
-        <input id="current-password" type="password" autocomplete="current-password"
-               required>
-        <label for="new-password">New password</label>
-        <input id="new-password" type="password" autocomplete="new-password"
-               minlength="8" required>
-        <button type="submit">Change it</button>
-      </form>
-      <p id="password-note" class="muted hidden" role="status"></p>
+      <div class="account-section card">
+        <h2>New files</h2>
+        <p class="muted">Files you drop on SoundStorm appear by themselves. If you
+          copied some into the folder another way, ask SoundStorm to look now.</p>
+        <button id="rescan" class="ghost" type="button">Check for new files</button>
+        <p id="rescan-note" class="muted hidden" role="status"></p>
+      </div>
 
       <!-- Putting the server on the internet. Owner-only, and only shown when
            auto HTTPS is on - without a real certificate there is nothing to
            offer. Off by default, and the warning is plain on purpose: this is
            the one switch that changes who can reach the server. -->
-      <div id="remote-block" class="hidden">
+      <div id="remote-block" class="account-section card hidden">
         <h2>Reach it from anywhere</h2>
-        <p class="muted">Off by default, your server is only reachable on your
-          home network. Turn this on to reach it from anywhere over the
-          internet, with the same login and a real certificate &mdash; no app
-          or account needed.</p>
-        <p class="muted"><strong>This puts your server on the internet.</strong>
-          Anyone who knows its address can reach the login screen. Only turn it
-          on if you want that.</p>
+        <p class="muted">Use SoundStorm away from home with the same login. No app
+          or extra account needed.</p>
+        <p class="warning-line"><strong>This puts your server on the internet:</strong>
+          anyone with the address reaches your login screen.</p>
         <label class="remote-switch">
           <input id="remote-toggle" type="checkbox">
           <span>Allow access from the internet</span>
         </label>
-        <p id="remote-share" class="library-share hidden">
-          <span class="muted">From anywhere:</span>
-          <a id="remote-share-url" href="#"></a>
-        </p>
+        <div id="remote-share" class="address-row hidden">
+          <a id="remote-share-url" class="address" href="#"></a>
+          <button class="ghost small copy" type="button" data-copy="remote-share-url">Copy</button>
+        </div>
         <!-- Steady-state status: whether it actually became reachable, whether
              the port was opened automatically, and - when it did not - the exact
              port to forward by hand. -->
@@ -182,30 +206,34 @@
           <strong>Set up Tailscale</strong> from the Start menu on the computer
           SoundStorm runs on, or
           <a href="https://github.com/GabrielHollberg/soundstorm#tailscale--when-there-is-no-port-to-forward-or-you-would-rather-not"
-             target="_blank" rel="noopener noreferrer">read how to set it up</a>.</p>
+             target="_blank" rel="noopener noreferrer">read how</a>.</p>
         <!-- Always: the private alternative, for anybody who would rather not
              be on the internet at all. Offered here, where remote access is
              decided, rather than as a question every install has to answer. -->
-        <p id="remote-private" class="muted">Rather not put your server on the
+        <p id="remote-private" class="muted small-print">Rather not be on the
           internet? <a href="https://github.com/GabrielHollberg/soundstorm#tailscale--when-there-is-no-port-to-forward-or-you-would-rather-not"
              target="_blank" rel="noopener noreferrer">Tailscale</a> reaches it
-          privately from your own phones and computers instead, with nothing
-          opened on your router. It needs a free Tailscale account and its app
-          on each device.</p>
+          privately from your own devices instead. It needs a free Tailscale
+          account and its app on each device.</p>
       </div>
 
-      <div id="people-block" class="hidden">
+      <div id="people-block" class="account-section card hidden">
         <h2>People</h2>
         <p class="muted">Everyone gets their own login and their own place in
           every book. Tick the shelves each person can see.</p>
         <ul id="people-list"></ul>
 
-        <form id="add-person-form" class="inline-form">
-          <label for="new-username">Add someone</label>
-          <input id="new-username" placeholder="Name" autocomplete="off" required>
-          <input id="new-person-password" type="password" placeholder="Password"
-                 autocomplete="new-password" minlength="8" required>
-          <button type="submit">Add</button>
+        <form id="add-person-form" class="stack-form">
+          <label>
+            <span>Name</span>
+            <input id="new-username" autocomplete="off" required>
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="new-person-password" type="password" autocomplete="new-password"
+                   minlength="8" required>
+          </label>
+          <button type="submit">Add person</button>
         </form>
         <p id="people-note" class="muted hidden" role="status"></p>
       </div>

@@ -1659,6 +1659,32 @@ three things with nowhere else to live:
 It has no border and no background on purpose. The moment it has a box around
 it, it is the box again.
 
+**Then the line was cleaned up, and two of its three things moved.** It had
+four styles in one sentence: plain text, underlined words, `·` separators, and
+the address as a raw URL in a code font. Now:
+- **Choose files** is a real (quiet) button.
+- The address sits behind **Use on your phone or TV**. That opens a small
+  panel with the home address, the away-from-home address when remote access
+  is on and working, and Copy buttons (secure contexts only; on plain http the
+  address is still there to copy by hand). It is no longer duplicated in the
+  account panel.
+- **Check for new files** lives on the account page. Uploads trigger a scan
+  and the backends watch their folders, so it is rarely wanted.
+
+The setup box names **shelves, never servers** ("Films and TV: Getting ready",
+not "jellyfin: waiting for jellyfin (attempt 6)"). It was the one place a
+person setting SoundStorm up learned what runs behind it, along with "No API
+keys needed", a line for developers. An owner still gets the raw error, folded
+under Details, on a failed shelf.
+
+The account is **a page of its own**, with a back link, while the library
+steps aside, not a card pushed between the setup box and the results. The
+sections are headed. Password fields are stacked, because the one-line form
+put one label above its box and the other beside it once it wrapped. People
+rows wrap instead of running past the card on a phone. Links use the accent
+colour; the browser default was dark blue on a dark background, and the
+remote address was the hardest line on the page to read.
+
 One signal survived from the per-kind counts the card used to show:
 **indexing…**, displayed only while a backend is still working through what
 arrived. It is what tells "nothing has been added" apart from "a scan is still

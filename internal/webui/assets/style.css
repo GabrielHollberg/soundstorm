@@ -38,6 +38,10 @@ body {
 body.dock-open { padding-bottom: var(--dock-space); }
 
 .hidden { display: none !important; }
+
+a { color: var(--accent); text-underline-offset: 2px; }
+a:visited { color: var(--accent); }
+a:hover { color: var(--text); }
 .muted { color: var(--muted); }
 .error { color: var(--error); }
 
@@ -124,6 +128,7 @@ button.ghost {
   font-weight: 500;
 }
 button.ghost:hover { color: var(--text); border-color: var(--muted); }
+button.small { padding: 5px 12px; font-size: 13px; }
 
 /* Header ---------------------------------------------------------------- */
 
@@ -189,8 +194,12 @@ header {
 .dot.failed { background: var(--error); }
 .dot.working { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
-.setup-name { font-weight: 600; text-transform: capitalize; }
-.setup-detail { color: var(--muted); font-size: 13px; }
+#setup li { flex-wrap: wrap; }
+.setup-name { font-weight: 600; }
+.setup-detail { color: var(--muted); font-size: 13px; margin-left: auto; }
+.setup-why { flex-basis: 100%; font-size: 12.5px; color: var(--muted); }
+.setup-why summary { cursor: pointer; }
+.setup-why p { margin: 6px 0 0; overflow-wrap: anywhere; }
 
 /* Banners --------------------------------------------------------------- */
 
@@ -445,9 +454,57 @@ header {
 
 /* Accounts --------------------------------------------------------------- */
 
-#account { margin: 16px 20px; }
-#account h2 { margin: 0 0 4px; font-size: 17px; }
-#people-block h2 { margin-top: 26px; }
+/* While it is open the library steps aside. Listed rather than "everything
+   but the account", so the audio dock and the players keep working. */
+#app.viewing-account #filters,
+#app.viewing-account #hints,
+#app.viewing-account #devices,
+#app.viewing-account #setup,
+#app.viewing-account #intake,
+#app.viewing-account #degraded,
+#app.viewing-account #status,
+#app.viewing-account #results,
+#app.viewing-account #scroll-sentinel,
+#app.viewing-account #loading-more { display: none !important; }
+
+.account {
+  max-width: 760px;
+  margin: 12px auto 40px;
+  padding: 0 20px;
+}
+.account h1 { margin: 8px 0 2px; font-size: 24px; }
+.account > .muted { margin: 0 0 18px; }
+.account-section { margin-top: 14px; }
+.account-section h2 { margin: 0 0 6px; font-size: 17px; }
+.account-section > p { margin: 0 0 12px; }
+.account-section > p:last-child { margin-bottom: 0; }
+
+.back {
+  background: none;
+  border: none;
+  padding: 6px 0;
+  color: var(--accent);
+  font-weight: 500;
+  cursor: pointer;
+}
+.back:hover { color: var(--text); filter: none; }
+
+/* Labels above their fields, fields side by side where there is room and
+   stacked where there is not - the old one-line form put one label above its
+   box and the other beside it as soon as it wrapped. */
+.stack-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+.stack-form label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+.stack-form button { justify-self: start; }
+#password-note, #people-note, #rescan-note { margin-top: 10px; }
+
+.warning-line { font-size: 14px; }
+.small-print { font-size: 13px; }
 
 .inline-form {
   display: flex;
@@ -469,8 +526,9 @@ header {
 }
 #people-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
   background: var(--surface-2);
   border-radius: 8px;
   padding: 9px 12px;
@@ -703,7 +761,7 @@ header {
   /* The address is a real link, and a 15px line of text is not something a
      thumb can hit. Padding alone would not do it on an inline element, so it
      becomes a flex box tall enough to aim at. */
-  #library-share-url, #account-share-url {
+  .address {
     display: inline-flex;
     align-items: center;
     min-height: 40px;
@@ -821,18 +879,20 @@ header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 10px;
+  gap: 8px 10px;
   margin: 10px 20px 0;
   font-size: 13px;
   color: var(--muted);
 }
 .hint-sep { opacity: 0.5; }
 
-/* The separator only separates while the line is a line. Once it wraps, a
-   leading interpunct at the start of a row is just a smudge. */
+/* The phone and TV button goes to the end of the line where there is room,
+   and onto its own line where there is not. */
+#devices-toggle { margin-left: auto; }
 @media (max-width: 620px) {
-  .hint-sep { display: none; }
-  .hints { gap: 6px 10px; }
+  #devices-toggle { margin-left: 0; }
+  /* A remote address is ~45 characters; at 17px it broke mid-word. */
+  .address { font-size: 15px; }
 }
 
 /* Buttons that read as text. A row of real buttons under the filters would be
@@ -850,21 +910,24 @@ header {
 }
 .linkish:hover { filter: none; color: var(--text); }
 
-/* Read off one screen and typed into another, so: monospace, and never broken
-   across a line. */
-#library-share-url,
-#account-share-url {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--accent);
-  white-space: nowrap;
+/* An address somebody reads off this screen and types into another: large,
+   in the ordinary font rather than a code font, allowed to wrap on a phone
+   rather than run off the edge, with a Copy button beside it. */
+.devices { margin: 12px 20px 0; max-width: 640px; }
+.devices h2 { margin: 0 0 6px; font-size: 17px; }
+.devices > p { margin: 0 0 12px; }
+.address-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 12px;
 }
-
-/* The account panel keeps the address in a paragraph of its own, where it has
-   room to be a proper tap target rather than a word in a sentence. */
-.library-share { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-#account-share { margin: 4px 0 14px; font-size: 13px; }
-
-#rescan-note { margin: 6px 20px 0; font-size: 13px; }
+.address {
+  font-size: 17px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
