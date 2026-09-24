@@ -1254,6 +1254,22 @@ permissions. Checked on this machine against a folder granting Users read: five
 inherited entries before, three protected ones after, the lock surviving
 `Out-File`'s rewrite, and `docker compose config` still reading the file.
 
+**And then it failed on the first laptop it met**, with "the process does not
+possess the 'SeSecurityPrivilege' privilege". Windows PowerShell's `Set-Acl`
+writes every section of the descriptor, including the audit list, and writing
+that needs a privilege ordinary accounts lack. The development machine
+tolerated it, and the reason was never pinned down. It now uses
+`FileInfo.SetAccessControl`, which persists only the sections that changed,
+and falls back to `icacls` with SIDs. A failure of both is a grey note, not a
+yellow alarm, because the folder's own permissions still apply.
+
+**A registry rate limit is not the internet connection.** Eight images pulled
+at once drew `toomanyrequests` on that same laptop's update. The installer
+said "almost always the internet connection" and stopped. Pulls are now
+retried after 30, 60 and 120 seconds. A rate limit gets its own message. An
+*update* whose pull fails starts the version already installed instead of
+stopping, since nothing about the install is broken.
+
 Nothing from the fifth pass is left open.
 
 ## Tailscale, and why it is a profile rather than a service

@@ -239,6 +239,9 @@ function Invoke-Docker {
         }
         if ($Calm) {
             $lastBeat = Get-Date
+            # What was shown is kept, so a failure can be told apart by what
+            # it said - a rate limit wants waiting out, not a new connection.
+            $kept = New-Object System.Collections.Generic.List[string]
             & docker @Arguments 2>&1 | ForEach-Object {
                 $line = "$_"
                 if (Test-DockerChurn $line) {
@@ -252,8 +255,10 @@ function Invoke-Docker {
                     return
                 }
                 Write-Host $line
+                $kept.Add($line)
                 $lastBeat = Get-Date
             }
+            return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($kept -join [Environment]::NewLine) }
         } else {
             # Piped through Write-Host rather than run bare: without this the
             # stderr lines still arrive as ErrorRecords and print as a red
@@ -1256,10 +1261,28 @@ function Protect-SecretFile([string]$Path) {
             $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
                 $sid, 'FullControl', 'Allow')))
         }
-        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+        # Not Set-Acl: in Windows PowerShell it writes every section of the
+        # descriptor, the audit list included, and writing that needs
+        # SeSecurityPrivilege - which an ordinary account does not hold. It
+        # worked on the development machine and failed on a laptop with
+        # "The process does not possess the 'SeSecurityPrivilege' privilege".
+        # SetAccessControl writes only the sections that were changed here,
+        # which is the permission list and nothing else.
+        (Get-Item -LiteralPath $Path -Force).SetAccessControl($acl)
+        return
     } catch {
-        Write-Host "  Could not restrict who can read $([IO.Path]::GetFileName($Path)): $($_.Exception.Message)" -ForegroundColor Yellow
+        $firstError = $_.Exception.Message
     }
+    # icacls is the second way to say the same thing, and names the accounts by
+    # SID too, so it is not thrown by a localized "Administrators".
+    $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $result = Invoke-Native 'icacls.exe' @($Path, '/inheritance:r', '/grant:r',
+        "*${me}:F", '*S-1-5-18:F', '*S-1-5-32-544:F')
+    if ($result.ExitCode -eq 0) { return }
+    # Not fatal: the folder's own permissions still apply, and under the user
+    # profile those already keep other accounts out. Said once, plainly.
+    Note "Could not tighten the permissions on $([IO.Path]::GetFileName($Path)) ($firstError)."
+    Note "It is still protected by the folder it is in; SoundStorm works normally."
 }
 
 function Get-InstalledPort {
@@ -1899,8 +1922,35 @@ if ($upgrade) {
 }
 # Shown rather than captured: this is the part that takes minutes, and a
 # silent window is how somebody decides it has hung.
-$pull = Invoke-Docker (@('compose') + $composeArgs + @('pull')) -Calm
-if ($pull.ExitCode -ne 0) {
+#
+# A registry that sheds load answers "toomanyrequests" - Docker Hub and ghcr
+# both do, and eight images pulled at once is exactly what trips it. That is
+# not the internet connection, and telling somebody to check theirs sends them
+# the wrong way. So a failed pull is retried after a wait, which is what the
+# registry asked for; everything already downloaded is kept between tries.
+$pullWaits = @(30, 60, 120)
+$pull = $null
+for ($attempt = 0; $attempt -le $pullWaits.Count; $attempt++) {
+    $pull = Invoke-Docker (@('compose') + $composeArgs + @('pull')) -Calm
+    if ($pull.ExitCode -eq 0 -or $attempt -eq $pullWaits.Count) { break }
+    $wait = $pullWaits[$attempt]
+    if ($pull.Output -match 'toomanyrequests|too many requests|rate limit|\b429\b') {
+        Important "The download server is busy and asked us to slow down."
+    } else {
+        Important "The download stopped part way."
+    }
+    Note "Trying again in $wait seconds - nothing already downloaded is lost."
+    Start-Sleep -Seconds $wait
+}
+$rateLimited = $pull.Output -match 'toomanyrequests|too many requests|rate limit|\b429\b'
+if ($pull.ExitCode -ne 0 -and $upgrade) {
+    # An update that cannot download is not a broken install: the version
+    # already here still works, so start that rather than stopping.
+    Important "Could not check for a newer version right now."
+    Note "Starting the version you already have. Run 'Update SoundStorm' again later."
+} elseif ($pull.ExitCode -ne 0 -and $rateLimited) {
+    Stop-With "  The download server is limiting how fast it hands out downloads.`n  Nothing is wrong with this PC or your internet connection.`n`n  Wait about half an hour and run the setup again - anything already`n  downloaded is kept."
+} elseif ($pull.ExitCode -ne 0) {
     Stop-With "  Could not download the media servers. That is almost always the`n  internet connection. Try again - anything already downloaded is kept."
 }
 
