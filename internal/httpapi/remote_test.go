@@ -61,6 +61,7 @@ func newRemoteHarness(t *testing.T, rs *remoteState) *harness {
 		Log:              log,
 		SetupCode:        testSetupCode,
 		Collections:      testCollections(t),
+		Lyrics:           testLyrics(t),
 		RemoteStatus: func() RemoteState {
 			return RemoteState{
 				Available: rs.available,

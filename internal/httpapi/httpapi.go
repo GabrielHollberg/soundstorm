@@ -321,6 +321,7 @@ func (s *Server) Routes() http.Handler {
 	// Turning remote access on or off is an owner decision too - it exposes the
 	// whole server - so it mounts the same owner guard.
 	guarded.Handle("/api/remote", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/settings/lyrics", s.auth.RequireOwner(owner))
 	// Deleting is the owner's alone: every other account shares these shelves
 	// with the rest of the house. See delete.go.
 	guarded.Handle("/api/delete", s.auth.RequireOwner(owner))
