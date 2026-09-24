@@ -1643,13 +1643,13 @@ body.np-open { overflow: hidden; }
 .np-lyric.gap.current i:nth-child(3) { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - 2, 1)); }
 @keyframes np-breathe { 50% { transform: scale(1.18); } }
 /* The blurred cover behind drifts slowly while the words go by. */
-.now-playing.lyrics-on .np-backdrop { animation: np-drift 38s ease-in-out infinite alternate; }
+.now-playing.panel-on .np-backdrop { animation: np-drift 38s ease-in-out infinite alternate; }
 @keyframes np-drift {
   from { transform: scale(1.1) rotate(0deg); }
   to { transform: scale(1.35) rotate(8deg) translate(3%, -2%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .now-playing.lyrics-on .np-backdrop, .np-lyric.gap.current { animation: none; }
+  .now-playing.panel-on .np-backdrop, .np-lyric.gap.current { animation: none; }
 }
 .np-lyrics.unsynced .np-lyric { color: rgba(255, 255, 255, 0.85); font-size: 19px; font-weight: 600; }
 @media (max-width: 760px) {
@@ -1660,30 +1660,52 @@ body.np-open { overflow: hidden; }
    rather than trailing below the controls and off the bottom of the screen.
    The panel stops scrolling as a whole; only the lyrics scroll. On a phone
    the cover steps aside, since there is no room for both. */
-.now-playing.lyrics-on .np-inner { overflow: hidden; }
-.now-playing.lyrics-on .np-main { min-height: 0; align-items: stretch; }
-.now-playing.lyrics-on .np-cover-wrap { align-self: center; }
-.now-playing.lyrics-on .np-side {
+.now-playing.panel-on .np-inner { overflow: hidden; }
+.now-playing.panel-on .np-main { min-height: 0; align-items: stretch; }
+.now-playing.panel-on .np-cover-wrap { align-self: center; }
+.now-playing.panel-on .np-side {
   display: flex;
   flex-direction: column;
   gap: 18px;
   min-height: 0;
 }
-.now-playing.lyrics-on .np-text { order: 1; }
-.now-playing.lyrics-on .np-lyrics {
+.now-playing.panel-on .np-head { order: 1; }
+.now-playing.panel-on .np-lyrics {
   order: 2;
   flex: 1;
   min-height: 0;
   max-height: none;
   padding: 25vh 0;
 }
-.now-playing.lyrics-on .np-progress { order: 3; }
-.now-playing.lyrics-on .np-controls { order: 4; }
-@media (max-width: 760px) {
-  .now-playing.lyrics-on .np-cover-wrap { display: none; }
-  .now-playing.lyrics-on .np-main { display: flex; padding-bottom: 0; }
-  .now-playing.lyrics-on .np-side { flex: 1; width: 100%; }
+/* Up next in the same place, scrolling on its own. */
+.now-playing.panel-on .np-next {
+  order: 2;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
+.now-playing.panel-on #np-queue { flex: 1; min-height: 0; max-height: none; }
+.now-playing.panel-on .np-progress { order: 3; }
+.now-playing.panel-on .np-controls { order: 4; }
+@media (max-width: 760px) {
+  .now-playing.panel-on .np-cover-wrap { display: none; }
+  .now-playing.panel-on .np-main { display: flex; padding-bottom: 0; }
+  .now-playing.panel-on .np-side { flex: 1; width: 100%; }
+  .now-playing.panel-on .np-thumb { display: block; }
+}
+.np-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.np-head .np-text { min-width: 0; }
+.np-thumb {
+  display: none;
+  width: 56px; height: 56px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+.np-thumb:not([src]) { visibility: hidden; width: 0; margin-right: -14px; }
 
 /* Downloads and offline ------------------------------------------------------- */
 

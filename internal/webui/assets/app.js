@@ -3593,6 +3593,8 @@ function queueChanged() {
 
 function openNowPlaying() {
   if (!audio.item) return;
+  audio.showQueue = false;
+  renderLyrics();
   show($('now-playing'), true);
   document.body.classList.add('np-open');
   renderNowPlaying();
@@ -3672,7 +3674,7 @@ function setIcon(button, name, filled) {
 }
 
 setIcon($('np-close'), 'down');
-setIcon($('np-lyrics-toggle'), 'lyrics');
+setIcon($('np-queue-toggle'), 'queue');
 setIcon($('dock-play'), 'play', true);
 setIcon($('dock-prev'), 'prev', true);
 setIcon($('dock-next'), 'skip', true);
@@ -3800,7 +3802,7 @@ function renderNowPlaying() {
   if ($('now-playing').classList.contains('hidden') || !audio.item) return;
   const item = audio.item;
   const art = artPath(item);
-  for (const img of [$('np-cover'), $('np-backdrop')]) {
+  for (const img of [$('np-cover'), $('np-backdrop'), $('np-thumb')]) {
     if (art) img.src = art;
     else img.removeAttribute('src');
   }
@@ -4111,7 +4113,8 @@ $('audio-player').addEventListener('timeupdate', () => {
 // middle; tap a line to go to it. Words without timings simply show. They come
 // from a .lrc file beside the song or the file's own tags, through Navidrome.
 audio.lyrics = null;    // { key, synced, lines }
-audio.showLyrics = false;
+// Lyrics always show when a song has them; Up next takes their place when asked for.
+audio.showQueue = false;
 
 async function loadLyrics(item) {
   const key = selectionKey(item);
@@ -4131,15 +4134,15 @@ async function loadLyrics(item) {
 
 function renderLyrics() {
   const has = Boolean(audio.lyrics && audio.lyrics.lines.length);
-  const toggle = $('np-lyrics-toggle');
-  toggle.disabled = !has;
-  toggle.title = has ? 'Lyrics' : 'No lyrics for this song';
-  const showing = audio.showLyrics && has;
-  toggle.classList.toggle('on', showing);
-  toggle.setAttribute('aria-pressed', String(showing));
+  const toggle = $('np-queue-toggle');
+  toggle.classList.toggle('on', audio.showQueue);
+  toggle.setAttribute('aria-pressed', String(audio.showQueue));
+  const showing = has && !audio.showQueue;
   show($('np-lyrics'), showing);
-  $('now-playing').classList.toggle('lyrics-on', showing);
-  show($('np-next-block'), !showing);
+  show($('np-next-block'), audio.showQueue);
+  // The panel layout - title at the top, the middle for lyrics or the queue,
+  // controls at the bottom - whenever there is something for the middle.
+  $('now-playing').classList.toggle('panel-on', showing || audio.showQueue);
   const box = $('np-lyrics');
   box.replaceChildren();
   if (!has) return;
@@ -4181,7 +4184,7 @@ const LYRIC_LEAD_MS = 150;
 
 function syncLyrics(force) {
   const lyrics = audio.lyrics;
-  if (!lyrics || !lyrics.synced || !audio.showLyrics || $('now-playing').classList.contains('hidden')) return;
+  if (!lyrics || !lyrics.synced || audio.showQueue || $('now-playing').classList.contains('hidden')) return;
   // A touch early: the eye needs a moment to find the line, and the fade in
   // takes a moment more, so a line lit exactly on time reads as late.
   const ms = $('audio-player').currentTime * 1000 + LYRIC_LEAD_MS;
@@ -4225,14 +4228,14 @@ function fillLyric(box, lyrics, index, ms) {
   el.style.setProperty('--p', p.toFixed(3));
 }
 
-$('np-lyrics-toggle').addEventListener('click', () => {
-  audio.showLyrics = !audio.showLyrics;
+$('np-queue-toggle').addEventListener('click', () => {
+  audio.showQueue = !audio.showQueue;
   renderLyrics();
 });
 // timeupdate comes four times a second; a line change between them would lag,
 // so while lyrics are showing they are also checked on every frame.
 (function lyricFrame() {
-  if (audio.showLyrics && !$('audio-player').paused) syncLyrics();
+  if (!audio.showQueue && !$('audio-player').paused) syncLyrics();
   requestAnimationFrame(lyricFrame);
 })();
 

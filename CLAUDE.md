@@ -378,6 +378,12 @@ judged on in its first minute:
   play, next, a seek bar and volume on the card; a phone gets play and next,
   swipe up for Now Playing and swipe down to stop. Starting music by hand
   opens Now Playing; dragging it down closes it.
+- **Now Playing has one layout, the lyrics one.** Title at the top, the
+  middle for the lyrics, controls at the bottom; there is no lyrics button,
+  because lyrics always show when a song has them. A computer keeps the big
+  cover on the left; a phone puts a small one beside the title. The top-right
+  button is Up next, which takes the lyrics' place. A song with no lyrics
+  shows its cover in the middle instead - there is nothing else to put there.
 - **Gapless, measured.** The next song is fetched whole into a Blob while the
   current one plays. Gaps were measured by polling `currentTime` every 4ms;
   `timeupdate` fires only every ~250ms, and the first measurement, taken on

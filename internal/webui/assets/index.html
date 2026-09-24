@@ -499,15 +499,20 @@
       <header class="np-bar">
         <button id="np-close" class="np-icon" type="button" aria-label="Close Now Playing"></button>
         <span class="np-label">Now Playing</span>
-        <button id="np-lyrics-toggle" class="np-icon np-toggle" type="button"
-                aria-label="Lyrics" aria-pressed="false"></button>
+        <button id="np-queue-toggle" class="np-icon np-toggle" type="button"
+                aria-label="Up next" aria-pressed="false"></button>
       </header>
       <div class="np-main">
         <div class="np-cover-wrap"><img id="np-cover" class="np-cover" alt=""></div>
         <div class="np-side">
-          <div class="np-text">
-            <h2 id="np-title"></h2>
-            <p id="np-sub"></p>
+          <!-- The small cover beside the title only shows on a phone while the
+               lyrics or the queue have the middle of the screen. -->
+          <div class="np-head">
+            <img id="np-thumb" class="np-thumb" alt="">
+            <div class="np-text">
+              <h2 id="np-title"></h2>
+              <p id="np-sub"></p>
+            </div>
           </div>
           <div class="np-progress">
             <input id="np-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
@@ -520,7 +525,8 @@
             <button id="np-next" class="np-icon" type="button" aria-label="Next"></button>
             <button id="np-repeat" class="np-icon np-toggle" type="button" aria-label="Repeat: off"></button>
           </div>
-          <!-- In place of Up next while lyrics are shown. -->
+          <!-- The middle of the screen: the lyrics when the song has them,
+               Up next when asked for, otherwise nothing and the cover leads. -->
           <div id="np-lyrics" class="np-lyrics hidden" aria-live="off"></div>
           <div class="np-next" id="np-next-block">
             <h3>Up next</h3>
