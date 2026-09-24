@@ -171,6 +171,9 @@ $('logout').addEventListener('click', async () => {
   setAccountOpen(false);
   stopAudio();
   closeVideo();
+  // Downloads are the signed-in person's; a shared device keeps nothing of
+  // theirs after they sign out.
+  await clearDownloads();
   await api('/api/logout', { method: 'POST' });
   if (state.setupTimer) clearInterval(state.setupTimer);
   clearTimeout(state.remotePoll);
@@ -1451,6 +1454,9 @@ function playAudio(item, fromQueue) {
   const src = artPath(item);
   if (src) {
     art.src = src;
+    art.onerror = () => {
+      offlineArtURL(item).then((u) => { if (u && audio.item === item) art.src = u; else show(art, false); });
+    };
     show(art, true);
   } else {
     art.removeAttribute('src');
@@ -1467,7 +1473,19 @@ function playAudio(item, fromQueue) {
   // about a four minute track needs the answer. An audiobook waits, because it
   // may be resuming into chapter twelve, and starting chapter one first would
   // play a second of the wrong thing before correcting itself.
-  if (item.kind !== 'audiobook') startAt(takePreloaded(item) || streamPath(item), 0);
+  if (item.kind !== 'audiobook') {
+    const preloaded = takePreloaded(item);
+    if (preloaded) {
+      startAt(preloaded, 0);
+    } else if (isDownloaded(item)) {
+      // From the device: through a tunnel, out of Wi-Fi range, on a plane.
+      offlineURL(item).then((url) => {
+        if (audio.item === item) startAt(url || streamPath(item), 0);
+      });
+    } else {
+      startAt(streamPath(item), 0);
+    }
+  }
   applyLevel(item);
 
   loadPlayback(item);
@@ -2217,6 +2235,11 @@ async function moveToSecureName(name) {
   }
   forgetSetupCodeInAddress();
 
+  if (offline && hasDownloads()) {
+    showOfflineApp();
+    return;
+  }
+
   // Whatever went wrong, stop spinning. A spinner that never resolves is the
   // one failure that tells somebody nothing at all.
   const boot = $('boot');
@@ -2533,6 +2556,7 @@ const ICONS = {
   down: '<path d="M6 9l6 6 6-6"/>',
   lyrics: '<path d="M4 6h16M4 10h16M4 14h10M4 18h7M17 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM19.5 18.5V11"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
 };
 
 function icon(name, filled) {
@@ -2627,6 +2651,13 @@ function renderMainMenu(item) {
     entries.push(menuItem('queue', 'Add to queue', () => {
       queueAdd(item);
       closeItemMenu();
+    }));
+    const downloaded = isDownloaded(item);
+    entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
+      closeItemMenu();
+      if (downloaded) await removeDownload(`song:${selectionKey(item)}`);
+      else await download({ id: `song:${selectionKey(item)}`, type: 'song', title: item.title,
+        subtitle: (item.creators || []).join(', '), sourceId: item.sourceId, artId: item.artId }, [item]);
     }));
     entries.push(menuItem('playlist', 'Add to playlist', async () => {
       const { ok, body } = await api('/api/playlists');
@@ -2825,7 +2856,10 @@ async function showPlaylist(id) {
     await api(path, { method: 'DELETE' });
     showPlaylists();
   });
-  head.append(name, count, playAll, rename, remove);
+  head.append(name, count, playAll, downloadButton({
+    id: `playlist:${id}`, type: 'playlist', title: body.name, subtitle: 'Playlist',
+    sourceId: (body.items[0] || {}).sourceId, artId: (body.items[0] || {}).artId,
+  }, body.items), rename, remove);
   view.append(back, head);
 
   const ol = document.createElement('ol');
@@ -3138,6 +3172,7 @@ $('album-order').addEventListener('change', (event) => {
 });
 
 function markMusicTabs() {
+  show($('downloads-tab'), hasDownloads());
   for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
     const on = tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
@@ -3161,6 +3196,11 @@ async function showMusicView(seq) {
   const view = $('music-view');
   $('status').textContent = 'Loading…';
   const q = state.query ? `q=${encodeURIComponent(state.query)}` : '';
+  if (state.musicView === 'downloads') {
+    view.replaceChildren(await downloadsView());
+    $('status').textContent = '';
+    return;
+  }
   if (state.musicView === 'mixes') {
     const { ok, body } = await api('/api/music/mixes');
     if (seq !== state.searchSeq) return;
@@ -3335,7 +3375,12 @@ async function showAlbum(sourceId, id) {
   facts.className = 'muted';
   facts.textContent = [album.year, `${songs.length} song${songs.length === 1 ? '' : 's'}`,
     formatLength(album.durationSeconds)].filter(Boolean).join(' · ');
-  text.append(kind, title, artist, facts, playButtons(async () => songs));
+  const albumButtons = playButtons(async () => songs);
+  albumButtons.append(downloadButton({
+    id: `album:${album.sourceId}/${album.id}`, type: 'album', title: album.title,
+    subtitle: album.artist, sourceId: album.sourceId, artId: album.artId,
+  }, songs));
+  text.append(kind, title, artist, facts, albumButtons);
   head.append(cover, text);
 
   const list = document.createElement('ol');
@@ -3697,7 +3742,7 @@ function takePreloaded(item) {
 
 async function preloadNext() {
   const next = upcomingItem();
-  if (!next || next.kind !== 'music') return;
+  if (!next || next.kind !== 'music' || isDownloaded(next)) return;
   const key = selectionKey(next);
   if ((audio.preloaded && audio.preloaded.key === key) || audio.preloading === key) return;
   audio.preloading = key;
@@ -3946,3 +3991,255 @@ $('np-lyrics-toggle').addEventListener('click', () => {
   if (audio.showLyrics && !$('audio-player').paused) syncLyrics();
   requestAnimationFrame(lyricFrame);
 })();
+
+/* --------------------------------------------------------------- downloads */
+
+// Songs downloaded to this device, for playing without a connection: through
+// a tunnel, out of Wi-Fi range, on a plane. The bytes are in the Cache API
+// (OFFLINE_CACHE), keyed by each song's own stream address; what was
+// downloaded - albums, playlists, single songs - is listed in localStorage.
+//
+// Downloaded songs always play from the device, connection or not. Opening
+// the app with no connection at all is the service worker's part; see sw.js
+// for the one case where it answers a page load.
+const OFFLINE_CACHE = 'soundstorm-offline-v1';
+const OFFLINE_SHELL = 'soundstorm-offline-shell-v1';
+const DOWNLOADS_KEY = 'soundstorm-downloads';
+
+function loadDownloadIndex() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DOWNLOADS_KEY) || 'null');
+    if (raw && raw.items && raw.groups) return raw;
+  } catch {
+    // A damaged index lists nothing; the cache is cleared with the next change.
+  }
+  return { items: {}, groups: [] };
+}
+state.downloads = loadDownloadIndex();
+
+function saveDownloadIndex() {
+  try {
+    localStorage.setItem(DOWNLOADS_KEY, JSON.stringify(state.downloads));
+  } catch {
+    // Storage full: the downloads still play this session.
+  }
+}
+
+function hasDownloads() {
+  return state.downloads.groups.length > 0;
+}
+
+function isDownloaded(item) {
+  return Boolean(item && state.downloads.items[selectionKey(item)]);
+}
+
+async function offlineURL(item) {
+  try {
+    const cache = await caches.open(OFFLINE_CACHE);
+    const resp = await cache.match(streamPath(item));
+    return resp ? URL.createObjectURL(await resp.blob()) : '';
+  } catch {
+    return '';
+  }
+}
+
+async function offlineArtURL(item) {
+  const path = artPath(item);
+  if (!path) return '';
+  try {
+    const resp = await (await caches.open(OFFLINE_CACHE)).match(path);
+    return resp ? URL.createObjectURL(await resp.blob()) : '';
+  } catch {
+    return '';
+  }
+}
+
+// keepShell saves the app itself for opening offline. The service worker only
+// serves it back on the real *.soundstorm.dev names (see sw.js).
+async function keepShell() {
+  try {
+    const cache = await caches.open(OFFLINE_SHELL);
+    await cache.addAll(['/', '/static/app.js', '/static/style.css', '/static/favicon.svg', '/static/sw-register.js']);
+  } catch {
+    // Offline start-up is a bonus; downloads still play with the app open.
+  }
+}
+
+// download saves a group of songs - an album, a playlist, one song - and
+// reports progress through onProgress(done, total).
+async function download(group, items, onProgress) {
+  const songs = items.filter((it) => it && it.kind === 'music');
+  if (!songs.length) return;
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  const cache = await caches.open(OFFLINE_CACHE);
+  let done = 0;
+  for (const song of songs) {
+    const key = selectionKey(song);
+    if (!state.downloads.items[key]) {
+      try {
+        const resp = await fetch(streamPath(song), { credentials: 'same-origin' });
+        if (!resp.ok) throw new Error(`status ${resp.status}`);
+        await cache.put(streamPath(song), resp);
+        const art = artPath(song);
+        if (art && !(await cache.match(art))) {
+          const artResp = await fetch(art, { credentials: 'same-origin' });
+          if (artResp.ok) await cache.put(art, artResp);
+        }
+        state.downloads.items[key] = song;
+      } catch {
+        continue; // one song failing does not stop the rest
+      }
+    }
+    done++;
+    if (onProgress) onProgress(done, songs.length);
+  }
+  state.downloads.groups = state.downloads.groups.filter((g) => g.id !== group.id);
+  state.downloads.groups.unshift({ ...group, keys: songs.map(selectionKey), at: Date.now() });
+  saveDownloadIndex();
+  keepShell();
+  markMusicTabs();
+}
+
+// removeDownload forgets a group, and deletes each song no other group needs.
+async function removeDownload(groupID) {
+  const group = state.downloads.groups.find((g) => g.id === groupID);
+  if (!group) return;
+  state.downloads.groups = state.downloads.groups.filter((g) => g.id !== groupID);
+  const stillNeeded = new Set(state.downloads.groups.flatMap((g) => g.keys));
+  const cache = await caches.open(OFFLINE_CACHE);
+  for (const key of group.keys) {
+    if (stillNeeded.has(key)) continue;
+    const song = state.downloads.items[key];
+    if (song) await cache.delete(streamPath(song));
+    delete state.downloads.items[key];
+  }
+  saveDownloadIndex();
+  markMusicTabs();
+}
+
+async function clearDownloads() {
+  state.downloads = { items: {}, groups: [] };
+  try {
+    localStorage.removeItem(DOWNLOADS_KEY);
+    await caches.delete(OFFLINE_CACHE);
+    await caches.delete(OFFLINE_SHELL);
+  } catch {
+    // nothing to clear
+  }
+}
+
+function downloadButton(group, songs) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost download-button';
+  const label = () => {
+    const have = state.downloads.groups.some((g) => g.id === group.id);
+    button.replaceChildren(icon('download'), document.createTextNode(have ? ' Downloaded' : ' Download'));
+    button.classList.toggle('done', have);
+    button.title = have ? 'On this device. Click to remove.' : 'Keep on this device for playing offline';
+  };
+  label();
+  button.addEventListener('click', async () => {
+    if (state.downloads.groups.some((g) => g.id === group.id)) {
+      if (!window.confirm(`Remove "${group.title}" from this device? It stays in your library.`)) return;
+      await removeDownload(group.id);
+      label();
+      return;
+    }
+    button.disabled = true;
+    await download(group, songs, (done, total) => {
+      button.replaceChildren(document.createTextNode(`Downloading ${done} of ${total}\u2026`));
+    });
+    button.disabled = false;
+    label();
+  });
+  return button;
+}
+
+function formatStorage(bytes) {
+  if (!bytes) return '0 MB';
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
+// downloadsView lists what is on this device: to play, and to remove.
+async function downloadsView(offlineMode) {
+  const wrap = document.createElement('div');
+  wrap.className = 'downloads';
+  const head = document.createElement('div');
+  head.className = 'downloads-head';
+  const h = document.createElement('h2');
+  h.textContent = 'Downloads';
+  const used = document.createElement('span');
+  used.className = 'muted';
+  if (navigator.storage && navigator.storage.estimate) {
+    const est = await navigator.storage.estimate().catch(() => null);
+    if (est) used.textContent = `${formatStorage(est.usage)} used on this device`;
+  }
+  head.append(h, used);
+  wrap.append(head);
+
+  if (!hasDownloads()) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'Nothing downloaded yet. Use Download on an album or playlist to keep it on this device.';
+    wrap.append(empty);
+    return wrap;
+  }
+  const list = document.createElement('ul');
+  list.className = 'download-list';
+  for (const group of state.downloads.groups) {
+    const songs = group.keys.map((k) => state.downloads.items[k]).filter(Boolean);
+    const li = document.createElement('li');
+    const cover = document.createElement('div');
+    cover.className = 'download-cover';
+    const img = document.createElement('img');
+    img.alt = '';
+    const artItem = songs.find((s) => s.artId);
+    if (artItem) offlineArtURL(artItem).then((u) => { if (u) img.src = u; });
+    cover.append(img);
+    const text = document.createElement('button');
+    text.type = 'button';
+    text.className = 'download-text';
+    const t = document.createElement('strong');
+    t.textContent = group.title;
+    const s = document.createElement('span');
+    s.className = 'muted';
+    s.textContent = [group.subtitle, `${songs.length} song${songs.length === 1 ? '' : 's'}`].filter(Boolean).join(' \u00B7 ');
+    text.append(t, s);
+    text.addEventListener('click', () => playQueue(songs, 0));
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'np-icon download-play';
+    play.setAttribute('aria-label', `Play ${group.title}`);
+    play.append(icon('play', true));
+    play.addEventListener('click', () => playQueue(songs, 0));
+    li.append(cover, text, play);
+    if (!offlineMode) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'np-icon download-remove';
+      remove.setAttribute('aria-label', `Remove ${group.title} from this device`);
+      remove.append(icon('close'));
+      remove.addEventListener('click', async () => {
+        await removeDownload(group.id);
+        li.remove();
+        if (!hasDownloads()) runSearch();
+      });
+      li.append(remove);
+    }
+    list.append(li);
+  }
+  wrap.append(list);
+  return wrap;
+}
+
+// showOfflineApp is the app with no server: downloads, and the player.
+async function showOfflineApp() {
+  show($('boot'), false);
+  show($('gate'), false);
+  show($('app'), false);
+  show($('offline-app'), true);
+  $('offline-view').replaceChildren(await downloadsView(true));
+}
+
+$('offline-retry').addEventListener('click', () => location.reload());

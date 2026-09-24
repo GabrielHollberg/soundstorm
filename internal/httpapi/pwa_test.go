@@ -145,7 +145,7 @@ func TestServiceWorkerRefusesAPIAndMedia(t *testing.T) {
 // after a reinstall or the yearly renewal the cached shell loaded, everything
 // behind it failed TLS, and the browser's warning, the only way out, never
 // appeared. Not in a new tab either, because the worker answered that too.
-func TestServiceWorkerNeverAnswersAPageLoad(t *testing.T) {
+func TestServiceWorkerAnswersAPageLoadOnlyOnTheRealNames(t *testing.T) {
 	h := newHarness(t)
 	_, body := h.do(t, http.MethodGet, "/sw.js", "")
 	src := string(body)
@@ -153,8 +153,27 @@ func TestServiceWorkerNeverAnswersAPageLoad(t *testing.T) {
 	if !strings.Contains(src, "request.mode === 'navigate') return false") {
 		t.Error("sw.js no longer refuses navigations, so a changed certificate can hide behind the cache again")
 	}
-	if strings.Contains(src, "caches.match('/')") {
-		t.Error("sw.js falls back to a cached page")
+	// One exception, for opening the app offline to play downloads: allowed only
+	// on the real *.soundstorm.dev names, where the certificate is trusted and
+	// renews itself, so the trap above cannot happen. The saved page may be
+	// served from nowhere else: not from the general precache, and not
+	// outside the hostname check.
+	guard := strings.Index(src, "function offlineStartAllowed")
+	if guard < 0 || !strings.Contains(src[guard:], `/\.soundstorm\.dev$/.test(url.hostname)`) {
+		t.Error("sw.js serves a page offline without limiting it to the real *.soundstorm.dev names")
+	}
+	for _, served := range []string{"caches.match('/')", "cache.match('/')"} {
+		for at := strings.Index(src, served); at >= 0; {
+			block := strings.LastIndex(src[:at], "if (offlineStartAllowed(")
+			if block < 0 || strings.Contains(src[block:at], "if (!handles(") {
+				t.Errorf("sw.js serves a cached page (%s) outside the real-name exception", served)
+			}
+			next := strings.Index(src[at+1:], served)
+			if next < 0 {
+				break
+			}
+			at += 1 + next
+		}
 	}
 	if i := strings.Index(src, "const SHELL"); i >= 0 {
 		shell := src[i:]

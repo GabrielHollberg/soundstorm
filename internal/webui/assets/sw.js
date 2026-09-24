@@ -13,7 +13,8 @@
 //      resources arrive as range requests, and a service worker that answers
 //      one without honouring the Range header breaks seeking in a way that
 //      looks like a corrupt file.
-//   3. Page loads are never answered. It used to serve a cached copy of the
+//   3. Page loads are never answered - with one exception, below. It used to
+//      serve a cached copy of the
 //      shell whenever loading the page failed, which hid the one thing
 //      somebody needs to see when the certificate changes: the browser's own
 //      warning. A browser pins a clicked-through exception to one exact
@@ -22,6 +23,15 @@
 //      it failed, and "cannot reach SoundStorm" was all there was. Opening a
 //      new tab changed nothing, because the worker answered that too. Left to
 //      the browser, the same failure is a warning people know how to get past.
+//
+// The exception to rule 3 is opening the app with no connection, for
+// downloads. It applies only on the real *.soundstorm.dev names, whose
+// certificates are trusted and renew themselves: the trap rule 3 exists for -
+// a clicked-through self-signed certificate changing underneath a cached page -
+// cannot happen there. On an IP address, localhost, or anything self-signed,
+// rule 3 holds exactly as written. And only when the network actually failed
+// and the page kept a copy of itself because something was downloaded
+// (OFFLINE_SHELL, filled by app.js); otherwise the browser's own error stands.
 //
 // Requests it does not explicitly handle are left alone entirely - not passed
 // through fetch(), but never given to respondWith() in the first place, so the
@@ -80,8 +90,23 @@ function handles(request, url) {
   return SHELL.includes(url.pathname);
 }
 
+const OFFLINE_SHELL = 'soundstorm-offline-shell-v1';
+
+function offlineStartAllowed(request, url) {
+  return request.mode === 'navigate'
+    && url.origin === self.location.origin
+    && /\.soundstorm\.dev$/.test(url.hostname);
+}
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+  if (offlineStartAllowed(event.request, url)) {
+    event.respondWith(fetch(event.request).catch(async () => {
+      const cache = await caches.open(OFFLINE_SHELL);
+      return (await cache.match('/')) || Response.error();
+    }));
+    return;
+  }
   if (!handles(event.request, url)) return;
 
   event.respondWith((async () => {
@@ -99,5 +124,6 @@ self.addEventListener('fetch', event => {
       if (cached) return cached;
       throw err;
     }
+    // (caches.match searches every cache, the offline shell's included.)
   })());
 });

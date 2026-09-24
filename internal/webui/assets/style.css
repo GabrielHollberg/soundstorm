@@ -1685,3 +1685,57 @@ body.np-open { overflow: hidden; }
   .np-lyric { font-size: 21px; }
   .np-lyrics { max-height: 50vh; }
 }
+
+/* Downloads and offline ------------------------------------------------------- */
+
+.download-button { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 9px 16px; }
+.download-button .icon { width: 16px; height: 16px; }
+.download-button.done { color: #7fe0a1; border-color: rgba(127, 224, 161, 0.4); }
+
+.downloads { margin: 8px 20px 40px; max-width: 760px; }
+.downloads-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.downloads-head h2 { margin: 6px 0 12px; font-size: 18px; }
+.download-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.download-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.download-cover { width: 52px; height: 52px; border-radius: 6px; overflow: hidden; background: var(--surface-2); flex: 0 0 auto; }
+.download-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.download-cover img:not([src]) { display: none; }
+.download-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  padding: 4px 0;
+  font-weight: 500;
+}
+.download-text:hover { filter: none; }
+.download-text strong, .download-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.download-text span { font-size: 13px; font-weight: 400; }
+.download-play, .download-remove { color: var(--text); }
+.download-remove { opacity: 0.6; }
+
+.offline-app { min-height: 100vh; }
+.offline-bar { display: flex; align-items: center; gap: 12px; }
+.offline-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 182, 72, 0.15);
+  color: #ffd592;
+}
+.offline-bar .ghost { margin-left: auto; }
+.offline-note { margin: 12px 20px 0; }

@@ -273,6 +273,23 @@ at the bottom is a mini-player: tap it for Now Playing.
   up, so you may want your volume a notch higher. iPhones do not let a web
   page set the volume, so there it has no effect.
 
+### Mixes, lyrics and downloads
+
+Music opens on **Mixes**: your most played, recently played, Rediscover
+(favourites you haven't played lately), shuffle everything, recently added,
+and a mix for each genre and decade in your library. Every artist page has an
+**Artist mix**. What you listen to is remembered for you alone.
+
+In Now Playing, the **lyrics** button shows the words, lit up line by line as
+they are sung, when a song has a `.lrc` file beside it or lyrics in its tags.
+Tap a line to jump there.
+
+**Download** an album or playlist, or a song from its menu, to keep it on the
+device. Downloaded songs play without a connection, and on the
+`….soundstorm.dev` address SoundStorm even opens with no connection at all,
+showing what is downloaded. Signing out removes the downloads from that
+device.
+
 ### Favourites and playlists
 
 On a phone, **hold down** on anything and a menu pops up beside it. On a

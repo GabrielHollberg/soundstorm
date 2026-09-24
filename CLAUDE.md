@@ -403,6 +403,33 @@ Checked in Chrome against a real Navidrome with a generated library: two
 artists, three albums with covers and ReplayGain tags of 0, -5 and +8 dB.
 Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
 
+## Music, phase 2: mixes, lyrics, downloads
+
+- **Listening history is SoundStorm's, per person**, in the collections file:
+  count, first and last play, capped at 5,000 songs. A play counts at half
+  the song or four minutes. It feeds Most played, Recently played and
+  Rediscover. Library mixes use `source.MixSource` (getRandomSongs,
+  getGenres): shuffle, recently added, genres with 5+ songs, decades. Artist
+  mix is the artist's songs with genre-mates woven in, since there is no
+  "sounds like" without audio analysis.
+- **Lyrics** come through OpenSubsonic `songLyrics` (getLyricsBySongId),
+  checked on Navidrome 0.64.1 with a `.lrc` beside a song: synced, starts in
+  ms. Hover styles only apply with `(hover: hover)`: a tap leaves `:hover`
+  stuck and greyed out the current line.
+- **Downloads** live in the Cache API (`soundstorm-offline-v1`), with an index
+  in localStorage. Downloaded songs always play from the device. Sign-out
+  clears them.
+- **Opening offline bends sw.js rule 3, on one condition only.** A page load
+  may be answered from `soundstorm-offline-shell-v1` only on
+  `*.soundstorm.dev` names, only when the network failed, and only once
+  something was downloaded. Rule 3 exists for self-signed certificates changing
+  under a cached page, and a trusted, self-renewing certificate cannot do
+  that. IP addresses, localhost and self-signed keep rule 3 exactly. The
+  guard test now asserts that shape. Offline mode asks for no password: the
+  files are already on the device. The start-up offline path has not been
+  seen on a real soundstorm.dev name, only on localhost, where the server
+  was made unreachable.
+
 ## Favourites and playlists
 
 Per person, and kept by SoundStorm (`internal/collections`) rather than by
