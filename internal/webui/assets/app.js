@@ -199,8 +199,61 @@ function renderAccount() {
   // Hiding the controls is presentation, not permission - the server refuses
   // these calls for a member whether or not the form is on screen.
   show($('people-block'), Boolean(me.owner));
-  if (me.owner) loadPeople();
+  if (me.owner) {
+    loadPeople();
+    refreshRemote();
+  }
 }
+
+// refreshRemote reads the current remote-access status from the session and
+// paints the owner's toggle. The status lives on /api/session rather than in
+// state.me, and it can change (the owner toggles it, or auto HTTPS comes up
+// after sign-in), so it is fetched fresh each time the panel opens rather than
+// cached at boot. The block stays hidden unless remote access can be offered at
+// all - without a real certificate there is nothing to turn on.
+async function refreshRemote() {
+  const { ok, body } = await api('/api/session');
+  const remote = ok && body && body.remote;
+  show($('remote-block'), Boolean(remote && remote.available));
+  if (!remote || !remote.available) return;
+  renderRemote(remote);
+}
+
+function renderRemote(remote) {
+  $('remote-toggle').checked = Boolean(remote.enabled);
+  const share = $('remote-share');
+  const url = $('remote-share-url');
+  if (remote.enabled && remote.name) {
+    const href = `https://${remote.name}`;
+    url.textContent = href;
+    url.href = href;
+    show(share, true);
+  } else {
+    show(share, false);
+  }
+}
+
+$('remote-toggle').addEventListener('change', async (event) => {
+  const enabled = event.target.checked;
+  const { ok, body } = await api('/api/remote', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+  if (!ok) {
+    // Put the switch back where it was - the server did not accept the change.
+    event.target.checked = !enabled;
+    note($('remote-note'), (body && body.error) || 'Could not change it.', true);
+    return;
+  }
+  renderRemote(body);
+  note(
+    $('remote-note'),
+    enabled
+      ? 'On. It can take a minute for the address to work the first time while the certificate is issued.'
+      : 'Off. Your server is only reachable on your home network again.',
+    false,
+  );
+});
 
 $('account-toggle').addEventListener('click', () => {
   const opening = $('account').classList.contains('hidden');

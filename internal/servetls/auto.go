@@ -83,17 +83,37 @@ type autoCert struct {
 	newACME   func(key *ecdsa.PrivateKey) issuer
 	log       *slog.Logger
 
-	// remote turns on reaching this install from the internet: the name
-	// service is asked to point a public name at the home's public address
-	// (which it verifies is reachable on port), and the certificate is issued
-	// for both names at once. Off leaves everything exactly as before.
-	remote bool
-	port   int
+	// remoteEnabled reports whether reaching this install from the internet is
+	// on. A function, not a flag, so the owner can toggle it at runtime and the
+	// next step picks the change up. Nil means off.
+	remoteEnabled func() bool
+	port          int
+
+	// kick nudges run to take a step at once, so a toggle takes effect now
+	// rather than at the next scheduled check. Buffered so a send never blocks.
+	kick chan struct{}
 
 	mu         sync.RWMutex
 	reg        names.Registration
 	publicName string // the remote name, once the service has published it
 	cert       *tls.Certificate
+}
+
+// remoteOn reports whether remote access is currently enabled.
+func (a *autoCert) remoteOn() bool {
+	return a.remoteEnabled != nil && a.remoteEnabled()
+}
+
+// Refresh asks the certificate loop to take a step now - after the owner turns
+// remote access on or off, so it does not wait for the next scheduled check.
+func (s *Server) Refresh() {
+	if s == nil || s.auto == nil {
+		return
+	}
+	select {
+	case s.auto.kick <- struct{}{}:
+	default:
+	}
 }
 
 // current returns the public certificate if there is a usable one for name.
@@ -145,7 +165,7 @@ func (a *autoCert) reachabilityAnswer(nonce string) (string, bool) {
 	// Only when remote access is on: the probe is part of publishing a public
 	// name, which only happens then, so there is no reason to answer - and no
 	// reason to expose the endpoint at all - otherwise.
-	if !a.remote || token == "" {
+	if !a.remoteOn() || token == "" {
 		return "", false
 	}
 	return names.Reachability(token, nonce), true
@@ -200,6 +220,8 @@ func (a *autoCert) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-a.kick:
+			// The owner toggled remote access; step again at once.
 		case <-time.After(wait):
 		}
 	}
@@ -267,7 +289,7 @@ func (a *autoCert) step(ctx context.Context) error {
 	// port means anyway - so it is logged and the remote name dropped.
 	domains := []string{reg.Name}
 	publicName := ""
-	if a.remote {
+	if a.remoteOn() {
 		if name, err := a.names.SetPublic(ctx, reg, a.port); err != nil {
 			a.log.Warn("remote access is not reachable; serving on the LAN name only",
 				"err", err)
@@ -275,6 +297,20 @@ func (a *autoCert) step(ctx context.Context) error {
 			publicName = name
 			domains = append(domains, name)
 			a.log.Info("remote access is reachable", "name", name)
+		}
+	} else {
+		a.mu.RLock()
+		had := a.publicName
+		a.mu.RUnlock()
+		if had != "" {
+			// Remote access was just turned off. Take the public record down so
+			// the name stops resolving; best effort, since the LAN name working
+			// does not depend on it.
+			if err := a.names.ClearPublic(ctx, reg); err != nil {
+				a.log.Warn("could not remove the public name", "err", err)
+			} else {
+				a.log.Info("remote access turned off; public name removed")
+			}
 		}
 	}
 	a.mu.Lock()

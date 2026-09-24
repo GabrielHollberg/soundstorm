@@ -81,6 +81,8 @@ type Server struct {
 	lanHosts         []string
 	publicName       func() string
 	remoteReach      func(nonce string) (string, bool)
+	remoteStatus     func() (bool, bool, string)
+	setRemoteAccess  func(bool) error
 
 	// rescans coalesces "look at your folder now" requests, keyed by kind,
 	// and lastRescan is when one last actually fired - see scheduleRescan.
@@ -124,6 +126,15 @@ type Config struct {
 	// install. Nil when remote access is not configured.
 	RemoteReachability func(nonce string) (string, bool)
 
+	// RemoteStatus reports whether remote access can be offered at all
+	// (available, i.e. auto TLS is on), whether the owner has it on, and the
+	// name to reach the install by from away once it is up.
+	RemoteStatus func() (available, enabled bool, name string)
+
+	// SetRemoteAccess turns remote access on or off: it persists the choice and
+	// nudges the certificate loop to act on it. Owner-only at the handler.
+	SetRemoteAccess func(enabled bool) error
+
 	// SetupCode is what the first sign-up must present. See handleSignup.
 	SetupCode string
 }
@@ -147,6 +158,8 @@ func New(cfg Config) *Server {
 		lanHosts:         cfg.LANHosts,
 		publicName:       cfg.PublicName,
 		remoteReach:      cfg.RemoteReachability,
+		remoteStatus:     cfg.RemoteStatus,
+		setRemoteAccess:  cfg.SetRemoteAccess,
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
@@ -230,8 +243,12 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 	owner.HandleFunc("POST /api/users/{id}/password", s.handleSetUserPassword)
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
+	owner.HandleFunc("PUT /api/remote", s.handleSetRemote)
 	guarded.Handle("/api/users", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/users/", s.auth.RequireOwner(owner))
+	// Turning remote access on or off is an owner decision too - it exposes the
+	// whole server - so it mounts the same owner guard.
+	guarded.Handle("/api/remote", s.auth.RequireOwner(owner))
 
 	mux.Handle("/api/", s.auth.Require(s.withUserContext(guarded)))
 
@@ -333,6 +350,18 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if user, ok := s.auth.UserFor(r); ok {
 		answer["signedIn"] = true
 		answer["user"] = publicUser(user)
+		// Remote-access state, for the account panel: whether it can be offered
+		// at all, whether it is on, and the address to reach the server by from
+		// away once it is up. Only to a signed-in account - it is config, not
+		// something an anonymous visitor needs.
+		if s.remoteStatus != nil {
+			available, enabled, name := s.remoteStatus()
+			remote := map[string]any{"available": available, "enabled": enabled}
+			if name != "" {
+				remote["name"] = name
+			}
+			answer["remote"] = remote
+		}
 	}
 	// The install's real https address, offered to a page that is not already
 	// on it. The page checks it can reach it before going there, because a
@@ -342,6 +371,36 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		answer["secureName"] = name
 	}
 	writeJSON(w, http.StatusOK, answer)
+}
+
+// handleSetRemote turns remote access on or off. Owner-only (mounted behind the
+// owner guard): it puts the whole server on, or off, the internet.
+func (s *Server) handleSetRemote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxCredentialBody))
+	if err := dec.Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with enabled")
+		return
+	}
+	if s.remoteStatus == nil || s.setRemoteAccess == nil {
+		writeError(w, http.StatusNotImplemented, "remote access is not available")
+		return
+	}
+	if available, _, _ := s.remoteStatus(); !available {
+		writeError(w, http.StatusPreconditionFailed, "remote access needs auto HTTPS to be on")
+		return
+	}
+	if err := s.setRemoteAccess(body.Enabled); err != nil {
+		s.log.Error("set remote access", "err", err)
+		writeError(w, http.StatusInternalServerError, "could not change remote access")
+		return
+	}
+	user, _ := auth.FromContext(r.Context())
+	s.log.Info("remote access changed", "enabled", body.Enabled, "by", user.Name)
+	available, enabled, name := s.remoteStatus()
+	writeJSON(w, http.StatusOK, map[string]any{"available": available, "enabled": enabled, "name": name})
 }
 
 // publicUser is what an account looks like over the wire. The salt, the hash

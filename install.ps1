@@ -16,6 +16,8 @@
 #   -NoHttps       plain http only
 #   -Tailscale     also reach it away from home, over a tailnet
 #   -NoTailscale   stop doing that
+#   -Remote        reach it from anywhere over the internet (off by default)
+#   -NoRemote      keep it to the home network
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
 #   -NoAutoStart   install, but do not start with Windows
 #   -Library PATH  keep the media library somewhere else - an external drive
@@ -46,6 +48,10 @@ param(
     # hyphen. Without the alias it bound to nothing and was ignored in silence:
     # the installer reported success and left the install on http.
     [Alias('no-https')][switch]$NoHttps,
+    # Putting the server on the internet, off by default. Same hyphenated-alias
+    # rule as -NoHttps above.
+    [switch]$Remote,
+    [Alias('no-remote')][switch]$NoRemote,
     [Alias('no-shortcuts')][switch]$NoShortcuts,
     [Alias('no-auto-start')][switch]$NoAutoStart,
     [Alias('no-browser')][switch]$NoBrowser,
@@ -60,6 +66,10 @@ if ($Https -and $NoHttps) {
 }
 if ($Tailscale -and $NoTailscale) {
     Write-Host "  -Tailscale and -NoTailscale cannot both be given." -ForegroundColor Red
+    exit 1
+}
+if ($Remote -and $NoRemote) {
+    Write-Host "  -Remote and -NoRemote cannot both be given." -ForegroundColor Red
     exit 1
 }
 
@@ -1282,6 +1292,23 @@ if ($Https -or ($NoHttps -eq $false -and -not $tlsNow)) {
     Note "Turning https off."
 }
 $tlsMode = Get-EnvSetting 'SOUNDSTORM_TLS'
+
+# Remote access is off unless -Remote is given, and it can be turned on later
+# from inside the app - so this only ever writes when the flag is present, and
+# an existing choice (the app's, or a previous run's) is left alone otherwise.
+# It needs auto https to have a real certificate; the toggle in the app is
+# hidden without one, and the server refuses the change, so the flag just seeds
+# the default that toggle starts from.
+if ($Remote) {
+    Set-EnvSetting 'SOUNDSTORM_REMOTE_ACCESS' 'on'
+    Note "Turning on access from the internet."
+    if ($tlsMode -ne 'auto') {
+        Write-Host "  Note: reaching it from the internet needs https on." -ForegroundColor Yellow
+    }
+} elseif ($NoRemote) {
+    Set-EnvSetting 'SOUNDSTORM_REMOTE_ACCESS' 'off'
+    Note "Keeping it to the home network."
+}
 
 # The first sign-up needs a setup code, so that whoever reaches the port
 # before the owner does - from the internet, once it faces it - cannot claim

@@ -509,6 +509,16 @@ header {
 .person-libraries label.on { color: var(--text); }
 .person-everything { font-size: 12.5px; }
 
+.remote-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  margin: 4px 0 8px;
+}
+.remote-switch input { width: auto; accent-color: var(--accent); cursor: pointer; }
+
 /* Audio dock ------------------------------------------------------------ */
 
 .dock {

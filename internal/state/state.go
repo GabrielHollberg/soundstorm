@@ -185,6 +185,13 @@ type data struct {
 	// That is the documented full reset, and arriving at a fresh install with
 	// something to look at is the behaviour this feature exists for.
 	StarterInstalled bool `json:"starterInstalled,omitempty"`
+
+	// RemoteAccess is whether the owner has turned on reaching this install
+	// from the internet. A pointer so absent means "not chosen" - which falls
+	// back to the SOUNDSTORM_REMOTE_ACCESS default - rather than "off", the
+	// same reason User.Libraries is careful about nil. Once the owner toggles
+	// it in the app, their choice is what stands.
+	RemoteAccess *bool `json:"remoteAccess,omitempty"`
 }
 
 // Store is the on-disk state, guarded for concurrent use.
@@ -698,6 +705,29 @@ func (s *Store) MarkStarterInstalled() error {
 		return nil // already recorded; no reason to write the file
 	}
 	s.d.StarterInstalled = true
+	return s.save()
+}
+
+// RemoteAccess reports whether remote access is on, and whether the owner has
+// made a choice at all - when they have not, the caller uses the configured
+// default rather than reading the false as a decision.
+func (s *Store) RemoteAccess() (on, chosen bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.RemoteAccess == nil {
+		return false, false
+	}
+	return *s.d.RemoteAccess, true
+}
+
+// SetRemoteAccess records the owner's choice.
+func (s *Store) SetRemoteAccess(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.RemoteAccess != nil && *s.d.RemoteAccess == on {
+		return nil
+	}
+	s.d.RemoteAccess = &on
 	return s.save()
 }
 

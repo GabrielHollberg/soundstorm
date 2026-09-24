@@ -162,6 +162,17 @@ func run(log *slog.Logger) error {
 	// TLS is set up before anything is served, and a bad setting is fatal:
 	// quietly falling back to plain HTTP when somebody asked for encryption is
 	// the worst available way to be wrong.
+	// Remote access is on when the owner has chosen it in the app; before they
+	// have, the SOUNDSTORM_REMOTE_ACCESS default stands. Read live so the
+	// in-app toggle takes effect without a restart.
+	remoteDefault := enabled(os.Getenv("SOUNDSTORM_REMOTE_ACCESS"))
+	remoteEnabled := func() bool {
+		if on, chosen := store.RemoteAccess(); chosen {
+			return on
+		}
+		return remoteDefault
+	}
+
 	tlsServer, err := servetls.Load(servetls.Config{
 		Mode:     env("SOUNDSTORM_TLS", servetls.ModeOff),
 		CertFile: os.Getenv("SOUNDSTORM_TLS_CERT"),
@@ -173,9 +184,9 @@ func run(log *slog.Logger) error {
 		ACMEDirectory: os.Getenv("SOUNDSTORM_ACME_DIRECTORY"),
 		// Remote access: reach this install from outside the house. Opt-in,
 		// and only meaningful in auto mode (it needs the name service).
-		Remote: enabled(os.Getenv("SOUNDSTORM_REMOTE_ACCESS")),
-		Port:   publicPort,
-		Log:    log,
+		RemoteEnabled: remoteEnabled,
+		Port:          publicPort,
+		Log:           log,
 	})
 	if err != nil {
 		return err
@@ -234,7 +245,17 @@ func run(log *slog.Logger) error {
 		LANHosts:           splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
 		PublicName:         tlsServer.PublicName,
 		RemoteReachability: tlsServer.ReachabilityAnswer,
-		SetupCode:          setupCode,
+		RemoteStatus: func() (bool, bool, string) {
+			return tlsServer.SupportsRemote(), remoteEnabled(), tlsServer.RemoteName()
+		},
+		SetRemoteAccess: func(on bool) error {
+			if err := store.SetRemoteAccess(on); err != nil {
+				return err
+			}
+			tlsServer.Refresh() // act on the change now, not at the next check
+			return nil
+		},
+		SetupCode: setupCode,
 	})
 
 	srv := &http.Server{

@@ -131,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/register", s.handleRegister)
 	mux.HandleFunc("PUT /v1/address", s.authed(s.handleAddress))
 	mux.HandleFunc("PUT /v1/public", s.authed(s.handlePublic))
+	mux.HandleFunc("DELETE /v1/public", s.authed(s.handleClearPublic))
 	mux.HandleFunc("PUT /v1/challenge", s.authed(s.handleSetChallenge))
 	mux.HandleFunc("DELETE /v1/challenge", s.authed(s.handleClearChallenge))
 	return mux
@@ -266,6 +267,18 @@ func (s *Server) handlePublic(w http.ResponseWriter, r *http.Request, id string)
 	}
 	s.Log.Info("public address set", "id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"name": s.PublicNameFor(id), "ip": addr.String()})
+}
+
+// handleClearPublic removes an install's remote-access records, for when the
+// owner turns remote access off.
+func (s *Server) handleClearPublic(w http.ResponseWriter, r *http.Request, id string) {
+	for _, typ := range []string{"A", "AAAA"} {
+		if err := s.DNS.Delete(r.Context(), s.publicRelative(id), typ); err != nil {
+			s.Log.Warn("clear public address", "id", id, "type", typ, "err", err)
+		}
+	}
+	s.Log.Info("public address cleared", "id", id)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // reachable is the default probe: fetch the install's reachability endpoint at

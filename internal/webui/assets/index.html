@@ -141,6 +141,30 @@
       </form>
       <p id="password-note" class="muted hidden" role="status"></p>
 
+      <!-- Putting the server on the internet. Owner-only, and only shown when
+           auto HTTPS is on - without a real certificate there is nothing to
+           offer. Off by default, and the warning is plain on purpose: this is
+           the one switch that changes who can reach the server. -->
+      <div id="remote-block" class="hidden">
+        <h2>Reach it from anywhere</h2>
+        <p class="muted">Off by default, your server is only reachable on your
+          home network. Turn this on to reach it from anywhere over the
+          internet, with the same login and a real certificate &mdash; no app
+          or account needed.</p>
+        <p class="muted"><strong>This puts your server on the internet.</strong>
+          Anyone who knows its address can reach the login screen. Only turn it
+          on if you want that.</p>
+        <label class="remote-switch">
+          <input id="remote-toggle" type="checkbox">
+          <span>Allow access from the internet</span>
+        </label>
+        <p id="remote-share" class="library-share hidden">
+          <span class="muted">From anywhere:</span>
+          <a id="remote-share-url" href="#"></a>
+        </p>
+        <p id="remote-note" class="muted hidden" role="status"></p>
+      </div>
+
       <div id="people-block" class="hidden">
         <h2>People</h2>
         <p class="muted">Everyone gets their own login and their own place in

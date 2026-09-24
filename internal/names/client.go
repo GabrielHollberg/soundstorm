@@ -49,6 +49,12 @@ func (c *Client) SetPublic(ctx context.Context, reg Registration, port int) (str
 	return out.Name, err
 }
 
+// ClearPublic removes the remote-access name, for when the owner turns remote
+// access off. Best effort - the LAN name working does not depend on it.
+func (c *Client) ClearPublic(ctx context.Context, reg Registration) error {
+	return c.do(ctx, http.MethodDelete, "/v1/public", reg.Credential(), nil, nil)
+}
+
 // SetChallenge publishes an ACME DNS-01 value, returning once the service
 // reports it visible - which can take minutes. public chooses which of the
 // install's two names the challenge is for: the remote name when true, the LAN

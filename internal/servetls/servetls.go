@@ -113,15 +113,18 @@ type Config struct {
 	// name service and the certificate authority. Empty means the real ones.
 	NamesURL, ACMEDirectory string
 
-	// Remote turns on reaching this install from the internet: the name
-	// service points a public name at the home's public address after
-	// confirming it is reachable, and the certificate covers that name too.
-	// Off is the default and changes nothing.
+	// Remote is the starting state of remote access - reaching this install
+	// from the internet - when RemoteEnabled is not set. Off changes nothing.
 	Remote bool
+
+	// RemoteEnabled, when set, is consulted on every certificate step so the
+	// owner can turn remote access on and off at runtime. It overrides Remote.
+	// Call Server.Refresh after it changes to have the change taken up at once.
+	RemoteEnabled func() bool
 
 	// Port is the port the install is reached on, published to the name
 	// service so it can confirm the address is reachable there. Only used with
-	// Remote.
+	// remote access.
 	Port int
 
 	// ACMEHTTP talks to the authority. Nil is an ordinary client; the
@@ -178,6 +181,10 @@ func (s *Server) PublicName() string {
 	}
 	return s.auto.name()
 }
+
+// SupportsRemote reports whether remote access can be offered at all - it needs
+// auto mode, which is the only mode with a name service and a real certificate.
+func (s *Server) SupportsRemote() bool { return s != nil && s.auto != nil }
 
 // RemoteName is the name to reach this install by from outside the house, once
 // remote access is up, or "" otherwise.
@@ -279,13 +286,19 @@ func loadAuto(cfg Config) (*Server, error) {
 	if directory == "" {
 		directory = acme.LetsEncrypt
 	}
+	remoteEnabled := cfg.RemoteEnabled
+	if remoteEnabled == nil {
+		on := cfg.Remote
+		remoteEnabled = func() bool { return on }
+	}
 	s.auto = &autoCert{
-		dir:       cfg.Dir,
-		announce:  announce,
-		directory: directory,
-		remote:    cfg.Remote,
-		port:      cfg.Port,
-		names:     &names.Client{Base: namesURL},
+		dir:           cfg.Dir,
+		announce:      announce,
+		directory:     directory,
+		remoteEnabled: remoteEnabled,
+		port:          cfg.Port,
+		kick:          make(chan struct{}, 1),
+		names:         &names.Client{Base: namesURL},
 		newACME: func(key *ecdsa.PrivateKey) issuer {
 			return &acme.Client{Directory: directory, Key: key, HTTP: cfg.ACMEHTTP}
 		},

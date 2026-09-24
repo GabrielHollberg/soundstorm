@@ -374,6 +374,7 @@ uninstall() {
 # nothing else and still reach the install below, which a single case cannot do.
 HTTPS=''
 TAILSCALE=''
+REMOTE=''
 AUTHKEY=''
 LIBRARY=''
 while [ $# -gt 0 ]; do
@@ -395,6 +396,12 @@ while [ $# -gt 0 ]; do
 		--no-tailscale)
 			TAILSCALE='off'
 			;;
+		--remote)
+			REMOTE='on'
+			;;
+		--no-remote)
+			REMOTE='off'
+			;;
 		--auth-key)
 			shift
 			AUTHKEY="${1:-}"
@@ -413,6 +420,8 @@ while [ $# -gt 0 ]; do
 			say "  --no-https       plain http only"
 			say "  --tailscale      also reach it away from home, over a tailnet"
 			say "  --no-tailscale   stop doing that"
+			say "  --remote         reach it from anywhere over the internet (off by default)"
+			say "  --no-remote      keep it to the home network"
 			say "  --uninstall      remove it, keeping your media library"
 			say "  --library PATH   keep the media library somewhere else"
 			say ""
@@ -556,6 +565,22 @@ elif [ "$HTTPS" = "off" ]; then
 fi
 TLS_MODE=$(get_env SOUNDSTORM_TLS)
 SCHEME=$(installed_scheme)
+
+# Remote access is off unless --remote is given, and it can be turned on later
+# from inside the app - so this only writes when the flag is present, and any
+# existing choice (the app's, or a previous run's) is left alone otherwise. It
+# needs auto https for a real certificate; the in-app toggle is hidden and the
+# server refuses the change without one, so the flag just seeds that default.
+if [ "$REMOTE" = "on" ]; then
+	set_env SOUNDSTORM_REMOTE_ACCESS on
+	note "turning on access from the internet"
+	if [ "$TLS_MODE" != "auto" ]; then
+		note "reaching it from the internet needs https on"
+	fi
+elif [ "$REMOTE" = "off" ]; then
+	set_env SOUNDSTORM_REMOTE_ACCESS off
+	note "keeping it to the home network"
+fi
 
 # Where the library lives: beside the install unless --library says otherwise,
 # which is how it goes on an external drive. Compose mounts every shelf from
