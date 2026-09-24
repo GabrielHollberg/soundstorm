@@ -1655,35 +1655,67 @@ body.np-open { overflow: hidden; }
   display: block;
   width: 100%;
   margin: 0;
-  /* Room on the right for the current line's 4% growth. */
-  padding: 6px 5% 6px 0;
+  /* Room on the right for the current line's growth. */
+  padding: 8px 6% 8px 0;
   border: none;
   background: none;
   text-align: left;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.3;
-  color: rgba(255, 255, 255, 0.38);
-  transition: color 0.25s ease, transform 0.25s ease;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.22;
+  color: rgba(255, 255, 255, 0.34);
+  /* Lines further from the one being sung soften, the way a camera's focus falls off. */
+  filter: blur(calc(min(var(--d, 0), 3) * 0.4px));
+  transition: color 0.35s ease, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.45s ease;
   -webkit-tap-highlight-color: transparent;
 }
+.np-lyric span { transition: color 0.18s linear, text-shadow 0.3s ease; }
 /* Hover only where there is a mouse, and never on the line being sung: a tap
    on a phone leaves :hover stuck on the line tapped, and its grey won over
    the current line's white, so the line you had just jumped to looked like
    every other. */
 @media (hover: hover) {
-  button.np-lyric:not(.current):hover { color: rgba(255, 255, 255, 0.72); filter: none; }
+  button.np-lyric:not(.current):hover { color: rgba(255, 255, 255, 0.7); filter: none; }
 }
-.np-lyric.past { color: rgba(255, 255, 255, 0.45); }
+.np-lyric.past { color: rgba(255, 255, 255, 0.4); }
 .np-lyric.current {
-  color: #fff;
+  color: rgba(255, 255, 255, 0.5);
+  filter: none;
   transform: scale(1.04);
   transform-origin: left center;
-  text-shadow: 0 0 24px rgba(255, 255, 255, 0.25);
+}
+.np-lyric.current span.lit {
+  color: #fff;
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.45), 0 0 2px rgba(255, 255, 255, 0.4);
+}
+/* An instrumental break: three dots that fill in turn and breathe. */
+.np-lyric.gap { display: flex; gap: 10px; padding: 18px 0; }
+.np-lyric.gap i {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.np-lyric.gap:not(.current) { padding: 6px 0; }
+.np-lyric.gap:not(.current) i { width: 6px; height: 6px; }
+.np-lyric.gap.current { color: #fff; animation: np-breathe 2.4s ease-in-out infinite; transform-origin: left center; }
+.np-lyric.gap.current i { transition: opacity 0.3s ease; }
+.np-lyric.gap.current i:nth-child(1) { opacity: calc(0.25 + 0.75 * min(1, var(--p, 0) * 3)); }
+.np-lyric.gap.current i:nth-child(2) { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - 1, 1)); }
+.np-lyric.gap.current i:nth-child(3) { opacity: calc(0.25 + 0.75 * clamp(0, var(--p, 0) * 3 - 2, 1)); }
+@keyframes np-breathe { 50% { transform: scale(1.18); } }
+/* The blurred cover behind drifts slowly while the words go by. */
+.now-playing.lyrics-on .np-backdrop { animation: np-drift 38s ease-in-out infinite alternate; }
+@keyframes np-drift {
+  from { transform: scale(1.1) rotate(0deg); }
+  to { transform: scale(1.35) rotate(8deg) translate(3%, -2%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .now-playing.lyrics-on .np-backdrop, .np-lyric.gap.current { animation: none; }
 }
 .np-lyrics.unsynced .np-lyric { color: rgba(255, 255, 255, 0.85); font-size: 19px; font-weight: 600; }
 @media (max-width: 760px) {
-  .np-lyric { font-size: 21px; }
+  .np-lyric { font-size: 26px; }
 }
 
 /* While lyrics show, they take the room between the title and the controls,

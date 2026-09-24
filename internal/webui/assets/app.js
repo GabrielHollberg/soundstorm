@@ -3945,6 +3945,10 @@ async function loadLyrics(item) {
   const { ok, body } = await api(`/api/music/lyrics/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
   if (!audio.lyrics || audio.lyrics.key !== key) return;
   audio.lyrics = { key, synced: Boolean(ok && body && body.synced), lines: (ok && body && body.lines) || [], from: (ok && body && body.from) || '' };
+  // A long intro gets the same breathing dots as an instrumental break, so
+  // the screen is not a column of grey waiting for the first word.
+  const first = audio.lyrics.lines[0];
+  if (audio.lyrics.synced && first && first.start >= 5000) audio.lyrics.lines.unshift({ start: 0, text: '' });
   renderLyrics();
 }
 
@@ -3966,8 +3970,30 @@ function renderLyrics() {
   audio.lyrics.lines.forEach((line, i) => {
     const el = document.createElement(audio.lyrics.synced ? 'button' : 'p');
     el.className = 'np-lyric';
-    el.textContent = line.text || '\u00A0';
     el.dataset.index = String(i);
+    const text = (line.text || '').trim();
+    if (audio.lyrics.synced && !text) {
+      // An instrumental break: three dots that fill as it runs.
+      el.classList.add('gap');
+      el.setAttribute('aria-label', 'Instrumental');
+      for (let d = 0; d < 3; d++) el.append(document.createElement('i'));
+    } else if (audio.lyrics.synced) {
+      // Words, so the line being sung can light up as it goes. Each word's
+      // share of the line is its share of the letters, which is closer to
+      // how long it takes to sing than an equal split.
+      const words = text.split(/\s+/);
+      const total = words.reduce((n, w) => n + w.length, 0) || 1;
+      let upTo = 0;
+      words.forEach((w, k) => {
+        const span = document.createElement('span');
+        span.textContent = w;
+        span.dataset.at = String(upTo / total);
+        upTo += w.length;
+        el.append(span, k < words.length - 1 ? ' ' : '');
+      });
+    } else {
+      el.textContent = text || '\u00A0';
+    }
     if (audio.lyrics.synced) {
       el.type = 'button';
       el.addEventListener('click', () => {
@@ -3997,19 +4023,40 @@ function syncLyrics(force) {
     if (lyrics.lines[i].start <= ms) index = i;
     else break;
   }
+  const box = $('np-lyrics');
+  if (index >= 0) fillLyric(box, lyrics, index, ms);
   if (index === audio.lyricIndex && !force) return;
   audio.lyricIndex = index;
-  const box = $('np-lyrics');
   for (const el of box.querySelectorAll('.np-lyric')) {
     const i = Number(el.dataset.index);
     el.classList.toggle('current', i === index);
     el.classList.toggle('past', i < index);
+    // Distance from the line being sung, for the blur that falls off around it.
+    el.style.setProperty('--d', String(Math.min(Math.abs(i - index), 4)));
+    if (i !== index) for (const w of el.querySelectorAll('span.lit')) w.classList.remove('lit');
   }
+  if (index >= 0) fillLyric(box, lyrics, index, ms);
   const current = box.querySelector('.np-lyric.current');
   if (current) {
     // Kept in the middle of the box, as the words go by.
     box.scrollTo({ top: current.offsetTop - box.clientHeight / 2 + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
   }
+}
+
+// How far through the current line the song is: its words light up in turn,
+// or, for a break, its dots fill.
+function fillLyric(box, lyrics, index, ms) {
+  const el = box.querySelector(`.np-lyric[data-index="${index}"]`);
+  if (!el) return;
+  const start = lyrics.lines[index].start;
+  const next = lyrics.lines[index + 1];
+  const end = next ? next.start : start + 4000;
+  // A line is sung in the first part of its slot, not stretched across the
+  // pause after it: roughly a third of a second a word.
+  const span = el.classList.contains('gap') ? end - start : Math.min(end - start, 400 + 320 * el.childElementCount);
+  const p = Math.max(0, Math.min(1, (ms - start) / Math.max(span, 1)));
+  el.style.setProperty('--p', p.toFixed(3));
+  for (const w of el.querySelectorAll('span')) w.classList.toggle('lit', p > Number(w.dataset.at));
 }
 
 $('np-lyrics-toggle').addEventListener('click', () => {
