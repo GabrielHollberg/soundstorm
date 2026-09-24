@@ -378,6 +378,50 @@ function Get-Gateway {
     return $null
 }
 
+# Get-UpnpUrl discovers the router's UPnP device-description URL over SSDP, the
+# fallback for opening the port when the router speaks UPnP but not NAT-PMP/PCP.
+#
+# Done here, on the host, because SSDP is multicast to 239.255.255.250 and that
+# does not cross the Docker bridge into the container - the same reason the
+# gateway is discovered here. The SOAP that uses this URL later is ordinary
+# unicast and does work from the container.
+function Get-UpnpUrl {
+    $udp = $null
+    try {
+        $udp = New-Object System.Net.Sockets.UdpClient
+        $udp.Client.ReceiveTimeout = 3000
+        $dst = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Parse('239.255.255.250')), 1900
+        $msg = "M-SEARCH * HTTP/1.1`r`n" +
+               "HOST: 239.255.255.250:1900`r`n" +
+               "MAN: `"ssdp:discover`"`r`n" +
+               "MX: 2`r`n" +
+               "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1`r`n`r`n"
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes($msg)
+        [void]$udp.Send($bytes, $bytes.Length, $dst)
+
+        $deadline = (Get-Date).AddSeconds(3)
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $from = New-Object System.Net.IPEndPoint ([System.Net.IPAddress]::Any), 0
+                $data = $udp.Receive([ref]$from)
+            } catch {
+                break  # receive timeout: nothing more is coming
+            }
+            $text = [System.Text.Encoding]::ASCII.GetString($data)
+            foreach ($line in ($text -split "`r`n")) {
+                if ($line -match '(?i)^location:\s*(\S+)') {
+                    return $Matches[1].Trim()
+                }
+            }
+        }
+    } catch {
+        # UPnP is a best-effort fallback; NAT-PMP/PCP or a manual forward remain.
+    } finally {
+        if ($udp) { $udp.Close() }
+    }
+    return $null
+}
+
 # There is deliberately no ".local" name printed on Windows.
 #
 # An earlier version printed "<computer>.local" as the address to use, having
@@ -1344,6 +1388,14 @@ if ($Remote) {
 if (-not (Get-EnvSetting 'SOUNDSTORM_GATEWAY')) {
     $gateway = Get-Gateway
     if ($gateway) { Set-EnvSetting 'SOUNDSTORM_GATEWAY' $gateway }
+}
+
+# The router's UPnP URL, the fallback for routers that do not speak NAT-PMP/PCP.
+# Same reasoning as the gateway: discovered on the host, left alone if already
+# set, best effort.
+if (-not (Get-EnvSetting 'SOUNDSTORM_UPNP_URL')) {
+    $upnp = Get-UpnpUrl
+    if ($upnp) { Set-EnvSetting 'SOUNDSTORM_UPNP_URL' $upnp }
 }
 
 # The first sign-up needs a setup code, so that whoever reaches the port

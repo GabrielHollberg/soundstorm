@@ -27,7 +27,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/netip"
+	"strings"
 	"sync"
 	"time"
 )
@@ -45,34 +47,46 @@ const (
 // gatewayPort is where both PCP and NAT-PMP listen on the router.
 const gatewayPort = 5351
 
-// ErrNoGateway is returned when no gateway address is configured, which is the
-// normal state on a network where the installer could not discover one (or on
-// Docker Desktop, where there is no host gateway the container can reach). It is
-// not really an error - it means "this method is unavailable, fall back to the
-// manual instructions" - so callers check for it rather than logging it loudly.
+// ErrNoGateway is returned when no method is available at all - no gateway
+// address for PCP/NAT-PMP and no internal-client address for UPnP. It is the
+// normal state on a network where the installer could not discover any of that
+// (or on Docker Desktop, where the container reaches no host gateway). It is not
+// really an error - it means "fall back to the manual instructions" - so callers
+// check for it rather than logging it loudly.
 var ErrNoGateway = errors.New("portmap: no gateway configured")
 
-// Mapping is a granted port forward. ExternalIP is filled in by PCP, which
-// reports the router's WAN address; NAT-PMP leaves it invalid here (its own
-// external-address call is separate). nonce carries PCP's mapping nonce so the
-// matching delete can name the same mapping.
+// Mapping is a granted port forward. ExternalIP is filled in by PCP and UPnP,
+// which report the router's WAN address; NAT-PMP leaves it invalid (its own
+// external-address call is separate). nonce carries PCP's mapping nonce and igd
+// the UPnP control endpoint, so the matching delete can name the same mapping.
 type Mapping struct {
-	Method       string        // "PCP" or "NAT-PMP"
+	Method       string        // "PCP", "NAT-PMP" or "UPnP"
 	ExternalPort uint16        // the port the router actually opened
 	ExternalIP   netip.Addr    // the WAN address, when the method reports it
 	Lifetime     time.Duration // how long the router promised to hold it
 
 	nonce [12]byte
+	igd   igd
+}
+
+// target names where each method should aim. gateway drives PCP and NAT-PMP;
+// internalClient (the LAN address the router forwards to) and upnpLocation drive
+// UPnP. A zero of either half simply skips that half's methods.
+type target struct {
+	gateway        netip.AddrPort // PCP/NAT-PMP server; invalid disables both
+	internalClient netip.Addr     // UPnP forward-to address; invalid disables UPnP
+	upnpLocation   string         // configured IGD description URL; "" => SSDP discovery
 }
 
 // Map asks the router to forward externalPort to this host's internalPort,
-// trying PCP first and NAT-PMP second. The returned Mapping records which
-// method won and the port actually granted, which the router may choose itself.
+// trying PCP first and NAT-PMP second. The returned Mapping records which method
+// won and the port actually granted, which the router may choose itself.
 //
-// A failure is not fatal to remote access: it means the port is not open
-// automatically and the owner is shown the manual instructions instead. The
-// name service's reachability probe, not this call, is what confirms the world
-// can actually reach the port.
+// It is the gateway-only entry point; UPnP additionally needs the LAN client
+// address, so it is reached through the Maintainer rather than here. A failure
+// is not fatal to remote access: it means the port is not open automatically and
+// the owner is shown the manual instructions instead. The name service's
+// reachability probe, not this call, confirms the world can actually reach it.
 func Map(ctx context.Context, gateway netip.Addr, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
 	if !gateway.IsValid() {
 		return Mapping{}, ErrNoGateway
@@ -83,43 +97,64 @@ func Map(ctx context.Context, gateway netip.Addr, proto Protocol, internalPort, 
 // mapVia is Map against an explicit server address, so a test can point it at a
 // fake gateway on an ephemeral port. The public API always uses port 5351.
 func mapVia(ctx context.Context, server netip.AddrPort, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
-	var nonce [12]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return Mapping{}, err
-	}
-
-	m, pcpErr := pcpMap(ctx, server, proto, internalPort, externalPort, lifetime, nonce)
-	if pcpErr == nil {
-		return m, nil
-	}
-	m, pmpErr := natpmpMap(ctx, server, proto, internalPort, externalPort, lifetime)
-	if pmpErr == nil {
-		return m, nil
-	}
-	return Mapping{}, fmt.Errorf("no port-mapping protocol worked (pcp: %v; nat-pmp: %v)", pcpErr, pmpErr)
+	return mapTarget(ctx, target{gateway: server}, proto, internalPort, externalPort, lifetime)
 }
 
-// Unmap removes a mapping created by Map, using the same method and nonce so a
-// strict PCP gateway recognises it. Best effort: a router that has already
-// forgotten the mapping (a reboot, an expired lifetime) is not an error worth
-// surfacing, so a delete that the gateway ignores is fine.
+// mapTarget tries every configured method in order - PCP, NAT-PMP, then UPnP -
+// and returns the first mapping that succeeds.
+func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
+	var attempts []string
+
+	if t.gateway.IsValid() {
+		var nonce [12]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return Mapping{}, err
+		}
+		if m, err := pcpMap(ctx, t.gateway, proto, internalPort, externalPort, lifetime, nonce); err == nil {
+			return m, nil
+		} else {
+			attempts = append(attempts, "pcp: "+err.Error())
+		}
+		if m, err := natpmpMap(ctx, t.gateway, proto, internalPort, externalPort, lifetime); err == nil {
+			return m, nil
+		} else {
+			attempts = append(attempts, "nat-pmp: "+err.Error())
+		}
+	}
+
+	if t.internalClient.IsValid() {
+		if m, err := upnpMap(ctx, t.upnpLocation, t.internalClient, proto, internalPort, externalPort, lifetime); err == nil {
+			return m, nil
+		} else {
+			attempts = append(attempts, err.Error())
+		}
+	}
+
+	if len(attempts) == 0 {
+		return Mapping{}, ErrNoGateway
+	}
+	return Mapping{}, fmt.Errorf("no port-mapping protocol worked (%s)", strings.Join(attempts, "; "))
+}
+
+// Unmap removes a mapping created by Map, using the same method and identifier
+// (PCP's nonce, UPnP's control endpoint) so the router recognises it. Best
+// effort: a router that has already forgotten the mapping (a reboot, an expired
+// lease) is not an error worth surfacing.
 func Unmap(ctx context.Context, gateway netip.Addr, m Mapping, proto Protocol, internalPort uint16) error {
-	if !gateway.IsValid() {
-		return ErrNoGateway
-	}
-	return unmapVia(ctx, netip.AddrPortFrom(gateway, gatewayPort), m, proto, internalPort)
+	return unmapTarget(ctx, target{gateway: netip.AddrPortFrom(gateway, gatewayPort)}, m, proto, internalPort)
 }
 
-// unmapVia is Unmap against an explicit server address, for the same reason as
-// mapVia.
-func unmapVia(ctx context.Context, server netip.AddrPort, m Mapping, proto Protocol, internalPort uint16) error {
+// unmapTarget removes a mapping by the method that created it.
+func unmapTarget(ctx context.Context, t target, m Mapping, proto Protocol, internalPort uint16) error {
 	switch m.Method {
 	case "PCP":
-		_, err := pcpMap(ctx, server, proto, internalPort, 0, 0, m.nonce)
+		_, err := pcpMap(ctx, t.gateway, proto, internalPort, 0, 0, m.nonce)
 		return err
 	case "NAT-PMP":
-		_, err := natpmpMap(ctx, server, proto, internalPort, 0, 0)
+		_, err := natpmpMap(ctx, t.gateway, proto, internalPort, 0, 0)
 		return err
+	case "UPnP":
+		return upnpDelete(ctx, &http.Client{Timeout: 8 * time.Second}, m.igd, proto, m.ExternalPort)
 	default:
 		return fmt.Errorf("portmap: cannot remove a mapping made by %q", m.Method)
 	}
@@ -138,6 +173,15 @@ type Maintainer struct {
 	Lifetime     time.Duration // requested lease; the router may grant less
 	Log          *slog.Logger
 
+	// InternalClient is the LAN address the router should forward to, for UPnP
+	// (the host's own address). Invalid disables UPnP. PCP and NAT-PMP do not
+	// need it - the router reads the request's source address for those.
+	InternalClient netip.Addr
+
+	// UPnPLocation is a configured IGD device-description URL, for when SSDP
+	// discovery cannot run (the bridged container). Empty falls back to SSDP.
+	UPnPLocation string
+
 	// testServer, when valid, overrides Gateway:5351 so a test can drive the
 	// loop against a fake gateway on an ephemeral port. Zero in production.
 	testServer netip.AddrPort
@@ -155,6 +199,15 @@ func (mt *Maintainer) server() netip.AddrPort {
 		return mt.testServer
 	}
 	return netip.AddrPortFrom(mt.Gateway, gatewayPort)
+}
+
+// target is where this Maintainer's methods aim.
+func (mt *Maintainer) target() target {
+	return target{
+		gateway:        mt.server(),
+		internalClient: mt.InternalClient,
+		upnpLocation:   mt.UPnPLocation,
+	}
 }
 
 // Current returns the live mapping, or false when none is held. For the UI and
@@ -236,18 +289,20 @@ func (mt *Maintainer) ensure(ctx context.Context) (Mapping, error) {
 	mt.opMu.Lock()
 	defer mt.opMu.Unlock()
 
-	server := mt.server()
-	if !server.IsValid() {
+	t := mt.target()
+	if !t.gateway.IsValid() && !t.internalClient.IsValid() {
 		mt.mu.Lock()
 		mt.current = nil
 		mt.mu.Unlock()
 		return Mapping{}, ErrNoGateway
 	}
 
-	opCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// A little longer than PCP/NAT-PMP alone need: UPnP may run SSDP discovery
+	// and two HTTP round trips within this.
+	opCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	m, err := mapVia(opCtx, server, mt.Proto, mt.InternalPort, mt.ExternalPort, mt.lease())
+	m, err := mapTarget(opCtx, t, mt.Proto, mt.InternalPort, mt.ExternalPort, mt.lease())
 	if err != nil {
 		mt.mu.Lock()
 		mt.current = nil
@@ -282,13 +337,9 @@ func (mt *Maintainer) drop(ctx context.Context) {
 	if m == nil {
 		return
 	}
-	server := mt.server()
-	if !server.IsValid() {
-		return
-	}
 	dropCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := unmapVia(dropCtx, server, *m, mt.Proto, mt.InternalPort); err != nil && mt.Log != nil {
+	if err := unmapTarget(dropCtx, mt.target(), *m, mt.Proto, mt.InternalPort); err != nil && mt.Log != nil {
 		mt.Log.Warn("could not remove the port mapping", "err", err)
 	} else if mt.Log != nil {
 		mt.Log.Info("removed the port mapping", "externalPort", m.ExternalPort)

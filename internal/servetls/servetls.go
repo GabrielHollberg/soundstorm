@@ -137,6 +137,14 @@ type Config struct {
 	// forwarded by hand.
 	Gateway netip.Addr
 
+	// UPnPLocation is a UPnP-IGD device-description URL, the fallback method
+	// after PCP and NAT-PMP. The installer discovers it on the host by SSDP
+	// (which cannot cross the Docker bridge from the container) and passes it in.
+	// Empty means the process tries SSDP itself, which only reaches the LAN on a
+	// host-network or native run. UPnP forwards to the first configured Host
+	// that is an IP - the LAN address - so it is only offered when there is one.
+	UPnPLocation string
+
 	// ACMEHTTP talks to the authority. Nil is an ordinary client; the
 	// rehearsal against Pebble needs one that accepts Pebble's own
 	// certificate.
@@ -320,17 +328,31 @@ func loadAuto(cfg Config) (*Server, error) {
 		},
 		log: cfg.Log,
 	}
-	// A port-mapper only when the installer found a gateway to aim it at, and a
-	// port to open. Without one, remote access still works with a hand-forwarded
-	// port; the mapper just is not there to do it automatically.
-	if cfg.Gateway.IsValid() && cfg.Port > 0 {
+	// The LAN address UPnP forwards to - the first configured host that parses
+	// as an IP. PCP and NAT-PMP do not need it (the router reads the request's
+	// source), so its absence only rules out UPnP.
+	var internalClient netip.Addr
+	for _, h := range cfg.Hosts {
+		if addr, err := netip.ParseAddr(strings.TrimSpace(h)); err == nil {
+			internalClient = addr
+			break
+		}
+	}
+
+	// A port-mapper whenever there is a port to open and at least one method to
+	// try it with: a gateway (PCP/NAT-PMP) or a LAN client (UPnP). Without any,
+	// remote access still works with a hand-forwarded port; the mapper just is
+	// not there to do it automatically.
+	if cfg.Port > 0 && (cfg.Gateway.IsValid() || internalClient.IsValid()) {
 		s.auto.portMapper = &portmap.Maintainer{
-			Gateway:      cfg.Gateway,
-			Proto:        portmap.TCP,
-			InternalPort: uint16(cfg.Port),
-			ExternalPort: uint16(cfg.Port),
-			Lifetime:     2 * time.Hour,
-			Log:          cfg.Log,
+			Gateway:        cfg.Gateway,
+			Proto:          portmap.TCP,
+			InternalPort:   uint16(cfg.Port),
+			ExternalPort:   uint16(cfg.Port),
+			Lifetime:       2 * time.Hour,
+			InternalClient: internalClient,
+			UPnPLocation:   cfg.UPnPLocation,
+			Log:            cfg.Log,
 		}
 	}
 	s.auto.load()

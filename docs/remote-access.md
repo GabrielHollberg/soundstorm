@@ -120,14 +120,28 @@ Remove the manual step where the router allows it.
 - If no method works, fall back to Stage 1's manual instructions with the exact
   port to forward.
 
-**Built so far: NAT-PMP and PCP** (`internal/portmap`), with UPnP still to come.
-Both are pure stdlib and tested against a fake gateway. PCP is tried first and
-NAT-PMP is the fallback, because PCP carries a client-address field a strict
-gateway checks against the packet source — and behind Docker's own NAT that
-source is SNATed from `172.20.x` to the host's LAN address, so a strict router
-answers ADDRESS_MISMATCH. NAT-PMP has no such field and maps the right box. The
-name service's reachability probe, not the protocol's own reply, is the final
-word on whether the port actually opened.
+**Built: NAT-PMP, PCP and UPnP-IGD** (`internal/portmap`), all pure stdlib and
+tested against fakes. The order is PCP, then NAT-PMP, then UPnP. PCP is first
+because where it works it is the best protocol, but it carries a client-address
+field a strict gateway checks against the packet source — and behind Docker's
+own NAT that source is SNATed from `172.20.x` to the host's LAN address, so a
+strict router answers ADDRESS_MISMATCH. NAT-PMP has no such field and maps the
+right box, so it is the fallback rather than the other way round. UPnP is the
+widest-reaching last resort, for routers that speak neither. The name service's
+reachability probe, not any protocol's own reply, is the final word on whether
+the port actually opened.
+
+UPnP needs three things the other two do not, and each shaped the design. Its
+**SSDP discovery is multicast**, which does not cross the Docker bridge, so the
+router's device-description URL is discovered on the host by the installer and
+passed in as `SOUNDSTORM_UPNP_URL` — like the gateway. The **SOAP** that uses
+that URL afterwards is ordinary unicast HTTP, which does reach the router from
+the container through Docker's NAT. And AddPortMapping needs the **LAN address
+to forward to** (the host's, not the container's `172.20.x`), which is the LAN
+address already in `SOUNDSTORM_TLS_HOSTS`. On a host-network or native run the
+process can do SSDP itself, so the configured URL is an override, not a
+requirement. A router that only grants permanent leases (UPnP error 725) is
+retried with a zero lease; the mapping is dropped on teardown regardless.
 
 **The gateway is discovered by the installer, not the container** — the same
 division that already has the installer, not the container, find the LAN
@@ -143,12 +157,12 @@ immediately when remote access is switched on (before the reachability probe
 runs) and refreshes it on its own timer, because a router lease is measured in
 hours while the certificate loop only wakes every twelve.
 
-Where no gateway was found, or the router speaks neither protocol, remote access
-still works with a hand-forwarded port — the automatic step just does nothing.
-UPnP, the widest-reaching fallback, would extend this but needs SSDP multicast
-discovery, which does not traverse the Docker bridge from inside the container;
-like the gateway address, its control URL would have to be discovered on the
-host and passed in. That is the next piece.
+Where none of the three could open the port — no gateway, no UPnP URL, and a
+router that ignores what it was sent — remote access still works with a
+hand-forwarded port; the automatic step just does nothing, and the reachability
+probe reports the port closed until it is forwarded by hand.
+
+The next piece is Stage 3 (IPv6), below.
 
 ### Stage 3 — IPv6
 

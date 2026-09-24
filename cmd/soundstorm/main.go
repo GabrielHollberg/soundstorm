@@ -201,7 +201,11 @@ func run(log *slog.Logger) error {
 		RemoteEnabled: remoteEnabled,
 		Port:          publicPort,
 		Gateway:       gateway,
-		Log:           log,
+		// UPnP fallback: the installer discovers the router's device-description
+		// URL on the host and passes it here, since SSDP cannot cross the Docker
+		// bridge from in here. Empty just means UPnP is tried by SSDP or skipped.
+		UPnPLocation: strings.TrimSpace(os.Getenv("SOUNDSTORM_UPNP_URL")),
+		Log:          log,
 	})
 	if err != nil {
 		return err

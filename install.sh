@@ -296,6 +296,49 @@ gateway_address() {
 	fi
 }
 
+# upnp_url discovers the router's UPnP device-description URL over SSDP, the
+# fallback for opening the port on routers that speak UPnP but not NAT-PMP/PCP.
+# Done on the host because SSDP multicast does not cross the Docker bridge; the
+# SOAP that uses the URL later is unicast and does work from the container.
+#
+# Best effort, and there is no one tool every box has, so it tries what is
+# there: miniupnpc's upnpc, then a short python3 M-SEARCH. Where neither is
+# present it prints nothing and NAT-PMP/PCP or a manual forward remain.
+upnp_url() {
+	if command -v upnpc >/dev/null 2>&1; then
+		url=$(upnpc -l 2>/dev/null | awk -F'[ \t]*' '/desc:/ {print $2; exit}')
+		if [ -n "$url" ]; then
+			printf '%s' "$url"
+			return
+		fi
+	fi
+	if command -v python3 >/dev/null 2>&1; then
+		python3 - <<-'PY' 2>/dev/null
+			import socket
+			m = ("M-SEARCH * HTTP/1.1\r\n"
+			     "HOST: 239.255.255.250:1900\r\n"
+			     "MAN: \"ssdp:discover\"\r\n"
+			     "MX: 2\r\n"
+			     "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n")
+			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			s.settimeout(3)
+			try:
+			    s.sendto(m.encode(), ("239.255.255.250", 1900))
+			    while True:
+			        data, _ = s.recvfrom(2048)
+			        for line in data.decode(errors="ignore").split("\r\n"):
+			            if line.lower().startswith("location:"):
+			                print(line.split(":", 1)[1].strip())
+			                raise SystemExit
+			except SystemExit:
+			    pass
+			except Exception:
+			    pass
+		PY
+		return
+	fi
+}
+
 # mdns_name is the name other devices can use instead of an IP address.
 #
 # macOS always answers for "<hostname>.local"; Linux does when avahi is
@@ -608,6 +651,16 @@ if [ -z "$(get_env SOUNDSTORM_GATEWAY)" ]; then
 	gw=$(gateway_address)
 	if [ -n "$gw" ]; then
 		set_env SOUNDSTORM_GATEWAY "$gw"
+	fi
+fi
+
+# The router's UPnP URL, the fallback for routers that do not speak NAT-PMP/PCP.
+# Same reasoning as the gateway: discovered on the host, an existing value left
+# alone, best effort.
+if [ -z "$(get_env SOUNDSTORM_UPNP_URL)" ]; then
+	upnp=$(upnp_url)
+	if [ -n "$upnp" ]; then
+		set_env SOUNDSTORM_UPNP_URL "$upnp"
 	fi
 fi
 
