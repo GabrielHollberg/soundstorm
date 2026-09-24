@@ -2628,6 +2628,7 @@ const ICONS = {
   lyrics: '<path d="M4 6h16M4 10h16M4 14h10M4 18h7M17 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM19.5 18.5V11"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+  grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3.2"/>',
   volume: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
 };
@@ -2910,6 +2911,7 @@ async function showPlaylist(id) {
     return;
   }
   const path = `/api/playlists/${encodeURIComponent(id)}`;
+  const songs = body.items;
   view.replaceChildren();
 
   const back = document.createElement('button');
@@ -2918,89 +2920,214 @@ async function showPlaylist(id) {
   back.textContent = '\u2190 All playlists';
   back.addEventListener('click', showPlaylists);
 
+  // The header is an album's: a cover, the name, what is in it, and Play,
+  // Shuffle and Download. The name renames in place.
   const head = document.createElement('div');
-  head.className = 'playlist-head';
-  const name = document.createElement('h2');
-  name.textContent = body.name;
-  const count = document.createElement('span');
-  count.className = 'muted';
-  count.textContent = `${body.items.length} song${body.items.length === 1 ? '' : 's'}`;
-  const playAll = document.createElement('button');
-  playAll.type = 'button';
-  playAll.textContent = 'Play all';
-  playAll.disabled = !body.items.length;
-  playAll.addEventListener('click', () => playQueue(body.items, 0));
-  const rename = document.createElement('button');
-  rename.type = 'button';
-  rename.className = 'ghost small';
-  rename.textContent = 'Rename';
-  rename.addEventListener('click', async () => {
-    const next = window.prompt('New name for this playlist', body.name);
-    if (!next) return;
-    await api(path, { method: 'PATCH', body: JSON.stringify({ name: next }) });
-    showPlaylist(id);
-  });
+  head.className = 'album-head';
+  const first = songs[0] || {};
+  const cover = coverArt(first.artId ? artUrl(first.sourceId, first.artId) : '', body.name);
+  cover.classList.add('album-cover');
+  const text = document.createElement('div');
+  text.className = 'album-text';
+  const kind = document.createElement('span');
+  kind.className = 'album-kind';
+  kind.textContent = 'Playlist';
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.className = 'playlist-title';
+  title.textContent = body.name;
+  title.title = 'Rename';
+  title.addEventListener('click', () => renamePlaylistInPlace(title, path, body.name, id));
+  const total = songs.reduce((sum, song) => sum + (song.durationSeconds || 0), 0);
+  const facts = document.createElement('span');
+  facts.className = 'muted';
+  facts.textContent = [`${songs.length} song${songs.length === 1 ? '' : 's'}`, formatLength(total)].filter(Boolean).join(' \u00b7 ');
+  const buttons = playButtons(async () => songs);
+  buttons.append(downloadButton({
+    id: `playlist:${id}`, type: 'playlist', title: body.name, subtitle: 'Playlist',
+    sourceId: first.sourceId, artId: first.artId,
+  }, songs));
   const remove = document.createElement('button');
   remove.type = 'button';
-  remove.className = 'ghost small';
+  remove.className = 'ghost small playlist-delete';
   remove.textContent = 'Delete playlist';
+  // Two taps, not a browser dialog: the first asks, the second deletes.
   remove.addEventListener('click', async () => {
-    if (!window.confirm(`Delete the playlist "${body.name}"? The songs stay in your library.`)) return;
+    if (!remove.classList.contains('confirming')) {
+      remove.classList.add('confirming');
+      remove.textContent = 'Tap again to delete';
+      setTimeout(() => { remove.classList.remove('confirming'); remove.textContent = 'Delete playlist'; }, 4000);
+      return;
+    }
     await api(path, { method: 'DELETE' });
     showPlaylists();
   });
-  head.append(name, count, playAll, downloadButton({
-    id: `playlist:${id}`, type: 'playlist', title: body.name, subtitle: 'Playlist',
-    sourceId: (body.items[0] || {}).sourceId, artId: (body.items[0] || {}).artId,
-  }, body.items), rename, remove);
+  text.append(kind, title, facts, buttons, remove);
+  head.append(cover, text);
   view.append(back, head);
 
-  const ol = document.createElement('ol');
-  ol.className = 'playlist-songs';
-  body.items.forEach((song, i) => {
+  if (!songs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = `Nothing in it yet. ${MENU_HOW} any song and choose Add to playlist.`;
+    view.append(empty);
+    return;
+  }
+
+  const list = document.createElement('ol');
+  list.className = 'playlist-rows';
+  songs.forEach((song, i) => {
     const li = document.createElement('li');
-    const playOne = document.createElement('button');
-    playOne.type = 'button';
-    playOne.className = 'playlist-song';
+    li.className = 'playlist-row';
+    li.dataset.index = String(i);
+
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'playlist-play';
+    const thumb = document.createElement('img');
+    thumb.alt = '';
+    thumb.loading = 'lazy';
+    thumb.src = song.artId ? artUrl(song.sourceId, song.artId) : NO_COVER;
+    thumb.addEventListener('error', () => { thumb.src = NO_COVER; }, { once: true });
+    const words = document.createElement('span');
+    words.className = 'playlist-words';
     const t = document.createElement('strong');
     t.textContent = song.title;
     const sub = document.createElement('span');
-    sub.className = 'muted';
     sub.textContent = subtitleFor(song);
-    playOne.append(t, sub);
-    playOne.addEventListener('click', () => playQueue(body.items, i));
+    words.append(t, sub);
+    const length = document.createElement('span');
+    length.className = 'track-length';
+    length.textContent = formatDuration(song.durationSeconds);
+    play.append(thumb, words, length);
+    play.addEventListener('click', () => playQueue(songs, i));
 
-    const controls = document.createElement('span');
-    controls.className = 'playlist-controls';
-    const move = (label, to) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'ghost small';
-      b.textContent = label;
-      b.disabled = to < 0 || to >= body.items.length;
-      b.addEventListener('click', async () => {
-        await api(`${path}/move`, { method: 'POST', body: JSON.stringify({ from: song.position, to: body.items[to].position }) });
-        showPlaylist(id);
-      });
-      return b;
-    };
     const drop = document.createElement('button');
     drop.type = 'button';
-    drop.className = 'ghost small';
-    drop.textContent = 'Remove';
+    drop.className = 'np-icon playlist-remove';
+    drop.setAttribute('aria-label', `Remove ${song.title}`);
+    drop.append(icon('close'));
     drop.addEventListener('click', async () => {
       await api(`${path}/items/${song.position}`, { method: 'DELETE' });
       showPlaylist(id);
+      showToast(`Removed \u201c${song.title}\u201d`, 'Undo', async () => {
+        // Back where it was: added at the end, then moved into its place.
+        const added = await api(`${path}/items`, { method: 'POST', body: JSON.stringify({ source: song.sourceId, id: song.id }) });
+        // The answer is the new length; the song went on the end.
+        const at = added.ok && added.body && typeof added.body.count === 'number' ? added.body.count - 1 : null;
+        if (at !== null && at !== song.position) {
+          await api(`${path}/move`, { method: 'POST', body: JSON.stringify({ from: at, to: song.position }) });
+        }
+        showPlaylist(id);
+      });
     });
-    const up = move('\u2191', i - 1);
-    up.setAttribute('aria-label', 'Move up');
-    const down = move('\u2193', i + 1);
-    down.setAttribute('aria-label', 'Move down');
-    controls.append(up, down, drop);
-    li.append(playOne, controls);
-    ol.append(li);
+
+    const handle = document.createElement('button');
+    handle.type = 'button';
+    handle.className = 'np-icon playlist-handle';
+    handle.setAttribute('aria-label', `Move ${song.title}`);
+    handle.append(icon('grip'));
+    attachReorder(handle, li, list, async (from, to) => {
+      await api(`${path}/move`, { method: 'POST', body: JSON.stringify({ from: songs[from].position, to: songs[to].position }) });
+      showPlaylist(id);
+    });
+
+    li.append(play, drop, handle);
+    list.append(li);
   });
-  view.append(ol);
+  view.append(list);
+}
+
+// Renaming happens where the name is: it becomes a text box, Enter or leaving
+// it saves, Escape puts it back.
+function renamePlaylistInPlace(title, path, current, id) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'playlist-title-input';
+  input.value = current;
+  input.maxLength = 100;
+  input.setAttribute('aria-label', 'Playlist name');
+  title.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (save && name && name !== current) {
+      await api(path, { method: 'PATCH', body: JSON.stringify({ name }) });
+    }
+    showPlaylist(id);
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+// Drag to reorder, by the handle, with a finger or a mouse. The row follows
+// the pointer, the others step aside as it passes their middle, and letting
+// go saves the new place. Keyboard: the handle's arrow keys move it by one.
+function attachReorder(handle, row, list, save) {
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    const rows = [...list.children];
+    const from = rows.indexOf(row);
+    const startY = event.clientY;
+    const height = row.getBoundingClientRect().height + parseFloat(getComputedStyle(list).rowGap || '0');
+    let to = from;
+    row.classList.add('dragging');
+    const move = (e) => {
+      const dy = e.clientY - startY;
+      row.style.transform = `translateY(${dy}px)`;
+      to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / height)));
+      rows.forEach((other, i) => {
+        if (other === row) return;
+        let shift = 0;
+        if (from < to && i > from && i <= to) shift = -height;
+        if (from > to && i < from && i >= to) shift = height;
+        other.style.transform = shift ? `translateY(${shift}px)` : '';
+      });
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      rows.forEach((other) => { other.style.transform = ''; });
+      row.classList.remove('dragging');
+      if (to !== from) save(from, to);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  });
+  handle.addEventListener('keydown', (event) => {
+    const from = [...list.children].indexOf(row);
+    const to = event.key === 'ArrowUp' ? from - 1 : event.key === 'ArrowDown' ? from + 1 : from;
+    if (to === from || to < 0 || to >= list.children.length) return;
+    event.preventDefault();
+    save(from, to);
+  });
+}
+
+// A short message at the bottom of the screen, with one action - Undo.
+function showToast(message, actionLabel, action, ms = 6000) {
+  const toast = $('toast');
+  clearTimeout(state.toastTimer);
+  $('toast-text').textContent = message;
+  const button = $('toast-action');
+  button.textContent = actionLabel || '';
+  show(button, Boolean(action));
+  button.onclick = async () => {
+    show(toast, false);
+    if (action) await action();
+  };
+  show(toast, true);
+  state.toastTimer = setTimeout(() => show(toast, false), ms);
 }
 
 // --- the queue ------------------------------------------------------------------
