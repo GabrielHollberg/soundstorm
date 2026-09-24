@@ -251,11 +251,12 @@ where you are. A film counts as finished once you reach the credits.
 
 ### Favourites and playlists
 
-Every card has a **⋯** button (hover over it on a computer; it is always there
-on a phone). Use it to add something to your **favourites**, whatever it is: a
+On a phone, **hold down** on anything and a menu pops up beside it. On a
+computer, **right-click** it, or use the **⋯** that appears when you point at
+it. Use the menu to add something to your **favourites**, whatever it is: a
 song, a film, a book or a photo. The **♥ Favourites** chip shows them all.
 
-For songs, the same button offers **Add to playlist**. Pick a playlist or type
+For songs, the same menu offers **Add to playlist**. Pick a playlist or type
 a name to start a new one. The **Playlists** chip lists them. Open one to play
 it all, play from any song, move songs up and down, remove them, rename the
 playlist or delete it. A playlist plays one song after another, with back and

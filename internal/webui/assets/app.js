@@ -188,6 +188,7 @@ async function showApp(me) {
   applyLibraryTabs();
   renderAccount();
   await loadFavouriteKeys();
+  maybeShowHoldTip();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
   // Awaited before the first browse so that libraryEmpty is known by the time
@@ -1001,10 +1002,20 @@ function renderItem(item) {
   const key = selectionKey(item);
   card.dataset.key = key;
   card.classList.toggle('selected', state.selected.has(key));
-  card.addEventListener('click', () => {
+  card.addEventListener('click', (event) => {
+    // The click that ends a long press is not a tap: the menu is open.
+    if (state.suppressClick) {
+      state.suppressClick = false;
+      event.preventDefault();
+      // Nor may it reach the page, where a click outside the menu closes it:
+      // lifting the finger would close the menu it had just opened.
+      event.stopPropagation();
+      return;
+    }
     if (state.selecting) toggleSelected(item, card);
     else play(item);
   });
+  attachItemMenuGestures(card, item);
   if (state.favourites.has(key)) wrap.classList.add('is-favourite');
 
   // The card is itself a button, and a button cannot hold another, so the
@@ -2463,7 +2474,7 @@ async function showFavourites(seq) {
   state.items = shown;
   $('status').textContent = items.length
     ? `${shown.length} favourite${shown.length === 1 ? '' : 's'}`
-    : 'Nothing here yet. Use the \u22EF on anything to add it to your favourites.';
+    : `Nothing here yet. ${MENU_HOW} anything and choose Add to favourites.`;
   show($('loading-more'), false);
 }
 
@@ -2545,6 +2556,7 @@ function menuHeader(item) {
 function closeItemMenu() {
   show($('item-menu'), false);
   show($('item-menu-backdrop'), false);
+  for (const lifted of document.querySelectorAll('.item-holder.lifted')) lifted.classList.remove('lifted');
   state.menuFor = null;
 }
 
@@ -2652,14 +2664,13 @@ function renderPlaylistMenu(item, lists) {
 state.sheetMenus = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
 function placeMenu(menu, anchor) {
-  menu.classList.toggle('sheet', state.sheetMenus);
+  // On a touch screen the page dims and the card lifts above it, so it is
+  // plain which item the menu belongs to.
   show($('item-menu-backdrop'), state.sheetMenus);
+  for (const lifted of document.querySelectorAll('.item-holder.lifted')) lifted.classList.remove('lifted');
+  const holder = anchor.closest('.item-holder');
+  if (holder && state.sheetMenus) holder.classList.add('lifted');
   show(menu, true);
-  if (state.sheetMenus) {
-    menu.style.left = '';
-    menu.style.top = '';
-    return;
-  }
   const box = anchor.getBoundingClientRect();
   const width = menu.offsetWidth;
   const height = menu.offsetHeight;
@@ -2700,7 +2711,7 @@ async function showPlaylists() {
   if (!lists.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = 'No playlists yet. Use the \u22EF on any song and choose Add to playlist.';
+    empty.textContent = `No playlists yet. ${MENU_HOW} any song and choose Add to playlist.`;
     view.append(empty);
     return;
   }
@@ -2858,3 +2869,77 @@ $('audio-prev').addEventListener('click', () => {
 $('audio-next').addEventListener('click', () => {
   if (audio.queue && audio.queue.index + 1 < audio.queue.items.length) playQueueAt(audio.queue.index + 1);
 });
+
+/* ---------------------------------------------------------- press and hold */
+
+// How to reach an item's menu, in the words for this device.
+const MENU_HOW = state.sheetMenus ? 'Hold down on' : 'Right-click';
+
+// attachItemMenuGestures opens a card's menu without a button for it: hold
+// down on a touch screen, right-click with a mouse, the menu key on a
+// keyboard. The menu opens beside the card.
+//
+// A hold is a finger resting in place: it is cancelled the moment the finger
+// moves more than a few pixels (that is a scroll), lifts early (that is a
+// tap), or the browser takes the touch over for itself.
+const HOLD_MS = 450;
+const HOLD_SLOP = 10;
+
+function attachItemMenuGestures(card, item) {
+  let timer = null;
+  let startX = 0;
+  let startY = 0;
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+    card.classList.remove('pressing');
+  };
+  card.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' || state.selecting) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    card.classList.add('pressing');
+    timer = setTimeout(() => {
+      timer = null;
+      card.classList.remove('pressing');
+      state.suppressClick = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      openItemMenu(item, card.querySelector('.art-wrap') || card);
+    }, HOLD_MS);
+  });
+  card.addEventListener('pointermove', (event) => {
+    if (timer && Math.hypot(event.clientX - startX, event.clientY - startY) > HOLD_SLOP) cancel();
+  });
+  card.addEventListener('pointerup', cancel);
+  card.addEventListener('pointercancel', cancel);
+  card.addEventListener('pointerleave', cancel);
+  // Right-click, and the long press Android also reports as a context menu:
+  // either way it is ours, not the browser's "open in new tab".
+  card.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    if (state.selecting) return;
+    cancel();
+    if (!state.menuFor) openItemMenu(item, card.querySelector('.art-wrap') || card);
+  });
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      openItemMenu(item, card.querySelector('.art-wrap') || card);
+    }
+  });
+}
+
+// A hidden gesture has to be told once. Only on a touch screen - a mouse has
+// the "..." on hover - and only until it has been seen.
+function maybeShowHoldTip() {
+  if (!state.sheetMenus) return;
+  try {
+    if (localStorage.getItem('soundstorm-hold-tip')) return;
+    localStorage.setItem('soundstorm-hold-tip', '1');
+  } catch {
+    return;
+  }
+  const tip = $('hold-tip');
+  show(tip, true);
+  setTimeout(() => show(tip, false), 7000);
+}

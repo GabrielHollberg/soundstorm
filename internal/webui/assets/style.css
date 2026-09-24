@@ -1110,7 +1110,27 @@ button.danger {
 .item-more:active { transform: scale(0.92); }
 .item-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .item-holder:hover .item-more, .item-more:focus-visible { opacity: 1; }
-@media (pointer: coarse) { .item-more { opacity: 1; min-height: 32px; } }
+/* On a touch screen the menu is a press and hold; the button is for a
+   mouse, which cannot hold anything down usefully. */
+@media (pointer: coarse) { .item-more { display: none; } }
+
+/* Cards are held, so the browser must not take the hold for itself -
+   selecting the title text, or iOS's link callout. */
+.item {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+/* A held card sinks a little while the hold builds, and lifts above the
+   dimmed page once its menu is open. */
+.item.pressing .art-wrap { transform: scale(0.96); transition-duration: 0.45s; }
+.item-holder.lifted { z-index: 60; }
+.item-holder.lifted .art-wrap {
+  transform: scale(1.03);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  border-color: var(--accent);
+}
 /* Selecting uses the same corner for its tick. */
 .grid.selecting .item-more { display: none; }
 
@@ -1283,3 +1303,22 @@ button.danger {
 .playlist-controls { display: flex; gap: 6px; }
 
 .dock-queue { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+
+.hold-tip {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 45;
+  margin: 0;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #1a1f28;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  animation: fade-in 0.2s ease-out;
+}
+body.dock-open .hold-tip { bottom: calc(var(--dock-space) + 12px); }

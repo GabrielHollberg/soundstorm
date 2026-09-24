@@ -429,8 +429,26 @@ clipped element is one more way to get a square repaint.
 dashes in the UI font, and a heart glyph sits on a different baseline in every
 font that has one. The menu has a header naming the item, 40px rows (48 on a
 touch screen), a filled pink heart for a favourite, and a second page for
-playlists with a back arrow. On a coarse pointer it is a bottom sheet over a
-dimmed page, where a thumb is.
+playlists with a back arrow.
+
+**Then the button went, on a touch screen: the menu is a press and hold.**
+The "⋯" cluttered every cover on a phone, where nothing hovers. A hold of
+450ms opens the menu beside the card, which lifts above a dimmed page.
+Moving more than 10px cancels it (that is a scroll), and so does lifting
+early (that is a tap). Cards turn off text selection and iOS's callout, or
+the browser takes the hold for itself.
+
+The finger lifting at the end of a hold is still a click. The card swallows
+it and stops it propagating, because the page's "click outside closes the
+menu" rule would otherwise close the menu the hold had just opened. That was
+the first version's bug, and the emulated-touch check caught it.
+
+A mouse cannot usefully hold, so right-click (`contextmenu`) opens the same
+menu and the "⋯" stays, but only on hover and only for a fine pointer. The
+menu key and Shift+F10 open it from a keyboard. A hidden gesture has to be
+told once: a tip on the first visit from a touch screen, and the empty
+Favourites and Playlists screens say "Hold down on" or "Right-click" to
+match the device.
 
 ## Deleting, into a bin
 
