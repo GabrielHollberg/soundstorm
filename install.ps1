@@ -938,6 +938,43 @@ function Set-EnvSetting([string]$Name, [string]$Value) {
     $kept = @($lines | Where-Object { $_ -notmatch $pattern })
     $kept += "$Name=$Value"
     $kept | Out-File -FilePath $envFile -Encoding ascii
+    Protect-SecretFile $envFile
+}
+
+# Protect-SecretFile makes a file readable by this user only - plus SYSTEM and
+# Administrators, who can take ownership of anything anyway.
+#
+# .env holds the first sign-up's setup code and, with -Tailscale, a reusable
+# auth key; the uninstaller's backup holds the password SoundStorm made on every
+# media server. Left alone, a file inherits its folder's permissions. Under the
+# user profile, the default, that already keeps other users out - but the
+# install can live anywhere (SOUNDSTORM_DIR), and a folder like C:\SoundStorm
+# inherits "Users: read" from the drive. install.sh gets the same protection
+# from umask 077.
+#
+# Accounts are named by SID rather than by name, because group names are
+# localized: "Administrators" is "Administratoren" on a German Windows, and a
+# lookup by name would fail there. Best effort: a file that cannot be locked
+# down still works, and refusing to install over it would be the worse failure.
+function Protect-SecretFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+        $acl = New-Object System.Security.AccessControl.FileSecurity
+        # Protected, and inherited entries not copied: only the rules below.
+        $acl.SetAccessRuleProtection($true, $false)
+        $owners = @(
+            [System.Security.Principal.WindowsIdentity]::GetCurrent().User,
+            (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-18'),     # SYSTEM
+            (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544')  # Administrators
+        )
+        foreach ($sid in $owners) {
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $sid, 'FullControl', 'Allow')))
+        }
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+    } catch {
+        Write-Host "  Could not restrict who can read $([IO.Path]::GetFileName($Path)): $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 function Get-InstalledPort {
@@ -1158,6 +1195,10 @@ if ($Uninstall) {
                 'soundstorm', 'backup', '/backup/soundstorm-backup.json'
             ) -Capture
             if ($saved.ExitCode -eq 0 -and (Test-Path $backup)) {
+                # Written by the container through a bind mount, so it arrives
+                # with the folder's permissions; it holds every media server's
+                # password, so it gets this user's alone.
+                Protect-SecretFile $backup
                 Good "Saved to $backup"
                 Note "Keep it if you might reinstall - it is the only copy of the"
                 Note "passwords SoundStorm made on the media servers."
@@ -1336,6 +1377,7 @@ if ($upgrade) {
     $lan = Get-LanAddress
     if ($lan) { $lines += "SOUNDSTORM_TLS_HOSTS=$lan" }
     $lines | Out-File -FilePath '.env' -Encoding ascii
+    Protect-SecretFile (Join-Path $Dir '.env')
 }
 
 # After the port, so that on a fresh install this amends the file just written
@@ -1410,6 +1452,11 @@ if (-not $setupCode) {
     $setupCode = -join ($bytes | ForEach-Object { $_.ToString('x2') })
     Set-EnvSetting 'SOUNDSTORM_SETUP_CODE' $setupCode
 }
+
+# Every run, not only when something above was written: an install from before
+# this existed has a .env with its folder's permissions, and running the
+# installer again - which is how updating works - is what fixes it.
+Protect-SecretFile (Join-Path $Dir '.env')
 
 # Where the library lives. Beside the install unless -Library says otherwise,
 # which is how it goes on an external drive. Compose mounts every shelf from

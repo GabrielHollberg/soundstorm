@@ -1170,8 +1170,20 @@ has signed in before now carries a device token and is judged on its own record
 instead (see "Accounts"). The end-to-end test runs every client from 127.0.0.1,
 the Docker Desktop case exactly, and fails with the exemption disabled.
 
-Checked and left for a decision: the Windows `.env` having no explicit ACL (the
-profile directory's defaults already exclude other users).
+**The Windows `.env` now has an ACL of its own**, as the Linux one has had
+`umask 077`. It inherited its folder's permissions, which under the user profile
+already exclude other users - but `SOUNDSTORM_DIR` can put the install anywhere,
+and `C:\SoundStorm` inherits "Users: read" from the drive. `Protect-SecretFile`
+replaces the inherited entries with full control for the current user, SYSTEM
+and Administrators only, naming them by SID because group names are localized.
+It runs after every write of `.env`, once on every install run (so an existing
+install is fixed by updating), and on the uninstaller's backup, which holds every
+media server's password and arrives through a bind mount with the folder's
+permissions. Checked on this machine against a folder granting Users read: five
+inherited entries before, three protected ones after, the lock surviving
+`Out-File`'s rewrite, and `docker compose config` still reading the file.
+
+Nothing from the fifth pass is left open.
 
 ## Tailscale, and why it is a profile rather than a service
 
