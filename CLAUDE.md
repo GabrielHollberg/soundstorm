@@ -398,6 +398,13 @@ judged on in its first minute:
   installed app launches with neither bar; in a browser tab every tap asks
   again while the page is not full screen, since a page may only ask from a
   tap and the back gesture or a video's own full screen can drop it.
+
+  **The installed app still shows a black strip over the camera until the
+  first tap**, confirmed on a real phone. `display: fullscreen` hides the bars
+  but Android letterboxes the camera cutout in black; the page may draw into
+  it (viewport-fit=cover) only once the page itself has requested full
+  screen, and that needs a tap. So the installed app asks on the first tap
+  too, and the strip goes then. Nothing a page does at load can remove it.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.
