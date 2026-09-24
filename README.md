@@ -289,7 +289,8 @@ Two things worth doing:
   **Update SoundStorm** from the Start menu while on your home network: it
   checks the network is marked Private, adds a firewall rule for SoundStorm's
   port, and undoes a Cancel on Windows' firewall prompt. A laptop that moved
-  to another network gets its new address the next time it starts SoundStorm.
+  to another network picks up its new address, and its new router, the next
+  time it starts SoundStorm.
 
 > **On macOS and Linux** the installer offers `http://<hostname>.local:8099`
 > instead, which survives the address changing. That is not offered on Windows:
@@ -316,10 +317,19 @@ Getting the traffic in is the part a home network makes awkward, and SoundStorm
 does as much of it as it can:
 
 - **It opens the port on your router for you** where the router allows it,
-  trying NAT-PMP, then PCP, then UPnP — most consumer routers speak one of them.
+  trying PCP, then NAT-PMP, then UPnP — most consumer routers speak one of them.
+  There is nothing to configure: SoundStorm finds the router itself, including
+  on an install run with Docker Compose alone, and on a laptop that has moved
+  to another house.
 - **Where none of them work**, the account panel says exactly what to do (forward
   one port, the one SoundStorm runs on, to this computer) and shows whether it
   has become reachable yet, re-checking as it comes up.
+- **Where forwarding cannot work**, it says that instead. Some internet
+  providers share one address between many homes (carrier-grade NAT), and some
+  homes have a second router in front of their own. SoundStorm asks your router
+  for its internet address to tell which, explains what is going on, and points
+  you at [Tailscale](#tailscale--when-there-is-no-port-to-forward-or-you-would-rather-not),
+  which works on any connection.
 - **Over IPv6 there is nothing to forward at all** where your ISP provides it,
   since IPv6 has no NAT. SoundStorm publishes both, and a visitor connects on
   whichever their own network has.
