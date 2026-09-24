@@ -726,8 +726,16 @@ header {
     gap: 8px;
     padding: 8px 12px;
   }
-  .dock img, .dock-meta { display: none; }
-  .dock audio { min-width: 0; }
+  /* A mini-player, as music apps have on a phone: the cover and the song
+     (either opens Now Playing) and one play button. The browser's own
+     controls are too small to use and repeat what Now Playing has. The audio
+     element stays in the page - hidden, it still plays. */
+  .dock { flex-wrap: nowrap; }
+  .dock img { width: 44px; height: 44px; }
+  .dock-meta { display: grid; flex: 1; min-width: 0; }
+  .dock audio { display: none; }
+  .dock-queue { display: none !important; }
+  .dock-play { display: grid; flex: 0 0 auto; }
 
   #status, #degraded { margin-left: 14px; margin-right: 14px; }
 }
@@ -1430,4 +1438,175 @@ body.dock-open .hold-tip { bottom: calc(var(--dock-space) + 12px); }
   .album-cover { width: min(260px, 70vw); }
   .album-text h2 { font-size: 24px; }
   .track-rows { margin: 0 8px; }
+}
+
+/* Now Playing ------------------------------------------------------------ */
+
+.dock-cover {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.dock-cover:hover { filter: none; }
+.dock-play { display: none; color: var(--text); }
+.dock-play .icon { width: 28px; height: 28px; }
+#audio-meta { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+#audio-meta:hover strong { text-decoration: underline; }
+
+body.np-open { overflow: hidden; }
+.now-playing {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: #07090d;
+  overflow: hidden;
+  animation: np-in 0.22s ease-out;
+}
+@keyframes np-in { from { transform: translateY(24px); opacity: 0; } }
+/* The cover again, huge and blurred: the screen takes its colour from the
+   album without anybody computing a colour. */
+.np-backdrop {
+  position: absolute;
+  inset: -60px;
+  width: calc(100% + 120px);
+  height: calc(100% + 120px);
+  object-fit: cover;
+  filter: blur(60px) saturate(1.4) brightness(0.45);
+  transform: scale(1.1);
+  pointer-events: none;
+}
+.np-backdrop:not([src]) { display: none; }
+.np-inner {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: max(12px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+/* A <header>, so the app header's own rule reached it and drew a dark bar.
+   Everything that rule sets is undone here. */
+.np-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: static;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.np-label { flex: 1; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.7); }
+.np-spacer { width: 44px; }
+.np-icon {
+  width: 44px; height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+}
+.np-icon:hover { background: rgba(255, 255, 255, 0.1); filter: none; }
+.np-icon:active { transform: scale(0.92); }
+.np-icon:disabled { opacity: 0.3; background: none; }
+.np-icon .icon { width: 24px; height: 24px; }
+.np-icon .icon.filled { fill: currentColor; stroke: none; }
+
+.np-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 48px;
+  align-items: center;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px 0;
+}
+.np-cover-wrap { display: grid; place-items: center; }
+.np-cover {
+  width: min(100%, 460px);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 14px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+}
+.np-cover.empty { content: none; }
+.np-side { display: grid; gap: 22px; align-content: center; min-width: 0; }
+.np-text h2 { margin: 0; font-size: 30px; line-height: 1.15; color: #fff; }
+.np-text p { margin: 6px 0 0; font-size: 16px; color: rgba(255, 255, 255, 0.72); }
+
+.np-progress input {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: #fff;
+}
+.np-times { display: flex; justify-content: space-between; font-size: 12.5px; color: rgba(255, 255, 255, 0.6); font-variant-numeric: tabular-nums; }
+
+.np-controls { display: flex; align-items: center; justify-content: space-between; max-width: 380px; }
+.np-play {
+  width: 68px; height: 68px;
+  background: #fff;
+  color: #0b0e13;
+}
+.np-play:hover { background: #fff; transform: scale(1.04); }
+.np-play .icon { width: 30px; height: 30px; }
+.np-toggle { color: rgba(255, 255, 255, 0.55); position: relative; }
+.np-toggle.on { color: #fff; }
+.np-toggle.on::after {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.np-toggle[data-mode="one"]::before {
+  content: "1";
+  position: absolute;
+  top: 9px; right: 7px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.np-next h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.6); }
+#np-queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 34vh; overflow-y: auto; }
+#np-queue li { display: flex; align-items: center; gap: 6px; border-radius: 8px; }
+#np-queue li:hover { background: rgba(255, 255, 255, 0.07); }
+.np-queue-song {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: #fff;
+  text-align: left;
+  font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.np-queue-song:hover { filter: none; }
+.np-queue-song strong, .np-queue-song span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-queue-song span { font-size: 12.5px; color: rgba(255, 255, 255, 0.6); font-weight: 400; }
+.np-remove { width: 36px; height: 36px; opacity: 0.6; }
+.np-remove .icon { width: 16px; height: 16px; }
+#np-queue-empty { color: rgba(255, 255, 255, 0.55); }
+
+@media (max-width: 760px) {
+  .np-main { grid-template-columns: 1fr; gap: 22px; align-content: start; padding-top: 8px; }
+  .np-cover { width: min(100%, 360px); }
+  .np-text h2 { font-size: 22px; }
+  .np-controls { max-width: none; }
+  #np-queue { max-height: none; }
 }

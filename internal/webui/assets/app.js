@@ -1459,6 +1459,7 @@ function playAudio(item, fromQueue) {
   renderQueue();
   showDock(true);
   updateMediaSession();
+  renderNowPlaying();
 
   // A song starts now: a round trip before the first note is felt, and nothing
   // about a four minute track needs the answer. An audiobook waits, because it
@@ -1684,10 +1685,8 @@ $('audio-player').addEventListener('ended', () => {
   }
   // The end of the last file is the end of the book.
   savePosition({ finished: true });
-  // And in a playlist, the next song.
-  if (audio.queue && audio.queue.index + 1 < audio.queue.items.length) {
-    playQueueAt(audio.queue.index + 1);
-  }
+  // And in a queue, whatever comes next - including going round again.
+  queueAdvance();
 });
 
 // pagehide rather than unload: it is the one that fires on a phone when the
@@ -1714,6 +1713,7 @@ function stopAudio() {
   renderTracks();
   showDock(false);
   clearMediaSession();
+  closeNowPlaying();
 }
 
 // showDock also marks the body, because the dock is position: fixed and the
@@ -2519,6 +2519,16 @@ const ICONS = {
   chevron: '<path d="M9 6l6 6-6 6"/>',
   back: '<path d="M15 6l-6 6 6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  next: '<path d="M4 7h10M4 12h10M4 17h6M16 14l5 3-5 3z"/>',
+  queue: '<path d="M4 7h16M4 12h16M4 17h10M18 15v6M15 18h6"/>',
+  play: '<path d="M8 5.5v13l11-6.5z"/>',
+  pause: '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>',
+  prev: '<path d="M6 5v14M19 5.5v13L9 12z"/>',
+  skip: '<path d="M18 5v14M5 5.5v13L15 12z"/>',
+  shuffle: '<path d="M3 7h3c4 0 6 10 10 10h5M17 14l3 3-3 3M3 17h3c1.6 0 2.8-1.6 3.9-3.5M13.5 9.2C14.5 8 15.3 7 16 7h5M17 4l3 3-3 3"/>',
+  repeat: '<path d="M4 11V9a3 3 0 0 1 3-3h12M16 3l3 3-3 3M20 13v2a3 3 0 0 1-3 3H5M8 21l-3-3 3-3"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
 };
 
 function icon(name, filled) {
@@ -2606,6 +2616,14 @@ function renderMainMenu(item) {
     }, { filled: faved, className: 'menu-favourite' }),
   ];
   if (item.kind === 'music') {
+    entries.push(menuItem('next', 'Play next', () => {
+      queuePlayNext(item);
+      closeItemMenu();
+    }));
+    entries.push(menuItem('queue', 'Add to queue', () => {
+      queueAdd(item);
+      closeItemMenu();
+    }));
     entries.push(menuItem('playlist', 'Add to playlist', async () => {
       const { ok, body } = await api('/api/playlists');
       renderPlaylistMenu(item, (ok && body && body.playlists) || []);
@@ -2858,8 +2876,15 @@ async function showPlaylist(id) {
 
 function playQueue(items, start) {
   if (!items.length) return;
-  audio.queue = { items, index: 0 };
+  audio.queue = { items: items.slice(), index: 0, original: null };
   playQueueAt(start);
+  // Shuffle stays on between queues, as it does in any music player.
+  if (audio.shuffle) {
+    audio.queue.original = audio.queue.items.slice();
+    const q = audio.queue;
+    q.items = q.items.slice(0, q.index + 1).concat(shuffled(q.items.slice(q.index + 1)));
+    queueChanged();
+  }
 }
 
 function playQueueAt(index) {
@@ -3375,3 +3400,236 @@ async function showArtist(sourceId, id) {
     head, heading, albumGrid(albums.map((a) => ({ ...a, sourceId: a.sourceId || sourceId }))));
   window.scrollTo(0, 0);
 }
+
+/* ----------------------------------------------------- the queue, grown up */
+
+// Every song played is in a queue now, not only a playlist's: Play next and
+// Add to queue turn a single song into one. audio.queue.items is the order
+// things will play in; shuffle rearranges what is still to come and keeps the
+// order it had, so turning it off puts things back.
+audio.shuffle = false;
+audio.repeat = 'off'; // 'off', 'all', 'one'
+
+function ensureQueue() {
+  if (!audio.queue && audio.item && audio.item.kind === 'music') {
+    audio.queue = { items: [audio.item], index: 0 };
+  }
+  return audio.queue;
+}
+
+function queuePlayNext(item) {
+  if (!ensureQueue()) {
+    playQueue([item], 0);
+    return;
+  }
+  audio.queue.items.splice(audio.queue.index + 1, 0, item);
+  if (audio.queue.original) audio.queue.original.push(item);
+  queueChanged();
+}
+
+function queueAdd(item) {
+  if (!ensureQueue()) {
+    playQueue([item], 0);
+    return;
+  }
+  audio.queue.items.push(item);
+  if (audio.queue.original) audio.queue.original.push(item);
+  queueChanged();
+}
+
+function queueRemove(position) {
+  const q = audio.queue;
+  if (!q || position <= q.index || position >= q.items.length) return;
+  const [gone] = q.items.splice(position, 1);
+  if (q.original) {
+    const at = q.original.indexOf(gone);
+    if (at >= 0) q.original.splice(at, 1);
+  }
+  queueChanged();
+}
+
+// queueAdvance is the end of a song: the next one, or the same one again, or
+// round to the start, or stop.
+function queueAdvance() {
+  const q = audio.queue;
+  if (!q) return;
+  if (audio.repeat === 'one') {
+    playQueueAt(q.index);
+  } else if (q.index + 1 < q.items.length) {
+    playQueueAt(q.index + 1);
+  } else if (audio.repeat === 'all' && q.items.length) {
+    playQueueAt(0);
+  } else {
+    renderNowPlaying();
+  }
+}
+
+function setShuffle(on) {
+  audio.shuffle = on;
+  const q = ensureQueue();
+  if (q) {
+    const played = q.items.slice(0, q.index + 1);
+    if (on) {
+      q.original = q.items.slice();
+      q.items = played.concat(shuffled(q.items.slice(q.index + 1)));
+    } else if (q.original) {
+      // Back to the order it had, carrying on after the current song.
+      const current = q.items[q.index];
+      q.items = q.original;
+      q.index = Math.max(0, q.items.indexOf(current));
+      q.original = null;
+    }
+  }
+  queueChanged();
+}
+
+function cycleRepeat() {
+  audio.repeat = { off: 'all', all: 'one', one: 'off' }[audio.repeat];
+  queueChanged();
+}
+
+function queueChanged() {
+  renderQueue();
+  updateMediaSession();
+  renderNowPlaying();
+}
+
+/* ------------------------------------------------------------- now playing */
+
+function openNowPlaying() {
+  if (!audio.item) return;
+  show($('now-playing'), true);
+  document.body.classList.add('np-open');
+  renderNowPlaying();
+}
+
+function closeNowPlaying() {
+  show($('now-playing'), false);
+  document.body.classList.remove('np-open');
+}
+
+function setIcon(button, name, filled) {
+  button.replaceChildren(icon(name, filled));
+}
+
+setIcon($('np-close'), 'down');
+setIcon($('dock-play'), 'play', true);
+$('dock-play').addEventListener('click', () => {
+  const player = $('audio-player');
+  if (player.paused) player.play().catch(() => {});
+  else player.pause();
+});
+for (const event of ['play', 'pause']) {
+  $('audio-player').addEventListener(event, () => {
+    setIcon($('dock-play'), $('audio-player').paused ? 'play' : 'pause', true);
+  });
+}
+setIcon($('np-prev'), 'prev', true);
+setIcon($('np-next'), 'skip', true);
+setIcon($('np-shuffle'), 'shuffle');
+setIcon($('np-repeat'), 'repeat');
+
+function renderNowPlaying() {
+  if ($('now-playing').classList.contains('hidden') || !audio.item) return;
+  const item = audio.item;
+  const art = artPath(item);
+  for (const img of [$('np-cover'), $('np-backdrop')]) {
+    if (art) img.src = art;
+    else img.removeAttribute('src');
+  }
+  $('np-cover').classList.toggle('empty', !art);
+  $('np-title').textContent = item.title;
+  $('np-sub').textContent = [(item.creators || []).join(', '), (item.extra && item.extra.album) || item.subtitle]
+    .filter(Boolean).join(' \u2014 ');
+
+  const player = $('audio-player');
+  setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
+  $('np-shuffle').setAttribute('aria-pressed', String(audio.shuffle));
+  $('np-shuffle').classList.toggle('on', audio.shuffle);
+  $('np-repeat').classList.toggle('on', audio.repeat !== 'off');
+  $('np-repeat').dataset.mode = audio.repeat;
+  $('np-repeat').setAttribute('aria-label', `Repeat: ${audio.repeat}`);
+  const q = audio.queue;
+  $('np-prev').disabled = false;
+  $('np-next').disabled = !q || (q.index + 1 >= q.items.length && audio.repeat === 'off');
+
+  const list = $('np-queue');
+  list.replaceChildren();
+  const upcoming = q ? q.items.slice(q.index + 1) : [];
+  upcoming.forEach((song, i) => {
+    const position = q.index + 1 + i;
+    const li = document.createElement('li');
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'np-queue-song';
+    const t = document.createElement('strong');
+    t.textContent = song.title;
+    const s = document.createElement('span');
+    s.textContent = (song.creators || []).join(', ') || song.subtitle || '';
+    go.append(t, s);
+    go.addEventListener('click', () => playQueueAt(position));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'np-icon np-remove';
+    remove.setAttribute('aria-label', `Remove ${song.title} from the queue`);
+    remove.append(icon('close'));
+    remove.addEventListener('click', () => queueRemove(position));
+    li.append(go, remove);
+    list.append(li);
+  });
+  show($('np-queue-empty'), upcoming.length === 0);
+  syncNowPlayingTime();
+}
+
+function syncNowPlayingTime() {
+  if ($('now-playing').classList.contains('hidden')) return;
+  const player = $('audio-player');
+  const length = Number.isFinite(player.duration) ? player.duration : 0;
+  if (!state.seeking) {
+    $('np-seek').value = length ? String(Math.round((player.currentTime / length) * 1000)) : '0';
+  }
+  $('np-time').textContent = formatDuration(player.currentTime) || '0:00';
+  $('np-length').textContent = formatDuration(length) || '0:00';
+}
+
+$('audio-open').addEventListener('click', openNowPlaying);
+$('audio-meta').addEventListener('click', openNowPlaying);
+$('audio-meta').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    openNowPlaying();
+  }
+});
+$('np-close').addEventListener('click', closeNowPlaying);
+$('np-play').addEventListener('click', () => {
+  const player = $('audio-player');
+  if (player.paused) player.play().catch(() => {});
+  else player.pause();
+});
+$('np-prev').addEventListener('click', () => mediaPrevious());
+$('np-next').addEventListener('click', () => {
+  const q = audio.queue;
+  if (q && q.index + 1 >= q.items.length && audio.repeat !== 'off') playQueueAt(0);
+  else mediaNext();
+});
+$('np-shuffle').addEventListener('click', () => setShuffle(!audio.shuffle));
+$('np-repeat').addEventListener('click', cycleRepeat);
+$('np-seek').addEventListener('input', () => {
+  state.seeking = true;
+  const player = $('audio-player');
+  if (Number.isFinite(player.duration)) {
+    $('np-time').textContent = formatDuration((Number($('np-seek').value) / 1000) * player.duration) || '0:00';
+  }
+});
+$('np-seek').addEventListener('change', () => {
+  const player = $('audio-player');
+  if (Number.isFinite(player.duration)) player.currentTime = (Number($('np-seek').value) / 1000) * player.duration;
+  state.seeking = false;
+});
+for (const event of ['play', 'pause', 'loadedmetadata']) {
+  $('audio-player').addEventListener(event, renderNowPlaying);
+}
+$('audio-player').addEventListener('timeupdate', syncNowPlayingTime);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('now-playing').classList.contains('hidden')) closeNowPlaying();
+});

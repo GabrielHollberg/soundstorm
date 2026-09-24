@@ -408,12 +408,18 @@
 
   <!-- Audio dock -------------------------------------------------------- -->
   <div id="audio-dock" class="dock hidden">
-    <img id="audio-art" alt="">
-    <div class="dock-meta">
+    <!-- The cover and the song open Now Playing. -->
+    <button id="audio-open" class="dock-cover" type="button" aria-label="Open Now Playing">
+      <img id="audio-art" alt="">
+    </button>
+    <div class="dock-meta" id="audio-meta" role="button" tabindex="0" aria-label="Open Now Playing">
       <strong id="audio-title"></strong>
       <span id="audio-sub" class="muted"></span>
     </div>
     <audio id="audio-player" controls></audio>
+    <!-- On a phone the browser's controls give way to one big play button:
+         the rest of the controls are a tap away, in Now Playing. -->
+    <button id="dock-play" class="np-icon dock-play" type="button" aria-label="Play or pause"></button>
     <!-- Only shown for something made of more than one file, which in practice
          means an audiobook ripped a chapter at a time. -->
     <!-- Only while playing a playlist: the queue it is working through. -->
@@ -430,6 +436,43 @@
          will not fit in a dock, so the list is a panel above it. -->
     <ol id="audio-tracks" class="track-list hidden"></ol>
   </div>
+
+  <!-- Now Playing: the song, big, with the controls and what comes next. -->
+  <section id="now-playing" class="now-playing hidden" aria-label="Now Playing">
+    <img id="np-backdrop" class="np-backdrop" alt="">
+    <div class="np-inner">
+      <header class="np-bar">
+        <button id="np-close" class="np-icon" type="button" aria-label="Close Now Playing"></button>
+        <span class="np-label">Now Playing</span>
+        <span class="np-spacer"></span>
+      </header>
+      <div class="np-main">
+        <div class="np-cover-wrap"><img id="np-cover" class="np-cover" alt=""></div>
+        <div class="np-side">
+          <div class="np-text">
+            <h2 id="np-title"></h2>
+            <p id="np-sub"></p>
+          </div>
+          <div class="np-progress">
+            <input id="np-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
+            <div class="np-times"><span id="np-time">0:00</span><span id="np-length">0:00</span></div>
+          </div>
+          <div class="np-controls">
+            <button id="np-shuffle" class="np-icon np-toggle" type="button" aria-label="Shuffle" aria-pressed="false"></button>
+            <button id="np-prev" class="np-icon" type="button" aria-label="Previous"></button>
+            <button id="np-play" class="np-icon np-play" type="button" aria-label="Play or pause"></button>
+            <button id="np-next" class="np-icon" type="button" aria-label="Next"></button>
+            <button id="np-repeat" class="np-icon np-toggle" type="button" aria-label="Repeat: off"></button>
+          </div>
+          <div class="np-next">
+            <h3>Up next</h3>
+            <ol id="np-queue"></ol>
+            <p id="np-queue-empty" class="muted hidden">Nothing after this. Hold down on a song and choose Play next or Add to queue.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <script src="/static/app.js"></script>
   <script type="module" src="/static/reader.js"></script>
