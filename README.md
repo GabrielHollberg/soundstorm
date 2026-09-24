@@ -185,6 +185,12 @@ Anything you drop on the window is searchable within a few seconds — SoundStor
 tells whichever server owns that shelf to look, rather than leaving the file
 sitting there until its next sweep.
 
+An upload has to keep moving: one that has sent next to nothing for a minute is
+dropped rather than tying the server up, which a slow connection never trips
+and a stalled one always does. Each person can have up to four uploading at
+once; the app sends one file at a time, so that only matters with several tabs
+or devices going together.
+
 Files you copy into the folders yourself are found on the next sweep instead:
 every minute for music, every two for ebooks, and as the watchers notice for
 films and audiobooks. Until then the app says "indexing…" rather than
@@ -289,8 +295,10 @@ It is **off by default and plainly warned**, because it does exactly what it
 says: once it is on, anyone who knows the address reaches your login screen. The
 setup code that guards the very first sign-up means finding the address is not
 enough to claim an unclaimed server — but the login itself is now facing the
-world, so turn it on deliberately. The same switch, or `-NoRemote` /
-`--no-remote`, turns it off again.
+world, so turn it on deliberately. Guessing passwords there is slow by design,
+and cannot lock you out of a device you already use (see
+[Giving other people a login](#giving-other-people-a-login)). The same switch,
+or `-NoRemote` / `--no-remote`, turns it off again.
 
 ##### Tailscale — when there is no port to forward, or you would rather not
 
@@ -411,7 +419,10 @@ Every ordinary write already leaves a `.bak` beside the state, which covers a
 bad write but not a deleted volume — that is what this is for.
 
 **Uninstalling saves one automatically** into the install folder before it
-removes anything, and leaves it behind when it cleans up.
+removes anything, and leaves it behind when it cleans up. That copy, like the
+`.env` file beside it — which holds the first sign-up's setup code and any
+Tailscale key — is written so that other people's accounts on the same computer
+cannot read it, wherever the install folder lives.
 
 ### Forgotten your password
 
@@ -468,9 +479,17 @@ reachable from outside a house should not let a stranger create an account.
 
 Changing your password under **Account** asks for the current one and signs you
 out on every other device. When the owner resets somebody's password, that
-person is signed out everywhere too. Repeated wrong passwords at the sign-in
-screen make it wait before accepting another try: a second after the fifth,
-doubling to at most five minutes.
+person is signed out everywhere too.
+
+Repeated wrong passwords make the sign-in screen wait before accepting another
+try: a second after the fifth wrong guess from one place, doubling to at most
+five minutes, and a short wait on any name that keeps being guessed at from
+anywhere. **A device you have signed in on before is never held up by somebody
+else's guessing** — a stranger trying passwords for your name, or failing over
+and over from behind the same router, cannot keep you out of your own server
+from a phone or laptop you already use. Only a device that has never signed in
+waits while that is going on, and changing your password makes every device
+new again.
 
 Everybody keeps their own **place in every book**, both for reading and for
 listening. The audiobook side of that is real per-person state on the backend,
