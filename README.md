@@ -111,6 +111,10 @@ This is a **working vertical slice**, not a finished product. What runs today:
 - **HTTPS with a real certificate, automatically**: every install gets its own
   `*.home.soundstorm.dev` address that every browser and phone already trusts —
   no warning, nothing to install, no account
+- **remote access, opt-in**: turn it on and the server gets a second
+  `*.net.soundstorm.dev` address reachable from anywhere, opening the router port
+  itself (NAT-PMP/PCP/UPnP, or IPv6 with no forwarding) and telling you what to
+  forward by hand when it cannot
 - one search across all four, merged and ranked
 - music, films, TV and audiobooks play **inside SoundStorm**
 - video a browser cannot decode is **transcoded by Jellyfin on the fly** and
@@ -237,8 +241,8 @@ the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
 > If the secure address does not load on your network, your router is
 > refusing names that point at home addresses (some do, as a security
 > measure); SoundStorm then simply stays on the plain address. Away from home,
-> [Tailscale](#reaching-it-from-outside-the-house) gives the same real
-> certificate.
+> [remote access or Tailscale](#from-outside-the-house)
+> gives the same real certificate.
 
 Two things worth doing:
 
@@ -254,12 +258,46 @@ Two things worth doing:
 > on the server itself and nowhere else — which is a worse thing to be handed
 > than a number.
 
-**From outside the house** is a different question. The secure
-`….home.soundstorm.dev` address points at your server's *home network*
-address, so it only works on your own Wi-Fi — on purpose. For everywhere
-else, the answer is not "forward a port". Run SoundStorm on a
-[Tailscale](https://tailscale.com) tailnet instead — nothing is exposed to the
-internet, and there is no port forwarding at all:
+#### From outside the house
+
+The secure `….home.soundstorm.dev` address points at your server's *home
+network* address, so it only works on your own Wi-Fi — on purpose. There are two
+ways to reach SoundStorm from everywhere else.
+
+##### Remote access — the simple one
+
+Turn it on under **Account → Reach it from anywhere**, or install with
+`-Remote` (Windows) / `--remote` (Linux, macOS). SoundStorm gives your server a
+second address of its own — `….net.soundstorm.dev` — pointing at your home's
+public address, with the same real certificate the home one has. Same login, no
+app for anyone to install, no account: send someone the link and they are at
+your login screen.
+
+Getting the traffic in is the part a home network makes awkward, and SoundStorm
+does as much of it as it can:
+
+- **It opens the port on your router for you** where the router allows it,
+  trying NAT-PMP, then PCP, then UPnP — most consumer routers speak one of them.
+- **Where none of them work**, the account panel says exactly what to do (forward
+  one port, the one SoundStorm runs on, to this computer) and shows whether it
+  has become reachable yet, re-checking as it comes up.
+- **Over IPv6 there is nothing to forward at all** where your ISP provides it,
+  since IPv6 has no NAT. SoundStorm publishes both, and a visitor connects on
+  whichever their own network has.
+
+It is **off by default and plainly warned**, because it does exactly what it
+says: once it is on, anyone who knows the address reaches your login screen. The
+setup code that guards the very first sign-up means finding the address is not
+enough to claim an unclaimed server — but the login itself is now facing the
+world, so turn it on deliberately. The same switch, or `-NoRemote` /
+`--no-remote`, turns it off again.
+
+##### Tailscale — when there is no port to forward, or you would rather not
+
+Some connections have no forwardable port at all (carrier-grade NAT is the usual
+reason), and some people would simply rather not put a server on the internet.
+Run SoundStorm on a [Tailscale](https://tailscale.com) tailnet instead — nothing
+is exposed, and there is no port forwarding at all:
 
 **Windows:**
 
@@ -511,8 +549,10 @@ terminates TLS for you? Leave TLS off and set `SOUNDSTORM_TRUST_PROXY=true` so
 the session cookie is marked Secure.
 
 **Still true:** SoundStorm has not been audited, and putting any self-hosted
-server directly on the open internet is a decision worth making deliberately. A
-VPN such as [Tailscale](https://tailscale.com) remains the easiest safe answer.
+server directly on the open internet is a decision worth making deliberately.
+That is exactly why [remote access](#from-outside-the-house) is off until you
+turn it on and is plainly warned when you do. If you would rather expose nothing
+at all, a VPN such as [Tailscale](https://tailscale.com) is the safe answer.
 
 ### Windows, in more detail
 
