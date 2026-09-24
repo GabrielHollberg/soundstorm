@@ -1111,6 +1111,7 @@ function play(item) {
     default:
       // Music and audiobooks are both just audio as far as a browser cares.
       playAudio(item);
+      if (item.kind === 'music') openNowPlaying();
   }
 }
 
@@ -2939,6 +2940,9 @@ function playQueue(items, start) {
   if (!items.length) return;
   audio.queue = { items: items.slice(), index: 0, original: null };
   playQueueAt(start);
+  // Starting music by hand opens the full player, as a music app does. The
+  // queue moving on by itself (playQueueAt) leaves the screen alone.
+  if (items[start] && items[start].kind === 'music') openNowPlaying();
   // Shuffle stays on between queues, as it does in any music player.
   if (audio.shuffle) {
     audio.queue.original = audio.queue.items.slice();
@@ -3595,7 +3599,71 @@ function openNowPlaying() {
 function closeNowPlaying() {
   show($('now-playing'), false);
   document.body.classList.remove('np-open');
+  $('now-playing').style.transform = '';
 }
+
+// Drag down to put the full player away, on a touch screen. The panel follows
+// the finger, and goes if it was dragged far enough or flicked; otherwise it
+// springs back. Not from the seek bar, and not from a list that is scrolled
+// down, where dragging down means scrolling up.
+(function dragToClose() {
+  const panel = $('now-playing');
+  let startY = 0;
+  let startT = 0;
+  let dy = 0;
+  let dragging = false;
+  let armed = false;
+  const scrolledDown = (el) => {
+    for (let n = el; n && n !== panel; n = n.parentElement) {
+      if (n.scrollTop > 0 && n.scrollHeight > n.clientHeight) return true;
+    }
+    return false;
+  };
+  panel.addEventListener('touchstart', (event) => {
+    const t = event.touches[0];
+    armed = event.touches.length === 1 &&
+      !event.target.closest('input') &&
+      !(event.target.closest('#np-lyrics, #np-queue') && scrolledDown(event.target));
+    dragging = false;
+    dy = 0;
+    startY = t.clientY;
+    startT = performance.now();
+  }, { passive: true });
+  panel.addEventListener('touchmove', (event) => {
+    if (!armed) return;
+    const d = event.touches[0].clientY - startY;
+    if (!dragging) {
+      if (d < 8) {
+        if (d < -8) armed = false; // an upward drag is a scroll, not a close
+        return;
+      }
+      dragging = true;
+      panel.style.transition = 'none';
+    }
+    dy = Math.max(0, d);
+    panel.style.transform = `translateY(${dy}px)`;
+    if (event.cancelable) event.preventDefault();
+  }, { passive: false });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    armed = false;
+    const speed = dy / Math.max(performance.now() - startT, 1); // px per ms
+    panel.style.transition = 'transform 0.22s ease-out';
+    if (dy > panel.clientHeight * 0.25 || (speed > 0.6 && dy > 40)) {
+      panel.style.transform = `translateY(${panel.clientHeight}px)`;
+      setTimeout(() => {
+        panel.style.transition = '';
+        closeNowPlaying();
+      }, 220);
+    } else {
+      panel.style.transform = '';
+      setTimeout(() => { panel.style.transition = ''; }, 220);
+    }
+  };
+  panel.addEventListener('touchend', end);
+  panel.addEventListener('touchcancel', end);
+})();
 
 function setIcon(button, name, filled) {
   button.replaceChildren(icon(name, filled));
