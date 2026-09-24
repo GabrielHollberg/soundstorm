@@ -21,6 +21,8 @@
 #   -NoShortcuts   skip the Start Menu, Desktop and startup shortcuts
 #   -NoAutoStart   install, but do not start with Windows
 #   -Library PATH  keep the media library somewhere else - an external drive
+#   -ChooseLibrary ask, in a window, where the library should go (what the
+#                  "Move SoundStorm library" shortcut runs)
 #
 # Updating is the same as installing: run it again. It pulls newer images and
 # restarts, and leaves everything else alone. -Https and -NoHttps work on an
@@ -57,7 +59,8 @@ param(
     [Alias('no-browser')][switch]$NoBrowser,
     # No alias: --library already binds to -Library, and an alias differing
     # only in case is an error rather than a no-op.
-    [string]$Library
+    [string]$Library,
+    [Alias('choose-library')][switch]$ChooseLibrary
 )
 
 if ($Https -and $NoHttps) {
@@ -712,21 +715,7 @@ function Set-LanAccess([string]$Address, [int]$Port) {
 
     $makePrivate = $false
     if ($network.Category -eq 'Public') {
-        Callout 'Is this your home network?' @(
-            "Windows is treating the network this PC is on (""$($network.Name)"") as",
-            'PUBLIC - the setting for cafes and airports - so it stops your phone,',
-            'TV and other computers from reaching SoundStorm.',
-            '',
-            'If this is your own home network, SoundStorm can mark it as private.',
-            'On a network you do not own, answer N and nothing is changed.'
-        ) 'Cyan'
-        $answer = ''
-        try {
-            $answer = Read-Host '    Is this your home network? Type Y or N, then press Enter'
-        } catch {
-            # No console to ask on: change nothing, which is the safe answer.
-        }
-        if ($answer -notmatch '^\s*y') {
+        if (-not (Confirm-HomeNetwork $network.Name)) {
             Note "Leaving this network as it is."
             return 'public'
         }
@@ -1286,95 +1275,34 @@ function Format-Size([double]$Bytes) {
     return ('{0:N0} GB' -f ($Bytes / 1GB))
 }
 
-# Select-LibraryLocation asks, on a first install, where the media should go,
-# and returns the folder chosen - or $null to keep the default beside the
-# install.
-#
-# -Library could always do this, but nothing ever asked, so only somebody who
-# had read the README knew it was possible - and the library is the one part of
-# this that outgrows a laptop's disk, where moving it later means moving every
-# file. So the question comes before anything is put there, with the free space
-# on each drive beside it, since that is what the answer turns on.
-#
-# A folder picker rather than a typed path: typing C:\Users\... is not
-# something the person this is for should have to do. Typing still works, as
-# the fallback when no dialog can be shown.
-function Select-LibraryLocation([string]$Default) {
-    $drives = @()
+# Get-LocalDrives is the drives a library can live on: fixed and removable
+# ones with a letter. Network drives are left out on purpose - Docker Desktop
+# cannot see a mapped drive letter, so offering one would be offering a library
+# the media servers cannot read.
+function Get-LocalDrives {
     try {
-        # Fixed and removable drives with a letter. Network drives are left
-        # out on purpose: Docker Desktop cannot see a mapped drive letter, so
-        # offering one would be offering a library the media servers cannot
-        # read.
-        $drives = @(Get-CimInstance Win32_LogicalDisk -ErrorAction Stop |
+        return @(Get-CimInstance Win32_LogicalDisk -ErrorAction Stop |
             Where-Object { ($_.DriveType -eq 2 -or $_.DriveType -eq 3) -and $_.Size -gt 0 })
     } catch {
+        return @()
     }
+}
 
-    $lines = @(
-        'Your music, films and books will be kept in:',
-        "*  $Default",
-        ''
-    )
-    if ($drives.Count -gt 1) {
-        $lines += 'Free space on this PC:'
-        foreach ($drive in $drives) {
-            $label = if ($drive.VolumeName) { " ($($drive.VolumeName))" } else { '' }
-            $lines += "   $($drive.DeviceID)$label  $(Format-Size $drive.FreeSpace) free of $(Format-Size $drive.Size)"
-        }
-        $lines += ''
-    }
-    $lines += @(
-        'A film collection can need hundreds of GB. To keep it on another',
-        'drive - an external one, say - choose a folder there now. Moving it',
-        'later means moving every file.'
-    )
-    Callout 'Where should your library go?' $lines 'Cyan'
-
-    $answer = ''
-    try {
-        $answer = Read-Host '    Press Enter to keep it there, or type C to choose another folder'
-    } catch {
-        return $null
-    }
-    if ($answer -notmatch '^\s*c') { return $null }
-
-    $picked = $null
-    try {
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = 'Choose where SoundStorm keeps your music, films and books. A new folder called SoundStorm is made inside the one you pick.'
-        $dialog.ShowNewFolderButton = $true
-        # Owned by a topmost form, or the dialog opens behind this window and
-        # the setup looks as if it has stopped.
-        $owner = New-Object System.Windows.Forms.Form
-        $owner.TopMost = $true
-        try {
-            if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
-                $picked = $dialog.SelectedPath
-            } else {
-                Note "No folder chosen - keeping the library in $Default."
-                return $null
-            }
-        } finally {
-            $owner.Dispose()
-            $dialog.Dispose()
-        }
-    } catch {
-        try {
-            $picked = Read-Host '    Type the folder to use, for example E:\Media'
-        } catch {
-            return $null
-        }
-    }
-    if (-not $picked -or -not $picked.Trim()) { return $null }
-    $picked = $picked.Trim().Trim('"')
-
-    # A network location looks like any other folder in the picker, and the
-    # media servers cannot read one: Docker Desktop does not see mapped drives
-    # or \\server\share paths. Better said now than as an empty library later.
-    $isNetwork = $picked.StartsWith('\\')
-    if (-not $isNetwork -and $picked -match '^([A-Za-z]:)') {
+# Resolve-LibraryChoice turns a folder somebody picked into the library folder,
+# or no path and the reason when it cannot be one.
+#
+# A folder of its own inside whatever was picked: somebody who picks E:\ does
+# not mean "scatter seven shelves across the root of my drive", and somebody who
+# picks an existing Media folder does not mean "mix these in with what is
+# there". A network location looks like any other folder in the picker, and the
+# media servers cannot read one - Docker Desktop sees neither mapped drives nor
+# \\server\share paths - so that is refused now rather than found later as an
+# empty library.
+function Resolve-LibraryChoice([string]$Picked) {
+    if (-not $Picked -or -not $Picked.Trim()) { return @{ Path = $null; Problem = '' } }
+    $Picked = $Picked.Trim().Trim('"')
+    $isNetwork = $Picked.StartsWith('\\')
+    if (-not $isNetwork -and $Picked -match '^([A-Za-z]:)') {
         try {
             $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($Matches[1].ToUpper())'" -ErrorAction Stop
             $isNetwork = ($disk.DriveType -eq 4)
@@ -1382,19 +1310,201 @@ function Select-LibraryLocation([string]$Default) {
         }
     }
     if ($isNetwork) {
-        Important "That is a network location, which the media servers cannot read."
-        Note "Keeping the library in $Default. Choose a drive plugged into this PC instead."
-        return $null
+        return @{ Path = $null; Problem = 'That is a network location, which SoundStorm cannot use. Choose a drive plugged into this PC.' }
+    }
+    if ([IO.Path]::GetFileName($Picked.TrimEnd('\')) -ne 'SoundStorm') {
+        $Picked = Join-Path $Picked 'SoundStorm'
+    }
+    return @{ Path = $Picked; Problem = '' }
+}
+
+# New-TopmostOwner is an invisible window for a message box to belong to.
+# Without an owner that is on top, a dialog opened from a console can appear
+# *behind* the setup window - and a setup waiting on a window nobody can see
+# looks exactly like one that has hung.
+function New-TopmostOwner {
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    $owner.ShowInTaskbar = $false
+    $owner.StartPosition = 'CenterScreen'
+    $owner.Size = New-Object System.Drawing.Size(1, 1)
+    $owner.Opacity = 0
+    $owner.Show()
+    $owner.Activate()
+    return $owner
+}
+
+# Select-LibraryLocation asks where the media should go and returns the folder
+# chosen, or $null to keep Default.
+#
+# -Library could always do this, but nothing ever asked, so only somebody who
+# had read the README knew it was possible - and the library is the one part of
+# this that outgrows a laptop's disk, where moving it later means moving every
+# file.
+#
+# A window with buttons and Windows' own folder browser, not a question typed
+# into the console: the people this is for are put off by a command prompt, and
+# "type C to choose" is still a command prompt. The console question is only
+# the fallback for a machine that cannot show a window.
+function Select-LibraryLocation([string]$Default, [string]$Intro = '') {
+    $drives = Get-LocalDrives
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+        [System.Windows.Forms.Application]::EnableVisualStyles()
+    } catch {
+        return (Read-LibraryLocation $Default $drives)
     }
 
-    # Its own folder inside whatever was picked. Somebody who picks E:\ does
-    # not mean "scatter seven shelves across the root of my drive", and
-    # somebody who picks an existing Media folder does not mean "mix these in
-    # with what is there".
-    if ([IO.Path]::GetFileName($picked.TrimEnd('\')) -ne 'SoundStorm') {
-        $picked = Join-Path $picked 'SoundStorm'
+    Note "A window has opened asking where to keep your library."
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'SoundStorm - where should your library go?'
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.StartPosition = 'CenterScreen'
+    $form.TopMost = $true
+    $form.AutoScaleMode = 'Dpi'
+    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $form.ClientSize = New-Object System.Drawing.Size(560, 360)
+
+    $heading = New-Object System.Windows.Forms.Label
+    $heading.Text = if ($Intro) { $Intro } else { 'Your music, films and books will be kept in this folder:' }
+    $heading.Location = New-Object System.Drawing.Point(20, 16)
+    $heading.Size = New-Object System.Drawing.Size(520, 44)
+    $form.Controls.Add($heading)
+
+    $pathBox = New-Object System.Windows.Forms.TextBox
+    $pathBox.ReadOnly = $true
+    $pathBox.Text = $Default
+    $pathBox.Location = New-Object System.Drawing.Point(20, 62)
+    $pathBox.Size = New-Object System.Drawing.Size(520, 28)
+    $form.Controls.Add($pathBox)
+
+    $lines = @('A film collection can need hundreds of GB. To keep it on another drive - an external one, say - choose a folder there now. Moving it later means moving every file.')
+    if ($drives.Count -gt 1) {
+        $lines += ''
+        $lines += 'Free space:'
+        # The roomiest eight: that is what the question turns on, and the box
+        # has room for eight lines.
+        foreach ($drive in @($drives | Sort-Object FreeSpace -Descending | Select-Object -First 8)) {
+            $label = if ($drive.VolumeName) { " ($($drive.VolumeName))" } else { '' }
+            $lines += "    $($drive.DeviceID)$label   $(Format-Size $drive.FreeSpace) free of $(Format-Size $drive.Size)"
+        }
     }
-    return $picked
+    $space = New-Object System.Windows.Forms.Label
+    $space.Text = $lines -join "`r`n"
+    $space.Location = New-Object System.Drawing.Point(20, 102)
+    $space.Size = New-Object System.Drawing.Size(520, 180)
+    $space.ForeColor = [System.Drawing.Color]::DimGray
+    $form.Controls.Add($space)
+
+    $problem = New-Object System.Windows.Forms.Label
+    $problem.ForeColor = [System.Drawing.Color]::Firebrick
+    $problem.Location = New-Object System.Drawing.Point(20, 284)
+    $problem.Size = New-Object System.Drawing.Size(520, 24)
+    $form.Controls.Add($problem)
+
+    $choose = New-Object System.Windows.Forms.Button
+    $choose.Text = 'Choose a different folder...'
+    $choose.Location = New-Object System.Drawing.Point(20, 314)
+    $choose.Size = New-Object System.Drawing.Size(240, 34)
+    $form.Controls.Add($choose)
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'Continue'
+    $ok.Location = New-Object System.Drawing.Point(420, 314)
+    $ok.Size = New-Object System.Drawing.Size(120, 34)
+    $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $form.Controls.Add($ok)
+    $form.AcceptButton = $ok
+    # Focus on the button, not the path: a highlighted path reads as something
+    # to edit, and the box is only there to be read.
+    $form.ActiveControl = $ok
+
+    $choose.Add_Click({
+        $browser = New-Object System.Windows.Forms.FolderBrowserDialog
+        $browser.Description = 'Choose where SoundStorm keeps your music, films and books. A folder called SoundStorm is made inside the one you pick.'
+        $browser.ShowNewFolderButton = $true
+        $browser.RootFolder = [Environment+SpecialFolder]::MyComputer
+        if ($browser.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+            $resolved = Resolve-LibraryChoice $browser.SelectedPath
+            if ($resolved.Path) {
+                $pathBox.Text = $resolved.Path
+                $problem.Text = ''
+            } else {
+                $problem.Text = $resolved.Problem
+            }
+        }
+        $browser.Dispose()
+    })
+
+    $chosen = $Default
+    try {
+        # Closing the window with the X means "carry on with what it shows" -
+        # the default, unless a folder was picked first.
+        [void]$form.ShowDialog()
+        $chosen = $pathBox.Text
+    } finally {
+        $form.Dispose()
+    }
+    if ($chosen -eq $Default) { return $null }
+    return $chosen
+}
+
+# Read-LibraryLocation is the same question in the console, for a machine that
+# cannot show a window.
+function Read-LibraryLocation([string]$Default, $Drives) {
+    $lines = @('Your music, films and books will be kept in:', "*  $Default", '')
+    if ($Drives.Count -gt 1) {
+        $lines += 'Free space on this PC:'
+        foreach ($drive in $Drives) {
+            $label = if ($drive.VolumeName) { " ($($drive.VolumeName))" } else { '' }
+            $lines += "   $($drive.DeviceID)$label  $(Format-Size $drive.FreeSpace) free of $(Format-Size $drive.Size)"
+        }
+        $lines += ''
+    }
+    $lines += @('To keep it somewhere else - an external drive, say - type the folder.',
+        'Moving it later means moving every file.')
+    Callout 'Where should your library go?' $lines 'Cyan'
+    try {
+        $typed = Read-Host '    Press Enter to keep it there, or type a folder such as E:\Media'
+    } catch {
+        return $null
+    }
+    $resolved = Resolve-LibraryChoice $typed
+    if ($resolved.Problem) {
+        Important $resolved.Problem
+        Note "Keeping the library in $Default."
+    }
+    return $resolved.Path
+}
+
+# Confirm-HomeNetwork asks the network question in a Yes/No window, falling
+# back to the console only where no window can be shown. Returns $true for yes.
+function Confirm-HomeNetwork([string]$NetworkName) {
+    $text = "Windows is treating the network this PC is on (""$NetworkName"") as public - the setting for cafes and airports - so your phone, TV and other computers cannot reach SoundStorm.`r`n`r`nIs this your own home network?`r`n`r`nYes: SoundStorm marks it as private so your other devices can connect. Windows will ask for permission.`r`nNo: nothing is changed."
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+    } catch {
+        try {
+            return ((Read-Host '    Is this your home network? Type Y or N, then press Enter') -match '^\s*y')
+        } catch {
+            # No console to ask on either: change nothing, the safe answer.
+            return $false
+        }
+    }
+    Note "A window has opened asking about your network."
+    $owner = New-TopmostOwner
+    try {
+        $answer = [System.Windows.Forms.MessageBox]::Show($owner, $text,
+            'SoundStorm - is this your home network?',
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question)
+    } finally {
+        $owner.Dispose()
+    }
+    return ($answer -eq [System.Windows.Forms.DialogResult]::Yes)
 }
 
 # Get-InstalledURL is where an install answers, read from its own .env rather
@@ -1648,6 +1758,13 @@ function Install-Shortcuts {
         "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`"" $Dir `
         'Get the newest version of SoundStorm' $false
 
+    # Moving the library is the one change somebody may want long after
+    # installing, and -Library is a command-line option. A shortcut that opens
+    # the same window a first install shows means nobody has to type it.
+    New-Shortcut (Join-Path $startMenu 'Move SoundStorm library.lnk') $powershell `
+        "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -ChooseLibrary" $Dir `
+        'Keep your music, films and books in a different folder or drive' $false
+
     if (-not $NoAutoStart) {
         $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
         New-Shortcut (Join-Path $startup 'SoundStorm.lnk') $powershell `
@@ -1707,6 +1824,7 @@ function Remove-Shortcuts {
         (Join-Path $desktop 'SoundStorm media.lnk'),
         (Join-Path $programs 'SoundStorm.lnk'),
         (Join-Path $programs 'Update SoundStorm.lnk'),
+        (Join-Path $programs 'Move SoundStorm library.lnk'),
         (Join-Path $programs 'Startup\SoundStorm.lnk')
     )) {
         Remove-Item $path -Force -ErrorAction SilentlyContinue
@@ -2046,7 +2164,16 @@ Protect-SecretFile (Join-Path $Dir '.env')
 if (-not $Library -and $firstInstall -and -not (Get-EnvSetting 'SOUNDSTORM_LIBRARY_PATH')) {
     $choice = Select-LibraryLocation (Get-LibraryPath)
     if ($choice) { $Library = $choice }
+} elseif (-not $Library -and $ChooseLibrary) {
+    $choice = Select-LibraryLocation (Get-LibraryPath) `
+        'Choose where SoundStorm should keep your music, films and books from now on. Your files are not moved - you will be shown both folders at the end.'
+    if ($choice) {
+        $Library = $choice
+    } else {
+        Note "Keeping the library where it is."
+    }
 }
+$movedFrom = ''
 if ($Library) {
     try {
         $full = [IO.Path]::GetFullPath($Library)
@@ -2065,9 +2192,9 @@ if ($Library) {
             Where-Object { $_.Name -ne 'README.txt' } | Select-Object -First 1)) {
         Write-Host ""
         Write-Host "  Your existing media is still in $previous." -ForegroundColor Yellow
-        Write-Host "  To bring it across, close SoundStorm, move the folders inside it" -ForegroundColor Gray
-        Write-Host "  into $full, and open SoundStorm again." -ForegroundColor Gray
+        Write-Host "  Both folders open when the setup finishes, so it can be dragged across." -ForegroundColor Gray
         Write-Host ""
+        $movedFrom = $previous
     }
 }
 $libraryPath = Get-LibraryPath
@@ -2334,4 +2461,29 @@ if ($hasAccount -ne $true -and $setupCode) {
         "Browser did not open?  Go to:  $url"
     ) 'Green'
     Start-Process $url
+}
+
+# After a move, the old files are still where they were - moving them for
+# somebody is the operation this script never does, because tens of gigabytes
+# shifted by a script is exactly what should not fail halfway. What it can do is
+# make the move a drag: open both folders, and say which way to drag, in a
+# window rather than a console line that scrolls away.
+if ($movedFrom) {
+    Start-Process explorer.exe -ArgumentList "`"$movedFrom`""
+    Start-Process explorer.exe -ArgumentList "`"$libraryPath`""
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+        $owner = New-TopmostOwner
+        try {
+            [void][System.Windows.Forms.MessageBox]::Show($owner,
+                "SoundStorm now keeps your library in:`r`n    $libraryPath`r`n`r`nYour existing files are still in:`r`n    $movedFrom`r`n`r`nBoth folders are open. To bring your files across, select everything inside the old folder (Ctrl+A) and drag it into the new one. If Windows says the folders already exist, click Yes - it adds your files to them. SoundStorm picks them up as they arrive.",
+                'SoundStorm - move your files across',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information)
+        } finally {
+            $owner.Dispose()
+        }
+    } catch {
+        # The console already said where both folders are.
+    }
 }
