@@ -3,6 +3,7 @@ package portmap
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"net/netip"
 	"sync"
@@ -330,5 +331,71 @@ func TestMaintainerRetriesAfterAFailure(t *testing.T) {
 	}
 	if wait < 30*time.Second || wait > 5*time.Minute {
 		t.Errorf("retry wait = %v, want it bounded to [30s, 5m]", wait)
+	}
+}
+
+func TestClassifyWAN(t *testing.T) {
+	cases := map[string]Upstream{
+		"100.64.0.1":        UpstreamShared,
+		"100.127.255.254":   UpstreamShared,
+		"100.128.0.1":       UpstreamUnknown, // just past the shared range
+		"100.63.255.255":    UpstreamUnknown, // just before it
+		"192.168.1.5":       UpstreamRouter,
+		"10.0.0.2":          UpstreamRouter,
+		"172.16.4.4":        UpstreamRouter,
+		"169.254.3.3":       UpstreamRouter,
+		"81.2.69.160":       UpstreamUnknown,
+		"2001:db8::1":       UpstreamUnknown,
+		"::ffff:100.64.1.1": UpstreamShared, // mapped form reads the same
+	}
+	for in, want := range cases {
+		if got := ClassifyWAN(netip.MustParseAddr(in)); got != want {
+			t.Errorf("ClassifyWAN(%s) = %q, want %q", in, got, want)
+		}
+	}
+	if got := ClassifyWAN(netip.Addr{}); got != UpstreamUnknown {
+		t.Errorf("an unknown address classified as %q", got)
+	}
+}
+
+// The case the check exists for: a router behind carrier-grade NAT opens the
+// port happily - on an address the internet cannot reach. The mapping
+// succeeding says nothing; the WAN address says it all.
+func TestExternalAddressSeesSharedAddressBehindAWorkingMapping(t *testing.T) {
+	g := newFakeGateway(t)
+	g.set(func(g *fakeGateway) { g.wanIP = netip.MustParseAddr("100.72.14.9") })
+	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099, testServer: g.addr}
+
+	if _, err := mt.EnsureNow(testCtx(t)); err != nil {
+		t.Fatalf("the mapping itself should succeed: %v", err)
+	}
+	wan, err := mt.ExternalAddress(testCtx(t))
+	if err != nil {
+		t.Fatalf("ExternalAddress: %v", err)
+	}
+	if got := ClassifyWAN(wan); got != UpstreamShared {
+		t.Errorf("WAN %s classified as %q, want shared", wan, got)
+	}
+}
+
+// With no mapping held - every method refused - the router is still asked.
+func TestExternalAddressAsksTheRouterWithoutAMapping(t *testing.T) {
+	g := newFakeGateway(t)
+	g.set(func(g *fakeGateway) { g.wanIP = netip.MustParseAddr("192.168.100.2") })
+	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099, testServer: g.addr}
+
+	wan, err := mt.ExternalAddress(testCtx(t))
+	if err != nil {
+		t.Fatalf("ExternalAddress: %v", err)
+	}
+	if got := ClassifyWAN(wan); got != UpstreamRouter {
+		t.Errorf("WAN %s classified as %q, want router (double NAT)", wan, got)
+	}
+}
+
+func TestExternalAddressWithoutAGateway(t *testing.T) {
+	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099}
+	if _, err := mt.ExternalAddress(testCtx(t)); !errors.Is(err, ErrNoGateway) {
+		t.Errorf("err = %v, want ErrNoGateway", err)
 	}
 }

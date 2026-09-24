@@ -1996,6 +1996,107 @@ function Read-LibraryLocation([string]$Default, $Drives) {
     return $resolved.Path
 }
 
+# Show-TailscaleDialog asks for a Tailscale auth key in a window that says
+# what Tailscale is, what it needs, and exactly where the key comes from - with
+# a button to that page. Returns the key, or '' when the person cancels.
+#
+# Tailscale is never asked about during an install (see CLAUDE.md, "Tailscale,
+# and why it is a profile rather than a service"): it needs an account and an
+# app on every device, which most people cannot answer yes to in the middle of
+# a setup. This is what the "Set up Tailscale" shortcut opens, for the people
+# who went looking for it - usually because the account panel told them remote
+# access cannot work on their connection.
+function Show-TailscaleDialog {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'SoundStorm - set up Tailscale'
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.StartPosition = 'CenterScreen'
+    $form.TopMost = $true
+    $form.AutoScaleMode = 'Dpi'
+    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $form.ClientSize = New-Object System.Drawing.Size(560, 430)
+
+    $intro = New-Object System.Windows.Forms.Label
+    $intro.Text = "Tailscale lets your own phones and computers reach SoundStorm from anywhere, privately. Nothing is opened on your router, and it works on every kind of internet connection.`r`n`r`nIt needs a free Tailscale account, and the Tailscale app on each phone or computer that should connect, signed in to that same account."
+    $intro.Location = New-Object System.Drawing.Point(20, 16)
+    $intro.Size = New-Object System.Drawing.Size(520, 108)
+    $form.Controls.Add($intro)
+
+    $stepsLabel = New-Object System.Windows.Forms.Label
+    $stepsLabel.Text = "1.  Click Open Tailscale, and sign up or sign in.`r`n2.  On the page that opens, click Generate auth key, then Generate key.`r`n3.  Copy the key and paste it here."
+    $stepsLabel.Location = New-Object System.Drawing.Point(20, 130)
+    $stepsLabel.Size = New-Object System.Drawing.Size(520, 72)
+    $form.Controls.Add($stepsLabel)
+
+    $openPage = New-Object System.Windows.Forms.Button
+    $openPage.Text = 'Open Tailscale'
+    $openPage.Location = New-Object System.Drawing.Point(20, 210)
+    $openPage.Size = New-Object System.Drawing.Size(160, 34)
+    $openPage.Add_Click({ Start-Process 'https://login.tailscale.com/admin/settings/keys' })
+    $form.Controls.Add($openPage)
+
+    $keyLabel = New-Object System.Windows.Forms.Label
+    $keyLabel.Text = 'Auth key:'
+    $keyLabel.Location = New-Object System.Drawing.Point(20, 262)
+    $keyLabel.Size = New-Object System.Drawing.Size(520, 22)
+    $form.Controls.Add($keyLabel)
+
+    $keyBox = New-Object System.Windows.Forms.TextBox
+    $keyBox.Location = New-Object System.Drawing.Point(20, 286)
+    $keyBox.Size = New-Object System.Drawing.Size(520, 28)
+    $keyBox.UseSystemPasswordChar = $true
+    $form.Controls.Add($keyBox)
+
+    $problem = New-Object System.Windows.Forms.Label
+    $problem.ForeColor = [System.Drawing.Color]::Firebrick
+    $problem.Location = New-Object System.Drawing.Point(20, 320)
+    $problem.Size = New-Object System.Drawing.Size(520, 44)
+    $form.Controls.Add($problem)
+
+    $connect = New-Object System.Windows.Forms.Button
+    $connect.Text = 'Connect'
+    $connect.Location = New-Object System.Drawing.Point(300, 378)
+    $connect.Size = New-Object System.Drawing.Size(116, 34)
+    $form.Controls.Add($connect)
+    $form.AcceptButton = $connect
+
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = 'Cancel'
+    $cancel.Location = New-Object System.Drawing.Point(424, 378)
+    $cancel.Size = New-Object System.Drawing.Size(116, 34)
+    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $form.Controls.Add($cancel)
+    $form.CancelButton = $cancel
+
+    # Checked before the window closes, so a wrong paste - the key's name, the
+    # page's URL, half a key - is caught while the page is still open to copy
+    # from again, rather than as a sidecar that never joins the tailnet.
+    $connect.Add_Click({
+        $candidate = $keyBox.Text.Trim()
+        if ($candidate -match '^tskey-[A-Za-z0-9-]{8,}$') {
+            $form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+            $form.Close()
+        } else {
+            $problem.Text = 'That does not look like a Tailscale auth key, which starts with tskey-. Copy it from the Tailscale page and paste it again.'
+        }
+    })
+
+    $key = ''
+    try {
+        if ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $key = $keyBox.Text.Trim()
+        }
+    } finally {
+        $form.Dispose()
+    }
+    return $key
+}
+
 # Confirm-HomeNetwork asks the network question in a Yes/No window, falling
 # back to the console only where no window can be shown. Returns $true for yes.
 function Confirm-HomeNetwork([string]$NetworkName) {
@@ -2283,6 +2384,13 @@ function Install-Shortcuts {
         "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -ChooseLibrary" $Dir `
         'Keep your music, films and books in a different folder or drive' $true
 
+    # Tailscale is offered where it is needed - the account panel points here
+    # when remote access cannot work on a connection - not asked about during
+    # every install. This is the click-through way in; -Tailscale is the same.
+    New-Shortcut (Join-Path $startMenu 'Set up Tailscale.lnk') $powershell `
+        "-NoProfile -ExecutionPolicy Bypass -File `"$localScript`" -Tailscale" $Dir `
+        'Reach SoundStorm privately from your own devices, from anywhere' $true
+
     if (-not $NoAutoStart) {
         $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
         New-Shortcut (Join-Path $startup 'SoundStorm.lnk') $powershell `
@@ -2343,6 +2451,7 @@ function Remove-Shortcuts {
         (Join-Path $programs 'SoundStorm.lnk'),
         (Join-Path $programs 'Update SoundStorm.lnk'),
         (Join-Path $programs 'Move SoundStorm library.lnk'),
+        (Join-Path $programs 'Set up Tailscale.lnk'),
         (Join-Path $programs 'Startup\SoundStorm.lnk')
     )) {
         Remove-Item $path -Force -ErrorAction SilentlyContinue
@@ -2756,30 +2865,33 @@ if ($Tailscale) {
     $key = $AuthKey
     if (-not $key) { $key = Get-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' }
     if (-not $key) {
-        Write-Host ""
-        Write-Host "  Reaching SoundStorm from outside the house needs a Tailscale account."
-        Write-Host "  It is free for personal use and takes about two minutes."
-        Write-Host ""
-        Write-Host "    1. Sign up at https://tailscale.com"
-        Write-Host "    2. Open the admin console, Settings, then Keys"
-        Write-Host "    3. Generate an auth key and copy it"
-        Write-Host ""
-        # The one prompt in this whole script, and only on a flag somebody
-        # typed on purpose. A double-click install never reaches it.
-        $key = Read-Text 'Paste the Tailscale auth key here' 'SoundStorm - Tailscale'
-        $key = "$key".Trim()
+        # Only on a request somebody made - the Set up Tailscale shortcut, or
+        # -Tailscale typed. A double-click install never reaches it.
+        Note "A window has opened to set up Tailscale."
+        try {
+            $key = Show-TailscaleDialog
+        } catch {
+            Write-Host ""
+            Write-Host "  Reaching SoundStorm from outside the house needs a Tailscale account."
+            Write-Host "  It is free for personal use and takes about two minutes."
+            Write-Host ""
+            Write-Host "    1. Sign up at https://tailscale.com"
+            Write-Host "    2. Open the admin console, Settings, then Keys"
+            Write-Host "    3. Generate an auth key and copy it"
+            Write-Host ""
+            $key = "$(Read-Text 'Paste the Tailscale auth key here' 'SoundStorm - Tailscale')".Trim()
+        }
     }
-    if (-not $key) {
-        Stop-With @"
-  No auth key, so there is nothing to connect with.
-
-  SoundStorm is installed and working on this network either way - run the
-  setup again with -Tailscale when you have a key.
-"@
+    if ($key) {
+        Set-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' $key
+        Write-ServeConfig
+        Note "Tailscale will be started with SoundStorm."
+    } else {
+        # Not an error: SoundStorm works exactly as before without it, and
+        # stopping the whole update over a cancelled window would be.
+        Note "Tailscale was not set up. SoundStorm works on your home network as before."
+        Note "To set it up later, open Set up Tailscale from the Start menu."
     }
-    Set-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' $key
-    Write-ServeConfig
-    Note "Tailscale will be started with SoundStorm."
 } elseif ($NoTailscale) {
     Set-EnvSetting 'SOUNDSTORM_TAILSCALE_AUTHKEY' ''
     Note "Turning off remote access. SoundStorm stays on this network."
@@ -2989,6 +3101,9 @@ $phoneLines = @()
 $phoneAddress = if ($secure) { $secure } elseif ($lan) { "${scheme}://${lan}:$port" } else { '' }
 if ($phoneAddress) {
     $phoneLines = @('', 'On your phone, TV or another computer on the same Wi-Fi:', "*  $phoneAddress")
+}
+if ($useTailscale -and $tailnet) {
+    $phoneLines += @('', 'Away from home, on a device signed in to Tailscale:', "*  $tailnet")
 }
 $openUrl = $url
 if ($hasAccount -ne $true -and $setupCode) {

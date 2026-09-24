@@ -103,6 +103,11 @@ type autoCert struct {
 	reg        names.Registration
 	publicName string // the remote name, once the service has published it
 	cert       *tls.Certificate
+	// upstream is what stands between the home router and the internet, from
+	// the router's own WAN address: carrier-grade NAT or a second router mean
+	// no forward on this router can work, and the account panel says so
+	// instead of asking for one.
+	upstream portmap.Upstream
 }
 
 // remoteOn reports whether remote access is currently enabled.
@@ -148,6 +153,37 @@ func (a *autoCert) name() string {
 		return ""
 	}
 	return a.reg.Name
+}
+
+// checkUpstream asks the router for its WAN address and records what it says
+// about the connection. Asked even when the port opened, because a router
+// behind carrier-grade NAT opens it without complaint, on an address the
+// internet cannot reach. An unanswered question changes nothing: without the
+// router's word, the panel's ordinary advice (forward the port) stands.
+func (a *autoCert) checkUpstream(ctx context.Context) {
+	askCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	wan, err := a.portMapper.ExternalAddress(askCtx)
+	if err != nil {
+		a.log.Debug("could not learn the router's internet address", "err", err)
+		return
+	}
+	up := portmap.ClassifyWAN(wan)
+	a.mu.Lock()
+	changed := a.upstream != up
+	a.upstream = up
+	a.mu.Unlock()
+	if changed && up != portmap.UpstreamUnknown {
+		a.log.Warn("the router is not directly on the internet, so a port forward cannot reach it",
+			"routerAddress", wan, "upstream", string(up))
+	}
+}
+
+// upstreamNow is the last word from the router about its connection.
+func (a *autoCert) upstreamNow() portmap.Upstream {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.upstream
 }
 
 // remoteNameNow is the remote name a certificate covers, or "" when remote
@@ -306,6 +342,7 @@ func (a *autoCert) step(ctx context.Context) error {
 				a.log.Info("could not open the port automatically; a manual forward may be needed",
 					"port", a.port, "err", err)
 			}
+			a.checkUpstream(ctx)
 		}
 		if name := a.publishRemote(ctx, reg); name != "" {
 			publicName = name
@@ -324,6 +361,9 @@ func (a *autoCert) step(ctx context.Context) error {
 			if a.portMapper != nil {
 				a.portMapper.DropNow(ctx)
 			}
+			a.mu.Lock()
+			a.upstream = portmap.UpstreamUnknown
+			a.mu.Unlock()
 			if err := a.names.ClearPublic(ctx, reg); err != nil {
 				a.log.Warn("could not remove the public name", "err", err)
 			} else {

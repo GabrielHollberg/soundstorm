@@ -255,6 +255,8 @@ function renderRemote(remote) {
     show(share, false);
   }
 
+  const howto = $('remote-tailscale-howto');
+  show(howto, false);
   if (!remote.enabled) {
     show(status, false);
     return;
@@ -267,6 +269,22 @@ function renderRemote(remote) {
   } else if (remote.mapped) {
     status.textContent = 'Opening the door… the port was opened on your router; '
       + 'waiting for it to be reachable from the internet. This can take a minute.';
+  } else if (remote.upstream === 'shared') {
+    // The router's own internet address is in the range providers use when many
+    // homes share one address. Asking for a port forward here would send
+    // somebody to their router for something that cannot work.
+    status.textContent = `This can't work on your internet connection. Your provider `
+      + `shares one internet address between many homes, so nothing from outside `
+      + `can reach your router, and opening a port won't change that. Tailscale `
+      + `works here instead: it connects your own devices privately, with nothing to open.`;
+    show(howto, true);
+  } else if (remote.upstream === 'router') {
+    const port = remote.port || 8099;
+    status.textContent = `Your router is plugged into another router, often the box `
+      + `from your internet provider, so opening a port on this one isn't enough. `
+      + `Either set the provider's box to bridge mode, or forward port ${port} (TCP) `
+      + `on both. Or use Tailscale, which needs neither.`;
+    show(howto, true);
   } else {
     const port = remote.port || 8099;
     status.textContent = 'Not reachable from the internet yet. If it stays this way, '

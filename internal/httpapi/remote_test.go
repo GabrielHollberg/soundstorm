@@ -28,6 +28,7 @@ type remoteState struct {
 	port      int
 	mapped    bool
 	method    string
+	upstream  string
 	setErr    error // when non-nil, SetRemoteAccess fails
 	sets      int   // how many times the toggle was actually applied
 }
@@ -67,6 +68,7 @@ func newRemoteHarness(t *testing.T, rs *remoteState) *harness {
 				Port:      rs.port,
 				Mapped:    rs.mapped,
 				Method:    rs.method,
+				Upstream:  rs.upstream,
 			}
 		},
 		SetRemoteAccess: func(on bool) error {
@@ -131,6 +133,32 @@ func TestSessionCarriesRemoteStatus(t *testing.T) {
 	}
 	if !out.Remote.Mapped || out.Remote.Method != rs.method {
 		t.Errorf("remote mapping = (%v, %q), want the port opened via %q", out.Remote.Mapped, out.Remote.Method, rs.method)
+	}
+}
+
+// Carrier-grade NAT reaches the panel as "upstream", so it can say a forward
+// cannot work and offer Tailscale - and a direct connection sends nothing, so
+// the panel's ordinary advice stands.
+func TestSessionCarriesTheRoutersUpstream(t *testing.T) {
+	for _, upstream := range []string{"shared", ""} {
+		rs := &remoteState{available: true, enabled: true, port: 8099, upstream: upstream}
+		h := newRemoteHarness(t, rs)
+		h.signUp(t)
+
+		var out struct {
+			Remote map[string]any `json:"remote"`
+		}
+		_, body := h.do(t, http.MethodGet, "/api/session", "")
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		got, present := out.Remote["upstream"]
+		if upstream == "" && present {
+			t.Errorf("a direct connection reported upstream %v", got)
+		}
+		if upstream != "" && got != upstream {
+			t.Errorf("upstream = %v, want %q", got, upstream)
+		}
 	}
 }
 

@@ -357,3 +357,81 @@ func retryWait(lifetime time.Duration) time.Duration {
 	}
 	return w
 }
+
+// cgnatRange is the shared address space of RFC 6598, which internet providers
+// hand to a customer's router when many homes sit behind one public address.
+var cgnatRange = netip.MustParsePrefix("100.64.0.0/10")
+
+// Upstream is what sits between a home router and the internet, judged from
+// the router's own internet (WAN) address.
+type Upstream string
+
+const (
+	// UpstreamUnknown means the WAN address is public, or could not be learned.
+	// Either way nothing here says a forward cannot work.
+	UpstreamUnknown Upstream = ""
+	// UpstreamShared is carrier-grade NAT: the provider shares one public
+	// address among many homes, so no forward on the home router can ever be
+	// reached from the internet. Tailscale is the way in.
+	UpstreamShared Upstream = "shared"
+	// UpstreamRouter is double NAT: the router is itself behind another router,
+	// often the provider's own box, so a forward has to be made on both - or
+	// the provider's box put in bridge mode.
+	UpstreamRouter Upstream = "router"
+)
+
+// ClassifyWAN says what a router's WAN address implies. A router's WAN address
+// is the one address that can tell "forward a port" apart from "no forward can
+// work": it is public on an ordinary connection, and shared or private when
+// something else stands in front of the router.
+func ClassifyWAN(wan netip.Addr) Upstream {
+	if !wan.IsValid() {
+		return UpstreamUnknown
+	}
+	wan = wan.Unmap()
+	switch {
+	case !wan.Is4():
+		// IPv6 has no NAT to stand behind.
+		return UpstreamUnknown
+	case cgnatRange.Contains(wan):
+		return UpstreamShared
+	case wan.IsPrivate() || wan.IsLinkLocalUnicast():
+		return UpstreamRouter
+	}
+	return UpstreamUnknown
+}
+
+// ExternalAddress asks the router for its own internet (WAN) address. The live
+// mapping carries it when PCP or UPnP opened the port; otherwise NAT-PMP and
+// UPnP are asked directly. It is asked whether or not a mapping could be made,
+// because a router behind carrier-grade NAT will usually still open the port -
+// on an address the internet cannot reach - and the WAN address is what says so.
+func (mt *Maintainer) ExternalAddress(ctx context.Context) (netip.Addr, error) {
+	if m, ok := mt.Current(); ok && m.ExternalIP.IsValid() {
+		return m.ExternalIP, nil
+	}
+	t := mt.target()
+	var attempts []string
+	if t.gateway.IsValid() {
+		if addr, err := natpmpExternalAddr(ctx, t.gateway); err == nil && addr.IsValid() && !addr.IsUnspecified() {
+			return addr, nil
+		} else if err != nil {
+			attempts = append(attempts, "nat-pmp: "+err.Error())
+		}
+	}
+	if t.internalClient.IsValid() {
+		client := upnpClient()
+		g, err := findIGD(ctx, client, t.upnpLocation, t.gateway.Addr())
+		if err == nil {
+			var addr netip.Addr
+			if addr, err = upnpExternalIP(ctx, client, g); err == nil {
+				return addr, nil
+			}
+		}
+		attempts = append(attempts, "upnp: "+err.Error())
+	}
+	if len(attempts) == 0 {
+		return netip.Addr{}, ErrNoGateway
+	}
+	return netip.Addr{}, fmt.Errorf("the router did not say its internet address (%s)", strings.Join(attempts, "; "))
+}

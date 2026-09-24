@@ -243,6 +243,17 @@ func (s *Server) RemoteMapping() (method string, mapped bool) {
 	return m.Method, true
 }
 
+// RemoteUpstream says what stands between the home router and the internet,
+// when the router has said: "shared" (carrier-grade NAT, where no forward can
+// ever work) or "router" (a second router in front, where a forward has to be
+// made on both). Empty when the connection looks direct or nobody could tell.
+func (s *Server) RemoteUpstream() string {
+	if s == nil || s.auto == nil {
+		return ""
+	}
+	return string(s.auto.upstreamNow())
+}
+
 // ReachabilityAnswer answers a name-service reachability challenge, or reports
 // that there is no registration to answer with (not auto mode, or not yet
 // registered). It is what the install's /api/remote-reachable route serves.

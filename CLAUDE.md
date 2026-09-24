@@ -1404,6 +1404,30 @@ wanted, because compose bind-mounts it - and Docker's answer to a bind mount
 whose source is missing is to create a *directory* with that name, after which
 the container fails in a way that reads like a Tailscale problem.
 
+**Offered where it is needed, not asked during install.** Asking every install
+"do you want Tailscale?" would stall the people who say yes (an account, a key,
+an app on every device) and is a milder form of the sign-up walk this section
+rules out. So it surfaces at the two moments it matters:
+
+- **When remote access cannot work.** The router's own WAN address says so:
+  in `100.64.0.0/10` it is carrier-grade NAT, where no forward can ever be
+  reached. In a private range it is double NAT, where a forward is needed on
+  both routers. `portmap.Maintainer.ExternalAddress` asks for it
+  even when the mapping *succeeded*, because a router behind CGNAT opens the
+  port without complaint, on an address the internet cannot reach.
+  `ClassifyWAN` judges it, the account panel then says what is going on instead
+  of "forward port 8099", and it points at Tailscale. A router that answers
+  nothing leaves the ordinary advice in place.
+- **For anybody who would rather not be on the internet.** A standing line
+  under the remote switch.
+
+Setting it up has a Start menu shortcut, **Set up Tailscale** (`-Tailscale`).
+It opens a window with the steps, a button to Tailscale's key page, and a key
+box that refuses anything not shaped like `tskey-...` while the page is still
+open to copy from. Cancelling is not an error: the update carries on without
+it. Before this, Tailscale was the one feature that could only be reached by
+typing an option.
+
 **Unverified:** that a real auth key produces a working `ts.net` address. That
 needs a Tailscale account, which is the user's to create. What was checked is
 everything up to it: the profile stays off by default, the config mounts as a

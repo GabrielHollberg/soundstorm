@@ -273,6 +273,7 @@ func run(log *slog.Logger) error {
 				Port:      tlsServer.RemotePort(),
 				Mapped:    mapped,
 				Method:    method,
+				Upstream:  tlsServer.RemoteUpstream(),
 			}
 		},
 		SetRemoteAccess: func(on bool) error {

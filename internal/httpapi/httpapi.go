@@ -158,6 +158,11 @@ type RemoteState struct {
 	// Port is the port the world reaches the install on - the one to forward by
 	// hand when the automatic methods cannot.
 	Port int
+	// Upstream is what the router said stands in front of it: "shared"
+	// (carrier-grade NAT) or "router" (double NAT). Either means a forward on
+	// the home router cannot be reached, and the panel offers Tailscale
+	// instead of asking for one. Empty when the connection looks direct.
+	Upstream string
 	// Mapped is whether the inbound port was opened automatically, and Method is
 	// how ("UPnP", "PCP", "NAT-PMP"). Both empty/false when the port was not
 	// mapped - remote access off, no method worked, or a hand-forwarded port.
@@ -440,6 +445,9 @@ func remoteJSON(st RemoteState) map[string]any {
 	}
 	if st.Method != "" {
 		remote["method"] = st.Method
+	}
+	if st.Upstream != "" {
+		remote["upstream"] = st.Upstream
 	}
 	return remote
 }

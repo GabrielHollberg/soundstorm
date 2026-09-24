@@ -338,9 +338,17 @@ or `-NoRemote` / `--no-remote`, turns it off again.
 Some connections have no forwardable port at all (carrier-grade NAT is the usual
 reason), and some people would simply rather not put a server on the internet.
 Run SoundStorm on a [Tailscale](https://tailscale.com) tailnet instead — nothing
-is exposed, and there is no port forwarding at all:
+is exposed, and there is no port forwarding at all. SoundStorm tells you when
+this is the only way: if your router reports that your internet provider shares
+one address between many homes, the **Reach it from anywhere** panel says so
+instead of asking you to forward a port.
 
-**Windows:**
+You need a free Tailscale account, and the Tailscale app on each phone or
+computer that should connect.
+
+**Windows:** open **Set up Tailscale** from the Start menu. A window explains
+the steps, opens Tailscale's page for the auth key, and takes the key when you
+paste it. Or from PowerShell:
 
 ```powershell
 & "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Tailscale

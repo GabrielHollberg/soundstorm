@@ -176,6 +176,22 @@
              port to forward by hand. -->
         <p id="remote-status" class="muted hidden" role="status"></p>
         <p id="remote-note" class="muted hidden" role="status"></p>
+        <!-- Shown when the router says no forward can work (carrier-grade NAT,
+             double NAT): where Tailscale is set up, since it is the way in. -->
+        <p id="remote-tailscale-howto" class="muted hidden">To set it up, open
+          <strong>Set up Tailscale</strong> from the Start menu on the computer
+          SoundStorm runs on, or
+          <a href="https://github.com/GabrielHollberg/soundstorm#tailscale--when-there-is-no-port-to-forward-or-you-would-rather-not"
+             target="_blank" rel="noopener noreferrer">read how to set it up</a>.</p>
+        <!-- Always: the private alternative, for anybody who would rather not
+             be on the internet at all. Offered here, where remote access is
+             decided, rather than as a question every install has to answer. -->
+        <p id="remote-private" class="muted">Rather not put your server on the
+          internet? <a href="https://github.com/GabrielHollberg/soundstorm#tailscale--when-there-is-no-port-to-forward-or-you-would-rather-not"
+             target="_blank" rel="noopener noreferrer">Tailscale</a> reaches it
+          privately from your own phones and computers instead, with nothing
+          opened on your router. It needs a free Tailscale account and its app
+          on each device.</p>
       </div>
 
       <div id="people-block" class="hidden">
