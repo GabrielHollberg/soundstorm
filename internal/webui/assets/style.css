@@ -1645,6 +1645,11 @@ body.np-open { overflow: hidden; }
 .np-lyrics {
   max-height: 42vh;
   overflow-y: auto;
+  /* The current line is scaled up and slightly wider than the box; without
+     this a finger could drag the whole column sideways. */
+  overflow-x: hidden;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   padding: 18vh 0;
   mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
   -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
@@ -1653,7 +1658,9 @@ body.np-open { overflow: hidden; }
 .np-lyrics::-webkit-scrollbar { display: none; }
 .np-lyric {
   display: block;
-  width: 100%;
+  /* 1/1.04 of the box, so the current line, scaled up 4% from its left
+     edge, still ends inside it rather than widening the column. */
+  width: calc(100% / 1.04);
   margin: 0;
   /* Room on the right for the current line's growth. */
   padding: 8px 6% 8px 0;
