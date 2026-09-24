@@ -94,6 +94,13 @@ services:
       # directory to Let's Encrypt staging for a first run.
       SOUNDSTORM_ACME_DIRECTORY: ${SOUNDSTORM_ACME_DIRECTORY:-}
       SOUNDSTORM_NAMES_URL: ${SOUNDSTORM_NAMES_URL:-}
+      # Remote access: reach this install from outside the house. Off by
+      # default - it puts the server on the internet, which is a real
+      # decision. Needs auto TLS. SOUNDSTORM_PORT is the published port, which
+      # the container is otherwise unaware of, so the name service knows which
+      # port to confirm is reachable and a remote URL carries the right one.
+      SOUNDSTORM_REMOTE_ACCESS: ${SOUNDSTORM_REMOTE_ACCESS:-off}
+      SOUNDSTORM_PORT: ${SOUNDSTORM_PORT:-8099}
       # Behind a reverse proxy that terminates TLS: lets X-Forwarded-Proto
       # decide whether the session cookie is marked Secure. Any client can send
       # that header, so only turn it on when a proxy is stripping incoming ones.

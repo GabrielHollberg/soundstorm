@@ -80,6 +80,7 @@ type Server struct {
 	caPEM            []byte
 	lanHosts         []string
 	publicName       func() string
+	remoteReach      func(nonce string) (string, bool)
 
 	// rescans coalesces "look at your folder now" requests, keyed by kind,
 	// and lastRescan is when one last actually fired - see scheduleRescan.
@@ -116,6 +117,13 @@ type Config struct {
 	// has none - see servetls auto mode. Nil when that mode is off.
 	PublicName func() string
 
+	// RemoteReachability answers a name-service reachability challenge - an
+	// HMAC of the nonce under this install's registration token - or reports
+	// that there is nothing to answer with. It is how the name service, before
+	// pointing a public name here, confirms the open port really reaches this
+	// install. Nil when remote access is not configured.
+	RemoteReachability func(nonce string) (string, bool)
+
 	// SetupCode is what the first sign-up must present. See handleSignup.
 	SetupCode string
 }
@@ -138,6 +146,7 @@ func New(cfg Config) *Server {
 		caPEM:            cfg.CAPEM,
 		lanHosts:         cfg.LANHosts,
 		publicName:       cfg.PublicName,
+		remoteReach:      cfg.RemoteReachability,
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
@@ -166,6 +175,11 @@ func (s *Server) Routes() http.Handler {
 	// Unauthenticated on purpose: this is a public certificate, and you need
 	// it installed BEFORE the browser will let you reach a login page at all.
 	mux.HandleFunc("GET /ca.crt", s.handleCA)
+	// Unauthenticated on purpose: the name service calls this over plain HTTP,
+	// from the internet, before any certificate or session exists, to confirm
+	// the open port really reaches this install. It reveals only an HMAC of a
+	// nonce, which is nothing.
+	mux.HandleFunc("GET /api/remote-reachable", s.handleRemoteReachable)
 	mux.HandleFunc("GET /api/session", s.handleSession)
 	mux.HandleFunc("POST /api/signup", s.handleSignup)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
@@ -265,6 +279,29 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // SoundStorm issues is trusted - including ones minted later for an address it
 // had never seen. That is the difference between a local authority and a bare
 // self-signed certificate, and the reason for the chore being a one-off.
+// handleRemoteReachable answers the name service's reachability challenge, so
+// it can confirm the open port reaches this install before pointing a public
+// name here. See Config.RemoteReachability.
+func (s *Server) handleRemoteReachable(w http.ResponseWriter, r *http.Request) {
+	nonce := r.URL.Query().Get("nonce")
+	if nonce == "" {
+		writeError(w, http.StatusBadRequest, "nonce is required")
+		return
+	}
+	if s.remoteReach == nil {
+		http.Error(w, "remote access is not configured", http.StatusNotFound)
+		return
+	}
+	answer, ok := s.remoteReach(nonce)
+	if !ok {
+		http.Error(w, "remote access is not configured", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(answer))
+}
+
 func (s *Server) handleCA(w http.ResponseWriter, _ *http.Request) {
 	if len(s.caPEM) == 0 {
 		http.Error(w, "this server has no certificate authority to install", http.StatusNotFound)

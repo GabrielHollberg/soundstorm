@@ -59,7 +59,7 @@ const (
 
 // issuer is what gets a certificate: acme.Client in life, a stub in tests.
 type issuer interface {
-	Obtain(ctx context.Context, domain string, certKey crypto.Signer, solver acme.Solver) ([]byte, error)
+	Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver acme.Solver) ([]byte, error)
 }
 
 // Retry pacing. A failure is nearly always the service or the authority being
@@ -83,25 +83,38 @@ type autoCert struct {
 	newACME   func(key *ecdsa.PrivateKey) issuer
 	log       *slog.Logger
 
-	mu   sync.RWMutex
-	reg  names.Registration
-	cert *tls.Certificate
+	// remote turns on reaching this install from the internet: the name
+	// service is asked to point a public name at the home's public address
+	// (which it verifies is reachable on port), and the certificate is issued
+	// for both names at once. Off leaves everything exactly as before.
+	remote bool
+	port   int
+
+	mu         sync.RWMutex
+	reg        names.Registration
+	publicName string // the remote name, once the service has published it
+	cert       *tls.Certificate
 }
 
 // current returns the public certificate if there is a usable one for name.
 func (a *autoCert) current(name string) *tls.Certificate {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	if a.cert == nil || !strings.EqualFold(name, a.reg.Name) {
+	if a.cert == nil || time.Now().After(a.cert.Leaf.NotAfter) {
 		return nil
 	}
-	if time.Now().After(a.cert.Leaf.NotAfter) {
-		return nil
+	// The certificate can carry both the LAN and the remote name, so it
+	// answers for whichever the client dialled - not just the LAN one.
+	for _, dns := range a.cert.Leaf.DNSNames {
+		if strings.EqualFold(name, dns) {
+			return a.cert
+		}
 	}
-	return a.cert
+	return nil
 }
 
-// name is the public name, once there is a certificate to go with it.
+// name is the LAN name a certificate covers, once there is one. This is the
+// name the page moves itself to at home; the remote name is separate.
 func (a *autoCert) name() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -109,6 +122,30 @@ func (a *autoCert) name() string {
 		return ""
 	}
 	return a.reg.Name
+}
+
+// remoteNameNow is the remote name a certificate covers, or "" when remote
+// access is not up.
+func (a *autoCert) remoteNameNow() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.cert == nil || a.publicName == "" || time.Now().After(a.cert.Leaf.NotAfter) {
+		return ""
+	}
+	return a.publicName
+}
+
+// reachabilityAnswer computes this install's answer to a name-service
+// reachability challenge, or reports that there is no registration to answer
+// with. It is what the /api/remote-reachable handler serves.
+func (a *autoCert) reachabilityAnswer(nonce string) (string, bool) {
+	a.mu.RLock()
+	token := a.reg.Token
+	a.mu.RUnlock()
+	if token == "" {
+		return "", false
+	}
+	return names.Reachability(token, nonce), true
 }
 
 // load picks up what a previous run saved. Any of it may be missing.
@@ -220,7 +257,28 @@ func (a *autoCert) step(ctx context.Context) error {
 		return fmt.Errorf("point %s at %s: %w", reg.Name, a.announce, err)
 	}
 
-	if cert != nil && !dueForRenewal(cert.Leaf, time.Now()) {
+	// The names a certificate should cover: always the LAN name, plus the
+	// remote name when remote access is on and the service confirms it is
+	// reachable. A failure to make it public is not fatal - the LAN name still
+	// works and the box just is not reachable from away, which is what a closed
+	// port means anyway - so it is logged and the remote name dropped.
+	domains := []string{reg.Name}
+	publicName := ""
+	if a.remote {
+		if name, err := a.names.SetPublic(ctx, reg, a.port); err != nil {
+			a.log.Warn("remote access is not reachable; serving on the LAN name only",
+				"err", err)
+		} else {
+			publicName = name
+			domains = append(domains, name)
+			a.log.Info("remote access is reachable", "name", name)
+		}
+	}
+	a.mu.Lock()
+	a.publicName = publicName
+	a.mu.Unlock()
+
+	if cert != nil && certCovers(cert.Leaf, domains) && !dueForRenewal(cert.Leaf, time.Now()) {
 		return nil
 	}
 
@@ -232,10 +290,10 @@ func (a *autoCert) step(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	a.log.Info("asking for a certificate", "name", reg.Name)
-	chain, err := a.newACME(key).Obtain(ctx, reg.Name, certKey, namesSolver{a.names, reg})
+	a.log.Info("asking for a certificate", "names", strings.Join(domains, ","))
+	chain, err := a.newACME(key).Obtain(ctx, domains, certKey, namesSolver{a.names, reg, publicName})
 	if err != nil {
-		return fmt.Errorf("certificate for %s: %w", reg.Name, err)
+		return fmt.Errorf("certificate for %s: %w", strings.Join(domains, ","), err)
 	}
 
 	keyDER, err := x509.MarshalECPrivateKey(certKey)
@@ -309,6 +367,25 @@ func dueForRenewal(leaf *x509.Certificate, now time.Time) bool {
 	return now.After(leaf.NotAfter.Add(-life / 3))
 }
 
+// certCovers reports whether a certificate already carries exactly the names
+// wanted - so turning remote access on or off, which changes the set, forces a
+// re-issue rather than being mistaken for a certificate that is still fine.
+func certCovers(leaf *x509.Certificate, domains []string) bool {
+	if len(leaf.DNSNames) != len(domains) {
+		return false
+	}
+	have := make(map[string]bool, len(leaf.DNSNames))
+	for _, d := range leaf.DNSNames {
+		have[strings.ToLower(d)] = true
+	}
+	for _, d := range domains {
+		if !have[strings.ToLower(d)] {
+			return false
+		}
+	}
+	return true
+}
+
 // announceAddress picks the address to point the name at from the configured
 // hosts: the first private one. A public address would be refused by the
 // service anyway, and a hostname cannot go in an A record.
@@ -323,16 +400,23 @@ func announceAddress(hosts []string) string {
 }
 
 type namesSolver struct {
-	c   *names.Client
-	reg names.Registration
+	c          *names.Client
+	reg        names.Registration
+	publicName string // the remote name, or "" when only the LAN name is being certified
 }
 
-func (s namesSolver) Present(ctx context.Context, _, value string) error {
-	return s.c.SetChallenge(ctx, s.reg, value)
+func (s namesSolver) Present(ctx context.Context, domain, value string) error {
+	return s.c.SetChallenge(ctx, s.reg, value, s.isPublic(domain))
 }
 
-func (s namesSolver) CleanUp(ctx context.Context, _ string) error {
-	return s.c.ClearChallenge(ctx, s.reg)
+func (s namesSolver) CleanUp(ctx context.Context, domain string) error {
+	return s.c.ClearChallenge(ctx, s.reg, s.isPublic(domain))
+}
+
+// isPublic reports whether a challenge is for the remote name rather than the
+// LAN one, so it is published under the right label.
+func (s namesSolver) isPublic(domain string) bool {
+	return s.publicName != "" && strings.EqualFold(domain, s.publicName)
 }
 
 // writeFileAtomic replaces a file whole, so a crash mid-write cannot leave a

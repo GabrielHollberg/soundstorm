@@ -103,11 +103,24 @@ func RateLimited(err error) bool {
 
 // --- the flow ------------------------------------------------------------------
 
-// Obtain gets a certificate for domain, whose private key is certKey, and
-// returns the chain as PEM, leaf first.
-func (c *Client) Obtain(ctx context.Context, domain string, certKey crypto.Signer, solver Solver) ([]byte, error) {
+// Obtain gets one certificate covering every name in domains, whose private
+// key is certKey, and returns the chain as PEM, leaf first.
+//
+// One order with several identifiers rather than one certificate each: an
+// install that answers to both its LAN name and its remote name needs both,
+// and a single multi-name certificate is one order and one renewal against the
+// shared per-domain Let's Encrypt allowance rather than two.
+func (c *Client) Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver Solver) ([]byte, error) {
+	if len(domains) == 0 {
+		return nil, errors.New("no domains to certify")
+	}
 	if err := c.account(ctx); err != nil {
 		return nil, err
+	}
+
+	identifiers := make([]map[string]string, len(domains))
+	for i, d := range domains {
+		identifiers[i] = map[string]string{"type": "dns", "value": d}
 	}
 
 	var order struct {
@@ -118,20 +131,22 @@ func (c *Client) Obtain(ctx context.Context, domain string, certKey crypto.Signe
 		Error          *Problem `json:"error"`
 	}
 	resp, err := c.post(ctx, c.dir.NewOrder, map[string]any{
-		"identifiers": []map[string]string{{"type": "dns", "value": domain}},
+		"identifiers": identifiers,
 	}, &order)
 	if err != nil {
 		return nil, fmt.Errorf("new order: %w", err)
 	}
 	orderURL := resp.Header.Get("Location")
 
+	// One authorization per identifier; each is solved in turn, and each
+	// authorize call publishes and cleans up the challenge for its own name.
 	for _, authz := range order.Authorizations {
 		if err := c.authorize(ctx, authz, solver); err != nil {
 			return nil, err
 		}
 	}
 
-	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{DNSNames: []string{domain}}, certKey)
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{DNSNames: domains}, certKey)
 	if err != nil {
 		return nil, fmt.Errorf("make csr: %w", err)
 	}

@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -150,6 +151,14 @@ func run(log *slog.Logger) error {
 			"SOUNDSTORM_JELLYFIN_URL, SOUNDSTORM_AUDIOBOOKSHELF_URL")
 	}
 
+	// The port the world reaches this install on, which is the published one
+	// (SOUNDSTORM_PORT), not the container's internal listen port. It is what
+	// the name service probes for remote access and what a remote URL carries.
+	publicPort := 8099
+	if p, err := strconv.Atoi(env("SOUNDSTORM_PORT", "8099")); err == nil && p > 0 {
+		publicPort = p
+	}
+
 	// TLS is set up before anything is served, and a bad setting is fatal:
 	// quietly falling back to plain HTTP when somebody asked for encryption is
 	// the worst available way to be wrong.
@@ -162,7 +171,11 @@ func run(log *slog.Logger) error {
 		// Auto mode's two outside services; empty means the real ones.
 		NamesURL:      os.Getenv("SOUNDSTORM_NAMES_URL"),
 		ACMEDirectory: os.Getenv("SOUNDSTORM_ACME_DIRECTORY"),
-		Log:           log,
+		// Remote access: reach this install from outside the house. Opt-in,
+		// and only meaningful in auto mode (it needs the name service).
+		Remote: enabled(os.Getenv("SOUNDSTORM_REMOTE_ACCESS")),
+		Port:   publicPort,
+		Log:    log,
 	})
 	if err != nil {
 		return err
@@ -218,9 +231,10 @@ func run(log *slog.Logger) error {
 		// The same list the certificate covers, for the same reason: it is
 		// the machine's LAN address, and only the installer - which ran on
 		// the host - was ever in a position to find it out.
-		LANHosts:   splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
-		PublicName: tlsServer.PublicName,
-		SetupCode:  setupCode,
+		LANHosts:           splitList(os.Getenv("SOUNDSTORM_TLS_HOSTS")),
+		PublicName:         tlsServer.PublicName,
+		RemoteReachability: tlsServer.ReachabilityAnswer,
+		SetupCode:          setupCode,
 	})
 
 	srv := &http.Server{

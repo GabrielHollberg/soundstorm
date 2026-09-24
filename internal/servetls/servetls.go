@@ -113,6 +113,17 @@ type Config struct {
 	// name service and the certificate authority. Empty means the real ones.
 	NamesURL, ACMEDirectory string
 
+	// Remote turns on reaching this install from the internet: the name
+	// service points a public name at the home's public address after
+	// confirming it is reachable, and the certificate covers that name too.
+	// Off is the default and changes nothing.
+	Remote bool
+
+	// Port is the port the install is reached on, published to the name
+	// service so it can confirm the address is reachable there. Only used with
+	// Remote.
+	Port int
+
 	// ACMEHTTP talks to the authority. Nil is an ordinary client; the
 	// rehearsal against Pebble needs one that accepts Pebble's own
 	// certificate.
@@ -166,6 +177,25 @@ func (s *Server) PublicName() string {
 		return ""
 	}
 	return s.auto.name()
+}
+
+// RemoteName is the name to reach this install by from outside the house, once
+// remote access is up, or "" otherwise.
+func (s *Server) RemoteName() string {
+	if s == nil || s.auto == nil {
+		return ""
+	}
+	return s.auto.remoteNameNow()
+}
+
+// ReachabilityAnswer answers a name-service reachability challenge, or reports
+// that there is no registration to answer with (not auto mode, or not yet
+// registered). It is what the install's /api/remote-reachable route serves.
+func (s *Server) ReachabilityAnswer(nonce string) (string, bool) {
+	if s == nil || s.auto == nil {
+		return "", false
+	}
+	return s.auto.reachabilityAnswer(nonce)
 }
 
 // Sniffs reports whether this configuration serves plain HTTP and TLS on one
@@ -253,6 +283,8 @@ func loadAuto(cfg Config) (*Server, error) {
 		dir:       cfg.Dir,
 		announce:  announce,
 		directory: directory,
+		remote:    cfg.Remote,
+		port:      cfg.Port,
 		names:     &names.Client{Base: namesURL},
 		newACME: func(key *ecdsa.PrivateKey) issuer {
 			return &acme.Client{Directory: directory, Key: key, HTTP: cfg.ACMEHTTP}

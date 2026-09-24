@@ -334,7 +334,8 @@ func validChallenge(v string) bool {
 
 func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
-		Value string `json:"value"`
+		Value  string `json:"value"`
+		Public bool   `json:"public"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -353,8 +354,15 @@ func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	name := "_acme-challenge." + s.relative(id)
-	if _, err := s.DNS.Set(r.Context(), name, "TXT", body.Value); err != nil {
+	// Which of the install's two names this challenge is for. The id is fixed
+	// by the credential, so public only picks the label - it cannot name
+	// another install's record.
+	rel, full := s.relative(id), s.NameFor(id)
+	if body.Public {
+		rel, full = s.publicRelative(id), s.PublicNameFor(id)
+	}
+
+	if _, err := s.DNS.Set(r.Context(), "_acme-challenge."+rel, "TXT", body.Value); err != nil {
 		s.Log.Error("set challenge", "id", id, "err", err)
 		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
 		return
@@ -362,19 +370,23 @@ func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id s
 	if len(s.Nameservers) > 0 {
 		ctx, cancel := context.WithTimeout(r.Context(), challengeWait)
 		defer cancel()
-		fqdn := "_acme-challenge." + s.NameFor(id) + "."
+		fqdn := "_acme-challenge." + full + "."
 		if err := waitForTXT(ctx, s.Nameservers, fqdn, body.Value); err != nil {
 			s.Log.Warn("challenge not visible in time", "id", id, "err", err)
 			writeError(w, http.StatusGatewayTimeout, "the record was written but is not being served yet; try again in a few minutes")
 			return
 		}
 	}
-	s.Log.Info("challenge published", "id", id)
+	s.Log.Info("challenge published", "id", id, "public", body.Public)
 	writeJSON(w, http.StatusOK, map[string]bool{"visible": true})
 }
 
 func (s *Server) handleClearChallenge(w http.ResponseWriter, r *http.Request, id string) {
-	if err := s.DNS.Delete(r.Context(), "_acme-challenge."+s.relative(id), "TXT"); err != nil {
+	rel := s.relative(id)
+	if r.URL.Query().Get("public") != "" {
+		rel = s.publicRelative(id)
+	}
+	if err := s.DNS.Delete(r.Context(), "_acme-challenge."+rel, "TXT"); err != nil {
 		s.Log.Warn("clear challenge", "id", id, "err", err)
 		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
 		return

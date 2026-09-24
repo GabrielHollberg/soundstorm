@@ -93,17 +93,19 @@ func newStubAuthority(t *testing.T) *stubAuthority {
 	return &stubAuthority{ca: ca, caKey: key, lifetime: 90 * 24 * time.Hour}
 }
 
-func (a *stubAuthority) Obtain(ctx context.Context, domain string, certKey crypto.Signer, solver acme.Solver) ([]byte, error) {
+func (a *stubAuthority) Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver acme.Solver) ([]byte, error) {
 	if a.fail != nil {
 		return nil, a.fail
 	}
-	if err := solver.Present(ctx, domain, "LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0"); err != nil {
-		return nil, err
+	for _, domain := range domains {
+		if err := solver.Present(ctx, domain, "LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0"); err != nil {
+			return nil, err
+		}
+		solver.CleanUp(ctx, domain)
 	}
-	defer solver.CleanUp(ctx, domain)
 	n := a.issued.Add(1)
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(int64(n) + 1), DNSNames: []string{domain},
+		SerialNumber: big.NewInt(int64(n) + 1), DNSNames: domains,
 		NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(a.lifetime),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, KeyUsage: x509.KeyUsageDigitalSignature,
 	}
@@ -480,5 +482,57 @@ func TestStepRecoveredSurvivesAPanic(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "panicked") {
 		t.Errorf("err = %v, want it to say it panicked", err)
+	}
+}
+
+// With remote access on, the step asks the name service for a public name and
+// gets one certificate covering both it and the LAN name, so the same
+// certificate answers a handshake to either.
+func TestRemoteAccessAddsThePublicName(t *testing.T) {
+	dir := t.TempDir()
+	const publicName = "abcdefghij.net.soundstorm.dev"
+
+	dns := &memDNS{records: map[string]string{}}
+	svc := &names.Server{Secret: []byte("a-secret-that-is-long-enough-to-use"), Zone: "soundstorm.dev", Label: "home", DNS: dns, Log: quietLog()}
+	h := svc.Handler()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The real probe reaches out to a public address, which a unit test
+		// has none of; the names package covers that path directly. Here the
+		// remote publish is canned so the servetls side can be exercised.
+		if r.Method == http.MethodPut && r.URL.Path == "/v1/public" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"name":"` + publicName + `","ip":"203.0.113.7"}`))
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	authority := newStubAuthority(t)
+	s, err := Load(Config{
+		Mode: ModeAuto, Dir: dir, Hosts: []string{"192.168.0.19"},
+		NamesURL: srv.URL, Remote: true, Port: 8099, Log: quietLog(),
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	s.auto.newACME = func(*ecdsa.PrivateKey) issuer { return authority }
+
+	if err := s.auto.step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+
+	if s.auto.current(publicName) == nil {
+		t.Error("the certificate does not answer for the remote name")
+	}
+	lan := s.PublicName()
+	if lan == "" || s.auto.current(lan) == nil {
+		t.Error("the certificate no longer answers for the LAN name")
+	}
+	if s.RemoteName() != publicName {
+		t.Errorf("RemoteName = %q, want %q", s.RemoteName(), publicName)
+	}
+	if _, ok := s.ReachabilityAnswer("a-nonce"); !ok {
+		t.Error("no reachability answer once registered")
 	}
 }

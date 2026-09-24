@@ -36,11 +36,11 @@ type namesSolver struct {
 }
 
 func (s namesSolver) Present(ctx context.Context, _, value string) error {
-	return s.c.SetChallenge(ctx, s.reg, value)
+	return s.c.SetChallenge(ctx, s.reg, value, false)
 }
 
 func (s namesSolver) CleanUp(ctx context.Context, _ string) error {
-	return s.c.ClearChallenge(ctx, s.reg)
+	return s.c.ClearChallenge(ctx, s.reg, false)
 }
 
 func TestPebbleIssuesACertificateForARegisteredName(t *testing.T) {
@@ -80,7 +80,7 @@ func TestPebbleIssuesACertificateForARegisteredName(t *testing.T) {
 	certKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 
 	client := &Client{Directory: directory, Key: accountKey, HTTP: pebbleHTTP}
-	chainPEM, err := client.Obtain(ctx, reg.Name, certKey, namesSolver{nc, reg})
+	chainPEM, err := client.Obtain(ctx, []string{reg.Name}, certKey, namesSolver{nc, reg})
 	if err != nil {
 		t.Fatalf("obtain: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestPebbleIssuesACertificateForARegisteredName(t *testing.T) {
 	// A renewal is a new process with the same account key: registering again
 	// has to find the existing account, not fail or make another.
 	again := &Client{Directory: directory, Key: accountKey, HTTP: pebbleHTTP}
-	if _, err := again.Obtain(ctx, reg.Name, certKey, namesSolver{nc, reg}); err != nil {
+	if _, err := again.Obtain(ctx, []string{reg.Name}, certKey, namesSolver{nc, reg}); err != nil {
 		t.Fatalf("renewal with the same account key: %v", err)
 	}
 }

@@ -50,14 +50,23 @@ func (c *Client) SetPublic(ctx context.Context, reg Registration, port int) (str
 }
 
 // SetChallenge publishes an ACME DNS-01 value, returning once the service
-// reports it visible - which can take minutes.
-func (c *Client) SetChallenge(ctx context.Context, reg Registration, value string) error {
-	return c.do(ctx, http.MethodPut, "/v1/challenge", reg.Credential(), map[string]string{"value": value}, nil)
+// reports it visible - which can take minutes. public chooses which of the
+// install's two names the challenge is for: the remote name when true, the LAN
+// name when false. A single multi-name certificate needs one challenge under
+// each.
+func (c *Client) SetChallenge(ctx context.Context, reg Registration, value string, public bool) error {
+	return c.do(ctx, http.MethodPut, "/v1/challenge", reg.Credential(),
+		map[string]any{"value": value, "public": public}, nil)
 }
 
-// ClearChallenge takes a challenge down.
-func (c *Client) ClearChallenge(ctx context.Context, reg Registration) error {
-	return c.do(ctx, http.MethodDelete, "/v1/challenge", reg.Credential(), nil, nil)
+// ClearChallenge takes a challenge down. public selects the same name
+// SetChallenge published under.
+func (c *Client) ClearChallenge(ctx context.Context, reg Registration, public bool) error {
+	path := "/v1/challenge"
+	if public {
+		path += "?public=1"
+	}
+	return c.do(ctx, http.MethodDelete, path, reg.Credential(), nil, nil)
 }
 
 // StatusError is a refusal from the service, with its reason.
