@@ -178,6 +178,27 @@
            into another, so it gets room, a large readable font and a Copy
            button. The away-from-home address joins it when remote access is
            on and working. -->
+      <!-- Per device, not per account: a phone on mobile data and the computer
+           on the Wi-Fi want different things. Kept in this browser. -->
+      <div id="playback" class="account-section card">
+        <h2>Playback on this device</h2>
+        <label class="setting-row">
+          <span>Streaming quality</span>
+          <select id="quality-select">
+            <option value="original">Original</option>
+            <option value="auto">Lower on mobile data (128 kbps)</option>
+            <option value="256">High (256 kbps)</option>
+            <option value="128">Normal (128 kbps)</option>
+            <option value="96">Data saver (96 kbps)</option>
+          </select>
+        </label>
+        <p class="muted small-print">Lower qualities use less data and start faster
+          on a slow connection. Downloads always keep the original.
+          "Lower on mobile data" works on Android; an iPhone cannot tell its
+          browser which connection it is on.</p>
+        <p id="playback-note" class="muted hidden" role="status"></p>
+      </div>
+
       <div id="devices" class="account-section card hidden">
         <h2>Use on your phone or TV</h2>
         <p class="muted">Open this in the browser on a phone, tablet, TV or another

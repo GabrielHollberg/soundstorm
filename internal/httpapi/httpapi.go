@@ -1737,8 +1737,17 @@ func escapePath(p string) string {
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
+	// ?kbps= is the listener's data saver. Only the ceilings the app offers
+	// are honoured, so a request cannot ask the music server for something
+	// odd; anything else streams the original.
+	if kbps, err := strconv.Atoi(r.URL.Query().Get("kbps")); err == nil && allowedBitRates[kbps] {
+		r = r.WithContext(source.WithMaxBitRate(r.Context(), kbps))
+	}
 	s.proxy.ServeMedia(w, r, r.PathValue("source"), r.PathValue("id"))
 }
+
+// allowedBitRates are the streaming qualities the app offers, in kbps.
+var allowedBitRates = map[int]bool{96: true, 128: true, 192: true, 256: true, 320: true}
 
 func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 	s.proxy.ServeArt(w, r, r.PathValue("source"), r.PathValue("id"))

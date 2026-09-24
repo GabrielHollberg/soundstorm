@@ -344,8 +344,30 @@ func (s *Source) songItem(sg song) media.Item {
 // works, so no headers are needed. They never reach the browser: SoundStorm
 // fetches them itself and pipes the bytes through, so Navidrome needs no
 // published port.
-func (s *Source) StreamTarget(_ context.Context, itemID string) (source.Target, error) {
-	return s.mediaTarget("/rest/stream.view", itemID)
+func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target, error) {
+	t, err := s.mediaTarget("/rest/stream.view", itemID)
+	if err != nil {
+		return t, err
+	}
+	if kbps := source.MaxBitRate(ctx); kbps > 0 {
+		// A data saver: Navidrome converts to MP3 at no more than kbps - MP3
+		// because every browser plays it, where Navidrome's own default,
+		// Opus, is patchy on iPhones. A file already that small, in that
+		// format, is sent as it is. estimateContentLength gives the converted
+		// stream a length, which is what lets a browser show and seek a
+		// timeline before the whole song has arrived.
+		u, perr := url.Parse(t.URL)
+		if perr != nil {
+			return source.Target{}, perr
+		}
+		q := u.Query()
+		q.Set("maxBitRate", strconv.Itoa(kbps))
+		q.Set("format", "mp3")
+		q.Set("estimateContentLength", "true")
+		u.RawQuery = q.Encode()
+		t.URL = u.String()
+	}
+	return t, nil
 }
 
 // ArtTarget builds an authenticated upstream target for cover art.

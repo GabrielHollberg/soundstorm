@@ -94,6 +94,26 @@ const artPath = (item) =>
 const streamPath = (item) =>
   `/api/stream/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`;
 
+// Streaming quality is this device's own choice - a phone on mobile data and
+// the computer on the Wi-Fi want different things - so it lives here, not in
+// the account. "auto" lowers it only where the browser says the connection is
+// mobile data or the data saver is on, which Android's Chrome can tell and an
+// iPhone cannot (there it streams the original). Downloads always keep the
+// original: streamPath, not playPath.
+const QUALITY_KEY = 'soundstorm.quality';
+function streamingKbps() {
+  const choice = localStorage.getItem(QUALITY_KEY) || 'original';
+  if (choice === 'auto') {
+    const c = navigator.connection;
+    return c && (c.type === 'cellular' || c.saveData) ? 128 : 0;
+  }
+  return Number(choice) || 0;
+}
+const playPath = (item) => {
+  const kbps = item.kind === 'music' ? streamingKbps() : 0;
+  return streamPath(item) + (kbps ? `?kbps=${kbps}` : '');
+};
+
 /* ------------------------------------------------------------------- gate */
 
 // The setup code arrives in the address the installer opened. It is read here,
@@ -588,6 +608,12 @@ async function loadLibrary() {
 // "Use on your phone or TV": the home address, and the away-from-home one when
 // remote access is on and working. Only the owner's session carries the latter,
 // so a member sees the home address alone.
+$('quality-select').value = localStorage.getItem(QUALITY_KEY) || 'original';
+$('quality-select').addEventListener('change', (event) => {
+  localStorage.setItem(QUALITY_KEY, event.target.value);
+  note($('playback-note'), 'Saved. It applies from the next song.', false);
+});
+
 // The away-from-home address, filled in each time the account page opens:
 // only the owner's session carries it, so a member sees the home address alone.
 async function refreshDevices() {
@@ -1515,10 +1541,10 @@ function playAudio(item, fromQueue) {
     } else if (isDownloaded(item)) {
       // From the device: through a tunnel, out of Wi-Fi range, on a plane.
       offlineURL(item).then((url) => {
-        if (audio.item === item) startAt(url || streamPath(item), 0);
+        if (audio.item === item) startAt(url || playPath(item), 0);
       });
     } else {
-      startAt(streamPath(item), 0);
+      startAt(playPath(item), 0);
     }
   }
   applyLevel(item);
@@ -1566,7 +1592,7 @@ function seekTo(seconds, item) {
     startAt(audio.tracks[index].url, seconds - audio.tracks[index].startSeconds);
     return;
   }
-  startAt(streamPath(item), seconds);
+  startAt(playPath(item), seconds);
 }
 
 function trackContaining(seconds) {
@@ -4054,7 +4080,7 @@ async function preloadNext() {
   if ((audio.preloaded && audio.preloaded.key === key) || audio.preloading === key) return;
   audio.preloading = key;
   try {
-    const resp = await fetch(streamPath(next), { credentials: 'same-origin' });
+    const resp = await fetch(playPath(next), { credentials: 'same-origin' });
     const size = Number(resp.headers.get('Content-Length') || 0);
     if (!resp.ok || size > PRELOAD_MAX_BYTES) {
       if (resp.body) resp.body.cancel().catch(() => {});

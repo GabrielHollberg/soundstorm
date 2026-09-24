@@ -300,6 +300,20 @@ func WithUserID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, userKey{}, id)
 }
 
+type bitRateKey struct{}
+
+// WithMaxBitRate asks a streaming source for audio of at most kbps - a data
+// saver for a phone. A source that cannot convert audio ignores it.
+func WithMaxBitRate(ctx context.Context, kbps int) context.Context {
+	return context.WithValue(ctx, bitRateKey{}, kbps)
+}
+
+// MaxBitRate is the ceiling asked for with WithMaxBitRate, or 0 for none.
+func MaxBitRate(ctx context.Context) int {
+	kbps, _ := ctx.Value(bitRateKey{}).(int)
+	return kbps
+}
+
 // UserID returns the account a request belongs to, or "" when there is none -
 // a background scan or a provisioning call, which belong to nobody.
 func UserID(ctx context.Context) string {

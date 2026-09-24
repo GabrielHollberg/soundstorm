@@ -2043,3 +2043,23 @@ body.np-open { overflow: hidden; }
    screen for an instant, it is simply shown as it now is. */
 ::view-transition-old(root) { animation: none; display: none; }
 ::view-transition-new(root) { animation: none; }
+
+/* A setting with its label on the left and its control on the right,
+   wrapping onto two lines on a narrow screen. */
+.setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 6px 0;
+}
+.setting-row select {
+  min-width: 220px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+}
