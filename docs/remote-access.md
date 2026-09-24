@@ -176,6 +176,41 @@ NAT, so the box already has a globally routable address.
 - The catch: the *visitor's* network must also have IPv6, so this augments the
   IPv4 path rather than replacing it. Prefer it when both ends have it.
 
+**Built: the dual-stack path, end to end on the software side.** The public
+`net` name now carries an `A` and an `AAAA` at once (`handlePublic` no longer
+clears the other family), and the install publishes each from a separate call
+pinned to that address family (`Client.SetPublicVia`, `autoCert.publishRemote`
+trying `tcp4` then `tcp6`). This falls straight out of the SSRF-safe design: the
+service publishes the family of the request's *source*, and the only way to make
+the source IPv6 is to actually reach the service over IPv6 — which proves the box
+has a working global v6, exactly as the reachability probe proves the port is
+open. So there is nothing new to trust. A visitor connects on whichever family
+they have; a record that later goes dark is covered by the browser trying both
+(Happy Eyeballs). The IPv4 call is pinned too, so the port-forward path keeps
+publishing `A` regardless of what the default route would have chosen.
+
+**Not built, and each is a deliberate open item, not an oversight:**
+
+- **The container needs IPv6 egress for any of this to activate.** By default a
+  Compose bridge network is IPv4-only, so the `tcp6` publish call simply fails
+  to dial and nothing is published — the path is dormant, costing nothing, until
+  the container has a global v6. Enabling that (`enable_ipv6` on the network, a
+  host daemon that does IPv6, and either a routed prefix or NDP proxying) is
+  host-dependent and can break `docker compose up` where the host has no v6 — so
+  it is the kind of fragile, external-dependency step this project keeps
+  **opt-in**, the way Tailscale is. The switch for it is not wired yet.
+- **The IPv6 firewall pinhole.** v6 has no NAT, but home routers often run a
+  stateful firewall that blocks unsolicited inbound. Opening it is a different
+  request from a port map: PCP's `MAP` can do it where the router honours PCP
+  over v6, and UPnP has a separate `WANIPv6FirewallControl:AddPinhole`. Neither
+  is wired; today a v6 box behind a closed firewall publishes nothing because
+  the reachability probe correctly fails, and the owner would forward/allow by
+  hand. `internal/portmap` is the place this would go.
+
+Both are verify-against-a-live-network steps with no way to exercise them from
+CI or a single dev box, so they are called out here rather than shipped
+untested — the same treatment the Tailscale `ts.net` path got.
+
 ## Security
 
 Putting a home server on the internet is a real decision. It ships **explicitly

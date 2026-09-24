@@ -250,22 +250,22 @@ func (s *Server) handlePublic(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 
-	typ, other := "A", "AAAA"
+	typ := "A"
 	if addr.Is6() {
-		typ, other = "AAAA", "A"
+		typ = "AAAA"
 	}
-	changed, err := s.DNS.Set(ctx, s.publicRelative(id), typ, addr.String())
-	if err != nil {
+	// The public name is deliberately dual-stack: unlike the LAN name, it keeps
+	// whichever of A and AAAA it already had. An install with a forwarded IPv4
+	// port and a directly reachable global IPv6 publishes both, from two calls -
+	// one reaching the service over each family - and a visitor connects on the
+	// family it has. A record that later goes dark is not a problem either: a
+	// browser handed both tries both (Happy Eyeballs) and falls back.
+	if _, err := s.DNS.Set(ctx, s.publicRelative(id), typ, addr.String()); err != nil {
 		s.Log.Error("set public address", "id", id, "err", err)
 		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
 		return
 	}
-	if changed {
-		if err := s.DNS.Delete(ctx, s.publicRelative(id), other); err != nil {
-			s.Log.Warn("clear other family", "id", id, "err", err)
-		}
-	}
-	s.Log.Info("public address set", "id", id)
+	s.Log.Info("public address set", "id", id, "type", typ)
 	writeJSON(w, http.StatusOK, map[string]string{"name": s.PublicNameFor(id), "ip": addr.String()})
 }
 

@@ -307,13 +307,11 @@ func (a *autoCert) step(ctx context.Context) error {
 					"port", a.port, "err", err)
 			}
 		}
-		if name, err := a.names.SetPublic(ctx, reg, a.port); err != nil {
-			a.log.Warn("remote access is not reachable; serving on the LAN name only",
-				"err", err)
-		} else {
+		if name := a.publishRemote(ctx, reg); name != "" {
 			publicName = name
 			domains = append(domains, name)
-			a.log.Info("remote access is reachable", "name", name)
+		} else {
+			a.log.Warn("remote access is not reachable on any address; serving on the LAN name only")
 		}
 	} else {
 		a.mu.RLock()
@@ -383,6 +381,31 @@ func (a *autoCert) step(ctx context.Context) error {
 	a.log.Info("real certificate installed", "name", reg.Name,
 		"expires", pair.Leaf.NotAfter.Format("2006-01-02"))
 	return nil
+}
+
+// publishRemote points the remote name at this install over whichever address
+// families both reach the service and prove reachable back: IPv4 through the
+// forwarded port, and IPv6 directly, since IPv6 has no NAT to punch. Either
+// alone is enough, and the name is the same for both - a visitor connects on the
+// family it has. The two calls are pinned to a family (see Client.SetPublicVia)
+// so the service sees a source of that family and publishes the matching record;
+// a box without one simply fails to dial, which is the norm for IPv6 and not
+// worth a warning on every step.
+func (a *autoCert) publishRemote(ctx context.Context, reg names.Registration) string {
+	var name string
+	if n, err := a.names.SetPublicVia(ctx, reg, a.port, "tcp4"); err != nil {
+		a.log.Info("remote access over IPv4 is not reachable", "err", err)
+	} else {
+		name = n
+		a.log.Info("remote access is reachable over IPv4", "name", n)
+	}
+	if n, err := a.names.SetPublicVia(ctx, reg, a.port, "tcp6"); err != nil {
+		a.log.Debug("remote access over IPv6 is not reachable", "err", err)
+	} else {
+		name = n
+		a.log.Info("remote access is reachable over IPv6", "name", n)
+	}
+	return name
 }
 
 func (a *autoCert) forget() {

@@ -143,6 +143,53 @@ func TestPublicNameNeedsAPassingProbe(t *testing.T) {
 	}
 }
 
+// The public name is dual-stack: publishing one family leaves the other in
+// place, so an install with a forwarded IPv4 port and a reachable IPv6 resolves
+// on both and a visitor uses whichever it has.
+func TestPublicNameIsDualStack(t *testing.T) {
+	dns := newFakeDNS()
+	s := &Server{
+		Secret:         []byte("0123456789abcdef0123456789abcdef"),
+		Zone:           "soundstorm.dev",
+		Label:          "home",
+		ClientIPHeader: "X-Real-Ip",
+		DNS:            dns,
+		probe:          func(context.Context, netip.Addr, int, string) error { return nil },
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	c := &Client{Base: srv.URL}
+	reg, err := c.Register(context.Background())
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	put := func(sourceIP string) {
+		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/v1/public", strings.NewReader(`{"port":8099}`))
+		req.Header.Set("Authorization", reg.Credential())
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Real-Ip", sourceIP)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("public(%s): %d", sourceIP, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	put("203.0.113.7")          // IPv4
+	put("2606:4700:4700::1111") // IPv6
+
+	if got := dns.get(reg.ID + ".net A"); got != "203.0.113.7" {
+		t.Errorf("A record = %q, want it kept after the AAAA was set", got)
+	}
+	if got := dns.get(reg.ID + ".net AAAA"); got != "2606:4700:4700::1111" {
+		t.Errorf("AAAA record = %q, want the IPv6 source", got)
+	}
+}
+
 // When the probe fails, no name is published and the caller is told to open the
 // port.
 func TestPublicNameNotPublishedWhenUnreachable(t *testing.T) {

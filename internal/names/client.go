@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -42,10 +43,26 @@ func (c *Client) SetAddress(ctx context.Context, reg Registration, ip string) er
 // public name, or an error the caller can show (a closed port, no public
 // address, the provider refusing).
 func (c *Client) SetPublic(ctx context.Context, reg Registration, port int) (string, error) {
+	return c.setPublic(ctx, reg, port, "")
+}
+
+// SetPublicVia is SetPublic over a specific address family, "tcp4" or "tcp6", so
+// the install can publish an A and an AAAA record from two calls. The service
+// takes the address from the request's source, so which family the request
+// leaves on decides which record is published - the SSRF-safe design means the
+// install cannot simply name an IPv6 address to publish; it has to actually
+// reach the service over IPv6, which proves it has one. A box with no address of
+// that family fails to dial, which the caller reads as "that family is not
+// available here" rather than an error.
+func (c *Client) SetPublicVia(ctx context.Context, reg Registration, port int, network string) (string, error) {
+	return c.setPublic(ctx, reg, port, network)
+}
+
+func (c *Client) setPublic(ctx context.Context, reg Registration, port int, network string) (string, error) {
 	var out struct {
 		Name string `json:"name"`
 	}
-	err := c.do(ctx, http.MethodPut, "/v1/public", reg.Credential(), map[string]int{"port": port}, &out)
+	err := c.doVia(ctx, network, http.MethodPut, "/v1/public", reg.Credential(), map[string]int{"port": port}, &out)
 	return out.Name, err
 }
 
@@ -75,6 +92,30 @@ func (c *Client) ClearChallenge(ctx context.Context, reg Registration, public bo
 	return c.do(ctx, http.MethodDelete, path, reg.Credential(), nil, nil)
 }
 
+// clientFor returns the HTTP client to use. With no forced family it is the
+// configured client (or a default with a long timeout, since a challenge can
+// take minutes to become visible). A forced family gets a fresh client whose
+// dialer connects only over that family, with a shorter timeout - the only calls
+// that pin a family are the reachability-gated public ones, which never wait on a
+// challenge, and a box lacking that family should fail fast rather than hang.
+func (c *Client) clientFor(network string) *http.Client {
+	if network == "" {
+		if c.HTTP != nil {
+			return c.HTTP
+		}
+		return &http.Client{Timeout: 6 * time.Minute}
+	}
+	d := &net.Dialer{Timeout: 10 * time.Second}
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
+				return d.DialContext(ctx, network, addr)
+			},
+		},
+	}
+}
+
 // StatusError is a refusal from the service, with its reason.
 type StatusError struct {
 	Status  int
@@ -86,6 +127,13 @@ func (e *StatusError) Error() string {
 }
 
 func (c *Client) do(ctx context.Context, method, path, credential string, body, into any) error {
+	return c.doVia(ctx, "", method, path, credential, body, into)
+}
+
+// doVia is do, optionally pinned to an address family ("tcp4"/"tcp6"). Pinning
+// forces a fresh client whose dialer only connects over that family, so the
+// request's source address - which the service reads - is of that family.
+func (c *Client) doVia(ctx context.Context, network, method, path, credential string, body, into any) error {
 	var rd io.Reader
 	if body != nil {
 		raw, _ := json.Marshal(body)
@@ -101,12 +149,7 @@ func (c *Client) do(ctx context.Context, method, path, credential string, body, 
 	if credential != "" {
 		req.Header.Set("Authorization", credential)
 	}
-	client := c.HTTP
-	if client == nil {
-		// Long enough for a challenge to become visible, which the service
-		// waits for before answering.
-		client = &http.Client{Timeout: 6 * time.Minute}
-	}
+	client := c.clientFor(network)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("name service: %w", err)
