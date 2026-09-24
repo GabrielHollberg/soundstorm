@@ -193,6 +193,10 @@ type data struct {
 	// same reason User.Libraries is careful about nil. Once the owner toggles
 	// it in the app, their choice is what stands.
 	RemoteAccess *bool `json:"remoteAccess,omitempty"`
+	// OnlineLyrics is whether the owner lets SoundStorm look up missing
+	// lyrics on LRCLIB. Off unless turned on: it sends a song's artist and
+	// title to an outside service, which nothing else here does.
+	OnlineLyrics bool `json:"onlineLyrics,omitempty"`
 
 	// DeviceKey signs the tokens that mark a browser as one an account has
 	// signed in on before (see auth.Manager.SignIn). Made on first use; a
@@ -937,4 +941,22 @@ func (s *Store) pruneLocked() {
 			delete(s.d.Sessions, key)
 		}
 	}
+}
+
+// OnlineLyrics reports whether looking up missing lyrics online is on.
+func (s *Store) OnlineLyrics() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.d.OnlineLyrics
+}
+
+// SetOnlineLyrics turns looking up missing lyrics online on or off.
+func (s *Store) SetOnlineLyrics(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.OnlineLyrics == on {
+		return nil
+	}
+	s.d.OnlineLyrics = on
+	return s.save()
 }

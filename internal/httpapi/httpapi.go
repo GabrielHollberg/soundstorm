@@ -53,6 +53,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/federate"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
+	"github.com/GabrielHollberg/soundstorm/internal/lyrics"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/provision"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
@@ -87,6 +88,7 @@ type Server struct {
 	remoteReach      func(nonce string) (string, bool)
 	remoteStatus     func() RemoteState
 	setRemoteAccess  func(bool) error
+	lyrics           *lyrics.Finder
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -147,6 +149,10 @@ type Config struct {
 
 	// Collections holds each person's favourites and playlists.
 	Collections *collections.Store
+
+	// Lyrics looks up lyrics a song's files lack, when the owner has turned
+	// that on. Nil disables it whatever the setting says.
+	Lyrics *lyrics.Finder
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -199,6 +205,7 @@ func New(cfg Config) *Server {
 		setRemoteAccess:  cfg.SetRemoteAccess,
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
 		collections:      cfg.Collections,
+		lyrics:           cfg.Lyrics,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 	}
@@ -305,6 +312,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("POST /api/users/{id}/password", s.handleSetUserPassword)
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
 	owner.HandleFunc("PUT /api/remote", s.handleSetRemote)
+	owner.HandleFunc("PUT /api/settings/lyrics", s.handleSetOnlineLyrics)
 	owner.HandleFunc("POST /api/delete/preview", s.handleDeletePreview)
 	owner.HandleFunc("POST /api/delete", s.handleDelete)
 	owner.HandleFunc("POST /api/delete/undo", s.handleDeleteUndo)
@@ -424,6 +432,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		// something an anonymous visitor needs.
 		if s.remoteStatus != nil {
 			answer["remote"] = remoteJSON(s.remoteStatus())
+		}
+		if user.IsOwner() && s.lyrics != nil {
+			answer["onlineLyrics"] = s.store.OnlineLyrics()
 		}
 	}
 	// The install's real https address, offered to a page that is not already

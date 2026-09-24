@@ -254,6 +254,26 @@
           account and its app on each device.</p>
       </div>
 
+      <!-- Owner only: whether song names may leave the house to find lyrics.
+           Off until somebody turns it on. -->
+      <div id="lyrics-block" class="account-section card hidden">
+        <h2>Lyrics</h2>
+        <p class="muted">Songs with lyrics in their files always show those. For
+          the rest, SoundStorm can look them up on
+          <a href="https://lrclib.net" target="_blank" rel="noopener noreferrer">LRCLIB</a>,
+          a free lyrics library, the first time each song plays.</p>
+        <label class="remote-switch">
+          <input id="lyrics-toggle" type="checkbox">
+          <span>Find missing lyrics online</span>
+        </label>
+        <p class="muted small-print">Sends the artist, title and album of the
+          song being played to LRCLIB. Nothing else leaves your server, and the
+          lyrics are kept by SoundStorm, not added to your music folders. To do a
+          whole library at once, try
+          <a href="https://github.com/tranxuanthang/lrcget" target="_blank" rel="noopener noreferrer">LRCGET</a>.</p>
+        <p id="lyrics-note" class="muted hidden" role="status"></p>
+      </div>
+
       <div id="people-block" class="account-section card hidden">
         <h2>People</h2>
         <p class="muted">Everyone gets their own login and their own place in

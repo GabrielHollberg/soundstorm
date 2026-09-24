@@ -35,6 +35,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/httpapi"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
+	"github.com/GabrielHollberg/soundstorm/internal/lyrics"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/portmap"
 	"github.com/GabrielHollberg/soundstorm/internal/provision"
@@ -288,6 +289,14 @@ func run(log *slog.Logger) error {
 			"or add to the address", "/?setup="+httpapi.NormalizeSetupCode(setupCode))
 	}
 
+	// Lyrics found online are kept beside the state, never in the music
+	// folders: the library is the user's, and a scanner would index them.
+	lyricsFinder, err := lyrics.New(filepath.Join(stateDir, "lyrics"))
+	if err != nil {
+		log.Warn("online lyrics unavailable", "err", err)
+		lyricsFinder = nil
+	}
+
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
 		Store:            store,
@@ -323,6 +332,7 @@ func run(log *slog.Logger) error {
 			return nil
 		},
 		SetupCode:   setupCode,
+		Lyrics:      lyricsFinder,
 		Collections: collectionStore,
 	})
 

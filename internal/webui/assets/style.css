@@ -1739,3 +1739,5 @@ body.np-open { overflow: hidden; }
 }
 .offline-bar .ghost { margin-left: auto; }
 .offline-note { margin: 12px 20px 0; }
+
+.np-lyrics-credit { font-size: 12px; opacity: 0.55; margin: 24px 0 8px; }

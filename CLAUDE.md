@@ -416,6 +416,18 @@ Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
   checked on Navidrome 0.64.1 with a `.lrc` beside a song: synced, starts in
   ms. Hover styles only apply with `(hover: hover)`: a tap leaves `:hover`
   stuck and greyed out the current line.
+- **Lyrics from LRCLIB** (`internal/lyrics`) fill in songs that have none, and
+  are the first thing SoundStorm sends to an outside service about what
+  somebody plays - so it is an owner setting, **off by default**, in
+  `state.json` as `onlineLyrics`. LRCLIB because it needs no key and no
+  account and has synced lyrics; Musixmatch needs a paid licence to show whole
+  lyrics and Genius's API has none. Local lyrics always win. It is asked only
+  on play, never in bulk (LRCGET exists for that), and matched on artist,
+  title, album and **duration** - duration is what picks the studio take over a
+  live one with different timings. Every answer, "none" included, is cached as
+  a file under the state dir's `lyrics/` for good (none re-asks after 30 days);
+  never in the music folders, which are the user's and scanned. Checked live:
+  a real song came back synced, 56 lines.
 - **Downloads** live in the Cache API (`soundstorm-offline-v1`), with an index
   in localStorage. Downloaded songs always play from the device. Sign-out
   clears them.

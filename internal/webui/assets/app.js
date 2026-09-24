@@ -218,8 +218,31 @@ function renderAccount() {
   if (me.owner) {
     loadPeople();
     refreshRemote();
+    refreshLyricsSetting();
+  } else {
+    show($('lyrics-block'), false);
   }
 }
+
+// The lyrics setting is on the owner's session only, and only when the server
+// can look lyrics up at all.
+async function refreshLyricsSetting() {
+  const { ok, body } = await api('/api/session');
+  const has = ok && body && typeof body.onlineLyrics === 'boolean';
+  show($('lyrics-block'), has);
+  if (has) $('lyrics-toggle').checked = body.onlineLyrics;
+}
+
+$('lyrics-toggle').addEventListener('change', async (event) => {
+  const enabled = event.target.checked;
+  const { ok, body } = await api('/api/settings/lyrics', { method: 'PUT', body: JSON.stringify({ enabled }) });
+  if (!ok) {
+    event.target.checked = !enabled;
+    note($('lyrics-note'), (body && body.error) || 'Could not change it.', true);
+    return;
+  }
+  note($('lyrics-note'), enabled ? 'On. Songs without lyrics are looked up as they play.' : 'Off. Only lyrics in your own files are shown.', false);
+});
 
 // refreshRemote reads the current remote-access status from the session and
 // paints the owner's toggle. The status lives on /api/session rather than in
@@ -3921,7 +3944,7 @@ async function loadLyrics(item) {
   if (item.kind !== 'music') return;
   const { ok, body } = await api(`/api/music/lyrics/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
   if (!audio.lyrics || audio.lyrics.key !== key) return;
-  audio.lyrics = { key, synced: Boolean(ok && body && body.synced), lines: (ok && body && body.lines) || [] };
+  audio.lyrics = { key, synced: Boolean(ok && body && body.synced), lines: (ok && body && body.lines) || [], from: (ok && body && body.from) || '' };
   renderLyrics();
 }
 
@@ -3953,6 +3976,13 @@ function renderLyrics() {
     }
     box.append(el);
   });
+  if (audio.lyrics.from === 'lrclib') {
+    // LRCLIB asks nothing in return; saying where the words came from is the least owed.
+    const credit = document.createElement('p');
+    credit.className = 'np-lyrics-credit';
+    credit.textContent = 'Lyrics from LRCLIB';
+    box.append(credit);
+  }
   audio.lyricIndex = -1;
   syncLyrics(true);
 }

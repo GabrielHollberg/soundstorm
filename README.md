@@ -284,6 +284,14 @@ In Now Playing, the **lyrics** button shows the words, lit up line by line as
 they are sung, when a song has a `.lrc` file beside it or lyrics in its tags.
 Tap a line to jump there.
 
+For songs without any, the owner can turn on **Find missing lyrics online** in
+Account. SoundStorm then asks [LRCLIB](https://lrclib.net), a free lyrics
+library, the first time each such song plays, sending only its artist, title
+and album. It is off until you turn it on, lyrics in your own files always come
+first, and what it finds is kept by SoundStorm rather than written into your
+music folders. To fill a whole library at once, [LRCGET](https://github.com/tranxuanthang/lrcget)
+writes `.lrc` files beside your songs, and SoundStorm shows those.
+
 **Download** an album or playlist, or a song from its menu, to keep it on the
 device. Downloaded songs play without a connection, and on the
 `….soundstorm.dev` address SoundStorm even opens with no connection at all,
