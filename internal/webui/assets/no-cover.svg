@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="102.5 65.0 296.0 296.0">
+  <!-- No cover: the SoundStorm cloud on a dark tile. Drawn by scripts/make-icons.py. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#252c38"/>
+      <stop offset="1" stop-color="#161a21"/>
+    </linearGradient>
+    <clipPath id="flat"><rect x="0" y="0" width="1000" height="249.0"/></clipPath>
+  </defs>
+  <rect x="102.5" y="65.0" width="296.0" height="296.0" fill="url(#tile)"/>
+  <!-- Opacity on the group, not on each shape, or the overlaps show. -->
+  <g opacity="0.28"><g clip-path="url(#flat)" fill="#ffffff">
+    <circle cx="234.0" cy="220.5" r="43.5"/>
+    <circle cx="283.0" cy="212.7" r="23.7"/>
+    <rect x="176.5" y="207.0" width="148.0" height="42.0" rx="21.0"/>
+  </g></g>
+</svg>

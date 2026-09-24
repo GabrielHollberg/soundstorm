@@ -1080,7 +1080,16 @@ const GLYPHS = {
   picture: '🖼️',
 };
 
+const NO_COVER = '/static/no-cover.svg';
+
 function fallbackArt(item) {
+  if (item.kind === 'music') {
+    const img = document.createElement('img');
+    img.src = NO_COVER;
+    img.alt = '';
+    img.className = 'no-cover';
+    return img;
+  }
   const span = document.createElement('span');
   span.className = 'art-fallback';
   span.textContent = GLYPHS[item.kind] || '●';
@@ -1480,13 +1489,14 @@ function playAudio(item, fromQueue) {
   if (src) {
     art.src = src;
     art.onerror = () => {
-      offlineArtURL(item).then((u) => { if (u && audio.item === item) art.src = u; else show(art, false); });
+      art.onerror = null;
+      offlineArtURL(item).then((u) => { if (audio.item === item) art.src = u || NO_COVER; });
     };
-    show(art, true);
   } else {
-    art.removeAttribute('src');
-    show(art, false);
+    art.onerror = null;
+    art.src = NO_COVER;
   }
+  show(art, true);
 
   renderTracks();
   renderQueue();
@@ -3288,12 +3298,22 @@ function coverArt(src, label, round) {
     img.src = src;
     img.alt = '';
     img.loading = 'lazy';
-    img.addEventListener('error', () => img.replaceWith(initials(label)));
+    img.addEventListener('error', () => img.replaceWith(round ? initials(label) : noCover()));
     wrap.append(img);
   } else {
-    wrap.append(initials(label));
+    wrap.append(round ? initials(label) : noCover());
   }
   return wrap;
+}
+
+// An album with no cover shows the cloud; an artist with no picture keeps
+// their initials, since a face is not album art.
+function noCover() {
+  const img = document.createElement('img');
+  img.src = NO_COVER;
+  img.alt = '';
+  img.className = 'no-cover';
+  return img;
 }
 
 // initials stand in for a missing cover: the name's first letters on a colour
@@ -3886,11 +3906,12 @@ function renderNowPlaying() {
   if ($('now-playing').classList.contains('hidden') || !audio.item) return;
   const item = audio.item;
   const art = artPath(item);
-  for (const img of [$('np-cover'), $('np-backdrop'), $('np-thumb')]) {
-    if (art) img.src = art;
-    else img.removeAttribute('src');
+  for (const img of [$('np-cover'), $('np-thumb')]) {
+    img.src = art || NO_COVER;
+    img.onerror = () => { img.onerror = null; img.src = NO_COVER; };
   }
-  $('np-cover').classList.toggle('empty', !art);
+  if (art) $('np-backdrop').src = art;
+  else $('np-backdrop').removeAttribute('src');
   $('np-title').textContent = item.title;
   $('np-sub').textContent = [(item.creators || []).join(', '), (item.extra && item.extra.album) || item.subtitle]
     .filter(Boolean).join(' \u2014 ');

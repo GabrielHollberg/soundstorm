@@ -65,6 +65,35 @@ def cloud_mark_svg():
 '''
 
 
+def placeholder_svg():
+    """What stands in for a song or album with no cover: the cloud, soft, on a
+    dark tile. Square, and scaled to fit by whatever shows it."""
+    left, top, right, bottom = BOX
+    w, h = right - left, bottom - top
+    side = w / 0.5  # the cloud is half the tile's width
+    x0 = left - (side - w) / 2
+    y0 = top - (side - h) / 2
+    bx, by, bx2, by2, r = BAR
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x0:.1f} {y0:.1f} {side:.1f} {side:.1f}">
+  <!-- No cover: the SoundStorm cloud on a dark tile. Drawn by scripts/make-icons.py. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#252c38"/>
+      <stop offset="1" stop-color="#161a21"/>
+    </linearGradient>
+    <clipPath id="flat"><rect x="0" y="0" width="1000" height="{by2}"/></clipPath>
+  </defs>
+  <rect x="{x0:.1f}" y="{y0:.1f}" width="{side:.1f}" height="{side:.1f}" fill="url(#tile)"/>
+  <!-- Opacity on the group, not on each shape, or the overlaps show. -->
+  <g opacity="0.28"><g clip-path="url(#flat)" fill="#ffffff">
+    <circle cx="{BIG[0]}" cy="{BIG[1]}" r="{BIG[2]}"/>
+    <circle cx="{SMALL[0]}" cy="{SMALL[1]}" r="{SMALL[2]}"/>
+    <rect x="{bx}" y="{by}" width="{bx2 - bx}" height="{by2 - by}" rx="{r}"/>
+  </g></g>
+</svg>
+'''
+
+
 def icon(size, cloud_width):
     """A square dark icon with the white cloud centred, cloud_width of it wide."""
     scale = 4  # drawn large and scaled down, for smooth edges
@@ -92,6 +121,7 @@ def icon(size, cloud_width):
 def main():
     (ASSETS / "favicon.svg").write_text(cloud_svg(), encoding="utf-8", newline="\n")
     (ASSETS / "cloud.svg").write_text(cloud_mark_svg(), encoding="utf-8", newline="\n")
+    (ASSETS / "no-cover.svg").write_text(placeholder_svg(), encoding="utf-8", newline="\n")
     icons = ASSETS / "icons"
     # "any": the cloud fills most of the square. Maskable: Android may crop to
     # a circle, keeping only the middle 80%, so the cloud stays well inside it.
@@ -101,7 +131,7 @@ def main():
     # iPhone rounds the corners itself and fills transparency with black, so
     # this one is opaque like the rest.
     icon(180, 0.66).save(icons / "apple-touch-icon.png", optimize=True)
-    print("wrote favicon.svg, cloud.svg and 4 icons")
+    print("wrote favicon.svg, cloud.svg, no-cover.svg and 4 icons")
 
 
 if __name__ == "__main__":

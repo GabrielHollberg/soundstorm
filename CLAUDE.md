@@ -415,6 +415,15 @@ judged on in its first minute:
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.
+  Only the art, the title and the lyrics take part. The page's own
+  before-and-after pictures are not cross-faded (that dimmed the whole screen
+  for an instant, read as a flicker), the background keeps drifting straight
+  through, and the progress bar and controls are laid out identically in both
+  views - same gap, full width - so they do not move at all. A check measures
+  the bar, progress bar and controls in both views and requires them equal.
+- **No cover is the cloud**: `no-cover.svg`, drawn by `scripts/make-icons.py`,
+  stands in for a song or album without art in cards, Now Playing and the
+  mini-player. Artists keep their initials; a face is not album art.
 - **Gapless, measured.** The next song is fetched whole into a Blob while the
   current one plays. Gaps were measured by polling `currentTime` every 4ms;
   `timeupdate` fires only every ~250ms, and the first measurement, taken on

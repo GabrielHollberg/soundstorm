@@ -265,6 +265,8 @@ header {
 }
 .art-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .art-fallback { font-size: 30px; opacity: 0.4; }
+/* No cover: the cloud on a dark tile (no-cover.svg, by scripts/make-icons.py). */
+.art-wrap img.no-cover { object-fit: cover; }
 
 .badge {
   position: absolute;
@@ -1493,7 +1495,7 @@ body.np-open { overflow: hidden; }
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
   background: rgba(255, 255, 255, 0.06);
 }
-.np-cover.empty { content: none; }
+
 .np-side { display: grid; gap: 22px; align-content: center; min-width: 0; }
 .np-text h2 { margin: 0; font-size: 30px; line-height: 1.15; color: #fff; }
 .np-text p { margin: 6px 0 0; font-size: 16px; color: rgba(255, 255, 255, 0.72); }
@@ -1961,10 +1963,13 @@ body.np-open { overflow: hidden; }
   .now-playing.strip-on .np-side {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 18px;
     flex: 1;
     min-height: 0;
     justify-content: flex-end;
+    /* Full width, as beside the full lyrics, so nothing shifts sideways. */
+    align-self: stretch;
+    width: 100%;
   }
   .now-playing.strip-on .np-head { order: 1; }
   .now-playing.strip-on .np-lyrics {
@@ -1993,8 +1998,6 @@ body.np-open { overflow: hidden; }
   .now-playing .np-thumb { view-transition-name: np-art; }
   .now-playing .np-text { view-transition-name: np-title; }
   .now-playing .np-lyrics { view-transition-name: np-lyrics; }
-  .now-playing .np-progress { view-transition-name: np-progress; }
-  .now-playing .np-controls { view-transition-name: np-controls; }
 }
 ::view-transition-group(*) {
   animation-duration: 0.42s;
@@ -2037,3 +2040,11 @@ body.np-open { overflow: hidden; }
 ::view-transition-old(np-backdrop) { animation: none; opacity: 0; }
 ::view-transition-new(np-backdrop) { animation: none; }
 ::view-transition-group(np-backdrop) { animation: none; }
+
+/* Only the art, the title and the lyrics take part in the change. Everything
+   else - the bar at the top, the progress bar, the controls, the background -
+   is identical in both views and stays exactly as it is: the page's own
+   before-and-after pictures are not cross-faded, which dimmed the whole
+   screen for an instant, it is simply shown as it now is. */
+::view-transition-old(root) { animation: none; display: none; }
+::view-transition-new(root) { animation: none; }
