@@ -79,12 +79,22 @@ type Server struct {
 // the Public Suffix List, after which each install is its own domain to Let's
 // Encrypt.
 var (
-	registerRate        = rate{10, time.Hour}      // per client address
+	registerRate        = rate{10, time.Hour}      // per client network
 	addressRate         = rate{20, time.Hour}      // per install
 	challengeRate       = rate{10, 24 * time.Hour} // per install
+	challengeNetRate    = rate{20, 24 * time.Hour} // per client network
 	globalChallengeRate = rate{300, 24 * time.Hour}
 	publicRate          = rate{20, time.Hour} // per install; each triggers an outbound probe
+	clearRate           = rate{30, time.Hour} // per install; each costs registrar calls
 )
+
+// The per-network challenge limit is what stops the global one being a way to
+// switch renewals off. Registration is free, so a per-install limit alone let a
+// few addresses mint enough installs to spend the whole day's global budget, and
+// every real install's renewal then waited on tomorrow. Bounded per network as
+// well, spending it takes many networks rather than a few addresses. (The Public
+// Suffix List remains the durable fix: once each install is its own domain to
+// Let's Encrypt, there is no shared budget to protect.)
 
 // reachTimeout bounds the outbound reachability probe: a short dial and read,
 // so a slow or black-holed address cannot tie the handler up.
@@ -148,7 +158,7 @@ func (s *Server) PublicNameFor(id string) string { return id + "." + s.PublicLab
 func (s *Server) publicRelative(id string) string { return id + "." + s.PublicLabel }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if !s.limits.allow("register:"+s.clientIP(r), registerRate) {
+	if !s.limits.allow("register:"+s.clientNet(r), registerRate) {
 		writeError(w, http.StatusTooManyRequests, "too many registrations from this address; try again later")
 		return
 	}
@@ -272,6 +282,12 @@ func (s *Server) handlePublic(w http.ResponseWriter, r *http.Request, id string)
 // handleClearPublic removes an install's remote-access records, for when the
 // owner turns remote access off.
 func (s *Server) handleClearPublic(w http.ResponseWriter, r *http.Request, id string) {
+	// Limited like every other write: each call spends registrar requests from a
+	// budget every install shares, so an unlimited one is a way to exhaust it.
+	if !s.limits.allow("clear:"+id, clearRate) {
+		writeError(w, http.StatusTooManyRequests, "too many changes for this install; try again later")
+		return
+	}
 	for _, typ := range []string{"A", "AAAA"} {
 		if err := s.DNS.Delete(r.Context(), s.publicRelative(id), typ); err != nil {
 			s.Log.Warn("clear public address", "id", id, "type", typ, "err", err)
@@ -361,6 +377,10 @@ func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id s
 		writeError(w, http.StatusTooManyRequests, "too many certificate requests for this install today")
 		return
 	}
+	if !s.limits.allow("challenge-net:"+s.clientNet(r), challengeNetRate) {
+		writeError(w, http.StatusTooManyRequests, "too many certificate requests from this network today")
+		return
+	}
 	if !s.limits.allow("challenge:*", globalChallengeRate) {
 		s.Log.Warn("global challenge limit reached")
 		writeError(w, http.StatusTooManyRequests, "the service is issuing too many certificates today; try again tomorrow")
@@ -395,6 +415,10 @@ func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id s
 }
 
 func (s *Server) handleClearChallenge(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.limits.allow("clear:"+id, clearRate) {
+		writeError(w, http.StatusTooManyRequests, "too many changes for this install; try again later")
+		return
+	}
 	rel := s.relative(id)
 	if r.URL.Query().Get("public") != "" {
 		rel = s.publicRelative(id)
@@ -436,6 +460,25 @@ func (s *Server) clientIP(r *http.Request) string {
 	return host
 }
 
+// clientNet is the caller's address for rate limiting: an IPv4 address as it is,
+// and an IPv6 address by its /64. A single home or server is handed a whole /64,
+// so keying IPv6 on the full address gave anybody reaching the service over v6
+// a fresh limit for every address in it - effectively none at all.
+func (s *Server) clientNet(r *http.Request) string {
+	ip := s.clientIP(r)
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap()
+	if addr.Is6() {
+		if p, err := addr.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return addr.String()
+}
+
 // --- limits --------------------------------------------------------------------
 
 type rate struct {
@@ -453,13 +496,18 @@ type bucket struct {
 // limit whose loss costs anything, and a restart cannot be triggered from
 // outside.
 type limits struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	now     func() time.Time
+	mu        sync.Mutex
+	buckets   map[string]*bucket
+	now       func() time.Time
+	nextPrune time.Time
 }
 
 // maxBuckets bounds memory against a flood of distinct keys.
 const maxBuckets = 100_000
+
+// pruneEvery bounds how often a full table is scanned for expired entries, so a
+// flood of new keys against a full table cannot make every request walk it.
+const pruneEvery = time.Second
 
 func newLimits() *limits { return &limits{buckets: map[string]*bucket{}, now: time.Now} }
 
@@ -469,11 +517,20 @@ func (l *limits) allow(key string, r rate) bool {
 	now := l.now()
 	b, ok := l.buckets[key]
 	if !ok || now.After(b.reset) {
-		if len(l.buckets) >= maxBuckets {
-			for k, old := range l.buckets {
-				if now.After(old.reset) {
-					delete(l.buckets, k)
+		if !ok && len(l.buckets) >= maxBuckets {
+			if now.After(l.nextPrune) {
+				for k, old := range l.buckets {
+					if now.After(old.reset) {
+						delete(l.buckets, k)
+					}
 				}
+				l.nextPrune = now.Add(pruneEvery)
+			}
+			// Still full: refuse a new key rather than grow without bound. Keys
+			// already in the table - the global challenge count, an install
+			// that is already counted - carry on as before.
+			if len(l.buckets) >= maxBuckets {
+				return false
 			}
 		}
 		b = &bucket{reset: now.Add(r.window)}

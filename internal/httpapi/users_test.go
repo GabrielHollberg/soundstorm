@@ -278,7 +278,7 @@ func TestTheOwnerCanResetSomebodyElsesPassword(t *testing.T) {
 // The whole point of multi-user: two people reading the same book keep their
 // own places.
 func TestTwoPeopleKeepSeparateReadingPositions(t *testing.T) {
-	h := newHarness(t, stub{id: "ebooks", kind: media.KindEbook})
+	h := newHarness(t, bookStub{stub: stub{id: "ebooks", kind: media.KindEbook}, books: []string{"dune.epub"}})
 	h.signUp(t)
 	h.addMember(t, "sam", samPassword)
 	sam := h.asUser(t, "sam", samPassword)
@@ -420,7 +420,7 @@ func TestSignupReturnsTheAccountItJustCreated(t *testing.T) {
 // [0, 1] before - including the exact trap noted for Audiobookshelf's own
 // API: a literal too large for float64 decodes to +Inf without an error.
 func TestReadingProgressRejectsABadFraction(t *testing.T) {
-	h := newHarness(t, stub{id: "ebooks", kind: media.KindEbook})
+	h := newHarness(t, bookStub{stub: stub{id: "ebooks", kind: media.KindEbook}, books: []string{"dune.epub"}})
 	h.signUp(t)
 	const where = "?source=ebooks&id=dune.epub"
 
@@ -448,8 +448,27 @@ func TestReadingProgressRejectsABadFraction(t *testing.T) {
 // An EPUB CFI is a few dozen characters. Nothing stopped a client sending
 // something enormous, which would sit in state.json - the file every login
 // and session change reads and rewrites whole - forever.
+// A reading position is only kept for a book that is on the shelf. The id was
+// a free string once, and every invented one was another entry in the file each
+// request's lock guards - so one member could slow the server for everybody.
+func TestReadingProgressOnlyForRealBooks(t *testing.T) {
+	h := newHarness(t, bookStub{stub: stub{id: "ebooks", kind: media.KindEbook}, books: []string{"dune.epub"}})
+	h.signUp(t)
+
+	resp, _ := h.do(t, http.MethodPut, "/api/book/progress?source=ebooks&id=invented-1.epub",
+		`{"location":"epubcfi(/6/4!/2)","fraction":0.1}`)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("progress for a book that does not exist = %d, want 404", resp.StatusCode)
+	}
+	resp, _ = h.do(t, http.MethodPut, "/api/book/progress?source=ebooks&id=dune.epub",
+		`{"location":"epubcfi(/6/4!/2)","fraction":0.1}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("progress for a real book = %d, want 200", resp.StatusCode)
+	}
+}
+
 func TestReadingProgressRejectsAnOverlongLocation(t *testing.T) {
-	h := newHarness(t, stub{id: "ebooks", kind: media.KindEbook})
+	h := newHarness(t, bookStub{stub: stub{id: "ebooks", kind: media.KindEbook}, books: []string{"dune.epub"}})
 	h.signUp(t)
 	const where = "?source=ebooks&id=dune.epub"
 

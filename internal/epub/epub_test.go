@@ -3,8 +3,10 @@ package epub
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -114,6 +116,54 @@ func TestParseOPFFindsCoverBothWays(t *testing.T) {
 	}
 	if meta.CoverHref != "cover.png" {
 		t.Errorf("epub3 cover = %q", meta.CoverHref)
+	}
+}
+
+// A cover is served on this origin, so only an item that declares itself an
+// image can be one - by any of the three routes. A book nominating a script (or
+// a page) as its cover gets no cover.
+func TestParseOPFRefusesANonImageCover(t *testing.T) {
+	for name, opf := range map[string]string{
+		"epub3 property": `<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+		  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title></metadata>
+		  <manifest><item id="c" href="x.js" media-type="text/javascript" properties="cover-image"/></manifest>
+		</package>`,
+		"epub2 meta": `<package xmlns="http://www.idpf.org/2007/opf">
+		  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>T</dc:title><meta name="cover" content="c"/></metadata>
+		  <manifest><item id="c" href="cover.xhtml" media-type="application/xhtml+xml"/></manifest>
+		</package>`,
+	} {
+		meta, _, err := ParseOPF([]byte(opf), "")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if meta.CoverHref != "" {
+			t.Errorf("%s: a non-image was taken as the cover: %q", name, meta.CoverHref)
+		}
+	}
+}
+
+// A zip whose central directory is far larger than any book's is refused before
+// archive/zip spends memory on it - about four times the directory's size.
+func TestOpenRefusesAnOversizedDirectory(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	// ~30,000 entries with long names is a directory of several megabytes.
+	long := strings.Repeat("x", 60)
+	for i := 0; i < 30000; i++ {
+		if _, err := zw.Create(fmt.Sprintf("%s/%06d", long, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "huge.epub")
+	if err := os.WriteFile(p, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(p); err == nil || !strings.Contains(err.Error(), "directory") {
+		t.Errorf("Open(huge) = %v, want a directory-size refusal", err)
 	}
 }
 

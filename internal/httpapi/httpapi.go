@@ -30,6 +30,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -656,20 +657,29 @@ func (s *Server) handleSetUserLibraries(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var body struct {
-		// A pointer so that an absent key, an explicit null and an empty list
-		// are three different requests: leave alone, allow everything, allow
-		// nothing.
-		Libraries *[]string `json:"libraries"`
+		// Raw, so that an absent key can be told apart from an explicit null.
+		// A *[]string cannot: JSON decodes both to a nil pointer, which made a
+		// body of {} - no libraries named at all - lift every restriction on the
+		// account. This is the one field that must never fail open.
+		Libraries json.RawMessage `json:"libraries"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxCredentialBody))
 	if err := dec.Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "expected a JSON body with a list of libraries")
 		return
 	}
+	if len(body.Libraries) == 0 {
+		writeError(w, http.StatusBadRequest, "libraries is required: a list, or null for every library")
+		return
+	}
 
+	// null is "every library"; a list, including an empty one, is exactly those.
 	var libraries []string
-	if body.Libraries != nil {
-		libraries = *body.Libraries
+	if string(bytes.TrimSpace(body.Libraries)) != "null" {
+		if err := json.Unmarshal(body.Libraries, &libraries); err != nil {
+			writeError(w, http.StatusBadRequest, "libraries must be a list of library names, or null")
+			return
+		}
 		if libraries == nil {
 			libraries = []string{}
 		}
@@ -699,7 +709,7 @@ func (s *Server) handleSetUserPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if err := s.auth.ResetPassword(actor, id, body.Password, auth.SessionToken(r)); err != nil {
+	if err := s.auth.ResetPassword(actor, id, body.Password, s.auth.SessionToken(r)); err != nil {
 		writeError(w, statusFor(err), err.Error())
 		return
 	}
@@ -725,7 +735,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	err := s.auth.ChangeOwnPassword(r.Context(), clientOf(r), actor,
-		body.Current, body.Password, auth.SessionToken(r))
+		body.Current, body.Password, s.auth.SessionToken(r))
 	if t, ok := auth.IsThrottled(err); ok {
 		writeThrottled(w, t)
 		return
@@ -1703,7 +1713,7 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "book resources are for the reader, not direct loading")
 		return
 	}
-	if isScriptType(contentType) {
+	if stream.IsScriptType(contentType) {
 		contentType = "text/plain; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", contentType)
@@ -1715,25 +1725,6 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-}
-
-// isScriptType reports whether a browser would run this content type as
-// JavaScript. Kept deliberately broad - every alias browsers have ever
-// executed - because the cost of a false positive is a book resource served
-// as text, and the cost of a false negative is a stranger's script running as
-// the reader.
-func isScriptType(contentType string) bool {
-	ct := strings.ToLower(strings.TrimSpace(contentType))
-	if i := strings.IndexByte(ct, ';'); i >= 0 {
-		ct = strings.TrimSpace(ct[:i])
-	}
-	switch ct {
-	case "text/javascript", "application/javascript", "application/x-javascript",
-		"text/ecmascript", "application/ecmascript", "text/jscript",
-		"application/node", "module":
-		return true
-	}
-	return false
 }
 
 func (s *Server) handleGetProgress(w http.ResponseWriter, r *http.Request) {
@@ -1837,8 +1828,20 @@ func (s *Server) progressTarget(w http.ResponseWriter, r *http.Request) (sourceI
 		writeError(w, http.StatusBadRequest, "id is too long")
 		return "", "", false
 	}
-	if _, found := s.reg.ByID(r.Context(), sourceID); !found {
+	src, found := s.reg.ByID(r.Context(), sourceID)
+	if !found {
 		writeError(w, http.StatusNotFound, "unknown source "+strconv.Quote(sourceID))
+		return "", "", false
+	}
+	// Only a real book can have a place kept in it. Without this the id was a
+	// free string, and every made-up one was a new entry in state.json - the file
+	// every login and every save rewrites whole, under the lock every request
+	// takes - so one member could slow the server for everybody. A source that
+	// cannot say which books it has (none today but the book shelves read here)
+	// keeps no reading positions.
+	books, ok := src.(interface{ HasBook(string) bool })
+	if !ok || !books.HasBook(itemID) {
+		writeError(w, http.StatusNotFound, "no such book")
 		return "", "", false
 	}
 	return sourceID, itemID, true

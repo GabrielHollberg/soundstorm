@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -211,6 +212,103 @@ func TestChallengesAreCappedPerInstallAndOverall(t *testing.T) {
 	other, _ := c.Register(ctx)
 	if err := c.SetChallenge(ctx, other, sampleChallenge, false); !errors.As(err, &se) || se.Status != http.StatusTooManyRequests {
 		t.Errorf("global: err = %v, want 429", err)
+	}
+}
+
+// Registration is free, so a per-install limit alone let a few addresses mint
+// enough installs to spend the whole day's global budget and switch off every
+// real install's renewal. Challenges are bounded per network too.
+func TestChallengesAreCappedPerNetwork(t *testing.T) {
+	_, _, c := newService(t)
+	ctx := context.Background()
+
+	spent := 0
+	for spent < challengeNetRate.n {
+		reg, err := c.Register(ctx)
+		if err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		for i := 0; i < challengeRate.n && spent < challengeNetRate.n; i++ {
+			if err := c.SetChallenge(ctx, reg, sampleChallenge, false); err != nil {
+				t.Fatalf("challenge %d refused early: %v", spent+1, err)
+			}
+			spent++
+		}
+	}
+
+	fresh, _ := c.Register(ctx)
+	var se *StatusError
+	if err := c.SetChallenge(ctx, fresh, sampleChallenge, false); !errors.As(err, &se) || se.Status != http.StatusTooManyRequests {
+		t.Errorf("past the per-network cap: err = %v, want 429", err)
+	}
+}
+
+// One home or server is handed a whole IPv6 /64. Keyed on the full address,
+// every address in it was a fresh limit.
+func TestIPv6LimitsAreKeyedByNetwork(t *testing.T) {
+	s := &Server{}
+	key := func(addr string) string {
+		r := httptest.NewRequest(http.MethodPost, "/v1/register", nil)
+		r.RemoteAddr = addr
+		return s.clientNet(r)
+	}
+	if a, b := key("[2001:db8:1:2::1]:4000"), key("[2001:db8:1:2:ffff::9]:4000"); a != b {
+		t.Errorf("two addresses in one /64 are separate keys: %q, %q", a, b)
+	}
+	if a, b := key("[2001:db8:1:2::1]:4000"), key("[2001:db8:1:3::1]:4000"); a == b {
+		t.Errorf("two /64s share a key: %q", a)
+	}
+	if a, b := key("203.0.113.7:4000"), key("203.0.113.8:4000"); a == b {
+		t.Errorf("two IPv4 addresses share a key: %q", a)
+	}
+}
+
+// Taking a record down spends registrar requests from a budget every install
+// shares, so it is limited like every other write.
+func TestClearsAreRateLimited(t *testing.T) {
+	_, _, c := newService(t)
+	ctx := context.Background()
+	reg, _ := c.Register(ctx)
+	for i := 0; i < clearRate.n; i++ {
+		if err := c.ClearChallenge(ctx, reg, false); err != nil {
+			t.Fatalf("clear %d refused: %v", i+1, err)
+		}
+	}
+	var se *StatusError
+	if err := c.ClearPublic(ctx, reg); !errors.As(err, &se) || se.Status != http.StatusTooManyRequests {
+		t.Errorf("past the limit: err = %v, want 429", err)
+	}
+}
+
+// A full table refuses a new key rather than growing without bound; keys it
+// already holds keep working.
+func TestTheLimitTableRefusesNewKeysWhenFull(t *testing.T) {
+	l := newLimits()
+	long := rate{1_000_000, time.Hour}
+	if !l.allow("known", long) {
+		t.Fatal("first key refused")
+	}
+	for i := 0; len(l.buckets) < maxBuckets; i++ {
+		l.allow("k"+strconv.Itoa(i), long)
+	}
+	if l.allow("brand-new", long) {
+		t.Error("a new key was admitted to a full table")
+	}
+	if !l.allow("known", long) {
+		t.Error("a key already in the table was refused")
+	}
+	if len(l.buckets) > maxBuckets {
+		t.Errorf("table grew to %d, past %d", len(l.buckets), maxBuckets)
+	}
+}
+
+// Remote-access records are stamped like LAN ones and must be swept too, or an
+// abandoned install holds a public record for ever.
+func TestSweepCoversBothLabels(t *testing.T) {
+	s := &Server{Label: "home", PublicLabel: "net"}
+	got := s.sweepLabels()
+	if len(got) != 2 || got[0] != "home" || got[1] != "net" {
+		t.Errorf("sweep labels = %v, want home and net", got)
 	}
 }
 

@@ -58,13 +58,13 @@ type igd struct {
 // host's, not the container's, which is why it is passed in rather than read
 // from the socket. A zero internalClient is an error: UPnP cannot map without
 // knowing the box to map to.
-func upnpMap(ctx context.Context, location string, internalClient netip.Addr, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
+func upnpMap(ctx context.Context, gateway netip.Addr, location string, internalClient netip.Addr, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
 	if !internalClient.IsValid() {
 		return Mapping{}, fmt.Errorf("upnp: no internal client address configured")
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := upnpClient()
 
-	g, err := findIGD(ctx, client, location)
+	g, err := findIGD(ctx, client, location, gateway)
 	if err != nil {
 		return Mapping{}, err
 	}
@@ -84,10 +84,42 @@ func upnpMap(ctx context.Context, location string, internalClient netip.Addr, pr
 	return m, nil
 }
 
+// upnpClient is the HTTP client for everything UPnP: short, and never following
+// a redirect. The description and control URLs are pinned to the gateway's host
+// (see describeIGD); a redirect is the one way whatever answers there could send
+// the request somewhere else anyway - and a 307 or 308 would re-send the POST and
+// its body with it.
+func upnpClient() *http.Client {
+	return &http.Client{
+		Timeout:       8 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
+// onGateway reports whether a URL is on the gateway's own address. When the
+// gateway is known, the device to ask is that one: SSDP is answered by anything
+// on the LAN, and the router that actually forwards the traffic is the default
+// route's next hop. An unknown gateway allows any host.
+func onGateway(rawURL string, gateway netip.Addr) bool {
+	if !gateway.IsValid() {
+		return true
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host, err := netip.ParseAddr(u.Hostname())
+	return err == nil && host.Unmap() == gateway.Unmap()
+}
+
 // findIGD resolves an IGD from a configured device-description URL, or discovers
-// one over SSDP when no URL is configured.
-func findIGD(ctx context.Context, client *http.Client, location string) (igd, error) {
+// one over SSDP when no URL is configured. With a known gateway, only a device on
+// the gateway's own address is used.
+func findIGD(ctx context.Context, client *http.Client, location string, gateway netip.Addr) (igd, error) {
 	if location != "" {
+		if !onGateway(location, gateway) {
+			return igd{}, fmt.Errorf("upnp: %s is not on the gateway %s", location, gateway)
+		}
 		return describeIGD(ctx, client, location)
 	}
 	locations, err := ssdpSearch(ctx, 2*time.Second)
@@ -96,6 +128,10 @@ func findIGD(ctx context.Context, client *http.Client, location string) (igd, er
 	}
 	var lastErr error
 	for _, loc := range locations {
+		if !onGateway(loc, gateway) {
+			lastErr = fmt.Errorf("upnp: %s is not on the gateway %s", loc, gateway)
+			continue
+		}
 		g, err := describeIGD(ctx, client, loc)
 		if err == nil {
 			return g, nil

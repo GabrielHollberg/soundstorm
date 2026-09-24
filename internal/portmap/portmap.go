@@ -1,8 +1,8 @@
 // Package portmap opens a single inbound port on a home router, so an install
 // that has turned remote access on can be reached from the internet without
 // anybody editing a port-forward by hand. It speaks PCP and NAT-PMP (RFC 6887
-// and 6886) with no third-party dependencies, consistent with the rest of the
-// project; UPnP-IGD, the widest-reaching fallback, is a later addition.
+// and 6886), and UPnP-IGD as the widest-reaching fallback, with no third-party
+// dependencies, consistent with the rest of the project.
 //
 // It is deliberately narrow. It only ever maps this install's own TCP port, only
 // at the owner's explicit request, and it drops the mapping when remote access
@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/netip"
 	"strings"
 	"sync"
@@ -123,7 +122,7 @@ func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, exte
 	}
 
 	if t.internalClient.IsValid() {
-		if m, err := upnpMap(ctx, t.upnpLocation, t.internalClient, proto, internalPort, externalPort, lifetime); err == nil {
+		if m, err := upnpMap(ctx, t.gateway.Addr(), t.upnpLocation, t.internalClient, proto, internalPort, externalPort, lifetime); err == nil {
 			return m, nil
 		} else {
 			attempts = append(attempts, err.Error())
@@ -154,7 +153,7 @@ func unmapTarget(ctx context.Context, t target, m Mapping, proto Protocol, inter
 		_, err := natpmpMap(ctx, t.gateway, proto, internalPort, 0, 0)
 		return err
 	case "UPnP":
-		return upnpDelete(ctx, &http.Client{Timeout: 8 * time.Second}, m.igd, proto, m.ExternalPort)
+		return upnpDelete(ctx, upnpClient(), m.igd, proto, m.ExternalPort)
 	default:
 		return fmt.Errorf("portmap: cannot remove a mapping made by %q", m.Method)
 	}

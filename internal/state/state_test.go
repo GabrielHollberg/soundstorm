@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -219,6 +220,44 @@ func TestASessionWithoutAnAccountIsNotLive(t *testing.T) {
 	}
 	if _, ok := s.SessionUser("orphan"); ok {
 		t.Error("a session for an account that does not exist was accepted")
+	}
+}
+
+// One account signing in over and over must not grow the file without end. The
+// oldest sessions go first; another account's are untouched.
+func TestSessionsPerAccountAreCapped(t *testing.T) {
+	s := open(t, t.TempDir())
+	gabe, _ := s.AddUser(User{Name: "gabe"})
+	sam, _ := s.AddUser(User{Name: "sam"})
+	if err := s.AddSession("sam-1", sam.ID, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	base := time.Now().Add(time.Hour)
+	for i := 0; i < maxSessionsPerUser+10; i++ {
+		tok := "gabe-" + strconv.Itoa(i)
+		if err := s.AddSession(tok, gabe.ID, base.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	live := 0
+	for i := 0; i < maxSessionsPerUser+10; i++ {
+		if _, ok := s.SessionUser("gabe-" + strconv.Itoa(i)); ok {
+			live++
+		}
+	}
+	if live != maxSessionsPerUser {
+		t.Errorf("gabe has %d live sessions, want the cap of %d", live, maxSessionsPerUser)
+	}
+	if _, ok := s.SessionUser("gabe-0"); ok {
+		t.Error("the oldest session survived the cap")
+	}
+	if _, ok := s.SessionUser("gabe-" + strconv.Itoa(maxSessionsPerUser+9)); !ok {
+		t.Error("the newest session was dropped")
+	}
+	if _, ok := s.SessionUser("sam-1"); !ok {
+		t.Error("another account's session was dropped")
 	}
 }
 

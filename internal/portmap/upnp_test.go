@@ -177,11 +177,56 @@ func TestUPnPRejectsCrossHostControlURL(t *testing.T) {
 	}
 }
 
+// A redirect from the control URL is the one way around the host pin: a 307 would
+// re-send the POST and its body wherever it pointed. It is not followed.
+func TestUPnPDoesNotFollowRedirects(t *testing.T) {
+	var reached bool
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	defer elsewhere.Close()
+
+	desc := `<?xml version="1.0"?><root xmlns="urn:schemas-upnp-org:device-1-0"><device>
+	  <serviceList><service>
+	    <serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>
+	    <controlURL>/ctl</controlURL>
+	  </service></serviceList></device></root>`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rootDesc.xml", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, desc) })
+	mux.HandleFunc("/ctl", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/internal", http.StatusTemporaryRedirect)
+	})
+	igdSrv := httptest.NewServer(mux)
+	defer igdSrv.Close()
+
+	_, err := upnpMap(context.Background(), netip.Addr{}, igdSrv.URL+"/rootDesc.xml",
+		netip.MustParseAddr("192.168.1.50"), TCP, 8080, 8099, time.Hour)
+	if err == nil {
+		t.Error("a redirected control request was reported as success")
+	}
+	if reached {
+		t.Error("the redirect was followed to another host")
+	}
+}
+
+// With the gateway known, only a device on the gateway's own address is asked:
+// SSDP is answered by anything on the LAN.
+func TestUPnPIsPinnedToTheGateway(t *testing.T) {
+	f := newFakeIGD(t) // listens on 127.0.0.1
+	_, err := upnpMap(context.Background(), netip.MustParseAddr("192.168.1.1"), f.location,
+		netip.MustParseAddr("192.168.1.50"), TCP, 8080, 8099, time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "not on the gateway") {
+		t.Errorf("a device off the gateway was used: err = %v", err)
+	}
+	if _, err := upnpMap(context.Background(), netip.MustParseAddr("127.0.0.1"), f.location,
+		netip.MustParseAddr("192.168.1.50"), TCP, 8080, 8099, time.Hour); err != nil {
+		t.Errorf("the device on the gateway was refused: %v", err)
+	}
+}
+
 func TestUPnPMapSendsTheMappingAndReadsTheWANIP(t *testing.T) {
 	f := newFakeIGD(t)
 	client := netip.MustParseAddr("192.168.1.50")
 
-	m, err := upnpMap(context.Background(), f.location, client, TCP, 8080, 8099, 2*time.Hour)
+	m, err := upnpMap(context.Background(), netip.Addr{}, f.location, client, TCP, 8080, 8099, 2*time.Hour)
 	if err != nil {
 		t.Fatalf("upnpMap: %v", err)
 	}
@@ -214,7 +259,7 @@ func TestUPnPRetriesWithPermanentLease(t *testing.T) {
 	f.permanentOnly = true
 	client := netip.MustParseAddr("192.168.1.50")
 
-	m, err := upnpMap(context.Background(), f.location, client, TCP, 8080, 8099, time.Hour)
+	m, err := upnpMap(context.Background(), netip.Addr{}, f.location, client, TCP, 8080, 8099, time.Hour)
 	if err != nil {
 		t.Fatalf("upnpMap: %v", err)
 	}
@@ -233,7 +278,7 @@ func TestUPnPRetriesWithPermanentLease(t *testing.T) {
 
 func TestUPnPMapNeedsAnInternalClient(t *testing.T) {
 	f := newFakeIGD(t)
-	if _, err := upnpMap(context.Background(), f.location, netip.Addr{}, TCP, 8080, 8099, time.Hour); err == nil {
+	if _, err := upnpMap(context.Background(), netip.Addr{}, f.location, netip.Addr{}, TCP, 8080, 8099, time.Hour); err == nil {
 		t.Fatal("mapping without an internal client was allowed")
 	}
 }
@@ -241,7 +286,7 @@ func TestUPnPMapNeedsAnInternalClient(t *testing.T) {
 func TestUPnPDeleteRemovesTheMapping(t *testing.T) {
 	f := newFakeIGD(t)
 	client := netip.MustParseAddr("192.168.1.50")
-	m, err := upnpMap(context.Background(), f.location, client, TCP, 8080, 8099, time.Hour)
+	m, err := upnpMap(context.Background(), netip.Addr{}, f.location, client, TCP, 8080, 8099, time.Hour)
 	if err != nil {
 		t.Fatalf("upnpMap: %v", err)
 	}

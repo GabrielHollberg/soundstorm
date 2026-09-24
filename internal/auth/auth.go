@@ -56,6 +56,18 @@ const (
 
 	sessionTTL = 30 * 24 * time.Hour
 	CookieName = "soundstorm_session"
+
+	// SecureCookieName is the session cookie's name over TLS. Every install's
+	// real address is a name under one shared domain that is not on the Public
+	// Suffix List, so to a browser another install - anybody's, including one
+	// somebody set up to attack this one - is the same site, and may set a cookie
+	// for the whole domain. A plain-named cookie planted that way is sent here
+	// ahead of the real one and signs the owner out, over and over. The __Host-
+	// prefix is the browser's own answer: it refuses any cookie of that name that
+	// names a Domain, so no other host can plant one. It requires Secure, which is
+	// why plain HTTP on the LAN keeps the old name - and that is no loss, because
+	// a cookie scoped to the shared domain never reaches a bare LAN address.
+	SecureCookieName = "__Host-soundstorm_session"
 )
 
 // ErrInvalidCredentials is returned for both a wrong name and a wrong
@@ -444,29 +456,45 @@ func iterationsOr(n int) int {
 
 // Logout forgets the session named by the request's cookie.
 func (m *Manager) Logout(r *http.Request) error {
-	c, err := r.Cookie(CookieName)
-	if err != nil {
+	token, _, ok := m.liveSession(r)
+	if !ok {
 		return nil
 	}
-	return m.store.DeleteSession(c.Value)
+	return m.store.DeleteSession(token)
 }
 
-// SessionToken returns the request's session token, or "" if it has none.
-func SessionToken(r *http.Request) string {
-	c, err := r.Cookie(CookieName)
-	if err != nil {
-		return ""
-	}
-	return c.Value
+// SessionToken returns the request's live session token, or "" if it has none.
+func (m *Manager) SessionToken(r *http.Request) string {
+	token, _, _ := m.liveSession(r)
+	return token
 }
 
 // UserFor returns the account making a request, if it carries a live session.
 func (m *Manager) UserFor(r *http.Request) (state.User, bool) {
-	c, err := r.Cookie(CookieName)
-	if err != nil {
-		return state.User{}, false
+	_, user, ok := m.liveSession(r)
+	return user, ok
+}
+
+// liveSession finds the request's session among every session cookie it sent.
+//
+// It looks at all of them rather than the first, because the first is not
+// necessarily ours: a cookie planted for the shared parent domain by another
+// install arrives alongside the real one, and a browser sends a cookie with a
+// longer path first. Taking only the first would let a junk one sign somebody
+// out on every request. The __Host- cookies go first, since nothing but this
+// host can have set them.
+func (m *Manager) liveSession(r *http.Request) (string, state.User, bool) {
+	for _, name := range []string{SecureCookieName, CookieName} {
+		for _, c := range r.Cookies() {
+			if c.Name != name || c.Value == "" {
+				continue
+			}
+			if user, ok := m.store.SessionUser(c.Value); ok {
+				return c.Value, user, true
+			}
+		}
 	}
-	return m.store.SessionUser(c.Value)
+	return "", state.User{}, false
 }
 
 // Authenticated reports whether the request carries a live session.
@@ -494,8 +522,24 @@ func (m *Manager) OverTLS(r *http.Request) bool {
 		strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
-// SetCookie writes the session cookie.
+// SetCookie writes the session cookie: the __Host- one over TLS, where no other
+// host can shadow it, and the plain one over plain HTTP, where __Host- is not
+// allowed. Over TLS the plain one is expired as well, so a browser that signed in
+// before this changed stops carrying the name another install could plant.
 func (m *Manager) SetCookie(w http.ResponseWriter, r *http.Request, token string, expiry time.Time) {
+	if m.OverTLS(r) {
+		http.SetCookie(w, &http.Cookie{
+			Name:     SecureCookieName,
+			Value:    token,
+			Path:     "/",
+			Expires:  expiry,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   true,
+		})
+		expireCookie(w, CookieName, true)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    token,
@@ -503,20 +547,28 @@ func (m *Manager) SetCookie(w http.ResponseWriter, r *http.Request, token string
 		Expires:  expiry,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   m.OverTLS(r),
 	})
 }
 
-// ClearCookie expires the session cookie.
+// ClearCookie expires the session cookie, under whichever names it may have.
 func (m *Manager) ClearCookie(w http.ResponseWriter, r *http.Request) {
+	secure := m.OverTLS(r)
+	expireCookie(w, CookieName, secure)
+	if secure {
+		// A __Host- cookie can only be set, including to expire it, over TLS.
+		expireCookie(w, SecureCookieName, true)
+	}
+}
+
+func expireCookie(w http.ResponseWriter, name string, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     name,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   m.OverTLS(r),
+		Secure:   secure,
 	})
 }
 

@@ -367,7 +367,7 @@ func (s *Source) readEPUB(b *book) error {
 	// A Calibre library puts metadata.opf beside the book. It is the same
 	// format as the one inside the epub and it is better maintained, because
 	// it is what the user edited in Calibre.
-	if raw, err := os.ReadFile(filepath.Join(dir, "metadata.opf")); err == nil {
+	if raw, err := epub.ReadSidecar(filepath.Join(dir, "metadata.opf")); err == nil {
 		if sidecar, _, err := epub.ParseOPF(raw, ""); err == nil {
 			meta = sidecar
 		}
@@ -632,6 +632,15 @@ func (o *openBook) Entries() []source.BookEntry {
 		out[i] = source.BookEntry{Name: e.Name, Size: e.Size}
 	}
 	return out
+}
+
+// HasBook reports whether id names a book on this shelf right now. Reading
+// positions are only kept for books that exist, which is what bounds how many one
+// account can hold to the size of the library rather than to what a client
+// chooses to invent.
+func (s *Source) HasBook(id string) bool {
+	_, ok := s.lookup(id)
+	return ok
 }
 
 func (s *Source) lookup(id string) (book, bool) {

@@ -144,14 +144,29 @@ func (s *Server) RunSweeper(ctx context.Context, forgetAfter time.Duration) {
 		case <-time.After(wait):
 		}
 		wait = 24 * time.Hour
-		res, err := sweepRecovered(ctx, sw, s.Label, forgetAfter, s.Log)
-		if err != nil {
-			s.Log.Error("sweep", "err", err, "installs", res.Installs)
-			continue
+		for _, label := range s.sweepLabels() {
+			res, err := sweepRecovered(ctx, sw, label, forgetAfter, s.Log)
+			if err != nil {
+				s.Log.Error("sweep", "label", label, "err", err, "installs", res.Installs)
+				continue
+			}
+			s.Log.Info("swept", "label", label, "installs", res.Installs, "unstamped", res.Unstamped,
+				"forgotten", res.Forgotten, "challenges", res.Challenges)
 		}
-		s.Log.Info("swept", "installs", res.Installs, "unstamped", res.Unstamped,
-			"forgotten", res.Forgotten, "challenges", res.Challenges)
 	}
+}
+
+// sweepLabels is every label the service writes install records under: the LAN
+// names, and the remote-access names, which are stamped the same way on every
+// publish and would otherwise hold a record each for ever after their install was
+// abandoned - against a registrar ceiling of a few thousand records for the whole
+// domain. Each is swept as its own pass with its own safety valve.
+func (s *Server) sweepLabels() []string {
+	labels := []string{s.Label}
+	if s.PublicLabel != "" && s.PublicLabel != s.Label {
+		labels = append(labels, s.PublicLabel)
+	}
+	return labels
 }
 
 // sweepRecovered calls Sweep with a panic turned into an ordinary error.

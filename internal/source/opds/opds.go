@@ -198,7 +198,7 @@ func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, erro
 
 func (s *Source) target(id, prefix string) (source.Target, error) {
 	ref, ok := strings.CutPrefix(id, prefix)
-	if !ok || ref == "" {
+	if !ok || ref == "" || !catalogRef(ref) {
 		return source.Target{}, fmt.Errorf("opds %q: %q is not a %s reference", s.id, id, strings.TrimSuffix(prefix, ":"))
 	}
 	t := source.Target{URL: s.http.URL(ref, nil)}
@@ -206,6 +206,22 @@ func (s *Source) target(id, prefix string) (source.Target, error) {
 		t.Headers = map[string]string{"Authorization": s.authHeader}
 	}
 	return t, nil
+}
+
+// catalogRef reports whether a reference is somewhere a feed could have pointed
+// a download or a cover: inside the server's OPDS tree, with no query string.
+//
+// The reference arrives from the client - it is the id in the URL, not something
+// looked up - and it is fetched with the server's credential attached. The
+// generic checks (no absolute URL, no dot segments) keep it on the server; this
+// keeps it inside the catalog, so an id cannot name the server's admin pages,
+// and cannot carry a query of its own to any page it does reach.
+func catalogRef(ref string) bool {
+	u, err := url.Parse(ref)
+	if err != nil || u.IsAbs() || u.Host != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return false
+	}
+	return strings.Contains("/"+strings.TrimPrefix(u.Path, "/"), "/opds/")
 }
 
 func (s *Source) Health(ctx context.Context) error {

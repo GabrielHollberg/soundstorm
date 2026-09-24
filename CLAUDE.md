@@ -1041,6 +1041,73 @@ container; and the installers and compose pull by moving tag rather than
 digest. None is reachable by an ordinary internet user against a default
 install; all are recorded here so they are not rediscovered from scratch.
 
+**A fifth pass came after remote access shipped, and ran blind on purpose.**
+Five reviewers, one per surface, were given the code and nothing else - not
+this file, not the docs, not the commit history - because what found the real
+bugs in earlier passes was eyes that had not absorbed this project's reasoning.
+Every finding was then checked against the code before anything changed. What
+was real:
+
+- **The reader XSS again, through a different door.** `/api/art` served an
+  EPUB's cover with a type taken from the file name, and only the last-resort
+  cover search checked for `image/*` - so a book whose declared cover was
+  `x.js` had it served as `text/javascript`, loadable by a chapter under
+  `script-src 'self'`. The fix is central this time, not per handler:
+  `stream.GuardActiveContent` demotes every script type to `text/plain`, every
+  stream path refuses `Sec-Fetch-Dest` of script/worker/style, and a local
+  target's type is resolved from its name *before* the guard runs (ServeContent
+  would otherwise fill in `text/javascript` afterwards). A cover must also be
+  declared an image, and SVG is not accepted as one.
+- **Anyone could switch off renewals for every install.** Registration is free,
+  so thirty registrations from a few addresses spent the name service's whole
+  daily challenge budget. Challenges are now also limited per client network,
+  and every limit keys IPv6 by /64 - keyed on the full address, one host's /64
+  was a fresh limit per address. The Public Suffix List is still the real fix.
+- **Cookie tossing.** Remote access lets anybody get a trusted
+  `*.net.soundstorm.dev` name for a server they control, and without the PSL
+  that server is same-site with every install: it could plant a session cookie
+  for the whole domain that is sent ahead of the real one, signing a victim out
+  on every request. Over TLS the cookie is now `__Host-soundstorm_session`,
+  which a browser refuses to accept with a Domain; plain HTTP keeps the old name
+  (a domain-scoped cookie never reaches a bare LAN address), and every session
+  cookie sent is tried, not just the first.
+- **Any member could stall the server through state.json.** Reading positions
+  took any book id, sessions had no per-account cap, and HTML escaping made
+  each `<` six bytes on disk - in the file every login rewrites under the lock
+  every request takes. Positions are now kept only for books that exist
+  (`HasBook`), sessions are capped at 50 per account, and the file is written
+  without HTML escaping.
+- **OPDS ids were an authenticated GET anywhere on the backend.** The id is the
+  client's, fetched with the admin credential; it must now stay under the
+  server's `/opds/` tree with no query of its own.
+- **A crafted EPUB could exhaust memory.** `zip.OpenReader` parses the central
+  directory from its start to the end of the file whatever entry count the
+  archive claims, at about four times its size. `epub.Open` now reads the
+  end-of-directory record first and refuses a directory span over 2MB (and
+  zip64 outright); the OPF and the Calibre sidecar are capped at 2MB, the
+  sidecar having been an unbounded read on every scan.
+- **Name-service hygiene.** Remote-access records were never swept (only the
+  LAN label was); the two DELETE endpoints had no rate limit and each spends
+  registrar requests from the budget every install shares; the rate-limit table
+  inserted past its cap. All three fixed.
+- **Smaller.** The TLS/HTTP listener closed itself on any accept error, so
+  running out of file descriptors restarted the server - it now backs off and
+  retries like net/http. UPnP followed redirects, which walked straight past the
+  control-URL pin - it no longer does, and with a gateway configured only a
+  device on the gateway's address is used. `{}` sent to the owner-only libraries
+  endpoint made a member unrestricted, because `*[]string` cannot tell an absent
+  key from null; it is now refused.
+
+Checked and left for a decision: a stranger holding sign-in for a known name in
+backoff indefinitely by guessing once a minute (the per-account throttle is
+short for exactly this reason, and a per-account lockout any stranger can
+trigger is the tradeoff that bought); the local CA's permitted names including
+all of `soundstorm.dev` and corporate-style TLDs, and a CA created before name
+constraints existed being kept unconstrained - regenerating it would break every
+device that installed the old one; the Windows `.env` having no explicit ACL
+(the profile directory's defaults already exclude other users); and a trickled
+upload being able to hold a connection open indefinitely.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

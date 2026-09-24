@@ -74,6 +74,30 @@ func kindsIn(t *testing.T, body []byte) []string {
 	return out
 }
 
+// A body that names no libraries at all must not lift a restriction. JSON
+// decodes an absent key and an explicit null the same way into a pointer, and
+// null means "every library" - so {} used to make a restricted child account
+// unrestricted. It is refused, and the restriction stands.
+func TestAnEmptyBodyDoesNotLiftARestriction(t *testing.T) {
+	h := fullHouse(t)
+	h.signUp(t)
+	id := h.addMember(t, "sam", samPassword)
+	if resp, body := h.setLibraries(t, id, `{"libraries":["music"]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("set libraries: %d %s", resp.StatusCode, body)
+	}
+
+	resp, _ := h.setLibraries(t, id, `{}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("{} = %d, want 400", resp.StatusCode)
+	}
+
+	sam := h.asUser(t, "sam", samPassword)
+	_, body := sam.do(t, http.MethodGet, "/api/search?q=findable", "")
+	if got := kindsIn(t, body); len(got) != 1 || got[0] != "music" {
+		t.Errorf("after {} the member searched %v, want music only", got)
+	}
+}
+
 // The thing a household with children actually asks for.
 func TestARestrictedAccountOnlySearchesItsOwnLibraries(t *testing.T) {
 	h := fullHouse(t)

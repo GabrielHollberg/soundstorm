@@ -24,8 +24,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,10 +84,18 @@ func (p *Proxy) serveBytes(w http.ResponseWriter, r *http.Request, target source
 }
 
 func setContentHeaders(w http.ResponseWriter, target source.Target) {
-	if target.ContentType != "" {
+	// Resolved here, not left to ServeContent: ServeContent fills in a type from
+	// the name's extension only after this function has run, so a file named
+	// .js would otherwise reach the browser as JavaScript having slipped past
+	// GuardActiveContent's check.
+	ct := target.ContentType
+	if ct == "" {
+		ct = mime.TypeByExtension(filepath.Ext(target.Name))
+	}
+	if ct != "" {
 		// Set it explicitly so ServeContent does not sniff, and so an EPUB is
 		// labelled as one rather than as a zip.
-		w.Header().Set("Content-Type", target.ContentType)
+		w.Header().Set("Content-Type", ct)
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	GuardActiveContent(w.Header())
@@ -165,6 +175,16 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, target source.Targ
 
 // pipe delivers a target, whatever kind it is.
 func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Target, what string) {
+	// Nothing served here is ever meant to be loaded as a script, a worker or a
+	// stylesheet - it is media, artwork, a book or a playlist. A book chapter
+	// rendered on this origin can name any of these URLs in a <script src>, and
+	// script-src 'self' would allow it, so refuse the request outright rather
+	// than rely only on the content type (a client may send no Sec-Fetch-Dest;
+	// GuardActiveContent covers that case).
+	if RefusedDestination(r) {
+		http.Error(w, "not available to this kind of request", http.StatusForbidden)
+		return
+	}
 	// Local targets do not involve an upstream at all. http.ServeContent gives
 	// Range, ETag and If-Modified-Since handling for free, which is strictly
 	// better than what the proxy path below reimplements.
@@ -248,10 +268,44 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 // shell's CSP answers for the reader, reached by pasting the URL instead.
 // Media, PDFs and images are left alone: Chrome's PDF viewer will not render
 // in a sandboxed document, and nothing else here can script.
+//
+// It also never lets a script content type through. JavaScript is not a
+// document, so the sandbox above does nothing for it; what makes it dangerous is
+// being pulled in by a <script src> on this origin (a book chapter, say), which
+// the shell's script-src 'self' permits. With nosniff, a browser refuses to run
+// text/plain as a script, so the bytes are still readable and never runnable.
 func GuardActiveContent(h http.Header) {
+	if IsScriptType(h.Get("Content-Type")) {
+		h.Set("Content-Type", "text/plain; charset=utf-8")
+	}
 	if ActiveContent(h.Get("Content-Type")) {
 		h.Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:")
 	}
+}
+
+// IsScriptType reports whether a browser would run this content type as script
+// when it is loaded by a <script> or a worker.
+func IsScriptType(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	switch ct {
+	case "text/javascript", "application/javascript", "application/x-javascript",
+		"text/ecmascript", "application/ecmascript", "text/jscript",
+		"application/node", "module", "text/x-javascript", "application/x-ecmascript":
+		return true
+	}
+	return false
+}
+
+// RefusedDestination reports whether a request is the browser loading a URL as
+// a script, a worker or a stylesheet - never a legitimate way to fetch media,
+// artwork, a book or a playlist, and the way an injected <script src> would.
+func RefusedDestination(r *http.Request) bool {
+	switch strings.ToLower(r.Header.Get("Sec-Fetch-Dest")) {
+	case "script", "worker", "sharedworker", "serviceworker",
+		"audioworklet", "paintworklet", "style", "xslt":
+		return true
+	}
+	return false
 }
 
 // ActiveContent reports whether a content type is one a browser executes as a

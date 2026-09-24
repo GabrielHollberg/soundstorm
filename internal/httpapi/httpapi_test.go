@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,15 @@ func (s stub) Search(context.Context, media.Query) ([]media.Item, error) {
 func (s stub) Health(context.Context) error                                { return s.err }
 func (s stub) StreamTarget(context.Context, string) (source.Target, error) { return s.target() }
 func (s stub) ArtTarget(context.Context, string) (source.Target, error)    { return s.target() }
+
+// bookStub is a stub shelf that knows which books it holds, as a real book
+// source does: reading positions are only kept for books that exist.
+type bookStub struct {
+	stub
+	books []string
+}
+
+func (b bookStub) HasBook(id string) bool { return slices.Contains(b.books, id) }
 
 func (s stub) target() (source.Target, error) {
 	if s.streamURL == "" {

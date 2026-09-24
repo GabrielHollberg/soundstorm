@@ -19,6 +19,7 @@
 package state
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -346,10 +347,25 @@ func newID() string {
 	return hex.EncodeToString(raw)
 }
 
+// encodeState renders the state as indented JSON without HTML escaping. The
+// escaping turns every <, > and & into six bytes - pointless in a file nothing
+// renders, and a way for text a client supplies to weigh six times as much in a
+// file that is rewritten whole on every change.
+func encodeState(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
 // save writes the state file atomically. Callers must hold the mutex, except
 // Open before it publishes the Store.
 func (s *Store) save() error {
-	encoded, err := json.MarshalIndent(s.d, "", "  ")
+	encoded, err := encodeState(s.d)
 	if err != nil {
 		return fmt.Errorf("encode state: %w", err)
 	}
@@ -462,7 +478,7 @@ func (s *Store) BackupTo(path string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	encoded, err := json.MarshalIndent(s.d, "", "  ")
+	encoded, err := encodeState(s.d)
 	if err != nil {
 		return fmt.Errorf("encode state: %w", err)
 	}
@@ -781,8 +797,37 @@ func (s *Store) AddSession(token, userID string, expiry time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pruneLocked()
+	s.capSessionsLocked(userID, maxSessionsPerUser-1)
 	s.d.Sessions[hashSessionToken(token)] = Session{UserID: userID, Expires: expiry}
 	return s.save()
+}
+
+// maxSessionsPerUser bounds how many signed-in devices one account keeps. Each
+// sign-in adds a session that lives for weeks and is written into the file every
+// request's lock guards, so without a cap one account signing in over and over
+// grows it without end. Far more devices than a person owns; the oldest goes
+// first, which is the one least likely to still be in use.
+const maxSessionsPerUser = 50
+
+// capSessionsLocked removes an account's soonest-expiring sessions until it has
+// at most keep. Every session is created with the same lifetime, so the soonest
+// to expire is the oldest.
+func (s *Store) capSessionsLocked(userID string, keep int) {
+	var mine []string
+	for key, sess := range s.d.Sessions {
+		if sess.UserID == userID {
+			mine = append(mine, key)
+		}
+	}
+	if len(mine) <= keep {
+		return
+	}
+	sort.Slice(mine, func(i, j int) bool {
+		return s.d.Sessions[mine[i]].Expires.Before(s.d.Sessions[mine[j]].Expires)
+	})
+	for _, key := range mine[:len(mine)-keep] {
+		delete(s.d.Sessions, key)
+	}
 }
 
 // SessionUser returns the account a live session belongs to.

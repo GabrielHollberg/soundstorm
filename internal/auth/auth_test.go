@@ -2,8 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +24,68 @@ func newManager(t *testing.T) *Manager {
 		t.Fatalf("open state: %v", err)
 	}
 	return New(store)
+}
+
+// Another install under the shared domain can plant a session cookie for the
+// whole domain, and a browser sends it ahead of the real one. The real session
+// must still be found, whichever order they arrive in, and a __Host- cookie -
+// which no other host can set - is looked at first.
+func TestAPlantedCookieDoesNotHideTheRealSession(t *testing.T) {
+	m := newManager(t)
+	if _, err := m.Signup("gabe", "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	token, _, _, err := m.Login("gabe", "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, cookies := range map[string][]*http.Cookie{
+		"junk first, same name":    {{Name: CookieName, Value: "planted-junk"}, {Name: CookieName, Value: token}},
+		"junk plain, real __Host-": {{Name: CookieName, Value: "planted-junk"}, {Name: SecureCookieName, Value: token}},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/api/session", nil)
+		for _, c := range cookies {
+			r.AddCookie(c)
+		}
+		if user, ok := m.UserFor(r); !ok || user.Name != "gabe" {
+			t.Errorf("%s: the real session was not found", name)
+		}
+		if got := m.SessionToken(r); got != token {
+			t.Errorf("%s: SessionToken = %q, want the live one", name, got)
+		}
+	}
+}
+
+// Over TLS the session cookie is the __Host- one, which a browser refuses to
+// accept with a Domain - and the old plain name is expired so it cannot be
+// shadowed. Over plain HTTP, where __Host- is not allowed, the plain name stays.
+func TestSessionCookieUsesHostPrefixOverTLS(t *testing.T) {
+	m := newManager(t)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "https://x.home.soundstorm.dev/api/login", nil)
+	r.TLS = &tls.ConnectionState{}
+	m.SetCookie(w, r, "tok", time.Now().Add(time.Hour))
+	set := map[string]*http.Cookie{}
+	for _, c := range w.Result().Cookies() {
+		set[c.Name] = c
+	}
+	c, ok := set[SecureCookieName]
+	if !ok || c.Value != "tok" || !c.Secure || c.Path != "/" || c.Domain != "" {
+		t.Errorf("over TLS the __Host- cookie was not set correctly: %+v", c)
+	}
+	if old, ok := set[CookieName]; !ok || old.MaxAge >= 0 {
+		t.Errorf("the plain cookie was not expired over TLS: %+v", old)
+	}
+
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodPost, "http://192.168.1.50:8099/api/login", nil)
+	m.SetCookie(w, r, "tok", time.Now().Add(time.Hour))
+	got := w.Result().Cookies()
+	if len(got) != 1 || got[0].Name != CookieName || got[0].Secure {
+		t.Errorf("over plain HTTP want one plain cookie, got %+v", got)
+	}
 }
 
 // A fake clock, so the throttle's waits can be walked through without

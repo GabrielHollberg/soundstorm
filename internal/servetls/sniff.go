@@ -51,15 +51,35 @@ type sniffListener struct {
 }
 
 func (l *sniffListener) acceptLoop() {
+	var backoff time.Duration
 	for {
 		c, err := l.inner.Accept()
 		if err != nil {
+			// Only a closed listener ends the loop. Anything else - running out
+			// of file descriptors under a flood of connections, most likely - is
+			// waited out and retried, the way net/http's own accept loop does.
+			// Closing on it instead handed the error to Serve, which returned,
+			// and the whole server exited: a connection flood became a restart.
+			if !errors.Is(err, net.ErrClosed) {
+				select {
+				case <-l.done:
+				default:
+					if backoff == 0 {
+						backoff = 5 * time.Millisecond
+					} else if backoff *= 2; backoff > time.Second {
+						backoff = time.Second
+					}
+					time.Sleep(backoff)
+					continue
+				}
+			}
 			l.mu.Lock()
 			l.err = err
 			l.mu.Unlock()
 			l.Close()
 			return
 		}
+		backoff = 0
 		go l.classify(c)
 	}
 }
