@@ -496,6 +496,220 @@ function Get-UpnpUrl {
 # An address that works everywhere beats a nicer one that works on the machine
 # that printed it.
 
+# --- other devices on the network ---------------------------------------------
+#
+# Reaching SoundStorm from a phone was the one thing a laptop install could not
+# do, and the installer only ever said "allow it through the firewall" in grey.
+# Two things stand in the way, and neither is visible from the PC itself:
+#
+#   * Windows marks every new Wi-Fi network Public - the setting for cafes -
+#     and a Public network lets nothing in.
+#   * The first time Docker publishes a port, Windows asks whether "Docker
+#     Desktop Backend" (com.docker.backend.exe, which is what accepts the
+#     connections) may use networks. Its default ticks Private only, and
+#     whatever is unticked - or everything, if the dialog is dismissed - gets
+#     a Block rule, which beats any Allow.
+#
+# So after SoundStorm is running (and after that dialog has done whatever it
+# did), the installer checks both and puts them right, with the person's say-so
+# for anything that changes how Windows trusts a network. Only Private networks
+# are ever opened: a network somebody has told Windows is their home, where the
+# router already keeps the internet out unless they forward a port - which is
+# exactly the case remote access needs this rule for.
+
+$script:LanRuleName = 'SoundStorm - other devices on your home network'
+
+# Get-LanProfile is the Windows network profile of the adapter holding Address:
+# Category is Public, Private or DomainAuthenticated.
+function Get-LanProfile([string]$Address) {
+    try {
+        $ip = Get-NetIPAddress -IPAddress $Address -ErrorAction Stop | Select-Object -First 1
+        $network = Get-NetConnectionProfile -InterfaceIndex $ip.InterfaceIndex -ErrorAction Stop | Select-Object -First 1
+        return [pscustomobject]@{
+            Category       = [string]$network.NetworkCategory
+            InterfaceIndex = [int]$ip.InterfaceIndex
+            Name           = [string]$network.Name
+        }
+    } catch {
+        return $null
+    }
+}
+
+# Get-DockerPrivateBlocks lists the enabled inbound Block rules for Docker's
+# listener that apply on Private networks - what a dismissed or default-answered
+# firewall dialog leaves behind, and what would beat the Allow rule below.
+function Get-DockerPrivateBlocks {
+    try {
+        return @(Get-NetFirewallApplicationFilter -ErrorAction Stop |
+            Where-Object { $_.Program -like '*\com.docker.backend.exe' } |
+            Get-NetFirewallRule -ErrorAction Stop |
+            Where-Object {
+                "$($_.Direction)" -eq 'Inbound' -and "$($_.Action)" -eq 'Block' -and
+                "$($_.Enabled)" -eq 'True' -and "$($_.Profile)" -match 'Private|Any'
+            })
+    } catch {
+        return @()
+    }
+}
+
+# Test-LanAccessReady says whether a Private network already lets other devices
+# in: SoundStorm's Allow rule is there for this port, and nothing blocks
+# Docker's listener on Private. Readable without administrator, which is what
+# keeps an update from asking for permission every time.
+function Test-LanAccessReady([int]$Port) {
+    try {
+        $ours = @(Get-NetFirewallRule -DisplayName $script:LanRuleName -ErrorAction Stop |
+            Where-Object { "$($_.Enabled)" -eq 'True' -and "$($_.Action)" -eq 'Allow' })
+        $portOk = $false
+        foreach ($rule in $ours) {
+            if (@(($rule | Get-NetFirewallPortFilter).LocalPort) -contains "$Port") { $portOk = $true }
+        }
+        if (-not $portOk) { return $false }
+    } catch {
+        return $false
+    }
+    return (Get-DockerPrivateBlocks).Count -eq 0
+}
+
+# Enable-LanAccess makes the changes, in one elevated step: optionally mark the
+# network Private, add SoundStorm's Allow rule for Port on Private networks,
+# and take Private out of any Docker Block rule (leaving it blocking on Public,
+# where it was). Returns the exit code, or $null when permission was refused.
+#
+# The script is passed encoded, and everything put into it is an integer or a
+# fixed string, so nothing from the network reaches it as code.
+function Enable-LanAccess([int]$Port, [int]$InterfaceIndex, [bool]$MakePrivate) {
+    $makePrivateText = if ($MakePrivate) { '$true' } else { '$false' }
+    $script = @"
+`$ErrorActionPreference = 'Stop'
+try {
+    if ($makePrivateText) { Set-NetConnectionProfile -InterfaceIndex $InterfaceIndex -NetworkCategory Private }
+    Get-NetFirewallRule -DisplayName '$($script:LanRuleName)' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    New-NetFirewallRule -DisplayName '$($script:LanRuleName)' ``
+        -Description 'Lets phones, TVs and other computers on a network you have marked Private reach SoundStorm. Added by the SoundStorm setup.' ``
+        -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Profile Private | Out-Null
+    `$blocks = Get-NetFirewallApplicationFilter | Where-Object { `$_.Program -like '*\com.docker.backend.exe' } |
+        Get-NetFirewallRule | Where-Object {
+            "`$(`$_.Direction)" -eq 'Inbound' -and "`$(`$_.Action)" -eq 'Block' -and
+            "`$(`$_.Enabled)" -eq 'True' -and "`$(`$_.Profile)" -match 'Private|Any' }
+    foreach (`$rule in `$blocks) {
+        `$profiles = "`$(`$rule.Profile)"
+        `$keep = @()
+        if (`$profiles -match 'Any|Domain') { `$keep += 'Domain' }
+        if (`$profiles -match 'Any|Public') { `$keep += 'Public' }
+        if (`$keep.Count) { Set-NetFirewallRule -Name `$rule.Name -Profile (`$keep -join ',') } else { Disable-NetFirewallRule -Name `$rule.Name }
+    }
+    exit 0
+} catch {
+    exit 1
+}
+"@
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    return Invoke-Elevated 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+}
+
+# Set-LanAccess checks, asks where it has to, fixes, and reports how it went:
+# 'ready', 'public' (said it is not a home network), 'domain', 'refused'
+# (permission declined), 'failed', or 'unknown' (no LAN address to judge by).
+function Set-LanAccess([string]$Address, [int]$Port) {
+    if (-not $Address) { return 'unknown' }
+    $network = Get-LanProfile $Address
+    if (-not $network) { return 'unknown' }
+
+    if ($network.Category -eq 'DomainAuthenticated') {
+        Note "This PC is on a work network, so SoundStorm does not open itself to other"
+        Note "devices on it - that is for whoever runs the network to decide."
+        return 'domain'
+    }
+
+    $makePrivate = $false
+    if ($network.Category -eq 'Public') {
+        Callout 'Is this your home network?' @(
+            "Windows is treating the network this PC is on (""$($network.Name)"") as",
+            'PUBLIC - the setting for cafes and airports - so it stops your phone,',
+            'TV and other computers from reaching SoundStorm.',
+            '',
+            'If this is your own home network, SoundStorm can mark it as private.',
+            'On a network you do not own, answer N and nothing is changed.'
+        ) 'Cyan'
+        $answer = ''
+        try {
+            $answer = Read-Host '    Is this your home network? Type Y or N, then press Enter'
+        } catch {
+            # No console to ask on: change nothing, which is the safe answer.
+        }
+        if ($answer -notmatch '^\s*y') {
+            Note "Leaving this network as it is."
+            return 'public'
+        }
+        $makePrivate = $true
+    } elseif (Test-LanAccessReady $Port) {
+        Good "Other devices on your network can reach SoundStorm."
+        return 'ready'
+    }
+
+    Note "Letting other devices on your home network reach SoundStorm."
+    if (-not (Test-Administrator)) { Important "Windows will ask for permission - click Yes." }
+    $code = Enable-LanAccess $Port $network.InterfaceIndex $makePrivate
+    if ($null -eq $code) {
+        Important "Permission was not given, so other devices still cannot reach it."
+        return 'refused'
+    }
+    if ($code -eq 0 -and (Test-LanAccessReady $Port)) {
+        Good "Done - other devices on your network can reach SoundStorm."
+        return 'ready'
+    }
+    Important "Could not change the network settings (code $code)."
+    return 'failed'
+}
+
+# Update-LanAddress points the recorded LAN address at this machine's current
+# one when it has moved - a laptop on another network, or a router that handed
+# out a new address. The secure name follows SOUNDSTORM_TLS_HOSTS, so without
+# this it kept pointing at an address this PC no longer has. Only the first
+# entry, and only when it has gone from every adapter here: an address still on
+# this machine was chosen, not left behind. Returns $true when it changed.
+function Update-LanAddress {
+    $hosts = Get-EnvSetting 'SOUNDSTORM_TLS_HOSTS'
+    if (-not $hosts) { return $false }
+    $parts = @($hosts -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $recorded = $null
+    if (-not $parts -or -not [Net.IPAddress]::TryParse($parts[0], [ref]$recorded)) { return $false }
+    $current = Get-LanAddress
+    if (-not $current -or $current -eq $parts[0]) { return $false }
+    try {
+        $mine = @(Get-NetIPAddress -ErrorAction Stop | ForEach-Object { $_.IPAddress })
+    } catch {
+        return $false
+    }
+    if ($mine -contains $parts[0]) { return $false }
+    $parts[0] = $current
+    Set-EnvSetting 'SOUNDSTORM_TLS_HOSTS' ($parts -join ',')
+    return $true
+}
+
+# Show-LanAdvice ends the summary with what to do if a phone still cannot
+# connect. This PC can check its own settings but cannot see what the phone
+# sees, so it says what is left to check rather than claiming it works.
+function Show-LanAdvice([string]$State) {
+    switch ($State) {
+        'ready' {
+            Write-Host "  If a phone still cannot connect: it must be on the same Wi-Fi as" -ForegroundColor Gray
+            Write-Host "  this PC - not mobile data, and not a 'guest' network, which keeps" -ForegroundColor Gray
+            Write-Host "  devices apart on purpose." -ForegroundColor Gray
+            Write-Host ""
+        }
+        { $_ -in 'public', 'refused', 'failed' } {
+            Important "Other devices cannot reach SoundStorm yet."
+            Write-Host "  To fix it later, on your home network, run 'Update SoundStorm' from" -ForegroundColor Gray
+            Write-Host "  the Start menu and answer Y - or in Windows Settings, open" -ForegroundColor Gray
+            Write-Host "  Network & internet, your Wi-Fi, and set 'Network profile type' to" -ForegroundColor Gray
+            Write-Host "  Private." -ForegroundColor Gray
+            Write-Host ""
+        }
+    }
+}
+
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     return (New-Object Security.Principal.WindowsPrincipal $identity).IsInRole(
@@ -1368,6 +1582,9 @@ if ($Launch) {
     }
     Set-Location $Dir
     Initialize-Docker
+    # A laptop that moved to another network: point the secure name at where
+    # it is now. compose sees the changed .env and recreates the container.
+    $null = Update-LanAddress
     if ((Invoke-DockerBounded @('compose', 'up', '-d')) -ne 0) {
         Stop-With "  SoundStorm would not start.`n`n  Try turning the PC off and on again. If it keeps happening, show`n  this to whoever gave you the app:`n`n    cd `"$Dir`"; docker compose logs"
     }
@@ -1536,6 +1753,7 @@ if ($Https -or ($NoHttps -eq $false -and -not $tlsNow)) {
     Set-EnvSetting 'SOUNDSTORM_TLS' 'off'
     Note "Turning https off."
 }
+if (Update-LanAddress) { Note "This PC's network address has changed; SoundStorm will use the new one." }
 $tlsMode = Get-EnvSetting 'SOUNDSTORM_TLS'
 
 # Remote access is off unless -Remote is given, and it can be turned on later
@@ -1687,6 +1905,18 @@ if ($pull.ExitCode -ne 0) {
 }
 
 Step "Step 4 of 4 - Starting SoundStorm"
+if ($firstInstall) {
+    # The dialog appears the moment the port is first published, i.e. during
+    # the next command, and its default answer is the one that shuts phones
+    # out on a network Windows thinks is public.
+    Callout 'Windows may ask about the firewall' @(
+        'A "Windows Security Alert" may appear for "Docker Desktop Backend".',
+        '*Click "Allow access".',
+        '',
+        'That is what lets your phone and TV reach SoundStorm. If you clicked',
+        'Cancel by mistake, carry on - this setup checks it in a moment.'
+    ) 'Cyan'
+}
 $start = Invoke-Docker (@('compose') + $composeArgs + @('up', '-d')) -Capture
 if ($start.ExitCode -ne 0) {
     Write-Host $start.Output
@@ -1713,6 +1943,7 @@ if (-not $NoShortcuts) {
 # The waiting happens before anything says "finished". It used to come after
 # "Opening it now", which then sat for up to 45 seconds with nothing opening.
 $lan = Get-LanAddress
+$lanAccess = Set-LanAccess $lan ([int]$port)
 $secure = ''
 if ($tlsMode -eq 'auto') {
     Note "Finishing up: getting a secure address for phones and other devices."
@@ -1758,10 +1989,9 @@ if ($secure) {
     }
     Write-Host "  Same account. Worth saving as a bookmark - and worth giving this" -ForegroundColor Gray
     Write-Host "  PC a fixed address in your router, or that number will change." -ForegroundColor Gray
-    Write-Host "  If nothing loads, allow SoundStorm through the Windows firewall" -ForegroundColor Gray
-    Write-Host "  for private networks." -ForegroundColor Gray
     Write-Host ""
 }
+if ($lan) { Show-LanAdvice $lanAccess }
 if ($useTailscale) {
     Note "Connecting to your tailnet."
     $tailnet = Get-TailnetURL

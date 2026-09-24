@@ -439,6 +439,42 @@ under test cannot answer a question about what another machine sees.** Resolving
 your own name, reading your own local address - both were wrong here, in the
 same way, a day apart.
 
+**Printing the address was not enough on a laptop, and the development
+machine could not show why.** Reported as "once it was up I couldn't connect
+from another device". The development machine is on Ethernet with both
+profiles Private and Docker's listener allowed on Private and Public, so it
+had never hit either cause:
+
+- **Windows makes every new Wi-Fi network Public**, and Public lets nothing
+  in.
+- **The Windows Security Alert for "Docker Desktop Backend"**
+  (`com.docker.backend.exe`, which is what accepts published ports) appears
+  during the first `compose up`. Its default ticks Private only, and
+  whatever is unticked (everything, on Cancel) gets a **Block** rule. Block
+  beats Allow.
+
+So after Step 4 `Set-LanAccess` looks up the profile of the adapter holding
+the LAN address. If it is Public, the installer *asks* whether this is the
+home network, because marking a cafe's network Private is the wrong
+default. With consent, one elevated step marks it Private, adds a
+`SoundStorm - ...` Allow rule for the port on **Private only**, and takes
+Private out of Docker's Block rules, leaving them blocking on Public. A work
+(domain) network is left alone. The check itself needs no administrator, so
+an update on an already-working PC asks for nothing. The elevated script is
+passed `-EncodedCommand` and interpolates only integers and a fixed name.
+
+`SOUNDSTORM_TLS_HOSTS` used to be written once, so a laptop that moved kept
+pointing its secure name at an address it no longer had. `Update-LanAddress`
+replaces the first entry, on install and on every launch, only when that
+address is gone from every adapter on the machine. An address still present
+was chosen, not left behind.
+
+As above, the installer cannot see what a phone sees. It reports what it
+checked, and names the two causes it cannot check: a guest network and
+mobile data. The profile, firewall and generated-script logic were exercised
+read-only on the development machine. The elevated change itself has not run
+there, because that machine never needed it.
+
 The container cannot work its own LAN address out - inside Docker the only
 addresses visible are the container's - so the *installer* does it, on the
 host, and prints it. It prefers `192.168.` then `10.` then `172.`, because the

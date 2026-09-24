@@ -27,6 +27,12 @@ when it is finished. Along the way:
   need a Docker account: click **Accept** on the agreement, then **Skip** on the
   sign-in and on the questions about you. Close that window afterwards if you
   like; Docker keeps running, and the setup carries on by itself.
+- **A "Windows Security Alert" may appear** for Docker Desktop Backend. Click
+  **Allow access**. If the setup then asks **"Is this your home network?"**,
+  answer **Y** at home: Windows treats new Wi-Fi networks as public, which
+  stops your phone and TV reaching SoundStorm. The setup marks the network
+  private and opens SoundStorm's port to devices on it (one more permission
+  prompt), and changes nothing on a network you answer N for.
 - **At the end your browser opens SoundStorm.** Choose a username and password —
   that is your account. If the page asks for a **setup code**, it is in the
   yellow box at the bottom of the setup window, and saved in the `.env` file in
@@ -269,9 +275,12 @@ Two things worth doing:
 
 - **Give the server a fixed address** in your router (a DHCP reservation), or
   that number will change one day and every bookmark breaks.
-- **If nothing loads at all**, the firewall is blocking it. On Windows, set the
-  network to **Private** in Settings → Network & Internet, and allow SoundStorm
-  through.
+- **If nothing loads at all**, check the phone is on the same Wi-Fi and not a
+  *guest* network, which keeps devices apart on purpose. On Windows, run
+  **Update SoundStorm** from the Start menu while on your home network: it
+  checks the network is marked Private, adds a firewall rule for SoundStorm's
+  port, and undoes a Cancel on Windows' firewall prompt. A laptop that moved
+  to another network gets its new address the next time it starts SoundStorm.
 
 > **On macOS and Linux** the installer offers `http://<hostname>.local:8099`
 > instead, which survives the address changing. That is not offered on Windows:
