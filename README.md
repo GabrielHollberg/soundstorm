@@ -484,10 +484,11 @@ docker compose pull && docker compose up -d
 
 ### Backing it up
 
-One file holds your accounts and the passwords SoundStorm invented for
-Navidrome, Jellyfin and Audiobookshelf. **Those passwords exist nowhere else.**
-Lose that file and the media servers keep running with accounts nobody can
-sign in to — and reinstalling does not help, because they are already set up.
+One file holds your accounts, everybody's favourites and playlists, and the
+passwords SoundStorm invented for Navidrome, Jellyfin and Audiobookshelf.
+**Those passwords exist nowhere else.** Lose that file and the media servers
+keep running with accounts nobody can sign in to — and reinstalling does not
+help, because they are already set up.
 
 From the install folder:
 

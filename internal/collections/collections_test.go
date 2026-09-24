@@ -1,6 +1,7 @@
 package collections
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -111,5 +112,44 @@ func TestForgetRemovesTheFile(t *testing.T) {
 	}
 	if got, _ := s.Favourites("u1"); len(got) != 0 {
 		t.Errorf("favourites after forget = %d", len(got))
+	}
+}
+
+func TestExportAndImportRoundTrip(t *testing.T) {
+	from := t.TempDir()
+	s, _ := Open(from)
+	_ = s.AddFavourite("u1", song("a"))
+	p, _ := s.CreatePlaylist("u2", "Mix")
+	_, _ = s.AddToPlaylist("u2", p.ID, song("b"))
+
+	files, err := Export(from)
+	if err != nil || len(files) != 2 {
+		t.Fatalf("Export = %d files, %v", len(files), err)
+	}
+
+	to := t.TempDir()
+	if _, err := Import(to, files); err != nil {
+		t.Fatal(err)
+	}
+	back, _ := Open(to)
+	if favs, _ := back.Favourites("u1"); len(favs) != 1 || favs[0].Item.ID != "a" {
+		t.Errorf("favourites after import = %+v", favs)
+	}
+	if got, err := back.Playlist("u2", p.ID); err != nil || len(got.Items) != 1 {
+		t.Errorf("playlist after import = %+v, %v", got, err)
+	}
+}
+
+func TestImportRefusesADamagedBackupBeforeWritingAnything(t *testing.T) {
+	to := t.TempDir()
+	_, err := Import(to, map[string]json.RawMessage{
+		"u1":         json.RawMessage(`{"favourites":[]}`),
+		"../outside": json.RawMessage(`{}`),
+	})
+	if err == nil {
+		t.Fatal("a backup naming a path was accepted")
+	}
+	if entries, _ := os.ReadDir(to); len(entries) != 0 {
+		t.Errorf("%d files written before the refusal", len(entries))
 	}
 }

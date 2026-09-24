@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
@@ -41,8 +43,8 @@ const backupUsage = `SoundStorm backup
   soundstorm backup [file | -]
   soundstorm restore <file | ->
 
-Copies the accounts and backend credentials out of the state volume, and back
-in. Without a file, backup writes soundstorm-backup-<date>.json beside the
+Copies the accounts, backend credentials, and everybody's favourites and
+playlists out of the state volume, and back in. Without a file, backup writes soundstorm-backup-<date>.json beside the
 state. A file of - means standard output for backup and standard input for
 restore.
 
@@ -119,34 +121,42 @@ func backupState(args []string) int {
 	// Where the talking goes: standard output normally, but standard error when
 	// standard output is the backup itself.
 	say := os.Stdout
-	var size int64
-	if dest == "-" {
+	if dest == "-" && isTerminal(os.Stdout) {
 		// A terminal is refused: every backend password scrolling past on a
 		// screen is exactly what this file must not do, and a pseudo-terminal
 		// would turn its newlines into CRLF on the way. Without -T, compose run
 		// gives the command one.
-		if isTerminal(os.Stdout) {
-			fmt.Fprint(os.Stderr, "Standard output is a terminal. Send the backup to a file instead:\n\n"+
-				"  (umask 077; docker compose run --rm -T soundstorm backup - > soundstorm-backup.json)\n")
-			return 2
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Could not read %s: %v\n", path, err)
-			return 1
-		}
+		fmt.Fprint(os.Stderr, "Standard output is a terminal. Send the backup to a file instead:\n\n"+
+			"  (umask 077; docker compose run --rm -T soundstorm backup - > soundstorm-backup.json)\n")
+		return 2
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not read %s: %v\n", path, err)
+		return 1
+	}
+	raw, people, err := withCollections(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not read the favourites and playlists: %v\n", err)
+		return 1
+	}
+	size := int64(len(raw))
+	if dest == "-" {
 		if _, err := os.Stdout.Write(raw); err != nil {
 			fmt.Fprintf(os.Stderr, "Could not write the backup: %v\n", err)
 			return 1
 		}
-		say, size, dest = os.Stderr, int64(len(raw)), "standard output"
+		say, dest = os.Stderr, "standard output"
 	} else {
-		if err := state.CopyTo(path, dest); err != nil {
+		if dir := filepath.Dir(dest); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				fmt.Fprintf(os.Stderr, "Could not write the backup: %v\n", err)
+				return 1
+			}
+		}
+		if err := os.WriteFile(dest, raw, 0o600); err != nil {
 			fmt.Fprintf(os.Stderr, "Could not write the backup: %v\n", err)
 			return 1
-		}
-		if info, err := os.Stat(dest); err == nil {
-			size = info.Size()
 		}
 	}
 
@@ -155,6 +165,9 @@ func backupState(args []string) int {
 	fmt.Fprintln(say)
 	fmt.Fprintf(say, "  %d account(s), credentials for %d backend(s): %s\n",
 		summary.Users, len(summary.Backends), strings.Join(summary.Backends, ", "))
+	if people > 0 {
+		fmt.Fprintf(say, "  Favourites and playlists for %d account(s)\n", people)
+	}
 	fmt.Fprintln(say)
 	// Said plainly, because the mistake this is guarding against is keeping
 	// the only copy in the one place that gets deleted.
@@ -190,13 +203,15 @@ func restoreState(args []string) int {
 
 	source := args[0]
 	var err error
+	var raw []byte
 	if source == "-" {
 		if isTerminal(os.Stdin) {
 			fmt.Fprint(os.Stderr, "Standard input is a terminal. Pipe the backup in:\n\n"+
 				"  docker compose run --rm -T soundstorm restore - < soundstorm-backup.json\n")
 			return 2
 		}
-		raw, readErr := io.ReadAll(io.LimitReader(os.Stdin, maxBackupBytes+1))
+		var readErr error
+		raw, readErr = io.ReadAll(io.LimitReader(os.Stdin, maxBackupBytes+1))
 		switch {
 		case readErr != nil:
 			err = fmt.Errorf("read standard input: %w", readErr)
@@ -204,14 +219,42 @@ func restoreState(args []string) int {
 			err = fmt.Errorf("standard input is larger than any SoundStorm backup")
 		default:
 			source = "standard input"
-			err = state.RestoreBytes(raw, source, path)
 		}
 	} else {
-		err = state.RestoreFrom(source, path)
+		raw, err = os.ReadFile(source)
+		if err != nil {
+			err = fmt.Errorf("read backup: %w", err)
+		}
+	}
+	// The lists are checked before the state is touched, so a damaged backup
+	// changes nothing rather than restoring half of itself.
+	var lists map[string]json.RawMessage
+	if err == nil {
+		raw, lists, err = splitCollections(raw)
+	}
+	if err == nil {
+		err = collections.Validate(lists)
+	}
+	if err == nil {
+		err = state.RestoreBytes(raw, source, path)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not restore: %v\n", err)
 		return 1
+	}
+	if len(lists) > 0 {
+		written, err := collections.Import(collectionsDir(), lists)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Restored the accounts, but not the favourites and playlists: %v\n", err)
+			return 1
+		}
+		// The same ownership care as the state file, and for the same reason.
+		if ownerErr == nil {
+			_ = restoreOwner(collectionsDir(), owner)
+			for _, p := range written {
+				_ = restoreOwner(p, owner)
+			}
+		}
 	}
 
 	if ownerErr == nil {
@@ -233,9 +276,67 @@ func restoreState(args []string) int {
 	fmt.Println()
 	fmt.Printf("  Restored %d account(s) and %d backend(s) from %s\n",
 		summary.Users, len(summary.Backends), source)
+	if len(lists) > 0 {
+		fmt.Printf("  and favourites and playlists for %d account(s)\n", len(lists))
+	}
 	fmt.Println()
 	fmt.Println("  The previous state is kept as state.json.bak.")
 	fmt.Println("  Start SoundStorm again:  docker compose up -d")
 	fmt.Println()
 	return 0
+}
+
+func collectionsDir() string {
+	return filepath.Join(filepath.Dir(statePath()), "collections")
+}
+
+// withCollections adds everybody's favourites and playlists to a state file,
+// as one more field, "collections", keyed by account id. A field rather than a
+// wrapper around the file, so the backup still is a state file: an older
+// SoundStorm, which refuses anything without the state's own version field,
+// restores the accounts from it and ignores the rest, and this one restores a
+// backup made before the field existed exactly as it always did.
+//
+// With nothing to add the state comes back byte for byte, so a backup of an
+// install nobody has favourited anything on is the same file it always was.
+func withCollections(stateRaw []byte) ([]byte, int, error) {
+	files, err := collections.Export(collectionsDir())
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(files) == 0 {
+		return stateRaw, 0, nil
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(stateRaw, &top); err != nil {
+		return nil, 0, fmt.Errorf("parse state: %w", err)
+	}
+	lists, err := json.Marshal(files)
+	if err != nil {
+		return nil, 0, err
+	}
+	top["collections"] = lists
+	out, err := json.MarshalIndent(top, "", "  ")
+	return out, len(files), err
+}
+
+// splitCollections separates a backup into the state file and the lists it
+// carries. A backup with no lists comes back unchanged; one that is not JSON
+// at all comes back unchanged too, for RestoreBytes to refuse in its own words.
+func splitCollections(raw []byte) ([]byte, map[string]json.RawMessage, error) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return raw, nil, nil
+	}
+	encoded, ok := top["collections"]
+	if !ok {
+		return raw, nil, nil
+	}
+	var lists map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &lists); err != nil {
+		return nil, nil, fmt.Errorf("the favourites and playlists in the backup do not read: %w", err)
+	}
+	delete(top, "collections")
+	stateRaw, err := json.MarshalIndent(top, "", "  ")
+	return stateRaw, lists, err
 }

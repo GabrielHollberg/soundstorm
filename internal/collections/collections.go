@@ -381,3 +381,71 @@ func (s *Store) Forget(userID string) error {
 	}
 	return nil
 }
+
+// Export reads every person's file in dir, for a backup: account id to the
+// file's contents. Read straight off the disk rather than through a Store -
+// the backup runs as its own process beside a stopped server, and has no
+// reason to hold anything in memory or write anything back.
+func Export(dir string) (map[string]json.RawMessage, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]json.RawMessage{}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		out[strings.TrimSuffix(name, ".json")] = raw
+	}
+	return out, nil
+}
+
+// Import writes people's files back from a backup, replacing any already there
+// for the same account. Every file is checked to be a collection before
+// anything is written, so a damaged backup changes nothing. It returns the
+// paths written, so the caller can give them to the right owner.
+func Import(dir string, files map[string]json.RawMessage) ([]string, error) {
+	if err := Validate(files); err != nil {
+		return nil, err
+	}
+	s := &Store{dir: dir}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	var written []string
+	for id, raw := range files {
+		var c collection
+		_ = json.Unmarshal(raw, &c)
+		if err := s.save(id, &c); err != nil {
+			return written, err
+		}
+		p, _ := s.path(id)
+		written = append(written, p)
+	}
+	return written, nil
+}
+
+// Validate checks a backup's lists without writing anything: every account id
+// must be usable as a file name and every file must read as a collection.
+func Validate(files map[string]json.RawMessage) error {
+	s := &Store{}
+	for id, raw := range files {
+		if _, err := s.path(id); err != nil {
+			return fmt.Errorf("backup names an account %q that cannot be a file name", id)
+		}
+		var c collection
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return fmt.Errorf("favourites and playlists for %s do not read: %w", id, err)
+		}
+	}
+	return nil
+}

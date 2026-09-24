@@ -385,9 +385,20 @@ The UI adds a "⋯" button beside each card. The card is itself a `<button>`, so
 the two sit in an `.item-holder` wrapper, since a button cannot contain
 another. There is one shared menu element, moved to whichever card asked.
 
-**Not in `soundstorm backup` yet.** The backup is state.json alone, so a
-reinstall that restores it brings back accounts but not favourites or
-playlists.
+**They are in `soundstorm backup`,** as one more field, `collections`, in the
+same file, keyed by account id. A field rather than a wrapper, so the backup
+still is a state file:
+- An older SoundStorm refuses anything without the state's version field. It
+  restores the accounts from a new backup and ignores the lists.
+- A backup from before the field restores exactly as it did, and leaves
+  current lists alone.
+- With no lists at all the backup is the state file byte for byte, which the
+  original stdout test still asserts.
+
+Restore checks the lists before touching the state, so a damaged backup
+changes nothing. It strips the field from the state it writes, and gives the
+list files the same owner as the state file, for the same reason the state
+needs it.
 
 Verified in Chrome against a throwaway stack with a real Navidrome that
 SoundStorm provisioned: favourite, the heart, the Favourites chip, a playlist
