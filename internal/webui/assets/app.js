@@ -1448,6 +1448,7 @@ function playAudio(item, fromQueue) {
   renderTracks();
   renderQueue();
   showDock(true);
+  updateMediaSession();
 
   // A song starts now: a round trip before the first note is felt, and nothing
   // about a four minute track needs the answer. An audiobook waits, because it
@@ -1589,6 +1590,8 @@ function selectTrack(index, offset = 0) {
   audio.index = index;
   startAt(track.url, offset);
   renderTracks();
+  // The lock screen shows the chapter, so it changes with it.
+  updateMediaSession();
 }
 
 // The dock's second line becomes the chapter, because "13 of 30" is the thing
@@ -1700,6 +1703,7 @@ function stopAudio() {
   showTrackList(false);
   renderTracks();
   showDock(false);
+  clearMediaSession();
 }
 
 // showDock also marks the body, because the dock is position: fixed and the
@@ -2942,4 +2946,134 @@ function maybeShowHoldTip() {
   const tip = $('hold-tip');
   show(tip, true);
   setTimeout(() => show(tip, false), 7000);
+}
+
+/* ------------------------------------------------ lock screen and headphones */
+
+// The Media Session API is how a web page tells the phone what is playing -
+// the lock screen, the notification shade, a car stereo over Bluetooth, a
+// smartwatch - and how their buttons reach the player. Without it a song
+// playing from SoundStorm shows up as "a tab is playing audio" with no cover,
+// no title and a skip button that does nothing.
+//
+// Next and previous mean the next song in a playlist, or the next chapter of an
+// audiobook made of several files. Where there is neither, the lock screen
+// offers a skip of fifteen seconds instead, which for a single long file is
+// what somebody pressing it wants.
+
+const hasMediaSession = 'mediaSession' in navigator;
+const SKIP_SECONDS = 15;
+
+function mediaArtwork(item) {
+  const path = artPath(item);
+  if (!path) return [];
+  // Absolute, because the lock screen fetches it outside the page. Same origin
+  // and cookie-authenticated like every other image here.
+  const src = new URL(path, location.href).href;
+  return [
+    { src, sizes: '256x256' },
+    { src, sizes: '512x512' },
+  ];
+}
+
+function updateMediaSession() {
+  if (!hasMediaSession || !audio.item) return;
+  const item = audio.item;
+  const track = audio.tracks.length > 1 ? audio.tracks[audio.index] : null;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      // For a chaptered audiobook the chapter is the title and the book is
+      // the album, which is how a lock screen reads best.
+      title: track ? (track.title || item.title) : item.title,
+      artist: (item.creators || []).join(', ') || item.subtitle || '',
+      album: track ? item.title : ((item.extra && item.extra.album) || item.subtitle || ''),
+      artwork: mediaArtwork(item),
+    });
+  } catch {
+    // An old browser with half of the API: the player still works.
+  }
+  const hasNext = (audio.queue && audio.queue.index + 1 < audio.queue.items.length)
+    || audio.index + 1 < audio.tracks.length;
+  const hasPrev = (audio.queue && audio.queue.index > 0) || audio.index > 0;
+  setMediaAction('nexttrack', hasNext ? mediaNext : null);
+  setMediaAction('previoustrack', hasPrev ? mediaPrevious : null);
+}
+
+function clearMediaSession() {
+  if (!hasMediaSession) return;
+  navigator.mediaSession.metadata = null;
+  navigator.mediaSession.playbackState = 'none';
+}
+
+// setMediaAction sets or clears one handler. Browsers throw for an action they
+// do not support, and one unsupported action must not stop the rest.
+function setMediaAction(action, handler) {
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+  } catch {
+    // not supported here
+  }
+}
+
+function mediaNext() {
+  if (audio.queue && audio.queue.index + 1 < audio.queue.items.length) {
+    playQueueAt(audio.queue.index + 1);
+  } else if (audio.index + 1 < audio.tracks.length) {
+    selectTrack(audio.index + 1);
+    updateMediaSession();
+  }
+}
+
+function mediaPrevious() {
+  const player = $('audio-player');
+  // As every music player does: a few seconds in, "previous" means the start
+  // of this song; only right at the start does it mean the one before.
+  if (player.currentTime > 3) {
+    player.currentTime = 0;
+    return;
+  }
+  if (audio.queue && audio.queue.index > 0) {
+    playQueueAt(audio.queue.index - 1);
+  } else if (audio.index > 0) {
+    selectTrack(audio.index - 1);
+    updateMediaSession();
+  } else {
+    player.currentTime = 0;
+  }
+}
+
+if (hasMediaSession) {
+  const player = $('audio-player');
+  setMediaAction('play', () => player.play().catch(() => {}));
+  setMediaAction('pause', () => player.pause());
+  setMediaAction('stop', () => stopAudio());
+  setMediaAction('seekbackward', (details) => {
+    player.currentTime = Math.max(0, player.currentTime - ((details && details.seekOffset) || SKIP_SECONDS));
+  });
+  setMediaAction('seekforward', (details) => {
+    const end = Number.isFinite(player.duration) ? player.duration : Infinity;
+    player.currentTime = Math.min(end, player.currentTime + ((details && details.seekOffset) || SKIP_SECONDS));
+  });
+  setMediaAction('seekto', (details) => {
+    if (details && Number.isFinite(details.seekTime)) player.currentTime = details.seekTime;
+  });
+
+  // The lock screen's own progress bar, kept in step with the player's.
+  const syncPosition = () => {
+    if (!audio.item || !Number.isFinite(player.duration) || player.duration <= 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: player.duration,
+        playbackRate: player.playbackRate || 1,
+        position: Math.min(player.currentTime, player.duration),
+      });
+    } catch {
+      // A position past a duration the browser disagrees with: skip this one.
+    }
+  };
+  player.addEventListener('play', () => { navigator.mediaSession.playbackState = 'playing'; syncPosition(); });
+  player.addEventListener('pause', () => { navigator.mediaSession.playbackState = 'paused'; syncPosition(); });
+  player.addEventListener('loadedmetadata', () => { syncPosition(); updateMediaSession(); });
+  player.addEventListener('seeked', syncPosition);
+  player.addEventListener('ratechange', syncPosition);
 }
