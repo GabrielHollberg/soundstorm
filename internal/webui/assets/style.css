@@ -1990,3 +1990,12 @@ body.np-open { overflow: hidden; }
 /* The old lyrics and title leave quickly, so the two sets of words do not
    sit on top of each other for long. */
 ::view-transition-old(np-lyrics), ::view-transition-old(np-title) { animation-duration: 0.16s; }
+
+/* No tap highlight anywhere in the players. Android draws a translucent blue
+   box over whatever has a click handler, and the lyrics area has one (it
+   grows into the full lyrics); during the view transition that box was
+   captured and flashed across the screen. Every control here has its own
+   press feedback instead. A tapped line keeps no focus ring either - the
+   keyboard's :focus-visible ring is untouched. */
+.now-playing, .now-playing *, .dock, .dock * { -webkit-tap-highlight-color: transparent; }
+.np-lyrics:focus, .np-lyric:focus:not(:focus-visible) { outline: none; }
