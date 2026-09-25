@@ -238,20 +238,16 @@ func groupByFolder(songs []song) *folderLibrary {
 			}
 			return sortKey(x.title) < sortKey(y.title)
 		})
-		// The artist's picture: Navidrome's for the artist most of these
-		// songs are credited to, which is its own artist image or cover.
-		ids := map[string]int{}
-		for _, a := range ar.albums {
-			for _, sg := range a.songs {
-				if sg.ArtistID != "" {
-					ids[sg.ArtistID]++
-				}
+		// The artist's picture is the cover of their newest album that has
+		// one. Navidrome's own artist image is a placeholder silhouette unless
+		// it has been set up to fetch photos from the internet, which it is
+		// not, so an album cover is the only real picture there is.
+		ar.art = ""
+		for i := len(ar.albums) - 1; i >= 0; i-- {
+			if ar.albums[i].art != "" {
+				ar.art = ar.albums[i].art
+				break
 			}
-		}
-		if id := mostCommon(ids); id != "" {
-			ar.art = "ar-" + id
-		} else if len(ar.albums) > 0 {
-			ar.art = ar.albums[0].art
 		}
 	}
 	sort.SliceStable(lib.artists, func(i, j int) bool { return sortKey(lib.artists[i].name) < sortKey(lib.artists[j].name) })

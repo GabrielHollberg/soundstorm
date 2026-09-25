@@ -462,7 +462,7 @@ Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
 ## Home, and five tabs instead of ten chips
 
 The shelves were a sideways row of ten chips, most off screen on a phone.
-Now five tabs - Home, Music (playlists with songs, albums and artists), Watch
+Now five tabs - Home, Music (mixes, playlists, songs, albums and artists), Watch
 (films, TV), Books (audiobooks, ebooks, documents), Photos - along the bottom
 of a phone and down the side of a computer. The chips are still in the page,
 hidden, and a tab presses one, so every search path is unchanged. A shelf the
@@ -572,6 +572,10 @@ same name with case and punctuation set aside: a folder cannot be "AC/DC" or
 end in a dot, so `AC-DC` shows as AC/DC and `Fun` as Fun. A folder the tags
 genuinely disagree with ("Tidewater" against "Tidewater (Deluxe)") keeps its
 own. iTunes LP and Extras bundles (`.itlp`, `.ite`) are not artists.
+
+An artist's picture is the cover of their newest album that has one. It
+was Navidrome's artist image (`ar-<id>`), which without an internet agent
+set up is a placeholder silhouette, so every artist looked the same.
 
 **Navidrome's paths were made up, and that was a latent bug.** Unless told
 otherwise it reports a path built from the tags - `2CELLOS/2Cellos/01-06 -
