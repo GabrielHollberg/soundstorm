@@ -4143,6 +4143,7 @@ function openNowPlaying() {
 function closeNowPlaying() {
   show($('now-playing'), false);
   document.body.classList.remove('np-open');
+  setStatusBar(null);
   $('now-playing').style.transform = '';
 }
 
@@ -4595,6 +4596,7 @@ function renderNowPlaying() {
   }
   if (art) $('np-backdrop').src = art;
   else $('np-backdrop').removeAttribute('src');
+  tintStatusBar(art);
   $('np-title').textContent = item.title;
   $('np-sub').textContent = [(item.creators || []).join(', '), (item.extra && item.extra.album) || item.subtitle]
     .filter(Boolean).join(' \u2014 ');
@@ -5997,3 +5999,45 @@ function albumCardFromHome(album) {
   set();
   if ('ResizeObserver' in window) new ResizeObserver(set).observe(header);
 })();
+
+/* ------------------------------------------------- the phone's status bar */
+
+// The installed app's status bar is the page's theme colour, and a page may
+// change it while it runs. Everywhere else that is the app's own dark; in Now
+// Playing it is the colour of the top of the blurred cover behind it, so the
+// bar reads as part of the screen instead of a dark strip across its top.
+// Android's navigation bar at the bottom is Chrome's, and no page can colour
+// it.
+function setStatusBar(colour) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = colour || '#0e1116';
+}
+
+function tintStatusBar(art) {
+  tintStatusBar.for = art || '';
+  if (!art) { setStatusBar('#07090d'); return; }
+  const img = new Image();
+  img.onload = () => {
+    if (tintStatusBar.for !== art || $('now-playing').classList.contains('hidden')) return;
+    try {
+      const c = document.createElement('canvas');
+      c.width = 16;
+      c.height = 16;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(img, 0, 0, 16, 16);
+      // The top third: what sits under the status bar once blurred.
+      const px = g.getImageData(0, 0, 16, 6).data;
+      let r = 0, gr = 0, b = 0;
+      for (let i = 0; i < px.length; i += 4) { r += px[i]; gr += px[i + 1]; b += px[i + 2]; }
+      const n = px.length / 4;
+      [r, gr, b] = [r / n, gr / n, b / n];
+      // The backdrop's own filter: saturate(1.4) brightness(0.45).
+      const l = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
+      const out = [r, gr, b].map((v) => Math.round(Math.max(0, Math.min(255, (l + (v - l) * 1.4) * 0.45))));
+      setStatusBar(`#${out.map((v) => v.toString(16).padStart(2, '0')).join('')}`);
+    } catch {
+      setStatusBar('#07090d');
+    }
+  };
+  img.src = art;
+}

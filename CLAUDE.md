@@ -427,6 +427,15 @@ judged on in its first minute:
   **Then removed, at the owner's request.** The app opens and stays like any
   installed app, status and navigation bars showing; nothing asks for full
   screen any more. The manifest stays `standalone`.
+- **The status bar takes Now Playing's colour.** An installed app's status
+  bar is the page's theme colour, which a page may change while it runs, so
+  in Now Playing it is the top of the cover averaged and put through the
+  backdrop's own filter (saturate 1.4, brightness 0.45), and the app's dark
+  again on close. Android's navigation bar at the bottom is Chrome's: no page
+  can colour it, and an installed app cannot draw under the status bar until
+  Chrome ships that (in progress, 2026). An APK was considered for this and
+  declined: a Trusted Web Activity runs in Chrome and has the same bars, and
+  a WebView app loses the lock-screen controls and background playback.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.
