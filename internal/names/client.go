@@ -134,25 +134,50 @@ func (c *Client) do(ctx context.Context, method, path, credential string, body, 
 // forces a fresh client whose dialer only connects over that family, so the
 // request's source address - which the service reads - is of that family.
 func (c *Client) doVia(ctx context.Context, network, method, path, credential string, body, into any) error {
-	var rd io.Reader
+	var raw []byte
 	if body != nil {
-		raw, _ := json.Marshal(body)
-		rd = bytes.NewReader(raw)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.Base, "/")+path, rd)
-	if err != nil {
-		return err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if credential != "" {
-		req.Header.Set("Authorization", credential)
+		raw, _ = json.Marshal(body)
 	}
 	client := c.clientFor(network)
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("name service: %w", err)
+	// A request that never got an answer is tried again, twice, a moment
+	// apart. The service's host dropped about one connection in four for a
+	// while (measured: 2 of 8 connects timed out, the rest answered in a
+	// quarter of a second), and a single miss at start-up used to cost an
+	// install its remote name. Only requests that are safe to repeat: every
+	// PUT and DELETE here sets or removes a record to one value. Registering
+	// (POST) is not retried; an answer of any status is never retried.
+	attempts := 1
+	if method == http.MethodPut || method == http.MethodDelete || method == http.MethodGet {
+		attempts = 3
+	}
+	var resp *http.Response
+	for attempt := 1; ; attempt++ {
+		var rd io.Reader
+		if raw != nil {
+			rd = bytes.NewReader(raw)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.Base, "/")+path, rd)
+		if err != nil {
+			return err
+		}
+		if raw != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if credential != "" {
+			req.Header.Set("Authorization", credential)
+		}
+		resp, err = client.Do(req)
+		if err == nil {
+			break
+		}
+		if attempt >= attempts || ctx.Err() != nil {
+			return fmt.Errorf("name service: %w", err)
+		}
+		select {
+		case <-time.After(time.Duration(attempt) * time.Second):
+		case <-ctx.Done():
+			return fmt.Errorf("name service: %w", err)
+		}
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

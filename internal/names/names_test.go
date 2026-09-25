@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -452,5 +453,32 @@ func TestPorkbunSaysWhyItRefused(t *testing.T) {
 	_, err := p.Set(context.Background(), "x.home", "A", "192.168.0.19")
 	if err == nil || !strings.Contains(err.Error(), "not opted in to API access") {
 		t.Errorf("err = %v, want Porkbun's own message", err)
+	}
+}
+
+// A connection dropped without an answer is tried again: the service's host
+// lost about one in four for a while, and one miss used to cost an install its
+// remote name.
+func TestTheClientRetriesADroppedConnection(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				conn.Close() // no answer at all
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"abcdefghij.home.soundstorm.dev","ip":"192.168.0.19"}`))
+	}))
+	defer srv.Close()
+	c := &Client{Base: srv.URL}
+	reg := Registration{ID: "abcdefghij", Name: "abcdefghij.home.soundstorm.dev", Token: "t"}
+	if err := c.SetAddress(context.Background(), reg, "192.168.0.19"); err != nil {
+		t.Fatalf("SetAddress after one dropped connection: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("service called %d times, want 2", calls)
 	}
 }
