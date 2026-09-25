@@ -1318,6 +1318,38 @@ const photoZoom = (() => {
     apply(animate);
   };
   const reset = () => { s = 1; tx = 0; ty = 0; img.style.opacity = ''; apply(false); };
+
+  // The photos either side ride along beside this one during a swipe, a
+  // small gap apart, so the next one is already there as this one leaves.
+  const GAP = 16;
+  const sides = { '-1': $('photo-prev-image'), 1: $('photo-next-image') };
+  const neighbours = () => {
+    const photos = photosOnScreen();
+    const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
+    return { '-1': at > 0 ? photos[at - 1] : null, 1: at >= 0 ? photos[at + 1] : null };
+  };
+  const prepSides = () => {
+    const near = neighbours();
+    for (const by of ['-1', '1']) {
+      const el = sides[by];
+      if (near[by]) {
+        const url = photoPreview(near[by]);
+        if (el.dataset.src !== url) { el.src = url; el.dataset.src = url; }
+        el.style.visibility = 'visible';
+      } else {
+        el.style.visibility = 'hidden';
+      }
+    }
+  };
+  const placeSides = (offset, animate) => {
+    const w = stage.clientWidth + GAP;
+    for (const by of ['-1', '1']) {
+      const el = sides[by];
+      el.style.transition = animate ? 'transform 0.22s ease-out' : 'none';
+      el.style.transform = `translateX(${offset + Number(by) * w}px)`;
+    }
+  };
+  const hideSides = () => { for (const el of Object.values(sides)) el.style.visibility = 'hidden'; };
   const toggleBars = () => overlay.classList.toggle('pv-bare');
 
   const onTap = (e) => {
@@ -1353,15 +1385,35 @@ const photoZoom = (() => {
     const photos = photosOnScreen();
     const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
     const more = photos[at + by] || (by > 0 && state.hasMore);
+    const beside = sides[String(by)];
+    const ready = beside.style.visibility === 'visible' && beside.complete && beside.naturalWidth > 0;
     if (more && (Math.abs(g.dx) > width * 0.25 || (speed > 0.5 && Math.abs(g.dx) > 30))) {
-      tx = -by * width; apply(true);
-      setTimeout(async () => {
-        await stepPhoto(by);
-        tx = by * width; apply(false);
-        requestAnimationFrame(() => requestAnimationFrame(() => { tx = 0; apply(true); }));
-      }, 200);
+      if (ready) {
+        // The neighbour slides into the middle; then it becomes the photo.
+        tx = -by * (width + GAP); apply(true);
+        placeSides(-by * (width + GAP), true);
+        setTimeout(async () => {
+          img.style.visibility = 'hidden';
+          if (await stepPhoto(by)) {
+            try { await img.decode(); } catch { /* shown when it loads */ }
+          }
+          img.style.visibility = '';
+          hideSides();
+        }, 230);
+      } else {
+        // Not loaded yet (the next page of photos, say): out, then in.
+        hideSides();
+        tx = -by * width; apply(true);
+        setTimeout(async () => {
+          await stepPhoto(by);
+          tx = by * width; apply(false);
+          requestAnimationFrame(() => requestAnimationFrame(() => { tx = 0; apply(true); }));
+        }, 200);
+      }
     } else {
       tx = 0; apply(true);
+      placeSides(0, true);
+      setTimeout(hideSides, 230);
     }
   };
 
@@ -1407,10 +1459,13 @@ const photoZoom = (() => {
       clamp();
       apply(false);
     } else if (gesture.kind === 'swipe' && gesture.touch) {
-      if (!gesture.axis) gesture.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (!gesture.axis) {
+        gesture.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        if (gesture.axis === 'x') prepSides();
+      }
       gesture.dx = dx;
       gesture.dy = dy;
-      if (gesture.axis === 'x') { tx = dx; ty = 0; }
+      if (gesture.axis === 'x') { tx = dx; ty = 0; placeSides(dx, false); }
       else {
         tx = 0; ty = Math.max(0, dy);
         overlay.style.backgroundColor = `rgba(0, 0, 0, ${Math.max(0.3, 1 - ty / 450)})`;
@@ -5535,29 +5590,96 @@ function albumCardFromHome(album) {
     return new Promise((resolve) => {
       let quiet;
       const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(); };
-      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 70); });
+      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 50); });
       for (const id of pages) observer.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-      const cap = setTimeout(done, 500);
-      quiet = setTimeout(done, 150);
+      const cap = setTimeout(done, 450);
+      quiet = setTimeout(done, 100);
     });
   }
 
-  async function go(next, dir) {
-    busy = true;
-    const width = window.innerWidth;
-    place(dir * -width, 0.2, 170, 'cubic-bezier(.4,0,1,1)');
-    await settle(170);
+  // The page that is leaving is a copy laid where it was, so it can carry
+  // on off the side while the real one - already the next pill's - follows
+  // right behind it, edge to edge, as the pages of one strip.
+  function ghostOf(dx) {
+    const shown = pages.map($).filter((el) => !el.classList.contains('hidden'));
+    const rects = shown.map((el) => el.getBoundingClientRect());
     // The next page starts at its top, as pressing the pill would show it.
     window.scrollTo(0, 0);
-    const drawn = whenDrawn();
-    next.click();
-    await drawn;
-    place(dir * width * 0.4, 0, 0);
-    await frame();
-    await frame();
-    place(0, 1, 240, 'cubic-bezier(0,0,.2,1)');
-    await settle(250);
-    place(0, 1, 0);
+    const app = $('app').getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.className = 'swipe-ghost';
+    ghost.inert = true;
+    ghost.setAttribute('aria-hidden', 'true');
+    shown.forEach((el, i) => {
+      const copy = el.cloneNode(true);
+      copy.style.cssText = '';
+      copy.style.position = 'absolute';
+      copy.style.margin = '0';
+      copy.style.left = `${rects[i].left - dx - app.left}px`;
+      copy.style.top = `${rects[i].top - app.top}px`;
+      copy.style.width = `${rects[i].width}px`;
+      ghost.append(copy);
+    });
+    ghost.style.transform = `translateX(${dx}px)`;
+    $('app').append(ghost);
+    return ghost;
+  }
+
+  const ease = 'cubic-bezier(.2,.7,.2,1)';
+  const slide = (ghost, x, ms) => {
+    ghost.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none';
+    ghost.style.transform = `translateX(${x}px)`;
+  };
+
+  // The swipe has gone sideways towards a neighbour: switch to it now, so
+  // its page is loading - and usually there - while the finger is still
+  // down, riding beside the copy of this one.
+  function begin(target, dir) {
+    g.target = target;
+    g.dir = dir;
+    g.scroll = window.scrollY;
+    g.ghost = ghostOf(0);
+    place(dir * window.innerWidth, 1, 0);
+    g.drawn = whenDrawn();
+    target.click();
+  }
+
+  function follow(dx) {
+    const width = window.innerWidth;
+    // Towards the neighbour the pages follow the finger; the other way the
+    // page gives only a little.
+    const d = Math.sign(dx) === -g.dir ? dx : dx / 4;
+    g.dx = d;
+    slide(g.ghost, d, 0);
+    place(d + g.dir * width, 1, 0);
+  }
+
+  async function finish(swipe, commit) {
+    busy = true;
+    const width = window.innerWidth;
+    const { ghost, dir, dx, drawn, from, scroll } = swipe;
+    if (commit) {
+      await drawn;
+      const ms = Math.round(140 + 160 * (1 - Math.abs(dx) / width));
+      slide(ghost, -dir * width, ms);
+      place(0, 1, ms, ease);
+      await settle(ms + 20);
+      ghost.remove();
+      place(0, 1, 0);
+    } else {
+      // Not far enough: this page springs back, and the pill it was on is
+      // pressed again behind it.
+      slide(ghost, 0, 200);
+      place(dir * width, 1, 200, ease);
+      await settle(210);
+      await drawn;
+      const back = whenDrawn();
+      from.click();
+      await back;
+      ghost.remove();
+      place(0, 1, 0);
+      window.scrollTo(0, scroll);
+    }
     busy = false;
   }
 
@@ -5579,31 +5701,41 @@ function albumCardFromHome(album) {
       if (g.lock === 'y') { g = null; return; }
       const list = pills();
       const at = list.findIndex((b) => b.classList.contains('active'));
-      g.prev = at > 0 ? list[at - 1] : null;
-      g.next = at >= 0 && at < list.length - 1 ? list[at + 1] : null;
+      g.from = list[at];
+      const target = dx < 0 ? list[at + 1] : at > 0 ? list[at - 1] : null;
+      if (at >= 0 && target) begin(target, dx < 0 ? 1 : -1);
     }
     if (event.cancelable) event.preventDefault();
-    // Past the first or last pill the page gives, but only a little.
-    const edge = (dx > 0 && !g.prev) || (dx < 0 && !g.next);
-    g.dx = edge ? dx / 4 : dx;
     g.samples.push({ x: t.clientX, at: Date.now() });
     if (g.samples.length > 5) g.samples.shift();
-    place(g.dx, 1 - Math.min(Math.abs(g.dx) / window.innerWidth, 1) * 0.5, 0);
+    if (g.target) {
+      follow(dx);
+    } else {
+      // Past the first or last pill the page gives, but only a little.
+      g.dx = dx / 4;
+      place(g.dx, 1, 0);
+    }
   }, { passive: false });
 
   function release() {
-    if (!g || g.lock !== 'x') { g = null; return; }
-    const { dx, samples } = g;
+    const swipe = g;
+    g = null;
+    if (!swipe || swipe.lock !== 'x') return;
+    if (!swipe.target) { place(0, 1, 220, 'cubic-bezier(0,0,.2,1)'); return; }
+    const { dx, samples, dir } = swipe;
     const first = samples[0];
     const last = samples[samples.length - 1];
     const speed = first && last && last.at > first.at ? (last.x - first.x) / (last.at - first.at) : 0;
-    const target = dx < 0 ? g.next : g.prev;
-    g = null;
+    const towards = Math.sign(dx) === -dir;
     const far = Math.abs(dx) > window.innerWidth * 0.3;
-    const flung = Math.abs(dx) > 30 && Math.abs(speed) > 0.35 && Math.sign(speed) === Math.sign(dx);
-    if (target && (far || flung)) go(target, dx < 0 ? 1 : -1);
-    else place(0, 1, 220, 'cubic-bezier(0,0,.2,1)');
+    const flung = Math.abs(dx) > 30 && Math.abs(speed) > 0.35 && Math.sign(speed) === -dir;
+    finish(swipe, towards && (far || flung));
   }
   document.addEventListener('touchend', release, { passive: true });
-  document.addEventListener('touchcancel', () => { g = null; place(0, 1, 200, 'ease-out'); }, { passive: true });
+  document.addEventListener('touchcancel', () => {
+    const swipe = g;
+    g = null;
+    if (swipe && swipe.target) finish(swipe, false);
+    else place(0, 1, 200, 'ease-out');
+  }, { passive: true });
 })();

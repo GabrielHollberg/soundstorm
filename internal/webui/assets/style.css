@@ -2414,4 +2414,10 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
 /* A page mid-swipe hangs off the side of the screen. Unclipped, that made
    the page wider than the phone, which zoomed out and threw the tab bar
    about. clip, not hidden, so the sticky header still sticks. */
-#app { overflow-x: clip; }
+#app { overflow-x: clip; position: relative; }
+/* The page leaving during a swipe: a copy, laid where the page was. */
+.swipe-ghost { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+/* The photo viewer: the photos either side share the middle cell and ride
+   beside the photo during a swipe. */
+.pv-stage > img { grid-area: 1 / 1; }
+.pv-stage img.pv-side { visibility: hidden; pointer-events: none; will-change: transform; }

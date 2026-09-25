@@ -486,15 +486,21 @@ stops anything else doing it (clip, so the sticky header still works).
 
 A sideways swipe steps between the pills wherever a row of them picks the
 page - Music, Books, Watch - anywhere below the header, including the empty
-space under a short list. The page follows the finger (touchmove is not
-passive: once the gesture locks sideways it prevents the scroll), then
-either carries on off the side or springs back; a third of the screen or a
-flick commits. The next page slides in only once it has stopped changing,
-at most half a second, or what slides in is a blank. Not on an album,
-artist or playlist page (the swipe would throw it away), and not from
-something that scrolls sideways itself. `overscroll-behavior-x: none` while
-pills show, or Chrome also takes a rightward swipe as Back - the first test
-run landed on about:blank.
+space under a short list. It behaves as pages of one strip, edge to edge:
+the moment the gesture locks sideways towards a neighbour, the page is
+copied into a ghost laid where it was and the neighbour's pill is pressed,
+so its page loads while the finger is still down and rides beside the
+ghost. A third of the screen or a flick commits; otherwise the ghost springs
+back, the original pill is pressed again behind it, and the scroll position
+is put back. touchmove is not passive: once locked sideways it prevents the
+scroll. Not on an album, artist or playlist page (the swipe would throw it
+away), and not from something that scrolls sideways itself.
+`overscroll-behavior-x: none` while pills show, or Chrome also takes a
+rightward swipe as Back - the first test run landed on about:blank.
+
+The photo viewer does the same with two side images holding the previews
+either side, 16px apart; on commit the neighbour slides to the middle and
+the main image, hidden, swaps to it once decoded.
 
 **And `#app { overflow-x: clip }`, or the tab bar jumps.** A page mid-swipe
 hangs off the right of the screen, which made the page wider than the phone:
