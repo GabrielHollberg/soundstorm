@@ -449,7 +449,10 @@ Turn it on under **Account → Reach it from anywhere**, or install with
 second address of its own — `….net.soundstorm.dev` — pointing at your home's
 public address, with the same real certificate the home one has. Same login, no
 app for anyone to install, no account: send someone the link and they are at
-your login screen.
+your login screen. The link ends in the port, usually `:8099`
+(`https://….net.soundstorm.dev:8099`) — without it, a phone knocks on your
+router instead, and the router's answer looks like a site impersonating
+SoundStorm. The account panel always shows it with the port.
 
 Getting the traffic in is the part a home network makes awkward, and SoundStorm
 does as much of it as it can:

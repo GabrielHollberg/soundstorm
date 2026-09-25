@@ -296,7 +296,7 @@ function renderRemote(remote) {
   const status = $('remote-status');
 
   if (remote.enabled && remote.reachable && remote.name) {
-    const href = `https://${remote.name}`;
+    const href = awayAddress(remote);
     url.textContent = href;
     url.href = href;
     show(share, true);
@@ -614,6 +614,15 @@ $('quality-select').addEventListener('change', (event) => {
   note($('playback-note'), 'Saved. It applies from the next song.', false);
 });
 
+// The away-from-home address, with its port. The router forwards the port
+// SoundStorm listens on (8099 unless changed), not 443, so an address without
+// it knocks on the router's own door - which answers, if at all, with its own
+// certificate and a warning that the site is impersonating SoundStorm.
+function awayAddress(remote) {
+  const port = Number(remote.port) || 443;
+  return `https://${remote.name}${port === 443 ? '' : `:${port}`}`;
+}
+
 // The away-from-home address, filled in each time the account page opens:
 // only the owner's session carries it, so a member sees the home address alone.
 async function refreshDevices() {
@@ -621,7 +630,7 @@ async function refreshDevices() {
   const remote = ok && body && body.remote;
   const away = remote && remote.enabled && remote.reachable && remote.name;
   if (away) {
-    const href = `https://${remote.name}`;
+    const href = awayAddress(remote);
     $('devices-away-url').textContent = href;
     $('devices-away-url').href = href;
   }
