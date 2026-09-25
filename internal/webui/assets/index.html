@@ -401,17 +401,21 @@
   <!-- Photos are shown as Immich's large preview, a JPEG, whatever the
        original was: a browser can show neither a HEIC nor a raw file. The
        original is offered as a download instead. -->
-  <div id="photo-overlay" class="overlay hidden">
-    <button id="photo-close" class="close" type="button" aria-label="Close">&times;</button>
-    <button id="photo-prev" class="photo-nav photo-prev" type="button" aria-label="Previous photo">&lsaquo;</button>
-    <figure>
-      <img id="photo-image" alt="">
-      <figcaption>
-        <span id="photo-caption"></span>
-        <a id="photo-download" href="#">Download original</a>
-      </figcaption>
-    </figure>
-    <button id="photo-next" class="photo-nav photo-next" type="button" aria-label="Next photo">&rsaquo;</button>
+  <div id="photo-overlay" class="photo-viewer hidden" role="dialog" aria-label="Photo">
+    <div id="photo-stage" class="pv-stage">
+      <img id="photo-image" alt="" draggable="false">
+    </div>
+    <!-- The bar and the caption sit above the photo and fade away on a tap,
+         as a phone's own photo app does. The down arrow closes, as in Now
+         Playing; so does swiping down, or Escape. -->
+    <div class="pv-top">
+      <button id="photo-close" class="np-icon" type="button" aria-label="Close"></button>
+      <span id="photo-count" class="pv-count"></span>
+      <a id="photo-download" class="np-icon" href="#" aria-label="Download original" title="Download original"></a>
+    </div>
+    <div class="pv-bottom"><span id="photo-caption"></span></div>
+    <button id="photo-prev" class="photo-nav photo-prev" type="button" aria-label="Previous photo"></button>
+    <button id="photo-next" class="photo-nav photo-next" type="button" aria-label="Next photo"></button>
   </div>
 
   <div id="video-overlay" class="overlay hidden">

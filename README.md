@@ -330,9 +330,11 @@ device.
 
 ### Looking at pictures
 
-Pick **Pictures** for your photos, newest first, and tap one to open it. On a
-phone, **swipe left and right** to go through them and **swipe down** to close;
-on a computer, use the arrows or the arrow keys, and Escape. iPhone HEIC and
+Pick **Pictures** for your photos, newest first, and tap one to open it full
+screen. On a phone, **swipe left and right** to go through them, **swipe down**
+to close, **pinch** or **double-tap** to zoom (and drag to look around), and
+tap once to hide the bar and caption. On a computer, use the arrows or arrow
+keys, the mouse wheel to zoom, and Escape. iPhone HEIC and
 raw photos are shown as ordinary pictures, and **Download original** gives you
 the untouched file. A video clip plays in the video player.
 

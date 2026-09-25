@@ -1187,7 +1187,10 @@ function showPhoto(item) {
   const at = photos.findIndex((p) => p.id === item.id && p.sourceId === item.sourceId);
   $('photo-prev').disabled = at <= 0;
   $('photo-next').disabled = at < 0 || at >= photos.length - 1;
+  $('photo-count').textContent = at >= 0 && photos.length > 1 ? `${at + 1} of ${photos.length}` : '';
+  photoZoom.reset();
   show($('photo-overlay'), true);
+  document.body.classList.add('photo-open');
   // The photos either side, fetched now, so a swipe lands on a picture that is
   // already there rather than on a blank while it loads.
   for (const near of [photos[at - 1], photos[at + 1]]) {
@@ -1206,104 +1209,207 @@ function stepPhoto(by) {
 function closePhoto() {
   photoShown = null;
   show($('photo-overlay'), false);
+  document.body.classList.remove('photo-open');
+  $('photo-overlay').classList.remove('pv-bare');
+  $('photo-overlay').style.backgroundColor = '';
+  photoZoom.reset();
   $('photo-image').removeAttribute('src');
 }
 
 $('photo-close').addEventListener('click', closePhoto);
 $('photo-prev').addEventListener('click', () => stepPhoto(-1));
 $('photo-next').addEventListener('click', () => stepPhoto(1));
-// Swiping, on a touch screen: left and right step through the photos, the
-// picture following the finger and sliding off to make way for the next; down
-// closes the viewer, the background fading as it goes. A short drag springs
-// back, and so does one past the first or last photo.
-(function photoSwipe() {
-  const overlay = $('photo-overlay');
+// Looking at a photo, with a finger or a mouse:
+//   swipe left or right   the next or previous photo, which slides in;
+//   swipe down            close, the background fading as the photo drops;
+//   pinch                 zoom, about the point between the fingers;
+//   drag, when zoomed     look around the photo, which stops at its edges;
+//   double-tap            zoom in on that point, or back out;
+//   tap                   hide or show the bar and the caption;
+//   wheel, on a computer  zoom about the pointer; double-click as double-tap.
+// Swipes only step or close at normal size - zoomed in, a drag is looking
+// around. All of it is pointer events, so a finger and a mouse share one path.
+const photoZoom = (() => {
+  const stage = $('photo-stage');
   const img = $('photo-image');
-  let x0 = 0;
-  let y0 = 0;
-  let t0 = 0;
-  let dx = 0;
-  let dy = 0;
-  let axis = null; // 'x' or 'y', decided once the finger has moved
-  let tracking = false;
+  const overlay = $('photo-overlay');
+  const MAX = 5;
+  let s = 1;
+  let tx = 0;
+  let ty = 0;
+  const pointers = new Map();
+  let gesture = null;
+  let lastTap = { t: 0, x: 0, y: 0 };
+  let tapTimer = 0;
 
-  const setPose = (x, y, animate) => {
+  const centre = () => {
+    const r = stage.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  };
+  // Points relative to the middle of the stage, which is where the photo's
+  // transform is anchored.
+  const rel = (e) => { const c = centre(); return { x: e.clientX - c.x, y: e.clientY - c.y }; };
+  const clamp = () => {
+    const w = img.clientWidth * s;
+    const h = img.clientHeight * s;
+    const mx = Math.max(0, (w - stage.clientWidth) / 2);
+    const my = Math.max(0, (h - stage.clientHeight) / 2);
+    tx = Math.min(mx, Math.max(-mx, tx));
+    ty = Math.min(my, Math.max(-my, ty));
+  };
+  const apply = (animate) => {
     img.style.transition = animate ? 'transform 0.22s ease-out, opacity 0.22s ease-out' : 'none';
-    img.style.transform = `translate(${x}px, ${y}px)`;
-    const fade = axis === 'y' ? Math.max(0.35, 1 - Math.abs(y) / 400) : 1;
-    overlay.style.backgroundColor = `rgba(0, 0, 0, ${0.92 * fade})`;
+    img.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
   };
-  const reset = (animate) => {
-    setPose(0, 0, animate);
-    img.style.opacity = '';
-    if (!animate) overlay.style.backgroundColor = '';
+  const zoomAbout = (p, next, animate) => {
+    next = Math.min(MAX, Math.max(1, next));
+    // Keep the photo point under p where it is: p = t + q*s for the same q.
+    tx = p.x - ((p.x - tx) * next) / s;
+    ty = p.y - ((p.y - ty) * next) / s;
+    s = next;
+    if (s === 1) { tx = 0; ty = 0; }
+    clamp();
+    apply(animate);
   };
+  const reset = () => { s = 1; tx = 0; ty = 0; img.style.opacity = ''; apply(false); };
+  const toggleBars = () => overlay.classList.toggle('pv-bare');
 
-  overlay.addEventListener('touchstart', (event) => {
-    if (!photoShown || event.touches.length !== 1 || event.target.closest('button, a')) return;
-    tracking = true;
-    axis = null;
-    dx = dy = 0;
-    x0 = event.touches[0].clientX;
-    y0 = event.touches[0].clientY;
-    t0 = performance.now();
-  }, { passive: true });
-
-  overlay.addEventListener('touchmove', (event) => {
-    if (!tracking) return;
-    dx = event.touches[0].clientX - x0;
-    dy = event.touches[0].clientY - y0;
-    if (!axis) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+  const onTap = (e) => {
+    const now = performance.now();
+    const p = rel(e);
+    if (now - lastTap.t < 300 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
+      clearTimeout(tapTimer);
+      lastTap.t = 0;
+      zoomAbout(p, s > 1 ? 1 : 2.5, true);
+      return;
     }
-    if (event.cancelable) event.preventDefault();
-    if (axis === 'x') setPose(dx, 0, false);
-    else setPose(0, Math.max(0, dy), false);
-  }, { passive: false });
+    lastTap = { t: now, x: p.x, y: p.y };
+    // A single tap waits a moment, in case it is the first of two.
+    tapTimer = setTimeout(toggleBars, 300);
+  };
 
-  const end = () => {
-    if (!tracking) return;
-    tracking = false;
-    if (!axis) return;
-    const width = overlay.clientWidth;
-    const speed = (axis === 'x' ? Math.abs(dx) : dy) / Math.max(performance.now() - t0, 1);
-    if (axis === 'y') {
-      if (dy > 120 || (speed > 0.6 && dy > 40)) {
-        setPose(0, overlay.clientHeight, true);
+  const swipeEnd = (g) => {
+    const width = stage.clientWidth;
+    const speed = (g.axis === 'x' ? Math.abs(g.dx) : g.dy) / Math.max(performance.now() - g.t0, 1);
+    if (g.axis === 'y') {
+      if (g.dy > 120 || (speed > 0.6 && g.dy > 40)) {
+        ty = stage.clientHeight;
         img.style.opacity = '0';
-        setTimeout(() => { reset(false); closePhoto(); }, 220);
+        apply(true);
+        setTimeout(closePhoto, 200);
       } else {
-        reset(true);
-        setTimeout(() => { overlay.style.backgroundColor = ''; }, 220);
+        tx = 0; ty = 0; apply(true);
+        overlay.style.backgroundColor = '';
       }
       return;
     }
-    const by = dx < 0 ? 1 : -1;
+    const by = g.dx < 0 ? 1 : -1;
     const photos = photosOnScreen();
     const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
-    const hasNext = Boolean(photos[at + by]);
-    if (hasNext && (Math.abs(dx) > width * 0.25 || (speed > 0.5 && Math.abs(dx) > 30))) {
-      // Off to one side, then the next photo in from the other.
-      setPose(-by * width, 0, true);
+    if (photos[at + by] && (Math.abs(g.dx) > width * 0.25 || (speed > 0.5 && Math.abs(g.dx) > 30))) {
+      tx = -by * width; apply(true);
       setTimeout(() => {
         stepPhoto(by);
-        setPose(by * width, 0, false);
-        requestAnimationFrame(() => requestAnimationFrame(() => reset(true)));
+        tx = by * width; apply(false);
+        requestAnimationFrame(() => requestAnimationFrame(() => { tx = 0; apply(true); }));
       }, 200);
     } else {
-      reset(true);
+      tx = 0; apply(true);
     }
   };
-  overlay.addEventListener('touchend', end);
-  overlay.addEventListener('touchcancel', end);
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (!photoShown) return;
+    stage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, rel(e));
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      gesture = { kind: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), s0: s, tx0: tx, ty0: ty,
+        m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    } else if (pointers.size === 1) {
+      const p = rel(e);
+      gesture = { kind: s > 1 ? 'pan' : 'swipe', p0: p, tx0: tx, ty0: ty, t0: performance.now(),
+        dx: 0, dy: 0, axis: null, moved: false, touch: e.pointerType !== 'mouse' };
+    }
+  });
+
+  stage.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId) || !gesture) return;
+    pointers.set(e.pointerId, rel(e));
+    if (gesture.kind === 'pinch' && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const next = Math.min(MAX, Math.max(1, (gesture.s0 * d) / gesture.d0));
+      // The pinch point follows the fingers as they move, too.
+      tx = m.x - ((gesture.m0.x - gesture.tx0) * next) / gesture.s0;
+      ty = m.y - ((gesture.m0.y - gesture.ty0) * next) / gesture.s0;
+      s = next;
+      clamp();
+      apply(false);
+      return;
+    }
+    const p = rel(e);
+    const dx = p.x - gesture.p0.x;
+    const dy = p.y - gesture.p0.y;
+    if (!gesture.moved && Math.hypot(dx, dy) < 8) return;
+    gesture.moved = true;
+    if (gesture.kind === 'pan') {
+      tx = gesture.tx0 + dx;
+      ty = gesture.ty0 + dy;
+      clamp();
+      apply(false);
+    } else if (gesture.kind === 'swipe' && gesture.touch) {
+      if (!gesture.axis) gesture.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      gesture.dx = dx;
+      gesture.dy = dy;
+      if (gesture.axis === 'x') { tx = dx; ty = 0; }
+      else {
+        tx = 0; ty = Math.max(0, dy);
+        overlay.style.backgroundColor = `rgba(0, 0, 0, ${Math.max(0.3, 1 - ty / 450)})`;
+      }
+      apply(false);
+    }
+  });
+
+  const up = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    const g = gesture;
+    if (!g) return;
+    if (g.kind === 'pinch') {
+      // One finger left on the glass carries on as a drag of the zoomed photo.
+      if (pointers.size === 1) {
+        const p = [...pointers.values()][0];
+        gesture = { kind: 'pan', p0: p, tx0: tx, ty0: ty, moved: true };
+      } else {
+        gesture = null;
+        if (s < 1.05) zoomAbout({ x: 0, y: 0 }, 1, true);
+      }
+      return;
+    }
+    if (pointers.size) return;
+    gesture = null;
+    if (!g.moved) { onTap(e); return; }
+    if (g.kind === 'swipe' && g.axis) swipeEnd(g);
+  };
+  stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointercancel', up);
+
+  stage.addEventListener('wheel', (e) => {
+    if (!photoShown) return;
+    e.preventDefault();
+    zoomAbout(rel(e), s * Math.exp(-e.deltaY * 0.0022), false);
+  }, { passive: false });
+
+  return { reset, zoomed: () => s > 1 };
 })();
 
 document.addEventListener('keydown', (event) => {
   if (!photoShown) return;
   if (event.key === 'Escape') closePhoto();
-  else if (event.key === 'ArrowLeft') stepPhoto(-1);
-  else if (event.key === 'ArrowRight') stepPhoto(1);
+  else if (event.key === 'ArrowLeft' && !photoZoom.zoomed()) stepPhoto(-1);
+  else if (event.key === 'ArrowRight' && !photoZoom.zoomed()) stepPhoto(1);
 });
 
 // Ebooks open in SoundStorm's own reader. Downloading is still offered, but as a
@@ -2719,6 +2825,7 @@ const ICONS = {
   playlist: '<path d="M4 6h11M4 11h11M4 16h7M17 14v6M14 17h6"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
   back: '<path d="M15 6l-6 6 6 6"/>',
+  forward: '<path d="M9 6l6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   next: '<path d="M4 7h10M4 12h10M4 17h6M16 14l5 3-5 3z"/>',
   queue: '<path d="M4 7h16M4 12h16M4 17h10M18 15v6M15 18h6"/>',
@@ -5101,3 +5208,9 @@ $('crossfade-select').addEventListener('change', (event) => {
   localStorage.setItem(FADE_KEY, event.target.value);
   note($('playback-note'), 'Saved.', false);
 });
+
+// The photo viewer's buttons, drawn once the icons above exist.
+setIcon($('photo-close'), 'down');
+$('photo-download').replaceChildren(icon('download'));
+setIcon($('photo-prev'), 'back');
+setIcon($('photo-next'), 'forward');
