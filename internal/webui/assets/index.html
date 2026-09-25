@@ -81,8 +81,6 @@
         <input id="search-input" type="search" placeholder="Search everything&hellip;"
                autocomplete="off" aria-label="Search your library">
       </form>
-      <button id="account-toggle" class="ghost" type="button" aria-expanded="false"
-              aria-controls="account">Account</button>
     </header>
 
     <nav id="filters" aria-label="Filter by kind">
@@ -159,10 +157,8 @@
          and only because the server refuses the calls either way - hiding a
          control is presentation, not a permission. -->
     <section id="account" class="account hidden">
-      <button id="account-back" class="back" type="button">&larr; Back to your library</button>
       <div class="account-head">
-        <h1>Account</h1>
-        <button id="logout" class="ghost" type="button">Sign out</button>
+        <h1>Settings</h1>
       </div>
       <p id="account-who" class="muted"></p>
 
@@ -333,6 +329,10 @@
           <button type="submit">Add person</button>
         </form>
         <p id="people-note" class="muted hidden" role="status"></p>
+      </div>
+
+      <div class="account-section card account-signout">
+        <button id="logout" class="ghost" type="button">Sign out</button>
       </div>
     </section>
 
@@ -555,6 +555,7 @@
     <button type="button" data-tab="watch"><span class="tab-icon" data-icon="film"></span><span>Watch</span></button>
     <button type="button" data-tab="books"><span class="tab-icon" data-icon="book"></span><span>Books</span></button>
     <button type="button" data-tab="photos"><span class="tab-icon" data-icon="photo"></span><span>Photos</span></button>
+    <button type="button" data-tab="settings"><span class="tab-icon" data-icon="gear"></span><span>Settings</span></button>
   </nav>
 
   <!-- A short message with one action (Undo), above the player. -->

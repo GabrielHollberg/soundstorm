@@ -373,7 +373,6 @@ $('remote-toggle').addEventListener('change', async (event) => {
 function setAccountOpen(opening) {
   show($('account'), opening);
   $('app').classList.toggle('viewing-account', opening);
-  $('account-toggle').setAttribute('aria-expanded', String(opening));
   if (opening) {
     renderAccount();
     refreshDevices();
@@ -383,10 +382,6 @@ function setAccountOpen(opening) {
   }
 }
 
-$('account-toggle').addEventListener('click', () => {
-  setAccountOpen($('account').classList.contains('hidden'));
-});
-$('account-back').addEventListener('click', () => setAccountOpen(false));
 
 function note(el, message, isError) {
   el.textContent = message;
@@ -953,8 +948,8 @@ function renderResults(result, append) {
     // to carry it is gone. It has to say what to do, not just what happened.
     // A phone cannot drag anything, so it is pointed at the button instead.
     $('status').textContent = matchMedia('(pointer: coarse)').matches
-      ? 'Nothing here yet. Open Account and choose Add media to add music, films, books, documents or photos.'
-      : 'Nothing here yet. Drag music, films, books, documents or photos anywhere on this window, or use Add media in Account.';
+      ? 'Nothing here yet. Open Settings and choose Add media to add music, films, books, documents or photos.'
+      : 'Nothing here yet. Drag music, films, books, documents or photos anywhere on this window, or use Add media in Settings.';
   } else if (browsing) {
     // Empty shelf, full library: they filtered to a kind they have none of,
     // or its backend is still doing its first scan.
@@ -2883,6 +2878,7 @@ const ICONS = {
   film: '<path d="M4 6h16v12H4zM4 10h16M8 6l-1.5 4M13 6l-1.5 4M18 6l-1.5 4"/>',
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5zM5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/>',
   photo: '<path d="M4 6h16v12H4zM4 15l4.5-4.5 4 4 2.5-2.5L20 17M15.5 9.5h.01"/>',
+  gear: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   next: '<path d="M4 7h10M4 12h10M4 17h6M16 14l5 3-5 3z"/>',
   queue: '<path d="M4 7h16M4 12h16M4 17h10M18 15v6M15 18h6"/>',
@@ -5281,7 +5277,7 @@ function shelfAvailable(kind) {
 }
 
 function tabShelves(tab) {
-  return TABS[tab].filter((o) => shelfAvailable(o.kind));
+  return (TABS[tab] || []).filter((o) => shelfAvailable(o.kind));
 }
 
 function selectKind(kind) {
@@ -5290,6 +5286,12 @@ function selectKind(kind) {
 }
 
 function selectTab(tab) {
+  if (tab === 'settings') {
+    state.tab = 'settings';
+    setAccountOpen(true);
+    renderTabs();
+    return;
+  }
   if (!$('account').classList.contains('hidden')) setAccountOpen(false);
   const shelves = tabShelves(tab).filter((o) => !o.inMusicTabs);
   if (!shelves.length) return;
@@ -5316,7 +5318,7 @@ function renderTabs() {
   let any = false;
   for (const button of document.querySelectorAll('#tabs [data-tab]')) {
     const tab = button.dataset.tab;
-    const available = tab === 'home' || tabShelves(tab).some((o) => !o.inMusicTabs);
+    const available = tab === 'home' || tab === 'settings' || tabShelves(tab).some((o) => !o.inMusicTabs);
     show(button, available);
     any = any || (available && tab !== 'home');
     const on = tab === state.tab;
@@ -5327,7 +5329,7 @@ function renderTabs() {
   show($('tabs'), !$('app').classList.contains('hidden'));
   // The shelves inside the tab, when there is more than one to choose from.
   const box = $('subtabs');
-  const shelves = tabShelves(state.tab).filter((o) => !o.inMusicTabs);
+  const shelves = state.tab === 'settings' ? [] : tabShelves(state.tab).filter((o) => !o.inMusicTabs);
   box.replaceChildren();
   if (shelves.length > 1) {
     for (const o of shelves) {
@@ -5344,7 +5346,7 @@ function renderTabs() {
   }
   show(box, shelves.length > 1);
   // A tab whose shelves have all gone (emptied, or taken away): back home.
-  if (state.tab !== 'home' && !tabShelves(state.tab).length) selectTab('home');
+  if (state.tab !== 'home' && state.tab !== 'settings' && !tabShelves(state.tab).length) selectTab('home');
 }
 
 for (const button of document.querySelectorAll('#tabs [data-tab]')) {
@@ -5410,7 +5412,7 @@ async function renderHome(seq) {
     const empty = document.createElement('p');
     empty.className = 'muted home-empty';
     empty.textContent = state.libraryEmpty
-      ? 'Nothing here yet. Open Account and choose Add media to add music, films, books or photos.'
+      ? 'Nothing here yet. Open Settings and choose Add media to add music, films, books or photos.'
       : 'Nothing new lately.';
     view.append(empty);
   }

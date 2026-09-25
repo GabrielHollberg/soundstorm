@@ -176,10 +176,10 @@ place is listed with the reason rather than dumped somewhere.
 ![Dragging files onto the window](docs/shots/15-drop.png)
 
 The app opens on your library rather than on a form, so there is nothing to
-go looking for: a search box, one **Account** button, and your media. Five
+go looking for: a search box and your media. Six
 tabs get you around — along the bottom of a phone, down the side of a
 computer: **Home**, **Music**, **Watch**
-(films and TV), **Books** (audiobooks, ebooks and documents) and **Photos**.
+(films and TV), **Books** (audiobooks, ebooks and documents), **Photos** and **Settings**.
 A tab with nothing in it is hidden, and each remembers where you were.
 
 **Home** is a front page: what you are part way through, then a row each of
@@ -189,7 +189,7 @@ on every other shelf — new films, TV, audiobooks, books and photos — each wi
 search box says what it will search — *Search music*, *Search albums*,
 *Search your playlists* — for whichever page you are on.
 
-On a phone, or anything else that cannot drag, open **Account** and choose
+On a phone, or anything else that cannot drag, open **Settings** and choose
 **Add media**. The same card has **Check for new files**, for anything copied
 into the folders some other way.
 
@@ -299,7 +299,7 @@ A song or album with no cover of its own shows the SoundStorm cloud.
 - **No gaps between songs.** The next song downloads while this one plays, so
   a live album or a mix flows straight on. That matters most on a phone
   away from your router.
-- **Crossfade and data saver.** Under **Account → Playback on this
+- **Crossfade and data saver.** Under **Settings → Playback on this
   device**: blend songs into each other over 3 to 12 seconds (an album
   playing in order still flows gaplessly), and stream at 96 to 256 kbps, or
   lower only on mobile data, to save data. Downloads keep the original.
@@ -325,7 +325,7 @@ breathing dots through the instrumental breaks. In the full-screen lyrics, tap
 a line to jump there.
 
 For songs without any, the owner can turn on **Find missing lyrics online** in
-Account. SoundStorm then asks [LRCLIB](https://lrclib.net), a free lyrics
+Settings. SoundStorm then asks [LRCLIB](https://lrclib.net), a free lyrics
 library, the first time each such song plays, sending only its artist, title
 and album. It is off until you turn it on, lyrics in your own files always come
 first, and what it finds is kept by SoundStorm rather than written into your
@@ -409,7 +409,7 @@ type on a phone. Either works. To find the plain address again:
 | macOS | `ipconfig getifaddr en0` |
 | Linux | `hostname -I` |
 
-**Account → Use on your phone or TV** shows the address to type, with a Copy
+**Settings → Use on your phone or TV** shows the address to type, with a Copy
 button, and the away-from-home one too once [remote access](#from-outside-the-house)
 is on.
 
@@ -459,7 +459,7 @@ ways to reach SoundStorm from everywhere else.
 
 ##### Remote access — the simple one
 
-Turn it on under **Account → Reach it from anywhere**, or install with
+Turn it on under **Settings → Reach it from anywhere**, or install with
 `-Remote` (Windows) / `--remote` (Linux, macOS). SoundStorm gives your server a
 second address of its own — `….net.soundstorm.dev` — pointing at your home's
 public address, with the same real certificate the home one has. Same login, no
@@ -667,7 +667,7 @@ docker compose run --rm soundstorm reset-password
 docker compose up -d
 ```
 
-It prints a new password for the account and you change it under **Account**
+It prints a new password for the account and you change it under **Settings**
 once you are in. With more than one account, add the name:
 `reset-password gabe`.
 
@@ -705,12 +705,12 @@ docker compose up -d          # start it again
 
 ### Giving other people a login
 
-The first account is the owner. From **Account → People** the owner adds
+The first account is the owner. From **Settings → People** the owner adds
 everyone else: a name and a password, and that is the whole ceremony. There is
 no open registration and no invite link, deliberately — a server that might be
 reachable from outside a house should not let a stranger create an account.
 
-Changing your password under **Account** asks for the current one and signs you
+Changing your password under **Settings** asks for the current one and signs you
 out on every other device. When the owner resets somebody's password, that
 person is signed out everywhere too.
 

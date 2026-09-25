@@ -2398,3 +2398,11 @@ body { overflow-x: clip; }
 .home-strip .badge { display: none; }
 .home-empty { padding: 30px 20px; }
 #app.viewing-account #home-view { display: none; }
+
+/* Sign out, last on the Settings page. */
+.account-signout { display: flex; justify-content: center; }
+.account-signout button { min-width: 180px; }
+/* Six tabs on a phone: a little tighter, labels still whole. */
+@media (max-width: 899px) {
+  .tabs button { font-size: 11px; padding: 6px 0; }
+}

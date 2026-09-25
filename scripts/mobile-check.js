@@ -134,10 +134,10 @@ async function check(page, name) {
   await page.waitForTimeout(2500);
   await check(page, 'results');
 
-  await page.click('#account-toggle');
+  await page.click('#tabs [data-tab="settings"]');
   await page.waitForTimeout(400);
   await check(page, 'account');
-  await page.click('#account-toggle');
+  await page.click('#tabs [data-tab="home"]');
 
   // The dock and video overlay need backends a bare instance has not got, so
   // their markup is filled in directly. The CSS under test is the real CSS.
