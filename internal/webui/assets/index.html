@@ -124,7 +124,12 @@
       <button type="button" role="tab" data-view="artists">Artists</button>
       <button type="button" role="tab" data-view="playlists" id="playlists-tab">Playlists</button>
       <button type="button" role="tab" data-view="downloads" class="hidden" id="downloads-tab">Downloads</button>
-      <select id="album-order" class="album-order hidden" aria-label="Order albums by">
+    </div>
+    <!-- How albums are ordered: its own line under the row, never squeezed
+         into it - that once made the row wider than a phone. -->
+    <div id="album-sort" class="album-sort hidden">
+      <label>Sort
+        <select id="album-order" class="album-order" aria-label="Order albums by">
         <option value="name">A to Z</option>
         <option value="newest">Recently added</option>
         <option value="artist">By artist</option>
@@ -132,6 +137,7 @@
         <option value="frequent">Most played</option>
         <option value="random">Random</option>
       </select>
+      </label>
     </div>
 
     <!-- Only when the library's disk is getting full: said before an upload

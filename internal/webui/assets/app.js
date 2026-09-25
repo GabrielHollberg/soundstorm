@@ -862,7 +862,7 @@ async function runSearch() {
     && !(state.musicView === 'mixes' && state.query);
   show($('music-tabs'), state.kind === 'music' || state.kind === 'playlists');
   markMusicTabs();
-  show($('album-order'), state.kind === 'music' && state.musicView === 'albums');
+  show($('album-sort'), state.kind === 'music' && state.musicView === 'albums');
   show($('music-view'), musicBrowse);
   show($('playlists-view'), state.kind === 'playlists');
   show($('results'), state.kind !== 'playlists' && !musicBrowse);

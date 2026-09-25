@@ -457,6 +457,7 @@ header {
 #app.viewing-account #space-warning,
 #app.viewing-account #continue,
 #app.viewing-account #music-tabs,
+#app.viewing-account #album-sort,
 #app.viewing-account #music-view,
 #app.viewing-account #results-bar,
 #app.viewing-account #select-bar,
@@ -1279,30 +1280,36 @@ body.dock-open .hold-tip { bottom: calc(var(--dock-space) + 12px); }
 
 /* Albums and artists ------------------------------------------------------ */
 
+/* The music row: pills that scroll sideways inside their own strip when
+   they do not fit, so they can never make the page wider than the phone. */
 .music-tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin: 12px 20px 0;
-  padding: 3px;
-  width: max-content;
-  max-width: calc(100% - 40px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 2px 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.music-tabs::-webkit-scrollbar { display: none; }
 .music-tabs [role="tab"] {
-  background: none;
-  border: none;
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--muted);
-  padding: 6px 14px;
-  border-radius: 7px;
+  font: inherit;
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 14px;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
 .music-tabs [role="tab"]:hover { color: var(--text); filter: none; }
-.music-tabs [role="tab"].active { background: var(--surface-2); color: var(--text); }
+.music-tabs [role="tab"].active { background: var(--text); border-color: var(--text); color: var(--bg); }
+.album-sort { margin: 10px 20px 0; font-size: 13px; color: var(--muted); }
+.album-sort label { display: inline-flex; align-items: center; gap: 8px; }
 .album-order {
   margin-left: 6px;
   background: var(--bg);
@@ -2340,27 +2347,34 @@ body.dock-open .hold-tip { bottom: calc(var(--dock-space) + var(--tabbar) + 12px
 body.dock-open .toast { bottom: calc(var(--dock-space) + var(--tabbar) + 18px); }
 body:not(.dock-open) .toast { bottom: calc(var(--tabbar) + 18px); }
 
-/* The shelves inside a tab: a segmented switch under the search box. */
+/* The shelves inside a tab: the same pills as the music row. */
 .subtabs {
-  display: inline-flex;
-  gap: 4px;
-  margin: 12px 20px 0;
-  padding: 4px;
-  border-radius: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 2px 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.subtabs::-webkit-scrollbar { display: none; }
 .subtabs button {
-  padding: 7px 14px;
-  border: none;
-  border-radius: 9px;
-  background: none;
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--muted);
   font: inherit;
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
 .subtabs button:hover { filter: none; color: var(--text); }
-.subtabs button.active { background: var(--surface-2); color: var(--text); }
+.subtabs button.active { background: var(--text); border-color: var(--text); color: var(--bg); }
 #app.viewing-account #subtabs { display: none; }
+
+/* Nothing may make the page wider than the screen: a phone then zooms out to
+   fit it, and the tab bar drops off the bottom. clip, not hidden, so the
+   sticky header keeps working. */
+body { overflow-x: clip; }
