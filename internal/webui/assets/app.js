@@ -3671,6 +3671,10 @@ function markMusicTabs() {
     const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
+    // A swipe can land on a pill that is off the side of its strip.
+    if (on && !$('music-tabs').classList.contains('hidden')) {
+      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   }
 }
 
@@ -5465,3 +5469,71 @@ function albumCardFromHome(album) {
   });
   return clone;
 }
+
+/* ------------------------------------------------- swiping between music tabs */
+
+// Under Music, a sideways swipe on the page steps to the next or previous
+// pill - Mixes, Songs, Albums, Artists, Playlists - as pressing it would.
+// Not on an album, artist or playlist page (those have a back button and
+// the swipe would throw the page away), and not when the swipe began on
+// something that scrolls sideways itself, like a strip of mixes.
+(function musicSwipe() {
+  const pages = ['results', 'music-view', 'playlists-view'];
+  let start = null;
+
+  function scrollsSideways(el) {
+    for (; el && el !== document.body; el = el.parentElement) {
+      if (el.scrollWidth > el.clientWidth + 1) {
+        const overflow = getComputedStyle(el).overflowX;
+        if (overflow === 'auto' || overflow === 'scroll') return true;
+      }
+      if (el.matches('input, select, textarea, button.drag-handle, .reorder-handle')) return true;
+    }
+    return false;
+  }
+
+  // The whole page below the header counts, including the empty space under
+  // a short list - but not the header, the pills, the tab bar, the player or
+  // anything laid over the page.
+  function eligible(target) {
+    if ($('music-tabs').classList.contains('hidden') || $('app').classList.contains('hidden')) return false;
+    if ($('app').classList.contains('viewing-account')) return false;
+    const onPage = target === document.body || target === document.documentElement || target.closest('#app');
+    if (!onPage || target.closest('header, #music-tabs, #album-sort, #tabs')) return false;
+    if (pages.some((id) => !$(id).classList.contains('hidden') && $(id).querySelector(':scope > .back'))) return false;
+    return !scrollsSideways(target);
+  }
+
+  document.addEventListener('touchstart', (event) => {
+    start = null;
+    if (event.touches.length !== 1 || !eligible(event.target)) return;
+    const t = event.touches[0];
+    start = { x: t.clientX, y: t.clientY, at: Date.now() };
+  }, { passive: true });
+  document.addEventListener('touchend', (event) => {
+    if (!start) return;
+    const t = event.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const quick = Date.now() - start.at < 700;
+    start = null;
+    if (!quick || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+    const tabs = [...document.querySelectorAll('#music-tabs [data-view]')]
+      .filter((tab) => !tab.classList.contains('hidden'));
+    const at = tabs.findIndex((tab) => tab.classList.contains('active'));
+    const next = tabs[at + (dx < 0 ? 1 : -1)];
+    if (at < 0 || !next) return;
+    next.click();
+    const slide = dx < 0 ? 'swipe-in-left' : 'swipe-in-right';
+    for (const id of pages) {
+      const el = $(id);
+      el.classList.remove('swipe-in-left', 'swipe-in-right');
+      void el.offsetWidth;
+      el.classList.add(slide);
+    }
+  }, { passive: true });
+  document.addEventListener('touchcancel', () => { start = null; }, { passive: true });
+  for (const id of pages) {
+    $(id).addEventListener('animationend', () => $(id).classList.remove('swipe-in-left', 'swipe-in-right'));
+  }
+})();

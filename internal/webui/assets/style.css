@@ -2406,3 +2406,16 @@ body { overflow-x: clip; }
 @media (max-width: 899px) {
   .tabs button { font-size: 11px; padding: 6px 0; }
 }
+
+/* The new music tab slides in from the side it was swiped from. */
+@keyframes swipe-in-left { from { opacity: 0; transform: translateX(32px); } }
+@keyframes swipe-in-right { from { opacity: 0; transform: translateX(-32px); } }
+.swipe-in-left { animation: swipe-in-left 0.22s ease-out; }
+.swipe-in-right { animation: swipe-in-right 0.22s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .swipe-in-left, .swipe-in-right { animation: none; }
+}
+
+/* Under Music a sideways swipe changes tab, so it must not also be the
+   browser going back a page. */
+html:has(#music-tabs:not(.hidden)) { overscroll-behavior-x: none; }
