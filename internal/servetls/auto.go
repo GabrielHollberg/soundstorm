@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -344,10 +345,25 @@ func (a *autoCert) step(ctx context.Context) error {
 			}
 			a.checkUpstream(ctx)
 		}
-		if name := a.publishRemote(ctx, reg); name != "" {
+		a.mu.RLock()
+		had := a.publicName
+		a.mu.RUnlock()
+		name, definite := a.publishRemote(ctx, reg)
+		switch {
+		case name != "":
 			publicName = name
 			domains = append(domains, name)
-		} else {
+		case !definite && had != "":
+			// The name service could not be asked - it timed out, was
+			// redeploying, or was busy - which says nothing about this
+			// install. Dropping the remote name on that would take it out of
+			// the certificate and break it for every visitor, over an outage
+			// that is not theirs; seen for real, when a redeploy of the service
+			// did exactly that. Keep it until the service answers.
+			publicName = had
+			domains = append(domains, had)
+			a.log.Warn("could not check remote access with the name service; keeping the remote name until it answers")
+		default:
 			a.log.Warn("remote access is not reachable on any address; serving on the LAN name only")
 		}
 	} else {
@@ -431,10 +447,14 @@ func (a *autoCert) step(ctx context.Context) error {
 // so the service sees a source of that family and publishes the matching record;
 // a box without one simply fails to dial, which is the norm for IPv6 and not
 // worth a warning on every step.
-func (a *autoCert) publishRemote(ctx context.Context, reg names.Registration) string {
-	var name string
+//
+// definite reports whether a failure was the service's own verdict - it tried
+// this install from the internet and could not reach it (424) - rather than
+// the service itself being unreachable, slow or busy, which proves nothing.
+func (a *autoCert) publishRemote(ctx context.Context, reg names.Registration) (name string, definite bool) {
 	if n, err := a.names.SetPublicVia(ctx, reg, a.port, "tcp4"); err != nil {
 		a.log.Info("remote access over IPv4 is not reachable", "err", err)
+		definite = verdict(err)
 	} else {
 		name = n
 		a.log.Info("remote access is reachable over IPv4", "name", n)
@@ -445,7 +465,15 @@ func (a *autoCert) publishRemote(ctx context.Context, reg names.Registration) st
 		name = n
 		a.log.Info("remote access is reachable over IPv6", "name", n)
 	}
-	return name
+	return name, definite
+}
+
+// verdict reports whether an error from publishing is the name service's
+// finding that the install is unreachable, as opposed to a failure to hear
+// from the service at all.
+func verdict(err error) bool {
+	var se *names.StatusError
+	return errors.As(err, &se) && se.Status == http.StatusFailedDependency
 }
 
 func (a *autoCert) forget() {

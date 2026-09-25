@@ -536,3 +536,60 @@ func TestRemoteAccessAddsThePublicName(t *testing.T) {
 		t.Error("no reachability answer once registered")
 	}
 }
+
+// A name service that cannot be asked - redeploying, timing out, busy - says
+// nothing about this install, and must not cost it its remote name: that took
+// the name out of the certificate on a real install, over an outage of the
+// service's own. Only the service's verdict that the install is unreachable
+// (424) drops it.
+func TestAnUnreachableNameServiceKeepsTheRemoteName(t *testing.T) {
+	const publicName = "abcdefghij.net.soundstorm.dev"
+	dns := &memDNS{records: map[string]string{}}
+	svc := &names.Server{Secret: []byte("a-secret-that-is-long-enough-to-use"), Zone: "soundstorm.dev", Label: "home", DNS: dns, Log: quietLog()}
+	h := svc.Handler()
+	answer := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/v1/public" {
+			if answer != http.StatusOK {
+				http.Error(w, `{"error":"no"}`, answer)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"name":"` + publicName + `","ip":"203.0.113.7"}`))
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	authority := newStubAuthority(t)
+	s, err := Load(Config{
+		Mode: ModeAuto, Dir: t.TempDir(), Hosts: []string{"192.168.0.19"},
+		NamesURL: srv.URL, Remote: true, Port: 8099, Log: quietLog(),
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	s.auto.newACME = func(*ecdsa.PrivateKey) issuer { return authority }
+	if err := s.auto.step(context.Background()); err != nil || s.RemoteName() != publicName {
+		t.Fatalf("first step: err %v, remote name %q", err, s.RemoteName())
+	}
+
+	for _, down := range []int{http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusTooManyRequests} {
+		answer = down
+		if err := s.auto.step(context.Background()); err != nil {
+			t.Fatalf("step with the service answering %d: %v", down, err)
+		}
+		if s.RemoteName() != publicName || s.auto.current(publicName) == nil {
+			t.Fatalf("the service answering %d dropped the remote name", down)
+		}
+	}
+
+	answer = http.StatusFailedDependency
+	if err := s.auto.step(context.Background()); err != nil {
+		t.Fatalf("step with the port closed: %v", err)
+	}
+	if s.RemoteName() != "" {
+		t.Errorf("remote name %q kept after the service found the port closed", s.RemoteName())
+	}
+}
