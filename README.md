@@ -421,11 +421,6 @@ bookmark: its own icon, its own window, and no address bar eating the top of
 the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
 → Install app.
 
-**On Android**, the button with four corners, next to Account, makes
-SoundStorm full screen: the status bar and the navigation bar go until you tap
-it again. (A web app can only hide both together, and an iPhone does not let a
-web page hide either.)
-
 > **On Android, install it from the secure address**, the
 > `https://….home.soundstorm.dev` one. Chrome only offers "Install app" on a
 > page with a certificate it trusts, which that address has and a plain

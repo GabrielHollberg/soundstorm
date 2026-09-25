@@ -412,6 +412,10 @@ judged on in its first minute:
   Android only, rather than any tap: asked for, never assumed. It hides both
   bars together - Chrome gives a page no way to hide the navigation bar and
   keep the status bar.
+
+  **Then removed, at the owner's request.** The app opens and stays like any
+  installed app, status and navigation bars showing; nothing asks for full
+  screen any more. The manifest stays `standalone`.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.

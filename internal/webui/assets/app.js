@@ -2886,8 +2886,6 @@ const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   next: '<path d="M4 7h10M4 12h10M4 17h6M16 14l5 3-5 3z"/>',
   queue: '<path d="M4 7h16M4 12h16M4 17h10M18 15v6M15 18h6"/>',
-  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
-  collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
   play: '<path d="M8 5.5v13l11-6.5z"/>',
   pause: '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>',
   prev: '<path d="M6 5v14M19 5.5v13L9 12z"/>',
@@ -4088,34 +4086,6 @@ function closeNowPlaying() {
   document.body.classList.remove('np-open');
   $('now-playing').style.transform = '';
 }
-
-// Full screen, by button, on Android only. It is the one way a web page can
-// hide the status and navigation bars, and it hides both together - Chrome has
-// no switch for one without the other. The app opens like any other, status bar
-// in its own colour: launching full screen from the manifest left the camera
-// cutout letterboxed in black until the page itself asked, and asking on any
-// tap was more than was wanted. An iPhone offers full screen only to video, so
-// it gets no button.
-(function fullScreenButton() {
-  const root = document.documentElement;
-  const button = $('fullscreen-toggle');
-  const android = /Android/i.test(navigator.userAgent);
-  if (!android || !root.requestFullscreen) return;
-  const render = () => {
-    const on = Boolean(document.fullscreenElement);
-    button.replaceChildren(icon(on ? 'collapse' : 'expand'));
-    button.setAttribute('aria-pressed', String(on));
-    button.title = on ? 'Leave full screen' : 'Full screen';
-    button.setAttribute('aria-label', button.title);
-  };
-  button.addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
-  });
-  document.addEventListener('fullscreenchange', render);
-  render();
-  show(button, true);
-})();
 
 // Moving between the big cover and the full lyrics is one smooth change, not
 // a jump: the cover shrinks into the small one by the title (and back), and
