@@ -1518,7 +1518,8 @@ document.addEventListener('keydown', (event) => {
 // choice rather than the only option - a result that leaves SoundStorm is a seam,
 // and this was the last one.
 function readBook(item) {
-  stopAudio();
+  // Music or an audiobook carries on: reading to something is the point,
+  // and the player stays on top of the book (see .reader in the CSS).
   closeVideo();
 
   if (window.soundstormReader) {

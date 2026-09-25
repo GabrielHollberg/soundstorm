@@ -2448,3 +2448,12 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
   pointer-events: none;
   margin: 0;
 }
+
+/* Reading while something plays: the player floats over the book, at the
+   bottom of the screen (the tab bar is under the reader), and the page is
+   laid out above it so no line of the book hides behind the card. */
+body:has(#reader-overlay:not(.hidden)) .dock {
+  z-index: 30;
+  bottom: max(12px, env(safe-area-inset-bottom));
+}
+body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-space) - 12px); }

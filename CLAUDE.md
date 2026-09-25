@@ -2415,6 +2415,13 @@ still has no dependencies and no go.sum.
 What is ours: SoundStorm unzips server-side (`/api/book/resource`), so no zip
 library runs in the browser, and it remembers reading position across devices.
 
+**Reading while listening.** Opening a book no longer stops the music or
+the audiobook - reading to something is the point. The mini-player floats
+over the reader (above its z-index, at the very bottom since the tab bar is
+under the reader) and the reader's page is laid out above the card, so no
+line hides behind it; Now Playing still opens over both. A film still stops,
+since it would play behind the book.
+
 ## Verified against live servers
 
 These were checked on a running stack, not inferred. Re-verify if versions move.
