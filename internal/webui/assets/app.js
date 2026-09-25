@@ -962,8 +962,14 @@ function renderResults(result, append) {
 // already on screen. It captures the sequence instead, so that a page which
 // comes back after the user has typed something else is dropped rather than
 // appended under results it has nothing to do with.
-async function loadMore() {
-  if (state.loadingMore || !state.hasMore) return;
+function loadMore() {
+  if (state.loadingMore) return state.loadMorePromise;
+  if (!state.hasMore) return Promise.resolve();
+  state.loadMorePromise = fetchMore();
+  return state.loadMorePromise;
+}
+
+async function fetchMore() {
   state.loadingMore = true;
   show($('loading-more'), true);
 
@@ -1165,6 +1171,7 @@ function photosOnScreen() {
 }
 
 let photoShown = null;
+let photoWaiting = false;
 
 const photoPreview = (item) => `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId + '@preview')}`;
 
@@ -1185,9 +1192,11 @@ function showPhoto(item) {
 
   const photos = photosOnScreen();
   const at = photos.findIndex((p) => p.id === item.id && p.sourceId === item.sourceId);
-  $('photo-prev').disabled = at <= 0;
-  $('photo-next').disabled = at < 0 || at >= photos.length - 1;
-  $('photo-count').textContent = at >= 0 && photos.length > 1 ? `${at + 1} of ${photos.length}` : '';
+  renderPhotoPlace();
+  // The viewer walks the same list as the page, which arrives fifty at a time
+  // as it is scrolled. Nearing the end of what has arrived, it fetches the
+  // next page, so swiping carries on through the whole shelf.
+  if (at >= photos.length - 3 && state.hasMore) loadMore().then(renderPhotoPlace);
   photoZoom.reset();
   show($('photo-overlay'), true);
   document.body.classList.add('photo-open');
@@ -1198,12 +1207,38 @@ function showPhoto(item) {
   }
 }
 
-function stepPhoto(by) {
+// Where the photo on screen is in the list: the arrows, and "12 of 50+"
+// while there are more to come.
+function renderPhotoPlace() {
   if (!photoShown) return;
   const photos = photosOnScreen();
   const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
+  $('photo-prev').disabled = at <= 0;
+  $('photo-next').disabled = at < 0 || (at >= photos.length - 1 && !state.hasMore);
+  $('photo-count').textContent = at >= 0 && (photos.length > 1 || state.hasMore)
+    ? `${at + 1} of ${photos.length}${state.hasMore ? '+' : ''}` : '';
+}
+
+async function stepPhoto(by) {
+  if (!photoShown) return false;
+  let photos = photosOnScreen();
+  const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
+  if (!photos[at + by] && by > 0 && state.hasMore) {
+    // Faster than the page could arrive: wait for it, and take no other step
+    // meanwhile - each would start from this same photo and land on the same
+    // next one.
+    if (photoWaiting) return false;
+    photoWaiting = true;
+    try {
+      await loadMore();
+    } finally {
+      photoWaiting = false;
+    }
+    photos = photosOnScreen();
+  }
   const next = photos[at + by];
   if (next) showPhoto(next);
+  return Boolean(next);
 }
 
 function closePhoto() {
@@ -1306,10 +1341,11 @@ const photoZoom = (() => {
     const by = g.dx < 0 ? 1 : -1;
     const photos = photosOnScreen();
     const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
-    if (photos[at + by] && (Math.abs(g.dx) > width * 0.25 || (speed > 0.5 && Math.abs(g.dx) > 30))) {
+    const more = photos[at + by] || (by > 0 && state.hasMore);
+    if (more && (Math.abs(g.dx) > width * 0.25 || (speed > 0.5 && Math.abs(g.dx) > 30))) {
       tx = -by * width; apply(true);
-      setTimeout(() => {
-        stepPhoto(by);
+      setTimeout(async () => {
+        await stepPhoto(by);
         tx = by * width; apply(false);
         requestAnimationFrame(() => requestAnimationFrame(() => { tx = 0; apply(true); }));
       }, 200);
