@@ -5543,6 +5543,8 @@ function albumCardFromHome(album) {
   const pages = ['album-sort', 'continue', 'results-bar', 'results', 'music-view', 'playlists-view'];
   let g = null;      // the gesture under way
   let busy = false;  // a switch is animating
+  let lift = 0;      // how far the real pages are drawn down, to look scrolled to the top
+  const listPages = new Set(['results', 'music-view', 'playlists-view']);
 
   const pills = () => {
     const row = ['music-tabs', 'subtabs'].map($).find((el) => !el.classList.contains('hidden'));
@@ -5572,14 +5574,14 @@ function albumCardFromHome(album) {
     return !scrollsSideways(target);
   }
 
-  function place(x, opacity, ms, easing) {
+  function place(x, ms, easing) {
     for (const id of pages) {
       const el = $(id);
-      el.style.transition = ms ? `transform ${ms}ms ${easing}, opacity ${ms}ms ${easing}` : 'none';
-      el.style.transform = x ? `translateX(${x}px)` : '';
-      el.style.opacity = opacity === 1 ? '' : String(opacity);
+      el.style.transition = ms ? `transform ${ms}ms ${easing}` : 'none';
+      el.style.transform = x || lift ? `translate3d(${x}px, ${lift}px, 0)` : '';
     }
   }
+  const promote = (on) => { for (const id of pages) $(id).style.willChange = on ? 'transform' : ''; };
   const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
@@ -5597,30 +5599,43 @@ function albumCardFromHome(album) {
     });
   }
 
-  // The page that is leaving is a copy laid where it was, so it can carry
-  // on off the side while the real one - already the next pill's - follows
-  // right behind it, edge to edge, as the pages of one strip.
-  function ghostOf(dx) {
+  // The page that is leaving is laid where it was in a ghost: its own nodes,
+  // moved rather than copied, so its pictures stay drawn and nothing is
+  // rebuilt. It carries on off the side while the real page - already the
+  // next pill's - follows right behind it, edge to edge.
+  function ghostOf() {
     const shown = pages.map($).filter((el) => !el.classList.contains('hidden'));
-    const rects = shown.map((el) => el.getBoundingClientRect());
-    // The next page starts at its top, as pressing the pill would show it.
-    window.scrollTo(0, 0);
     const app = $('app').getBoundingClientRect();
     const ghost = document.createElement('div');
     ghost.className = 'swipe-ghost';
     ghost.inert = true;
     ghost.setAttribute('aria-hidden', 'true');
+    // Every place is measured before anything moves, or each move would
+    // shift the ones after it.
+    const rects = shown.map((el) => el.getBoundingClientRect());
     shown.forEach((el, i) => {
-      const copy = el.cloneNode(true);
-      copy.style.cssText = '';
-      copy.style.position = 'absolute';
-      copy.style.margin = '0';
-      copy.style.left = `${rects[i].left - dx - app.left}px`;
-      copy.style.top = `${rects[i].top - app.top}px`;
-      copy.style.width = `${rects[i].width}px`;
-      ghost.append(copy);
+      const r = rects[i];
+      let shell;
+      if (listPages.has(el.id)) {
+        // A list: its own cards, moved, which the next render replaces anyway.
+        shell = el.cloneNode(false);
+        shell.append(...el.childNodes);
+      } else {
+        // Fixed parts with ids of their own (the count, Select, the Continue
+        // row) stay where they are; the ghost gets a copy.
+        shell = el.cloneNode(true);
+        for (const img of shell.querySelectorAll('img')) img.loading = 'eager';
+        for (const node of shell.querySelectorAll('[id]')) node.removeAttribute('id');
+      }
+      shell.removeAttribute('id');
+      shell.style.cssText = '';
+      shell.style.position = 'absolute';
+      shell.style.margin = '0';
+      shell.style.left = `${r.left - app.left}px`;
+      shell.style.top = `${r.top - app.top}px`;
+      shell.style.width = `${r.width}px`;
+      ghost.append(shell);
     });
-    ghost.style.transform = `translateX(${dx}px)`;
     $('app').append(ghost);
     return ghost;
   }
@@ -5628,58 +5643,76 @@ function albumCardFromHome(album) {
   const ease = 'cubic-bezier(.2,.7,.2,1)';
   const slide = (ghost, x, ms) => {
     ghost.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none';
-    ghost.style.transform = `translateX(${x}px)`;
+    ghost.style.transform = `translate3d(${x}px, 0, 0)`;
   };
 
   // The swipe has gone sideways towards a neighbour: switch to it now, so
   // its page is loading - and usually there - while the finger is still
-  // down, riding beside the copy of this one.
+  // down. Nothing scrolls: the next page is drawn down by the scroll so far,
+  // which shows it from its top under the pills (they stay pinned), and the
+  // real scroll to the top happens in the same frame the ghost goes.
   function begin(target, dir) {
     g.target = target;
     g.dir = dir;
     g.scroll = window.scrollY;
-    g.ghost = ghostOf(0);
-    place(dir * window.innerWidth, 1, 0);
+    // Nodes leaving the page must not make the browser re-aim the scroll.
+    document.documentElement.style.overflowAnchor = 'none';
+    g.ghost = ghostOf();
+    lift = g.scroll;
+    promote(true);
+    place(dir * window.innerWidth, 0);
     g.drawn = whenDrawn();
     target.click();
   }
 
+  // Touch events arrive faster than frames on many phones: draw once a frame.
+  let pending = null;
   function follow(dx) {
-    const width = window.innerWidth;
-    // Towards the neighbour the pages follow the finger; the other way the
-    // page gives only a little.
     const d = Math.sign(dx) === -g.dir ? dx : dx / 4;
     g.dx = d;
-    slide(g.ghost, d, 0);
-    place(d + g.dir * width, 1, 0);
+    if (pending) { pending.d = d; return; }
+    pending = { d, swipe: g };
+    requestAnimationFrame(() => {
+      const { d: at, swipe } = pending;
+      pending = null;
+      if (swipe !== g) return;
+      slide(swipe.ghost, at, 0);
+      place(at + swipe.dir * window.innerWidth, 0);
+    });
   }
 
   async function finish(swipe, commit) {
     busy = true;
+    pending = null;
     const width = window.innerWidth;
     const { ghost, dir, dx, drawn, from, scroll } = swipe;
     if (commit) {
       await drawn;
-      const ms = Math.round(140 + 160 * (1 - Math.abs(dx) / width));
+      const ms = Math.round(150 + 150 * (1 - Math.abs(dx) / width));
       slide(ghost, -dir * width, ms);
-      place(0, 1, ms, ease);
+      place(0, ms, ease);
       await settle(ms + 20);
       ghost.remove();
-      place(0, 1, 0);
+      lift = 0;
+      place(0, 0);
+      window.scrollTo(0, 0);
     } else {
       // Not far enough: this page springs back, and the pill it was on is
       // pressed again behind it.
       slide(ghost, 0, 200);
-      place(dir * width, 1, 200, ease);
+      place(dir * width, 200, ease);
       await settle(210);
       await drawn;
       const back = whenDrawn();
       from.click();
       await back;
       ghost.remove();
-      place(0, 1, 0);
+      lift = 0;
+      place(0, 0);
       window.scrollTo(0, scroll);
     }
+    promote(false);
+    document.documentElement.style.overflowAnchor = '';
     busy = false;
   }
 
@@ -5713,7 +5746,7 @@ function albumCardFromHome(album) {
     } else {
       // Past the first or last pill the page gives, but only a little.
       g.dx = dx / 4;
-      place(g.dx, 1, 0);
+      place(g.dx, 0);
     }
   }, { passive: false });
 
@@ -5721,7 +5754,7 @@ function albumCardFromHome(album) {
     const swipe = g;
     g = null;
     if (!swipe || swipe.lock !== 'x') return;
-    if (!swipe.target) { place(0, 1, 220, 'cubic-bezier(0,0,.2,1)'); return; }
+    if (!swipe.target) { place(0, 220, 'cubic-bezier(0,0,.2,1)'); return; }
     const { dx, samples, dir } = swipe;
     const first = samples[0];
     const last = samples[samples.length - 1];
@@ -5736,6 +5769,16 @@ function albumCardFromHome(album) {
     const swipe = g;
     g = null;
     if (swipe && swipe.target) finish(swipe, false);
-    else place(0, 1, 200, 'ease-out');
+    else place(0, 200, 'ease-out');
   }, { passive: true });
+})();
+
+// The header's height, for the pills pinned under it: it wraps to two lines
+// on a phone, and its search box can change it.
+(function headerHeight() {
+  const header = document.querySelector('#app header');
+  if (!header) return;
+  const set = () => document.documentElement.style.setProperty('--header-h', `${header.offsetHeight}px`);
+  set();
+  if ('ResizeObserver' in window) new ResizeObserver(set).observe(header);
 })();

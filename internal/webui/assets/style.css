@@ -2416,7 +2416,19 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
    about. clip, not hidden, so the sticky header still sticks. */
 #app { overflow-x: clip; position: relative; }
 /* The page leaving during a swipe: a copy, laid where the page was. */
-.swipe-ghost { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.swipe-ghost { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; will-change: transform; }
+/* The pills stay pinned under the header as the page scrolls, so they are
+   in reach from anywhere down a list - and a swipe, which shows the next
+   page from its top, has nothing above it to jump into view. */
+#music-tabs, #subtabs {
+  position: sticky;
+  top: var(--header-h, 64px);
+  z-index: 4;
+  margin-top: 0;
+  padding-top: 10px;
+  padding-bottom: 8px;
+  background: var(--bg);
+}
 /* The photo viewer: the photos either side share the middle cell and ride
    beside the photo during a swipe. */
 .pv-stage > img { grid-area: 1 / 1; }

@@ -498,6 +498,19 @@ away), and not from something that scrolls sideways itself.
 `overscroll-behavior-x: none` while pills show, or Chrome also takes a
 rightward swipe as Back - the first test run landed on about:blank.
 
+Three things made it glitch on a phone, all fixed. The ghost was a deep
+clone, whose lazy images drew blank for a moment: now a list's own nodes
+are moved into it (the next render replaces them anyway), and only the
+fixed parts with ids of their own - the count, Select, the Continue row -
+are copied, because moving those deleted them with the ghost. It scrolled
+to the top as the swipe began, so the pills jumped into view mid-drag: the
+pills are now pinned under the header (`--header-h`, measured), the next
+page is drawn down by the current scroll with a transform, and the real
+scroll to the top happens in the frame the ghost goes. And moving nodes let
+Chrome's scroll anchoring re-aim the page by 40px, so `overflow-anchor` is
+off for the length of a swipe. Positions are written once a frame, not per
+touch event.
+
 The photo viewer does the same with two side images holding the previews
 either side, 16px apart; on commit the neighbour slides to the middle and
 the main image, hidden, swaps to it once decoded.
