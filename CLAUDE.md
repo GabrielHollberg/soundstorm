@@ -2422,6 +2422,18 @@ under the reader) and the reader's page is laid out above the card, so no
 line hides behind it; Now Playing still opens over both. A film still stops,
 since it would play behind the book.
 
+**Read & listen** is a shelf in Books of what somebody has as both an ebook
+and an audiobook. `GET /api/books/pairs` lists both shelves through the
+registry (so access applies) and matches on a key with the edition noise
+taken out - anything bracketed (ASIN, Unabridged, Full-Cast Edition), a
+subtitle after a colon, a trailing "Book 1", curly quotes, punctuation, a
+leading article - plus a shared author surname, reading "Rowling, J.K." and
+"J.K. Rowling" alike. Nothing is stored. Each edition of an audiobook is its
+own pair. On the real library: 1,663 ebooks and 113 audiobooks gave four
+pairs, and a scan for same-author near-misses found none. The card's cover
+reads along (starts the audiobook, opens the book over it); Read and Listen
+do one each. The pill only shows once there is a pair.
+
 ## Verified against live servers
 
 These were checked on a running stack, not inferred. Re-verify if versions move.

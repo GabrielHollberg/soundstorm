@@ -213,6 +213,7 @@ async function showApp(me) {
   renderTabs();
   renderAccount();
   await loadFavouriteKeys();
+  refreshPairs();
   maybeShowHoldTip();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
@@ -851,7 +852,7 @@ async function runSearch() {
   const seq = ++state.searchSeq;
 
   // The two personal views are not a search of a shelf.
-  const own = state.kind === 'favourites' || state.kind === 'playlists';
+  const own = state.kind === 'favourites' || state.kind === 'playlists' || state.kind === 'pairs';
   renderSearchHint();
   const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
     && !(state.musicView === 'mixes' && state.query);
@@ -879,6 +880,10 @@ async function runSearch() {
   show($('select-toggle'), Boolean(state.me && state.me.owner) && !own);
   if (state.kind === 'favourites') {
     await showFavourites(seq);
+    return;
+  }
+  if (state.kind === 'pairs') {
+    await showPairs(seq, query);
     return;
   }
   if (state.kind === 'playlists') {
@@ -2933,6 +2938,7 @@ const ICONS = {
   note: '<path d="M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>',
   film: '<path d="M4 6h16v12H4zM4 10h16M8 6l-1.5 4M13 6l-1.5 4M18 6l-1.5 4"/>',
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5zM5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/>',
+  headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zM20 15a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z"/>',
   photo: '<path d="M4 6h16v12H4zM4 15l4.5-4.5 4 4 2.5-2.5L20 17M15.5 9.5h.01"/>',
   gear: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -3165,7 +3171,7 @@ function renderSearchHint() {
   const shelves = {
     '': 'everything', music: 'music', video: 'films', tv: 'TV', audiobook: 'audiobooks',
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
-    favourites: 'your favourites', playlists: 'your playlists',
+    favourites: 'your favourites', playlists: 'your playlists', pairs: 'books to read and listen to',
   };
   let what = shelves[state.kind] || 'everything';
   if (state.kind === 'music' && ['songs', 'albums', 'artists'].includes(state.musicView)) what = state.musicView;
@@ -5539,7 +5545,8 @@ const TABS = {
   home: [{ kind: '', label: 'Home' }, { kind: 'favourites', label: 'Favourites', inMusicTabs: true }],
   music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true }],
   watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }],
-  books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' }, { kind: 'document', label: 'Documents' }],
+  books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
+    { kind: 'pairs', label: 'Read & listen' }, { kind: 'document', label: 'Documents' }],
   photos: [{ kind: 'picture', label: 'Photos' }],
 };
 state.tab = 'home';
@@ -5551,6 +5558,8 @@ function tabOf(kind) {
 
 function shelfAvailable(kind) {
   if (kind === '' || kind === 'favourites' || kind === 'playlists') return true;
+  // Only once there is at least one book on both shelves.
+  if (kind === 'pairs') return state.pairCount > 0 && shelfAvailable('ebook') && shelfAvailable('audiobook');
   const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
   if (!chip || chip.classList.contains('hidden')) return false; // not allowed
   const files = state.shelfFiles && state.shelfFiles[kind];
@@ -6041,4 +6050,83 @@ function tintStatusBar(art) {
     }
   };
   img.src = art;
+}
+
+/* ------------------------------------------------------- read and listen */
+
+// Books there is both an ebook and an audiobook of, matched by the server on
+// title and author. A card's cover reads along - the audiobook starts and the
+// book opens over it, the player floating at the bottom - and its two
+// buttons do one or the other.
+async function refreshPairs() {
+  const { ok, body } = await api('/api/books/pairs');
+  if (!ok || !body) return [];
+  state.pairCount = body.pairs.length;
+  renderTabs();
+  return body.pairs;
+}
+
+async function showPairs(seq, query) {
+  $('status').textContent = 'Loading\u2026';
+  state.hasMore = false;
+  state.offset = 0;
+  const pairs = await refreshPairs();
+  if (seq !== state.searchSeq) return;
+  const terms = (query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = pairs.filter((p) => {
+    const text = [p.ebook.title, p.audiobook.title, ...(p.ebook.creators || []), ...(p.audiobook.creators || [])]
+      .join(' ').toLowerCase();
+    return terms.every((t) => text.includes(t));
+  });
+  state.items = [];
+  $('results').replaceChildren(...shown.map(pairCard));
+  $('status').textContent = shown.length
+    ? `${shown.length} book${shown.length === 1 ? '' : 's'} to read and listen to`
+    : (terms.length ? 'Nothing matches.' : 'No book is on both shelves yet.');
+}
+
+function readAlong(pair) {
+  play(pair.audiobook);
+  play(pair.ebook);
+}
+
+function pairCard(pair) {
+  const { ebook, audiobook } = pair;
+  const holder = document.createElement('div');
+  holder.className = 'pair-holder';
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'item pair-card';
+  card.setAttribute('aria-label', `Read ${ebook.title} while listening`);
+  const art = artPath(audiobook) || artPath(ebook);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const title = document.createElement('span');
+  title.className = 'title';
+  title.textContent = ebook.title;
+  title.title = ebook.title;
+  const sub = document.createElement('span');
+  sub.className = 'sub';
+  // Which recording, when it is not the plain one: "Full-Cast Edition".
+  const edition = (audiobook.title.match(/\(([^)]*edition[^)]*)\)/i) || [])[1];
+  sub.textContent = [(ebook.creators || audiobook.creators || [])[0], edition].filter(Boolean).join(' \u00b7 ');
+  meta.append(title, sub);
+  card.append(coverArt(art, ebook.title), meta);
+  card.addEventListener('click', () => readAlong(pair));
+
+  const actions = document.createElement('div');
+  actions.className = 'pair-actions';
+  const read = document.createElement('button');
+  read.type = 'button';
+  read.className = 'ghost small';
+  read.append(icon('book'), document.createTextNode('Read'));
+  read.addEventListener('click', () => play(ebook));
+  const listen = document.createElement('button');
+  listen.type = 'button';
+  listen.className = 'ghost small';
+  listen.append(icon('headphones'), document.createTextNode('Listen'));
+  listen.addEventListener('click', () => play(audiobook));
+  actions.append(read, listen);
+  holder.append(card, actions);
+  return holder;
 }

@@ -1,0 +1,165 @@
+package httpapi
+
+import (
+	"context"
+	"net/http"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+
+	"github.com/GabrielHollberg/soundstorm/internal/federate"
+	"github.com/GabrielHollberg/soundstorm/internal/media"
+)
+
+// Books somebody has both as an ebook and as an audiobook, so they can read
+// along while they listen. Each shelf keeps its own titles - Audible says
+// "Harry Potter and the Sorcerer's Stone, Book 1 [B017V4IM1G]", Calibre says
+// "Harry Potter and the Sorcerer's Stone" - so they are matched on a title
+// with the edition noise taken out, and on the author's surname. Nothing is
+// stored: both shelves are listed and matched on each request, the listings
+// coming out of each adapter's shelf cache.
+
+const pairsDeadline = 10 * time.Second
+
+type bookPair struct {
+	Ebook     media.Item `json:"ebook"`
+	Audiobook media.Item `json:"audiobook"`
+}
+
+func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), pairsDeadline)
+	defer cancel()
+
+	var (
+		mu         sync.Mutex
+		wg         sync.WaitGroup
+		ebooks     []media.Item
+		audiobooks []media.Item
+	)
+	// Through the registry, so a shelf this account may not see is never listed.
+	for _, src := range s.reg.All(r.Context()) {
+		kind := src.Kind()
+		if kind != media.KindEbook && kind != media.KindAudiobook {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { _ = recover() }() // one shelf, never the request
+			items, err := src.Search(ctx, media.Query{Kinds: []media.Kind{kind}, Limit: federate.MaxDepth})
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if kind == media.KindEbook {
+				ebooks = append(ebooks, items...)
+			} else {
+				audiobooks = append(audiobooks, items...)
+			}
+		}()
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{"pairs": matchBooks(ebooks, audiobooks)})
+}
+
+// matchBooks pairs every audiobook with the ebooks of the same book. Two
+// editions of one audiobook (the regular recording and a full-cast one) each
+// pair with the ebook.
+func matchBooks(ebooks, audiobooks []media.Item) []bookPair {
+	byTitle := map[string][]media.Item{}
+	for _, e := range ebooks {
+		if k := bookKey(e.Title); k != "" {
+			byTitle[k] = append(byTitle[k], e)
+		}
+	}
+	pairs := []bookPair{}
+	for _, a := range audiobooks {
+		for _, e := range byTitle[bookKey(a.Title)] {
+			if sameAuthor(e.Creators, a.Creators) {
+				pairs = append(pairs, bookPair{Ebook: e, Audiobook: a})
+			}
+		}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		ki, kj := bookKey(pairs[i].Ebook.Title), bookKey(pairs[j].Ebook.Title)
+		if ki != kj {
+			return ki < kj
+		}
+		return pairs[i].Audiobook.Title < pairs[j].Audiobook.Title
+	})
+	return pairs
+}
+
+var (
+	bracketed   = regexp.MustCompile(`\s*[\[(][^\])]*[\])]`)
+	bookNumber  = regexp.MustCompile(`[,:]?\s*\b(book|volume|vol|part)\s+\d+\s*$`)
+	editionNote = regexp.MustCompile(`\b(unabridged|abridged)\b`)
+)
+
+// bookKey is a title with what differs between editions taken out: anything
+// in brackets (an ASIN, "Unabridged", "Full-Cast Edition"), a subtitle after a
+// colon, "Book 1" at the end, curly quotes, punctuation, case, and a leading
+// article.
+func bookKey(title string) string {
+	t := strings.ToLower(title)
+	t = strings.NewReplacer("’", "'", "‘", "'", "“", `"`, "”", `"`, "&", " and ").Replace(t)
+	t = bracketed.ReplaceAllString(t, "")
+	if i := strings.Index(t, ":"); i > 0 {
+		t = t[:i]
+	}
+	t = bookNumber.ReplaceAllString(t, "")
+	t = editionNote.ReplaceAllString(t, "")
+	t = strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		if r == '\'' {
+			return -1 // "sorcerer's" and "sorcerers" alike
+		}
+		return ' '
+	}, t)
+	words := strings.Fields(t)
+	if len(words) > 1 && (words[0] == "the" || words[0] == "a" || words[0] == "an") {
+		words = words[1:]
+	}
+	return strings.Join(words, " ")
+}
+
+// sameAuthor reports whether two lists of authors share a surname. A side
+// with no author at all is taken on the title alone.
+func sameAuthor(a, b []string) bool {
+	as, bs := surnames(a), surnames(b)
+	if len(as) == 0 || len(bs) == 0 {
+		return true
+	}
+	for s := range as {
+		if bs[s] {
+			return true
+		}
+	}
+	return false
+}
+
+// surnames reads "J.K. Rowling" and the sort form "Rowling, J.K." alike.
+func surnames(names []string) map[string]bool {
+	out := map[string]bool{}
+	for _, n := range names {
+		for _, one := range strings.Split(n, " & ") {
+			var last string
+			if i := strings.Index(one, ","); i > 0 {
+				last = one[:i]
+			} else if f := strings.Fields(one); len(f) > 0 {
+				last = f[len(f)-1]
+			}
+			last = strings.ToLower(strings.TrimFunc(last, func(r rune) bool { return !unicode.IsLetter(r) }))
+			if last != "" {
+				out[last] = true
+			}
+		}
+	}
+	return out
+}

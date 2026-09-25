@@ -2457,3 +2457,17 @@ body:has(#reader-overlay:not(.hidden)) .dock {
   bottom: max(12px, env(safe-area-inset-bottom));
 }
 body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-space) - 12px); }
+
+/* Read & listen: a book card with Read and Listen under it. */
+.pair-holder { display: flex; flex-direction: column; min-width: 0; }
+.pair-actions { display: flex; gap: 6px; margin-top: 6px; }
+.pair-actions button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.pair-actions .icon { width: 16px; height: 16px; }

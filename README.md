@@ -189,6 +189,11 @@ on every other shelf — new films, TV, audiobooks, books and photos — each wi
 search box says what it will search — *Search music*, *Search albums*,
 *Search your playlists* — for whichever page you are on.
 
+**Books → Read & listen** lists every book you have both as an ebook and as
+an audiobook. Tap the cover to read along: the audiobook starts and the book
+opens, with the player at the bottom of the page. **Read** or **Listen**
+does just one. You can read any book while music or an audiobook plays.
+
 On a phone, or anything else that cannot drag, open **Settings** and choose
 **Add media**. The same card has **Check for new files**, for anything copied
 into the folders some other way.
