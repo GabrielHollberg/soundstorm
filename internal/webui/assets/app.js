@@ -5485,7 +5485,7 @@ function albumCardFromHome(album) {
 // throw the page away), and not from something that scrolls sideways
 // itself, like a strip of mixes.
 (function pillSwipe() {
-  const pages = ['continue', 'results-bar', 'results', 'music-view', 'playlists-view'];
+  const pages = ['album-sort', 'continue', 'results-bar', 'results', 'music-view', 'playlists-view'];
   let g = null;      // the gesture under way
   let busy = false;  // a switch is animating
 

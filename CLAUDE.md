@@ -496,6 +496,12 @@ something that scrolls sideways itself. `overscroll-behavior-x: none` while
 pills show, or Chrome also takes a rightward swipe as Back - the first test
 run landed on about:blank.
 
+**And `#app { overflow-x: clip }`, or the tab bar jumps.** A page mid-swipe
+hangs off the right of the screen, which made the page wider than the phone:
+a real Android phone zoomed out and the bottom tab bar glitched, the same
+failure as the album sort once was. Desktop emulation hid it in screenshots;
+`visualViewport.width` narrower than `innerWidth` mid-swipe is what shows it.
+
 ## Music, phase 3: data saver, sleep timer, playlists, crossfade
 
 - **Streaming quality is per device** (localStorage, Account > Playback on

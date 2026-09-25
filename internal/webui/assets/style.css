@@ -2411,3 +2411,7 @@ body { overflow-x: clip; }
    browser going back a page. */
 html:has(#music-tabs:not(.hidden)),
 html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
+/* A page mid-swipe hangs off the side of the screen. Unclipped, that made
+   the page wider than the phone, which zoomed out and threw the tab bar
+   about. clip, not hidden, so the sticky header still sticks. */
+#app { overflow-x: clip; }
