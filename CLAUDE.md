@@ -378,6 +378,17 @@ judged on in its first minute:
   play, next, a seek bar and volume on the card; a phone gets play and next,
   swipe up for Now Playing and swipe down to stop. Starting music by hand
   opens Now Playing; dragging it down closes it.
+
+  **On a touch screen, songs change by swiping, not buttons.** Previous and
+  next are gone from Now Playing and the mini-player wherever the pointer is
+  coarse (a computer keeps them - a mouse cannot swipe). Swiping the big
+  cover sideways moves it with the neighbouring covers riding beside it and
+  plays the one that slides in; with the lyrics or queue in the middle the
+  title moves instead. The mini-player slides out and back in. A swipe back
+  is always the song before - the previous cover is what slid in - not a
+  restart of this one; the lock screen's previous keeps the 3-second rule.
+  A song played on its own from Songs has no queue, so there is nothing to
+  swipe to, as there was nothing for the old next button either.
 - **Now Playing has one layout, the lyrics one.** Title at the top, the
   middle for the lyrics, controls at the bottom; there is no lyrics button,
   because lyrics always show when a song has them. A computer keeps the big

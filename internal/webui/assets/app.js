@@ -4178,6 +4178,149 @@ document.querySelector('#now-playing .np-head').addEventListener('click', () => 
   });
 });
 
+// Songs either side, for swiping: in a queue the ones before and after
+// (round to the start on repeat), and in an audiobook the chapters, which
+// share the book's cover.
+function neighbourTrack(by) {
+  const q = audio.queue;
+  if (q) {
+    let at = q.index + by;
+    if (by > 0 && at >= q.items.length && audio.repeat !== 'off') at = 0;
+    const item = q.items[at];
+    return item ? { item } : null;
+  }
+  const at = audio.index + by;
+  return at >= 0 && at < audio.tracks.length ? { item: audio.item } : null;
+}
+
+// A swipe changes song outright: back means the song before, not the start
+// of this one, since the previous cover is what slid in.
+function stepTrack(by) {
+  if (by > 0) {
+    const q = audio.queue;
+    if (q && q.index + 1 >= q.items.length && audio.repeat !== 'off') playQueueAt(0);
+    else mediaNext();
+  } else if (audio.queue && audio.queue.index > 0) {
+    playQueueAt(audio.queue.index - 1);
+  } else if (audio.index > 0) {
+    selectTrack(audio.index - 1);
+    updateMediaSession();
+  }
+}
+
+// Now Playing's sideways swipe: the cover follows the finger with the next
+// and previous covers riding beside it, a small gap apart, and on letting go
+// either the neighbour slides into the middle and its song plays, or it all
+// springs back. With the lyrics or the queue in the middle (no big cover),
+// the title moves instead.
+const npSwipe = (() => {
+  const GAP = 24;
+  const wrap = document.querySelector('.np-cover-wrap');
+  const cover = $('np-cover');
+  const head = document.querySelector('#now-playing .np-head');
+  const sides = {};
+  for (const by of [-1, 1]) {
+    const img = document.createElement('img');
+    img.className = 'np-cover np-cover-side';
+    img.alt = '';
+    wrap.append(img);
+    sides[by] = img;
+  }
+  let w = 0;
+  let near = {};
+  let bigCover = false;
+  const self = { busy: false };
+
+  const put = (el, x, ms, opacity) => {
+    el.style.transition = ms ? `transform ${ms}ms ease-out, opacity ${ms}ms ease-out` : 'none';
+    el.style.transform = x ? `translateX(${x}px)` : '';
+    if (opacity !== undefined) el.style.opacity = opacity === 1 ? '' : String(opacity);
+  };
+  const artOf = (n) => (n && artPath(n.item)) || NO_COVER;
+
+  self.start = () => {
+    near = { '-1': neighbourTrack(-1), 1: neighbourTrack(1) };
+    bigCover = cover.offsetWidth > 0;
+    if (!bigCover) return;
+    w = cover.offsetWidth + GAP;
+    for (const by of [-1, 1]) {
+      const img = sides[by];
+      Object.assign(img.style, {
+        left: `${cover.offsetLeft}px`, top: `${cover.offsetTop}px`,
+        width: `${cover.offsetWidth}px`, height: `${cover.offsetHeight}px`,
+      });
+      if (near[by]) {
+        const url = artOf(near[by]);
+        if (img.dataset.src !== url) { img.src = url; img.dataset.src = url; }
+        img.style.visibility = 'visible';
+      } else {
+        img.style.visibility = 'hidden';
+      }
+    }
+  };
+
+  const draw = (d, ms) => {
+    if (bigCover) {
+      put(cover, d, ms);
+      put(sides[-1], d - w, ms);
+      put(sides[1], d + w, ms);
+      put(head, 0, ms, 1 - Math.min(Math.abs(d) / w, 1) * 0.7);
+    } else {
+      put(head, d, ms, 1 - Math.min(Math.abs(d) / 300, 1) * 0.7);
+    }
+  };
+
+  self.move = (dx) => {
+    const by = dx < 0 ? 1 : -1;
+    // With nothing that way, the cover gives only a little.
+    draw(near[by] ? dx : dx / 4, 0);
+  };
+
+  const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Until the new song's cover is the one on screen, and drawn.
+  async function coverShows(url) {
+    const want = new URL(url, location.href).href;
+    for (let i = 0; i < 60 && cover.src !== want; i++) await new Promise((r) => requestAnimationFrame(r));
+    try { await cover.decode(); } catch { /* shown when it loads */ }
+  }
+
+  self.end = async (dx, speed) => {
+    const by = dx < 0 ? 1 : -1;
+    const far = Math.abs(dx) > (bigCover ? w : 300) * 0.3;
+    const flung = Math.abs(dx) > 30 && Math.abs(speed) > 0.35 && Math.sign(speed) === Math.sign(dx);
+    if (!near[by] || !(far || flung)) {
+      draw(0, 220);
+      // The neighbours tuck away again once the cover is back.
+      setTimeout(() => { if (!self.busy) for (const b of [-1, 1]) sides[b].style.visibility = 'hidden'; }, 230);
+      return;
+    }
+    self.busy = true;
+    if (bigCover) {
+      draw(-by * w, 230);
+      await settle(240);
+      const url = artOf(near[by]);
+      cover.style.visibility = 'hidden';
+      stepTrack(by);
+      await coverShows(url);
+      put(cover, 0, 0);
+      cover.style.visibility = '';
+      for (const b of [-1, 1]) { put(sides[b], 0, 0); sides[b].style.visibility = 'hidden'; }
+      put(head, 0, 0, 1);
+    } else {
+      put(head, -by * 300, 160, 0);
+      await settle(170);
+      stepTrack(by);
+      put(head, by * 120, 0, 0);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      put(head, 0, 200, 1);
+      await settle(210);
+      put(head, 0, 0, 1);
+    }
+    self.busy = false;
+  };
+  return self;
+})();
+
 // Drag down to put the full player away, on a touch screen. The panel follows
 // the finger, and goes if it was dragged far enough or flicked; otherwise it
 // springs back. Not from the seek bar, and not from a list that is scrolled
@@ -4195,35 +4338,59 @@ document.querySelector('#now-playing .np-head').addEventListener('click', () => 
     }
     return false;
   };
+  let startX = 0;
+  let axis = null;   // 'y' closes, 'x' changes song
+  let dx = 0;
   panel.addEventListener('touchstart', (event) => {
     const t = event.touches[0];
-    armed = event.touches.length === 1 &&
-      !event.target.closest('input') &&
-      !(event.target.closest('#np-lyrics, #np-queue') && scrolledDown(event.target));
+    armed = event.touches.length === 1 && !npSwipe.busy &&
+      !event.target.closest('input, #np-queue, #np-sleep-menu') &&
+      !(event.target.closest('#np-lyrics') && scrolledDown(event.target));
     dragging = false;
+    axis = null;
     dy = 0;
+    dx = 0;
     startY = t.clientY;
+    startX = t.clientX;
     startT = performance.now();
   }, { passive: true });
   panel.addEventListener('touchmove', (event) => {
     if (!armed) return;
-    const d = event.touches[0].clientY - startY;
-    if (!dragging) {
-      if (d < 8) {
-        if (d < -8) armed = false; // an upward drag is a scroll, not a close
+    const t = event.touches[0];
+    const d = t.clientY - startY;
+    const across = t.clientX - startX;
+    if (!axis) {
+      if (Math.max(Math.abs(d), Math.abs(across)) < 8) return;
+      if (Math.abs(across) > Math.abs(d)) {
+        axis = 'x';
+        npSwipe.start();
+      } else if (d > 0) {
+        axis = 'y';
+      } else {
+        armed = false; // an upward drag is a scroll, not a close
         return;
       }
       dragging = true;
-      panel.style.transition = 'none';
+      if (axis === 'y') panel.style.transition = 'none';
+    }
+    if (event.cancelable) event.preventDefault();
+    if (axis === 'x') {
+      dx = across;
+      npSwipe.move(dx);
+      return;
     }
     dy = Math.max(0, d);
     panel.style.transform = `translateY(${dy}px)`;
-    if (event.cancelable) event.preventDefault();
   }, { passive: false });
   const end = () => {
     if (!dragging) return;
     dragging = false;
     armed = false;
+    if (axis === 'x') {
+      const speed = dx / Math.max(performance.now() - startT, 1);
+      npSwipe.end(dx, speed);
+      return;
+    }
     const speed = dy / Math.max(performance.now() - startT, 1); // px per ms
     panel.style.transition = 'transform 0.22s ease-out';
     if (dy > panel.clientHeight * 0.25 || (speed > 0.6 && dy > 40)) {
@@ -4313,25 +4480,73 @@ $('audio-player').addEventListener('volumechange', () => {
   let startY = 0;
   let dy = 0;
   let active = false;
+  let startX = 0;
+  let dx = 0;
+  let axis = null;
+  let startT = 0;
+  let busy = false;
   dock.addEventListener('touchstart', (event) => {
-    if (event.touches.length !== 1 || !matchMedia('(max-width: 760px)').matches) return;
+    if (busy || event.touches.length !== 1 || !matchMedia('(max-width: 760px)').matches) return;
     active = true;
+    axis = null;
     dy = 0;
+    dx = 0;
     startY = event.touches[0].clientY;
+    startX = event.touches[0].clientX;
+    startT = performance.now();
     dock.style.transition = 'none';
   }, { passive: true });
   dock.addEventListener('touchmove', (event) => {
     if (!active) return;
-    dy = event.touches[0].clientY - startY;
-    if (dy > 0) {
+    const t = event.touches[0];
+    dy = t.clientY - startY;
+    dx = t.clientX - startX;
+    if (!axis) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+      axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (axis === 'x') {
+      // Sideways: the next or previous song. Nothing that way, and the card
+      // gives only a little.
+      const d = neighbourTrack(dx < 0 ? 1 : -1) ? dx : dx / 4;
+      dock.style.transform = `translateX(${d}px)`;
+      dock.style.opacity = String(Math.max(0.3, 1 - Math.abs(d) / 300));
+    } else if (dy > 0) {
       dock.style.transform = `translateY(${dy}px)`;
       dock.style.opacity = String(Math.max(0.2, 1 - dy / 160));
     }
   }, { passive: true });
-  const end = () => {
+  const end = async () => {
     if (!active) return;
     active = false;
     dock.style.transition = 'transform 0.2s ease-out, opacity 0.2s ease-out';
+    if (axis === 'x') {
+      const by = dx < 0 ? 1 : -1;
+      const speed = Math.abs(dx) / Math.max(performance.now() - startT, 1);
+      if (neighbourTrack(by) && (Math.abs(dx) > 80 || (speed > 0.35 && Math.abs(dx) > 30))) {
+        busy = true;
+        const width = dock.offsetWidth;
+        dock.style.transition = 'transform 0.16s ease-in, opacity 0.16s ease-in';
+        dock.style.transform = `translateX(${-by * width}px)`;
+        dock.style.opacity = '0';
+        await new Promise((r) => setTimeout(r, 170));
+        stepTrack(by);
+        dock.style.transition = 'none';
+        dock.style.transform = `translateX(${by * width * 0.5}px)`;
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        dock.style.transition = 'transform 0.22s ease-out, opacity 0.22s ease-out';
+        dock.style.transform = '';
+        dock.style.opacity = '';
+        await new Promise((r) => setTimeout(r, 230));
+        dock.style.transition = '';
+        busy = false;
+        return;
+      }
+      dock.style.transform = '';
+      dock.style.opacity = '';
+      setTimeout(() => { dock.style.transition = ''; }, 200);
+      return;
+    }
     if (dy < -30) {
       dock.style.transform = '';
       dock.style.opacity = '';

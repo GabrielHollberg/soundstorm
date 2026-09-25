@@ -2433,3 +2433,18 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
    beside the photo during a swipe. */
 .pv-stage > img { grid-area: 1 / 1; }
 .pv-stage img.pv-side { visibility: hidden; pointer-events: none; will-change: transform; }
+
+/* On a touch screen a song changes by swiping - the cover in Now Playing,
+   or the mini-player - so previous and next give their room to the rest.
+   A mouse cannot swipe, so a computer keeps them. */
+@media (pointer: coarse) {
+  #np-prev, #np-next, #dock-next { display: none !important; }
+  .dock { touch-action: none; }
+}
+.np-cover-wrap { position: relative; }
+.np-cover-side {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  margin: 0;
+}
