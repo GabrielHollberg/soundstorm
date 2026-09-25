@@ -2080,6 +2080,15 @@ carries the real address and a forged one is overwritten. `X-Forwarded-For`
 arrives as `<client>, <Railway edge>`, and the service reads the last entry,
 so that header would have put every install behind one shared limit.
 
+**A restart must not forget the remote name.** Keeping the remote name
+through a name-service outage relied on the name held in memory, which a
+restart empties - so when the DNS provider answered 502 just as the server
+came back up, the name was dropped and the certificate reissued without it.
+Phones away from home then got the local authority's certificate for
+`<id>.net...` and refused it, until the next half-day check. After a restart
+the remote name is now read from the certificate on disk, and an unanswered
+check is retried after five minutes rather than twelve hours.
+
 **Porkbun's limits, from its OpenAPI spec rather than its docs page, which
 states none:** a general budget of 20 requests per 2 seconds per key, measured
 but not yet enforced; and **2,500 records per domain**, which is the ceiling

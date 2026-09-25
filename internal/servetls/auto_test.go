@@ -593,3 +593,62 @@ func TestAnUnreachableNameServiceKeepsTheRemoteName(t *testing.T) {
 		t.Errorf("remote name %q kept after the service found the port closed", s.RemoteName())
 	}
 }
+
+func TestARestartDuringANameServiceOutageKeepsTheRemoteName(t *testing.T) {
+	const publicName = "abcdefghij.net.soundstorm.dev"
+	dns := &memDNS{records: map[string]string{}}
+	svc := &names.Server{Secret: []byte("a-secret-that-is-long-enough-to-use"), Zone: "soundstorm.dev", Label: "home", DNS: dns, Log: quietLog()}
+	h := svc.Handler()
+	answer := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && r.URL.Path == "/v1/public" {
+			if answer != http.StatusOK {
+				http.Error(w, `{"error":"no"}`, answer)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"name":"` + publicName + `","ip":"203.0.113.7"}`))
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	authority := newStubAuthority(t)
+	dir := t.TempDir()
+	s, err := Load(Config{
+		Mode: ModeAuto, Dir: dir, Hosts: []string{"192.168.0.19"},
+		NamesURL: srv.URL, Remote: true, Port: 8099, Log: quietLog(),
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	s.auto.newACME = func(*ecdsa.PrivateKey) issuer { return authority }
+	if err := s.auto.step(context.Background()); err != nil || s.RemoteName() != publicName {
+		t.Fatalf("first step: err %v, remote name %q", err, s.RemoteName())
+	}
+
+	// Restart: a new process, nothing in memory, the same state on disk - and
+	// the name service is having a bad moment. Seen for real: the DNS provider
+	// answered 502 as the server came back up, the remote name was dropped and
+	// the certificate reissued without it, and every phone away from home was
+	// refused until the next half-day check.
+	answer = http.StatusBadGateway
+	again, err := Load(Config{
+		Mode: ModeAuto, Dir: dir, Hosts: []string{"192.168.0.19"},
+		NamesURL: srv.URL, Remote: true, Port: 8099, Log: quietLog(),
+	})
+	if err != nil {
+		t.Fatalf("Load after the restart: %v", err)
+	}
+	again.auto.newACME = func(*ecdsa.PrivateKey) issuer { return authority }
+	if err := again.auto.step(context.Background()); err != nil {
+		t.Fatalf("step after the restart: %v", err)
+	}
+	if again.RemoteName() != publicName || again.auto.current(publicName) == nil {
+		t.Fatalf("a restart during an outage dropped the remote name (now %q)", again.RemoteName())
+	}
+	if !again.auto.recheckSoon {
+		t.Error("an unanswered check should be tried again soon, not at the next half-day check")
+	}
+}

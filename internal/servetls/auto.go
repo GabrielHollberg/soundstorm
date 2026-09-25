@@ -103,6 +103,10 @@ type autoCert struct {
 	mu         sync.RWMutex
 	reg        names.Registration
 	publicName string // the remote name, once the service has published it
+	// recheckSoon asks run to step again after firstRetry rather than
+	// checkEvery: the name service could not say whether remote access works,
+	// and half a day is too long to leave that unanswered.
+	recheckSoon bool
 	cert       *tls.Certificate
 	// upstream is what stands between the home router and the internet, from
 	// the router's own WAN address: carrier-grade NAT or a second router mean
@@ -259,6 +263,12 @@ func (a *autoCert) run(ctx context.Context) {
 			}
 		} else {
 			retry = firstRetry
+			a.mu.Lock()
+			if a.recheckSoon {
+				wait = firstRetry
+				a.recheckSoon = false
+			}
+			a.mu.Unlock()
 		}
 		select {
 		case <-ctx.Done():
@@ -348,6 +358,11 @@ func (a *autoCert) step(ctx context.Context) error {
 		a.mu.RLock()
 		had := a.publicName
 		a.mu.RUnlock()
+		if had == "" {
+			// Just started: nothing in memory yet, but the certificate on disk
+			// says which remote name was working before the restart.
+			had = remoteNameIn(cert, reg)
+		}
 		name, definite := a.publishRemote(ctx, reg)
 		switch {
 		case name != "":
@@ -363,6 +378,16 @@ func (a *autoCert) step(ctx context.Context) error {
 			publicName = had
 			domains = append(domains, had)
 			a.log.Warn("could not check remote access with the name service; keeping the remote name until it answers")
+			a.mu.Lock()
+			a.recheckSoon = true
+			a.mu.Unlock()
+		case !definite:
+			// Never published, and the service could not be asked: try again
+			// soon rather than at the next half-day check.
+			a.log.Warn("could not check remote access with the name service; trying again soon")
+			a.mu.Lock()
+			a.recheckSoon = true
+			a.mu.Unlock()
 		default:
 			a.log.Warn("remote access is not reachable on any address; serving on the LAN name only")
 		}
@@ -466,6 +491,21 @@ func (a *autoCert) publishRemote(ctx context.Context, reg names.Registration) (n
 		a.log.Info("remote access is reachable over IPv6", "name", n)
 	}
 	return name, definite
+}
+
+// remoteNameIn finds the remote name in a certificate this install already
+// holds. Its certificates only ever cover the LAN name and the remote one, so
+// it is whichever other name is there. Empty when there is none.
+func remoteNameIn(cert *tls.Certificate, reg names.Registration) string {
+	if cert == nil || cert.Leaf == nil || reg.ID == "" {
+		return ""
+	}
+	for _, n := range cert.Leaf.DNSNames {
+		if n != reg.Name {
+			return n
+		}
+	}
+	return ""
 }
 
 // verdict reports whether an error from publishing is the name service's
