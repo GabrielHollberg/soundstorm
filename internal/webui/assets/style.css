@@ -2203,3 +2203,12 @@ body:not(.dock-open) .toast { bottom: 18px; }
   font: inherit;
   font-weight: 700;
 }
+
+/* Swiping replaces the arrows on a touch screen; the photo is the thing to
+   drag, so the browser's own panning and zooming step aside inside the
+   viewer. */
+#photo-overlay figure { touch-action: none; }
+#photo-image { will-change: transform; }
+@media (pointer: coarse) {
+  .photo-nav { display: none; }
+}

@@ -1166,13 +1166,15 @@ function photosOnScreen() {
 
 let photoShown = null;
 
+const photoPreview = (item) => `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId + '@preview')}`;
+
 function showPhoto(item) {
   stopAudio();
   closeVideo();
   photoShown = item;
 
   const img = $('photo-image');
-  img.src = `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId + '@preview')}`;
+  img.src = photoPreview(item);
   img.alt = item.title;
   const place = item.extra && item.extra.place;
   $('photo-caption').textContent = [item.title, item.subtitle, place].filter(Boolean).join(' — ');
@@ -1186,6 +1188,11 @@ function showPhoto(item) {
   $('photo-prev').disabled = at <= 0;
   $('photo-next').disabled = at < 0 || at >= photos.length - 1;
   show($('photo-overlay'), true);
+  // The photos either side, fetched now, so a swipe lands on a picture that is
+  // already there rather than on a blank while it loads.
+  for (const near of [photos[at - 1], photos[at + 1]]) {
+    if (near) new Image().src = photoPreview(near);
+  }
 }
 
 function stepPhoto(by) {
@@ -1205,6 +1212,93 @@ function closePhoto() {
 $('photo-close').addEventListener('click', closePhoto);
 $('photo-prev').addEventListener('click', () => stepPhoto(-1));
 $('photo-next').addEventListener('click', () => stepPhoto(1));
+// Swiping, on a touch screen: left and right step through the photos, the
+// picture following the finger and sliding off to make way for the next; down
+// closes the viewer, the background fading as it goes. A short drag springs
+// back, and so does one past the first or last photo.
+(function photoSwipe() {
+  const overlay = $('photo-overlay');
+  const img = $('photo-image');
+  let x0 = 0;
+  let y0 = 0;
+  let t0 = 0;
+  let dx = 0;
+  let dy = 0;
+  let axis = null; // 'x' or 'y', decided once the finger has moved
+  let tracking = false;
+
+  const setPose = (x, y, animate) => {
+    img.style.transition = animate ? 'transform 0.22s ease-out, opacity 0.22s ease-out' : 'none';
+    img.style.transform = `translate(${x}px, ${y}px)`;
+    const fade = axis === 'y' ? Math.max(0.35, 1 - Math.abs(y) / 400) : 1;
+    overlay.style.backgroundColor = `rgba(0, 0, 0, ${0.92 * fade})`;
+  };
+  const reset = (animate) => {
+    setPose(0, 0, animate);
+    img.style.opacity = '';
+    if (!animate) overlay.style.backgroundColor = '';
+  };
+
+  overlay.addEventListener('touchstart', (event) => {
+    if (!photoShown || event.touches.length !== 1 || event.target.closest('button, a')) return;
+    tracking = true;
+    axis = null;
+    dx = dy = 0;
+    x0 = event.touches[0].clientX;
+    y0 = event.touches[0].clientY;
+    t0 = performance.now();
+  }, { passive: true });
+
+  overlay.addEventListener('touchmove', (event) => {
+    if (!tracking) return;
+    dx = event.touches[0].clientX - x0;
+    dy = event.touches[0].clientY - y0;
+    if (!axis) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (event.cancelable) event.preventDefault();
+    if (axis === 'x') setPose(dx, 0, false);
+    else setPose(0, Math.max(0, dy), false);
+  }, { passive: false });
+
+  const end = () => {
+    if (!tracking) return;
+    tracking = false;
+    if (!axis) return;
+    const width = overlay.clientWidth;
+    const speed = (axis === 'x' ? Math.abs(dx) : dy) / Math.max(performance.now() - t0, 1);
+    if (axis === 'y') {
+      if (dy > 120 || (speed > 0.6 && dy > 40)) {
+        setPose(0, overlay.clientHeight, true);
+        img.style.opacity = '0';
+        setTimeout(() => { reset(false); closePhoto(); }, 220);
+      } else {
+        reset(true);
+        setTimeout(() => { overlay.style.backgroundColor = ''; }, 220);
+      }
+      return;
+    }
+    const by = dx < 0 ? 1 : -1;
+    const photos = photosOnScreen();
+    const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
+    const hasNext = Boolean(photos[at + by]);
+    if (hasNext && (Math.abs(dx) > width * 0.25 || (speed > 0.5 && Math.abs(dx) > 30))) {
+      // Off to one side, then the next photo in from the other.
+      setPose(-by * width, 0, true);
+      setTimeout(() => {
+        stepPhoto(by);
+        setPose(by * width, 0, false);
+        requestAnimationFrame(() => requestAnimationFrame(() => reset(true)));
+      }, 200);
+    } else {
+      reset(true);
+    }
+  };
+  overlay.addEventListener('touchend', end);
+  overlay.addEventListener('touchcancel', end);
+})();
+
 document.addEventListener('keydown', (event) => {
   if (!photoShown) return;
   if (event.key === 'Escape') closePhoto();
