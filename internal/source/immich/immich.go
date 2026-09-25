@@ -324,3 +324,8 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 	it.SortKey = ""
 	return it, true
 }
+
+// Recent is the newest photos - Immich's own browsing order already.
+func (s *Source) Recent(ctx context.Context, limit int) ([]media.Item, error) {
+	return s.Search(ctx, media.Query{Limit: limit})
+}

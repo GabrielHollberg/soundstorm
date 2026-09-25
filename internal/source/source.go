@@ -618,3 +618,11 @@ type Lyrics struct {
 type LyricsSource interface {
 	Lyrics(ctx context.Context, songID string) (Lyrics, error)
 }
+
+// RecentLister is an optional interface for a source that can say what was
+// added to it most recently, newest first - the rows on the home page. Every
+// backend orders by its own record of when something arrived: nothing here
+// keeps one.
+type RecentLister interface {
+	Recent(ctx context.Context, limit int) ([]media.Item, error)
+}

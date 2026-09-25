@@ -455,6 +455,31 @@ Checked in Chrome against a real Navidrome with a generated library: two
 artists, three albums with covers and ReplayGain tags of 0, -5 and +8 dB.
 Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
 
+## Home, and five tabs instead of ten chips
+
+The shelves were a sideways row of ten chips, most off screen on a phone.
+Now five tabs - Home, Music (playlists with songs, albums and artists), Watch
+(films, TV), Books (audiobooks, ebooks, documents), Photos - along the bottom
+of a phone and down the side of a computer. The chips are still in the page,
+hidden, and a tab presses one, so every search path is unchanged. A shelf the
+account may not see, or with no files, is left out; an empty tab is hidden.
+
+Home is a front page, not "everything" alphabetically: Continue, then strips
+of new music (the newest album folders), favourites, recently played, and
+`GET /api/home`'s newest items per shelf. That asks every source at once
+through `source.RecentLister`, five seconds each, and leaves out a shelf
+that fails, the search's rule. Each backend orders by its own record of
+arrival - Jellyfin DateCreated (a series by DateLastContentAdded, so a new
+season brings it forward), Audiobookshelf `sort=addedAt&desc=1` (checked on
+a real library), Immich's own newest-first, and for the folders SoundStorm
+reads itself the file's modification time. Typing on Home searches
+everything.
+
+A page wider than the phone made the phone zoom out and dropped the tab bar
+off the bottom: the album sort sat inside the music row. The row is now
+pills that scroll inside their own strip, and `body { overflow-x: clip }`
+stops anything else doing it (clip, so the sticky header still works).
+
 ## Music, phase 3: data saver, sleep timer, playlists, crossfade
 
 - **Streaming quality is per device** (localStorage, Account > Playback on

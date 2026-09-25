@@ -828,3 +828,18 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 	}
 	return items[0], true
 }
+
+// Recent is what arrived last, newest first. A series is ordered by when an
+// episode was last added to it, so a new season brings the show forward.
+func (s *Source) Recent(ctx context.Context, limit int) ([]media.Item, error) {
+	params := s.searchParams(media.Query{})
+	params.Set("SortOrder", "Descending")
+	if s.kind == media.KindTV {
+		params.Set("IncludeItemTypes", "Series")
+		params.Set("SortBy", "DateLastContentAdded")
+	} else {
+		params.Set("SortBy", "DateCreated")
+	}
+	params.Set("Limit", strconv.Itoa(limit))
+	return s.fetchPage(ctx, params)
+}

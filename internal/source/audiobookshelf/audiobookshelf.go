@@ -778,3 +778,19 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 	}
 	return items[0], true
 }
+
+// Recent is the books added last, newest first, by Audiobookshelf's own
+// record of when each arrived.
+func (s *Source) Recent(ctx context.Context, limit int) ([]media.Item, error) {
+	var resp listResponse
+	params := url.Values{
+		"sort":  {"addedAt"},
+		"desc":  {"1"},
+		"limit": {strconv.Itoa(limit)},
+		"page":  {"0"},
+	}
+	if err := s.http.JSON(ctx, s.itemsPath(), params, &resp); err != nil {
+		return nil, err
+	}
+	return convertItems(s.id, resp.Results), nil
+}

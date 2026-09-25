@@ -715,3 +715,23 @@ func (s *Source) ItemByID(_ context.Context, itemID string) (media.Item, bool) {
 	}
 	return b.item(s.id, s.kind), true
 }
+
+// Recent is the books whose files changed last, newest first - for a folder
+// SoundStorm reads itself, the file's own date is the record of arrival.
+func (s *Source) Recent(_ context.Context, limit int) ([]media.Item, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	books := make([]book, 0, len(s.books))
+	for _, b := range s.books {
+		books = append(books, b)
+	}
+	sort.SliceStable(books, func(a, b int) bool { return books[a].modTime.After(books[b].modTime) })
+	if len(books) > limit {
+		books = books[:limit]
+	}
+	items := make([]media.Item, 0, len(books))
+	for _, b := range books {
+		items = append(items, b.item(s.id, s.kind))
+	}
+	return items, nil
+}

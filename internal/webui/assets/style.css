@@ -2378,3 +2378,34 @@ body:not(.dock-open) .toast { bottom: calc(var(--tabbar) + 18px); }
    fit it, and the tab bar drops off the bottom. clip, not hidden, so the
    sticky header keeps working. */
 body { overflow-x: clip; }
+
+/* Home: strips that scroll sideways, each a row of fixed-width cards. */
+.home-view { padding: 4px 0 24px; }
+.home-row { margin-top: 22px; }
+.home-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px;
+  margin-bottom: 10px;
+}
+.home-row-head h2 { margin: 0; font-size: 19px; }
+.home-see-all { font-size: 14px; text-decoration: none; font-weight: 600; }
+.home-strip {
+  display: flex;
+  gap: 14px;
+  padding: 0 20px 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  /* Snapping lines a card up with the strip's edge; this keeps the gutter. */
+  scroll-padding-inline: 20px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.home-strip::-webkit-scrollbar { display: none; }
+.home-strip > * { flex: 0 0 150px; width: 150px; scroll-snap-align: start; }
+@media (min-width: 900px) { .home-strip > * { flex-basis: 180px; width: 180px; } }
+.home-strip .badge { display: none; }
+.home-empty { padding: 30px 20px; }
+#app.viewing-account #home-view { display: none; }

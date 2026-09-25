@@ -865,7 +865,16 @@ async function runSearch() {
   show($('album-sort'), state.kind === 'music' && state.musicView === 'albums');
   show($('music-view'), musicBrowse);
   show($('playlists-view'), state.kind === 'playlists');
-  show($('results'), state.kind !== 'playlists' && !musicBrowse);
+  const home = state.kind === '' && !query;
+  show($('home-view'), home);
+  show($('results-bar'), !home);
+  show($('results'), state.kind !== 'playlists' && !musicBrowse && !home);
+  if (home) {
+    show($('select-toggle'), false);
+    state.hasMore = false;
+    await renderHome(seq);
+    return;
+  }
   if (musicBrowse) {
     show($('select-toggle'), false);
     state.hasMore = false;
@@ -5280,7 +5289,7 @@ setIcon($('photo-next'), 'forward');
 // not see, or that has nothing on it, is left out, and a tab left with nothing
 // is hidden.
 const TABS = {
-  home: [{ kind: '', label: 'Everything' }, { kind: 'favourites', label: '\u2665 Favourites' }],
+  home: [{ kind: '', label: 'Home' }, { kind: 'favourites', label: 'Favourites', inMusicTabs: true }],
   music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true }],
   watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }],
   books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' }, { kind: 'document', label: 'Documents' }],
@@ -5373,3 +5382,114 @@ for (const button of document.querySelectorAll('#tabs [data-tab]')) {
   button.addEventListener('click', () => selectTab(button.dataset.tab));
 }
 renderTabs();
+
+/* -------------------------------------------------------------- home page */
+
+// Home is a front page, not a list of everything: Continue on top (its own
+// row, above), then a strip each of the newest albums, favourites, what was
+// played lately, and what arrived on every other shelf. Each strip scrolls
+// sideways and has a "See all" into its tab. Strips with nothing in them are
+// left out, so a music-only library has a music-only home.
+const HOME_SHELVES = {
+  video: 'New films', tv: 'New TV', audiobook: 'New audiobooks',
+  ebook: 'New books', document: 'New documents', picture: 'New photos',
+};
+
+async function renderHome(seq) {
+  const view = $('home-view');
+  $('status').textContent = '';
+  const [home, favs, played] = await Promise.all([
+    api('/api/home'),
+    api('/api/favourites'),
+    api('/api/music/mixes/recently-played'),
+  ]);
+  if (seq !== state.searchSeq) return;
+  view.replaceChildren();
+  const all = [];
+
+  const albums = (home.ok && home.body && home.body.albums) || [];
+  if (albums.length) {
+    view.append(homeRow('New music', albums.map((a) => albumCardFromHome(a)), () => {
+      state.albumOrder = 'newest';
+      $('album-order').value = 'newest';
+      state.musicView = 'albums';
+      selectTab('music');
+      if (state.kind === 'music') runSearch();
+    }));
+  }
+  const favourites = ((favs.ok && favs.body && favs.body.items) || []).slice(0, 12);
+  if (favourites.length) {
+    all.push(...favourites);
+    view.append(homeRow('\u2665 Favourites', favourites.map(renderItem), () => selectKind('favourites')));
+  }
+  const recent = ((played.ok && played.body && played.body.songs) || []).slice(0, 12);
+  if (recent.length) {
+    all.push(...recent);
+    view.append(homeRow('Recently played', recent.map(renderItem), () => {
+      state.musicView = 'mixes';
+      selectTab('music');
+    }));
+  }
+  for (const shelf of (home.ok && home.body && home.body.shelves) || []) {
+    all.push(...shelf.items);
+    view.append(homeRow(HOME_SHELVES[shelf.kind] || 'New', shelf.items.map(renderItem), () => selectKind(shelf.kind)));
+  }
+  // What the cards open into - the photo viewer steps through these.
+  state.items = all;
+  if (!view.children.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted home-empty';
+    empty.textContent = state.libraryEmpty
+      ? 'Nothing here yet. Open Account and choose Add media to add music, films, books or photos.'
+      : 'Nothing new lately.';
+    view.append(empty);
+  }
+}
+
+function homeRow(title, cards, seeAll) {
+  const row = document.createElement('section');
+  row.className = 'home-row';
+  const head = document.createElement('div');
+  head.className = 'home-row-head';
+  const h = document.createElement('h2');
+  h.textContent = title;
+  head.append(h);
+  if (seeAll) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'linkish home-see-all';
+    more.textContent = 'See all';
+    more.addEventListener('click', seeAll);
+    head.append(more);
+  }
+  const strip = document.createElement('div');
+  strip.className = 'home-strip';
+  strip.append(...cards);
+  row.append(head, strip);
+  return row;
+}
+
+// An album on Home opens the same album page as under Music, whose back
+// button then leads to the albums.
+function albumCardFromHome(album) {
+  const card = albumCard(album);
+  card.replaceWith();
+  const clone = card.cloneNode(true);
+  clone.addEventListener('click', () => {
+    state.musicView = 'albums';
+    for (const chip of document.querySelectorAll('#filters .chip')) {
+      chip.classList.toggle('active', chip.dataset.kind === 'music');
+    }
+    state.kind = 'music';
+    noteTabKind();
+    renderSearchHint();
+    show($('home-view'), false);
+    show($('results-bar'), true);
+    show($('results'), false);
+    show($('music-tabs'), true);
+    markMusicTabs();
+    show($('music-view'), true);
+    showAlbum(album.sourceId, album.id);
+  });
+  return clone;
+}
