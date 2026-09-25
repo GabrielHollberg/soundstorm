@@ -3672,8 +3672,12 @@ function markMusicTabs() {
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
     // A swipe can land on a pill that is off the side of its strip.
-    if (on && !$('music-tabs').classList.contains('hidden')) {
-      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (on) {
+      const row = $('music-tabs');
+      const left = tab.offsetLeft - row.offsetLeft;
+      if (left < row.scrollLeft || left + tab.offsetWidth > row.scrollLeft + row.clientWidth) {
+        row.scrollTo({ left: left - 16, behavior: 'smooth' });
+      }
     }
   }
 }
@@ -5470,16 +5474,25 @@ function albumCardFromHome(album) {
   return clone;
 }
 
-/* ------------------------------------------------- swiping between music tabs */
+/* ------------------------------------------ swiping between a tab's pills */
 
-// Under Music, a sideways swipe on the page steps to the next or previous
-// pill - Mixes, Songs, Albums, Artists, Playlists - as pressing it would.
-// Not on an album, artist or playlist page (those have a back button and
-// the swipe would throw the page away), and not when the swipe began on
-// something that scrolls sideways itself, like a strip of mixes.
-(function musicSwipe() {
-  const pages = ['results', 'music-view', 'playlists-view'];
-  let start = null;
+// Wherever a row of pills picks what is on the page - Music's Mixes, Songs,
+// Albums, Artists and Playlists; Books' audiobooks, ebooks and documents;
+// Watch's films and TV - a sideways swipe steps to the neighbouring pill.
+// The page follows the finger, and on letting go either carries on off the
+// side while the next one slides in, or springs back. Not on an album,
+// artist or playlist page (those have a back button and the swipe would
+// throw the page away), and not from something that scrolls sideways
+// itself, like a strip of mixes.
+(function pillSwipe() {
+  const pages = ['continue', 'results-bar', 'results', 'music-view', 'playlists-view'];
+  let g = null;      // the gesture under way
+  let busy = false;  // a switch is animating
+
+  const pills = () => {
+    const row = ['music-tabs', 'subtabs'].map($).find((el) => !el.classList.contains('hidden'));
+    return row ? [...row.querySelectorAll('button')].filter((b) => !b.classList.contains('hidden')) : [];
+  };
 
   function scrollsSideways(el) {
     for (; el && el !== document.body; el = el.parentElement) {
@@ -5487,7 +5500,7 @@ function albumCardFromHome(album) {
         const overflow = getComputedStyle(el).overflowX;
         if (overflow === 'auto' || overflow === 'scroll') return true;
       }
-      if (el.matches('input, select, textarea, button.drag-handle, .reorder-handle')) return true;
+      if (el.matches('input, select, textarea')) return true;
     }
     return false;
   }
@@ -5496,44 +5509,101 @@ function albumCardFromHome(album) {
   // a short list - but not the header, the pills, the tab bar, the player or
   // anything laid over the page.
   function eligible(target) {
-    if ($('music-tabs').classList.contains('hidden') || $('app').classList.contains('hidden')) return false;
-    if ($('app').classList.contains('viewing-account')) return false;
+    if (busy || $('app').classList.contains('hidden') || $('app').classList.contains('viewing-account')) return false;
+    if (pills().length < 2) return false;
     const onPage = target === document.body || target === document.documentElement || target.closest('#app');
-    if (!onPage || target.closest('header, #music-tabs, #album-sort, #tabs')) return false;
+    if (!onPage || target.closest('header, #music-tabs, #subtabs, #album-sort, #tabs')) return false;
     if (pages.some((id) => !$(id).classList.contains('hidden') && $(id).querySelector(':scope > .back'))) return false;
     return !scrollsSideways(target);
   }
 
-  document.addEventListener('touchstart', (event) => {
-    start = null;
-    if (event.touches.length !== 1 || !eligible(event.target)) return;
-    const t = event.touches[0];
-    start = { x: t.clientX, y: t.clientY, at: Date.now() };
-  }, { passive: true });
-  document.addEventListener('touchend', (event) => {
-    if (!start) return;
-    const t = event.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    const quick = Date.now() - start.at < 700;
-    start = null;
-    if (!quick || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
-    const tabs = [...document.querySelectorAll('#music-tabs [data-view]')]
-      .filter((tab) => !tab.classList.contains('hidden'));
-    const at = tabs.findIndex((tab) => tab.classList.contains('active'));
-    const next = tabs[at + (dx < 0 ? 1 : -1)];
-    if (at < 0 || !next) return;
-    next.click();
-    const slide = dx < 0 ? 'swipe-in-left' : 'swipe-in-right';
+  function place(x, opacity, ms, easing) {
     for (const id of pages) {
       const el = $(id);
-      el.classList.remove('swipe-in-left', 'swipe-in-right');
-      void el.offsetWidth;
-      el.classList.add(slide);
+      el.style.transition = ms ? `transform ${ms}ms ${easing}, opacity ${ms}ms ${easing}` : 'none';
+      el.style.transform = x ? `translateX(${x}px)` : '';
+      el.style.opacity = opacity === 1 ? '' : String(opacity);
     }
-  }, { passive: true });
-  document.addEventListener('touchcancel', () => { start = null; }, { passive: true });
-  for (const id of pages) {
-    $(id).addEventListener('animationend', () => $(id).classList.remove('swipe-in-left', 'swipe-in-right'));
   }
+  const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+  // The next pill's page arrives by fetch. Wait until the page has stopped
+  // changing for a moment (a list is often cleared, then filled), at most
+  // half a second, so what slides in is the page and not a blank.
+  function whenDrawn() {
+    return new Promise((resolve) => {
+      let quiet;
+      const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(); };
+      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 70); });
+      for (const id of pages) observer.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      const cap = setTimeout(done, 500);
+      quiet = setTimeout(done, 150);
+    });
+  }
+
+  async function go(next, dir) {
+    busy = true;
+    const width = window.innerWidth;
+    place(dir * -width, 0.2, 170, 'cubic-bezier(.4,0,1,1)');
+    await settle(170);
+    // The next page starts at its top, as pressing the pill would show it.
+    window.scrollTo(0, 0);
+    const drawn = whenDrawn();
+    next.click();
+    await drawn;
+    place(dir * width * 0.4, 0, 0);
+    await frame();
+    await frame();
+    place(0, 1, 240, 'cubic-bezier(0,0,.2,1)');
+    await settle(250);
+    place(0, 1, 0);
+    busy = false;
+  }
+
+  document.addEventListener('touchstart', (event) => {
+    g = null;
+    if (event.touches.length !== 1 || !eligible(event.target)) return;
+    const t = event.touches[0];
+    g = { x: t.clientX, y: t.clientY, at: Date.now(), lock: null, dx: 0, samples: [] };
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (event) => {
+    if (!g || event.touches.length !== 1) return;
+    const t = event.touches[0];
+    const dx = t.clientX - g.x;
+    const dy = t.clientY - g.y;
+    if (!g.lock) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 10) return;
+      g.lock = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
+      if (g.lock === 'y') { g = null; return; }
+      const list = pills();
+      const at = list.findIndex((b) => b.classList.contains('active'));
+      g.prev = at > 0 ? list[at - 1] : null;
+      g.next = at >= 0 && at < list.length - 1 ? list[at + 1] : null;
+    }
+    if (event.cancelable) event.preventDefault();
+    // Past the first or last pill the page gives, but only a little.
+    const edge = (dx > 0 && !g.prev) || (dx < 0 && !g.next);
+    g.dx = edge ? dx / 4 : dx;
+    g.samples.push({ x: t.clientX, at: Date.now() });
+    if (g.samples.length > 5) g.samples.shift();
+    place(g.dx, 1 - Math.min(Math.abs(g.dx) / window.innerWidth, 1) * 0.5, 0);
+  }, { passive: false });
+
+  function release() {
+    if (!g || g.lock !== 'x') { g = null; return; }
+    const { dx, samples } = g;
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    const speed = first && last && last.at > first.at ? (last.x - first.x) / (last.at - first.at) : 0;
+    const target = dx < 0 ? g.next : g.prev;
+    g = null;
+    const far = Math.abs(dx) > window.innerWidth * 0.3;
+    const flung = Math.abs(dx) > 30 && Math.abs(speed) > 0.35 && Math.sign(speed) === Math.sign(dx);
+    if (target && (far || flung)) go(target, dx < 0 ? 1 : -1);
+    else place(0, 1, 220, 'cubic-bezier(0,0,.2,1)');
+  }
+  document.addEventListener('touchend', release, { passive: true });
+  document.addEventListener('touchcancel', () => { g = null; place(0, 1, 200, 'ease-out'); }, { passive: true });
 })();

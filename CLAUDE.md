@@ -484,12 +484,17 @@ off the bottom: the album sort sat inside the music row. The row is now
 pills that scroll inside their own strip, and `body { overflow-x: clip }`
 stops anything else doing it (clip, so the sticky header still works).
 
-Under Music a sideways swipe on the page steps between the pills, anywhere
-below the header including the empty space under a short list. Not on an
-album, artist or playlist page (the swipe would throw it away), and not from
-something that scrolls sideways itself. `overscroll-behavior-x: none` on the
-page while the pills show, or Chrome also takes a rightward swipe as Back -
-the first test run landed on about:blank.
+A sideways swipe steps between the pills wherever a row of them picks the
+page - Music, Books, Watch - anywhere below the header, including the empty
+space under a short list. The page follows the finger (touchmove is not
+passive: once the gesture locks sideways it prevents the scroll), then
+either carries on off the side or springs back; a third of the screen or a
+flick commits. The next page slides in only once it has stopped changing,
+at most half a second, or what slides in is a blank. Not on an album,
+artist or playlist page (the swipe would throw it away), and not from
+something that scrolls sideways itself. `overscroll-behavior-x: none` while
+pills show, or Chrome also takes a rightward swipe as Back - the first test
+run landed on about:blank.
 
 ## Music, phase 3: data saver, sleep timer, playlists, crossfade
 
