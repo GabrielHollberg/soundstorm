@@ -141,6 +141,7 @@ function forgetSetupCodeInAddress() {
 function showGate(hasAccount, setupCodeRequired) {
   show($('boot'), false);
   show($('app'), false);
+  show($('tabs'), false);
   show($('gate'), true);
 
   $('gate-blurb').textContent = hasAccount
@@ -209,6 +210,7 @@ async function showApp(me) {
   show($('app'), true);
   $('search-input').focus();
   applyLibraryTabs();
+  renderTabs();
   renderAccount();
   await loadFavouriteKeys();
   maybeShowHoldTip();
@@ -579,6 +581,9 @@ async function loadLibrary() {
   // has been added" apart from "a scan is still running", which are the two
   // reasons a search can come back empty and look broken.
   const folders = body.folders || [];
+  state.shelfFiles = {};
+  for (const f of folders) state.shelfFiles[f.kind] = (state.shelfFiles[f.kind] || 0) + (f.files || 0);
+  renderTabs();
   const indexing = folders.some(
     (f) => typeof f.indexed === 'number' && f.indexed < f.files);
   show($('library-indexing'), indexing);
@@ -823,6 +828,7 @@ for (const chip of document.querySelectorAll('.chip')) {
       other.classList.toggle('active', other === chip);
     }
     state.kind = chip.dataset.kind;
+    noteTabKind();
     runSearch();
   });
 }
@@ -854,7 +860,8 @@ async function runSearch() {
   renderSearchHint();
   const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
     && !(state.musicView === 'mixes' && state.query);
-  show($('music-tabs'), state.kind === 'music');
+  show($('music-tabs'), state.kind === 'music' || state.kind === 'playlists');
+  markMusicTabs();
   show($('album-order'), state.kind === 'music' && state.musicView === 'albums');
   show($('music-view'), musicBrowse);
   show($('playlists-view'), state.kind === 'playlists');
@@ -2862,6 +2869,11 @@ const ICONS = {
   chevron: '<path d="M9 6l6 6-6 6"/>',
   back: '<path d="M15 6l-6 6 6 6"/>',
   forward: '<path d="M9 6l6 6-6 6"/>',
+  home: '<path d="M4 11l8-7 8 7M6 9.5V20h4.5v-6h3v6H18V9.5"/>',
+  note: '<path d="M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>',
+  film: '<path d="M4 6h16v12H4zM4 10h16M8 6l-1.5 4M13 6l-1.5 4M18 6l-1.5 4"/>',
+  book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5zM5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/>',
+  photo: '<path d="M4 6h16v12H4zM4 15l4.5-4.5 4 4 2.5-2.5L20 17M15.5 9.5h.01"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   next: '<path d="M4 7h10M4 12h10M4 17h6M16 14l5 3-5 3z"/>',
   queue: '<path d="M4 7h16M4 12h16M4 17h10M18 15v6M15 18h6"/>',
@@ -3634,8 +3646,15 @@ state.albumOrder = 'name';
 
 for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
   tab.addEventListener('click', () => {
+    // Playlists sit with the music now, though they are a shelf of their own.
+    if (tab.dataset.view === 'playlists') {
+      selectKind('playlists');
+      markMusicTabs();
+      return;
+    }
     state.musicView = tab.dataset.view;
-    runSearch();
+    if (state.kind !== 'music') selectKind('music');
+    else runSearch();
   });
 }
 $('album-order').addEventListener('change', (event) => {
@@ -3646,7 +3665,7 @@ $('album-order').addEventListener('change', (event) => {
 function markMusicTabs() {
   show($('downloads-tab'), hasDownloads());
   for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
-    const on = tab.dataset.view === state.musicView;
+    const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
   }
@@ -5017,6 +5036,7 @@ async function showOfflineApp() {
   show($('boot'), false);
   show($('gate'), false);
   show($('app'), false);
+  show($('tabs'), false);
   show($('offline-app'), true);
   $('offline-view').replaceChildren(await downloadsView(true));
 }
@@ -5250,3 +5270,106 @@ setIcon($('photo-close'), 'down');
 $('photo-download').replaceChildren(icon('download'));
 setIcon($('photo-prev'), 'back');
 setIcon($('photo-next'), 'forward');
+
+/* ------------------------------------------------------------------ tabs */
+
+// Five tabs instead of ten chips: each is a group of shelves, one tap away,
+// along the bottom of a phone and down the side of a computer. The chips still
+// exist, hidden, and still do the choosing - a tab is a way of pressing one.
+// A tab remembers which of its shelves was last open. A shelf this account may
+// not see, or that has nothing on it, is left out, and a tab left with nothing
+// is hidden.
+const TABS = {
+  home: [{ kind: '', label: 'Everything' }, { kind: 'favourites', label: '\u2665 Favourites' }],
+  music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true }],
+  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }],
+  books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' }, { kind: 'document', label: 'Documents' }],
+  photos: [{ kind: 'picture', label: 'Photos' }],
+};
+state.tab = 'home';
+state.tabKind = {};
+
+function tabOf(kind) {
+  return Object.keys(TABS).find((tab) => TABS[tab].some((o) => o.kind === kind)) || 'home';
+}
+
+function shelfAvailable(kind) {
+  if (kind === '' || kind === 'favourites' || kind === 'playlists') return true;
+  const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
+  if (!chip || chip.classList.contains('hidden')) return false; // not allowed
+  const files = state.shelfFiles && state.shelfFiles[kind];
+  return files === undefined || files > 0;
+}
+
+function tabShelves(tab) {
+  return TABS[tab].filter((o) => shelfAvailable(o.kind));
+}
+
+function selectKind(kind) {
+  const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
+  if (chip) chip.click();
+}
+
+function selectTab(tab) {
+  if (!$('account').classList.contains('hidden')) setAccountOpen(false);
+  const shelves = tabShelves(tab).filter((o) => !o.inMusicTabs);
+  if (!shelves.length) return;
+  const remembered = state.tabKind[tab];
+  const kind = TABS[tab].some((o) => o.kind === remembered) && shelfAvailable(remembered) ? remembered : shelves[0].kind;
+  state.tab = tab;
+  if (kind === state.kind) {
+    renderTabs();
+    window.scrollTo({ top: 0, behavior: 'smooth' }); // a tab tapped again goes back to the top
+    return;
+  }
+  selectKind(kind);
+  window.scrollTo(0, 0);
+}
+
+// noteTabKind follows the chips: whatever shelf is open, its tab is lit.
+function noteTabKind() {
+  state.tab = tabOf(state.kind);
+  state.tabKind[state.tab] = state.kind;
+  renderTabs();
+}
+
+function renderTabs() {
+  let any = false;
+  for (const button of document.querySelectorAll('#tabs [data-tab]')) {
+    const tab = button.dataset.tab;
+    const available = tab === 'home' || tabShelves(tab).some((o) => !o.inMusicTabs);
+    show(button, available);
+    any = any || (available && tab !== 'home');
+    const on = tab === state.tab;
+    button.classList.toggle('active', on);
+    button.setAttribute('aria-current', on ? 'page' : 'false');
+  }
+  // Only with the library on screen - not over the sign-in page.
+  show($('tabs'), !$('app').classList.contains('hidden'));
+  // The shelves inside the tab, when there is more than one to choose from.
+  const box = $('subtabs');
+  const shelves = tabShelves(state.tab).filter((o) => !o.inMusicTabs);
+  box.replaceChildren();
+  if (shelves.length > 1) {
+    for (const o of shelves) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.textContent = o.label;
+      const on = o.kind === state.kind;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+      b.addEventListener('click', () => selectKind(o.kind));
+      box.append(b);
+    }
+  }
+  show(box, shelves.length > 1);
+  // A tab whose shelves have all gone (emptied, or taken away): back home.
+  if (state.tab !== 'home' && !tabShelves(state.tab).length) selectTab('home');
+}
+
+for (const button of document.querySelectorAll('#tabs [data-tab]')) {
+  button.querySelector('.tab-icon').replaceChildren(icon(button.querySelector('.tab-icon').dataset.icon));
+  button.addEventListener('click', () => selectTab(button.dataset.tab));
+}
+renderTabs();

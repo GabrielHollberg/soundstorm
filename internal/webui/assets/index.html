@@ -112,12 +112,17 @@
       <span id="library-indexing" class="hidden">Indexing new files&hellip;</span>
     </div>
 
+    <!-- Inside a tab that holds more than one shelf - Films or TV, Audiobooks,
+         Ebooks or Documents - which one. Built by renderTabs. -->
+    <div id="subtabs" class="subtabs hidden" role="tablist" aria-label="Shelf"></div>
+
     <!-- Under the Music chip: songs, albums or artists. -->
     <div id="music-tabs" class="music-tabs hidden" role="tablist" aria-label="Browse music by">
       <button type="button" role="tab" data-view="mixes">Mixes</button>
       <button type="button" role="tab" data-view="songs">Songs</button>
       <button type="button" role="tab" data-view="albums">Albums</button>
       <button type="button" role="tab" data-view="artists">Artists</button>
+      <button type="button" role="tab" data-view="playlists" id="playlists-tab">Playlists</button>
       <button type="button" role="tab" data-view="downloads" class="hidden" id="downloads-tab">Downloads</button>
       <select id="album-order" class="album-order hidden" aria-label="Order albums by">
         <option value="name">A to Z</option>
@@ -534,6 +539,16 @@
          will not fit in a dock, so the list is a panel above it. -->
     <ol id="audio-tracks" class="track-list hidden"></ol>
   </div>
+
+  <!-- Where to go: along the bottom of a phone, down the side of a computer.
+       Each tab is a group of shelves; a tab with nothing in it is hidden. -->
+  <nav id="tabs" class="tabs hidden" aria-label="Library">
+    <button type="button" data-tab="home"><span class="tab-icon" data-icon="home"></span><span>Home</span></button>
+    <button type="button" data-tab="music"><span class="tab-icon" data-icon="note"></span><span>Music</span></button>
+    <button type="button" data-tab="watch"><span class="tab-icon" data-icon="film"></span><span>Watch</span></button>
+    <button type="button" data-tab="books"><span class="tab-icon" data-icon="book"></span><span>Books</span></button>
+    <button type="button" data-tab="photos"><span class="tab-icon" data-icon="photo"></span><span>Photos</span></button>
+  </nav>
 
   <!-- A short message with one action (Undo), above the player. -->
   <div id="toast" class="toast hidden" role="status">

@@ -2268,3 +2268,99 @@ body.photo-open { overflow: hidden; }
 .photo-nav:disabled { visibility: hidden; }
 /* A phone swipes; the arrows are for a mouse. */
 @media (pointer: coarse) { .photo-nav { display: none; } }
+
+/* Tabs. On a phone, a bar along the bottom that everything else clears -
+   the mini-player floats just above it. On a computer, a rail down the left.
+   The old row of chips stays in the page, hidden: the tabs press them. */
+:root { --tabbar: 0px; }
+#filters { display: none; }
+.tabs {
+  position: fixed;
+  z-index: 14;
+  display: flex;
+  background: rgba(14, 17, 22, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.tabs button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.tabs button:hover { filter: none; color: var(--text); }
+.tabs button.active { color: var(--text); }
+.tabs button.active .tab-icon { color: var(--accent); }
+.tab-icon { display: grid; place-items: center; }
+.tab-icon .icon { width: 24px; height: 24px; }
+
+@media (max-width: 899px) {
+  :root { --tabbar: calc(60px + env(safe-area-inset-bottom)); }
+  .tabs {
+    left: 0; right: 0; bottom: 0;
+    height: var(--tabbar);
+    padding-bottom: env(safe-area-inset-bottom);
+    border-top: 1px solid var(--border);
+  }
+}
+@media (min-width: 900px) {
+  #app { padding-left: 84px; }
+  .tabs {
+    top: 0; bottom: 0; left: 0;
+    width: 84px;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 6px;
+    padding-top: 78px;
+    border-right: 1px solid var(--border);
+  }
+  .tabs button { flex: 0 0 auto; height: 64px; font-size: 12px; }
+  .dock { left: calc(50% + 42px); width: min(1180px, calc(100% - 112px)); }
+}
+
+/* Everything that sits at the bottom of the screen clears the tab bar. */
+body { padding-bottom: var(--tabbar); }
+body.dock-open { padding-bottom: calc(var(--dock-space) + var(--tabbar)); }
+.dock { bottom: calc(var(--tabbar) + 12px); }
+.select-bar { bottom: calc(var(--tabbar) + 20px); }
+body.dock-open .select-bar { bottom: calc(var(--dock-space) + var(--tabbar) + 12px); }
+.hold-tip { bottom: calc(var(--tabbar) + 24px); }
+body.dock-open .hold-tip { bottom: calc(var(--dock-space) + var(--tabbar) + 12px); }
+.toast { bottom: calc(var(--tabbar) + 18px); }
+body.dock-open .toast { bottom: calc(var(--dock-space) + var(--tabbar) + 18px); }
+body:not(.dock-open) .toast { bottom: calc(var(--tabbar) + 18px); }
+
+/* The shelves inside a tab: a segmented switch under the search box. */
+.subtabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 12px 20px 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.subtabs button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.subtabs button:hover { filter: none; color: var(--text); }
+.subtabs button.active { background: var(--surface-2); color: var(--text); }
+#app.viewing-account #subtabs { display: none; }

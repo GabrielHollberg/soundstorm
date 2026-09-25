@@ -176,9 +176,13 @@ place is listed with the reason rather than dumped somewhere.
 ![Dragging files onto the window](docs/shots/15-drop.png)
 
 The app opens on your library rather than on a form, so there is nothing to
-go looking for: a search box, one **Account** button, the shelves, and your
-media. The search box says what it will search — *Search music*, *Search
-albums*, *Search your playlists* — for whichever page you are on.
+go looking for: a search box, one **Account** button, and your media. Five
+tabs get you around — along the bottom of a phone, down the side of a
+computer: **Home** (everything, and your ♥ Favourites), **Music**, **Watch**
+(films and TV), **Books** (audiobooks, ebooks and documents) and **Photos**.
+A tab with nothing in it is hidden, and each remembers where you were. The
+search box says what it will search — *Search music*, *Search albums*,
+*Search your playlists* — for whichever page you are on.
 
 On a phone, or anything else that cannot drag, open **Account** and choose
 **Add media**. The same card has **Check for new files**, for anything copied
@@ -261,7 +265,8 @@ where you are. A film counts as finished once you reach the credits.
 
 ### Listening to music
 
-Pick **Music** and choose **Songs**, **Albums** or **Artists**. Artists and
+Open the **Music** tab and choose **Songs**, **Albums**, **Artists** or
+**Playlists**. Artists and
 albums are your folders — `Artist/Album/` — rather than whatever each file's
 tags claim, so a guest appearance does not create a new artist and an album
 does not split in two because its tracks disagree about the year. Albums can be
@@ -343,10 +348,10 @@ the untouched file. A video clip plays in the video player.
 On a phone, **hold down** on anything and a menu pops up beside it. On a
 computer, **right-click** it, or use the **⋯** that appears when you point at
 it. Use the menu to add something to your **favourites**, whatever it is: a
-song, a film, a book or a photo. The **♥ Favourites** chip shows them all.
+song, a film, a book or a photo. **Home → ♥ Favourites** shows them all.
 
 For songs, the same menu offers **Add to playlist**. Pick a playlist or type
-a name to start a new one. The **Playlists** chip lists them. Open one to play
+a name to start a new one. **Music → Playlists** lists them. Open one to play
 or shuffle it, play from any song, **drag songs by their handle** to reorder
 them, remove one (with **Undo**), tap the name to rename it, or delete the
 playlist. A playlist plays one song after another, with back and
