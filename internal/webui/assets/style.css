@@ -2306,14 +2306,8 @@ body.photo-open { overflow: hidden; }
     left: 0; right: 0; bottom: 0;
     height: var(--tabbar);
     padding-bottom: env(safe-area-inset-bottom);
-    /* On a phone the bar has no background of its own: the icons sit on the
-       page, with a shadow so they still read over a cover beneath them. */
-    background: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    border-top: 1px solid var(--border);
   }
-  .tabs button { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9); }
-  .tabs .tab-icon .icon { filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.9)); }
 }
 @media (min-width: 900px) {
   #app { padding-left: 84px; }
