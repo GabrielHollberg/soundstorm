@@ -901,14 +901,22 @@ async function runSearch() {
   // last one while it loads: the old list sitting there read as the new one.
   // Typing on the same page keeps the results until the new ones arrive.
   const page = `${state.kind}|${state.kind === 'music' ? state.musicView : ''}|${home}`;
-  if (page !== state.shownPage) {
+  const fresh = page !== state.shownPage;
+  if (fresh) {
     state.shownPage = page;
     for (const id of ['results', 'music-view', 'playlists-view', 'home-view']) $(id).replaceChildren();
-    $('status').textContent = home ? '' : 'Loading…';
+    $('status').textContent = '';
   }
   show($('home-view'), home);
   show($('results-bar'), !home);
   show($('results'), state.kind !== 'playlists' && !musicBrowse && !bookBrowse && !home);
+  if (fresh) {
+    if (home) showSkeleton($('home-view'), 'home');
+    else if (musicBrowse || bookBrowse) {
+      showSkeleton($('music-view'), 'grid', state.musicView === 'artists' || state.kind === 'authors');
+    } else if (state.kind === 'playlists') showSkeleton($('playlists-view'), 'grid');
+    else showSkeleton($('results'), 'grid');
+  }
   if (home) {
     state.hasMore = false;
     await renderHome(seq);
@@ -938,7 +946,8 @@ async function runSearch() {
     await showPlaylists();
     return;
   }
-  $('status').textContent = query ? 'Searching…' : 'Loading…';
+  $('status').textContent = '';
+  if (!$('results').children.length) showSkeleton($('results'), 'grid');
 
   // Back to the top of the list. Anything already on screen belongs to the
   // previous query and must not be appended to.
@@ -956,6 +965,7 @@ async function runSearch() {
     return;
   }
   if (!ok || !body) {
+    $('results').replaceChildren();
     $('status').textContent = 'Search failed.';
     return;
   }
@@ -3145,7 +3155,8 @@ async function loadFavouriteKeys() {
 }
 
 async function showFavourites(seq, kinds) {
-  $('status').textContent = 'Loading…';
+  $('status').textContent = '';
+  if (!$('results').children.length) showSkeleton($('results'), 'grid');
   // In a tab, only what belongs to it: Watch's favourites are films and TV.
   const items = (await loadFavouriteKeys()).filter((item) => !kinds || kinds.includes(item.kind));
   if (seq !== state.searchSeq) return;
@@ -4073,7 +4084,8 @@ function formatLength(seconds) {
 async function showMusicView(seq) {
   markMusicTabs();
   const view = $('music-view');
-  $('status').textContent = 'Loading…';
+  $('status').textContent = '';
+  if (!view.children.length) showSkeleton(view, 'grid', state.musicView === 'artists');
   const q = state.query ? `q=${encodeURIComponent(state.query)}` : '';
   if (state.musicView === 'downloads') {
     view.replaceChildren(await downloadsView());
@@ -4250,7 +4262,11 @@ async function showAlbum(sourceId, id) {
   const view = $('music-view');
   startLoading(view);
   const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
-  if (!ok || !body) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton('Albums', () => runSearch()));
+    $('status').textContent = 'Could not load that album.';
+    return;
+  }
   const { album, songs } = body;
   $('status').textContent = '';
 
@@ -4326,7 +4342,11 @@ async function showArtist(sourceId, id) {
   const view = $('music-view');
   startLoading(view);
   const { ok, body } = await api(`/api/music/artists/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
-  if (!ok || !body) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton('Artists', () => runSearch()));
+    $('status').textContent = 'Could not load that artist.';
+    return;
+  }
   const { artist, albums } = body;
   $('status').textContent = '';
 
@@ -6283,7 +6303,7 @@ function albumCardFromHome(album) {
       let quiet;
       const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(); };
       // Quiet is not drawn while the page still says it is loading.
-      const settled = () => { if (!$('status').textContent.startsWith('Loading')) done(); };
+      const settled = () => { if (!document.querySelector('#app .skeleton')) done(); };
       const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(settled, 50); });
       for (const id of pages) observer.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
       const cap = setTimeout(done, 450);
@@ -6539,7 +6559,7 @@ async function refreshPairs() {
 }
 
 async function showPairs(seq, query) {
-  if (!state.pairsShown) $('status').textContent = 'Loading\u2026';
+  if (!state.pairsShown && !$('results').children.length) showSkeleton($('results'), 'grid');
   state.hasMore = false;
   state.offset = 0;
   const pairs = await refreshPairs();
@@ -8293,7 +8313,8 @@ const bookCount = (n) => `${n} book${n === 1 ? '' : 's'}`;
 async function showBookBrowse(seq) {
   const view = $('music-view');
   const authors = state.kind === 'authors';
-  $('status').textContent = 'Loading\u2026';
+  $('status').textContent = '';
+  if (!view.children.length) showSkeleton(view, 'grid', authors);
   const params = new URLSearchParams({ q: state.query });
   const { ok, body } = await api(`/api/books/${authors ? 'authors' : 'series'}?${params}`);
   if (seq !== state.searchSeq) return;
@@ -8341,7 +8362,10 @@ async function showAuthor(key) {
   const { ok, body } = await api(`/api/books/authors?${new URLSearchParams({ key })}`);
   if (seq !== state.searchSeq) return;
   $('status').textContent = ok && body ? '' : 'Could not load that author.';
-  if (!ok || !body) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton('Authors', () => runSearch()));
+    return;
+  }
   const parts = [backButton('Authors', () => runSearch()), pageHead(body.name, bookCount(body.count))];
   const series = body.series || [];
   if (series.length) {
@@ -8364,7 +8388,10 @@ async function showSeries(key, fromAuthor) {
   const { ok, body } = await api(`/api/books/series?${new URLSearchParams({ key })}`);
   if (seq !== state.searchSeq) return;
   $('status').textContent = ok && body ? '' : 'Could not load that series.';
-  if (!ok || !body) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton('Series', () => runSearch()));
+    return;
+  }
   const books = body.books || [];
   state.items = books;
   // Back to wherever it was opened from: an author's page, or the list.
@@ -8384,11 +8411,68 @@ function nameKeyOf(name) {
   return name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 }
 
-// startLoading empties a view about to show another page, and says so, so
-// the page being left is not mistaken for the one on its way. The next list
-// page is then a fresh one, whatever runSearch last drew.
+// startLoading swaps a view about to show another page for ghost content
+// of a page, so the page being left is not mistaken for the one on its way.
+// The next list page is then a fresh one, whatever runSearch last drew.
 function startLoading(view) {
-  view.replaceChildren();
-  $('status').textContent = 'Loading\u2026';
+  showSkeleton(view, 'page');
+  $('status').textContent = '';
   state.shownPage = null;
+}
+
+// Ghost content: grey shapes where covers and titles will be, with a slow
+// shimmer across them, so a page on its way looks like it is coming rather
+// than stuck. Shaped like what arrives - a grid of covers, Home's rows, or a
+// page with its heading - and replaced wholesale by the real thing.
+function skeletonCards(n, round) {
+  return Array.from({ length: n }, () => {
+    const card = document.createElement('div');
+    card.className = 'item-holder skeleton';
+    card.setAttribute('aria-hidden', 'true');
+    const cover = document.createElement('div');
+    cover.className = round ? 'sk-cover round' : 'sk-cover';
+    const line = document.createElement('div');
+    line.className = 'sk-line';
+    const short = document.createElement('div');
+    short.className = 'sk-line short';
+    card.append(cover, line, short);
+    return card;
+  });
+}
+
+function showSkeleton(view, shape, round) {
+  const grid = () => {
+    const g = document.createElement('div');
+    g.className = 'grid browse-grid';
+    g.append(...skeletonCards(6, round));
+    return g;
+  };
+  if (shape === 'home') {
+    view.replaceChildren(...[0, 1, 2].map(() => {
+      const row = document.createElement('div');
+      row.className = 'sk-row skeleton';
+      row.setAttribute('aria-hidden', 'true');
+      const heading = document.createElement('div');
+      heading.className = 'sk-line sk-heading';
+      const strip = document.createElement('div');
+      strip.className = 'sk-strip';
+      strip.append(...skeletonCards(3));
+      row.append(heading, strip);
+      return row;
+    }));
+  } else if (shape === 'page') {
+    const head = document.createElement('div');
+    head.className = 'sk-page-head skeleton';
+    head.setAttribute('aria-hidden', 'true');
+    const title = document.createElement('div');
+    title.className = 'sk-line sk-title';
+    const sub = document.createElement('div');
+    sub.className = 'sk-line short';
+    head.append(title, sub);
+    view.replaceChildren(head, grid());
+  } else if (view.classList.contains('grid')) {
+    view.replaceChildren(...skeletonCards(8, round));
+  } else {
+    view.replaceChildren(grid());
+  }
 }

@@ -905,11 +905,14 @@ registers, every touchmove is prevented, the pill swipe stands down, and
 reported as selections refreshing the page or switching category.
 
 **A page being left shows nothing while the next one loads.** Switching
-tab, pill or page empties the old content at once and says "Loading..." -
-the last page sitting there read as the new one. Typing on the same page
+tab, pill or page swaps the old content at once for ghost content - grey
+covers and title lines with a slow shimmer (`showSkeleton`: a grid, Home's
+rows, or a page with its heading; still under reduced motion). The last page
+sitting there read as the new one, and "Loading..." read as stuck. A page
+that fails to load clears its ghost and says so. Typing on the same page
 keeps the results until the new ones replace them (`state.shownPage` tells
 the two apart; detail pages clear through `startLoading`). The pill swipe's
-wait for the next page does not count a page that still says it is loading
+wait for the next page does not count a page still showing ghost content
 as drawn.
 
 **Content starts right under the bars.** The status line under the pills

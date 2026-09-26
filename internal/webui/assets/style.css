@@ -2697,3 +2697,23 @@ html.holding, html.holding body { overscroll-behavior: none; }
 .book-page-head h1 { margin: 0; font-size: 24px; }
 .book-page-head p { margin: 4px 0 0; }
 .book-section h2 { margin: 18px 20px 0; font-size: 18px; }
+
+/* Ghost content while a page loads: grey shapes where covers and titles
+   will be, a soft light sweeping across them. Still, for anybody who has
+   asked for less motion. */
+.sk-cover, .sk-line {
+  background: linear-gradient(100deg, #161a21 30%, #232935 50%, #161a21 70%);
+  background-size: 300% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+.sk-cover { aspect-ratio: 1; border-radius: var(--radius); }
+.sk-cover.round { border-radius: 50%; }
+.sk-line { height: 12px; border-radius: 6px; margin-top: 10px; width: 80%; }
+.sk-line.short { width: 50%; margin-top: 8px; }
+.sk-heading { height: 18px; width: 40%; margin: 22px 20px 12px; }
+.sk-strip { display: flex; gap: 14px; padding: 0 20px; overflow: hidden; }
+.sk-strip > .skeleton { flex: 0 0 38%; }
+.sk-page-head { margin: 12px 20px 8px; }
+.sk-title { height: 24px; width: 55%; margin-top: 4px; }
+@keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .sk-cover, .sk-line { animation: none; } }
