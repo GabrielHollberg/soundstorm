@@ -7,7 +7,9 @@
  */
 
 :root {
-  --bg: #0e1116;
+  /* Black, the whole app: header, pills and content one background, as
+     Android's bars are. */
+  --bg: #000;
   --surface: #171b22;
   --surface-2: #1f242d;
   --border: #2a3039;
@@ -657,7 +659,8 @@ header {
     flex: 1 0 100%;
   }
   #search-input { max-width: none; }
-  .wordmark.small { margin-right: auto; }
+  /* The name centred at the top, over the full-width search box. */
+  .wordmark.small { margin: 0 auto; }
 
   /* One row that scrolls sideways, rather than two rows of wrapped chips.
      Six filters wrapping cost 88px of a 844px screen before any result. */
@@ -2411,9 +2414,10 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
   top: calc(var(--header-h, 64px) - 1px);
   z-index: 4;
   margin-top: 0;
-  padding-top: 11px;
+  /* As much room above the pills as below them, to the content. */
+  padding-top: 8px;
   padding-bottom: 8px;
-  background: #000;
+  background: var(--bg);
 }
 /* The photo viewer: the photos either side share the middle cell and ride
    beside the photo during a swipe. */
@@ -2575,7 +2579,7 @@ body.offline-mode .dl-get { display: none; }
    (the theme colour, #000) and the navigation bar below. The header and the
    pills under it are one solid band, with no line between them. */
 #app > header {
-  background: #000;
+  background: var(--bg);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   border-bottom: none;
