@@ -850,8 +850,16 @@ for (const chip of document.querySelectorAll('.chip')) {
     for (const other of document.querySelectorAll('.chip')) {
       other.classList.toggle('active', other === chip);
     }
+    const fromTab = state.tab;
     state.kind = chip.dataset.kind;
     noteTabKind();
+    // Nothing of the page being left comes along: not a selection, not an
+    // open menu, and not a search from another tab - "dune" typed in Books
+    // used to filter Music too. Between a tab's own pills the search stays,
+    // so it can be asked of audiobooks and ebooks alike.
+    if (state.selecting) setSelecting(false);
+    closeItemMenu();
+    if (state.tab !== fromTab && !state.settingsSearching) $('search-input').value = '';
     runSearch();
   });
 }
@@ -866,6 +874,7 @@ for (const chip of document.querySelectorAll('.chip')) {
 async function runSearch() {
   const query = $('search-input').value.trim();
   state.query = query;
+  state.detailPage = false;
 
   if (state.offline) {
     const seq = ++state.searchSeq;
@@ -3110,7 +3119,7 @@ async function refreshContinue() {
   const section = $('continue');
   const browsing = !state.query && !state.selecting;
   const kindFits = !state.kind || CONTINUE_KINDS.has(state.kind);
-  if (!browsing || !kindFits) {
+  if (!browsing || !kindFits || state.detailPage) {
     show(section, false);
     return;
   }
@@ -3135,7 +3144,8 @@ async function refreshContinue() {
     card.title = `${Math.round(item.progress * 100)}% of the way through`;
     row.append(card);
   }
-  show(section, items.length > 0 && !state.query && !state.selecting);
+  // Checked again: an album may have opened while this was on its way.
+  show(section, items.length > 0 && !state.query && !state.selecting && !state.detailPage);
 }
 
 window.addEventListener('soundstorm:reader-closed', () => setTimeout(refreshContinue, 300));
@@ -6068,6 +6078,9 @@ function selectTab(tab) {
   if (!shelves.length) return;
   const remembered = state.tabKind[tab];
   const kind = TABS[tab].some((o) => o.kind === remembered) && shelfAvailable(remembered) ? remembered : shelves[0].kind;
+  // A search belongs to the tab it was typed in; another tab, or coming back
+  // from Settings, starts with an empty box.
+  if (tab !== state.tab) $('search-input').value = '';
   state.tab = tab;
   if (kind === state.kind) {
     renderTabs();
@@ -6153,6 +6166,18 @@ async function renderHome(seq) {
   view.replaceChildren();
   const all = [];
 
+  // In three runs, each together: what you were just playing (under the
+  // Continue row), what is new on every shelf, then your favourites. They
+  // used to interleave - New music, favourites, Recently played, then the
+  // other New rows - which read as no order at all.
+  const recent = ((played.ok && played.body && played.body.songs) || []).slice(0, 12);
+  if (recent.length) {
+    all.push(...recent);
+    view.append(homeRow('Recently played', recent.map(renderItem), () => {
+      state.musicView = 'mixes';
+      selectTab('music');
+    }));
+  }
   const albums = (home.ok && home.body && home.body.albums) || [];
   if (albums.length) {
     view.append(homeRow('New music', albums.map((a) => albumCardFromHome(a)), () => {
@@ -6161,6 +6186,10 @@ async function renderHome(seq) {
       selectTab('music');
       if (state.kind === 'music') runSearch();
     }));
+  }
+  for (const shelf of (home.ok && home.body && home.body.shelves) || []) {
+    all.push(...shelf.items);
+    view.append(homeRow(HOME_SHELVES[shelf.kind] || 'New', shelf.items.map(renderItem), () => selectKind(shelf.kind)));
   }
   // A row of favourites for each tab, rather than one mixed list: See all
   // opens that tab's own Favourites.
@@ -6171,18 +6200,6 @@ async function renderHome(seq) {
     if (!list.length) continue;
     all.push(...list);
     view.append(homeRow(title, list.map(renderItem), () => selectKind(kind)));
-  }
-  const recent = ((played.ok && played.body && played.body.songs) || []).slice(0, 12);
-  if (recent.length) {
-    all.push(...recent);
-    view.append(homeRow('Recently played', recent.map(renderItem), () => {
-      state.musicView = 'mixes';
-      selectTab('music');
-    }));
-  }
-  for (const shelf of (home.ok && home.body && home.body.shelves) || []) {
-    all.push(...shelf.items);
-    view.append(homeRow(HOME_SHELVES[shelf.kind] || 'New', shelf.items.map(renderItem), () => selectKind(shelf.kind)));
   }
   // What the cards open into - the photo viewer steps through these.
   state.items = all;
@@ -7599,6 +7616,7 @@ function groupCard(group) {
 // album page lays it out.
 function showOfflineGroup(group, songs) {
   const view = $('music-view');
+  enterDetailPage();
   show($('results'), false);
   show($('results-bar'), false);
   show($('music-view'), true);
@@ -8420,9 +8438,21 @@ function nameKeyOf(name) {
 // of a page, so the page being left is not mistaken for the one on its way.
 // The next list page is then a fresh one, whatever runSearch last drew.
 function startLoading(view) {
+  enterDetailPage();
   showSkeleton(view, 'page');
   $('status').textContent = '';
   state.shownPage = null;
+}
+
+// enterDetailPage: an album, artist, playlist, author or series page, opened
+// from a list - or from Home, where the Continue row was showing and used to
+// stay above the album. Such a page is only itself; the lists' extras go.
+function enterDetailPage() {
+  state.detailPage = true;
+  show($('continue'), false);
+  show($('home-view'), false);
+  closeItemMenu();
+  if (state.selecting) setSelecting(false);
 }
 
 // Ghost content: grey shapes where covers and titles will be, with a slow

@@ -915,6 +915,18 @@ the two apart; detail pages clear through `startLoading`). The pill swipe's
 wait for the next page does not count a page still showing ghost content
 as drawn.
 
+**A page is only itself.** Opening an album, artist, playlist, author or
+series (`enterDetailPage`, from `startLoading`) hides the Continue row and
+Home, and closes a menu and any selection; a Continue refresh still on its
+way checks again before showing. Reported as an album opened from Home's
+New music with Continue still above it - that card switches the page by
+hand. Changing page closes menus and selections too, and a search belongs
+to its tab: another tab starts with an empty box, though a tab's own pills
+keep it (dune across audiobooks and ebooks).
+
+**Home runs in three groups**: Continue and Recently played, then every New
+row (music first), then the favourites. They used to interleave.
+
 **Content starts right under the bars.** The status line under the pills
 takes no room while it has nothing to say (`:has(#status:empty)`); it was
 an empty 20px on every page once the counts went.
