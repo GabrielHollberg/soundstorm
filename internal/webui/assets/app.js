@@ -6478,7 +6478,8 @@ function renderSyncLine(pair, line) {
 function pairCard(pair) {
   const { ebook, audiobook } = pair;
   const holder = document.createElement('div');
-  holder.className = 'pair-holder';
+  // An item holder, so the corner arrow is placed as it is on every card.
+  holder.className = 'item-holder pair-holder';
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'item pair-card';
@@ -6499,44 +6500,19 @@ function pairCard(pair) {
   card.append(coverArt(art, ebook.title), meta);
   card.addEventListener('click', () => readAlong(pair));
 
-  const actions = document.createElement('div');
-  actions.className = 'pair-actions';
-  const read = document.createElement('button');
-  read.type = 'button';
-  read.className = 'ghost small';
-  read.append(icon('book'), document.createTextNode('Read'));
-  read.addEventListener('click', () => play(ebook));
-  const listen = document.createElement('button');
-  listen.type = 'button';
-  listen.className = 'ghost small';
-  listen.append(icon('headphones'), document.createTextNode('Listen'));
-  listen.addEventListener('click', () => play(audiobook));
-  const keep = document.createElement('button');
-  keep.type = 'button';
-  keep.className = 'ghost small pair-download';
-  const paint = () => {
-    const have = state.downloads.groups.some((g) => g.id === pairDownloadID(pair));
-    keep.replaceChildren(icon('download'));
-    keep.classList.toggle('done', have);
-    keep.setAttribute('aria-label', have ? `Remove ${ebook.title} from this device` : `Download ${ebook.title}`);
-    keep.title = have ? 'On this device. Tap to remove.' : 'Keep the book and the audiobook on this device';
-  };
-  paint();
-  keep.addEventListener('click', async () => {
-    if (state.downloads.groups.some((g) => g.id === pairDownloadID(pair))) {
-      if (!window.confirm(`Remove "${ebook.title}" from this device? It stays in your library.`)) return;
-      await removeDownload(pairDownloadID(pair));
-    } else {
-      keep.disabled = true;
-      await downloadWithToast(ebook.title, (progress) => downloadPair(pair, progress));
-      keep.disabled = false;
-    }
-    paint();
-  });
-  actions.append(read, listen, keep);
+  // Downloading is the corner arrow every card has; the tick once it is here.
+  const cover = card.querySelector('.art-wrap');
+  if (state.downloads.groups.some((g) => g.id === pairDownloadID(pair))) cover.append(downloadedBadge());
+  const get = downloadsPossible() && !state.downloads.groups.some((g) => g.id === pairDownloadID(pair))
+    ? makeGet(ebook.title, false, async (progress) => {
+      await downloadPair(pair, progress);
+      cover.append(downloadedBadge());
+    })
+    : null;
   const line = document.createElement('div');
   renderSyncLine(pair, line);
-  holder.append(card, actions, line);
+  holder.append(card, line);
+  if (get) holder.append(get);
   return holder;
 }
 

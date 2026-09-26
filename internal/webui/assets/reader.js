@@ -205,6 +205,11 @@ export async function open(item, options = {}) {
     const view = document.createElement('foliate-view');
     host.append(view);
     session.view = view;
+    // Each chapter is its own document inside the view, and a touch on the
+    // text never reaches this page, so swipe-to-close listens in each one.
+    view.addEventListener('load', (event) => {
+      if (event.detail && event.detail.doc) swipeToClose(event.detail.doc);
+    });
 
     view.addEventListener('relocate', (event) => {
       const { cfi, fraction } = event.detail || {};
@@ -460,3 +465,60 @@ window.addEventListener('pagehide', () => {
 
 // app.js is a classic script and cannot import this module.
 window.soundstormReader = { open, close };
+
+/* ------------------------------------------------------ swipe down to close */
+
+// Drag the book down to put it away, as Now Playing, a photo and a film go:
+// it follows the finger and goes past a third of the screen or on a flick,
+// or springs back. Sideways stays the page turn. Measured on the screen, not
+// in the chapter: the chapter moves with the finger, so its own coordinates
+// would say the finger had not moved at all.
+function swipeToClose(target) {
+  const overlay = $('reader-overlay');
+  let start = null;
+  target.addEventListener('touchstart', (event) => {
+    start = null;
+    if (event.touches.length !== 1) return;
+    const t = event.touches[0];
+    start = { x: t.screenX, y: t.screenY, at: Date.now(), down: false, dy: 0 };
+  }, { passive: true });
+  target.addEventListener('touchmove', (event) => {
+    if (!start || event.touches.length !== 1) return;
+    const t = event.touches[0];
+    const dx = t.screenX - start.x;
+    const dy = t.screenY - start.y;
+    if (!start.down) {
+      if (dy < 14 || Math.abs(dy) < Math.abs(dx) * 1.6) {
+        if (Math.abs(dx) > 14) start = null; // a page turn
+        return;
+      }
+      start.down = true;
+      overlay.style.transition = 'none';
+    }
+    start.dy = Math.max(0, dy);
+    overlay.style.transform = `translateY(${start.dy}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (!start || !start.down) { start = null; return; }
+    const { dy, at } = start;
+    start = null;
+    const speed = dy / Math.max(Date.now() - at, 1);
+    overlay.style.transition = 'transform 0.22s ease-out';
+    if (dy > overlay.clientHeight * 0.3 || (speed > 0.6 && dy > 50)) {
+      overlay.style.transform = `translateY(${overlay.clientHeight}px)`;
+      setTimeout(async () => {
+        await close();
+        overlay.style.transition = '';
+        overlay.style.transform = '';
+      }, 220);
+    } else {
+      overlay.style.transform = '';
+      setTimeout(() => { overlay.style.transition = ''; }, 220);
+    }
+  };
+  target.addEventListener('touchend', end);
+  target.addEventListener('touchcancel', end);
+}
+
+// The bar and the margins around the book are this page's own.
+swipeToClose($('reader-overlay'));
