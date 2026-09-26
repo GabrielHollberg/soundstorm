@@ -6162,10 +6162,15 @@ async function renderHome(seq) {
       if (state.kind === 'music') runSearch();
     }));
   }
-  const favourites = ((favs.ok && favs.body && favs.body.items) || []).slice(0, 12);
-  if (favourites.length) {
-    all.push(...favourites);
-    view.append(homeRow('\u2665 Favourites', favourites.map(renderItem), () => selectKind('favourites')));
+  // A row of favourites for each tab, rather than one mixed list: See all
+  // opens that tab's own Favourites.
+  const favourites = (favs.ok && favs.body && favs.body.items) || [];
+  for (const [kind, title] of [['fav-music', 'Favourite songs'], ['fav-watch', 'Favourite films and TV'],
+    ['fav-books', 'Favourite books'], ['fav-photos', 'Favourite photos']]) {
+    const list = favourites.filter((it) => FAV_KINDS[kind].includes(it.kind)).slice(0, 12);
+    if (!list.length) continue;
+    all.push(...list);
+    view.append(homeRow(title, list.map(renderItem), () => selectKind(kind)));
   }
   const recent = ((played.ok && played.body && played.body.songs) || []).slice(0, 12);
   if (recent.length) {

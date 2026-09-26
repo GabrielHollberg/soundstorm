@@ -138,6 +138,12 @@ func (s *Server) handleMixes(w http.ResponseWriter, r *http.Request) {
 	}
 	var cards []mixCard
 
+	// The songs this person has hearted, first: the mix most their own.
+	if favs := s.favouriteSongs(r, user.ID); len(favs) > 0 {
+		cards = append(cards, mixCard{ID: "favourites", Title: "Your favourites",
+			Subtitle: "Every song you've hearted, shuffled", Covers: covers(shuffleItems(favs)), SourceID: src.ID()})
+	}
+
 	// From what this person listens to.
 	plays := s.history(r, user.ID)
 	if len(plays) > 0 {
@@ -220,6 +226,11 @@ func (s *Server) handleMix(w http.ResponseWriter, r *http.Request) {
 	var songs []media.Item
 	var err error
 	switch {
+	case id == "favourites":
+		// All of them, not a mix's hundred: a favourites mix that left some out
+		// would not be the favourites.
+		writeJSON(w, http.StatusOK, map[string]any{"songs": nonNil(shuffleItems(s.favouriteSongs(r, user.ID)))})
+		return
 	case id == "shuffle":
 		songs, err = mixer.RandomSongs(r.Context(), mixSize, "", 0, 0)
 	case id == "most-played":
@@ -368,4 +379,19 @@ func shuffleItems(items []media.Item) []media.Item {
 	out := append([]media.Item(nil), items...)
 	rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
 	return out
+}
+
+// favouriteSongs is this person's favourite songs, on shelves they can see.
+func (s *Server) favouriteSongs(r *http.Request, userID string) []media.Item {
+	entries, err := s.collections.Favourites(userID)
+	if err != nil {
+		return nil
+	}
+	var songs []media.Item
+	for _, it := range s.visible(r, entries) {
+		if it.Kind == media.KindMusic {
+			songs = append(songs, it)
+		}
+	}
+	return songs
 }

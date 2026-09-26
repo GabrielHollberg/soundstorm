@@ -2650,7 +2650,10 @@ each in order, then their other books.
 
 **Every tab has a Favourites pill** - `fav-music`, `fav-watch`, `fav-books`,
 `fav-photos` - showing only the favourites of that tab's kinds (Music's is in
-its own row of pills). Home keeps the all-kinds Favourites.
+its own row of pills). Home has a row per tab likewise - Favourite songs,
+films and TV, books, photos - each See all opening that tab's pill. Music's
+Mixes lead with **Your favourites**: every hearted song, shuffled, and all
+of them rather than a mix's hundred.
 
 ## Read-along: the page follows the audiobook
 
