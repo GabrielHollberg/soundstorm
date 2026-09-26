@@ -2517,3 +2517,5 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 /* Read & listen: the download button, a square beside Read and Listen. */
 .pair-actions .pair-download { flex: 0 0 auto; width: 38px; padding: 6px 0; }
 .pair-actions .pair-download.done { color: var(--accent); border-color: var(--accent); }
+#download-all { margin-left: auto; }
+#download-all + #select-toggle { margin-left: 8px; }

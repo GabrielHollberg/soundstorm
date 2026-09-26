@@ -887,6 +887,9 @@ async function runSearch() {
   show($('home-view'), home);
   show($('results-bar'), !home);
   show($('results'), state.kind !== 'playlists' && !musicBrowse && !home);
+  show($('download-all'), !home && !musicBrowse && ('caches' in window) && (
+    ['favourites', 'pairs', 'audiobook', 'ebook', 'document'].includes(state.kind)
+    || (state.kind === 'music' && state.musicView === 'songs')));
   if (home) {
     show($('select-toggle'), false);
     state.hasMore = false;
@@ -4129,7 +4132,18 @@ async function showArtist(sourceId, id) {
   radio.textContent = 'Artist mix';
   radio.title = 'Their songs, with others from the same genres';
   radio.addEventListener('click', () => playMix(`artist:${id}`));
-  buttons.append(radio);
+  const keepAll = document.createElement('button');
+  keepAll.type = 'button';
+  keepAll.className = 'ghost';
+  keepAll.append(icon('download'), document.createTextNode(' Download all'));
+  keepAll.addEventListener('click', () => bulkDownload(artist.name, async () => [{
+    label: artist.name,
+    run: async (progress, stopped) => download(
+      { id: `artist:${sourceId}/${id}`, type: 'artist', title: artist.name, subtitle: 'Every album',
+        sourceId, artId: artist.artId },
+      await everySong(), (done, total) => progress(done / total), stopped),
+  }]));
+  buttons.append(radio, keepAll);
   text.append(kind, name, facts, buttons);
   head.append(photo, text);
 
@@ -5242,13 +5256,14 @@ async function keepShell() {
 
 // download saves a group of songs - an album, a playlist, one song - and
 // reports progress through onProgress(done, total).
-async function download(group, items, onProgress) {
+async function download(group, items, onProgress, shouldStop) {
   const songs = items.filter((it) => it && it.kind === 'music');
   if (!songs.length) return;
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   const cache = await caches.open(OFFLINE_CACHE);
   let done = 0;
   for (const song of songs) {
+    if (shouldStop && shouldStop()) break;
     const key = selectionKey(song);
     if (!state.downloads.items[key]) {
       try {
@@ -6838,3 +6853,131 @@ async function downloadWithToast(title, run) {
     showToast(`Could not download ${title}.`);
   }
 }
+
+/* -------------------------------------------------------- download all */
+
+// Download all: an artist's albums, the favourites, every Read & listen book,
+// or a whole shelf. One job at a time, one item after another, with its
+// progress and a Stop in the message at the bottom. A whole shelf says how
+// much it is and how much room the device has, and asks first.
+state.bulk = null;
+
+async function bulkDownload(title, makeTasks, confirmFirst) {
+  if (state.bulk) {
+    showToast('Already downloading. Stop that first, from the message below.');
+    return;
+  }
+  const job = { stop: false };
+  state.bulk = job;
+  try {
+    showToast(`Getting ready to download ${title}\u2026`, 'Stop', () => { job.stop = true; }, 600000);
+    const tasks = await makeTasks();
+    if (!tasks.length) {
+      showToast(`Everything in ${title} is already on this device.`);
+      return;
+    }
+    if (confirmFirst && !(await confirmFirst(tasks))) {
+      showToast('Nothing downloaded.');
+      return;
+    }
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    let done = 0;
+    for (let i = 0; i < tasks.length && !job.stop; i++) {
+      const task = tasks[i];
+      let shown = -1;
+      const say = (p) => {
+        const pct = Math.floor((p || 0) * 100);
+        if (pct === shown) return;
+        shown = pct;
+        const place = tasks.length > 1 ? ` ${i + 1} of ${tasks.length}:` : '';
+        showToast(`Downloading${place} ${task.label}\u2026 ${pct}%`, 'Stop', () => { job.stop = true; }, 600000);
+      };
+      say(0);
+      try {
+        await task.run(say, () => job.stop);
+        done++;
+      } catch {
+        // One that fails does not stop the rest.
+      }
+    }
+    markMusicTabs();
+    showToast(job.stop
+      ? `Stopped. ${done} of ${tasks.length} downloaded; find them in Music, Downloads.`
+      : `${done === tasks.length ? `Downloaded ${title}` : `Downloaded ${done} of ${tasks.length} from ${title}`}. Find them in Music, Downloads.`);
+  } finally {
+    state.bulk = null;
+  }
+}
+
+// Every item on a shelf, a page at a time, as the list itself would load them.
+async function wholeShelf(kind) {
+  const items = [];
+  for (let offset = 0; offset < 10000;) {
+    const params = new URLSearchParams({ q: '', kind, limit: '200', offset: String(offset) });
+    const { ok, body } = await api(`/api/search?${params}`);
+    if (!ok || !body) break;
+    items.push(...body.items);
+    if (!body.hasMore || !body.items.length) break;
+    offset = (body.offset || offset) + body.items.length;
+  }
+  return items;
+}
+
+const bookTask = (item) => ({ label: item.title, run: (progress) => downloadBook(item, progress) });
+
+async function roomLeft() {
+  if (!navigator.storage || !navigator.storage.estimate) return '';
+  const est = await navigator.storage.estimate().catch(() => null);
+  return est && est.quota ? ` This device has about ${formatStorage(est.quota - (est.usage || 0))} free for SoundStorm.` : '';
+}
+
+$('download-all').addEventListener('click', () => {
+  const kind = state.kind;
+  if (kind === 'favourites') {
+    bulkDownload('your favourites', async () => {
+      const items = await loadFavouriteKeys();
+      const songs = items.filter((it) => it.kind === 'music');
+      const tasks = [];
+      if (songs.some((s) => !isDownloaded(s))) {
+        tasks.push({
+          label: 'favourite songs',
+          run: (progress, stopped) => download(
+            { id: 'favourites', type: 'favourites', title: 'Favourites', subtitle: 'Songs' },
+            songs, (done, total) => progress(done / total), stopped),
+        });
+      }
+      for (const it of items) {
+        if (['audiobook', 'ebook', 'document'].includes(it.kind) && !isDownloaded(it)) tasks.push(bookTask(it));
+      }
+      return tasks;
+    });
+  } else if (kind === 'pairs') {
+    bulkDownload('Read & listen', async () => {
+      const pairs = await refreshPairs();
+      return pairs
+        .filter((p) => !state.downloads.groups.some((g) => g.id === pairDownloadID(p)))
+        .map((p) => ({ label: p.ebook.title, run: (progress) => downloadPair(p, progress) }));
+    }, async (tasks) => window.confirm(
+      `Download ${tasks.length} book${tasks.length === 1 ? '' : 's'}, each with its audiobook? `
+      + `Audiobooks are often several hundred MB each.${await roomLeft()}`));
+  } else if (kind === 'music') {
+    bulkDownload('all songs', async () => {
+      const songs = await wholeShelf('music');
+      if (songs.every((s) => isDownloaded(s))) return [];
+      return [{
+        label: `${songs.length} songs`,
+        run: (progress, stopped) => download(
+          { id: 'shelf:music', type: 'shelf', title: 'All songs', subtitle: 'Your whole music library' },
+          songs, (done, total) => progress(done / total), stopped),
+      }];
+    }, async (tasks) => window.confirm(
+      `Download all ${tasks[0].label} to this device? That can be many GB.${await roomLeft()}`));
+  } else if (['audiobook', 'ebook', 'document'].includes(kind)) {
+    const names = { audiobook: 'audiobooks', ebook: 'ebooks', document: 'documents' };
+    bulkDownload(`all ${names[kind]}`, async () => (await wholeShelf(kind)).filter((it) => !isDownloaded(it)).map(bookTask),
+      async (tasks) => window.confirm(
+        `Download ${tasks.length} ${names[kind]} to this device?`
+        + (kind === 'audiobook' ? ' Audiobooks are often several hundred MB each.' : '')
+        + await roomLeft()));
+  }
+});
