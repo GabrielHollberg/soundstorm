@@ -39,6 +39,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/source/jellyfin"
 	"github.com/GabrielHollberg/soundstorm/internal/source/localbooks"
 	"github.com/GabrielHollberg/soundstorm/internal/source/opds"
+	"github.com/GabrielHollberg/soundstorm/internal/source/storyteller"
 	"github.com/GabrielHollberg/soundstorm/internal/source/subsonic"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
@@ -87,6 +88,10 @@ type Target struct {
 	// Kind is what a local folder holds, for the one backend type that
 	// serves more than one: "localbooks" is ebooks or documents.
 	Kind media.Kind
+
+	// For Storyteller: the audiobook shelf as its container sees it. Its data
+	// folder, as SoundStorm sees it, is MediaPath.
+	AudiobooksRemote string
 }
 
 // BackendStatus is one backend's setup state, for the UI.
@@ -358,6 +363,9 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 	case "calibreweb":
 		m.set(t.ID, StatusProvisioning, "configuring Calibre-Web", "")
 		return provisionCalibreWeb(ctx, c, t, log)
+	case "storyteller":
+		m.set(t.ID, StatusProvisioning, "setting up read-along", "")
+		return provisionStoryteller(ctx, c, log)
 	default:
 		return state.Backend{}, fmt.Errorf("unknown backend type %q", t.Type)
 	}
@@ -483,6 +491,17 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			Username: creds.Username,
 			Password: creds.Password,
 			Timeout:  15 * time.Second,
+		})
+		return one(s, err)
+
+	case "storyteller":
+		s, err := storyteller.New(storyteller.Config{
+			ID:               t.ID,
+			BaseURL:          t.BaseURL,
+			Token:            creds.Token,
+			Timeout:          20 * time.Second,
+			DataDir:          t.MediaPath,
+			AudiobooksRemote: t.AudiobooksRemote,
 		})
 		return one(s, err)
 

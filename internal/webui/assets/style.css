@@ -2471,3 +2471,11 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
   -webkit-tap-highlight-color: transparent;
 }
 .pair-actions .icon { width: 16px; height: 16px; }
+
+/* Read & listen: whether the page turns with the audio. */
+.pair-sync { margin-top: 6px; font-size: 12.5px; color: var(--muted); min-height: 18px; }
+.pair-sync .linkish { font-size: 12.5px; padding: 0; }
+.pair-sync.ready { display: flex; align-items: center; gap: 4px; color: var(--text); }
+.pair-sync.ready .icon { width: 14px; height: 14px; color: var(--accent); }
+.pair-bar { height: 3px; margin-top: 5px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.pair-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease-out; }

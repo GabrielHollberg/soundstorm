@@ -470,6 +470,17 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 			Kind:      media.KindDocument,
 		})
 	}
+	// Read-along: Storyteller lines an audiobook up with its ebook. Its data
+	// folder is mounted read-only here, where the synced books are read from.
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_STORYTELLER_URL")); url != "" {
+		targets = append(targets, provision.Target{
+			ID:               "storyteller",
+			Type:             "storyteller",
+			BaseURL:          url,
+			MediaPath:        env("SOUNDSTORM_STORYTELLER_DATA", "/readalong/data"),
+			AudiobooksRemote: env("SOUNDSTORM_STORYTELLER_AUDIOBOOKS", "/audiobooks"),
+		})
+	}
 	// Escape hatch for an existing Calibre server elsewhere on the network.
 	// This one does need credentials typed, which is why it is not the default.
 	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_CALIBREWEB_URL")); url != "" {

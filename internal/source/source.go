@@ -626,3 +626,27 @@ type LyricsSource interface {
 type RecentLister interface {
 	Recent(ctx context.Context, limit int) ([]media.Item, error)
 }
+
+// AudioFile is one file of an audiobook: its name inside the book's folder,
+// and where it starts and how long it runs on the whole book's timeline.
+type AudioFile struct {
+	Name            string
+	StartSeconds    float64
+	DurationSeconds float64
+}
+
+// AudioLayout is how an audiobook is laid out on disk: its folder relative to
+// the shelf, its files in playing order, and where each chapter starts on the
+// whole book's timeline.
+type AudioLayout struct {
+	Folder   string
+	Files    []AudioFile
+	Chapters []float64
+}
+
+// AudioLayouter is an optional interface for an audiobook source that can say
+// how a book is laid out - what read-along needs to turn a time in one of a
+// syncing tool's chapter clips back into a time in the book.
+type AudioLayouter interface {
+	AudioLayout(ctx context.Context, itemID string) (AudioLayout, error)
+}

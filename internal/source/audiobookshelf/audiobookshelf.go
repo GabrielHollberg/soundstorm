@@ -282,6 +282,10 @@ func convertItems(sourceID string, found []libraryItem) []media.Item {
 		if md.ISBN != "" {
 			item.Extra["isbn"] = md.ISBN
 		}
+		// The book's folder on the shelf: read-along knows a synced book by it.
+		if li.RelPath != "" && !li.IsFile {
+			item.Extra["folder"] = li.RelPath
+		}
 		if y, err := strconv.Atoi(md.PublishedYear); err == nil {
 			item.Year = y
 		}
@@ -793,4 +797,28 @@ func (s *Source) Recent(ctx context.Context, limit int) ([]media.Item, error) {
 		return nil, err
 	}
 	return convertItems(s.id, resp.Results), nil
+}
+
+// AudioLayout is the book's folder, its files in playing order with their
+// place on the book's timeline, and where each chapter starts.
+func (s *Source) AudioLayout(ctx context.Context, itemID string) (source.AudioLayout, error) {
+	item, err := s.fetchItem(ctx, itemID)
+	if err != nil {
+		return source.AudioLayout{}, err
+	}
+	if item.RelPath == "" || item.IsFile {
+		return source.AudioLayout{}, fmt.Errorf("audiobookshelf %q: %q is not a book folder", s.id, itemID)
+	}
+	layout := source.AudioLayout{Folder: item.RelPath}
+	var start float64
+	for _, f := range orderedFiles(item) {
+		layout.Files = append(layout.Files, source.AudioFile{
+			Name: f.Metadata.Filename, StartSeconds: start, DurationSeconds: f.Duration,
+		})
+		start += f.Duration
+	}
+	for _, c := range item.Media.Chapters {
+		layout.Chapters = append(layout.Chapters, c.Start)
+	}
+	return layout, nil
 }

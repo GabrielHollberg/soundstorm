@@ -194,6 +194,14 @@ an audiobook. Tap the cover to read along: the audiobook starts and the book
 opens, with the player at the bottom of the page. **Read** or **Listen**
 does just one. You can read any book while music or an audiobook plays.
 
+Under each book, **Turn pages with the audio** syncs it: SoundStorm listens to
+the recording once (about 40 minutes for a 10-hour book on a recent PC) and
+lines it up with the text. After that, reading along turns the page by itself
+and highlights the sentence being read. Turn the page yourself to look back,
+and it picks up again a few seconds later. This is done by
+[Storyteller](https://storyteller-platform.dev/), which SoundStorm installs and
+sets up for you like its other parts.
+
 On a phone, or anything else that cannot drag, open **Settings** and choose
 **Add media**. The same card has **Check for new files**, for anything copied
 into the folders some other way.

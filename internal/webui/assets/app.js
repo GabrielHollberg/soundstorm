@@ -724,6 +724,7 @@ const SETUP_SHELVES = {
   ebooks: 'Ebooks',
   documents: 'Documents',
   calibreweb: 'Calibre library',
+  storyteller: 'Read-along',
 };
 
 async function pollSetup() {
@@ -2040,6 +2041,11 @@ function elapsed() {
   return offset + (player.currentTime || 0);
 }
 
+// For read-along in the reader (a module, so it asks through window): where
+// this audiobook is on its whole timeline, or null when something else plays.
+window.soundstormListening = (sourceId, id) =>
+  audio.item && audio.item.sourceId === sourceId && audio.item.id === id ? elapsed() : null;
+
 // savePosition sends where we are, if there is anywhere to send it.
 //
 // keepalive, so the last save survives the page being closed - which is the
@@ -2938,6 +2944,7 @@ const ICONS = {
   note: '<path d="M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>',
   film: '<path d="M4 6h16v12H4zM4 10h16M8 6l-1.5 4M13 6l-1.5 4M18 6l-1.5 4"/>',
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5zM5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zM20 15a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z"/>',
   photo: '<path d="M4 6h16v12H4zM4 15l4.5-4.5 4 4 2.5-2.5L20 17M15.5 9.5h.01"/>',
   gear: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
@@ -6057,17 +6064,20 @@ function tintStatusBar(art) {
 // Books there is both an ebook and an audiobook of, matched by the server on
 // title and author. A card's cover reads along - the audiobook starts and the
 // book opens over it, the player floating at the bottom - and its two
-// buttons do one or the other.
+// buttons do one or the other. Where read-along is set up, a card can also be
+// synced, after which the page turns with the voice and the sentence being
+// read is lit.
 async function refreshPairs() {
   const { ok, body } = await api('/api/books/pairs');
   if (!ok || !body) return [];
   state.pairCount = body.pairs.length;
+  state.readAlong = Boolean(body.readalong);
   renderTabs();
   return body.pairs;
 }
 
 async function showPairs(seq, query) {
-  $('status').textContent = 'Loading\u2026';
+  if (!state.pairsShown) $('status').textContent = 'Loading\u2026';
   state.hasMore = false;
   state.offset = 0;
   const pairs = await refreshPairs();
@@ -6079,15 +6089,100 @@ async function showPairs(seq, query) {
     return terms.every((t) => text.includes(t));
   });
   state.items = [];
+  state.pairsShown = true;
   $('results').replaceChildren(...shown.map(pairCard));
   $('status').textContent = shown.length
     ? `${shown.length} book${shown.length === 1 ? '' : 's'} to read and listen to`
     : (terms.length ? 'Nothing matches.' : 'No book is on both shelves yet.');
+  // While a book is syncing, keep its card current.
+  clearTimeout(state.pairsPoll);
+  if (pairs.some((p) => p.sync && (p.sync.state === 'queued' || p.sync.state === 'working'))) {
+    state.pairsPoll = setTimeout(() => {
+      if (state.kind === 'pairs' && seq === state.searchSeq) showPairs(seq, query);
+    }, 4000);
+  }
 }
 
-function readAlong(pair) {
+const pairRef = (item) => ({ sourceId: item.sourceId, id: item.id });
+
+async function readAlong(pair) {
+  if (pair.sync && pair.sync.state === 'ready') {
+    const params = new URLSearchParams({
+      ebookSource: pair.ebook.sourceId, ebookId: pair.ebook.id,
+      audiobookSource: pair.audiobook.sourceId, audiobookId: pair.audiobook.id,
+    });
+    const { ok, body } = await api(`/api/readalong?${params}`);
+    if (ok && body && body.item) {
+      play(pair.audiobook);
+      closeVideo();
+      const book = { ...body.item, title: pair.ebook.title, creators: pair.ebook.creators };
+      window.soundstormReader.open(book, {
+        timeline: body.timeline || [],
+        audiobook: pairRef(pair.audiobook),
+      });
+      if (!body.timeline || !body.timeline.length) {
+        showToast("This book synced, but its chapters do not line up with the recording, so the page will not follow.");
+      }
+      return;
+    }
+  }
   play(pair.audiobook);
   play(pair.ebook);
+}
+
+async function startSync(pair, line) {
+  line.replaceChildren(document.createTextNode('Starting\u2026'));
+  const { ok, body } = await api('/api/readalong', {
+    method: 'POST',
+    body: JSON.stringify({ ebook: pairRef(pair.ebook), audiobook: pairRef(pair.audiobook) }),
+  });
+  if (!ok) {
+    line.replaceChildren(document.createTextNode((body && body.error) || 'Could not start.'));
+    return;
+  }
+  pair.sync = body;
+  renderSyncLine(pair, line);
+  if (state.kind === 'pairs') showPairs(state.searchSeq, state.query);
+}
+
+function renderSyncLine(pair, line) {
+  line.replaceChildren();
+  line.className = 'pair-sync';
+  if (!state.readAlong) return;
+  const sync = pair.sync;
+  const button = (label, action) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'linkish';
+    b.textContent = label;
+    b.addEventListener('click', action);
+    return b;
+  };
+  if (!sync) {
+    line.append(button('Turn pages with the audio', () => startSync(pair, line)));
+    return;
+  }
+  switch (sync.state) {
+    case 'ready':
+      line.classList.add('ready');
+      line.append(icon('check'), document.createTextNode('Pages turn with the audio'));
+      break;
+    case 'failed':
+    case 'stopped':
+      line.append(document.createTextNode('Could not sync. '), button('Try again', () => startSync(pair, line)));
+      break;
+    default: {
+      const pct = Math.round((sync.progress || 0) * 100);
+      line.append(document.createTextNode(sync.state === 'queued' ? 'Waiting to sync\u2026'
+        : `${sync.stage || 'Syncing'}\u2026 ${pct}%`));
+      const bar = document.createElement('div');
+      bar.className = 'pair-bar';
+      const fill = document.createElement('i');
+      fill.style.width = `${pct}%`;
+      bar.append(fill);
+      line.append(bar);
+    }
+  }
 }
 
 function pairCard(pair) {
@@ -6127,6 +6222,8 @@ function pairCard(pair) {
   listen.append(icon('headphones'), document.createTextNode('Listen'));
   listen.addEventListener('click', () => play(audiobook));
   actions.append(read, listen);
-  holder.append(card, actions);
+  const line = document.createElement('div');
+  renderSyncLine(pair, line);
+  holder.append(card, actions, line);
   return holder;
 }

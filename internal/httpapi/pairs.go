@@ -12,6 +12,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/federate"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/source/storyteller"
 )
 
 // Books somebody has both as an ebook and as an audiobook, so they can read
@@ -45,6 +46,9 @@ func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 		if kind != media.KindEbook && kind != media.KindAudiobook {
 			continue
 		}
+		if _, synced := src.(*storyteller.Source); synced {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -63,7 +67,22 @@ func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	wg.Wait()
-	writeJSON(w, http.StatusOK, map[string]any{"pairs": matchBooks(ebooks, audiobooks)})
+	pairs := matchBooks(ebooks, audiobooks)
+	out := map[string]any{"pairs": pairs, "readalong": false}
+	if st, ok := s.readAlong(r.Context()); ok {
+		out["readalong"] = true
+		statuses := s.pairStatuses(ctx, st, pairs)
+		withStatus := make([]map[string]any, len(pairs))
+		for i, p := range pairs {
+			entry := map[string]any{"ebook": p.Ebook, "audiobook": p.Audiobook}
+			if st, ok := statuses[i]; ok {
+				entry["sync"] = st
+			}
+			withStatus[i] = entry
+		}
+		out["pairs"] = withStatus
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // matchBooks pairs every audiobook with the ebooks of the same book. Two

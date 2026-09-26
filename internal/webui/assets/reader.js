@@ -30,6 +30,7 @@ const session = {
   sizes: new Map(),
   pendingLocation: null,
   saveTimer: null,
+  follow: null, // read-along: the timeline being followed, and where it is
 };
 
 function bookParams(item) {
@@ -121,7 +122,7 @@ function isPDF(item) {
   return ((item.extra && item.extra.format) || '').toLowerCase() === 'pdf';
 }
 
-export async function open(item) {
+export async function open(item, options = {}) {
   const overlay = $('reader-overlay');
   const host = $('reader-host');
 
@@ -196,6 +197,9 @@ export async function open(item) {
     }
 
     applyTheme(view);
+    if (options.timeline && options.timeline.length && options.audiobook) {
+      startFollowing(view, options.timeline, options.audiobook);
+    }
   } catch (err) {
     const error = $('reader-error');
     error.textContent = `Could not open this book: ${err.message}`;
@@ -217,10 +221,104 @@ function applyTheme(view) {
     }
     a { color: #6aa8ff; }
     img { max-width: 100%; height: auto; }
+    .ss-reading {
+      background: rgba(106, 168, 255, 0.24);
+      border-radius: 3px;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
   `);
 }
 
+/* --------------------------------------------------------------- read-along */
+
+// The page follows the audiobook. The timeline is every sentence of the synced
+// book with its place on the recording's whole timeline, in order; four times
+// a second the reader finds the sentence being read, turns to it if it is not
+// on the page, and lights it. Turning the page by hand pauses the turning for
+// a little while (the sentence is still lit), so somebody can look back
+// without being dragged forward mid-thought.
+const FOLLOW_EVERY_MS = 250;
+const HANDS_OFF_MS = 12000;
+
+function startFollowing(view, timeline, audiobook) {
+  stopFollowing();
+  const follow = { view, timeline, audiobook, index: -1, lit: null, movedByUs: false, handsOffUntil: 0 };
+  session.follow = follow;
+  follow.onRelocate = () => {
+    if (!follow.movedByUs) follow.handsOffUntil = Date.now() + HANDS_OFF_MS;
+  };
+  view.addEventListener('relocate', follow.onRelocate);
+  follow.timer = setInterval(() => tick(follow), FOLLOW_EVERY_MS);
+  // The first page shown is wherever the voice is, not the saved place.
+  follow.handsOffUntil = 0;
+}
+
+function stopFollowing() {
+  const follow = session.follow;
+  if (!follow) return;
+  clearInterval(follow.timer);
+  follow.view.removeEventListener('relocate', follow.onRelocate);
+  unlight(follow);
+  session.follow = null;
+}
+
+// The sentence playing at t: the last one starting at or before it.
+function sentenceAt(timeline, t) {
+  let lo = 0;
+  let hi = timeline.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (timeline[mid].t <= t) { found = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return found;
+}
+
+function unlight(follow) {
+  const el = follow.lit && follow.lit.deref();
+  if (el) el.classList.remove('ss-reading');
+  follow.lit = null;
+}
+
+async function tick(follow) {
+  if (session.follow !== follow || follow.busy) return;
+  const t = window.soundstormListening?.(follow.audiobook.sourceId, follow.audiobook.id);
+  if (typeof t !== 'number' || !Number.isFinite(t)) return;
+  const index = sentenceAt(follow.timeline, t);
+  if (index < 0 || index === follow.index) return;
+  follow.index = index;
+  follow.busy = true;
+  try {
+    const { view } = follow;
+    const resolved = view.resolveNavigation(follow.timeline[index].h);
+    if (!resolved) return;
+    if (Date.now() >= follow.handsOffUntil) {
+      follow.movedByUs = true;
+      try {
+        await view.renderer.goTo(resolved);
+      } finally {
+        // The relocate this causes arrives after goTo settles.
+        setTimeout(() => { follow.movedByUs = false; }, 100);
+      }
+    }
+    const contents = view.renderer.getContents?.() || [];
+    const shown = contents.find((c) => c.index === resolved.index);
+    const el = shown && resolved.anchor && resolved.anchor(shown.doc);
+    unlight(follow);
+    if (el && el.classList) {
+      el.classList.add('ss-reading');
+      follow.lit = new WeakRef(el);
+    }
+  } catch {
+    // A sentence that cannot be found is skipped; the next one may be.
+  } finally {
+    follow.busy = false;
+  }
+}
+
 export async function close() {
+  stopFollowing();
   await flushProgress();
 
   const frame = $('reader-pdf');

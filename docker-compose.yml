@@ -63,6 +63,9 @@ services:
       SOUNDSTORM_AUDIOBOOKSHELF_MEDIA_PATH: /audiobooks
       SOUNDSTORM_IMMICH_URL: http://immich-server:2283
       SOUNDSTORM_IMMICH_MEDIA_PATH: /pictures
+      # Read-along. Storyteller's data folder is mounted below, read-only,
+      # which is where the synced books are read from.
+      SOUNDSTORM_STORYTELLER_URL: http://storyteller:8001
       # SoundStorm creates and owns this folder. Ebooks are read straight out of
       # it, since an EPUB describes itself and needs no backend; the other
       # three folders are handed to the server that indexes them.
@@ -130,11 +133,14 @@ services:
       # library on one drive: uploads are staged in its root and moved into
       # place.
       - ${SOUNDSTORM_LIBRARY_PATH:-./library}:/library
+      # Storyteller's synced books, read here and never written.
+      - storyteller-data:/readalong/data:ro
     depends_on:
       - navidrome
       - jellyfin
       - audiobookshelf
       - immich-server
+      - storyteller
     healthcheck:
       # Either scheme: the same container serves plain HTTP or TLS depending on
       # SOUNDSTORM_TLS, and a healthcheck that only knew one would report the
@@ -194,6 +200,31 @@ services:
       - abs-config:/config
       - abs-metadata:/metadata
     # Deliberately no ports. SoundStorm reaches it at http://audiobookshelf:80.
+
+  # Read-along: Storyteller lines an audiobook up with its ebook, sentence by
+  # sentence, by transcribing the recording - the expensive part, which is
+  # why it is a backend rather than something SoundStorm does. SoundStorm sets
+  # it up, hands it pairs from Books > Read & listen, and reads the result.
+  #
+  # Pinned by digest: its API changes between releases, and every call
+  # SoundStorm makes was checked against this build (web-v2.14.21).
+  storyteller:
+    image: registry.gitlab.com/storyteller-platform/storyteller@sha256:f063fcd838ffd9723d581d7a190135069c58c595e6ce9ac41b5e2f8bec090db7
+    container_name: soundstorm-storyteller
+    restart: unless-stopped
+    environment:
+      STORYTELLER_SECRET_KEY: ${SOUNDSTORM_STORYTELLER_SECRET:-soundstorm-storyteller}
+      # It checks GitLab for release notes at every start otherwise.
+      STORYTELLER_SYNC_CHANGELOG: "false"
+    volumes:
+      - storyteller-data:/data
+      # The transcription models it downloads, kept across updates.
+      - storyteller-models:/home/storyteller/.local/share/ghost-story
+      # The recordings are used where they are. The ebook is uploaded to it,
+      # so the book on the shelf is never touched even when it has to be
+      # upgraded to EPUB 3.
+      - ${SOUNDSTORM_LIBRARY_PATH:-./library}/audiobooks:/audiobooks:ro
+    # Deliberately no ports. SoundStorm reaches it at http://storyteller:8001.
 
   # Pictures. Immich is four containers - the server, the machine learning
   # that makes "dog on a beach" find a photo, a Postgres with vector search,
@@ -306,3 +337,5 @@ volumes:
   immich-data:
   immich-models:
   immich-db:
+  storyteller-data:
+  storyteller-models:

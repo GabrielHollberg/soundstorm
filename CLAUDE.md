@@ -2434,6 +2434,74 @@ pairs, and a scan for same-author near-misses found none. The card's cover
 reads along (starts the audiobook, opens the book over it); Read and Listen
 do one each. The pill only shows once there is a pair.
 
+## Read-along: the page follows the audiobook
+
+Asked for as pages turning by themselves with the audiobook. Matching a
+recording to its text sentence by sentence is forced alignment - transcribe
+the audio, find it in the book - which is the expensive, ML-shaped layer this
+project does not own. So it is a backend: **Storyteller** (MIT, Docker),
+pinned by digest to web-v2.14.21 because its API moves between releases.
+SoundStorm provisions it, hands it pairs from Read & listen, and reads the
+result. A cheap alternative - chapter-proportional guessing - was offered and
+declined: a page off by one reads as broken.
+
+**SoundStorm keeps playing the audiobook through its own player.**
+Storyteller's output is an EPUB 3 with media overlays and its own copy of the
+audio inside; playing that would lose the lock screen, the dock and
+Audiobookshelf's listening position. So only its *text* is used - every
+sentence wrapped in a span with an id - plus its SMIL timings, converted to the
+audiobook's whole-book timeline (`storyteller.Timeline`). Four times a second
+the reader finds the sentence at `elapsed()`, turns to it with foliate's own
+`resolveNavigation` + `renderer.goTo` (the same calls its read-aloud uses),
+and lights it with a class. Turning the page by hand stops the turning for
+twelve seconds.
+
+**The timing conversion rests on how Storyteller cuts audio**, read from its
+source and then checked end to end: files are numbered in name order
+(`Audio/0000F-0000C`), and each is cut at its chapter marks, with long
+chapters cut again at 2 hours by default - `maxTrackLength` is set huge at
+provisioning so chapters are the only cuts. Piece C of file F therefore starts
+at that file's C-th chapter, which is Audiobookshelf's chapter list
+(`source.AudioLayouter`). Where the pieces and chapters do not line up, there
+is no timeline: the book opens and says it cannot follow, rather than
+following the wrong sentence.
+
+Provisioning, all checked live:
+- The first account is a Next.js server action on `/init`, which works as a
+  plain multipart form. The action id changes per build, so it is scraped off
+  the page each time.
+- `/api/v2/token` (form data) gives a thirty-day session; `/api/v2/token/app`
+  trades it for a 35-year one, and **reads only the `st_token` cookie**: a
+  bearer token is sent to the login page. That cost a test cycle.
+- Settings: synced books written inside its own `/data` (`INTERNAL`, never
+  beside the source - the default writes into the library), `base.en` (tiny
+  missed a chapter of synthetic speech), cache cleaned after, OPDS off.
+
+**Two steps to add a pair, because the one-call form is broken.** Naming the
+EPUB and the audio in one `POST /api/v2/books` fails when they are in
+different folders - each tries to create the book, the second hits a duplicate
+id. So the recording is added by reference (read-only mount, never copied)
+and the ebook is uploaded into that book over tus. That also keeps the shelf's
+file untouched when an EPUB 2 - most of a Calibre library - has to be
+upgraded: the upgrade happens to Storyteller's copy. A synced book is found
+again by its audiobook's folder (`Extra["folder"]`), so nothing is stored in
+SoundStorm.
+
+Measured: on the development machine a 10-hour book should take about 40
+minutes (8 minutes of speech in 30s with base.en). A sync queues; one runs at
+a time. Disk: roughly the audiobook's size again in Storyteller's volume,
+since the synced EPUB embeds the audio. Idle RAM about 300MB, 0.7GB syncing.
+The image is 2.9GB. It still syncs its changelog from GitLab on a daily
+schedule despite `STORYTELLER_SYNC_CHANGELOG=false`, which only stops the one
+at start. Its secret key defaults like Immich's database password; both are
+reachable only on the compose network.
+
+Verified end to end on an isolated stack with synthetic speech: an EPUB 3 with
+two MP3s, and an EPUB 2 with a chaptered M4B. Both synced through SoundStorm's
+API; each timeline ended exactly where its recording did; in Chrome the lit
+sentence moved with the narration and the page turned to chapter two on its
+own.
+
 ## Verified against live servers
 
 These were checked on a running stack, not inferred. Re-verify if versions move.
