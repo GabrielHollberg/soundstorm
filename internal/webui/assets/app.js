@@ -208,7 +208,8 @@ async function showApp(me) {
   show($('boot'), false);
   show($('gate'), false);
   show($('app'), true);
-  $('search-input').focus();
+  // The search box is not focused on opening: on a phone that pops the
+  // keyboard over the library, and it drew a highlight round the box.
   applyLibraryTabs();
   renderTabs();
   renderAccount();
