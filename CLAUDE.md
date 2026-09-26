@@ -890,9 +890,18 @@ photos do (back up and they come off; what was selected before stays).
 The bottom 120px of the screen scrolls the page down, and the band under
 the pills up, faster nearer the edge, so a drag reaches any number. The
 selection bar waits for the lift - over the list it hid the very cards the
-finger was heading for, and `elementFromPoint` found the bar - then offers
-Add to favourites and Download to everyone and Delete to the owner. Only
-in a shelf's list; the page swipe stands down while a drag selects.
+finger was heading for, and `elementFromPoint` found the bar. Dragging up
+works the same way: a finger over the pills or the tab bar counts as the
+item at that edge of the list, so the selection follows the scroll. The
+selection gets the item menu itself, fixed at the bottom, with only what
+applies to many: play next, add to queue and add to playlist when all are
+songs, favourites, download or remove downloads, select all shown, and
+Delete (with its preview, and Undo in the toast) for the owner. Only in a
+shelf's list; the page swipe stands down while a drag selects.
+
+**Content starts right under the bars.** The status line under the pills
+takes no room while it has nothing to say (`:has(#status:empty)`); it was
+an empty 20px on every page once the counts went.
 
 **Normalization at the edge again.** `source.FileLister` asks each adapter
 which files an item is, relative to its shelf. Each backend reports a path

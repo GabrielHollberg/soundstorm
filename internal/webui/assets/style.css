@@ -2672,3 +2672,12 @@ body.offline-mode .cover-queue, body.offline-mode .cover-next { display: none; }
 /* While a drag selects: the bar waits, and the player lets the finger through. */
 body.drag-selecting #select-bar { visibility: hidden; }
 body.drag-selecting #audio-dock { pointer-events: none; }
+
+/* Content starts right under the bars: no empty status line in the way,
+   and no extra margin over the first thing on a page. */
+.results-bar:has(#status:empty) { display: none; }
+.grid { padding-top: 4px; }
+.music-view { padding-top: 0; }
+.browse-grid { padding-top: 4px; }
+.home-view { padding-top: 0; }
+.home-view > .home-row:first-child, .home-view > :first-child { margin-top: 6px; }
