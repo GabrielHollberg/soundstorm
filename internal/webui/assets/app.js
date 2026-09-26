@@ -886,18 +886,20 @@ async function runSearch() {
   const seq = ++state.searchSeq;
 
   // The two personal views are not a search of a shelf.
-  const own = state.kind === 'favourites' || state.kind === 'playlists' || state.kind === 'pairs';
+  const own = state.kind === 'favourites' || state.kind === 'playlists' || state.kind === 'pairs'
+    || Boolean(FAV_KINDS[state.kind]) || BOOK_BROWSE.has(state.kind);
   renderSearchHint();
   const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
     && !(state.musicView === 'mixes' && state.query);
-  show($('music-tabs'), state.kind === 'music' || state.kind === 'playlists');
+  show($('music-tabs'), state.kind === 'music' || state.kind === 'playlists' || state.kind === 'fav-music');
   markMusicTabs();
-  show($('music-view'), musicBrowse);
+  const bookBrowse = BOOK_BROWSE.has(state.kind);
+  show($('music-view'), musicBrowse || bookBrowse);
   show($('playlists-view'), state.kind === 'playlists');
   const home = state.kind === '' && !query;
   show($('home-view'), home);
   show($('results-bar'), !home);
-  show($('results'), state.kind !== 'playlists' && !musicBrowse && !home);
+  show($('results'), state.kind !== 'playlists' && !musicBrowse && !bookBrowse && !home);
   if (home) {
     state.hasMore = false;
     await renderHome(seq);
@@ -908,8 +910,13 @@ async function runSearch() {
     await showMusicView(seq);
     return;
   }
-  if (state.kind === 'favourites') {
-    await showFavourites(seq);
+  if (state.kind === 'favourites' || FAV_KINDS[state.kind]) {
+    await showFavourites(seq, FAV_KINDS[state.kind]);
+    return;
+  }
+  if (bookBrowse) {
+    state.hasMore = false;
+    await showBookBrowse(seq);
     return;
   }
   if (state.kind === 'pairs') {
@@ -3128,9 +3135,10 @@ async function loadFavouriteKeys() {
   return body.items;
 }
 
-async function showFavourites(seq) {
+async function showFavourites(seq, kinds) {
   $('status').textContent = 'Loading…';
-  const items = await loadFavouriteKeys();
+  // In a tab, only what belongs to it: Watch's favourites are films and TV.
+  const items = (await loadFavouriteKeys()).filter((item) => !kinds || kinds.includes(item.kind));
   if (seq !== state.searchSeq) return;
   // Typing narrows the list, as it does a shelf.
   const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -3459,6 +3467,8 @@ function renderSearchHint() {
     '': 'everything', music: 'music', video: 'films', tv: 'TV', audiobook: 'audiobooks',
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
     favourites: 'your favourites', playlists: 'your playlists', pairs: 'books to read along with',
+    authors: 'authors', series: 'series', 'fav-music': 'your favourites', 'fav-watch': 'your favourites',
+    'fav-books': 'your favourites', 'fav-photos': 'your favourites',
   };
   let what = shelves[state.kind] || 'everything';
   if (state.kind === 'music' && ['songs', 'albums', 'artists'].includes(state.musicView)) what = state.musicView;
@@ -4004,6 +4014,11 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
       markMusicTabs();
       return;
     }
+    if (tab.dataset.view === 'favourites') {
+      selectKind('fav-music');
+      markMusicTabs();
+      return;
+    }
     state.musicView = tab.dataset.view;
     // Albums are A to Z; only New music's See all lists them newest first.
     state.albumOrder = 'name';
@@ -4014,12 +4029,13 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
 
 function markMusicTabs() {
   // Offline, Music is what is downloaded: songs, albums, playlists.
-  for (const view of ['mixes', 'artists']) {
+  for (const view of ['mixes', 'artists', 'favourites']) {
     const pill = document.querySelector(`#music-tabs [data-view="${view}"]`);
     if (pill) pill.classList.toggle('hidden', state.offline);
   }
   for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
-    const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists' : tab.dataset.view === state.musicView;
+    const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists'
+      : state.kind === 'fav-music' ? tab.dataset.view === 'favourites' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
     // A swipe can land on a pill that is off the side of its strip.
@@ -5894,12 +5910,23 @@ setIcon($('photo-next'), 'forward');
 // is hidden.
 const TABS = {
   home: [{ kind: '', label: 'Home' }, { kind: 'favourites', label: 'Favourites', inMusicTabs: true }],
-  music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true }],
-  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }],
+  music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true },
+    { kind: 'fav-music', label: 'Favourites', inMusicTabs: true }],
+  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'fav-watch', label: 'Favourites' }],
   books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
-    { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' }],
-  photos: [{ kind: 'picture', label: 'Photos' }],
+    { kind: 'authors', label: 'Authors' }, { kind: 'series', label: 'Series' },
+    { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
+    { kind: 'fav-books', label: 'Favourites' }],
+  photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'fav-photos', label: 'Favourites' }],
 };
+// Each tab's Favourites pill shows the favourites of the kinds it holds; the
+// Books tab also browses by author and by series. Here, beside TABS, because
+// the tabs are first drawn while the page loads.
+const FAV_KINDS = {
+  'fav-music': ['music'], 'fav-watch': ['video', 'tv'],
+  'fav-books': ['audiobook', 'ebook', 'document'], 'fav-photos': ['picture'],
+};
+const BOOK_BROWSE = new Set(['authors', 'series']);
 state.tab = 'home';
 state.tabKind = {};
 
@@ -5912,6 +5939,10 @@ function shelfAvailable(kind) {
   if (kind === '' || kind === 'favourites' || kind === 'playlists') return true;
   // Only once there is at least one book on both shelves.
   if (kind === 'pairs') return state.pairCount > 0 && shelfAvailable('ebook') && shelfAvailable('audiobook');
+  // Books by author and series: wherever there are books.
+  if (kind === 'authors' || kind === 'series') return shelfAvailable('ebook') || shelfAvailable('audiobook');
+  // A tab's favourites: while the tab has a shelf of its own to favourite from.
+  if (FAV_KINDS[kind]) return FAV_KINDS[kind].some((k) => shelfAvailable(k));
   const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
   if (!chip || chip.classList.contains('hidden')) return false; // not allowed
   const files = state.shelfFiles && state.shelfFiles[kind];
@@ -8210,3 +8241,131 @@ document.addEventListener('touchmove', (event) => {
   if ((state.dragSelect || state.holding) && event.cancelable) event.preventDefault();
 }, { passive: false });
 
+/* ------------------------------------------------ authors and series */
+
+// Books by author and by series, across the ebook and audiobook shelves: an
+// author's page has their series, each in order, and then their other books;
+// a series' page has its books in order. The server groups them (sort-form
+// and reading-form names alike); typing narrows the list of authors or series.
+
+function groupCover(group) {
+  return group.cover ? artUrl(group.cover.sourceId, group.cover.artId) : '';
+}
+
+// A card for an author or a series: round for a person, square for books.
+function bookGroupCard(group, round, subtitle, open) {
+  const holder = document.createElement('div');
+  holder.className = 'item-holder';
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = round ? 'item artist-card' : 'item';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const name = document.createElement('span');
+  name.className = 'title';
+  name.textContent = group.name;
+  const sub = document.createElement('span');
+  sub.className = 'sub';
+  sub.textContent = subtitle;
+  meta.append(name, sub);
+  card.append(coverArt(groupCover(group), group.name, round), meta);
+  card.addEventListener('click', open);
+  holder.append(card);
+  return holder;
+}
+
+const bookCount = (n) => `${n} book${n === 1 ? '' : 's'}`;
+
+async function showBookBrowse(seq) {
+  const view = $('music-view');
+  const authors = state.kind === 'authors';
+  $('status').textContent = 'Loading\u2026';
+  const params = new URLSearchParams({ q: state.query });
+  const { ok, body } = await api(`/api/books/${authors ? 'authors' : 'series'}?${params}`);
+  if (seq !== state.searchSeq) return;
+  const list = (ok && body && (authors ? body.authors : body.series)) || [];
+  const grid = document.createElement('div');
+  grid.className = authors ? 'grid browse-grid artist-grid' : 'grid browse-grid';
+  grid.append(...list.map((g) => (authors
+    ? bookGroupCard(g, true, bookCount(g.count), () => showAuthor(g.key))
+    : bookGroupCard(g, false, [(g.authors || []).join(', '), bookCount(g.count)].filter(Boolean).join(' \u00b7 '),
+      () => showSeries(g.key)))));
+  view.replaceChildren(grid);
+  $('status').textContent = list.length ? ''
+    : (state.query ? `No ${authors ? 'author' : 'series'} matches.`
+      : (authors ? 'No authors yet.' : 'No series yet. Books show here when their details name a series.'));
+}
+
+function bookSection(title, children) {
+  const section = document.createElement('section');
+  section.className = 'book-section';
+  const h = document.createElement('h2');
+  h.textContent = title;
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...children);
+  section.append(h, grid);
+  return section;
+}
+
+function pageHead(title, subtitle) {
+  const head = document.createElement('div');
+  head.className = 'book-page-head';
+  const h = document.createElement('h1');
+  h.textContent = title;
+  const sub = document.createElement('p');
+  sub.className = 'muted';
+  sub.textContent = subtitle;
+  head.append(h, sub);
+  return head;
+}
+
+async function showAuthor(key) {
+  const seq = ++state.searchSeq;
+  const view = $('music-view');
+  $('status').textContent = 'Loading\u2026';
+  const { ok, body } = await api(`/api/books/authors?${new URLSearchParams({ key })}`);
+  if (seq !== state.searchSeq) return;
+  $('status').textContent = ok && body ? '' : 'Could not load that author.';
+  if (!ok || !body) return;
+  const parts = [backButton('Authors', () => runSearch()), pageHead(body.name, bookCount(body.count))];
+  const series = body.series || [];
+  if (series.length) {
+    parts.push(bookSection('Series', series.map((g) => bookGroupCard(g, false, bookCount(g.count),
+      () => showSeries(g.key, body.name)))));
+  }
+  const books = body.books || [];
+  if (books.length) {
+    state.items = books;
+    parts.push(bookSection(series.length ? 'Other books' : 'Books', books.map(renderItem)));
+  }
+  view.replaceChildren(...parts);
+  window.scrollTo(0, 0);
+}
+
+async function showSeries(key, fromAuthor) {
+  const seq = ++state.searchSeq;
+  const view = $('music-view');
+  $('status').textContent = 'Loading\u2026';
+  const { ok, body } = await api(`/api/books/series?${new URLSearchParams({ key })}`);
+  if (seq !== state.searchSeq) return;
+  $('status').textContent = ok && body ? '' : 'Could not load that series.';
+  if (!ok || !body) return;
+  const books = body.books || [];
+  state.items = books;
+  // Back to wherever it was opened from: an author's page, or the list.
+  const back = fromAuthor && state.kind === 'authors'
+    ? backButton(fromAuthor, () => showAuthor(nameKeyOf(fromAuthor)))
+    : backButton(state.kind === 'authors' ? 'Authors' : 'Series', () => runSearch());
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...books.map(renderItem));
+  view.replaceChildren(back, pageHead(body.name, [(body.authors || []).join(', '), bookCount(body.count)]
+    .filter(Boolean).join(' \u00b7 ')), grid);
+  window.scrollTo(0, 0);
+}
+
+// The server's key for a name: lower-case letters and digits of its reading form.
+function nameKeyOf(name) {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}

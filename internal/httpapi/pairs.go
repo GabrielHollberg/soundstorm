@@ -6,13 +6,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
-	"github.com/GabrielHollberg/soundstorm/internal/federate"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
-	"github.com/GabrielHollberg/soundstorm/internal/source/storyteller"
 )
 
 // Books somebody has both as an ebook and as an audiobook, so they can read
@@ -54,39 +51,7 @@ func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 // listPairs lists both shelves, as far as ctx's account may see them, and
 // matches them.
 func (s *Server) listPairs(ctx context.Context) []bookPair {
-	var (
-		mu         sync.Mutex
-		wg         sync.WaitGroup
-		ebooks     []media.Item
-		audiobooks []media.Item
-	)
-	// Through the registry, so a shelf this account may not see is never listed.
-	for _, src := range s.reg.All(ctx) {
-		kind := src.Kind()
-		if kind != media.KindEbook && kind != media.KindAudiobook {
-			continue
-		}
-		if _, synced := src.(*storyteller.Source); synced {
-			continue
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer func() { _ = recover() }() // one shelf, never the request
-			items, err := src.Search(ctx, media.Query{Kinds: []media.Kind{kind}, Limit: federate.MaxDepth})
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if kind == media.KindEbook {
-				ebooks = append(ebooks, items...)
-			} else {
-				audiobooks = append(audiobooks, items...)
-			}
-		}()
-	}
-	wg.Wait()
+	ebooks, audiobooks := s.listBookShelves(ctx)
 	wrong := s.store.NotPairs()
 	var pairs []bookPair
 	have := map[string]bool{}

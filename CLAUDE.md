@@ -2625,6 +2625,22 @@ pairs, and a scan for same-author near-misses found none. The card's cover
 reads along (starts the audiobook, opens the book over it); Read and Listen
 do one each. The pill only shows once there is a pair.
 
+**Authors and Series** are pills in Books, over both book shelves at
+once. `GET /api/books/authors` and `/api/books/series` (with `?key=` for one
+author's or series' page) list the shelves through the registry, as Read
+Along does (`listBookShelves`, shared), and group on each request - nothing
+stored. Names are grouped on a key that reads "Herbert, Frank" and "Frank
+Herbert" alike and shown in the reading form, sorted by surname. A comma is
+a list (Audiobookshelf joins co-authors with one) unless one side of a
+single comma is one word, the sort form. Series come from Calibre's series
+and index, or Audiobookshelf's seriesName, which carries the number
+("Dune #2"); only a book's first series. An author's page is their series,
+each in order, then their other books.
+
+**Every tab has a Favourites pill** - `fav-music`, `fav-watch`, `fav-books`,
+`fav-photos` - showing only the favourites of that tab's kinds (Music's is in
+its own row of pills). Home keeps the all-kinds Favourites.
+
 ## Read-along: the page follows the audiobook
 
 Asked for as pages turning by themselves with the audiobook. Matching a

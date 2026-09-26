@@ -159,3 +159,65 @@ func TestPairingByHand(t *testing.T) {
 		t.Errorf("a backwards pair answered %d", resp.StatusCode)
 	}
 }
+
+// Authors read the sort form and the reading form as one person, across
+// both shelves, and an author's page splits series (in order) from the rest.
+func TestAuthorsAndSeries(t *testing.T) {
+	ebooks := stub{id: "ebooks", kind: media.KindEbook, items: []media.Item{
+		{ID: "e1", SourceID: "ebooks", Kind: media.KindEbook, Title: "Dune", Creators: []string{"Herbert, Frank"},
+			Extra: map[string]string{"series": "Dune", "seriesIndex": "1"}},
+		{ID: "e2", SourceID: "ebooks", Kind: media.KindEbook, Title: "The Dosadi Experiment", Creators: []string{"Frank Herbert"}},
+	}}
+	audiobooks := stub{id: "audiobookshelf", kind: media.KindAudiobook, items: []media.Item{
+		{ID: "a1", SourceID: "audiobookshelf", Kind: media.KindAudiobook, Title: "Dune Messiah", Creators: []string{"Frank Herbert"},
+			Extra: map[string]string{"series": "Dune #2"}},
+		{ID: "a2", SourceID: "audiobookshelf", Kind: media.KindAudiobook, Title: "Good Omens", Creators: []string{"Terry Pratchett, Neil Gaiman"}},
+	}}
+	h := newHarness(t, ebooks, audiobooks)
+	h.signUp(t)
+	var list struct {
+		Authors []struct {
+			Key, Name string
+			Count     int
+		}
+	}
+	_, body := h.do(t, http.MethodGet, "/api/books/authors", "")
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("authors: %v (%s)", err, body)
+	}
+	names := map[string]int{}
+	for _, a := range list.Authors {
+		names[a.Name] = a.Count
+	}
+	if names["Frank Herbert"] != 3 || names["Terry Pratchett"] != 1 || names["Neil Gaiman"] != 1 || len(names) != 3 {
+		t.Fatalf("authors = %v, want Frank Herbert 3, Terry Pratchett 1, Neil Gaiman 1", names)
+	}
+	var page struct {
+		Series []struct {
+			Name  string
+			Books []struct{ ID string }
+		}
+		Books []struct{ ID string }
+	}
+	_, body = h.do(t, http.MethodGet, "/api/books/authors?key=frankherbert", "")
+	if err := json.Unmarshal(body, &page); err != nil {
+		t.Fatalf("author: %v (%s)", err, body)
+	}
+	if len(page.Series) != 1 || page.Series[0].Name != "Dune" || len(page.Series[0].Books) != 2 ||
+		page.Series[0].Books[0].ID != "e1" || page.Series[0].Books[1].ID != "a1" {
+		t.Errorf("series = %+v, want Dune: e1 then a1", page.Series)
+	}
+	if len(page.Books) != 1 || page.Books[0].ID != "e2" {
+		t.Errorf("other books = %+v, want e2", page.Books)
+	}
+	var series struct {
+		Series []struct {
+			Name  string
+			Count int
+		}
+	}
+	_, body = h.do(t, http.MethodGet, "/api/books/series", "")
+	if err := json.Unmarshal(body, &series); err != nil || len(series.Series) != 1 || series.Series[0].Count != 2 {
+		t.Errorf("series list = %s", body)
+	}
+}
