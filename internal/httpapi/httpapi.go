@@ -101,10 +101,10 @@ type Server struct {
 
 	// Read-along's background sync: a nudge after new books are scanned, and
 	// the pairs it could not start, so they are not tried every half hour.
-	autoKick chan struct{}
-	autoMu   sync.Mutex
-	autoSkip map[string]bool
-	lastRescan   map[media.Kind]time.Time
+	autoKick   chan struct{}
+	autoMu     sync.Mutex
+	autoSkip   map[string]bool
+	lastRescan map[media.Kind]time.Time
 }
 
 // Config configures the server.
