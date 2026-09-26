@@ -772,6 +772,17 @@ playing something else. Lists are filtered through the registry each time they
 are shown, so a favourite on a shelf an account has since lost is hidden. It
 is not a way back in.
 
+**A heart on every cover** (top right, where nothing else sits on a
+phone): an outline, and a tap fills it red and favourites the item - at
+once, put back if the server refuses. A sibling of the card in its
+holder, like the download arrow. The small heart that used to mark a
+favourite in the bottom corner went with it, and the desktop's hover "..."
+moved left of the heart. Covers also lost their length, the pages their
+counts ("25 songs") and Albums its sort (A to Z; New music's See all
+still lists newest first): the length is under **Info** in the hold menu,
+with everything else the backend said, and a menu page that grows is
+placed again so none of it is off screen.
+
 **Favourites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A
 playlist of films has no player to play it in.

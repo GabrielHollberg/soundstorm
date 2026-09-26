@@ -892,7 +892,6 @@ async function runSearch() {
     && !(state.musicView === 'mixes' && state.query);
   show($('music-tabs'), state.kind === 'music' || state.kind === 'playlists');
   markMusicTabs();
-  show($('album-sort'), state.kind === 'music' && state.musicView === 'albums');
   show($('music-view'), musicBrowse);
   show($('playlists-view'), state.kind === 'playlists');
   const home = state.kind === '' && !query;
@@ -979,9 +978,8 @@ function renderResults(result, append) {
     // The ellipsis goes after the noun, not inside the number: "100 items…"
     // rather than "100… items", which reads like a broken number.
     const more = state.hasMore ? '…' : '';
-    $('status').textContent = browsing
-      ? `${shown} item${shown === 1 ? '' : 's'}${more}`
-      : `${shown} result${shown === 1 ? '' : 's'}${more} in ${result.tookMs} ms`;
+    // No count: the items themselves are on screen.
+    $('status').textContent = '';
   } else if (state.libraryEmpty) {
     // "Nothing matched" is a lie when there is nothing to match against - and
     // this is now the whole of the first-run guidance, since the box that used
@@ -1092,14 +1090,6 @@ function renderItem(item) {
     wrap.append(fallbackArt(item));
   }
 
-  const duration = formatDuration(item.durationSeconds);
-  if (duration) {
-    const el = document.createElement('span');
-    el.className = 'duration';
-    el.textContent = duration;
-    wrap.append(el);
-  }
-
   const meta = document.createElement('div');
   meta.className = 'meta';
 
@@ -1156,10 +1146,39 @@ function renderItem(item) {
     event.stopPropagation();
     openItemMenu(item, more);
   });
-  holder.append(card, more);
+  holder.append(card, more, heartButton(item));
   const get = getButton(item);
   if (get) holder.append(get);
   return holder;
+}
+
+// The heart in a cover's top corner: empty, and a tap fills it red and adds
+// the item to favourites; a tap on a full one takes it off again. A sibling
+// of the card, like the download arrow, since a card is itself a button.
+function heartButton(item) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'fav-toggle';
+  const paint = (on) => {
+    b.classList.toggle('on', on);
+    b.replaceChildren(icon('heart', on));
+    b.setAttribute('aria-label', on ? `Remove ${item.title} from favourites` : `Add ${item.title} to favourites`);
+    b.setAttribute('aria-pressed', String(on));
+  };
+  paint(state.favourites.has(selectionKey(item)));
+  b.soundstormPaint = paint;
+  b.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    const on = !b.classList.contains('on');
+    paint(on); // at once; put back if the server says no
+    const problem = await setFavourite(item, on);
+    if (problem) {
+      paint(!on);
+      showToast(problem);
+    }
+  });
+  return b;
 }
 
 const GLYPHS = {
@@ -3006,7 +3025,7 @@ async function showFavourites(seq) {
   grid.replaceChildren(...shown.map(renderItem));
   state.items = shown;
   $('status').textContent = items.length
-    ? `${shown.length} favourite${shown.length === 1 ? '' : 's'}`
+    ? ''
     : `Nothing here yet. ${MENU_HOW} anything and choose Add to favourites.`;
   show($('loading-more'), false);
 }
@@ -3020,6 +3039,8 @@ async function setFavourite(item, on) {
   else state.favourites.delete(key);
   for (const card of document.querySelectorAll(`.item[data-key="${CSS.escape(key)}"]`)) {
     card.querySelector('.art-wrap').classList.toggle('is-favourite', on);
+    const heart = card.closest('.item-holder') && card.closest('.item-holder').querySelector('.fav-toggle');
+    if (heart && heart.soundstormPaint) heart.soundstormPaint(on);
   }
   // Taken off the list while looking at the list: it goes.
   if (!on && state.kind === 'favourites') runSearch();
@@ -3037,6 +3058,7 @@ const ICONS = {
   playlist: '<path d="M4 6h11M4 11h11M4 16h7M17 14v6M14 17h6"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
   back: '<path d="M15 6l-6 6 6 6"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   forward: '<path d="M9 6l6 6-6 6"/>',
   home: '<path d="M4 11l8-7 8 7M6 9.5V20h4.5v-6h3v6H18V9.5"/>',
   note: '<path d="M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>',
@@ -3190,6 +3212,10 @@ function renderMainMenu(item) {
       }
     }));
   }
+  entries.push(menuItem('info', 'Info', (event) => {
+    event.stopPropagation();
+    renderInfoMenu(item);
+  }, { chevron: true }));
   const pairable = (item.kind === 'audiobook'
     || (item.kind === 'ebook' && ((item.extra && item.extra.format) || '').toLowerCase() !== 'pdf'));
   if (pairable && state.me && state.me.owner && !state.offline) {
@@ -3465,10 +3491,7 @@ async function showPlaylist(id) {
     const sub = document.createElement('span');
     sub.textContent = subtitleFor(song);
     words.append(t, sub);
-    const length = document.createElement('span');
-    length.className = 'track-length';
-    length.textContent = formatDuration(song.durationSeconds);
-    play.append(thumb, words, length);
+    play.append(thumb, words);
     play.addEventListener('click', () => playQueue(songs, i));
 
     const drop = document.createElement('button');
@@ -3861,14 +3884,12 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
       return;
     }
     state.musicView = tab.dataset.view;
+    // Albums are A to Z; only New music's See all lists them newest first.
+    state.albumOrder = 'name';
     if (state.kind !== 'music') selectKind('music');
     else runSearch();
   });
 }
-$('album-order').addEventListener('change', (event) => {
-  state.albumOrder = event.target.value;
-  runSearch();
-});
 
 function markMusicTabs() {
   // Offline, Music is what is downloaded: songs, albums, playlists.
@@ -3927,7 +3948,7 @@ async function showMusicView(seq) {
     const albums = (ok && body && body.albums) || [];
     view.replaceChildren(albumGrid(albums));
     $('status').textContent = albums.length
-      ? `${albums.length} album${albums.length === 1 ? '' : 's'}`
+      ? ''
       : (state.query ? 'No albums match.' : 'No albums yet.');
     return;
   }
@@ -3936,7 +3957,7 @@ async function showMusicView(seq) {
   const artists = (ok && body && body.artists) || [];
   view.replaceChildren(artistGrid(artists));
   $('status').textContent = artists.length
-    ? `${artists.length} artist${artists.length === 1 ? '' : 's'}`
+    ? ''
     : (state.query ? 'No artists match.' : 'No artists yet.');
 }
 
@@ -4133,10 +4154,7 @@ function trackRow(song, index, songs) {
   const name = document.createElement('span');
   name.className = 'track-title';
   name.textContent = song.title;
-  const length = document.createElement('span');
-  length.className = 'track-length';
-  length.textContent = formatDuration(song.durationSeconds);
-  row.append(number, name, length);
+  row.append(number, name);
   row.dataset.key = selectionKey(song);
   if (isDownloaded(song)) name.append(downloadedBadge());
   row.addEventListener('click', (event) => {
@@ -5955,7 +5973,6 @@ async function renderHome(seq) {
   if (albums.length) {
     view.append(homeRow('New music', albums.map((a) => albumCardFromHome(a)), () => {
       state.albumOrder = 'newest';
-      $('album-order').value = 'newest';
       state.musicView = 'albums';
       selectTab('music');
       if (state.kind === 'music') runSearch();
@@ -6049,7 +6066,7 @@ function albumCardFromHome(album) {
 // throw the page away), and not from something that scrolls sideways
 // itself, like a strip of mixes.
 (function pillSwipe() {
-  const pages = ['album-sort', 'continue', 'results-bar', 'results', 'music-view', 'playlists-view', 'account'];
+  const pages = ['continue', 'results-bar', 'results', 'music-view', 'playlists-view', 'account'];
   let g = null;      // the gesture under way
   let busy = false;  // a switch is animating
   let lift = 0;      // how far the real pages are drawn down, to look scrolled to the top
@@ -6078,7 +6095,7 @@ function albumCardFromHome(album) {
     if (busy || $('app').classList.contains('hidden')) return false;
     if (pills().length < 2) return false;
     const onPage = target === document.body || target === document.documentElement || target.closest('#app');
-    if (!onPage || target.closest('header, #music-tabs, #subtabs, #album-sort, #tabs')) return false;
+    if (!onPage || target.closest('header, #music-tabs, #subtabs, #tabs')) return false;
     if (pages.some((id) => !$(id).classList.contains('hidden') && $(id).querySelector(':scope > .back'))) return false;
     return !scrollsSideways(target);
   }
@@ -6370,7 +6387,7 @@ async function showPairs(seq, query) {
   state.pairsShown = true;
   $('results').replaceChildren(...shown.map(pairCard));
   $('status').textContent = shown.length
-    ? `${shown.length} book${shown.length === 1 ? '' : 's'} to read along with`
+    ? ''
     : (terms.length ? 'Nothing matches.' : 'No book is on both shelves yet.');
   // While a book is syncing, keep its card current.
   clearTimeout(state.pairsPoll);
@@ -7282,7 +7299,7 @@ async function showOfflineShelf(seq, query) {
     return words.every((w) => text.includes(w));
   };
   const music = kind === 'music' || kind === 'playlists';
-  for (const id of ['album-sort', 'playlists-view', 'continue', 'loading-more']) {
+  for (const id of ['playlists-view', 'continue', 'loading-more']) {
     show($(id), false);
   }
   show($('music-tabs'), music);
@@ -7341,7 +7358,7 @@ async function showOfflineShelf(seq, query) {
   }
   $('results').replaceChildren(...cards);
   $('status').textContent = cards.length
-    ? `${cards.length} on this device`
+    ? ''
     : (words.length ? 'Nothing downloaded matches.' : 'Nothing here is downloaded.');
 }
 
@@ -7710,6 +7727,7 @@ function renderPairPicker(item) {
   const list = document.createElement('div');
   list.className = 'menu-results';
   menu.replaceChildren(back, search, list, note);
+  if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
 
   let seq = 0;
   const find = async () => {
@@ -7850,3 +7868,77 @@ function leaveSettingsSearch() {
   const observer = new MutationObserver(check);
   for (const card of settingsCards()) observer.observe(card, { attributes: true, attributeFilter: ['class'] });
 })();
+
+/* ------------------------------------------------------------ item info */
+
+// Info, from the hold menu: what the library knows about an item - the
+// length that used to sit on every cover, and everything else its backend
+// said - on a page of the menu with a way back.
+const INFO_KIND = {
+  music: 'Song', audiobook: 'Audiobook', ebook: 'Ebook', document: 'Document',
+  video: 'Film', tv: 'TV', picture: 'Photo',
+};
+const INFO_BY = { music: 'Artist', audiobook: 'Author', ebook: 'Author', video: 'Director', tv: 'Director' };
+
+function infoRows(item) {
+  const x = item.extra || {};
+  const rows = [['Type', INFO_KIND[item.kind] || item.kind]];
+  const add = (label, value) => { if (value) rows.push([label, String(value)]); };
+  if (item.creators && item.creators.length) add(INFO_BY[item.kind] || 'By', item.creators.join(', '));
+  add('Narrator', x.narrator);
+  if (item.kind === 'music') add('Album', x.album || item.subtitle);
+  else if (item.kind === 'tv') add('Series', item.subtitle);
+  add('Series', x.series && (x.seriesIndex ? `${x.series}, book ${x.seriesIndex}` : x.series));
+  add('Episode', x.episode);
+  add('Year', item.year);
+  add('Length', formatDuration(item.durationSeconds));
+  add('Genre', x.genre);
+  add('Tags', x.tags);
+  add('Rating', x.rating);
+  add('Language', x.language);
+  add('Format', x.format && x.format.toUpperCase());
+  add('Taken', x.taken && new Date(x.taken).toLocaleString());
+  add('Place', x.place);
+  if (x.width && x.height) add('Size', `${x.width} \u00d7 ${x.height}`);
+  add('ISBN', x.isbn);
+  if (isDownloaded(item)) add('On this device', 'Downloaded');
+  return rows;
+}
+
+function renderInfoMenu(item) {
+  const menu = $('item-menu');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = 'Info';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item);
+  });
+  const title = document.createElement('p');
+  title.className = 'menu-info-title';
+  title.textContent = item.title;
+  const list = document.createElement('dl');
+  list.className = 'menu-info';
+  for (const [k, v] of infoRows(item)) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.textContent = v;
+    list.append(dt, dd);
+  }
+  const parts = [back, title, list];
+  const overview = item.extra && item.extra.overview;
+  if (overview) {
+    const p = document.createElement('p');
+    p.className = 'menu-info-about';
+    p.textContent = overview;
+    parts.push(p);
+  }
+  menu.replaceChildren(...parts);
+  // Taller than the menu it replaces: placed again, so none of it is off screen.
+  if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
+}

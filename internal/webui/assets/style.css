@@ -1090,17 +1090,6 @@ button.danger {
 /* Selecting uses the same corner for its tick. */
 .grid.selecting .item-more { display: none; }
 
-/* A small heart on anything favourited, drawn like the menu's. */
-.art-wrap.is-favourite::after {
-  content: "";
-  position: absolute;
-  bottom: 8px; left: 8px;
-  width: 16px; height: 16px;
-  background: #ff6b8e;
-  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 20.5s-7.5-4.6-9.2-9.1C1.6 8.2 3.6 5 6.9 5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.3 0 5.3 3.2 4.1 6.4C19.5 15.9 12 20.5 12 20.5z'/></svg>") center / contain no-repeat;
-  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 20.5s-7.5-4.6-9.2-9.1C1.6 8.2 3.6 5 6.9 5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.3 0 5.3 3.2 4.1 6.4C19.5 15.9 12 20.5 12 20.5z'/></svg>") center / contain no-repeat;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
-}
 
 .item-menu {
   position: absolute;
@@ -2618,3 +2607,38 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 
 /* In the Settings card, the list lines up with the rest of the card. */
 #downloads-block .downloads { margin: 0; }
+
+/* Info, in the hold menu. */
+.menu-info-title { margin: 4px 14px 8px; font-weight: 600; font-size: 15px; }
+.menu-info {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px;
+  margin: 0 14px 12px; font-size: 14px;
+}
+.menu-info dt { color: var(--muted); }
+.menu-info dd { margin: 0; overflow-wrap: anywhere; }
+.menu-info-about {
+  margin: 0 14px 12px; font-size: 13.5px; line-height: 1.45; color: var(--muted);
+  max-height: 200px; overflow-y: auto;
+}
+
+/* The heart in a cover's top-right corner: an outline, filled red once the
+   item is a favourite. The desktop's hover "..." moves over beside it. */
+.fav-toggle {
+  position: absolute;
+  top: 4px; right: 4px;
+  z-index: 2;
+  width: 36px; height: 36px;
+  padding: 0;
+  display: grid; place-items: center;
+  border: none; background: none;
+  color: rgba(235, 238, 243, 0.85);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+  -webkit-tap-highlight-color: transparent;
+}
+.fav-toggle:hover { color: #fff; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85)); }
+.fav-toggle .icon { width: 21px; height: 21px; stroke-width: 2.2; }
+.fav-toggle.on { color: #ff3b5c; }
+.fav-toggle.on .icon { fill: #ff3b5c; }
+.fav-toggle:active .icon { transform: scale(0.88); }
+.item-holder .item-more { right: 44px; }
+body.offline-mode .fav-toggle { display: none; }
