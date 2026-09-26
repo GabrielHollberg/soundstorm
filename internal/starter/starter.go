@@ -23,9 +23,9 @@
 //	audiobook   As a Man Thinketh                    LibriVox, public domain
 //	music       Aria, Open Goldberg Variations       CC0 1.0
 //
-// Free licences are a hard constraint here, not a preference: these files are
+// Free licenses are a hard constraint here, not a preference: these files are
 // compiled into a published binary. A genuinely famous song is almost certainly
-// somebody's copyright, so each of these is as recognisable as a free licence
+// somebody's copyright, so each of these is as recognisable as a free license
 // allows rather than as recognisable as possible.
 //
 // No video, and it was tried. Big Buck Bunny was bundled for one commit: CC-BY,

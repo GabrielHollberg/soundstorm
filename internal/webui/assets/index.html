@@ -81,17 +81,17 @@
       <button class="chip" data-kind="document">Documents</button>
       <button class="chip" data-kind="picture">Pictures</button>
       <!-- Not shelves: this person's own lists, across every shelf. -->
-      <button class="chip chip-own" data-kind="favourites">&#9829; Favourites</button>
+      <button class="chip chip-own" data-kind="favorites">&#9829; Favorites</button>
       <button class="chip chip-own" data-kind="playlists">Playlists</button>
       <button class="chip chip-own" data-kind="pairs">Read Along</button>
       <!-- Pressed by the tabs' pills: books by author and by series, and each
-           tab's own favourites. -->
+           tab's own favorites. -->
       <button class="chip chip-own" data-kind="authors">Authors</button>
       <button class="chip chip-own" data-kind="series">Series</button>
-      <button class="chip chip-own" data-kind="fav-music">Favourites</button>
-      <button class="chip chip-own" data-kind="fav-watch">Favourites</button>
-      <button class="chip chip-own" data-kind="fav-books">Favourites</button>
-      <button class="chip chip-own" data-kind="fav-photos">Favourites</button>
+      <button class="chip chip-own" data-kind="fav-music">Favorites</button>
+      <button class="chip chip-own" data-kind="fav-watch">Favorites</button>
+      <button class="chip chip-own" data-kind="fav-books">Favorites</button>
+      <button class="chip chip-own" data-kind="fav-photos">Favorites</button>
     </nav>
 
     <!-- Nothing lives under the filters any more but this: shown only while a
@@ -114,7 +114,7 @@
       <button type="button" role="tab" data-view="songs">Songs</button>
       <button type="button" role="tab" data-view="albums">Albums</button>
       <button type="button" role="tab" data-view="artists">Artists</button>
-      <button type="button" role="tab" data-view="favourites">Favourites</button>
+      <button type="button" role="tab" data-view="favorites">Favorites</button>
     </div>
 
     <!-- Only when the library's disk is getting full: said before an upload
@@ -376,7 +376,7 @@
     </section>
 
     <!-- Home, with nothing typed: a row per shelf of what arrived lately, the
-         newest albums, favourites and recently played, under Continue. Typing
+         newest albums, favorites and recently played, under Continue. Typing
          searches everything instead. -->
     <section id="home-view" class="home-view hidden" aria-label="Home"></section>
 
@@ -398,7 +398,7 @@
     <div id="item-menu-backdrop" class="item-menu-backdrop hidden"></div>
     <!-- Shown once, on a touch screen: the menu is behind a gesture. -->
     <p id="hold-tip" class="hold-tip hidden" role="status">Tip: hold down on anything
-      for favourites and playlists.</p>
+      for favorites and playlists.</p>
     <div id="item-menu" class="item-menu hidden" role="menu"></div>
 
     <!-- While selecting: how many, and what to do with them. The same bar asks
@@ -501,7 +501,7 @@
   <!-- Audio dock -------------------------------------------------------- -->
   <div id="audio-dock" class="dock hidden">
     <!-- The card's own background: the cover again, blurred, the way Now
-         Playing takes its colour from the album. In a clipped layer of its
+         Playing takes its color from the album. In a clipped layer of its
          own, so the chapter list can still open above the card. -->
     <div class="dock-bg" aria-hidden="true">
       <img id="dock-backdrop" alt="">

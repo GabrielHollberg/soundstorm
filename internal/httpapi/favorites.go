@@ -11,7 +11,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
-// Favourites and playlists, per person. See internal/collections for why they
+// Favorites and playlists, per person. See internal/collections for why they
 // are SoundStorm's rather than the backends'.
 //
 // An item is always looked up on its backend before it is kept - the snapshot
@@ -47,7 +47,7 @@ func (s *Server) resolveItem(w http.ResponseWriter, r *http.Request, sourceID, i
 }
 
 // visible drops entries on shelves this account can no longer see - a
-// favourite kept before the owner took Films away is not a way back in.
+// favorite kept before the owner took Films away is not a way back in.
 func (s *Server) visible(r *http.Request, entries []collections.Entry) []media.Item {
 	out := make([]media.Item, 0, len(entries))
 	for _, e := range entries {
@@ -70,14 +70,14 @@ func (s *Server) collectionsError(w http.ResponseWriter, err error) {
 	}
 }
 
-// --- favourites ---------------------------------------------------------------
+// --- favorites ---------------------------------------------------------------
 
-func (s *Server) handleFavourites(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
-	entries, err := s.collections.Favourites(user.ID)
+	entries, err := s.collections.Favorites(user.ID)
 	if err != nil {
 		s.collectionsError(w, err)
 		return
@@ -85,7 +85,7 @@ func (s *Server) handleFavourites(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.visible(r, entries)})
 }
 
-func (s *Server) handleAddFavourite(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAddFavorite(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
 		return
@@ -94,24 +94,24 @@ func (s *Server) handleAddFavourite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.collections.AddFavourite(user.ID, item); err != nil {
+	if err := s.collections.AddFavorite(user.ID, item); err != nil {
 		s.collectionsError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"favourite": true})
+	writeJSON(w, http.StatusOK, map[string]any{"favorite": true})
 }
 
-func (s *Server) handleRemoveFavourite(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
 		return
 	}
 	q := r.URL.Query()
-	if err := s.collections.RemoveFavourite(user.ID, q.Get("source"), q.Get("id")); err != nil {
+	if err := s.collections.RemoveFavorite(user.ID, q.Get("source"), q.Get("id")); err != nil {
 		s.collectionsError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"favourite": false})
+	writeJSON(w, http.StatusOK, map[string]any{"favorite": false})
 }
 
 // --- playlists ----------------------------------------------------------------

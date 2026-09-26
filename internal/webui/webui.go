@@ -109,7 +109,7 @@ func ServeShell(w http.ResponseWriter, r *http.Request, connectAlso ...string) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// The shell is tiny and gates on live session state, so caching it only
-	// creates confusing stale-login behaviour.
+	// creates confusing stale-login behavior.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	csp := contentSecurityPolicy

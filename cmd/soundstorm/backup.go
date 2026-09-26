@@ -43,7 +43,7 @@ const backupUsage = `SoundStorm backup
   soundstorm backup [file | -]
   soundstorm restore <file | ->
 
-Copies the accounts, backend credentials, and everybody's favourites and
+Copies the accounts, backend credentials, and everybody's favorites and
 playlists out of the state volume, and back in. Without a file, backup writes soundstorm-backup-<date>.json beside the
 state. A file of - means standard output for backup and standard input for
 restore.
@@ -137,7 +137,7 @@ func backupState(args []string) int {
 	}
 	raw, people, err := withCollections(raw)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not read the favourites and playlists: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Could not read the favorites and playlists: %v\n", err)
 		return 1
 	}
 	size := int64(len(raw))
@@ -166,7 +166,7 @@ func backupState(args []string) int {
 	fmt.Fprintf(say, "  %d account(s), credentials for %d backend(s): %s\n",
 		summary.Users, len(summary.Backends), strings.Join(summary.Backends, ", "))
 	if people > 0 {
-		fmt.Fprintf(say, "  Favourites and playlists for %d account(s)\n", people)
+		fmt.Fprintf(say, "  Favorites and playlists for %d account(s)\n", people)
 	}
 	fmt.Fprintln(say)
 	// Said plainly, because the mistake this is guarding against is keeping
@@ -245,7 +245,7 @@ func restoreState(args []string) int {
 	if len(lists) > 0 {
 		written, err := collections.Import(collectionsDir(), lists)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Restored the accounts, but not the favourites and playlists: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Restored the accounts, but not the favorites and playlists: %v\n", err)
 			return 1
 		}
 		// The same ownership care as the state file, and for the same reason.
@@ -277,7 +277,7 @@ func restoreState(args []string) int {
 	fmt.Printf("  Restored %d account(s) and %d backend(s) from %s\n",
 		summary.Users, len(summary.Backends), source)
 	if len(lists) > 0 {
-		fmt.Printf("  and favourites and playlists for %d account(s)\n", len(lists))
+		fmt.Printf("  and favorites and playlists for %d account(s)\n", len(lists))
 	}
 	fmt.Println()
 	fmt.Println("  The previous state is kept as state.json.bak.")
@@ -290,7 +290,7 @@ func collectionsDir() string {
 	return filepath.Join(filepath.Dir(statePath()), "collections")
 }
 
-// withCollections adds everybody's favourites and playlists to a state file,
+// withCollections adds everybody's favorites and playlists to a state file,
 // as one more field, "collections", keyed by account id. A field rather than a
 // wrapper around the file, so the backup still is a state file: an older
 // SoundStorm, which refuses anything without the state's own version field,
@@ -298,7 +298,7 @@ func collectionsDir() string {
 // backup made before the field existed exactly as it always did.
 //
 // With nothing to add the state comes back byte for byte, so a backup of an
-// install nobody has favourited anything on is the same file it always was.
+// install nobody has favorited anything on is the same file it always was.
 func withCollections(stateRaw []byte) ([]byte, int, error) {
 	files, err := collections.Export(collectionsDir())
 	if err != nil {
@@ -334,7 +334,7 @@ func splitCollections(raw []byte) ([]byte, map[string]json.RawMessage, error) {
 	}
 	var lists map[string]json.RawMessage
 	if err := json.Unmarshal(encoded, &lists); err != nil {
-		return nil, nil, fmt.Errorf("the favourites and playlists in the backup do not read: %w", err)
+		return nil, nil, fmt.Errorf("the favorites and playlists in the backup do not read: %w", err)
 	}
 	delete(top, "collections")
 	stateRaw, err := json.MarshalIndent(top, "", "  ")

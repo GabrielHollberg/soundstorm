@@ -25,7 +25,7 @@ rem can say SoundStorm-Setup.cmd --https and have it reach the installer.
 rem
 rem No console stays open. A double-clicked .cmd always gets one - Windows
 rem gives it no choice - so this one says nothing and does nothing but start
-rem PowerShell minimised and hidden, then closes: a blink.
+rem PowerShell minimized and hidden, then closes: a blink.
 
 setlocal
 

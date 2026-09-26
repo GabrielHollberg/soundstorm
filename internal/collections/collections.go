@@ -1,8 +1,8 @@
-// Package collections keeps each person's favourites and playlists.
+// Package collections keeps each person's favorites and playlists.
 //
 // They are SoundStorm's, per person, rather than the backends': the house
 // shares one Navidrome and one Jellyfin account (see "Accounts" in CLAUDE.md),
-// so favourites or playlists kept there would be everybody's at once - the
+// so favorites or playlists kept there would be everybody's at once - the
 // same reason a film's watch position is SoundStorm's.
 //
 // A file per person, not a field in state.json. That file is rewritten whole
@@ -36,7 +36,7 @@ import (
 
 // Limits, so no one person's file can grow without bound.
 const (
-	MaxFavourites    = 5000
+	MaxFavorites    = 5000
 	MaxPlaylists     = 200
 	MaxPlaylistItems = 5000
 	MaxNameLength    = 100
@@ -63,7 +63,7 @@ type Playlist struct {
 }
 
 type collection struct {
-	Favourites []Entry     `json:"favourites"`
+	Favorites []Entry     `json:"favourites"` // the name on disk since the first file: kept, or every saved list would read as empty
 	Playlists  []*Playlist `json:"playlists"`
 	// History is what this person has listened to, keyed "source/id", for
 	// Recently played, Most played and Rediscover. Per person for the same
@@ -165,56 +165,56 @@ func sameItem(e Entry, sourceID, itemID string) bool {
 	return e.Item.SourceID == sourceID && e.Item.ID == itemID
 }
 
-// --- favourites -------------------------------------------------------------
+// --- favorites -------------------------------------------------------------
 
-// Favourites is one person's favourites, most recently added first.
-func (s *Store) Favourites(userID string) ([]Entry, error) {
+// Favorites is one person's favorites, most recently added first.
+func (s *Store) Favorites(userID string) ([]Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.load(userID)
 	if err != nil {
 		return nil, err
 	}
-	out := append([]Entry(nil), c.Favourites...)
+	out := append([]Entry(nil), c.Favorites...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].AddedAt.After(out[j].AddedAt) })
 	return out, nil
 }
 
-// AddFavourite adds an item. Adding one already there is not an error.
-func (s *Store) AddFavourite(userID string, item media.Item) error {
+// AddFavorite adds an item. Adding one already there is not an error.
+func (s *Store) AddFavorite(userID string, item media.Item) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.load(userID)
 	if err != nil {
 		return err
 	}
-	for _, e := range c.Favourites {
+	for _, e := range c.Favorites {
 		if sameItem(e, item.SourceID, item.ID) {
 			return nil
 		}
 	}
-	if len(c.Favourites) >= MaxFavourites {
+	if len(c.Favorites) >= MaxFavorites {
 		return ErrFull
 	}
-	c.Favourites = append(c.Favourites, Entry{Item: item, AddedAt: time.Now().UTC()})
+	c.Favorites = append(c.Favorites, Entry{Item: item, AddedAt: time.Now().UTC()})
 	return s.save(userID, c)
 }
 
-// RemoveFavourite removes an item. Removing one not there is not an error.
-func (s *Store) RemoveFavourite(userID, sourceID, itemID string) error {
+// RemoveFavorite removes an item. Removing one not there is not an error.
+func (s *Store) RemoveFavorite(userID, sourceID, itemID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := s.load(userID)
 	if err != nil {
 		return err
 	}
-	kept := c.Favourites[:0]
-	for _, e := range c.Favourites {
+	kept := c.Favorites[:0]
+	for _, e := range c.Favorites {
 		if !sameItem(e, sourceID, itemID) {
 			kept = append(kept, e)
 		}
 	}
-	c.Favourites = kept
+	c.Favorites = kept
 	return s.save(userID, c)
 }
 
@@ -464,7 +464,7 @@ func Validate(files map[string]json.RawMessage) error {
 		}
 		var c collection
 		if err := json.Unmarshal(raw, &c); err != nil {
-			return fmt.Errorf("favourites and playlists for %s do not read: %w", id, err)
+			return fmt.Errorf("favorites and playlists for %s do not read: %w", id, err)
 		}
 	}
 	return nil

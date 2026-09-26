@@ -183,7 +183,7 @@ computer: **Home**, **Music**, **Watch**
 A tab with nothing in it is hidden, and each remembers where you were.
 
 **Home** is a front page: what you are part way through, then a row each of
-new music, your ♥ Favourites, what you played lately, and what arrived lately
+new music, your ♥ Favorites, what you played lately, and what arrived lately
 on every other shelf — new films, TV, audiobooks, books and photos — each with
 **See all**. Typing in the search box on Home searches everything. The
 search box says what it will search — *Search music*, *Search albums*,
@@ -330,7 +330,7 @@ A song or album with no cover of its own shows the SoundStorm cloud.
 ### Mixes, lyrics and downloads
 
 Music opens on **Mixes**: your most played, recently played, Rediscover
-(favourites you haven't played lately), shuffle everything, recently added,
+(favorites you haven't played lately), shuffle everything, recently added,
 and a mix for each genre and decade in your library. Every artist page has an
 **Artist mix**. What you listen to is remembered for you alone.
 
@@ -363,12 +363,12 @@ keys, the mouse wheel to zoom, and Escape. iPhone HEIC and
 raw photos are shown as ordinary pictures, and **Download original** gives you
 the untouched file. A video clip plays in the video player.
 
-### Favourites and playlists
+### Favorites and playlists
 
 On a phone, **hold down** on anything and a menu pops up beside it. On a
 computer, **right-click** it, or use the **⋯** that appears when you point at
-it. Use the menu to add something to your **favourites**, whatever it is: a
-song, a film, a book or a photo. The **♥ Favourites** row on Home shows them, and **See all** lists every one.
+it. Use the menu to add something to your **favorites**, whatever it is: a
+song, a film, a book or a photo. The **♥ Favorites** row on Home shows them, and **See all** lists every one.
 
 For songs, the same menu offers **Add to playlist**. Pick a playlist or type
 a name to start a new one. **Music → Playlists** lists them. Open one to play
@@ -377,7 +377,7 @@ them, remove one (with **Undo**), tap the name to rename it, or delete the
 playlist. A playlist plays one song after another, with back and
 forward buttons in the player.
 
-Favourites and playlists are yours; everybody in the house has their own.
+Favorites and playlists are yours; everybody in the house has their own.
 
 ### When the drive fills up
 
@@ -614,7 +614,7 @@ docker compose pull && docker compose up -d
 
 ### Backing it up
 
-One file holds your accounts, everybody's favourites and playlists, and the
+One file holds your accounts, everybody's favorites and playlists, and the
 passwords SoundStorm invented for Navidrome, Jellyfin and Audiobookshelf.
 **Those passwords exist nowhere else.** Lose that file and the media servers
 keep running with accounts nobody can sign in to — and reinstalling does not
@@ -693,7 +693,7 @@ accounts all survive, and devices already signed in stay signed in.
 
 ### Moving to another computer
 
-SoundStorm packs itself into one folder - your accounts, favourites,
+SoundStorm packs itself into one folder - your accounts, favorites,
 playlists, listening and reading positions, the media servers' own data, and
 your media - to carry to a new computer on a USB drive or over the network.
 It works between Windows, Mac and Linux, in any direction.

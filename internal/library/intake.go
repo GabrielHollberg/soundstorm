@@ -38,7 +38,7 @@ import (
 // guessing is "there is real evidence", not "one of them is more likely".
 //
 // The path a browser gives us is attacker-controlled. Every segment is
-// sanitised and the result is checked to still be inside the folder it claims
+// sanitized and the result is checked to still be inside the folder it claims
 // to be in, which is a thing worth doing twice.
 
 const (
@@ -141,7 +141,7 @@ type Question struct {
 	Group string `json:"group"`
 
 	// Label is what to put in front of the choice: the folder or file name,
-	// which is the thing the person just dragged and will recognise.
+	// which is the thing the person just dragged and will recognize.
 	Label string `json:"label"`
 
 	// Count is how many files hang on the answer, so a question can say
@@ -694,7 +694,7 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	rel = shelveUnder(kind, rel, tmpName, folder)
 
 	dest := filepath.Join(folder, filepath.FromSlash(rel))
-	// Sanitising should already guarantee this. Checking the result anyway
+	// Sanitizing should already guarantee this. Checking the result anyway
 	// costs nothing and turns a future mistake in cleanRelPath - or in the
 	// names that just came out of a stranger's tags - into a refusal rather
 	// than a write outside the library.

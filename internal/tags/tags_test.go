@@ -75,12 +75,12 @@ func TestID3TextEncodings(t *testing.T) {
 	}
 }
 
-// Unsynchronisation rewrites every 0xFF 0x00 pair so no part of a tag can look
+// Unsynchronization rewrites every 0xFF 0x00 pair so no part of a tag can look
 // like the start of an audio frame. Left undone, every frame length after the
 // first such pair is wrong.
 func TestID3Unsynchronisation(t *testing.T) {
 	raw := id3v2(3, 3, [][2]string{{"TPE1", "A"}, {"TALB", "B"}})
-	raw[5] |= 0x80 // claim unsynchronisation
+	raw[5] |= 0x80 // claim unsynchronization
 	body := bytes.ReplaceAll(raw[10:], []byte{0xFF}, []byte{0xFF, 0x00})
 	n := len(body)
 	raw = append(raw[:6], append([]byte{

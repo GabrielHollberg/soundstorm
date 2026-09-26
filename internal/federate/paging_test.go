@@ -10,7 +10,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
-// limited is a source that honours the Limit it is handed, the way a real
+// limited is a source that honors the Limit it is handed, the way a real
 // backend does. The plain stub ignores it, which would hide the whole reason
 // paging works the way it does.
 type limited struct {

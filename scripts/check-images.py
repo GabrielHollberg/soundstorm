@@ -71,14 +71,14 @@ def check(path):
     if pos != len(d):
         return '%d bytes after IEND' % (len(d) - pos)
 
-    width, height, depth, colour = header[0], header[1], header[2], header[3]
-    if colour not in CHANNELS:
-        return 'unknown colour type %d' % colour
+    width, height, depth, color = header[0], header[1], header[2], header[3]
+    if color not in CHANNELS:
+        return 'unknown color type %d' % color
     try:
         raw = zlib.decompress(bytes(pixels))
     except zlib.error as err:
         return 'the pixel data will not inflate: %s' % err
-    stride = 1 + (width * CHANNELS[colour] * depth + 7) // 8
+    stride = 1 + (width * CHANNELS[color] * depth + 7) // 8
     if len(raw) != stride * height:
         return 'inflated to %d bytes, but %dx%d needs %d' % (
             len(raw), width, height, stride * height)

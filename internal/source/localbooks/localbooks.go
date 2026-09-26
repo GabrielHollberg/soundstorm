@@ -320,7 +320,7 @@ func formatOf(name string) string {
 //
 // A hand-written EPUB or PDF parser reading a file nobody but its uploader has
 // ever seen is exactly the kind of code an adversarial input finds the edge
-// of, and internal/tags' own history - syncsafe integers, unsynchronisation,
+// of, and internal/tags' own history - syncsafe integers, unsynchronization,
 // an MP4 atom with no siblings - is proof this class of parser gets edge
 // cases wrong until a real file finds them. Uploading is something any member
 // can do to a shelf they can see, so one crafted file must cost this scan its
@@ -417,7 +417,7 @@ func (s *Source) readPDF(b *book) error {
 
 	// No cover: extracting one means rendering page one, which needs a PDF
 	// renderer this project is not going to carry. A sidecar image beside the
-	// file is still honoured, because that is cheap and some people make them.
+	// file is still honored, because that is cheap and some people make them.
 	s.findSidecarCover(b)
 	return nil
 }

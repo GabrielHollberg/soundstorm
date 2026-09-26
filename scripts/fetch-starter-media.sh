@@ -17,14 +17,14 @@
 # Everything here is public domain or CC, and that is a hard constraint rather
 # than a preference: these files are compiled into a binary and published. A
 # genuinely well-known song or film is almost certainly somebody's copyright, so
-# "well known" here means as recognisable as a free licence allows.
+# "well known" here means as recognisable as a free license allows.
 #
 #   ebook      The Richest Man in Babylon (1926), George S. Clason, from
 #              Wikisource, which tags it {{PD-US|1957|1926}} - the 1926 edition
 #              specifically. Later expanded editions are still in copyright, and
 #              most copies floating around are those, which is why this comes
-#              from a source that reviews licences rather than from a search.
-#              Not on Project Gutenberg; its 79,433-title catalogue was checked.
+#              from a source that reviews licenses rather than from a search.
+#              Not on Project Gutenberg; its 79,433-title catalog was checked.
 #   audiobook  As a Man Thinketh, read for LibriVox, public domain. Eight
 #              chapter files joined into one and re-encoded at 32k mono - spoken
 #              word, and even so it is 13MB of the 17MB bundle.

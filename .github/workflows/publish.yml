@@ -97,7 +97,7 @@ jobs:
         run: python3 scripts/check-images.py
 
       # SoundStorm-Setup.cmd is downloaded straight from raw.githubusercontent
-      # and run by cmd.exe, which does not reliably honour `goto` with LF line
+      # and run by cmd.exe, which does not reliably honor `goto` with LF line
       # endings - and this file uses goto. A repo-wide `sed -i` has quietly
       # stripped the carriage returns out of it twice now, which is not
       # something anybody would notice until the first person to try it got a

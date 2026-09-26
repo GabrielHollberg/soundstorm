@@ -180,7 +180,7 @@ func TestAQuestionOnlyOffersLibrariesYouHave(t *testing.T) {
 	}
 }
 
-// A restriction that search honours and uploading does not is not a
+// A restriction that search honors and uploading does not is not a
 // restriction. Both the automatic sorter and an explicit shelf have to refuse.
 func TestARestrictedAccountCannotUploadToAForbiddenShelf(t *testing.T) {
 	h := newHarness(t)

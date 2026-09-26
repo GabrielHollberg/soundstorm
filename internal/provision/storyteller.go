@@ -33,7 +33,7 @@ var storytellerAction = regexp.MustCompile(`name="(\$ACTION_ID_[0-9a-f]+)"`)
 // synced books written inside its own data folder (never beside the source,
 // which is the library), chapters left uncut so every timing is relative to a
 // chapter start, a transcription model that aligns real narration, and its
-// OPDS catalogue off, since nothing reads it.
+// OPDS catalog off, since nothing reads it.
 //
 // Every step was checked by hand against web-v2.14.21 first.
 func provisionStoryteller(ctx context.Context, c *httpx.Client, log *slog.Logger) (state.Backend, error) {

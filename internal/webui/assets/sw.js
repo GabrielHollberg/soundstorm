@@ -11,7 +11,7 @@
 //      one is worse than not answering.
 //   2. Media bytes are never touched. Audio, video, HLS segments and book
 //      resources arrive as range requests, and a service worker that answers
-//      one without honouring the Range header breaks seeking in a way that
+//      one without honoring the Range header breaks seeking in a way that
 //      looks like a corrupt file.
 //   3. Page loads are never answered - with one exception, below. It used to
 //      serve a cached copy of the
@@ -37,7 +37,7 @@
 // through fetch(), but never given to respondWith() in the first place, so the
 // browser handles them as if no worker existed.
 //
-// What it does answer is network-first. On a home network the server is metres
+// What it does answer is network-first. On a home network the server is meters
 // away, so the cache is a fallback for the seconds it is restarting, not a
 // performance layer to reason about. That also means a docker compose pull
 // cannot leave somebody pinned to an old build.

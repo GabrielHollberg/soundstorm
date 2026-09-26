@@ -12,7 +12,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
 
-// LibriVox catalogue entries carry HTML entities in plain-text fields, and
+// LibriVox catalog entries carry HTML entities in plain-text fields, and
 // Audiobookshelf stores what it is given. Without decoding, a reader sees
 // "Las F&aacute;bulas de Esopo" instead of the accent. Seen in real data.
 func TestHTMLEntitiesAreDecoded(t *testing.T) {
@@ -165,7 +165,7 @@ func TestStreamTargetOfABareItemServesTheFirstFile(t *testing.T) {
 }
 
 // Titles come from whatever the book actually has. LibriVox puts the chapter
-// name in the ID3 title tag - complete with the HTML entities its catalogue
+// name in the ID3 title tag - complete with the HTML entities its catalog
 // carries - and some rips have neither tags nor chapters.
 func TestTrackTitlesFallBackThroughEverySource(t *testing.T) {
 	srv, _ := itemServer(t, `{"id":"bk1","media":{"audioFiles":[

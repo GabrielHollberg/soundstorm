@@ -213,7 +213,7 @@ async function showApp(me) {
   applyLibraryTabs();
   renderTabs();
   renderAccount();
-  await loadFavouriteKeys();
+  await loadFavoriteKeys();
   await loadPrefs();
   if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
@@ -896,7 +896,7 @@ async function runSearch() {
   const seq = ++state.searchSeq;
 
   // The two personal views are not a search of a shelf.
-  const own = state.kind === 'favourites' || state.kind === 'playlists' || state.kind === 'pairs'
+  const own = state.kind === 'favorites' || state.kind === 'playlists' || state.kind === 'pairs'
     || Boolean(FAV_KINDS[state.kind]) || BOOK_BROWSE.has(state.kind);
   renderSearchHint();
   const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
@@ -937,8 +937,8 @@ async function runSearch() {
     await showMusicView(seq);
     return;
   }
-  if (state.kind === 'favourites' || FAV_KINDS[state.kind]) {
-    await showFavourites(seq, FAV_KINDS[state.kind]);
+  if (state.kind === 'favorites' || FAV_KINDS[state.kind]) {
+    await showFavorites(seq, FAV_KINDS[state.kind]);
     return;
   }
   if (bookBrowse) {
@@ -1167,7 +1167,7 @@ function renderItem(item) {
     else play(item);
   });
   attachItemMenuGestures(card, item);
-  if (state.favourites.has(key)) wrap.classList.add('is-favourite');
+  if (state.favorites.has(key)) wrap.classList.add('is-favorite');
 
   // The card is itself a button, and a button cannot hold another, so the
   // "..." sits beside it in a wrapper, positioned over the cover.
@@ -1226,7 +1226,7 @@ function coverButton(className, iconName, label, run) {
 }
 
 // The heart in a cover's top corner: empty, and a tap fills it red and adds
-// the item to favourites; a tap on a full one takes it off again. A sibling
+// the item to favorites; a tap on a full one takes it off again. A sibling
 // of the card, like the download arrow, since a card is itself a button.
 function heartButton(item) {
   const b = document.createElement('button');
@@ -1235,17 +1235,17 @@ function heartButton(item) {
   const paint = (on) => {
     b.classList.toggle('on', on);
     b.replaceChildren(icon('heart', on));
-    b.setAttribute('aria-label', on ? `Remove ${item.title} from favourites` : `Add ${item.title} to favourites`);
+    b.setAttribute('aria-label', on ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`);
     b.setAttribute('aria-pressed', String(on));
   };
-  paint(state.favourites.has(selectionKey(item)));
+  paint(state.favorites.has(selectionKey(item)));
   b.soundstormPaint = paint;
   b.addEventListener('click', async (event) => {
     event.stopPropagation();
     event.preventDefault();
     const on = !b.classList.contains('on');
     paint(on); // at once; put back if the server says no
-    const problem = await setFavourite(item, on);
+    const problem = await setFavorite(item, on);
     if (problem) {
       paint(!on);
       showToast(problem);
@@ -1423,13 +1423,13 @@ const photoZoom = (() => {
   let lastTap = { t: 0, x: 0, y: 0 };
   let tapTimer = 0;
 
-  const centre = () => {
+  const center = () => {
     const r = stage.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   };
   // Points relative to the middle of the stage, which is where the photo's
   // transform is anchored.
-  const rel = (e) => { const c = centre(); return { x: e.clientX - c.x, y: e.clientY - c.y }; };
+  const rel = (e) => { const c = center(); return { x: e.clientX - c.x, y: e.clientY - c.y }; };
   const clamp = () => {
     const w = img.clientWidth * s;
     const h = img.clientHeight * s;
@@ -1458,13 +1458,13 @@ const photoZoom = (() => {
   // small gap apart, so the next one is already there as this one leaves.
   const GAP = 16;
   const sides = { '-1': $('photo-prev-image'), 1: $('photo-next-image') };
-  const neighbours = () => {
+  const neighbors = () => {
     const photos = photosOnScreen();
     const at = photos.findIndex((p) => p.id === photoShown.id && p.sourceId === photoShown.sourceId);
     return { '-1': at > 0 ? photos[at - 1] : null, 1: at >= 0 ? photos[at + 1] : null };
   };
   const prepSides = () => {
-    const near = neighbours();
+    const near = neighbors();
     for (const by of ['-1', '1']) {
       const el = sides[by];
       if (near[by]) {
@@ -1524,7 +1524,7 @@ const photoZoom = (() => {
     const ready = beside.style.visibility === 'visible' && beside.complete && beside.naturalWidth > 0;
     if (more && (Math.abs(g.dx) > width * 0.25 || (speed > 0.5 && Math.abs(g.dx) > 30))) {
       if (ready) {
-        // The neighbour slides into the middle; then it becomes the photo.
+        // The neighbor slides into the middle; then it becomes the photo.
         tx = -by * (width + GAP); apply(true);
         placeSides(-by * (width + GAP), true);
         setTimeout(async () => {
@@ -2320,7 +2320,7 @@ function stopAudio() {
 // not permanently hidden behind a player.
 //
 // Conditional rather than always reserved: 96px of dead space at the bottom
-// of every screen is what stopped the library card looking vertically centred
+// of every screen is what stopped the library card looking vertically centered
 // when nothing was playing, which is most of the time.
 function showDock(visible) {
   show($('audio-dock'), visible);
@@ -2504,7 +2504,7 @@ async function runIntake(dataTransfer) {
       : `${questions.length} things SoundStorm cannot tell`;
     const answer = await askQuestion(questions[0]);
     if (answer === null) {
-      $('intake-title').textContent = 'Cancelled — nothing was added.';
+      $('intake-title').textContent = 'Canceled — nothing was added.';
       $('intake-questions').replaceChildren();
       return;
     }
@@ -2724,7 +2724,7 @@ function uploadOne(item, onProgress) {
       resolve({ ok: false, skipped: request.status === 409, error: message });
     });
     request.addEventListener('error', () => resolve({ ok: false, error: 'connection lost' }));
-    request.addEventListener('abort', () => resolve({ ok: false, error: 'cancelled' }));
+    request.addEventListener('abort', () => resolve({ ok: false, error: 'canceled' }));
     request.send(item.file);
   });
 }
@@ -2961,17 +2961,17 @@ function renderSelectMenu() {
     }, { chevron: true }));
   }
   if (n) {
-    const allFaved = items.every((it) => state.favourites.has(selectionKey(it)));
-    entries.push(menuItem('heart', allFaved ? 'Remove from favourites' : 'Add to favourites', async () => {
+    const allFaved = items.every((it) => state.favorites.has(selectionKey(it)));
+    entries.push(menuItem('heart', allFaved ? 'Remove from favorites' : 'Add to favorites', async () => {
       const on = !allFaved;
       let done = 0;
       for (const it of items) {
-        if (state.favourites.has(selectionKey(it)) === on) continue;
-        if (!(await setFavourite(it, on))) done++;
+        if (state.favorites.has(selectionKey(it)) === on) continue;
+        if (!(await setFavorite(it, on))) done++;
       }
       setSelecting(false);
-      showToast(on ? `Added ${done} to your favourites.` : `Took ${done} off your favourites.`);
-    }, { filled: allFaved, className: 'menu-favourite' }));
+      showToast(on ? `Added ${done} to your favorites.` : `Took ${done} off your favorites.`);
+    }, { filled: allFaved, className: 'menu-favorite' }));
   }
   const downloadable = items.filter((it) => !isDownloaded(it) && (it.kind === 'music' || canDownload(it)));
   if (downloadable.length && downloadsPossible()) {
@@ -3151,25 +3151,25 @@ async function refreshContinue() {
 
 window.addEventListener('soundstorm:reader-closed', () => setTimeout(refreshContinue, 300));
 
-/* ---------------------------------------------------- favourites, playlists */
+/* ---------------------------------------------------- favorites, playlists */
 
 // Each person's own, kept by SoundStorm (see internal/collections). The set
-// of favourite keys is loaded once and kept current, so a card can show its
+// of favorite keys is loaded once and kept current, so a card can show its
 // heart and the menu can say "remove" without asking the server per card.
-state.favourites = new Set();
+state.favorites = new Set();
 
-async function loadFavouriteKeys() {
-  const { ok, body } = await api('/api/favourites');
+async function loadFavoriteKeys() {
+  const { ok, body } = await api('/api/favorites');
   if (!ok || !body) return [];
-  state.favourites = new Set(body.items.map(selectionKey));
+  state.favorites = new Set(body.items.map(selectionKey));
   return body.items;
 }
 
-async function showFavourites(seq, kinds) {
+async function showFavorites(seq, kinds) {
   $('status').textContent = '';
   if (!$('results').children.length) showSkeleton($('results'), 'grid');
-  // In a tab, only what belongs to it: Watch's favourites are films and TV.
-  const items = (await loadFavouriteKeys()).filter((item) => !kinds || kinds.includes(item.kind));
+  // In a tab, only what belongs to it: Watch's favorites are films and TV.
+  const items = (await loadFavoriteKeys()).filter((item) => !kinds || kinds.includes(item.kind));
   if (seq !== state.searchSeq) return;
   // Typing narrows the list, as it does a shelf.
   const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -3183,24 +3183,24 @@ async function showFavourites(seq, kinds) {
   state.items = shown;
   $('status').textContent = items.length
     ? ''
-    : `Nothing here yet. ${MENU_HOW} anything and choose Add to favourites.`;
+    : `Nothing here yet. ${MENU_HOW} anything and choose Add to favorites.`;
   show($('loading-more'), false);
 }
 
-async function setFavourite(item, on) {
+async function setFavorite(item, on) {
   const q = new URLSearchParams({ source: item.sourceId, id: item.id });
-  const { ok, body } = await api(`/api/favourites?${q}`, { method: on ? 'PUT' : 'DELETE' });
+  const { ok, body } = await api(`/api/favorites?${q}`, { method: on ? 'PUT' : 'DELETE' });
   if (!ok) return (body && body.error) || 'Could not change that.';
   const key = selectionKey(item);
-  if (on) state.favourites.add(key);
-  else state.favourites.delete(key);
+  if (on) state.favorites.add(key);
+  else state.favorites.delete(key);
   for (const card of document.querySelectorAll(`.item[data-key="${CSS.escape(key)}"]`)) {
-    card.querySelector('.art-wrap').classList.toggle('is-favourite', on);
+    card.querySelector('.art-wrap').classList.toggle('is-favorite', on);
     const heart = card.closest('.item-holder') && card.closest('.item-holder').querySelector('.fav-toggle');
     if (heart && heart.soundstormPaint) heart.soundstormPaint(on);
   }
   // Taken off the list while looking at the list: it goes.
-  if (!on && state.kind === 'favourites') runSearch();
+  if (!on && state.kind === 'favorites') runSearch();
   return '';
 }
 
@@ -3324,14 +3324,14 @@ function renderMainMenu(item) {
     renderPairMenu(item.pair, menu, note);
     return;
   }
-  const faved = state.favourites.has(selectionKey(item));
+  const faved = state.favorites.has(selectionKey(item));
   const entries = [
     menuHeader(item),
-    menuItem('heart', faved ? 'Remove from favourites' : 'Add to favourites', async () => {
-      const problem = await setFavourite(item, !faved);
+    menuItem('heart', faved ? 'Remove from favorites' : 'Add to favorites', async () => {
+      const problem = await setFavorite(item, !faved);
       if (problem) say(problem);
       else closeItemMenu();
-    }, { filled: faved, className: 'menu-favourite' }),
+    }, { filled: faved, className: 'menu-favorite' }),
   ];
   if (item.kind === 'music') {
     entries.push(menuItem('next', 'Play next', () => {
@@ -3497,9 +3497,9 @@ function renderSearchHint() {
   const shelves = {
     '': 'everything', music: 'music', video: 'films', tv: 'TV', audiobook: 'audiobooks',
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
-    favourites: 'your favourites', playlists: 'your playlists', pairs: 'books to read along with',
-    authors: 'authors', series: 'series', 'fav-music': 'your favourites', 'fav-watch': 'your favourites',
-    'fav-books': 'your favourites', 'fav-photos': 'your favourites',
+    favorites: 'your favorites', playlists: 'your playlists', pairs: 'books to read along with',
+    authors: 'authors', series: 'series', 'fav-music': 'your favorites', 'fav-watch': 'your favorites',
+    'fav-books': 'your favorites', 'fav-photos': 'your favorites',
   };
   let what = shelves[state.kind] || 'everything';
   if (state.kind === 'music' && ['songs', 'albums', 'artists'].includes(state.musicView)) what = state.musicView;
@@ -3831,7 +3831,7 @@ const MENU_HOW = state.sheetMenus ? 'Hold down on' : 'Right-click';
 // down on a touch screen, right-click with a mouse, the menu key on a
 // keyboard. The menu opens beside the card.
 //
-// A hold is a finger resting in place: it is cancelled the moment the finger
+// A hold is a finger resting in place: it is canceled the moment the finger
 // moves more than a few pixels (that is a scroll), lifts early (that is a
 // tap), or the browser takes the touch over for itself.
 const HOLD_MS = 450;
@@ -4046,7 +4046,7 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
       markMusicTabs();
       return;
     }
-    if (tab.dataset.view === 'favourites') {
+    if (tab.dataset.view === 'favorites') {
       selectKind('fav-music');
       markMusicTabs();
       return;
@@ -4061,13 +4061,13 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
 
 function markMusicTabs() {
   // Offline, Music is what is downloaded: songs, albums, playlists.
-  for (const view of ['mixes', 'artists', 'favourites']) {
+  for (const view of ['mixes', 'artists', 'favorites']) {
     const pill = document.querySelector(`#music-tabs [data-view="${view}"]`);
     if (pill) pill.classList.toggle('hidden', state.offline);
   }
   for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
     const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists'
-      : state.kind === 'fav-music' ? tab.dataset.view === 'favourites' : tab.dataset.view === state.musicView;
+      : state.kind === 'fav-music' ? tab.dataset.view === 'favorites' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
     // A swipe can land on a pill that is off the side of its strip.
@@ -4157,8 +4157,8 @@ function noCover() {
   return img;
 }
 
-// initials stand in for a missing cover: the name's first letters on a colour
-// taken from the name, so the same album is always the same colour.
+// initials stand in for a missing cover: the name's first letters on a color
+// taken from the name, so the same album is always the same color.
 function initials(label) {
   const span = document.createElement('span');
   span.className = 'initials';
@@ -4340,7 +4340,7 @@ function trackRow(song, index, songs) {
     }
     playQueue(songs, index);
   });
-  // The same hold-down / right-click menu as a card: favourites, playlists.
+  // The same hold-down / right-click menu as a card: favorites, playlists.
   attachItemMenuGestures(row, song);
   row.soundstormItem = song;
   li.append(row);
@@ -4559,7 +4559,7 @@ document.querySelector('#now-playing .np-head').addEventListener('click', () => 
 // Songs either side, for swiping: in a queue the ones before and after
 // (round to the start on repeat), and in an audiobook the chapters, which
 // share the book's cover.
-function neighbourTrack(by) {
+function neighborTrack(by) {
   const q = audio.queue;
   if (q) {
     let at = q.index + by;
@@ -4588,7 +4588,7 @@ function stepTrack(by) {
 
 // Now Playing's sideways swipe: the cover follows the finger with the next
 // and previous covers riding beside it, a small gap apart, and on letting go
-// either the neighbour slides into the middle and its song plays, or it all
+// either the neighbor slides into the middle and its song plays, or it all
 // springs back. With the lyrics or the queue in the middle (no big cover),
 // the title moves instead.
 const npSwipe = (() => {
@@ -4617,7 +4617,7 @@ const npSwipe = (() => {
   const artOf = (n) => (n && artPath(n.item)) || NO_COVER;
 
   self.start = () => {
-    near = { '-1': neighbourTrack(-1), 1: neighbourTrack(1) };
+    near = { '-1': neighborTrack(-1), 1: neighborTrack(1) };
     bigCover = cover.offsetWidth > 0;
     if (!bigCover) return;
     w = cover.offsetWidth + GAP;
@@ -4668,7 +4668,7 @@ const npSwipe = (() => {
     const flung = Math.abs(dx) > 30 && Math.abs(speed) > 0.35 && Math.sign(speed) === Math.sign(dx);
     if (!near[by] || !(far || flung)) {
       draw(0, 220);
-      // The neighbours tuck away again once the cover is back.
+      // The neighbors tuck away again once the cover is back.
       setTimeout(() => { if (!self.busy) for (const b of [-1, 1]) sides[b].style.visibility = 'hidden'; }, 230);
       return;
     }
@@ -4842,7 +4842,7 @@ $('dock-seek').addEventListener('change', () => {
   state.dockSeeking = false;
 });
 
-// Volume is the listener's own level, under the ReplayGain levelling that
+// Volume is the listener's own level, under the ReplayGain leveling that
 // sets the element's real volume.
 $('dock-volume').addEventListener('input', () => {
   audio.userVolume = Number($('dock-volume').value) / 100;
@@ -4886,7 +4886,7 @@ $('audio-player').addEventListener('volumechange', () => {
     if (axis === 'x') {
       // Sideways: the next or previous song. Nothing that way, and the card
       // gives only a little.
-      const d = neighbourTrack(dx < 0 ? 1 : -1) ? dx : dx / 4;
+      const d = neighborTrack(dx < 0 ? 1 : -1) ? dx : dx / 4;
       dock.style.transform = `translateX(${d}px)`;
       dock.style.opacity = String(Math.max(0.3, 1 - Math.abs(d) / 300));
     } else if (dy > 0) {
@@ -4901,7 +4901,7 @@ $('audio-player').addEventListener('volumechange', () => {
     if (axis === 'x') {
       const by = dx < 0 ? 1 : -1;
       const speed = Math.abs(dx) / Math.max(performance.now() - startT, 1);
-      if (neighbourTrack(by) && (Math.abs(dx) > 80 || (speed > 0.35 && Math.abs(dx) > 30))) {
+      if (neighborTrack(by) && (Math.abs(dx) > 80 || (speed > 0.35 && Math.abs(dx) > 30))) {
         busy = true;
         const width = dock.offsetWidth;
         dock.style.transition = 'transform 0.16s ease-in, opacity 0.16s ease-in';
@@ -5162,7 +5162,7 @@ $('audio-player').addEventListener('emptied', () => {
 // Set through the element's volume, not the Web Audio API. Routing a phone's
 // music through Web Audio is what makes an iPhone stop the music when the
 // screen locks. The cost is that iOS ignores the volume a page sets, so there
-// levelling does nothing, where the alternative is music that stops.
+// leveling does nothing, where the alternative is music that stops.
 const LEVEL_PREAMP_DB = -6;
 audio.userVolume = 1;
 audio.settingVolume = false;
@@ -5195,7 +5195,7 @@ function applyLevel(item) {
 }
 
 // The volume somebody chose with the player's own slider is theirs, and
-// levelling works under it rather than replacing it.
+// leveling works under it rather than replacing it.
 $('audio-player').addEventListener('volumechange', () => {
   // A fade (the sleep timer's, a crossfade) is not the listener moving the
   // volume; counted as one, it left their volume at zero afterwards.
@@ -5297,7 +5297,7 @@ async function loadLyrics(item) {
   if (!audio.lyrics || audio.lyrics.key !== key) return;
   audio.lyrics = { key, synced: Boolean(ok && body && body.synced), lines: (ok && body && body.lines) || [], from: (ok && body && body.from) || '' };
   // A long intro gets the same breathing dots as an instrumental break, so
-  // the screen is not a column of grey waiting for the first word.
+  // the screen is not a column of gray waiting for the first word.
   const first = audio.lyrics.lines[0];
   if (audio.lyrics.synced && first && first.start >= 5000) audio.lyrics.lines.unshift({ start: 0, text: '' });
   renderLyrics();
@@ -5441,7 +5441,13 @@ const DOWNLOADS_KEY = 'soundstorm-downloads';
 function loadDownloadIndex() {
   try {
     const raw = JSON.parse(localStorage.getItem(DOWNLOADS_KEY) || 'null');
-    if (raw && raw.items && raw.groups) return raw;
+    if (raw && raw.items && raw.groups) {
+      // Downloaded favorites were once a group named the British way.
+      for (const g of raw.groups) {
+        if (g.id === 'favourites') Object.assign(g, { id: 'favorites', type: 'favorites', title: 'Favorites' });
+      }
+      return raw;
+    }
   } catch {
     // A damaged index lists nothing; the cache is cleared with the next change.
   }
@@ -5815,7 +5821,7 @@ renderSleep();
 
 // Crossfade: the last few seconds of a song blend into the next, as a radio
 // does. The page has one audio element, and everything in it - the lyrics,
-// the lock screen, the queue, the levelling - listens to that one. So a second,
+// the lock screen, the queue, the leveling - listens to that one. So a second,
 // hidden element plays only the fade-in; when the first song ends, the main
 // element takes the next song over from exactly where the hidden one has got
 // to (it is usually a blob already in memory, so that is instant), and the
@@ -5952,17 +5958,17 @@ setIcon($('photo-next'), 'forward');
 // not see, or that has nothing on it, is left out, and a tab left with nothing
 // is hidden.
 const TABS = {
-  home: [{ kind: '', label: 'Home' }, { kind: 'favourites', label: 'Favourites', inMusicTabs: true }],
+  home: [{ kind: '', label: 'Home' }, { kind: 'favorites', label: 'Favorites', inMusicTabs: true }],
   music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true },
-    { kind: 'fav-music', label: 'Favourites', inMusicTabs: true }],
-  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'fav-watch', label: 'Favourites' }],
+    { kind: 'fav-music', label: 'Favorites', inMusicTabs: true }],
+  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'fav-watch', label: 'Favorites' }],
   books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
     { kind: 'authors', label: 'Authors' }, { kind: 'series', label: 'Series' },
     { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
-    { kind: 'fav-books', label: 'Favourites' }],
-  photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'fav-photos', label: 'Favourites' }],
+    { kind: 'fav-books', label: 'Favorites' }],
+  photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'fav-photos', label: 'Favorites' }],
 };
-// Each tab's Favourites pill shows the favourites of the kinds it holds; the
+// Each tab's Favorites pill shows the favorites of the kinds it holds; the
 // Books tab also browses by author and by series. Here, beside TABS, because
 // the tabs are first drawn while the page loads.
 const FAV_KINDS = {
@@ -5979,12 +5985,12 @@ function tabOf(kind) {
 
 function shelfAvailable(kind) {
   if (state.offline) return kind === '' || offlineKinds().has(kind);
-  if (kind === '' || kind === 'favourites' || kind === 'playlists') return true;
+  if (kind === '' || kind === 'favorites' || kind === 'playlists') return true;
   // Only once there is at least one book on both shelves.
   if (kind === 'pairs') return state.pairCount > 0 && shelfAvailable('ebook') && shelfAvailable('audiobook');
   // Books by author and series: wherever there are books.
   if (kind === 'authors' || kind === 'series') return shelfAvailable('ebook') || shelfAvailable('audiobook');
-  // A tab's favourites: while the tab has a shelf of its own to favourite from.
+  // A tab's favorites: while the tab has a shelf of its own to favorite from.
   if (FAV_KINDS[kind]) return FAV_KINDS[kind].some((k) => shelfAvailable(k));
   const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
   if (!chip || chip.classList.contains('hidden')) return false; // not allowed
@@ -6006,7 +6012,8 @@ function tabShelves(tab) {
 // can differ.
 function pillOrder(row) {
   const saved = state.prefs && state.prefs.pills && state.prefs.pills[row];
-  return Array.isArray(saved) ? saved : [];
+  // An order saved before the spelling changed names Music's pill the British way.
+  return Array.isArray(saved) ? saved.map((k) => (k === 'favourites' ? 'favorites' : k)) : [];
 }
 
 function savePillOrder(row, keys) {
@@ -6146,7 +6153,7 @@ renderTabs();
 /* -------------------------------------------------------------- home page */
 
 // Home is a front page, not a list of everything: Continue on top (its own
-// row, above), then a strip each of the newest albums, favourites, what was
+// row, above), then a strip each of the newest albums, favorites, what was
 // played lately, and what arrived on every other shelf. Each strip scrolls
 // sideways and has a "See all" into its tab. Strips with nothing in them are
 // left out, so a music-only library has a music-only home.
@@ -6160,7 +6167,7 @@ async function renderHome(seq) {
   $('status').textContent = '';
   const [home, favs, played] = await Promise.all([
     api('/api/home'),
-    api('/api/favourites'),
+    api('/api/favorites'),
     api('/api/music/mixes/recently-played'),
   ]);
   if (seq !== state.searchSeq) return;
@@ -6168,8 +6175,8 @@ async function renderHome(seq) {
   const all = [];
 
   // In three runs, each together: what you were just playing (under the
-  // Continue row), what is new on every shelf, then your favourites. They
-  // used to interleave - New music, favourites, Recently played, then the
+  // Continue row), what is new on every shelf, then your favorites. They
+  // used to interleave - New music, favorites, Recently played, then the
   // other New rows - which read as no order at all.
   const recent = ((played.ok && played.body && played.body.songs) || []).slice(0, 12);
   if (recent.length) {
@@ -6192,12 +6199,12 @@ async function renderHome(seq) {
     all.push(...shelf.items);
     view.append(homeRow(HOME_SHELVES[shelf.kind] || 'New', shelf.items.map(renderItem), () => selectKind(shelf.kind)));
   }
-  // A row of favourites for each tab, rather than one mixed list: See all
-  // opens that tab's own Favourites.
-  const favourites = (favs.ok && favs.body && favs.body.items) || [];
-  for (const [kind, title] of [['fav-music', 'Favourite songs'], ['fav-watch', 'Favourite films and TV'],
-    ['fav-books', 'Favourite books'], ['fav-photos', 'Favourite photos']]) {
-    const list = favourites.filter((it) => FAV_KINDS[kind].includes(it.kind)).slice(0, 12);
+  // A row of favorites for each tab, rather than one mixed list: See all
+  // opens that tab's own Favorites.
+  const favorites = (favs.ok && favs.body && favs.body.items) || [];
+  for (const [kind, title] of [['fav-music', 'Favorite songs'], ['fav-watch', 'Favorite films and TV'],
+    ['fav-books', 'Favorite books'], ['fav-photos', 'Favorite photos']]) {
+    const list = favorites.filter((it) => FAV_KINDS[kind].includes(it.kind)).slice(0, 12);
     if (!list.length) continue;
     all.push(...list);
     view.append(homeRow(title, list.map(renderItem), () => selectKind(kind)));
@@ -6266,7 +6273,7 @@ function albumCardFromHome(album) {
 
 // Wherever a row of pills picks what is on the page - Music's Mixes, Songs,
 // Albums, Artists and Playlists; Books' audiobooks, ebooks and documents;
-// Watch's films and TV - a sideways swipe steps to the neighbouring pill.
+// Watch's films and TV - a sideways swipe steps to the neighboring pill.
 // The page follows the finger, and on letting go either carries on off the
 // side while the next one slides in, or springs back. Not on an album,
 // artist or playlist page (those have a back button and the swipe would
@@ -6381,7 +6388,7 @@ function albumCardFromHome(album) {
     ghost.style.transform = `translate3d(${x}px, 0, 0)`;
   };
 
-  // The swipe has gone sideways towards a neighbour: switch to it now, so
+  // The swipe has gone sideways toward a neighbor: switch to it now, so
   // its page is loading - and usually there - while the finger is still
   // down. Nothing scrolls: the next page is drawn down by the scroll so far,
   // which shows it from its top under the pills (they stay pinned), and the
@@ -6495,10 +6502,10 @@ function albumCardFromHome(album) {
     const first = samples[0];
     const last = samples[samples.length - 1];
     const speed = first && last && last.at > first.at ? (last.x - first.x) / (last.at - first.at) : 0;
-    const towards = Math.sign(dx) === -dir;
+    const toward = Math.sign(dx) === -dir;
     const far = Math.abs(dx) > window.innerWidth * 0.3;
     const flung = Math.abs(dx) > 30 && Math.abs(speed) > 0.35 && Math.sign(speed) === -dir;
-    finish(swipe, towards && (far || flung));
+    finish(swipe, toward && (far || flung));
   }
   document.addEventListener('touchend', release, { passive: true });
   document.addEventListener('touchcancel', () => {
@@ -6524,15 +6531,15 @@ function albumCardFromHome(album) {
 
 /* ------------------------------------------------- the phone's status bar */
 
-// The installed app's status bar is the page's theme colour, and a page may
+// The installed app's status bar is the page's theme color, and a page may
 // change it while it runs. Everywhere else that is the app's own dark; in Now
-// Playing it is the colour of the top of the blurred cover behind it, so the
+// Playing it is the color of the top of the blurred cover behind it, so the
 // bar reads as part of the screen instead of a dark strip across its top.
-// Android's navigation bar at the bottom is Chrome's, and no page can colour
+// Android's navigation bar at the bottom is Chrome's, and no page can color
 // it.
-function setStatusBar(colour) {
+function setStatusBar(color) {
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = colour || '#000000';
+  if (meta) meta.content = color || '#000000';
 }
 
 function tintStatusBar(art) {
@@ -7155,7 +7162,7 @@ async function downloadWithToast(title, run) {
 
 /* -------------------------------------------------------- download all */
 
-// Download all: an artist's albums, the favourites, every Read Along book,
+// Download all: an artist's albums, the favorites, every Read Along book,
 // or a whole shelf. One job at a time, one item after another, with its
 // progress and a Stop in the message at the bottom. A whole shelf says how
 // much it is and how much room the device has, and asks first.
@@ -7231,16 +7238,16 @@ async function roomLeft() {
 }
 
 function downloadAllOf(kind) {
-  if (kind === 'favourites') {
-    bulkDownload('your favourites', async () => {
-      const items = await loadFavouriteKeys();
+  if (kind === 'favorites') {
+    bulkDownload('your favorites', async () => {
+      const items = await loadFavoriteKeys();
       const songs = items.filter((it) => it.kind === 'music');
       const tasks = [];
       if (songs.some((s) => !isDownloaded(s))) {
         tasks.push({
-          label: 'favourite songs',
+          label: 'favorite songs',
           run: (progress, stopped) => download(
-            { id: 'favourites', type: 'favourites', title: 'Favourites', subtitle: 'Songs' },
+            { id: 'favorites', type: 'favorites', title: 'Favorites', subtitle: 'Songs' },
             songs, (done, total) => progress(done / total), stopped),
         });
       }
@@ -7288,7 +7295,7 @@ function downloadAllOf(kind) {
 
 // Settings, Downloads: a button for each whole shelf this account has.
 const WHOLE_SHELVES = [
-  { kind: 'music', label: 'All songs' }, { kind: 'favourites', label: 'Favourites' },
+  { kind: 'music', label: 'All songs' }, { kind: 'favorites', label: 'Favorites' },
   { kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
   { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
   { kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'picture', label: 'Photos' },
@@ -7332,7 +7339,7 @@ function canDownload(item) {
 }
 
 // hlsParts is every address a media playlist leads to: its pieces, and the
-// initialisation piece an fMP4 playlist names in EXT-X-MAP.
+// initialization piece an fMP4 playlist names in EXT-X-MAP.
 function hlsParts(text, base) {
   const parts = [];
   for (const raw of text.split('\n')) {
@@ -7458,7 +7465,7 @@ async function playKeptVideo(item, player) {
 // aside. When the connection comes back, so does everything else.
 state.offline = false;
 
-const MUSIC_GROUPS = ['song', 'album', 'playlist', 'artist', 'favourites', 'shelf', 'mix'];
+const MUSIC_GROUPS = ['song', 'album', 'playlist', 'artist', 'favorites', 'shelf', 'mix'];
 
 function offlineKinds() {
   const kinds = new Set();
@@ -7554,7 +7561,7 @@ async function showOfflineShelf(seq, query) {
       state.items = songs;
       cards = songs.map(renderItem);
     } else {
-      const types = view === 'albums' ? ['album', 'artist'] : ['playlist', 'favourites', 'shelf'];
+      const types = view === 'albums' ? ['album', 'artist'] : ['playlist', 'favorites', 'shelf'];
       cards = state.downloads.groups
         .filter((g) => types.includes(g.type) && (!words.length || [g.title, g.subtitle].join(' ').toLowerCase().includes(words.join(' '))))
         .map(groupCard);
@@ -8161,7 +8168,7 @@ function renderInfoMenu(item) {
 // is selected - back up and they come off again, as in a phone's photos.
 // Near the bottom (or top) of the screen the page scrolls by itself, faster
 // the closer the finger, so any number can be selected in one drag. Lifting
-// leaves the bar to act on them: favourite, download, and for the owner
+// leaves the bar to act on them: favorite, download, and for the owner
 // delete. Only in a shelf's list; not in the strips on Home.
 state.dragSelect = null;
 
@@ -8456,7 +8463,7 @@ function enterDetailPage() {
   if (state.selecting) setSelecting(false);
 }
 
-// Ghost content: grey shapes where covers and titles will be, with a slow
+// Ghost content: gray shapes where covers and titles will be, with a slow
 // shimmer across them, so a page on its way looks like it is coming rather
 // than stuck. Shaped like what arrives - a grid of covers, Home's rows, or a
 // page with its heading - and replaced wholesale by the real thing.

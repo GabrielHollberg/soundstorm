@@ -115,7 +115,7 @@ func TestDuplicateDetectionIsScopedToAudio(t *testing.T) {
 }
 
 // A file that claims a format it does not have is compared whole rather than
-// guessed at, which errs towards keeping both.
+// guessed at, which errs toward keeping both.
 func TestAnUnparseableFileIsComparedWhole(t *testing.T) {
 	l := newLibrary(t)
 	saved(t, l, media.KindMusic, "Album/a.m4a", []byte("not really an mp4 at all"))

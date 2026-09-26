@@ -218,7 +218,7 @@ func (s *Server) handleAddress(w http.ResponseWriter, r *http.Request, id string
 // for reaching the server from outside the house.
 //
 // The address is not taken from the request body - it is the request's own
-// source address. That is the whole SSRF defence: the service can only ever be
+// source address. That is the whole SSRF defense: the service can only ever be
 // asked to probe and name whoever is calling, never a victim, a metadata
 // endpoint, or the host's own network. The install supplies only the port it
 // serves, which is only ever combined with that source address, so it cannot
@@ -492,7 +492,7 @@ type bucket struct {
 }
 
 // limits is a fixed-window counter per key, in memory. It forgets on restart,
-// which errs towards letting people in; the global challenge cap is the only
+// which errs toward letting people in; the global challenge cap is the only
 // limit whose loss costs anything, and a restart cannot be triggered from
 // outside.
 type limits struct {

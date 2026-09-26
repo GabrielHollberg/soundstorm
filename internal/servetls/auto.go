@@ -140,7 +140,7 @@ func (a *autoCert) current(name string) *tls.Certificate {
 		return nil
 	}
 	// The certificate can carry both the LAN and the remote name, so it
-	// answers for whichever the client dialled - not just the LAN one.
+	// answers for whichever the client dialed - not just the LAN one.
 	for _, dns := range a.cert.Leaf.DNSNames {
 		if strings.EqualFold(name, dns) {
 			return a.cert
@@ -328,7 +328,7 @@ func (a *autoCert) step(ctx context.Context) error {
 	if err := a.names.SetAddress(ctx, reg, a.announce); err != nil {
 		var se *names.StatusError
 		if errors.As(err, &se) && se.Status == 401 {
-			// The service no longer recognises this registration - its secret
+			// The service no longer recognizes this registration - its secret
 			// was rotated. Forget it, and the next step registers afresh.
 			a.forget()
 		}

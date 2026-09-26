@@ -33,13 +33,13 @@ func provisionAudiobookshelf(ctx context.Context, c *httpx.Client, t Target, log
 	if err := resp.JSON(&status); err != nil {
 		return state.Backend{}, err
 	}
-	log.Info("audiobookshelf reachable", "version", status.ServerVersion, "initialised", status.IsInit)
+	log.Info("audiobookshelf reachable", "version", status.ServerVersion, "initialized", status.IsInit)
 
 	if status.IsInit {
 		// Already set up, with a password we do not hold. Same situation as the
 		// other backends: a human has to decide which volume to reset.
 		return state.Backend{}, fmt.Errorf(
-			"audiobookshelf is already initialised but SoundStorm has no stored credentials for it; " +
+			"audiobookshelf is already initialized but SoundStorm has no stored credentials for it; " +
 				"either restore SoundStorm's state file or reset the audiobookshelf volume")
 	}
 

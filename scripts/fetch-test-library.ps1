@@ -101,7 +101,7 @@ if (-not $SkipFilms) {
 # the /robot/harvest endpoint, and their own example throttles with `wget -w 2`.
 # The mirror serves byte-identical files, so this costs nothing but courtesy.
 #
-# No catalogue API is involved on purpose: the whole point is to feed our EPUB
+# No catalog API is involved on purpose: the whole point is to feed our EPUB
 # parser files whose metadata we did not write, exactly as they come.
 if ($Ebooks -gt 0) {
   Write-Step "Ebooks (Project Gutenberg, up to $Ebooks)"

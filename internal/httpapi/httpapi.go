@@ -153,7 +153,7 @@ type Config struct {
 	// SetupCode is what the first sign-up must present. See handleSignup.
 	SetupCode string
 
-	// Collections holds each person's favourites and playlists.
+	// Collections holds each person's favorites and playlists.
 	Collections *collections.Store
 
 	// Lyrics looks up lyrics a song's files lack, when the owner has turned
@@ -307,10 +307,10 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/readalong", s.handleReadAlong)
 	guarded.HandleFunc("GET /api/music/mixes/{id}", s.handleMix)
 	guarded.HandleFunc("POST /api/history", s.handleRecordPlay)
-	// Favourites and playlists, per person. See favourites.go.
-	guarded.HandleFunc("GET /api/favourites", s.handleFavourites)
-	guarded.HandleFunc("PUT /api/favourites", s.handleAddFavourite)
-	guarded.HandleFunc("DELETE /api/favourites", s.handleRemoveFavourite)
+	// Favorites and playlists, per person. See favorites.go.
+	guarded.HandleFunc("GET /api/favorites", s.handleFavorites)
+	guarded.HandleFunc("PUT /api/favorites", s.handleAddFavorite)
+	guarded.HandleFunc("DELETE /api/favorites", s.handleRemoveFavorite)
 	guarded.HandleFunc("GET /api/playlists", s.handlePlaylists)
 	guarded.HandleFunc("POST /api/playlists", s.handleCreatePlaylist)
 	guarded.HandleFunc("GET /api/playlists/{id}", s.handlePlaylist)
@@ -742,11 +742,11 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	// after that nothing knows what to clean up - the orphan would sit there
 	// with somebody's listening history in it.
 	s.setup.ForgetUser(r.Context(), id)
-	// Their favourites and playlists go with them. Best effort, like the
+	// Their favorites and playlists go with them. Best effort, like the
 	// backend accounts: a file that will not delete must not stop the removal.
 	if s.collections != nil {
 		if err := s.collections.Forget(id); err != nil {
-			s.log.Warn("could not remove a person's favourites and playlists", "err", err)
+			s.log.Warn("could not remove a person's favorites and playlists", "err", err)
 		}
 	}
 
@@ -1770,7 +1770,7 @@ func escapePath(p string) string {
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	// ?kbps= is the listener's data saver. Only the ceilings the app offers
-	// are honoured, so a request cannot ask the music server for something
+	// are honored, so a request cannot ask the music server for something
 	// odd; anything else streams the original.
 	if kbps, err := strconv.Atoi(r.URL.Query().Get("kbps")); err == nil && allowedBitRates[kbps] {
 		r = r.WithContext(source.WithMaxBitRate(r.Context(), kbps))
@@ -1856,7 +1856,7 @@ func (s *Server) handleBookResource(w http.ResponseWriter, r *http.Request) {
 	// And for a client that sends no Sec-Fetch-Dest at all, never hand back a
 	// runnable script content-type: with nosniff, a non-JS type cannot be
 	// executed as one, and the reader reads bytes rather than <script>-loading
-	// anything, so neutralising it costs nothing.
+	// anything, so neutralizing it costs nothing.
 	if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "empty" {
 		writeError(w, http.StatusForbidden, "book resources are for the reader, not direct loading")
 		return
@@ -1959,7 +1959,7 @@ const maxProgressItemID = 1024
 // real reader has ten thousand books open.
 const maxProgressPerUser = 10_000
 
-// progressTarget resolves and authorises the source/id pair both progress
+// progressTarget resolves and authorizes the source/id pair both progress
 // endpoints take. reg.ByID is what applies the account's library
 // restriction, exactly as on every other guarded route, and also confirms the
 // source is real - so a member cannot store or read a position against a

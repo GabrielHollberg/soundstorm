@@ -330,7 +330,7 @@ func TestSubtitleTargetBuildsAVTTURL(t *testing.T) {
 // manufactured from its metadata, when a user has "display missing episodes"
 // switched on. They arrive as ordinary results with nothing behind them to play.
 //
-// The parameter is asserted rather than the behaviour, because a fake server
+// The parameter is asserted rather than the behavior, because a fake server
 // cannot manufacture a virtual episode. What it is standing in for was checked
 // against Jellyfin 12.1.0 directly: IsMissing=true returned nothing for a real
 // film, IsMissing=false kept the film, an episode and its parent series, and

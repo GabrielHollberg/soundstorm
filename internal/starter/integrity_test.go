@@ -19,7 +19,7 @@ import (
 //
 // What happened was that something read them as text and wrote them back, which
 // on Windows drops every carriage return. In a zip that moves the central
-// directory out from under its own offsets; in an mp3 it desynchronises the
+// directory out from under its own offsets; in an mp3 it desynchronizes the
 // frame chain. Both are cheap to check and neither was checked, so these tests
 // read every bundled file the way the thing that consumes it will.
 

@@ -35,7 +35,7 @@ FIRST_PORT="${SOUNDSTORM_PORT:-8099}"
 
 # --- saying things ----------------------------------------------------------
 
-# Colour only when stdout is a terminal. Piping this into a log should not
+# Color only when stdout is a terminal. Piping this into a log should not
 # produce escape codes, and `curl | sh` is a very normal way to run it.
 if [ -t 1 ]; then
 	BOLD=$(printf '\033[1m'); DIM=$(printf '\033[2m')
@@ -491,7 +491,7 @@ uninstall() {
 # --- moving it to another computer ------------------------------------------
 
 # What a move carries, besides the library: SoundStorm's own state (accounts,
-# the passwords it made on every backend, favourites, playlists, positions, the
+# the passwords it made on every backend, favorites, playlists, positions, the
 # install's name) and each backend's own database. Left out on purpose:
 # jellyfin-cache, immich-models and storyteller-models, which rebuild or
 # download themselves; and tailscale-state, a node identity that belongs to one
@@ -694,7 +694,7 @@ kept), then import again."
 			*) note "skipping $v, which this version does not know"; continue ;;
 		esac
 		note "$v"
-		# Labelled as compose labels its own, so compose adopts the volume
+		# Labeled as compose labels its own, so compose adopts the volume
 		# rather than warning that something else made it.
 		docker volume create --label "com.docker.compose.project=$PROJECT" \
 			--label "com.docker.compose.volume=$v" "${PROJECT}_$v" >/dev/null ||

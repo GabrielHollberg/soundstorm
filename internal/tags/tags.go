@@ -100,7 +100,7 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 		return Tags{}, fmt.Errorf("read tag: %w", err)
 	}
 
-	// Unsynchronisation rewrites every 0xFF 0x00 pair so that no part of the
+	// Unsynchronization rewrites every 0xFF 0x00 pair so that no part of the
 	// tag can look like the start of an audio frame to a decoder that does not
 	// understand tags. Undo it, or every frame length after the first such
 	// pair is wrong and the walk below falls off the end.

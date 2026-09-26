@@ -45,7 +45,7 @@ func TestAFolderServesOnlyItsOwnKind(t *testing.T) {
 		}
 		for _, it := range items {
 			if it.Kind != c.kind {
-				t.Errorf("%s folder labelled %q as %q", c.kind, it.Title, it.Kind)
+				t.Errorf("%s folder labeled %q as %q", c.kind, it.Title, it.Kind)
 			}
 		}
 	}

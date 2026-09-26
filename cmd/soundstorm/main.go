@@ -49,7 +49,7 @@ func main() {
 	// Recovery lives wherever the server lives: somebody locked out of their
 	// own install, or holding a backup and an empty volume, should not also
 	// have to find a second tool. Anything else falls through and starts the
-	// server, so an unrecognised argument is not silently swallowed.
+	// server, so an unrecognized argument is not silently swallowed.
 	// Any argument at all is a subcommand, because the server itself takes
 	// none - it is configured entirely by environment variables.
 	//
@@ -146,7 +146,7 @@ func run(log *slog.Logger) error {
 	// no backend has it mounted.
 	lib.ClearStaging()
 
-	// Each person's favourites and playlists, a file each beside the state
+	// Each person's favorites and playlists, a file each beside the state
 	// file. See internal/collections for why they are not in it.
 	collectionStore, err := collections.Open(filepath.Join(stateDir, "collections"))
 	if err != nil {
@@ -388,7 +388,7 @@ func run(log *slog.Logger) error {
 			}
 		} else if tlsServer != nil {
 			// Empty paths: the certificate comes from TLSConfig.GetCertificate,
-			// which mints one for whatever address the client actually dialled.
+			// which mints one for whatever address the client actually dialed.
 			err = srv.ListenAndServeTLS("", "")
 		} else {
 			err = srv.ListenAndServe()

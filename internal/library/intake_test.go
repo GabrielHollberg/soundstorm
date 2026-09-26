@@ -314,7 +314,7 @@ func TestPathsCannotEscapeTheLibrary(t *testing.T) {
 	}
 }
 
-// Windows swallows trailing dots and spaces, so a name has to be normalised
+// Windows swallows trailing dots and spaces, so a name has to be normalized
 // before it is checked rather than after.
 func TestAwkwardNamesAreNormalisedOrRefused(t *testing.T) {
 	l := newLibrary(t)

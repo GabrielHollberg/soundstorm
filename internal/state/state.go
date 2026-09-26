@@ -78,7 +78,7 @@ type User struct {
 	// the default for a new one.
 	//
 	// No omitempty, deliberately. An account allowed nothing is a real state
-	// and it serialises as []; with omitempty that would vanish from the file
+	// and it serializes as []; with omitempty that would vanish from the file
 	// and read back as nil, which means everything. The one mistake this field
 	// must not make is failing open.
 	Libraries []string `json:"libraries"`
@@ -178,13 +178,13 @@ type data struct {
 	// the library folder, which is worse for a reason that is easy to miss:
 	// Windows Explorer does not hide dot-files, so it would be the single stray
 	// item at the top of "the folders are the interface", and deleting it - the
-	// obvious thing to do with a file you do not recognise - would bring the
+	// obvious thing to do with a file you do not recognize - would bring the
 	// samples back.
 	//
 	// It does mean `docker compose down -v` forgets, and a reinstall over an
 	// existing library can put samples on a shelf that happens to be empty.
 	// That is the documented full reset, and arriving at a fresh install with
-	// something to look at is the behaviour this feature exists for.
+	// something to look at is the behavior this feature exists for.
 	StarterInstalled bool `json:"starterInstalled,omitempty"`
 
 	// RemoteAccess is whether the owner has turned on reaching this install
@@ -636,7 +636,7 @@ func (s *Store) UserByName(name string) (User, bool) {
 // AddUser stores a new account, generating its id.
 //
 // It refuses a name already in use, case-insensitively: two accounts that
-// differ only in capitalisation would make signing in ambiguous.
+// differ only in capitalization would make signing in ambiguous.
 func (s *Store) AddUser(u User) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

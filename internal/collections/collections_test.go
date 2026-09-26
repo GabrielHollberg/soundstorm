@@ -14,29 +14,29 @@ func song(id string) media.Item {
 	return media.Item{ID: id, SourceID: "navidrome", Kind: media.KindMusic, Title: "Song " + id}
 }
 
-func TestFavouritesAreKeptPerPersonAndSurviveARestart(t *testing.T) {
+func TestFavoritesAreKeptPerPersonAndSurviveARestart(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := Open(dir)
-	if err := s.AddFavourite("u1", song("a")); err != nil {
+	if err := s.AddFavorite("u1", song("a")); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	_ = s.AddFavourite("u1", song("b"))
-	_ = s.AddFavourite("u1", song("a")) // twice is still once
-	_ = s.AddFavourite("u2", song("c"))
+	_ = s.AddFavorite("u1", song("b"))
+	_ = s.AddFavorite("u1", song("a")) // twice is still once
+	_ = s.AddFavorite("u2", song("c"))
 
 	reopened, _ := Open(dir)
-	got, _ := reopened.Favourites("u1")
+	got, _ := reopened.Favorites("u1")
 	if len(got) != 2 || got[0].Item.ID != "b" || got[1].Item.ID != "a" {
-		t.Fatalf("u1 favourites = %+v, want b then a", got)
+		t.Fatalf("u1 favorites = %+v, want b then a", got)
 	}
-	other, _ := reopened.Favourites("u2")
+	other, _ := reopened.Favorites("u2")
 	if len(other) != 1 || other[0].Item.ID != "c" {
-		t.Errorf("u2 favourites = %+v", other)
+		t.Errorf("u2 favorites = %+v", other)
 	}
 
-	_ = reopened.RemoveFavourite("u1", "navidrome", "b")
-	got, _ = reopened.Favourites("u1")
+	_ = reopened.RemoveFavorite("u1", "navidrome", "b")
+	got, _ = reopened.Favorites("u1")
 	if len(got) != 1 || got[0].Item.ID != "a" {
 		t.Errorf("after removing b: %+v", got)
 	}
@@ -95,7 +95,7 @@ func TestNamesAndIdsAreChecked(t *testing.T) {
 	if _, err := s.CreatePlaylist("u1", string(long)); err == nil {
 		t.Error("an overlong name was accepted")
 	}
-	if err := s.AddFavourite("../escape", song("a")); err == nil {
+	if err := s.AddFavorite("../escape", song("a")); err == nil {
 		t.Error("an account id with a path in it was accepted")
 	}
 }
@@ -103,22 +103,22 @@ func TestNamesAndIdsAreChecked(t *testing.T) {
 func TestForgetRemovesTheFile(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := Open(dir)
-	_ = s.AddFavourite("u1", song("a"))
+	_ = s.AddFavorite("u1", song("a"))
 	if err := s.Forget("u1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "u1.json")); !os.IsNotExist(err) {
 		t.Error("the file is still there")
 	}
-	if got, _ := s.Favourites("u1"); len(got) != 0 {
-		t.Errorf("favourites after forget = %d", len(got))
+	if got, _ := s.Favorites("u1"); len(got) != 0 {
+		t.Errorf("favorites after forget = %d", len(got))
 	}
 }
 
 func TestExportAndImportRoundTrip(t *testing.T) {
 	from := t.TempDir()
 	s, _ := Open(from)
-	_ = s.AddFavourite("u1", song("a"))
+	_ = s.AddFavorite("u1", song("a"))
 	p, _ := s.CreatePlaylist("u2", "Mix")
 	_, _ = s.AddToPlaylist("u2", p.ID, song("b"))
 
@@ -132,8 +132,8 @@ func TestExportAndImportRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, _ := Open(to)
-	if favs, _ := back.Favourites("u1"); len(favs) != 1 || favs[0].Item.ID != "a" {
-		t.Errorf("favourites after import = %+v", favs)
+	if favs, _ := back.Favorites("u1"); len(favs) != 1 || favs[0].Item.ID != "a" {
+		t.Errorf("favorites after import = %+v", favs)
 	}
 	if got, err := back.Playlist("u2", p.ID); err != nil || len(got.Items) != 1 {
 		t.Errorf("playlist after import = %+v, %v", got, err)

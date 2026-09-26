@@ -26,12 +26,12 @@ SOFTWARE.
 The bundled starter library under internal/starter/media is not covered by the
 above. It is redistributed as-is, and every item in it is public domain or CC0:
 
-  ebooks      Project Gutenberg, under the licence included in each book
+  ebooks      Project Gutenberg, under the license included in each book
   audiobook   LibriVox, public domain
   music       The Open Goldberg Variations, CC0 1.0 Public Domain Dedication
 
 Two browser libraries are vendored under internal/webui/assets/vendor, each
-under its own licence:
+under its own license:
 
   foliate-js  MIT
   hls.js      Apache License 2.0

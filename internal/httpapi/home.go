@@ -14,7 +14,7 @@ import (
 // albums. Every shelf is asked at once and given a few seconds; one that is
 // slow or down is left out rather than holding the page up - the same rule
 // the search lives by. The rows that are about this person (carry on,
-// favourites, recently played) come from the endpoints that already answer
+// favorites, recently played) come from the endpoints that already answer
 // those.
 
 const (

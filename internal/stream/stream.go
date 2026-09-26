@@ -94,7 +94,7 @@ func setContentHeaders(w http.ResponseWriter, target source.Target) {
 	}
 	if ct != "" {
 		// Set it explicitly so ServeContent does not sniff, and so an EPUB is
-		// labelled as one rather than as a zip.
+		// labeled as one rather than as a zip.
 		w.Header().Set("Content-Type", ct)
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -231,7 +231,7 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 
 	resp, err := p.hc.Do(req)
 	if err != nil {
-		// A cancelled client request is the normal way a video ends - somebody
+		// A canceled client request is the normal way a video ends - somebody
 		// hit stop. Do not shout about it.
 		if r.Context().Err() != nil {
 			return

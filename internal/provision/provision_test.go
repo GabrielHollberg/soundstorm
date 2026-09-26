@@ -64,7 +64,7 @@ func TestTransientDistinguishesNotReadyFromRefused(t *testing.T) {
 		{
 			// The one case that genuinely means "your credentials are wrong",
 			// and the only one that should trigger re-provisioning.
-			name: "unauthorised",
+			name: "unauthorized",
 			err:  fmt.Errorf("health check: %w", &httpx.StatusError{Status: http.StatusUnauthorized}),
 			want: false,
 		},

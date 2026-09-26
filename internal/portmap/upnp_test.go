@@ -148,7 +148,7 @@ func TestUPnPDescribeFindsNestedRelativeControlURL(t *testing.T) {
 }
 
 // A device description that points the control URL at another host (a blind
-// SSRF if it were honoured) is refused: the control endpoint must be on the same
+// SSRF if it were honored) is refused: the control endpoint must be on the same
 // host the description was fetched from.
 func TestUPnPRejectsCrossHostControlURL(t *testing.T) {
 	desc := `<?xml version="1.0"?>

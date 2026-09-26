@@ -323,7 +323,7 @@ func (s *Source) songItem(sg song) media.Item {
 	if sg.Genre != "" {
 		item.Extra["genre"] = sg.Genre
 	}
-	// For volume levelling in the player, which is the only thing that
+	// For volume leveling in the player, which is the only thing that
 	// reads these.
 	if rg := sg.ReplayGain; rg != nil {
 		for key, v := range map[string]*float64{
@@ -466,7 +466,7 @@ func (s *Source) realPath(p string) (string, bool) {
 	return rel, true
 }
 
-// ItemByID describes one song, for a favourite or a playlist entry, which know
+// ItemByID describes one song, for a favorite or a playlist entry, which know
 // it only by id.
 func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
 	if itemID == "" {

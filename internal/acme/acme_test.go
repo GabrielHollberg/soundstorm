@@ -63,6 +63,6 @@ func TestServiceBusyIsNotARateLimit(t *testing.T) {
 		t.Error("a 503 service-busy reply was taken for a rate limit")
 	}
 	if !RateLimited(limited) {
-		t.Error("a 429 rate limit was not recognised")
+		t.Error("a 429 rate limit was not recognized")
 	}
 }

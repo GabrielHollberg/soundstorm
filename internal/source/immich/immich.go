@@ -2,7 +2,7 @@
 //
 // Immich owns everything expensive about photos: reading EXIF, decoding HEIC
 // (which Go's standard library cannot), making thumbnails, transcoding phone
-// videos, and recognising what is in a picture so "dog on a beach" finds one.
+// videos, and recognizing what is in a picture so "dog on a beach" finds one.
 // SoundStorm owns the login and the grid. Nobody sees Immich: its port is not
 // published and its phone apps have nothing to connect to.
 package immich
@@ -306,8 +306,8 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 	return []string{rel}, nil
 }
 
-// ItemByID describes one photo or clip, for a favourite, which knows it only
-// by id. Its sort key is left empty: a favourites list is ordered by when
+// ItemByID describes one photo or clip, for a favorite, which knows it only
+// by id. Its sort key is left empty: a favorites list is ordered by when
 // something was added, not by Immich's timeline.
 func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
 	if itemID == "" {

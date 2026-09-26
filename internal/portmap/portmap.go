@@ -151,7 +151,7 @@ func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, exte
 }
 
 // Unmap removes a mapping created by Map, using the same method and identifier
-// (PCP's nonce, UPnP's control endpoint) so the router recognises it. Best
+// (PCP's nonce, UPnP's control endpoint) so the router recognizes it. Best
 // effort: a router that has already forgotten the mapping (a reboot, an expired
 // lease) is not an error worth surfacing.
 func Unmap(ctx context.Context, gateway netip.Addr, m Mapping, proto Protocol, internalPort uint16) error {
@@ -200,7 +200,7 @@ type Maintainer struct {
 	// loop against a fake gateway on an ephemeral port. Zero in production.
 	testServer netip.AddrPort
 
-	opMu sync.Mutex // serialises map/unmap so the loop and EnsureNow never collide
+	opMu sync.Mutex // serializes map/unmap so the loop and EnsureNow never collide
 
 	mu      sync.Mutex
 	current *Mapping // the live mapping, or nil when none is held
@@ -297,7 +297,7 @@ func (mt *Maintainer) step(ctx context.Context, enabled func() bool) time.Durati
 }
 
 // ensure opens (or re-opens, refreshing the lease) the mapping and records it.
-// The op lock serialises it against the refresh loop and against drop, so a
+// The op lock serializes it against the refresh loop and against drop, so a
 // toggle-driven EnsureNow and a timer-driven step never map at once.
 func (mt *Maintainer) ensure(ctx context.Context) (Mapping, error) {
 	mt.opMu.Lock()

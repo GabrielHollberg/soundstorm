@@ -67,7 +67,7 @@ func TestBrowseWithNoQueryParameterAtAll(t *testing.T) {
 
 // Browsing is still a search as far as permission is concerned. An empty query
 // must not become a way around the shelves an account cannot see.
-func TestBrowseHonoursLibraryRestrictions(t *testing.T) {
+func TestBrowseHonorsLibraryRestrictions(t *testing.T) {
 	h := fullHouse(t)
 	h.signUp(t)
 	id := h.addMember(t, "sam", samPassword)

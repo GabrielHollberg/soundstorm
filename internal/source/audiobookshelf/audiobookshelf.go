@@ -157,7 +157,7 @@ type chapter struct {
 
 // decodeEntities undoes HTML escaping that arrives in metadata as literal text.
 //
-// LibriVox catalogue entries carry titles like "Las F&aacute;bulas de Esopo",
+// LibriVox catalog entries carry titles like "Las F&aacute;bulas de Esopo",
 // and Audiobookshelf stores what it is given, so without this a reader sees the
 // entity rather than the accent. Normalization at the edge: only the adapter
 // knows its backend ships HTML in places that are not HTML.
@@ -377,7 +377,7 @@ func (s *Source) Tracks(ctx context.Context, itemID string) ([]source.Track, err
 // multi-part books in the test library are. That equal-count test is a
 // heuristic rather than proof - chapter offsets are into the whole book, so
 // proving alignment means summing durations and picking a tolerance - but the
-// cost of it being wrong is a mislabelled chapter, not a misplayed one.
+// cost of it being wrong is a mislabeled chapter, not a misplayed one.
 //
 // Failing that: the file's own title tag, then its name, then its position.
 func trackTitles(item libraryItem, files []audioFile) []string {
@@ -767,7 +767,7 @@ func (s *Source) InProgress(ctx context.Context, limit int) ([]source.Started, e
 	return out, nil
 }
 
-// ItemByID describes one book, for a favourite, which knows it only by id.
+// ItemByID describes one book, for a favorite, which knows it only by id.
 func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool) {
 	if itemID == "" {
 		return media.Item{}, false

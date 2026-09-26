@@ -72,7 +72,7 @@ type span struct{ start, length int64 }
 
 // fingerprintSpan finds the part of a file that is the recording, for the
 // formats whose tags live inside the file. Anything else - and any file whose
-// structure does not parse - is fingerprinted whole, which errs towards
+// structure does not parse - is fingerprinted whole, which errs toward
 // keeping both copies.
 func fingerprintSpan(f *os.File, size int64, ext string) span {
 	whole := span{0, size}

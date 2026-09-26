@@ -22,7 +22,7 @@ import (
 // rediscover). The listening history is SoundStorm's, per person - see
 // internal/collections.
 //
-// No "sounds like": that needs the audio of every track analysed, which is
+// No "sounds like": that needs the audio of every track analyzed, which is
 // the expensive layer this project does not own. Genre, era and a person's own
 // history get a long way without it.
 
@@ -139,8 +139,8 @@ func (s *Server) handleMixes(w http.ResponseWriter, r *http.Request) {
 	var cards []mixCard
 
 	// The songs this person has hearted, first: the mix most their own.
-	if favs := s.favouriteSongs(r, user.ID); len(favs) > 0 {
-		cards = append(cards, mixCard{ID: "favourites", Title: "Your favourites",
+	if favs := s.favoriteSongs(r, user.ID); len(favs) > 0 {
+		cards = append(cards, mixCard{ID: "favorites", Title: "Your favorites",
 			Subtitle: "Every song you've hearted, shuffled", Covers: covers(shuffleItems(favs)), SourceID: src.ID()})
 	}
 
@@ -155,7 +155,7 @@ func (s *Server) handleMixes(w http.ResponseWriter, r *http.Request) {
 			Subtitle: "Picking up where you were", Covers: covers(playItems(byLast)), SourceID: src.ID()})
 		if old := rediscover(plays, time.Now()); len(old) >= minMixSongs {
 			cards = append(cards, mixCard{ID: "rediscover", Title: "Rediscover",
-				Subtitle: "Favourites you haven't played lately", Covers: covers(playItems(old)), SourceID: src.ID()})
+				Subtitle: "Favorites you haven't played lately", Covers: covers(playItems(old)), SourceID: src.ID()})
 		}
 	}
 
@@ -226,10 +226,10 @@ func (s *Server) handleMix(w http.ResponseWriter, r *http.Request) {
 	var songs []media.Item
 	var err error
 	switch {
-	case id == "favourites":
-		// All of them, not a mix's hundred: a favourites mix that left some out
-		// would not be the favourites.
-		writeJSON(w, http.StatusOK, map[string]any{"songs": nonNil(shuffleItems(s.favouriteSongs(r, user.ID)))})
+	case id == "favorites":
+		// All of them, not a mix's hundred: a favorites mix that left some out
+		// would not be the favorites.
+		writeJSON(w, http.StatusOK, map[string]any{"songs": nonNil(shuffleItems(s.favoriteSongs(r, user.ID)))})
 		return
 	case id == "shuffle":
 		songs, err = mixer.RandomSongs(r.Context(), mixSize, "", 0, 0)
@@ -291,7 +291,7 @@ func (s *Server) recentlyAdded(r *http.Request, src source.Source) ([]media.Item
 }
 
 // artistMix is an artist's own songs with others from their genres woven in -
-// the nearest honest thing to "radio" without analysing the audio.
+// the nearest honest thing to "radio" without analyzing the audio.
 func (s *Server) artistMix(r *http.Request, src source.Source, mixer source.MixSource, artistID string) ([]media.Item, error) {
 	browser, ok := src.(source.MusicBrowser)
 	if !ok {
@@ -381,9 +381,9 @@ func shuffleItems(items []media.Item) []media.Item {
 	return out
 }
 
-// favouriteSongs is this person's favourite songs, on shelves they can see.
-func (s *Server) favouriteSongs(r *http.Request, userID string) []media.Item {
-	entries, err := s.collections.Favourites(userID)
+// favoriteSongs is this person's favorite songs, on shelves they can see.
+func (s *Server) favoriteSongs(r *http.Request, userID string) []media.Item {
+	entries, err := s.collections.Favorites(userID)
 	if err != nil {
 		return nil
 	}

@@ -86,7 +86,7 @@ const ROUNDS = 3;
   const midY = box.y + box.height / 2;
 
   // A real gesture: down, ten moves, up. One jump is not a swipe and any
-  // recogniser worth the name ignores it.
+  // recognizer worth the name ignores it.
   async function swipe(forward) {
     const from = box.x + box.width * (forward ? 0.82 : 0.18);
     const to = box.x + box.width * (forward ? 0.18 : 0.82);

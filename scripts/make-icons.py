@@ -19,7 +19,7 @@ ASSETS = Path(__file__).resolve().parent.parent / "internal" / "webui" / "assets
 # The cloud in the logo's own pixels. Its box is x 176.5-324.5, y 177-249,
 # and everything is cut off flat along the bottom of the bar - the big circle
 # would otherwise hang below it.
-BIG = (234.0, 220.5, 43.5)      # centre x, centre y, radius
+BIG = (234.0, 220.5, 43.5)      # center x, center y, radius
 SMALL = (283.0, 212.7, 23.7)
 BAR = (176.5, 207.0, 324.5, 249.0, 21.0)  # left, top, right, bottom, corner radius
 # A lightning bolt drops out of the cloud's flat bottom: the storm in the
@@ -54,7 +54,7 @@ def cloud_svg():
 
 def cloud_mark_svg():
     """The cloud alone, cropped tight: the shape the wordmark is drawn beside.
-    The page uses it as a mask and paints it in the text's own colour."""
+    The page uses it as a mask and paints it in the text's own color."""
     left, top, right, bottom = BOX
     bx, by, bx2, by2, r = BAR
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left} {top} {right - left} {bottom - top}">
@@ -102,7 +102,7 @@ def placeholder_svg():
 
 
 def icon(size, cloud_width):
-    """A square dark icon with the white cloud centred, cloud_width of it wide."""
+    """A square dark icon with the white cloud centered, cloud_width of it wide."""
     scale = 4  # drawn large and scaled down, for smooth edges
     s = size * scale
     img = Image.new("RGBA", (s, s), PAPER)

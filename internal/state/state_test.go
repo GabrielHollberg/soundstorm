@@ -144,7 +144,7 @@ func TestTheFirstAccountIsAlwaysTheOwner(t *testing.T) {
 	}
 }
 
-// Two accounts differing only in capitalisation would make signing in
+// Two accounts differing only in capitalization would make signing in
 // ambiguous, since names are matched case-insensitively.
 func TestNamesCannotCollide(t *testing.T) {
 	s := open(t, t.TempDir())

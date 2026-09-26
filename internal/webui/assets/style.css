@@ -58,12 +58,12 @@ a:hover { color: var(--text); }
 
 .wordmark {
   /* The logo: the cloud, then the name in heavy italic. The cloud is a mask
-     painted in the text's colour, so it is white on the dark app wherever
+     painted in the text's color, so it is white on the dark app wherever
      it appears. */
   display: inline-flex;
-  /* On the baseline, not centred on the line: a line box is the font's
+  /* On the baseline, not centered on the line: a line box is the font's
      ascent and descent, which differ between Windows's and Android's fonts,
-     so centring on it put the cloud high on one and low on the other. */
+     so centering on it put the cloud high on one and low on the other. */
   align-items: baseline;
   gap: 0.35em;
   font-weight: 800;
@@ -75,7 +75,7 @@ a:hover { color: var(--text); }
 .wordmark::before {
   content: "";
   flex: 0 0 auto;
-  /* Cloud and bolt together, centred on the capitals: those stand about
+  /* Cloud and bolt together, centered on the capitals: those stand about
      0.7em above the baseline in every common font, so the icon's middle goes
      0.35em up - its bottom sits on the baseline and moves 0.2em down. */
   width: 1.3em;
@@ -656,7 +656,7 @@ header {
     flex: 1 0 100%;
   }
   #search-input { max-width: none; }
-  /* The name centred at the top, over the full-width search box. */
+  /* The name centered at the top, over the full-width search box. */
   .wordmark.small { margin: 0 auto; }
 
   /* One row that scrolls sideways, rather than two rows of wrapped chips.
@@ -1017,7 +1017,7 @@ button.danger {
   .continue-row { grid-auto-columns: 132px; }
 }
 
-/* Favourites, playlists and the item menu ---------------------------------- */
+/* Favorites, playlists and the item menu ---------------------------------- */
 
 /* Cards are buttons, and the browser's default treatment of a button was the
    square that flashed on a tap: Chrome's tap highlight covers the whole
@@ -1146,8 +1146,8 @@ button.danger {
 .menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-detail { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .menu-item .icon-chevron { width: 16px; height: 16px; color: var(--muted); }
-.menu-favourite .icon-heart { color: #ff6b8e; }
-.menu-favourite .icon-heart.filled { fill: #ff6b8e; }
+.menu-favorite .icon-heart { color: #ff6b8e; }
+.menu-favorite .icon-heart.filled { fill: #ff6b8e; }
 
 .menu-back { color: var(--muted); font-weight: 600; font-size: 13px; }
 .menu-back .icon { width: 16px; height: 16px; }
@@ -1393,8 +1393,8 @@ body.np-open { overflow: hidden; }
   animation: np-in 0.22s ease-out;
 }
 @keyframes np-in { from { transform: translateY(24px); opacity: 0; } }
-/* The cover again, huge and blurred: the screen takes its colour from the
-   album without anybody computing a colour. */
+/* The cover again, huge and blurred: the screen takes its color from the
+   album without anybody computing a color. */
 .np-backdrop {
   position: absolute;
   inset: -60px;
@@ -1585,7 +1585,7 @@ body.np-open { overflow: hidden; }
   /* 1/1.04 of the box, so the current line, scaled up 4% from its left
      edge, still ends inside it rather than widening the column. */
   width: calc(100% / 1.04);
-  /* Centred, and scaled from the centre, so the current line's growth is
+  /* Centered, and scaled from the center, so the current line's growth is
      shared by both sides and still ends inside the box. */
   margin: 0 auto;
   padding: 8px 4%;
@@ -1603,7 +1603,7 @@ body.np-open { overflow: hidden; }
   -webkit-tap-highlight-color: transparent;
 }
 /* Hover only where there is a mouse, and never on the line being sung: a tap
-   on a phone leaves :hover stuck on the line tapped, and its grey won over
+   on a phone leaves :hover stuck on the line tapped, and its gray won over
    the current line's white, so the line you had just jumped to looked like
    every other. */
 @media (hover: hover) {
@@ -1895,7 +1895,7 @@ body.np-open { overflow: hidden; }
 }
 @media (pointer: coarse) { .dock-volume { display: none; } }
 
-/* Centred, to match the lyrics: the title, and on a computer the controls. */
+/* Centered, to match the lyrics: the title, and on a computer the controls. */
 .np-head { justify-content: center; }
 .np-text { text-align: center; }
 .now-playing.panel-on .np-head .np-text { text-align: left; }
@@ -2561,7 +2561,7 @@ body.offline-mode .dl-get { display: none; }
 .menu-confirm { margin: 8px 14px 10px; font-size: 14px; line-height: 1.45; color: var(--text); }
 
 /* Black at both ends, to run into Android's own bars: the status bar above
-   (the theme colour, #000) and the navigation bar below. The header and the
+   (the theme color, #000) and the navigation bar below. The header and the
    pills under it are one solid band, with no line between them. */
 #app > header {
   background: var(--bg);
@@ -2621,7 +2621,7 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 }
 
 /* The heart in a cover's top-right corner: an outline, filled red once the
-   item is a favourite. The desktop's hover "..." moves over beside it. */
+   item is a favorite. The desktop's hover "..." moves over beside it. */
 .fav-toggle {
   position: absolute;
   top: 4px; right: 4px;
@@ -2698,7 +2698,7 @@ html.holding, html.holding body { overscroll-behavior: none; }
 .book-page-head p { margin: 4px 0 0; }
 .book-section h2 { margin: 18px 20px 0; font-size: 18px; }
 
-/* Ghost content while a page loads: grey shapes where covers and titles
+/* Ghost content while a page loads: gray shapes where covers and titles
    will be, a soft light sweeping across them. Still, for anybody who has
    asked for less motion. */
 .sk-cover, .sk-line {

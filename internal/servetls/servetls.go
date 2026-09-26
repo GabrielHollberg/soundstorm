@@ -25,7 +25,7 @@
 // accepted connection, is wrong here. SoundStorm's port is published by
 // Docker, which NATs it: inside the container the local address is the
 // container's own 172.20.0.5, not the 192.168.0.19 the client actually
-// dialled. That reads correctly in a unit test with a synthetic connection,
+// dialed. That reads correctly in a unit test with a synthetic connection,
 // and correctly for a binary run directly on the host, and never once in the
 // way the thing actually ships.
 //
@@ -75,7 +75,7 @@ const (
 	// mid-request on a server that has been up for a year.
 	renewBefore = 30 * 24 * time.Hour
 
-	// maxLeaves caps the on-demand cache. Every unrecognised name in a
+	// maxLeaves caps the on-demand cache. Every unrecognized name in a
 	// handshake would otherwise cost a signature and a map entry, which is a
 	// cheap thing for a stranger to ask for a great many of.
 	maxLeaves = 64
@@ -450,7 +450,7 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 //
 // ServerName is empty when a client dials an IP address, because browsers do
 // not put an IP in SNI. The local address of the connection is then the answer:
-// it is the address the client actually dialled, which is precisely what its
+// it is the address the client actually dialed, which is precisely what its
 // certificate has to match.
 func (s *Server) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	name := strings.TrimSpace(hello.ServerName)
@@ -461,7 +461,7 @@ func (s *Server) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 	}
 	if name == "" {
 		// A bare IP address, which browsers send no SNI for. Nothing in the
-		// handshake says which address was dialled - behind Docker's NAT the
+		// handshake says which address was dialed - behind Docker's NAT the
 		// connection's local address is the container's own - so this is what
 		// the configured names are for.
 		return s.fallback, nil

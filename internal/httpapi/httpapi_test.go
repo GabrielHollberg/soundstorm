@@ -294,7 +294,7 @@ func TestSearchMergesResultsFromEveryBackend(t *testing.T) {
 	}
 }
 
-// The behaviour that matters when one server is off: the search still answers.
+// The behavior that matters when one server is off: the search still answers.
 func TestSearchStillServesWhenOneBackendIsDown(t *testing.T) {
 	h := newHarness(t,
 		stub{id: "jellyfin", kind: media.KindVideo, items: []media.Item{
@@ -345,7 +345,7 @@ func TestSearchValidatesInput(t *testing.T) {
 	// "/api/search" with no q is deliberately absent from this list. It used
 	// to be a 400 and is now a browse - "everything on this shelf" - which is
 	// what the UI asks for the moment somebody picks a filter without typing.
-	// TestBrowseWithNoQueryParameterAtAll pins the new behaviour down.
+	// TestBrowseWithNoQueryParameterAtAll pins the new behavior down.
 	for _, path := range []string{
 		"/api/search?q=x&kind=vhs", // unknown kind
 		"/api/search?q=x&limit=0",  // out of range

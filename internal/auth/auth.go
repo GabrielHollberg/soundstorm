@@ -246,7 +246,7 @@ func (m *Manager) SetLibraries(actor state.User, id string, libraries []string) 
 		return errors.New("the owner always sees every library")
 	}
 
-	// nil means everything. Anything else is normalised and checked here, so a
+	// nil means everything. Anything else is normalized and checked here, so a
 	// typo becomes an error now rather than a library that silently never
 	// appears.
 	if libraries != nil {

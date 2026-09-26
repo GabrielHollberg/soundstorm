@@ -17,7 +17,7 @@ import (
 // fakeImmichSetup answers Immich 3.2's first-run endpoints in the shapes the
 // live server returned, and remembers what was asked.
 type fakeImmichSetup struct {
-	initialised bool
+	initialized bool
 	paths       []string
 	savedConfig map[string]any
 	libraryBody map[string]any
@@ -34,16 +34,16 @@ func (f *fakeImmichSetup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET /api/server/ping":
 		reply(map[string]string{"res": "pong"})
 	case "GET /api/server/config":
-		reply(map[string]bool{"isInitialized": f.initialised})
+		reply(map[string]bool{"isInitialized": f.initialized})
 	case "POST /api/auth/admin-sign-up":
-		f.initialised = true
+		f.initialized = true
 		w.WriteHeader(http.StatusCreated)
 		reply(map[string]string{"id": "u-1", "email": body["email"].(string)})
 	case "POST /api/auth/login":
 		reply(map[string]string{"accessToken": "session-token", "userId": "u-1"})
 	case "POST /api/api-keys":
 		if r.Header.Get("Authorization") != "Bearer session-token" {
-			http.Error(w, "unauthorised", http.StatusUnauthorized)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		reply(map[string]any{"secret": "the-api-key", "permissions": body["permissions"]})
@@ -129,7 +129,7 @@ func TestImmichWatchingChangesOnlyTheOneSetting(t *testing.T) {
 // An Immich that already has an admin, with credentials SoundStorm does not
 // hold, is a human decision - never something to retry into.
 func TestAnImmichSetUpByOthersIsRefused(t *testing.T) {
-	_, _, _, err := runImmichSetup(t, &fakeImmichSetup{initialised: true})
+	_, _, _, err := runImmichSetup(t, &fakeImmichSetup{initialized: true})
 	if err == nil || !strings.Contains(err.Error(), "no stored credentials") {
 		t.Errorf("err = %v", err)
 	}

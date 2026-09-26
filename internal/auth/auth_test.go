@@ -528,7 +528,7 @@ func TestAnOverlongCurrentPasswordIsRefused(t *testing.T) {
 // only checked before it. Only the global two-hash cap limited it. Now one
 // guess per account is admitted at a time, so the rest are turned away and the
 // backoff catches up.
-func TestConcurrentGuessesAgainstOneAccountAreSerialised(t *testing.T) {
+func TestConcurrentGuessesAgainstOneAccountAreSerialized(t *testing.T) {
 	th := newThrottle()
 	const account = "owner"
 	started := make(chan struct{})

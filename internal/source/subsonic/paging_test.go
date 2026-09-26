@@ -20,7 +20,7 @@ import (
 // real 4,413-song library, its first 50 held none - and the merge cuts pages
 // after sorting by title, so every page drew from a different set.
 //
-// This fake answers the same way, in a fixed but scrambled order and honouring
+// This fake answers the same way, in a fixed but scrambled order and honoring
 // songCount and songOffset, and the test scrolls the whole shelf through the
 // real merge. Every song must appear exactly once, in title order.
 func TestScrollingMusicShowsEverySongOnceInOrder(t *testing.T) {

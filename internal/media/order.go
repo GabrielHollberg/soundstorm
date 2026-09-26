@@ -124,7 +124,7 @@ func (c *ShelfCache) GetOrFetch(key string, fetch func() ([]Item, error)) ([]Ite
 	c.mu.Unlock()
 
 	// Deliberately outside the lock: this is the network call, and holding
-	// the lock across it would serialise every shelf's fetches behind
+	// the lock across it would serialize every shelf's fetches behind
 	// whichever one is slowest.
 	items, err := fetch()
 

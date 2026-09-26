@@ -37,7 +37,7 @@ func selfSigned(t *testing.T, dir string, hosts ...string) *Server {
 //
 // Not httptest.StartTLS: it installs a certificate of its own, and Go's TLS
 // only consults GetCertificate when Certificates is empty or SNI was sent. A
-// client dialling 127.0.0.1 sends no SNI, so the whole mechanism under test
+// client dialing 127.0.0.1 sends no SNI, so the whole mechanism under test
 // would be bypassed and the test would be measuring httptest.
 func serve(t *testing.T, s *Server) (string, *http.Client) {
 	t.Helper()
@@ -118,13 +118,13 @@ func TestAClientThatDoesNotTrustItIsRejected(t *testing.T) {
 // Browsers send no SNI when you dial a bare IP address, so nothing in the
 // handshake says which address was asked for. The local address of the
 // connection looks like the answer and is not: behind Docker's published port
-// it is the container's own, not the one the client dialled. So the addresses
+// it is the container's own, not the one the client dialed. So the addresses
 // to answer for are configured, and they go in one certificate used whenever
 // the handshake names nothing.
 func TestAConnectionWithNoSNIGetsTheConfiguredNames(t *testing.T) {
 	s := selfSigned(t, t.TempDir(), "192.168.0.19", "media.lan")
 
-	// A handshake carrying no ServerName at all, which is what dialling an IP
+	// A handshake carrying no ServerName at all, which is what dialing an IP
 	// produces, and arriving on an address that means nothing to anybody.
 	conn := &fakeConn{local: &net.TCPAddr{IP: net.ParseIP("172.20.0.5"), Port: 8080}}
 	cert, err := s.TLSConfig().GetCertificate(&tls.ClientHelloInfo{Conn: conn})
@@ -149,7 +149,7 @@ func TestAConnectionWithNoSNIGetsTheConfiguredNames(t *testing.T) {
 	}
 }
 
-// The whole point of configuring an address: a client dialling it, trusting
+// The whole point of configuring an address: a client dialing it, trusting
 // only the published authority, must not see a warning.
 func TestAConfiguredAddressVerifies(t *testing.T) {
 	s := selfSigned(t, t.TempDir(), "192.168.0.19")
@@ -166,7 +166,7 @@ func TestAConfiguredAddressVerifies(t *testing.T) {
 		DNSName: "192.168.0.19",
 		Roots:   pool,
 	}); err != nil {
-		t.Errorf("a client dialling the configured address would see a warning: %v", err)
+		t.Errorf("a client dialing the configured address would see a warning: %v", err)
 	}
 }
 

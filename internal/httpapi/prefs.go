@@ -9,7 +9,7 @@ import (
 )
 
 // A person's small choices - the order of a tab's pills, read-along's
-// highlight, audiobook speed - kept with their favourites and playlists so
+// highlight, audiobook speed - kept with their favorites and playlists so
 // they follow them from device to device.
 
 const maxPrefsBody = 8 << 10

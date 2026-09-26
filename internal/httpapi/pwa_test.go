@@ -118,7 +118,7 @@ func TestServiceWorkerIsServedFromTheRoot(t *testing.T) {
 
 // The two rules in sw.js that matter, asserted against the file itself rather
 // than trusted to stay true: caching a search result serves stale state, and
-// answering a range request without honouring Range breaks seeking in a way
+// answering a range request without honoring Range breaks seeking in a way
 // that looks exactly like a corrupt file.
 func TestServiceWorkerRefusesAPIAndMedia(t *testing.T) {
 	h := newHarness(t)
@@ -282,7 +282,7 @@ func TestLibraryReportsTheRootTheUserSees(t *testing.T) {
 		t.Errorf("root = %q, want the hint ./library rather than the container path", out.Root)
 	}
 	if len(out.Folders) == 0 {
-		t.Fatal("no folders, so the screen would have nothing to summarise")
+		t.Fatal("no folders, so the screen would have nothing to summarize")
 	}
 	// Every folder needs a kind, because the UI looks up what to call a shelf
 	// in a sentence by kind - "tv" reads like a typo mid-sentence, "TV" does

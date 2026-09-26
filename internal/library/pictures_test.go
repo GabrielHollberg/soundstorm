@@ -80,7 +80,7 @@ func TestPicturesKeepTheirFolders(t *testing.T) {
 	}
 }
 
-func TestArtworkNamesAreRecognised(t *testing.T) {
+func TestArtworkNamesAreRecognized(t *testing.T) {
 	for _, rel := range []string{"x/poster.jpg", "x/Arrival-fanart.jpg", "x/extrafanart/1.jpg", "x/folder.png"} {
 		if !looksLikeArtwork(rel) {
 			t.Errorf("%s not taken for artwork", rel)

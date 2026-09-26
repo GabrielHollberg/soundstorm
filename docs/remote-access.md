@@ -201,7 +201,7 @@ publishing `A` regardless of what the default route would have chosen.
   **opt-in**, the way Tailscale is. The switch for it is not wired yet.
 - **The IPv6 firewall pinhole.** v6 has no NAT, but home routers often run a
   stateful firewall that blocks unsolicited inbound. Opening it is a different
-  request from a port map: PCP's `MAP` can do it where the router honours PCP
+  request from a port map: PCP's `MAP` can do it where the router honors PCP
   over v6, and UPnP has a separate `WANIPv6FirewallControl:AddPinhole`. Neither
   is wired; today a v6 box behind a closed firewall publishes nothing because
   the reachability probe correctly fails, and the owner would forward/allow by

@@ -156,7 +156,7 @@ type Request struct {
 	Method  string            // defaults to GET
 	Path    string            // URI reference, resolved against the base URL
 	Params  url.Values        // query parameters
-	Body    any               // marshalled as JSON when non-nil
+	Body    any               // marshaled as JSON when non-nil
 	Form    url.Values        // form-encoded body; mutually exclusive with Body
 	Headers map[string]string // merged over the client's headers
 }
@@ -180,7 +180,7 @@ func (r *Response) JSON(out any) error {
 }
 
 // StatusError is a non-2xx response, carrying the status so callers can tell
-// "you are not authorised" from "I am still starting up".
+// "you are not authorized" from "I am still starting up".
 //
 // That distinction is load-bearing. A backend that answers 503 while it boots
 // is not rejecting our credentials, and treating it as though it were means

@@ -59,7 +59,7 @@ other in a book. What is not built:
 
 - **Per-user Navidrome and Jellyfin accounts.** They share one. Nothing
   SoundStorm surfaces from them differs per person today, so this only matters
-  when watched state, play counts or favourites reach the UI.
+  when watched state, play counts or favorites reach the UI.
 - **Per-title or age-rating filtering.** Access is per whole library, so "no
   films for the seven-year-old" works and "only these films" does not. Doing it
   properly means per-user Jellyfin accounts and its parental ratings, which is

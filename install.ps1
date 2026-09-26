@@ -672,7 +672,7 @@ function Important($text) { Write-Host "    $text" -ForegroundColor Yellow; Set-
 # Callout frames the few things somebody has to act on - what to click in
 # Docker's windows, the code to type into the first screen - so they cannot be
 # lost among the progress lines scrolling past. A line starting with "*" is the
-# thing itself (a code, an address) and is drawn in the frame's colour.
+# thing itself (a code, an address) and is drawn in the frame's color.
 #
 # ASCII only, like the rest of this file: it has no byte order mark, so
 # Windows PowerShell reads it in the system code page, where box-drawing
@@ -716,7 +716,7 @@ function Show-DockerGuide {
         '',
         'No Skip button? Choose "Continue without signing in" instead.',
         '',
-        'Then come back to THIS window. You can minimise or close the Docker',
+        'Then come back to THIS window. You can minimize or close the Docker',
         'window - Docker keeps running in the background, and this setup',
         'carries on by itself as soon as Docker is ready.'
     ) 'Cyan'
@@ -726,7 +726,7 @@ function Show-DockerGuide {
 # "error: 1" has failed twice.
 #
 # In -Launch mode it also puts the message in a dialog box. That path runs from
-# a desktop shortcut with a minimised window, so console text is written where
+# a desktop shortcut with a minimized window, so console text is written where
 # nobody will ever see it - the failure just looks like clicking the icon did
 # nothing at all.
 function Stop-With($text) {
@@ -789,7 +789,7 @@ function Show-Problem($text) {
 # Invoke-DockerBounded runs docker with a deadline.
 #
 # `compose up -d` normally takes seconds, but it will sit for a very long time
-# trying to reach a registry it cannot. From a minimised shortcut that is
+# trying to reach a registry it cannot. From a minimized shortcut that is
 # indistinguishable from the icon doing nothing, so the launcher gives it a
 # limit and reports rather than waiting.
 function Invoke-DockerBounded {
@@ -1136,7 +1136,7 @@ function Get-UpnpUrl([string]$Gateway = '') {
 # --- other devices on the network ---------------------------------------------
 #
 # Reaching SoundStorm from a phone was the one thing a laptop install could not
-# do, and the installer only ever said "allow it through the firewall" in grey.
+# do, and the installer only ever said "allow it through the firewall" in gray.
 # Two things stand in the way, and neither is visible from the PC itself:
 #
 #   * Windows marks every new Wi-Fi network Public - the setting for cafes -
@@ -1551,7 +1551,7 @@ function Install-Docker {
         } catch {
             Stop-With @"
   Installing Docker Desktop needs permission, and that was refused or
-  cancelled.
+  canceled.
 
   Run the setup again and choose Yes when Windows asks - or install Docker
   Desktop yourself from here and then run the setup again:
@@ -1580,7 +1580,7 @@ function Install-Docker {
   This is usually one of two things:
 
     * it needs a restart to finish - restart the PC, then run this again
-    * Windows features for virtualisation are off - Docker Desktop will say
+    * Windows features for virtualization are off - Docker Desktop will say
       so if you open it from the Start menu
 
   Or install it yourself from here and run the setup again:
@@ -1715,7 +1715,7 @@ function Initialize-Docker {
     $installed = [bool](Get-Command docker -ErrorAction SilentlyContinue)
 
     # Only where somebody is sitting in front of it. The desktop shortcut runs
-    # this minimised at startup, and a permission prompt with no visible
+    # this minimized at startup, and a permission prompt with no visible
     # window behind it is worse than the failure it would be fixing.
     if (-not $Launch) {
         # Before the download, not after. Docker Desktop is half a gigabyte
@@ -2424,23 +2424,23 @@ function Get-SecureAddress([int]$Port) {
 
 # New-Shortcut writes a .lnk. WScript.Shell is the only way to do that without
 # shipping a compiled helper, and it is on every Windows since XP.
-function New-Shortcut($Path, $Target, $Arguments, $WorkingDirectory, $Description, $Minimised) {
+function New-Shortcut($Path, $Target, $Arguments, $WorkingDirectory, $Description, $Minimized) {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut($Path)
     $link.TargetPath = $Target
     if ($Arguments) { $link.Arguments = $Arguments }
     if ($WorkingDirectory) { $link.WorkingDirectory = $WorkingDirectory }
     $link.Description = $Description
-    # 7 is minimised: the launcher makes sure Docker is up before opening a
+    # 7 is minimized: the launcher makes sure Docker is up before opening a
     # browser, and that is not work anybody wants to watch.
-    if ($Minimised) { $link.WindowStyle = 7 }
+    if ($Minimized) { $link.WindowStyle = 7 }
     $link.Save()
 }
 
 function Install-Shortcuts {
     $localScript = Join-Path $Dir 'soundstorm.ps1'
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    # -WindowStyle Hidden as well as the minimised shortcut: minimised still
+    # -WindowStyle Hidden as well as the minimized shortcut: minimized still
     # puts a console on the taskbar for the second it takes.
     $arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -Launch"
 
@@ -2635,7 +2635,7 @@ if ($Uninstall) {
 # --- moving it to another computer ---------------------------------------------
 
 # What a move carries besides the library: SoundStorm's own state (accounts,
-# the passwords it made on every backend, favourites, playlists, positions,
+# the passwords it made on every backend, favorites, playlists, positions,
 # the install's name) and each backend's own database. Left out on purpose:
 # the caches and downloaded models, which rebuild themselves, and Tailscale's
 # node identity, which belongs to one machine. Kept in step with install.sh.
@@ -2711,7 +2711,7 @@ function Write-MoveLaunchers([string]$Folder) {
 }
 
 # Select-MoveDestination asks where to put the move - usually an external
-# drive - and whether to bring the media. Returns $null when cancelled.
+# drive - and whether to bring the media. Returns $null when canceled.
 function Select-MoveDestination([double]$LibraryBytes) {
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     $owner = New-TopmostOwner
@@ -2861,7 +2861,7 @@ function Import-Volumes([string]$Path) {
         $v = $tar.BaseName
         if ($MoveVolumes -notcontains $v) { Note "Skipping $v, which this version does not know."; continue }
         Note $v
-        # Labelled as compose labels its own, so compose adopts it.
+        # Labeled as compose labels its own, so compose adopts it.
         $made = Invoke-Docker @('volume', 'create', '--label', "com.docker.compose.project=$Project",
             '--label', "com.docker.compose.volume=$v", "${Project}_$v") -Capture
         if ($made.ExitCode -ne 0) { Stop-With "  Could not create the $v volume.`n`n  $($made.Output)" }
@@ -3256,7 +3256,7 @@ if ($Tailscale) {
         Note "Tailscale will be started with SoundStorm."
     } else {
         # Not an error: SoundStorm works exactly as before without it, and
-        # stopping the whole update over a cancelled window would be.
+        # stopping the whole update over a canceled window would be.
         Note "Tailscale was not set up. SoundStorm works on your home network as before."
         Note "To set it up later, open Set up Tailscale from the Start menu."
     }

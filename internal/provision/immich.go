@@ -46,7 +46,7 @@ func provisionImmich(ctx context.Context, c *httpx.Client, t Target, log *slog.L
 	if err := c.JSON(ctx, "/api/server/config", nil, &cfg); err != nil {
 		return state.Backend{}, fmt.Errorf("immich /api/server/config: %w", err)
 	}
-	log.Info("immich reachable", "initialised", cfg.IsInitialized)
+	log.Info("immich reachable", "initialized", cfg.IsInitialized)
 	if cfg.IsInitialized {
 		return state.Backend{}, fmt.Errorf(
 			"immich already has an admin account but SoundStorm has no stored credentials for it; " +

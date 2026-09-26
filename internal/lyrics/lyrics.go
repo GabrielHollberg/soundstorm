@@ -2,7 +2,7 @@
 //
 // LRCLIB (lrclib.net) is a free, open database of synced lyrics that needs no
 // account and no key, which is why it was chosen over the alternatives:
-// Musixmatch needs a paid licence to show whole lyrics, Genius's API has no
+// Musixmatch needs a paid license to show whole lyrics, Genius's API has no
 // lyrics in it, and the Chinese streaming services' APIs are unofficial. See
 // "Lyrics from LRCLIB" in CLAUDE.md.
 //

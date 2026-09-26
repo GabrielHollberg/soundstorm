@@ -648,7 +648,7 @@ func (s *Source) stopTranscode(playSessionID string) {
 		return
 	}
 	// The viewer has already gone, so this cleanup gets its own short budget
-	// rather than inheriting a context that is already cancelled.
+	// rather than inheriting a context that is already canceled.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

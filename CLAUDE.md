@@ -126,7 +126,7 @@ real file rather than reasoned about:
 
 - **ID3 frame sizes are plain integers in 2.3 and syncsafe in 2.4.** Read one
   as the other and the walk falls off the end of the first frame.
-- **Unsynchronisation** rewrites every `0xFF 0x00` pair so no part of a tag can
+- **Unsynchronization** rewrites every `0xFF 0x00` pair so no part of a tag can
   look like an audio frame. Left undone, every length after the first such pair
   is wrong. The first real file tested had the flag set.
 - **MP4's `meta` is a full atom**: four bytes of version and flags before its
@@ -269,7 +269,7 @@ differed in the audio itself, two by enough to be different versions.
 So audio is fingerprinted by the audio alone (`duplicate.go`): the `mdat` of an
 MP4, the frames of an MP3 between its ID3 tags, the frames of a FLAC after its
 metadata blocks. Everything else is compared whole, as is any file whose
-structure does not parse, which errs towards keeping both. A clean and an
+structure does not parse, which errs toward keeping both. A clean and an
 explicit version differ in their audio and are both kept; what is skipped is
 one recording sold under two listings. On the real files, the five same-audio
 pairs differed only by a Parental Advisory badge on one cover, or a Deluxe
@@ -302,7 +302,7 @@ anything is trimmed. `Save` also re-checks the joined path is still inside the
 folder, which is a thing worth doing twice.
 
 Uploading follows the same permission as reading: you can add to a shelf you can
-see. A restriction search honours and uploading does not is not a restriction,
+see. A restriction search honors and uploading does not is not a restriction,
 so the plan refuses forbidden kinds and so does the upload.
 
 On the browser side, `walkEntry` must call `readEntries` **until it returns an
@@ -355,7 +355,7 @@ minute and closed, the film was in Continue at 51%, and reopening it resumed
 at 61s. The same stack confirmed Jellyfin's side of deleting, which had been
 untested: the preview named exactly the film's file, byte for byte.
 
-## Music, towards Plexamp
+## Music, toward Plexamp
 
 Asked for as "competitive with Plexamp". The first phase is what a music app is
 judged on in its first minute:
@@ -382,7 +382,7 @@ judged on in its first minute:
   **On a touch screen, songs change by swiping, not buttons.** Previous and
   next are gone from Now Playing and the mini-player wherever the pointer is
   coarse (a computer keeps them - a mouse cannot swipe). Swiping the big
-  cover sideways moves it with the neighbouring covers riding beside it and
+  cover sideways moves it with the neighboring covers riding beside it and
   plays the one that slides in; with the lyrics or queue in the middle the
   title moves instead. The mini-player slides out and back in. A swipe back
   is always the song before - the previous cover is what slid in - not a
@@ -396,7 +396,7 @@ judged on in its first minute:
   button is Up next, which takes the lyrics' place. A song with no lyrics
   shows its cover in the middle instead - there is nothing else to put there.
   On a phone the default is the big cover with a strip of the few lines around
-  the one being sung under the centred title; tapping the strip grows it into
+  the one being sung under the centered title; tapping the strip grows it into
   the full lyrics (a tap there never seeks), and tapping the small cover at
   the top shrinks it back.
 - **The player asks for the whole screen on a phone**, hiding the status and
@@ -418,7 +418,7 @@ judged on in its first minute:
   too, and the strip goes then. Nothing a page does at load can remove it.
 
   The owner did not like the strip, so the manifest went back to
-  `standalone`: the app opens with the status bar showing in its own colour,
+  `standalone`: the app opens with the status bar showing in its own color,
   as any app does. Full screen is now a small button beside Account, on
   Android only, rather than any tap: asked for, never assumed. It hides both
   bars together - Chrome gives a page no way to hide the navigation bar and
@@ -427,12 +427,12 @@ judged on in its first minute:
   **Then removed, at the owner's request.** The app opens and stays like any
   installed app, status and navigation bars showing; nothing asks for full
   screen any more. The manifest stays `standalone`.
-- **The status bar takes Now Playing's colour.** An installed app's status
-  bar is the page's theme colour, which a page may change while it runs, so
+- **The status bar takes Now Playing's color.** An installed app's status
+  bar is the page's theme color, which a page may change while it runs, so
   in Now Playing it is the top of the cover averaged and put through the
   backdrop's own filter (saturate 1.4, brightness 0.45), and the app's dark
   again on close. Android's navigation bar at the bottom is Chrome's: no page
-  can colour it, and an installed app cannot draw under the status bar until
+  can color it, and an installed app cannot draw under the status bar until
   Chrome ships that (in progress, 2026). An APK was considered for this and
   declined: a Trusted Web Activity runs in Chrome and has the same bars, and
   a WebView app loses the lock-screen controls and background playback.
@@ -455,13 +455,13 @@ judged on in its first minute:
   than the gap. Real numbers: 20-23ms before and 11-16ms after on a fast
   network, 180-195ms before and 15-17ms after on a throttled one. The win is
   on a phone.
-- **Levelling from ReplayGain**, which Navidrome 0.64.1 passes through as
+- **Leveling from ReplayGain**, which Navidrome 0.64.1 passes through as
   OpenSubsonic `replayGain` (checked). Album gain when an album plays in
   order, track gain otherwise. A -6dB pre-amp lets a quiet track come *up*,
   capped by its peak. It is set through `audio.volume`, **not Web Audio**:
   routing a phone's music through Web Audio is what stops it when an iPhone
   locks, and iOS ignoring a page's volume is the cheaper loss. The user's own
-  slider is kept and levelled under.
+  slider is kept and leveled under.
 
 Not attempted, and why: **sonic analysis** (Plexamp's "sonically similar", its
 DJs) is ML over every track's audio, the expensive layer this project does not
@@ -489,7 +489,7 @@ hidden, and a tab presses one, so every search path is unchanged. A shelf the
 account may not see, or with no files, is left out; an empty tab is hidden.
 
 Home is a front page, not "everything" alphabetically: Continue, then strips
-of new music (the newest album folders), favourites, recently played, and
+of new music (the newest album folders), favorites, recently played, and
 `GET /api/home`'s newest items per shelf. That asks every source at once
 through `source.RecentLister`, five seconds each, and leaves out a shelf
 that fails, the search's rule. Each backend orders by its own record of
@@ -522,7 +522,7 @@ late. While Settings is open the search box searches settings - every
 card holding all the words typed, in its text or its `data-words`, across
 every pill - and the library's query and placeholder come back on leaving.
 
-**Black at both ends, to meet Android's bars.** The theme colour (the
+**Black at both ends, to meet Android's bars.** The theme color (the
 status bar) is #000, and so are the header and the pills under it - one
 solid band, no blur, no line between them - and the phone's tab bar, with no
 top line, which runs into the black navigation bar. The pills stick a pixel
@@ -539,8 +539,8 @@ stops anything else doing it (clip, so the sticky header still works).
 A sideways swipe steps between the pills wherever a row of them picks the
 page - Music, Books, Watch - anywhere below the header, including the empty
 space under a short list. It behaves as pages of one strip, edge to edge:
-the moment the gesture locks sideways towards a neighbour, the page is
-copied into a ghost laid where it was and the neighbour's pill is pressed,
+the moment the gesture locks sideways toward a neighbor, the page is
+copied into a ghost laid where it was and the neighbor's pill is pressed,
 so its page loads while the finger is still down and rides beside the
 ghost. A third of the screen or a flick commits; otherwise the ghost springs
 back, the original pill is pressed again behind it, and the scroll position
@@ -564,7 +564,7 @@ off for the length of a swipe. Positions are written once a frame, not per
 touch event.
 
 The photo viewer does the same with two side images holding the previews
-either side, 16px apart; on commit the neighbour slides to the middle and
+either side, 16px apart; on commit the neighbor slides to the middle and
 the main image, hidden, swaps to it once decoded.
 
 **And `#app { overflow-x: clip }`, or the tab bar jumps.** A page mid-swipe
@@ -578,19 +578,19 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
 - **Streaming quality is per device** (localStorage, Account > Playback on
   this device), because a phone on mobile data and the computer on the
   Wi-Fi want different things. `?kbps=` on `/api/stream` - only 96, 128,
-  192, 256 or 320 are honoured - becomes Navidrome's `maxBitRate` with
+  192, 256 or 320 are honored - becomes Navidrome's `maxBitRate` with
   `format=mp3` (its default, Opus, is patchy on iPhones) and
   `estimateContentLength=true`, which gives the converted stream a length and
   Range support: checked, a request from byte 100,000 answered 206. Downloads
   use `streamPath`, never `playPath`, so they keep the original.
 - **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
   handler instead of advancing - a chapter, for an audiobook.
-- **A fade is not the listener moving the volume.** The levelling code reads
+- **A fade is not the listener moving the volume.** The leveling code reads
   every volumechange as the listener's choice, so the sleep timer's fade left
   their volume at zero afterwards. `audio.fading` now guards it; crossfade
   uses the same flag.
 - **Crossfade uses a second, hidden audio element for the fade-in only.**
-  Everything else - lyrics, lock screen, queue, levelling - listens to the one
+  Everything else - lyrics, lock screen, queue, leveling - listens to the one
   `audio-player`, so when the song ends the main element takes the next song
   over from where the hidden one reached (`takeCrossfade`, usually a blob in
   memory) and the hidden one stops. Not within an album playing in order, on
@@ -659,12 +659,12 @@ fix it, both checked on the real install:
 - **Lyrics** come through OpenSubsonic `songLyrics` (getLyricsBySongId),
   checked on Navidrome 0.64.1 with a `.lrc` beside a song: synced, starts in
   ms. Hover styles only apply with `(hover: hover)`: a tap leaves `:hover`
-  stuck and greyed out the current line.
+  stuck and grayed out the current line.
 - **Lyrics from LRCLIB** (`internal/lyrics`) fill in songs that have none, and
   are the first thing SoundStorm sends to an outside service about what
   somebody plays - so it is an owner setting, **off by default**, in
   `state.json` as `onlineLyrics`. LRCLIB because it needs no key and no
-  account and has synced lyrics; Musixmatch needs a paid licence to show whole
+  account and has synced lyrics; Musixmatch needs a paid license to show whole
   lyrics and Genius's API has none. Local lyrics always win. It is asked only
   on play, never in bulk (LRCGET exists for that), and matched on artist,
   title, album and **duration** - duration is what picks the studio take over a
@@ -712,7 +712,7 @@ fix it, both checked on the real install:
   was opened offline and never signed in). The separate offline screen is
   gone, and offline looks like online: Home is the same strips, one per
   downloaded kind, and Music keeps its pills - Songs, Albums (downloaded
-  albums and artists) and Playlists (playlists, favourites, shelves) - with
+  albums and artists) and Playlists (playlists, favorites, shelves) - with
   a group opening as an album page. Music's Downloads pill went; managing
   downloads is a card in Settings. Everything downloaded wears a small badge
   on its cover (and beside a song in an album's list), repainted by
@@ -722,7 +722,7 @@ fix it, both checked on the real install:
   first). A card is itself a button, so the arrow is a sibling in the
   holder, placed with `100cqw` - covers are square, so the cover is the
   holder's width tall. Hidden offline and where there is no Cache API.
-  **Download all** for a whole shelf (all songs, favourites, each book,
+  **Download all** for a whole shelf (all songs, favorites, each book,
   film and photo shelf) lives in Settings' Downloads card, one button per
   shelf the account has: a button on every shelf page got in the way. An
   artist page keeps its own, as an album keeps Download. Cards no longer
@@ -750,18 +750,18 @@ fix it, both checked on the real install:
   .dev, so plain http cannot be used for this): signed in, no downloads,
   network off, reopened - the app's own offline screen.
 
-## Favourites and playlists
+## Favorites and playlists
 
 Per person, and kept by SoundStorm (`internal/collections`) rather than by
 Navidrome, which has both built in. The house shares one Navidrome account, so
 they would be everybody's at once: the same reasoning as film positions, and
-the "revisit when favourites reach the UI" moment from "Accounts".
+the "revisit when favorites reach the UI" moment from "Accounts".
 
 **A file per person, not state.json.** That file is rewritten whole on every
 sign-in and session change, under the lock every request takes, and a
 household's playlists in it would slow all of those. Here one change writes
 one small file, to a temporary name and renamed over. Limits: 5,000
-favourites, 200 playlists, 5,000 songs in each, names up to 100 characters.
+favorites, 200 playlists, 5,000 songs in each, names up to 100 characters.
 Removing a person removes their file.
 
 Each entry is a snapshot of the item as its backend described it
@@ -769,14 +769,14 @@ Each entry is a snapshot of the item as its backend described it
 sent, and it means a list of 500 songs is one file read, not 500 backend
 calls. Playing still goes by id, so a deleted song fails to play rather than
 playing something else. Lists are filtered through the registry each time they
-are shown, so a favourite on a shelf an account has since lost is hidden. It
+are shown, so a favorite on a shelf an account has since lost is hidden. It
 is not a way back in.
 
 **A heart on every cover** (top right, where nothing else sits on a
-phone): an outline, and a tap fills it red and favourites the item - at
+phone): an outline, and a tap fills it red and favorites the item - at
 once, put back if the server refuses. A sibling of the card in its
 holder, like the download arrow. The small heart that used to mark a
-favourite in the bottom corner went with it, and the desktop's hover "..."
+favorite in the bottom corner went with it, and the desktop's hover "..."
 moved left of the heart. Covers also lost their length, the pages their
 counts ("25 songs") and Albums its sort (A to Z; New music's See all
 still lists newest first): the length is under **Info** in the hold menu,
@@ -788,7 +788,7 @@ song, add to queue sits bottom middle and play next bottom right, beside
 the download arrow. With nothing playing either one simply plays the
 song, as the menu's items always have.
 
-**Favourites are for anything; playlists are songs only.** A playlist plays in
+**Favorites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A
 playlist of films has no player to play it in.
 
@@ -812,7 +812,7 @@ list files the same owner as the state file, for the same reason the state
 needs it.
 
 Verified in Chrome against a throwaway stack with a real Navidrome that
-SoundStorm provisioned: favourite, the heart, the Favourites chip, a playlist
+SoundStorm provisioned: favorite, the heart, the Favorites chip, a playlist
 built from the menu, Play all, next, and advancing when a song ends.
 
 ## The free-space warning, and what a card does when pressed
@@ -839,7 +839,7 @@ clipped element is one more way to get a square repaint.
 **Icons are SVG, never characters.** The "⋯" (U+22EF) rendered as three
 dashes in the UI font, and a heart glyph sits on a different baseline in every
 font that has one. The menu has a header naming the item, 40px rows (48 on a
-touch screen), a filled pink heart for a favourite, and a second page for
+touch screen), a filled pink heart for a favorite, and a second page for
 playlists with a back arrow.
 
 **Then the button went, on a touch screen: the menu is a press and hold.**
@@ -858,7 +858,7 @@ A mouse cannot usefully hold, so right-click (`contextmenu`) opens the same
 menu and the "⋯" stays, but only on hover and only for a fine pointer. The
 menu key and Shift+F10 open it from a keyboard. A hidden gesture has to be
 told once: a tip on the first visit from a touch screen, and the empty
-Favourites and Playlists screens say "Hold down on" or "Right-click" to
+Favorites and Playlists screens say "Hold down on" or "Right-click" to
 match the device.
 
 ## Deleting, into a bin
@@ -895,7 +895,7 @@ works the same way: a finger over the pills or the tab bar counts as the
 item at that edge of the list, so the selection follows the scroll. The
 selection gets the item menu itself, fixed at the bottom, with only what
 applies to many: play next, add to queue and add to playlist when all are
-songs, favourites, download or remove downloads, select all shown, and
+songs, favorites, download or remove downloads, select all shown, and
 Delete (with its preview, and Undo in the toast) for the owner. Only in a
 shelf's list; the page swipe stands down while a drag selects.
 
@@ -905,7 +905,7 @@ registers, every touchmove is prevented, the pill swipe stands down, and
 reported as selections refreshing the page or switching category.
 
 **A page being left shows nothing while the next one loads.** Switching
-tab, pill or page swaps the old content at once for ghost content - grey
+tab, pill or page swaps the old content at once for ghost content - gray
 covers and title lines with a slow shimmer (`showSkeleton`: a grid, Home's
 rows, or a page with its heading; still under reduced motion). The last page
 sitting there read as the new one, and "Loading..." read as stuck. A page
@@ -925,7 +925,7 @@ to its tab: another tab starts with an empty box, though a tab's own pills
 keep it (dune across audiobooks and ebooks).
 
 **Home runs in three groups**: Continue and Recently played, then every New
-row (music first), then the favourites. They used to interleave.
+row (music first), then the favorites. They used to interleave.
 
 **Content starts right under the bars.** The status line under the pills
 takes no room while it has nothing to say (`:has(#status:empty)`); it was
@@ -1150,7 +1150,7 @@ default. A choice somebody made (off, self-signed, file) is left alone, and
 Auto is **not** the default in `docker-compose.yml` itself. The compose-only
 install has no installer to record the LAN address, so auto there could name
 nothing; it would still serve http and self-signed https side by side, but
-that is a change of behaviour nobody using compose directly asked for.
+that is a change of behavior nobody using compose directly asked for.
 
 What the installers print for auto is the `http://` address, because it works
 from the first second and the page moves itself to https once it has checked
@@ -1187,7 +1187,7 @@ installing from the folder it sits in.
 Import refuses a computer that already has SoundStorm data or an install in
 the folder: writing over accounts is not something to do by accident. The
 volumes are restored before anything starts (a backend started on empty
-volumes sets itself up afresh), labelled as compose labels its own so compose
+volumes sets itself up afresh), labeled as compose labels its own so compose
 adopts them without a warning.
 
 Rehearsed on throwaway compose projects - `SOUNDSTORM_PROJECT` exists only
@@ -1435,7 +1435,7 @@ and yellow boxes made it legible, but "typical users are put off by command
 prompt" was about the black window itself. An interactive run now relaunches
 itself with its console hidden and shows a Windows Forms window instead. The
 window has the four steps ticking off, a status line, a progress bar, the
-callouts as a coloured panel, and at the end the setup code, the phone address
+callouts as a colored panel, and at the end the setup code, the phone address
 and an Open SoundStorm button. Errors show in the same window with the log's
 path. The console text survives under "Show details" and in
 `%TEMP%\SoundStorm-setup.log`. The library and home-network questions are
@@ -1479,7 +1479,7 @@ reached the "already installed in another folder" refusal and displayed it,
 and wrote nothing.
 
 **No console stays open, from the double-click on.** The setup file hands
-straight to PowerShell started minimised and hidden, and closes - it does not
+straight to PowerShell started minimized and hidden, and closes - it does not
 even download: the hidden PowerShell saves the installer to a file and starts
 that file as its own process (never from memory, which Defender blocks; no
 detection on this machine), with `SOUNDSTORM_WINDOW` set so it opens its
@@ -1553,7 +1553,7 @@ giving them a second one would split their own history in two.
 
 Navidrome and Jellyfin keep one shared account on purpose. Nothing SoundStorm
 surfaces from them differs per person, so an account each would be four times
-the provisioning for no visible gain. Revisit when watched-state or favourites
+the provisioning for no visible gain. Revisit when watched-state or favorites
 reach the UI.
 
 **Signing in is throttled, because it is the one unauthenticated endpoint
@@ -1796,7 +1796,7 @@ down, for every user, mid-search or mid-scan.
   whatever EPUB or PDF anyone with upload access to that shelf just dropped
   in, on a ticker, with nobody watching - the first scan runs synchronously
   during provisioning, every one after that from `rescanLoop`. `internal/tags`'
-  own history (syncsafe integers, unsynchronisation, an MP4 atom with no
+  own history (syncsafe integers, unsynchronization, an MP4 atom with no
   siblings) is evidence this class of hand-rolled parser gets edge cases wrong
   until a real file finds them; a panic here, unrecovered, would crash the
   server on that one file and crash it again identically on every restart,
@@ -1867,7 +1867,7 @@ And the rest, each traced and fixed:
   sent at once all passed the check before any failed. Only the global
   two-hash cap limited it. Now one guess *per account* is admitted at a time
   (`throttle.reserve`), so a burst against one name waits on itself and the
-  backoff catches up. A distributed burst against one account is serialised
+  backoff catches up. A distributed burst against one account is serialized
   the same way.
 - **The owner could reset their own password through the admin path**, which
   takes no current password - handing a stolen session the persistence that
@@ -2032,7 +2032,7 @@ writes every section of the descriptor, including the audit list, and writing
 that needs a privilege ordinary accounts lack. The development machine
 tolerated it, and the reason was never pinned down. It now uses
 `FileInfo.SetAccessControl`, which persists only the sections that changed,
-and falls back to `icacls` with SIDs. A failure of both is a grey note, not a
+and falls back to `icacls` with SIDs. A failure of both is a gray note, not a
 yellow alarm, because the folder's own permissions still apply.
 
 **A registry rate limit is not the internet connection.** Eight images pulled
@@ -2132,7 +2132,7 @@ rules out. So it surfaces at the two moments it matters:
 Setting it up has a Start menu shortcut, **Set up Tailscale** (`-Tailscale`).
 It opens a window with the steps, a button to Tailscale's key page, and a key
 box that refuses anything not shaped like `tskey-...` while the page is still
-open to copy from. Cancelling is not an error: the update carries on without
+open to copy from. Canceling is not an error: the update carries on without
 it. Before this, Tailscale was the one feature that could only be reached by
 typing an option.
 
@@ -2158,7 +2158,7 @@ not, because browsers send no SNI for one.
 `ClientHelloInfo.Conn.LocalAddr()` looks like the answer and is not, and this
 shipped wrong first. Docker NATs the published port, so inside the container
 the local address is the container's own `172.20.0.5`, never the
-`192.168.0.19` the client dialled. That reads correctly in a unit test with a
+`192.168.0.19` the client dialed. That reads correctly in a unit test with a
 synthetic connection, and correctly for a binary run directly on the host -
 the only two ways it had been tested - and never once in the way it actually
 ships. It was caught by asking a client that trusts only the published
@@ -2356,7 +2356,7 @@ not "video").
 
 **Nothing on the first screen is a box any more.** That screen has now been
 three things: five folder rows with paths and example filenames, then one
-centred card asking for files, then nothing at all. Each version was smaller
+centered card asking for files, then nothing at all. Each version was smaller
 than the last and each removal was right, because dropping works anywhere on
 the window - so the screen's whole job is to get out of the way and show the
 library.
@@ -2413,7 +2413,7 @@ steps aside, not a card pushed between the setup box and the results. The
 sections are headed. Password fields are stacked, because the one-line form
 put one label above its box and the other beside it once it wrapped. People
 rows wrap instead of running past the card on a phone. Links use the accent
-colour; the browser default was dark blue on a dark background, and the
+color; the browser default was dark blue on a dark background, and the
 remote address was the hardest line on the page to read.
 
 One signal survived from the per-kind counts the card used to show:
@@ -2444,7 +2444,7 @@ failure. On Linux an unmounted drive leaves an empty mount point, which looks
 to every backend like a library somebody emptied - and `EnsurePlaceholders`
 would write a README into it, taking away the empty-folder protection Jellyfin
 relies on (see "Telling the backends to look"). Documented rather than guarded
-for now; a guard would need to recognise "this is not the library I had" with
+for now; a guard would need to recognize "this is not the library I had" with
 no state about the media, which is the line `internal/state` does not cross.
 
 **Uploads survive a shelf on another drive.** They are staged in
@@ -2582,7 +2582,7 @@ holds because the key *is* the source's order, and a test walks it.
 **The viewer shows Immich's preview, never the original.** The preview is a
 JPEG whatever the original was; a browser can show neither HEIC nor raw. The
 original is a download (`/api/stream`), and a clip plays through the ordinary
-video player from Immich's playback endpoint, which honours `Range` (206), so
+video player from Immich's playback endpoint, which honors `Range` (206), so
 seeking works through SoundStorm's proxy. `ArtTarget` takes `<id>@preview` for
 the large size.
 
@@ -2595,7 +2595,7 @@ companion - an album cover, a film poster - and a folder of nothing but photos
 used to be skipped as a folder of companions. Now a group of only images is
 pictures; images beside audio or a book stay artwork; beside video, photos
 lead only when they plainly outnumber the clips (a camera roll) or a folder
-says `DCIM`, `Photos` or `Pictures`. Recognised artwork - `poster`, `fanart`,
+says `DCIM`, `Photos` or `Pictures`. Recognized artwork - `poster`, `fanart`,
 `cover`, `extrafanart/` - is never counted as photos, so a film with ten
 pieces of fan art stays a film. Pictures keep their dropped folders.
 
@@ -2660,11 +2660,11 @@ and index, or Audiobookshelf's seriesName, which carries the number
 ("Dune #2"); only a book's first series. An author's page is their series,
 each in order, then their other books.
 
-**Every tab has a Favourites pill** - `fav-music`, `fav-watch`, `fav-books`,
-`fav-photos` - showing only the favourites of that tab's kinds (Music's is in
-its own row of pills). Home has a row per tab likewise - Favourite songs,
+**Every tab has a Favorites pill** - `fav-music`, `fav-watch`, `fav-books`,
+`fav-photos` - showing only the favorites of that tab's kinds (Music's is in
+its own row of pills). Home has a row per tab likewise - Favorite songs,
 films and TV, books, photos - each See all opening that tab's pill. Music's
-Mixes lead with **Your favourites**: every hearted song, shuffled, and all
+Mixes lead with **Your favorites**: every hearted song, shuffled, and all
 of them rather than a mix's hundred.
 
 ## Read-along: the page follows the audiobook
@@ -2827,7 +2827,7 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
   swipe at all.
 
   Re-run that script if foliate-js is ever updated. It is vendored third-party
-  code and this is a behaviour of theirs we are now depending on.
+  code and this is a behavior of theirs we are now depending on.
 - **foliate-js probes for optional files** (`META-INF/encryption.xml`, Apple and
   Kobo display options). 404 is the correct answer; those requests log at debug.
 - **Calibre-Web was removed** (see above). `internal/source/opds` and
@@ -2860,9 +2860,9 @@ draws every icon from them: the favicon (black, white in a dark browser),
 `cloud.svg` for the wordmark, and the PNG app icons - a white cloud on
 the app's own dark background, so the home screen icon looks like the app
 it opens. A lightning bolt drops out of the cloud's flat bottom, for the storm in
-the name; the wordmark centres cloud and bolt together on the name.
+the name; the wordmark centers cloud and bolt together on the name.
 Change the icons by changing the script, not by editing the PNGs.
-The wordmark is the cloud as a CSS mask in the text's colour, then the name
+The wordmark is the cloud as a CSS mask in the text's color, then the name
 in heavy italic, matching the logo.
 
 ## How it gets installed
@@ -2915,9 +2915,9 @@ PowerShell-specific traps worth knowing:
   through `Write-Host` so it prints as text rather than as a red block that
   looks like a crash.
 
-The desktop shortcut runs the launcher **minimised**, which is right for the
+The desktop shortcut runs the launcher **minimized**, which is right for the
 common case - clicking it when the stack is already up takes half a second -
-and wrong for every failure, because console text written into a minimised
+and wrong for every failure, because console text written into a minimized
 window is text nobody will ever see. So `-Launch` failures also open a dialog,
 and `compose up -d` gets a deadline: without one, an unreachable registry makes
 the icon do nothing at all, for minutes, with no way to tell that from a broken
@@ -2992,18 +2992,18 @@ slack, because slack is what a film grows into.
 
 **Television gets nothing either**, for the same reason twice over.
 
-**A free licence is a hard constraint, not a preference** - this is compiled into
+**A free license is a hard constraint, not a preference** - this is compiled into
 a published binary. A genuinely famous song or film is almost certainly
-somebody's copyright, so each item is as recognisable as a free licence allows
+somebody's copyright, so each item is as recognisable as a free license allows
 rather than as recognisable as possible. Two traps found while picking them:
 
 - **The Richest Man in Babylon is not on Project Gutenberg** - its whole
-  79,433-title catalogue was checked, and no work by Clason is either. The 1926
+  79,433-title catalog was checked, and no work by Clason is either. The 1926
   edition is US public domain; the *later expanded* editions are not, and most
   copies circulating are those. Wikisource has it and tags it
-  `{{PD-US|1957|1926}}`, which is a licence review by somebody whose job that is,
+  `{{PD-US|1957|1926}}`, which is a license review by somebody whose job that is,
   so that is the source. The archive.org text hits are Internet Archive lending
-  scans and anonymous uploads - neither is a licence basis.
+  scans and anonymous uploads - neither is a license basis.
 - **`download.blender.org` and `musopen.org` both answer 403** from this
   environment, so a Blender film has to come from archive.org's CC-BY mirror and
   Musopen is not available as a source for a better-known piece of music. Worth
@@ -3028,7 +3028,7 @@ an account. It is still not a fact about anybody's media - it says what
 SoundStorm has done. A marker file in the library folder was the obvious
 alternative and is worse for a reason easy to miss from Linux: **Windows
 Explorer does not hide dot-files**, so it would sit at the top of "the folders
-are the interface" as the one item nobody recognises, and deleting it - the
+are the interface" as the one item nobody recognizes, and deleting it - the
 natural response - would bring the samples back.
 
 The flag is set even when nothing was unpacked, because a boot that found every
@@ -3136,7 +3136,7 @@ and never point automated fetches at an origin site that has asked you not to.
   nothing else - a deleted volume takes the `.bak` with it.
 
   **An unknown argument is an error, not a server.** `main` used to fall
-  through to its normal path for anything it did not recognise, so
+  through to its normal path for anything it did not recognize, so
   `soundstorm backup` against an image too old to have the command quietly
   started a *second* SoundStorm against the same state volume - two writers on
   the one file that cannot be regenerated, in answer to what was effectively a
@@ -3276,7 +3276,7 @@ and never point automated fetches at an origin site that has asked you not to.
   hand in `internal/webui` rather than by the file server.
 - **The service worker must never answer a range request, anything under
   `/api/`, or a page load.** Caching a search result serves stale state;
-  answering a range request without honouring `Range` breaks seeking in a way
+  answering a range request without honoring `Range` breaks seeking in a way
   indistinguishable from a corrupt file; answering a page load hides the
   browser's certificate warning behind a cached page that cannot work (see TLS
   above). Requests it does not handle are left alone entirely -
@@ -3311,7 +3311,7 @@ and never point automated fetches at an origin site that has asked you not to.
   screen reports a false positive.
 - **An empty `libraries` list means nothing, and must never read back as nil.**
   `User.Libraries` has no `omitempty` for exactly this reason: with it, an
-  account allowed no libraries would serialise to nothing, read back as nil,
+  account allowed no libraries would serialize to nothing, read back as nil,
   and silently mean *every* library. The one mistake this field cannot make is
   failing open, and there is a test that writes it, reads it back through the
   accounts list, and checks.
@@ -3456,7 +3456,7 @@ and never point automated fetches at an origin site that has asked you not to.
   thing is present, and the exit code is the whole answer - the text it prints
   is UTF-16 and arrives full of null bytes through a pipe.
 
-  Skipped entirely on the `-Launch` path. That runs minimised from a desktop
+  Skipped entirely on the `-Launch` path. That runs minimized from a desktop
   shortcut at startup, where a UAC prompt with no visible window behind it is
   worse than the failure it would be fixing.
 - **Docker's progress output is filtered, and the filter must not require a
