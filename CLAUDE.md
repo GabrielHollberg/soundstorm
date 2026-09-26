@@ -688,7 +688,13 @@ fix it, both checked on the real install:
   covers from the cache), search looks through that, and Settings and the
   list buttons step aside. The `online` event brings it back (a reload if it
   was opened offline and never signed in). The separate offline screen is
-  gone. And downloads come first even online: the reader reads a downloaded
+  gone, and offline looks like online: Home is the same strips, one per
+  downloaded kind, and Music keeps its pills - Songs, Albums (downloaded
+  albums and artists) and Playlists (playlists, favourites, shelves) - with
+  a group opening as an album page. Music's Downloads pill went; managing
+  downloads is a card in Settings. Everything downloaded wears a small badge
+  on its cover (and beside a song in an album's list), repainted by
+  `markDownloads` whenever downloads change. And downloads come first even online: the reader reads a downloaded
   book from the cache before asking the server, as songs, audiobooks, films
   and photos already did.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load
