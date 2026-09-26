@@ -2407,12 +2407,13 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
    page from its top, has nothing above it to jump into view. */
 #music-tabs, #subtabs {
   position: sticky;
-  top: var(--header-h, 64px);
+  /* A pixel under the header, so no sliver of the page shows between. */
+  top: calc(var(--header-h, 64px) - 1px);
   z-index: 4;
   margin-top: 0;
-  padding-top: 10px;
+  padding-top: 11px;
   padding-bottom: 8px;
-  background: var(--bg);
+  background: #000;
 }
 /* The photo viewer: the photos either side share the middle cell and ride
    beside the photo during a swipe. */
@@ -2569,3 +2570,16 @@ body.offline-mode .dl-get { display: none; }
 /* Delete, in the hold menu: red, and a sentence saying what would go. */
 .menu-item.menu-danger { color: #ff7b7b; }
 .menu-confirm { margin: 8px 14px 10px; font-size: 14px; line-height: 1.45; color: var(--text); }
+
+/* Black at both ends, to run into Android's own bars: the status bar above
+   (the theme colour, #000) and the navigation bar below. The header and the
+   pills under it are one solid band, with no line between them. */
+#app > header {
+  background: #000;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
+}
+@media (max-width: 899px) {
+  .tabs { background: #000; border-top: none; }
+}

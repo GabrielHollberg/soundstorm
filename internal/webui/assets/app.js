@@ -6276,7 +6276,10 @@ function albumCardFromHome(album) {
 (function headerHeight() {
   const header = document.querySelector('#app header');
   if (!header) return;
-  const set = () => document.documentElement.style.setProperty('--header-h', `${header.offsetHeight}px`);
+  // The real height, fractions and all: offsetHeight rounds, and on a phone
+  // with a fractional pixel ratio that left a sliver between the header and
+  // the pills where the page scrolled through.
+  const set = () => document.documentElement.style.setProperty('--header-h', `${header.getBoundingClientRect().height}px`);
   set();
   if ('ResizeObserver' in window) new ResizeObserver(set).observe(header);
 })();
@@ -6291,7 +6294,7 @@ function albumCardFromHome(album) {
 // it.
 function setStatusBar(colour) {
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = colour || '#0e1116';
+  if (meta) meta.content = colour || '#000000';
 }
 
 function tintStatusBar(art) {

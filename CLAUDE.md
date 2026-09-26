@@ -509,6 +509,15 @@ both read it from the DOM and `tabShelves`. The click that ends a hold is
 swallowed, and while a pill is up touchmove is prevented so the row cannot
 scroll away under it.
 
+**Black at both ends, to meet Android's bars.** The theme colour (the
+status bar) is #000, and so are the header and the pills under it - one
+solid band, no blur, no line between them - and the phone's tab bar, with no
+top line, which runs into the black navigation bar. The pills stick a pixel
+under the header, and `--header-h` is the header's real fractional height
+(`getBoundingClientRect`): `offsetHeight` rounds, and on a phone's
+fractional pixel ratio that left a sliver where the page scrolled through,
+reported as a gap above the pills.
+
 A page wider than the phone made the phone zoom out and dropped the tab bar
 off the bottom: the album sort sat inside the music row. The row is now
 pills that scroll inside their own strip, and `body { overflow-x: clip }`
