@@ -2859,23 +2859,11 @@ function toggleSelected(item, card) {
   resetSelectBar();
 }
 
-// resetSelectBar puts the bar back to "N selected" with its ordinary buttons,
-// out of the confirm or undo state it may have been in.
+// The selection's menu: the same menu as one item's, from the bottom of the
+// screen, with only what can be done to many at once. It stays open while
+// selecting, so more can be tapped in or out, and says how many.
 function resetSelectBar() {
-  const n = state.selected.size;
-  $('select-count').textContent = n ? `${n} selected` : 'Tap to select';
-  show($('select-all'), true);
-  show($('select-cancel'), true);
-  show($('select-fav'), true);
-  show($('select-download'), downloadsPossible());
-  $('select-fav').disabled = n === 0;
-  $('select-download').disabled = n === 0;
-  const del = $('select-delete');
-  // Deleting is the owner's; everybody can favourite and download.
-  show(del, Boolean(state.me && state.me.owner));
-  del.textContent = 'Delete';
-  del.disabled = n === 0;
-  state.confirming = false;
+  renderSelectMenu();
 }
 
 function formatBytes(n) {
@@ -2894,106 +2882,190 @@ function selectedPayload() {
   });
 }
 
-$('select-cancel').addEventListener('click', () => setSelecting(false));
+function selectMenuBack(label) {
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const text = document.createElement('span');
+  text.textContent = label;
+  back.append(text);
+  back.addEventListener('click', () => renderSelectMenu());
+  return back;
+}
 
-$('select-all').addEventListener('click', () => {
-  for (const item of state.items || []) state.selected.set(selectionKey(item), item);
-  for (const card of $('results').querySelectorAll('.item')) card.classList.add('selected');
-  resetSelectBar();
-});
-
-$('select-delete').addEventListener('click', async () => {
-  const del = $('select-delete');
-  // The same button is Undo for a few seconds after a delete.
-  if (state.undoEntry) {
-    await undoDelete();
-    return;
+function renderSelectMenu() {
+  const box = $('select-bar');
+  const items = [...state.selected.values()];
+  const n = items.length;
+  const head = document.createElement('div');
+  head.className = 'menu-head';
+  const title = document.createElement('strong');
+  title.textContent = n ? `${n} selected` : 'Nothing selected';
+  const sub = document.createElement('span');
+  sub.textContent = 'Tap items to add or take them off';
+  head.append(title, sub);
+  const entries = [head];
+  const songs = n > 0 && items.every((it) => it.kind === 'music');
+  if (songs) {
+    entries.push(menuItem('next', 'Play next', () => {
+      // One after another in the order shown, each after the last.
+      for (const it of [...items].reverse()) queuePlayNext(it);
+      setSelecting(false);
+      showToast(`${n} song${n === 1 ? '' : 's'} play next.`);
+    }));
+    entries.push(menuItem('queue', 'Add to queue', () => {
+      for (const it of items) queueAdd(it);
+      setSelecting(false);
+      showToast(`Added ${n} song${n === 1 ? '' : 's'} to the queue.`);
+    }));
+    entries.push(menuItem('playlist', 'Add to playlist', async () => {
+      const { ok, body } = await api('/api/playlists');
+      renderSelectPlaylists(items, (ok && body && body.playlists) || []);
+    }, { chevron: true }));
   }
-  if (!state.confirming) {
-    // First press: ask the server exactly what would go, and say it.
-    del.disabled = true;
-    const { ok, body } = await api('/api/delete/preview', { method: 'POST', body: selectedPayload() });
-    del.disabled = false;
-    if (!ok || !body) {
-      $('select-count').textContent = (body && body.error) || 'Could not work out what that would delete.';
+  if (n) {
+    const allFaved = items.every((it) => state.favourites.has(selectionKey(it)));
+    entries.push(menuItem('heart', allFaved ? 'Remove from favourites' : 'Add to favourites', async () => {
+      const on = !allFaved;
+      let done = 0;
+      for (const it of items) {
+        if (state.favourites.has(selectionKey(it)) === on) continue;
+        if (!(await setFavourite(it, on))) done++;
+      }
+      setSelecting(false);
+      showToast(on ? `Added ${done} to your favourites.` : `Took ${done} off your favourites.`);
+    }, { filled: allFaved, className: 'menu-favourite' }));
+  }
+  const downloadable = items.filter((it) => !isDownloaded(it) && (it.kind === 'music' || canDownload(it)));
+  if (downloadable.length && downloadsPossible()) {
+    entries.push(menuItem('download', 'Download', () => {
+      setSelecting(false);
+      bulkDownload(`${downloadable.length} item${downloadable.length === 1 ? '' : 's'}`, async () => downloadable
+        .filter((it) => !isDownloaded(it))
+        .map((it) => (it.kind === 'music'
+          ? {
+            label: it.title,
+            run: (progress, stopped) => download({
+              id: `song:${selectionKey(it)}`, type: 'song', title: it.title,
+              subtitle: (it.creators || []).join(', '), sourceId: it.sourceId, artId: it.artId,
+            }, [it], (k, total) => progress(k / total), stopped),
+          }
+          : bookTask(it))));
+    }));
+  }
+  const kept = items.filter((it) => isDownloaded(it));
+  if (kept.length) {
+    entries.push(menuItem('download', 'Remove downloads', async () => {
+      setSelecting(false);
+      for (const it of kept) await removeItemDownload(it);
+      showToast(`Removed ${kept.length} from this device.`);
+    }));
+  }
+  entries.push(menuItem('check', 'Select all shown', () => {
+    for (const item of state.items || []) state.selected.set(selectionKey(item), item);
+    for (const card of $('results').querySelectorAll('.item')) card.classList.add('selected');
+    renderSelectMenu();
+  }));
+  if (n && state.me && state.me.owner && !state.offline) {
+    entries.push(menuItem('trash', 'Delete from library', () => renderSelectDelete(), { className: 'menu-danger' }));
+  }
+  entries.push(menuItem('close', 'Cancel', () => setSelecting(false)));
+  box.replaceChildren(...entries);
+}
+
+function renderSelectPlaylists(items, lists) {
+  const box = $('select-bar');
+  const note = menuNote();
+  const add = async (id) => {
+    let failed = '';
+    for (const it of items) {
+      const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}/items`, {
+        method: 'POST', body: JSON.stringify({ source: it.sourceId, id: it.id }),
+      });
+      if (!ok) { failed = (body && body.error) || 'Could not add them all.'; break; }
+    }
+    if (failed) {
+      note.textContent = failed;
+      show(note, true);
       return;
     }
-    const n = body.items;
-    $('select-count').textContent =
-      `Delete ${n} item${n === 1 ? '' : 's'}? ${body.files} file${body.files === 1 ? '' : 's'}, ` +
-      `${formatBytes(body.bytes)}. They stay in the bin for 30 days.`;
-    show($('select-all'), false);
-    show($('select-fav'), false);
-    show($('select-download'), false);
-    del.textContent = `Delete ${n}`;
-    state.confirming = true;
-    return;
-  }
-
-  // Second press: delete.
-  del.disabled = true;
-  const deleted = [...state.selected.keys()];
-  const { ok, body } = await api('/api/delete', { method: 'POST', body: selectedPayload() });
-  del.disabled = false;
-  if (!ok || !body) {
-    $('select-count').textContent = (body && body.error) || 'Could not delete.';
-    state.confirming = false;
-    del.textContent = 'Delete';
-    return;
-  }
-  // Gone from the screen now; the backends catch up with a rescan.
-  for (const key of deleted) {
-    const card = $('results').querySelector(`.item[data-key="${CSS.escape(key)}"]`);
-    if (card) (card.closest('.item-holder') || card).remove();
-  }
-  state.items = (state.items || []).filter((item) => !deleted.includes(selectionKey(item)));
-  setSelecting(false);
-  offerUndo(body);
-});
-
-// offerUndo shows the undo in the same bar, for long enough to notice.
-function offerUndo(result) {
-  state.undoEntry = result.entry;
-  show($('select-bar'), true);
-  const n = result.items;
-  $('select-count').textContent = `Deleted ${n} item${n === 1 ? '' : 's'}.`;
-  show($('select-all'), false);
-  show($('select-cancel'), false);
-  show($('select-fav'), false);
-  show($('select-download'), false);
-  const del = $('select-delete');
-  show(del, true);
-  del.disabled = false;
-  del.textContent = 'Undo';
-  del.classList.replace('danger', 'ghost');
-  clearTimeout(state.undoTimer);
-  state.undoTimer = setTimeout(endUndo, 12000);
-}
-
-// endUndo puts the bar back to what it was before the undo was offered.
-function endUndo() {
-  clearTimeout(state.undoTimer);
-  state.undoEntry = null;
-  $('select-delete').classList.replace('ghost', 'danger');
-  show($('select-bar'), state.selecting);
-  resetSelectBar();
-}
-
-async function undoDelete() {
-  const entry = state.undoEntry;
-  $('select-delete').disabled = true;
-  const { ok, body } = await api('/api/delete/undo', {
-    method: 'POST', body: JSON.stringify({ entry }),
+    setSelecting(false);
+    showToast(`Added ${items.length} song${items.length === 1 ? '' : 's'} to the playlist.`);
+  };
+  const list = document.createElement('div');
+  list.className = 'menu-scroll';
+  list.append(...lists.map((pl) => menuItem('playlist', pl.name, () => add(pl.id), { detail: `${pl.count}` })));
+  const form = document.createElement('form');
+  form.className = 'menu-new';
+  const input = document.createElement('input');
+  input.placeholder = lists.length ? 'New playlist' : 'Name your first playlist';
+  input.maxLength = 100;
+  input.setAttribute('aria-label', 'New playlist name');
+  const create = document.createElement('button');
+  create.type = 'submit';
+  create.className = 'menu-create';
+  create.setAttribute('aria-label', 'Create playlist');
+  create.append(icon('plus'));
+  form.append(input, create);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const { ok, body } = await api('/api/playlists', { method: 'POST', body: JSON.stringify({ name: input.value }) });
+    if (!ok || !body) {
+      note.textContent = (body && body.error) || 'Could not make it.';
+      show(note, true);
+      return;
+    }
+    await add(body.id);
   });
-  endUndo();
-  if (!ok) {
-    show($('select-bar'), true);
-    $('select-count').textContent = (body && body.error) || 'Could not undo.';
-    setTimeout(() => show($('select-bar'), state.selecting), 6000);
+  box.replaceChildren(selectMenuBack('Add to playlist'), list, form, note);
+}
+
+// Delete: the server says exactly what would go, the owner confirms, and it
+// goes to the bin for thirty days with an Undo in the message at the bottom.
+async function renderSelectDelete() {
+  const box = $('select-bar');
+  const text = document.createElement('p');
+  text.className = 'menu-confirm';
+  text.textContent = 'Working out what that would delete\u2026';
+  box.replaceChildren(selectMenuBack('Delete from library'), text);
+  const payload = selectedPayload();
+  const { ok, body } = await api('/api/delete/preview', { method: 'POST', body: payload });
+  if (!ok || !body) {
+    text.textContent = (body && body.error) || 'Could not work out what that would delete.';
     return;
   }
-  // Back on disk now; give the shelf a moment to notice before listing it.
-  setTimeout(runSearch, 3000);
+  const n = body.items;
+  text.textContent = `Delete ${n} item${n === 1 ? '' : 's'}? ${body.files} file${body.files === 1 ? '' : 's'}, `
+    + `${formatBytes(body.bytes)}. They stay in the bin for 30 days.`;
+  const confirm = menuItem('trash', `Delete ${n}`, async () => {
+    confirm.disabled = true;
+    const deleted = [...state.selected.keys()];
+    const result = await api('/api/delete', { method: 'POST', body: payload });
+    if (!result.ok || !result.body) {
+      text.textContent = (result.body && result.body.error) || 'Could not delete.';
+      confirm.disabled = false;
+      return;
+    }
+    for (const key of deleted) {
+      const card = $('results').querySelector(`.item[data-key="${CSS.escape(key)}"]`);
+      if (card) (card.closest('.item-holder') || card).remove();
+    }
+    state.items = (state.items || []).filter((item) => !deleted.includes(selectionKey(item)));
+    setSelecting(false);
+    const entry = result.body.entry;
+    showToast(`Deleted ${n} item${n === 1 ? '' : 's'}.`, 'Undo', async () => {
+      const undone = await api('/api/delete/undo', { method: 'POST', body: JSON.stringify({ entry }) });
+      if (!undone.ok) {
+        showToast((undone.body && undone.body.error) || 'Could not undo.');
+        return;
+      }
+      showToast('They are back.');
+      setTimeout(runSearch, 3000);
+    }, 12000);
+  }, { className: 'menu-danger' });
+  box.replaceChildren(selectMenuBack('Delete from library'), text, confirm,
+    menuItem('close', 'Cancel', () => renderSelectMenu()));
 }
 
 document.addEventListener('keydown', (event) => {
@@ -8054,7 +8126,7 @@ function startDragSelect(card, item) {
     // The bottom 120px of the screen (tab bar included) scroll down, the
     // band under the header and pills scrolls up; faster nearer the edge.
     const bottomEdge = window.innerHeight - 120;
-    const topEdge = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 0) + 80;
+    const topEdge = listBounds().top + 80;
     let speed = 0;
     if (d.y > bottomEdge) speed = Math.min(1, (d.y - bottomEdge) / 120) * 26;
     else if (d.y && d.y < topEdge) speed = -Math.min(1, (topEdge - d.y) / 80) * 26;
@@ -8069,12 +8141,34 @@ function startDragSelect(card, item) {
 
 // Everything between the held card and the one under the finger, in the
 // order they are shown.
-function dragSelectTo(x, y) {
+// Where the list shows: under the header and its pills, above the tab bar.
+function listBounds() {
+  let top = 0;
+  for (const el of [document.querySelector('#app > header'), $('music-tabs'), $('subtabs')]) {
+    if (el && !el.classList.contains('hidden') && el.getClientRects().length) top = Math.max(top, el.getBoundingClientRect().bottom);
+  }
+  const tabs = $('tabs');
+  const bottom = tabs && !tabs.classList.contains('hidden') && tabs.getClientRects().length
+    ? Math.min(window.innerHeight, tabs.getBoundingClientRect().top) : window.innerHeight;
+  return { top, bottom };
+}
+
+function dragSelectTo(x, y0) {
   const d = state.dragSelect;
   if (!d) return;
-  const under = document.elementFromPoint(x, y);
-  const holder = under && under.closest('#results .item-holder');
-  const target = holder && holder.querySelector('.item');
+  // A finger over the pills or the tab bar - where it goes to scroll - means
+  // the item at that edge of the list, so the selection follows the scroll.
+  const { top, bottom } = listBounds();
+  const y = Math.min(Math.max(y0, top + 8), bottom - 8);
+  // Between two rows is no card: the nearest one above or below it counts.
+  let target = null;
+  for (const dy of [0, 16, -16, 32, -32]) {
+    const yy = Math.min(Math.max(y + dy, top + 1), bottom - 1);
+    const under = document.elementFromPoint(x, yy);
+    const holder = under && under.closest('#results .item-holder');
+    target = holder && holder.querySelector('.item');
+    if (target) break;
+  }
   if (!target) return;
   const cards = [...$('results').querySelectorAll('.item')];
   const a = cards.findIndex((c) => c.dataset.key === d.from);
@@ -8098,27 +8192,3 @@ document.addEventListener('touchmove', (event) => {
   if (state.dragSelect && event.cancelable) event.preventDefault();
 }, { passive: false });
 
-$('select-fav').addEventListener('click', async () => {
-  const items = [...state.selected.values()].filter((it) => !state.favourites.has(selectionKey(it)));
-  $('select-fav').disabled = true;
-  let done = 0;
-  for (const it of items) if (!(await setFavourite(it, true))) done++;
-  setSelecting(false);
-  showToast(items.length ? `Added ${done} to your favourites.` : 'Those are all favourites already.');
-});
-
-$('select-download').addEventListener('click', () => {
-  const items = [...state.selected.values()];
-  setSelecting(false);
-  bulkDownload(`${items.length} item${items.length === 1 ? '' : 's'}`, async () => items
-    .filter((it) => !isDownloaded(it) && (it.kind === 'music' || canDownload(it)))
-    .map((it) => (it.kind === 'music'
-      ? {
-        label: it.title,
-        run: (progress, stopped) => download({
-          id: `song:${selectionKey(it)}`, type: 'song', title: it.title,
-          subtitle: (it.creators || []).join(', '), sourceId: it.sourceId, artId: it.artId,
-        }, [it], (n, total) => progress(n / total), stopped),
-      }
-      : bookTask(it))));
-});

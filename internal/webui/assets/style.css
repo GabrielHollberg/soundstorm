@@ -61,7 +61,10 @@ a:hover { color: var(--text); }
      painted in the text's colour, so it is white on the dark app wherever
      it appears. */
   display: inline-flex;
-  align-items: center;
+  /* On the baseline, not centred on the line: a line box is the font's
+     ascent and descent, which differ between Windows's and Android's fonts,
+     so centring on it put the cloud high on one and low on the other. */
+  align-items: baseline;
   gap: 0.35em;
   font-weight: 800;
   font-style: italic;
@@ -72,9 +75,12 @@ a:hover { color: var(--text); }
 .wordmark::before {
   content: "";
   flex: 0 0 auto;
-  /* Cloud and bolt together, centred on the name. */
+  /* Cloud and bolt together, centred on the capitals: those stand about
+     0.7em above the baseline in every common font, so the icon's middle goes
+     0.35em up - its bottom sits on the baseline and moves 0.2em down. */
   width: 1.3em;
   height: 1.1em;
+  transform: translateY(0.2em);
   background: currentColor;
   -webkit-mask: url(/static/cloud.svg) center / contain no-repeat;
   mask: url(/static/cloud.svg) center / contain no-repeat;
@@ -959,28 +965,20 @@ code {
 .grid.selecting .item.selected .art-wrap { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .grid.selecting .item:hover .title { color: inherit; }
 
-.select-bar {
+/* Many selected: the item menu, fixed at the bottom of the screen. */
+.item-menu.select-menu {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   bottom: 20px;
   z-index: 40;
-  width: min(720px, calc(100% - 24px));
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 14px;
-  padding: 12px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  width: min(360px, calc(100% - 24px));
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  animation: none;
 }
 /* Above the audio dock when it is open, not under it. */
-body.dock-open .select-bar { bottom: calc(var(--dock-space) + 12px); }
-.select-count { font-size: 14px; }
-.select-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+body.dock-open .select-menu { bottom: calc(var(--dock-space) + 12px); }
 
 button.danger {
   background: var(--error);
@@ -2304,8 +2302,8 @@ body.photo-open { overflow: hidden; }
 body { padding-bottom: var(--tabbar); }
 body.dock-open { padding-bottom: calc(var(--dock-space) + var(--tabbar)); }
 .dock { bottom: calc(var(--tabbar) + 12px); }
-.select-bar { bottom: calc(var(--tabbar) + 20px); }
-body.dock-open .select-bar { bottom: calc(var(--dock-space) + var(--tabbar) + 12px); }
+.item-menu.select-menu { bottom: calc(var(--tabbar) + 12px); }
+body.dock-open .select-menu { bottom: calc(var(--dock-space) + var(--tabbar) + 12px); }
 .hold-tip { bottom: calc(var(--tabbar) + 24px); }
 body.dock-open .hold-tip { bottom: calc(var(--dock-space) + var(--tabbar) + 12px); }
 .toast { bottom: calc(var(--tabbar) + 18px); }
@@ -2672,5 +2670,5 @@ body.offline-mode .cover-queue, body.offline-mode .cover-next { display: none; }
 .grid.selecting .dl-get { display: none; }
 
 /* While a drag selects: the bar waits, and the player lets the finger through. */
-body.drag-selecting .select-bar { visibility: hidden; }
+body.drag-selecting #select-bar { visibility: hidden; }
 body.drag-selecting #audio-dock { pointer-events: none; }
