@@ -3814,6 +3814,7 @@ function attachItemMenuGestures(card, item) {
       card.classList.remove('pressing');
       state.suppressClick = true;
       if (navigator.vibrate) navigator.vibrate(12);
+      holdStarted();
       openItemMenu(item, card.querySelector('.art-wrap') || card);
       // Held, and the finger may now move on: that selects instead.
       armDragSelect(card, item, event.pointerId, startX, startY);
@@ -6370,7 +6371,7 @@ function albumCardFromHome(album) {
   }, { passive: true });
 
   document.addEventListener('touchmove', (event) => {
-    if (state.dragSelect) { g = null; return; }
+    if (state.dragSelect || state.holding) { g = null; return; }
     if (!g || event.touches.length !== 1) return;
     const t = event.touches[0];
     const dx = t.clientX - g.x;
@@ -8187,8 +8188,25 @@ function dragSelectTo(x, y0) {
   resetSelectBar();
 }
 
-// While a drag selects, the page must not scroll under the finger by itself.
+// From the moment a hold registers until the finger lifts, the finger is
+// the hold's: no scrolling by hand, no pull-to-refresh, no sideways swipe to
+// the next pill - only the menu, or selecting and the scrolling it does itself.
+function holdStarted() {
+  state.holding = true;
+  document.documentElement.classList.add('holding');
+  const end = () => {
+    state.holding = false;
+    document.documentElement.classList.remove('holding');
+    document.removeEventListener('touchend', end);
+    document.removeEventListener('touchcancel', end);
+    document.removeEventListener('pointerup', end);
+  };
+  document.addEventListener('touchend', end);
+  document.addEventListener('touchcancel', end);
+  document.addEventListener('pointerup', end);
+}
+
 document.addEventListener('touchmove', (event) => {
-  if (state.dragSelect && event.cancelable) event.preventDefault();
+  if ((state.dragSelect || state.holding) && event.cancelable) event.preventDefault();
 }, { passive: false });
 

@@ -899,6 +899,11 @@ songs, favourites, download or remove downloads, select all shown, and
 Delete (with its preview, and Undo in the toast) for the owner. Only in a
 shelf's list; the page swipe stands down while a drag selects.
 
+**A hold owns the finger until it lifts.** From the moment the hold
+registers, every touchmove is prevented, the pill swipe stands down, and
+`html.holding` sets `overscroll-behavior: none` against pull-to-refresh -
+reported as selections refreshing the page or switching category.
+
 **Content starts right under the bars.** The status line under the pills
 takes no room while it has nothing to say (`:has(#status:empty)`); it was
 an empty 20px on every page once the counts went.

@@ -2687,3 +2687,7 @@ body.drag-selecting #audio-dock { pointer-events: none; }
    page itself keeps its own. */
 body * { scrollbar-width: none; }
 body *::-webkit-scrollbar { display: none; }
+
+/* While a hold has the finger, the browser does nothing else with it:
+   no pull-to-refresh, no overscroll. */
+html.holding, html.holding body { overscroll-behavior: none; }
