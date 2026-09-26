@@ -3119,6 +3119,14 @@ and never point automated fetches at an origin site that has asked you not to.
 - **iOS Safari zooms in on any input whose text is under 16px, and does not
   zoom back out.** Inputs inherit the 15px body font, so tapping the search box
   shoved the layout sideways. One rule at the mobile breakpoint fixes it.
+- **A safe-area rule must be in the rule that sets the padding.** The
+  reader's bar had `padding-top: max(10px, env(safe-area-inset-top))` in an
+  early `@supports` block, and two later rules - the bar's own and a phone
+  breakpoint - set its whole padding again, so on an iPhone the bar sat
+  under the camera cutout and its close button could not be tapped. The
+  video overlay's close sat at a fixed 18px, under the status bar. Chrome's
+  `Emulation.setSafeAreaInsetsOverride` (CDP) gives a real inset to test
+  against; without it every inset is 0 and the bug cannot be seen.
 - **Mobile layout is measured, not eyeballed.** The screenshot script asserts
   `document.scrollWidth <= clientWidth` per screen and lists anything sticking
   out, which is what found all of the above. Elements inside a deliberately

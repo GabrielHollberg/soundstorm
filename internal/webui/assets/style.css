@@ -340,7 +340,9 @@ header {
 .overlay img { display: block; max-width: 100%; max-height: 80vh; margin: 0 auto; border-radius: var(--radius); }
 .close {
   position: absolute;
-  top: 18px; right: 22px;
+  /* Clear of an iPhone's status bar and cutout, for the same reason. */
+  top: max(18px, calc(env(safe-area-inset-top) + 6px));
+  right: max(22px, env(safe-area-inset-right));
   background: transparent;
   color: var(--text);
   border: none;
@@ -704,7 +706,6 @@ header {
 @supports (padding: env(safe-area-inset-bottom)) {
   header { padding-top: max(14px, env(safe-area-inset-top)); }
   .dock { bottom: max(12px, env(safe-area-inset-bottom)); }
-  .reader-bar { padding-top: max(10px, env(safe-area-inset-top)); }
   header, #filters, .grid {
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
@@ -752,7 +753,11 @@ header {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 18px;
+  /* Below an iPhone's camera cutout and status bar, where a tap on the close
+     button never arrived. This used to be a separate safe-area rule earlier
+     in the file, which this padding silently overrode. */
+  padding: max(10px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+    10px max(18px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex: 0 0 auto;
@@ -806,7 +811,12 @@ header {
 
 @media (max-width: 620px) {
   .page-turn { flex-basis: 30px; font-size: 22px; }
-  .reader-bar { gap: 8px; padding: 8px 12px; }
+  .reader-bar {
+    gap: 8px;
+    /* Still below the cutout: this is the rule a phone actually gets. */
+    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+      8px max(12px, env(safe-area-inset-left));
+  }
   /* Kept, not hidden. It is the only way to get a book off the server and
      onto something else, and a cramped bar is not a reason to take a
      capability away from exactly one kind of device. */
@@ -2448,7 +2458,6 @@ body:has(#reader-overlay:not(.hidden)) .dock {
   z-index: 30;
   bottom: max(12px, env(safe-area-inset-bottom));
 }
-body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-space) - 12px); }
 
 /* Read & listen: a book card with Read and Listen under it. */
 .pair-holder { display: flex; flex-direction: column; min-width: 0; }
@@ -2589,3 +2598,7 @@ body.offline-mode .dl-get { display: none; }
 @media (max-width: 899px) {
   .tabs { background: #000; border-top: none; }
 }
+
+/* The reader's page stops above an iPhone's home indicator. */
+#reader-overlay .reader-body { padding-bottom: env(safe-area-inset-bottom); }
+body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-space) - 12px + env(safe-area-inset-bottom)); }
