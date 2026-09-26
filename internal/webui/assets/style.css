@@ -2681,3 +2681,9 @@ body.drag-selecting #audio-dock { pointer-events: none; }
 .browse-grid { padding-top: 4px; }
 .home-view { padding-top: 0; }
 .home-view > .home-row:first-child, .home-view > :first-child { margin-top: 6px; }
+
+/* No scrollbars on anything that scrolls inside the page - strips, rows,
+   menus, lists: they scroll by touch, wheel and trackpad all the same. The
+   page itself keeps its own. */
+body * { scrollbar-width: none; }
+body *::-webkit-scrollbar { display: none; }
