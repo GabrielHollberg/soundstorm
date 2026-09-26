@@ -1837,6 +1837,7 @@ function playAudio(item, fromQueue) {
 
   audio.item = item;
   audio.tracks = [];
+  audio.urlMap = null;
   audio.index = 0;
   audio.resumable = false;
   audio.duration = item.durationSeconds || 0;
@@ -1903,6 +1904,29 @@ async function loadPlayback(item) {
 
   const info = (ok && body) || {};
 
+  // A downloaded audiobook plays from the device whether or not the server
+  // answered, from the file list kept with it, and from the place it was last
+  // listened to here if that never reached the server.
+  if (item.kind === 'audiobook' && isDownloaded(item)) {
+    const kept = state.downloads.items[selectionKey(item)];
+    const dl = (kept && kept.dl) || {};
+    if (!Array.isArray(info.tracks) && Array.isArray(dl.tracks)) info.tracks = dl.tracks;
+    const map = {};
+    for (const url of dl.files || []) {
+      const local = await offlineURLFor(url);
+      if (local) map[url] = local;
+    }
+    if (audio.item !== item) return;
+    audio.urlMap = map;
+    const here = localPosition(item);
+    if (here && !here.synced) {
+      info.position = { ...(info.position || {}), seconds: here.seconds, finished: false };
+    } else if (!info.position && here) {
+      info.position = { seconds: here.seconds, finished: false };
+    }
+    if (!info.position) info.position = { seconds: 0, finished: false };
+  }
+
   // Sent only for genuinely multi-file items, so anything else needs nothing.
   if (Array.isArray(info.tracks) && info.tracks.length > 1) {
     audio.tracks = info.tracks;
@@ -1954,7 +1978,9 @@ function startAt(url, offset) {
   // Start the clock now, or the first timeupdate is already older than the
   // interval and every play begins by writing back the position it just read.
   audio.savedAt = Date.now();
-  player.src = url;
+  // A downloaded audiobook plays from the device: its files' server
+  // addresses map to copies kept here.
+  player.src = (audio.urlMap && audio.urlMap[url]) || url;
 
   const begin = () => player.play().catch(() => {});
   if (offset > 0) {
@@ -2079,6 +2105,8 @@ function savePosition(options = {}) {
 
   audio.savedAt = Date.now();
   const item = audio.item;
+  const kept = isDownloaded(item);
+  if (kept) keepLocalPosition(item, seconds, false);
   fetch(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`, {
     method: 'PUT',
     credentials: 'same-origin',
@@ -2089,9 +2117,32 @@ function savePosition(options = {}) {
       finished: Boolean(options.finished),
     }),
     keepalive: true,
+  }).then((resp) => {
+    if (kept && resp.ok) keepLocalPosition(item, seconds, true);
   }).catch(() => {
-    // Losing a position is not worth interrupting somebody's book over.
+    // Losing a position is not worth interrupting somebody's book over. For a
+    // downloaded book it is kept here, and sent with the next save that
+    // reaches the server.
   });
+}
+
+// Where somebody got to in a downloaded audiobook, on this device: sent to
+// the server when it can be, and used when the server has not heard of it.
+function localPositionKey(item) {
+  return `soundstorm-pos:${selectionKey(item)}`;
+}
+function localPosition(item) {
+  try {
+    const v = JSON.parse(localStorage.getItem(localPositionKey(item)) || 'null');
+    return v && Number.isFinite(v.seconds) ? v : null;
+  } catch {
+    return null;
+  }
+}
+function keepLocalPosition(item, seconds, synced) {
+  try {
+    localStorage.setItem(localPositionKey(item), JSON.stringify({ seconds, synced, at: Date.now() }));
+  } catch { /* storage full */ }
 }
 
 $('audio-player').addEventListener('timeupdate', () => {
@@ -3100,6 +3151,18 @@ function renderMainMenu(item) {
       const { ok, body } = await api('/api/playlists');
       renderPlaylistMenu(item, (ok && body && body.playlists) || []);
     }, { chevron: true }));
+  }
+  if (['audiobook', 'ebook', 'document'].includes(item.kind)) {
+    const downloaded = isDownloaded(item);
+    entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
+      closeItemMenu();
+      if (downloaded) {
+        await removeDownload(`book:${selectionKey(item)}`);
+        showToast(`${item.title} removed from this device.`);
+      } else {
+        await downloadWithToast(item.title, (progress) => downloadBook(item, progress));
+      }
+    }));
   }
   menu.replaceChildren(...entries, note);
 }
@@ -5162,6 +5225,9 @@ async function offlineArtURL(item) {
 const SHELL_FILES = [
   '/', '/static/app.js', '/static/style.css', '/static/reader.js', '/static/sw-register.js',
   '/static/favicon.svg', '/static/cloud.svg', '/static/no-cover.svg', '/manifest.webmanifest',
+  // The reader's own modules, for books downloaded to read offline.
+  ...['view', 'epub', 'epubcfi', 'fixed-layout', 'overlayer', 'paginator', 'progress', 'search', 'text-walker']
+    .map((m) => `/static/vendor/foliate-js/${m}.js`),
 ];
 async function keepShell() {
   if (!('caches' in window)) return;
@@ -5218,8 +5284,10 @@ async function removeDownload(groupID) {
   const cache = await caches.open(OFFLINE_CACHE);
   for (const key of group.keys) {
     if (stillNeeded.has(key)) continue;
-    const song = state.downloads.items[key];
-    if (song) await cache.delete(streamPath(song));
+    const kept = state.downloads.items[key];
+    if (kept) {
+      for (const url of (kept.dl && kept.dl.files) || [streamPath(kept)]) await cache.delete(url);
+    }
     delete state.downloads.items[key];
   }
   saveDownloadIndex();
@@ -5230,6 +5298,10 @@ async function clearDownloads() {
   state.downloads = { items: {}, groups: [] };
   try {
     localStorage.removeItem(DOWNLOADS_KEY);
+    // Places kept for downloaded books are this person's too.
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('soundstorm-pos:') || key.startsWith('soundstorm-read:')) localStorage.removeItem(key);
+    }
     await caches.delete(OFFLINE_CACHE);
     await caches.delete(OFFLINE_SHELL);
   } catch {
@@ -5290,7 +5362,7 @@ async function downloadsView(offlineMode) {
   if (!hasDownloads()) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = 'Nothing downloaded yet. Use Download on an album or playlist to keep it on this device.';
+    empty.textContent = 'Nothing downloaded yet. Use Download on an album, a playlist, a book or an audiobook to keep it on this device.';
     wrap.append(empty);
     return wrap;
   }
@@ -5313,16 +5385,24 @@ async function downloadsView(offlineMode) {
     t.textContent = group.title;
     const s = document.createElement('span');
     s.className = 'muted';
-    s.textContent = [group.subtitle, `${songs.length} song${songs.length === 1 ? '' : 's'}`].filter(Boolean).join(' \u00B7 ');
+    const what = {
+      audiobook: 'Audiobook', ebook: 'Book', document: 'Document', pair: 'Read & listen',
+    }[group.type] || `${songs.length} song${songs.length === 1 ? '' : 's'}`;
+    s.textContent = [group.subtitle, what].filter(Boolean).join(' \u00B7 ');
     text.append(t, s);
-    text.addEventListener('click', () => playQueue(songs, 0));
-    const play = document.createElement('button');
-    play.type = 'button';
-    play.className = 'np-icon download-play';
-    play.setAttribute('aria-label', `Play ${group.title}`);
-    play.append(icon('play', true));
-    play.addEventListener('click', () => playQueue(songs, 0));
-    li.append(cover, text, play);
+    const open = () => {
+      if (group.type === 'pair') readAlong(group.pair, group);
+      else if (['audiobook', 'ebook', 'document'].includes(group.type)) play(songs[0]);
+      else playQueue(songs, 0);
+    };
+    text.addEventListener('click', open);
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'np-icon download-play';
+    openButton.setAttribute('aria-label', `Open ${group.title}`);
+    openButton.append(icon(group.type === 'ebook' || group.type === 'document' ? 'book' : 'play', true));
+    openButton.addEventListener('click', open);
+    li.append(cover, text, openButton);
     if (!offlineMode) {
       const remove = document.createElement('button');
       remove.type = 'button';
@@ -6214,13 +6294,19 @@ async function showPairs(seq, query) {
 
 const pairRef = (item) => ({ sourceId: item.sourceId, id: item.id });
 
-async function readAlong(pair) {
-  if (pair.sync && pair.sync.state === 'ready') {
+async function readAlong(pair, keptGroup) {
+  const kept = keptGroup || state.downloads.groups.find((g) => g.id === pairDownloadID(pair));
+  if ((pair.sync && pair.sync.state === 'ready') || (kept && kept.readalong)) {
     const params = new URLSearchParams({
       ebookSource: pair.ebook.sourceId, ebookId: pair.ebook.id,
       audiobookSource: pair.audiobook.sourceId, audiobookId: pair.audiobook.id,
     });
-    const { ok, body } = await api(`/api/readalong?${params}`);
+    let { ok, body } = await api(`/api/readalong?${params}`);
+    // Offline, a downloaded pair brings its synced book and timeline with it.
+    if (!(ok && body && body.item) && kept && kept.readalong) {
+      ok = true;
+      body = kept.readalong;
+    }
     if (ok && body && body.item) {
       play(pair.audiobook);
       closeVideo();
@@ -6347,7 +6433,29 @@ function pairCard(pair) {
   listen.className = 'ghost small';
   listen.append(icon('headphones'), document.createTextNode('Listen'));
   listen.addEventListener('click', () => play(audiobook));
-  actions.append(read, listen);
+  const keep = document.createElement('button');
+  keep.type = 'button';
+  keep.className = 'ghost small pair-download';
+  const paint = () => {
+    const have = state.downloads.groups.some((g) => g.id === pairDownloadID(pair));
+    keep.replaceChildren(icon('download'));
+    keep.classList.toggle('done', have);
+    keep.setAttribute('aria-label', have ? `Remove ${ebook.title} from this device` : `Download ${ebook.title}`);
+    keep.title = have ? 'On this device. Tap to remove.' : 'Keep the book and the audiobook on this device';
+  };
+  paint();
+  keep.addEventListener('click', async () => {
+    if (state.downloads.groups.some((g) => g.id === pairDownloadID(pair))) {
+      if (!window.confirm(`Remove "${ebook.title}" from this device? It stays in your library.`)) return;
+      await removeDownload(pairDownloadID(pair));
+    } else {
+      keep.disabled = true;
+      await downloadWithToast(ebook.title, (progress) => downloadPair(pair, progress));
+      keep.disabled = false;
+    }
+    paint();
+  });
+  actions.append(read, listen, keep);
   const line = document.createElement('div');
   renderSyncLine(pair, line);
   holder.append(card, actions, line);
@@ -6548,3 +6656,185 @@ document.addEventListener('click', () => {
   show($('np-speed-menu'), false);
   $('np-speed').setAttribute('aria-expanded', 'false');
 });
+
+/* ------------------------------------------------ downloading books */
+
+// Audiobooks, ebooks and documents can be kept on the device like songs, and
+// a Read & listen book as both halves - with its synced text and timeline,
+// so the page follows the voice offline too. Films and TV cannot: a film is
+// gigabytes, and one a browser cannot play is converted by the server as it
+// plays, which cannot happen with no server. Photos are not offered either:
+// the phone keeps its own, and a single one can already be saved.
+//
+// Everything lands in the same cache as songs, under the address the app
+// would ask the server for, so the one index and the one Remove serve both.
+// The reader and the player look there when the server does not answer.
+
+window.soundstormOfflineURL = (item) => offlineURL(item);
+
+async function offlineURLFor(url) {
+  try {
+    const resp = await (await caches.open(OFFLINE_CACHE)).match(url);
+    return resp ? URL.createObjectURL(await resp.blob()) : '';
+  } catch {
+    return '';
+  }
+}
+
+// keepURL fetches one address into the cache, streaming, and reports bytes as
+// they arrive, so a single 400MB audiobook file still shows progress.
+async function keepURL(cache, url, onBytes) {
+  const resp = await fetch(url, { credentials: 'same-origin' });
+  if (!resp.ok || !resp.body) throw new Error(`status ${resp.status}`);
+  const total = Number(resp.headers.get('Content-Length')) || 0;
+  let got = 0;
+  const counted = resp.body.pipeThrough(new TransformStream({
+    transform(chunk, controller) {
+      got += chunk.byteLength;
+      if (onBytes) onBytes(got, total);
+      controller.enqueue(chunk);
+    },
+  }));
+  await cache.put(url, new Response(counted, { status: 200, headers: resp.headers }));
+}
+
+// The addresses the reader will ask for, built the way reader.js builds them.
+function bookURLs(item, names) {
+  const base = new URLSearchParams({ source: item.sourceId, id: item.id });
+  const manifest = `/api/book/manifest?${base}`;
+  const resources = names.map((name) => {
+    const params = new URLSearchParams(base);
+    params.set('path', name);
+    return `/api/book/resource?${params}`;
+  });
+  return { manifest, resources };
+}
+
+// keepBook saves what reading one book needs; skip leaves out entries the
+// reader will never ask for (a synced book's own copy of the audio).
+async function keepBook(cache, item, onProgress, skip) {
+  const isPDF = ((item.extra && item.extra.format) || '').toLowerCase() === 'pdf';
+  if (isPDF) {
+    await keepURL(cache, streamPath(item), (got, total) => onProgress(total ? got / total : 0));
+    return [streamPath(item)];
+  }
+  const { manifest } = bookURLs(item, []);
+  const resp = await fetch(manifest, { credentials: 'same-origin' });
+  if (!resp.ok) throw new Error('could not read the book');
+  const body = await resp.clone().json();
+  await cache.put(manifest, resp);
+  const names = (body.entries || []).map((e) => e.name).filter((n) => !(skip && skip(n)));
+  const { resources } = bookURLs(item, names);
+  let done = 0;
+  for (const url of resources) {
+    await keepURL(cache, url).catch(() => {}); // one missing picture does not lose the book
+    onProgress(++done / resources.length);
+  }
+  return [manifest, ...resources];
+}
+
+async function keepArt(cache, item) {
+  const art = artPath(item);
+  if (!art) return [];
+  if (!(await cache.match(art))) await keepURL(cache, art).catch(() => {});
+  return [art];
+}
+
+// downloadBook keeps one audiobook, ebook or document; onProgress gets 0-1.
+async function downloadBook(item, onProgress = () => {}) {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  const cache = await caches.open(OFFLINE_CACHE);
+  const key = selectionKey(item);
+  let files = [];
+  let tracks = null;
+  if (item.kind === 'audiobook') {
+    const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+    if (!ok) throw new Error('could not read the audiobook');
+    tracks = body && Array.isArray(body.tracks) && body.tracks.length > 1 ? body.tracks : null;
+    const urls = tracks ? tracks.map((t) => t.url) : [streamPath(item)];
+    for (let i = 0; i < urls.length; i++) {
+      await keepURL(cache, urls[i], (got, total) => onProgress((i + (total ? got / total : 0)) / urls.length));
+      files.push(urls[i]);
+    }
+  } else {
+    files = await keepBook(cache, item, onProgress);
+  }
+  files.push(...await keepArt(cache, item));
+  state.downloads.items[key] = { ...item, dl: { files, tracks } };
+  const id = `book:${key}`;
+  state.downloads.groups = state.downloads.groups.filter((g) => g.id !== id);
+  state.downloads.groups.unshift({
+    id, type: item.kind, title: item.title, subtitle: (item.creators || []).join(', '),
+    sourceId: item.sourceId, artId: item.artId, keys: [key], at: Date.now(),
+  });
+  saveDownloadIndex();
+  keepShell();
+  markMusicTabs();
+}
+
+function pairDownloadID(pair) {
+  return `pair:${selectionKey(pair.ebook)}|${selectionKey(pair.audiobook)}`;
+}
+
+// downloadPair keeps both halves of a Read & listen book, and where it is
+// synced, the synced text (not its copy of the audio - the audiobook is
+// already here) and the timeline.
+async function downloadPair(pair, onProgress = () => {}) {
+  const hasBook = (item) => isDownloaded(item);
+  const parts = [pair.audiobook, pair.ebook].filter((it) => !hasBook(it));
+  let step = 0;
+  const steps = parts.length + 1;
+  for (const it of parts) {
+    await downloadBook(it, (p) => onProgress((step + p) / steps));
+    step++;
+    // Kept as part of the pair, not as books of their own.
+    state.downloads.groups = state.downloads.groups.filter((g) => g.id !== `book:${selectionKey(it)}`);
+  }
+  const keys = [selectionKey(pair.ebook), selectionKey(pair.audiobook)];
+  let readalong = null;
+  if (pair.sync && pair.sync.state === 'ready') {
+    const params = new URLSearchParams({
+      ebookSource: pair.ebook.sourceId, ebookId: pair.ebook.id,
+      audiobookSource: pair.audiobook.sourceId, audiobookId: pair.audiobook.id,
+    });
+    const { ok, body } = await api(`/api/readalong?${params}`);
+    if (ok && body && body.item) {
+      const cache = await caches.open(OFFLINE_CACHE);
+      const files = await keepBook(cache, body.item, (p) => onProgress((step + p) / steps),
+        (name) => name.startsWith('Audio/') || /\.(mp3|mp4|m4a|m4b|aac|ogg|opus)$/i.test(name));
+      const syncedKey = selectionKey(body.item);
+      state.downloads.items[syncedKey] = { ...body.item, dl: { files } };
+      keys.push(syncedKey);
+      readalong = { item: body.item, timeline: body.timeline || [] };
+    }
+  }
+  onProgress(1);
+  const id = pairDownloadID(pair);
+  state.downloads.groups = state.downloads.groups.filter((g) => g.id !== id);
+  state.downloads.groups.unshift({
+    id, type: 'pair', title: pair.ebook.title, subtitle: (pair.ebook.creators || []).join(', '),
+    sourceId: pair.audiobook.sourceId, artId: pair.audiobook.artId, keys, at: Date.now(),
+    pair: { ebook: pair.ebook, audiobook: pair.audiobook, sync: pair.sync }, readalong,
+  });
+  saveDownloadIndex();
+  keepShell();
+  markMusicTabs();
+}
+
+// A download can take minutes for a long audiobook; the toast says how far.
+async function downloadWithToast(title, run) {
+  let shown = -1;
+  showToast(`Downloading ${title}\u2026`, null, null, 600000);
+  try {
+    await run((p) => {
+      const pct = Math.floor(p * 100);
+      if (pct !== shown) {
+        shown = pct;
+        showToast(`Downloading ${title}\u2026 ${pct}%`, null, null, 600000);
+      }
+    });
+    showToast(`${title} is on this device. Find it in Music, Downloads.`);
+  } catch {
+    showToast(`Could not download ${title}.`);
+  }
+}

@@ -2513,3 +2513,7 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 #np-speed-menu { min-width: 150px; }
 /* Read-along's highlight toggle, lit while it is on. */
 #reader-highlight.on { color: var(--accent); border-color: var(--accent); }
+
+/* Read & listen: the download button, a square beside Read and Listen. */
+.pair-actions .pair-download { flex: 0 0 auto; width: 38px; padding: 6px 0; }
+.pair-actions .pair-download.done { color: var(--accent); border-color: var(--accent); }

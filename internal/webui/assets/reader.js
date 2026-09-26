@@ -42,6 +42,23 @@ function bookParams(item) {
 // foliate-js asks for resources by path; SoundStorm has already unzipped the book,
 // so the loader is three fetches rather than a zip implementation in the
 // browser. The Go side owns the only EPUB parser in the project.
+// A book downloaded to this device is read from there when the server does
+// not answer - the same addresses, kept in the downloads cache by app.js.
+const OFFLINE_CACHE = 'soundstorm-offline-v1';
+async function fetchOrKept(url) {
+  try {
+    const resp = await fetch(url, { credentials: 'same-origin' });
+    if (resp.ok) return resp;
+  } catch {
+    // no connection; try the device
+  }
+  try {
+    return (await (await caches.open(OFFLINE_CACHE)).match(url)) || null;
+  } catch {
+    return null;
+  }
+}
+
 function makeLoader(item) {
   const base = bookParams(item);
 
@@ -53,24 +70,20 @@ function makeLoader(item) {
 
   return {
     loadText: async (name) => {
-      const resp = await fetch(resourceURL(name), { credentials: 'same-origin' });
-      if (!resp.ok) return null;
-      return resp.text();
+      const resp = await fetchOrKept(resourceURL(name));
+      return resp ? resp.text() : null;
     },
     loadBlob: async (name) => {
-      const resp = await fetch(resourceURL(name), { credentials: 'same-origin' });
-      if (!resp.ok) return null;
-      return resp.blob();
+      const resp = await fetchOrKept(resourceURL(name));
+      return resp ? resp.blob() : null;
     },
     getSize: (name) => session.sizes.get(name) ?? 0,
   };
 }
 
 async function loadManifest(item) {
-  const resp = await fetch(`/api/book/manifest?${bookParams(item)}`, {
-    credentials: 'same-origin',
-  });
-  if (!resp.ok) throw new Error('could not read the book');
+  const resp = await fetchOrKept(`/api/book/manifest?${bookParams(item)}`);
+  if (!resp) throw new Error('could not read the book');
   const body = await resp.json();
 
   session.sizes = new Map((body.entries || []).map((e) => [e.name, e.size]));
@@ -78,17 +91,43 @@ async function loadManifest(item) {
 
 /* ----------------------------------------------------------------- progress */
 
+// Where somebody is in a book is also kept on the device, so a book read
+// offline opens where it was left and the place reaches the server with the
+// next save that gets through.
+const readKey = (item) => `soundstorm-read:${item.sourceId}/${item.id}`;
+function localRead(item) {
+  try {
+    return JSON.parse(localStorage.getItem(readKey(item)) || 'null');
+  } catch {
+    return null;
+  }
+}
+function keepLocalRead(item, place, synced) {
+  try {
+    localStorage.setItem(readKey(item), JSON.stringify({ ...place, synced, at: Date.now() }));
+  } catch { /* storage full */ }
+}
+
 async function loadProgress(item) {
-  const resp = await fetch(`/api/book/progress?${bookParams(item)}`, {
-    credentials: 'same-origin',
-  });
-  if (!resp.ok) return null;
-  const body = await resp.json();
-  return body.found ? body : null;
+  const here = localRead(item);
+  if (here && !here.synced && here.location) return here;
+  try {
+    const resp = await fetch(`/api/book/progress?${bookParams(item)}`, {
+      credentials: 'same-origin',
+    });
+    if (resp.ok) {
+      const body = await resp.json();
+      if (body.found) return body;
+    }
+  } catch {
+    // offline
+  }
+  return here && here.location ? here : null;
 }
 
 function scheduleSave(location, fraction) {
   session.pendingLocation = { location, fraction };
+  if (session.item) keepLocalRead(session.item, { location, fraction }, false);
   if (session.saveTimer) return;
   session.saveTimer = setTimeout(flushProgress, SAVE_INTERVAL_MS);
 }
@@ -103,7 +142,7 @@ async function flushProgress() {
   session.pendingLocation = null;
 
   try {
-    await fetch(`/api/book/progress?${bookParams(item)}`, {
+    const resp = await fetch(`/api/book/progress?${bookParams(item)}`, {
       method: 'PUT',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -111,6 +150,7 @@ async function flushProgress() {
       keepalive: true,
       body: JSON.stringify(pending),
     });
+    if (resp.ok) keepLocalRead(item, pending, true);
   } catch {
     // Losing a bookmark is not worth interrupting someone's reading over.
   }
@@ -145,7 +185,7 @@ export async function open(item, options = {}) {
     $('reader-progress').textContent = 'PDF';
 
     const frame = $('reader-pdf');
-    frame.src = streamPath(item);
+    frame.src = (await window.soundstormOfflineURL?.(item)) || streamPath(item);
     show(frame, true);
     return;
   }

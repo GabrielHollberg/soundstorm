@@ -87,7 +87,10 @@ function handles(request, url) {
   // See rule 3: the browser, not this worker, has to be the one that fails a
   // page load, or a changed certificate becomes a dead end.
   if (request.mode === 'navigate') return false;
-  return SHELL.includes(url.pathname);
+  // The app's own files, network first: the reader is several modules, and a
+  // book downloaded for offline reading needs all of them there with no
+  // server. Media never comes from /static/.
+  return SHELL.includes(url.pathname) || url.pathname.startsWith('/static/');
 }
 
 const OFFLINE_SHELL = 'soundstorm-offline-shell-v1';
