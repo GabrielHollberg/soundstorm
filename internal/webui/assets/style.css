@@ -72,11 +72,9 @@ a:hover { color: var(--text); }
 .wordmark::before {
   content: "";
   flex: 0 0 auto;
-  width: 1.45em;
-  /* The bolt hangs below the cloud: the cloud stays centred on the name,
-     and the bolt takes no room of its own. */
-  height: 1.23em;
-  margin-bottom: -0.52em;
+  /* Cloud and bolt together, centred on the name. */
+  width: 1.3em;
+  height: 1.1em;
   background: currentColor;
   -webkit-mask: url(/static/cloud.svg) center / contain no-repeat;
   mask: url(/static/cloud.svg) center / contain no-repeat;

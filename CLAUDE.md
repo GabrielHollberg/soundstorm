@@ -2745,8 +2745,8 @@ draws every icon from them: the favicon (black, white in a dark browser),
 `cloud.svg` for the wordmark, and the PNG app icons - a white cloud on
 the app's own dark background, so the home screen icon looks like the app
 it opens. A lightning bolt drops out of the cloud's flat bottom, for the storm in
-the name; the wordmark's mask is taller for it, with a negative bottom
-margin so the cloud stays centred on the name. Change the icons by changing the script, not by editing the PNGs.
+the name; the wordmark centres cloud and bolt together on the name.
+Change the icons by changing the script, not by editing the PNGs.
 The wordmark is the cloud as a CSS mask in the text's colour, then the name
 in heavy italic, matching the logo.
 
