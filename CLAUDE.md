@@ -633,7 +633,12 @@ the middle as the page arrives, and eases it the rest of the way (or back)
 with the slide. During a swipe the pills are only drawn shifted, by a
 transform, and the row really scrolls once, in the frame they are put back:
 scrolling it every frame made the phone lay the row out every frame, which
-is what brought the choppiness back. And `#subtabs` is no longer rebuilt
+is what brought the choppiness back. The row's buttons are layers from the
+stylesheet (`will-change: transform`), not made as a swipe starts: a layer
+made then is drawn only once in view, and on a phone the +, last in the
+row, popped in after the finger lifted. The + also has a transition of its
+own, so the transforms come off with transitions held off for a frame. And
+`#subtabs` is no longer rebuilt
 when only the lit pill changes - a rebuild mid-swipe snapped it back.
 
 **And `#app { overflow-x: clip }`, or the tab bar jumps.** A page mid-swipe

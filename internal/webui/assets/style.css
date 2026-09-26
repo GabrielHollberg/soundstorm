@@ -2795,3 +2795,7 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 }
 #music-tabs .pill-add .icon, #subtabs .pill-add .icon { width: 18px; height: 18px; }
 #music-tabs .pill-add.drop-target, #subtabs .pill-add.drop-target { transform: scale(1.18); background: #3a1d22; border-color: #ff7b7b; color: #ff7b7b; }
+
+/* The row's buttons are layers from the start, so they are already drawn,
+   off-screen ones included, when a swipe slides them along. */
+#music-tabs > button, #subtabs > button { will-change: transform; }
