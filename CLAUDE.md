@@ -501,8 +501,9 @@ everything.
 
 **The pills can be put in any order**: hold one (450ms, as a card) and slide
 it; the others move aside as it passes their middles (a FLIP animation), and
-the row scrolls near its ends. Kept per device in localStorage
-(`soundstorm-pills-music`, `soundstorm-pills-<tab>`), like streaming quality.
+the row scrolls near its ends. Kept on the account, in the person's collections file (`prefs`,
+bounded), behind `GET`/`PATCH /api/prefs` - it was per device first, and an
+order saved that way is carried over once and the device's copy dropped.
 Swiping between pills, and the shelf a tab opens on, follow the order, since
 both read it from the DOM and `tabShelves`. The click that ends a hold is
 swallowed, and while a pill is up touchmove is prevented so the row cannot
@@ -2504,6 +2505,14 @@ The image is 2.9GB. It still syncs its changelog from GitLab on a daily
 schedule despite `STORYTELLER_SYNC_CHANGELOG=false`, which only stops the one
 at start. Its secret key defaults like Immich's database password; both are
 reachable only on the compose network.
+
+The reader's **Highlight** button, shown only while reading along, turns
+the lit sentence off and on; off, the page still turns with the voice. The
+choice is kept on the account like the pill order. So is **audiobook speed**
+(Now Playing's speed pill, audiobooks only, 0.75x-3x): set as
+`defaultPlaybackRate` as well as `playbackRate`, because giving the player
+the next chapter file resets the rate to the default. Read-along's timeline
+reads the player's own clock, so it follows at any speed.
 
 **Books sync by themselves**, as soon as there is both an ebook and an
 audiobook of one: a background look two minutes after start, every half hour,
