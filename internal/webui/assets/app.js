@@ -6506,7 +6506,9 @@ function albumCardFromHome(album) {
     g.row = target.parentElement;
     g.rowFrom = g.row.scrollLeft;
     g.rowTo = pillCenter(g.row, target);
-    g.rowPills = [...g.row.querySelectorAll('button')].filter(isPill);
+    // Every button in the row slides, the + included: left out, it stayed
+    // where it was until the swipe ended, then jumped.
+    g.rowPills = [...g.row.querySelectorAll('button')];
     for (const b of g.rowPills) b.style.willChange = 'transform';
     state.pillSwiping = true;
     // A frame later: pressing the pill starts the next page's work - clearing,
