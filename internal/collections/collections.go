@@ -36,7 +36,7 @@ import (
 
 // Limits, so no one person's file can grow without bound.
 const (
-	MaxFavorites    = 5000
+	MaxFavorites     = 5000
 	MaxPlaylists     = 200
 	MaxPlaylistItems = 5000
 	MaxNameLength    = 100
@@ -63,8 +63,10 @@ type Playlist struct {
 }
 
 type collection struct {
-	Favorites []Entry     `json:"favourites"` // the name on disk since the first file: kept, or every saved list would read as empty
-	Playlists  []*Playlist `json:"playlists"`
+	// "favourites" is the name on disk since the first file: kept, or every
+	// saved list would read as empty.
+	Favorites []Entry     `json:"favourites"`
+	Playlists []*Playlist `json:"playlists"`
 	// History is what this person has listened to, keyed "source/id", for
 	// Recently played, Most played and Rediscover. Per person for the same
 	// reason as everything else here: Navidrome's play counts would be the
