@@ -3,6 +3,10 @@ package storyteller
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/GabrielHollberg/soundstorm/internal/source"
@@ -94,5 +98,35 @@ func TestTimelinePutsChapterPiecesOnTheWholeBook(t *testing.T) {
 	}
 	if _, err := Timeline([]Clip{{Href: "d#1", File: 3, Piece: 1}}, two); err == nil {
 		t.Error("a file the audiobook does not have was placed anyway")
+	}
+}
+
+func TestSyncNextRequeuesWithTheChosenBookFirst(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v2/books" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[
+{"uuid":"running","readaloud":{"status":"PROCESSING","queuePosition":0}},
+{"uuid":"b2","readaloud":{"status":"QUEUED","queuePosition":1}},
+{"uuid":"b4","readaloud":{"status":"QUEUED","queuePosition":2}},
+{"uuid":"mc","readaloud":{"status":"QUEUED","queuePosition":3}},
+{"uuid":"done","readaloud":{"status":"ALIGNED"}}]`))
+			return
+		}
+		calls = append(calls, r.Method+" "+strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v2/books/"), "/process"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	s, err := New(Config{ID: "storyteller", BaseURL: srv.URL, Token: "t", DataDir: "/d", AudiobooksRemote: "/audiobooks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncNext(context.Background(), "mc"); err != nil {
+		t.Fatal(err)
+	}
+	want := "DELETE mc,DELETE b2,DELETE b4,POST mc,POST b2,POST b4"
+	if got := strings.Join(calls, ","); got != want {
+		t.Errorf("calls\n got %s\nwant %s", got, want)
 	}
 }

@@ -91,6 +91,38 @@ func (s *Server) handleStartReadAlong(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
+// handleReadAlongNext moves a pair's waiting sync to the front of the queue.
+func (s *Server) handleReadAlongNext(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Audiobook itemRef `json:"audiobook"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReadAlongBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected an audiobook")
+		return
+	}
+	st, ok := s.readAlong(r.Context())
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "read-along is not set up on this server")
+		return
+	}
+	layout, _, err := s.audiobookFiles(r.Context(), body.Audiobook)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	book, found, err := st.ByFolder(r.Context(), layout.Folder)
+	if err != nil || !found {
+		writeError(w, http.StatusNotFound, "this book is not waiting to sync")
+		return
+	}
+	if err := st.SyncNext(r.Context(), book.UUID); err != nil {
+		s.log.Warn("read-along could not reorder its queue", "err", err)
+		writeError(w, http.StatusBadGateway, "could not move it up")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // handleReadAlong is a synced pair, ready to read: the synced book for the
 // reader, and every sentence's place on the audiobook's timeline.
 func (s *Server) handleReadAlong(w http.ResponseWriter, r *http.Request) {

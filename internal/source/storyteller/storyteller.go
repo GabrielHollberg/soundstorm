@@ -116,6 +116,8 @@ type Status struct {
 	State    string  `json:"state"` // queued, working, ready, failed, stopped
 	Stage    string  `json:"stage,omitempty"`
 	Progress float64 `json:"progress"` // 0 to 1, over the whole sync
+	// Place is where a waiting sync is in the queue: 1 is next.
+	Place int `json:"place,omitempty"`
 }
 
 // StatusOf turns Storyteller's record into the app's words.
@@ -126,6 +128,9 @@ func StatusOf(b Book) Status {
 	}
 	stages := map[string]float64{"SPLIT_TRACKS": 0, "TRANSCRIBE_CHAPTERS": 1, "SYNC_CHAPTERS": 2}
 	done := stages[b.Readaloud.CurrentStage]
+	if b.Readaloud.Status == "QUEUED" && b.Readaloud.QueuePosition != nil {
+		st.Place = *b.Readaloud.QueuePosition
+	}
 	switch b.Readaloud.Status {
 	case "ALIGNED":
 		st.State, st.Progress = "ready", 1
@@ -311,6 +316,70 @@ func (s *Source) upload(ctx context.Context, uuid, ebookPath string) error {
 		return fmt.Errorf("storyteller did not finish taking the ebook (%d)", resp.StatusCode)
 	}
 	return nil
+}
+
+// SyncNext moves a waiting sync to the front of the queue, after whatever is
+// being synced now, which carries on. Storyteller has no way to reorder its
+// queue, but it places a book at the back when it is queued and resumes from
+// where it had got to, so the waiting books are taken out and queued again
+// with this one first - nothing done so far is lost.
+func (s *Source) SyncNext(ctx context.Context, uuid string) error {
+	s.forget()
+	books, err := s.Books(ctx)
+	if err != nil {
+		return err
+	}
+	type waiting struct {
+		uuid  string
+		place int
+	}
+	var queue []waiting
+	found := false
+	for _, b := range books {
+		if b.Readaloud == nil {
+			continue
+		}
+		if b.UUID == uuid {
+			found = true
+		}
+		if b.Readaloud.Status == "QUEUED" && b.UUID != uuid {
+			place := 1 << 30
+			if b.Readaloud.QueuePosition != nil {
+				place = *b.Readaloud.QueuePosition
+			}
+			queue = append(queue, waiting{b.UUID, place})
+		}
+	}
+	if !found {
+		return fmt.Errorf("storyteller: no sync %q", uuid)
+	}
+	sort.SliceStable(queue, func(i, j int) bool { return queue[i].place < queue[j].place })
+	for _, w := range append([]waiting{{uuid: uuid}}, queue...) {
+		if err := s.cancel(ctx, w.uuid); err != nil {
+			return err
+		}
+	}
+	if err := s.process(ctx, uuid, ""); err != nil {
+		return err
+	}
+	for _, w := range queue {
+		if err := s.process(ctx, w.uuid, ""); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Source) cancel(ctx context.Context, uuid string) error {
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Method: http.MethodDelete,
+		Path:   "/api/v2/books/" + url.PathEscape(uuid) + "/process",
+	})
+	if err != nil {
+		return err
+	}
+	s.forget()
+	return resp.Err()
 }
 
 func (s *Source) process(ctx context.Context, uuid, restart string) error {

@@ -299,6 +299,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/home", s.handleHome)
 	guarded.HandleFunc("GET /api/books/pairs", s.handleBookPairs)
 	guarded.HandleFunc("POST /api/readalong", s.handleStartReadAlong)
+	guarded.HandleFunc("POST /api/readalong/next", s.handleReadAlongNext)
 	guarded.HandleFunc("GET /api/readalong", s.handleReadAlong)
 	guarded.HandleFunc("GET /api/music/mixes/{id}", s.handleMix)
 	guarded.HandleFunc("POST /api/history", s.handleRecordPlay)

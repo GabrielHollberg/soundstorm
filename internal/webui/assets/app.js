@@ -6164,6 +6164,19 @@ async function startSync(pair, line) {
   if (state.kind === 'pairs') showPairs(state.searchSeq, state.query);
 }
 
+async function syncNext(pair, line) {
+  line.replaceChildren(document.createTextNode('Moving it up\u2026'));
+  const { ok, body } = await api('/api/readalong/next', {
+    method: 'POST',
+    body: JSON.stringify({ audiobook: pairRef(pair.audiobook) }),
+  });
+  if (!ok) {
+    line.replaceChildren(document.createTextNode((body && body.error) || 'Could not move it up.'));
+    return;
+  }
+  if (state.kind === 'pairs') showPairs(state.searchSeq, state.query);
+}
+
 function renderSyncLine(pair, line) {
   line.replaceChildren();
   line.className = 'pair-sync';
@@ -6192,8 +6205,12 @@ function renderSyncLine(pair, line) {
       break;
     default: {
       const pct = Math.round((sync.progress || 0) * 100);
-      line.append(document.createTextNode(sync.state === 'queued' ? 'Waiting to sync\u2026'
+      line.append(document.createTextNode(sync.state === 'queued' ? 'Waiting to sync'
         : `${sync.stage || 'Syncing'}\u2026 ${pct}%`));
+      // Not already next in line: offer to make it so.
+      if (sync.state === 'queued' && !(sync.place === 1)) {
+        line.append(document.createTextNode(' \u00b7 '), button('Sync this next', () => syncNext(pair, line)));
+      }
       const bar = document.createElement('div');
       bar.className = 'pair-bar';
       const fill = document.createElement('i');
