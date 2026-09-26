@@ -694,7 +694,12 @@ fix it, both checked on the real install:
   a group opening as an album page. Music's Downloads pill went; managing
   downloads is a card in Settings. Everything downloaded wears a small badge
   on its cover (and beside a song in an album's list), repainted by
-  `markDownloads` whenever downloads change. And downloads come first even online: the reader reads a downloaded
+  `markDownloads` whenever downloads change. The badge is a plain green
+  tick; anything downloadable that is not downloaded wears a plain gray
+  arrow in the same corner, and tapping it downloads the item (films ask
+  first). A card is itself a button, so the arrow is a sibling in the
+  holder, placed with `100cqw` - covers are square, so the cover is the
+  holder's width tall. Hidden offline and where there is no Cache API. And downloads come first even online: the reader reads a downloaded
   book from the cache before asking the server, as songs, audiobooks, films
   and photos already did.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load

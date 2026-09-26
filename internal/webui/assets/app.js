@@ -1132,6 +1132,7 @@ function renderItem(item) {
 
   const key = selectionKey(item);
   card.dataset.key = key;
+  card.soundstormItem = item;
   card.classList.toggle('selected', state.selected.has(key));
   if (isDownloaded(item)) wrap.append(downloadedBadge());
   card.addEventListener('click', (event) => {
@@ -1164,6 +1165,8 @@ function renderItem(item) {
     openItemMenu(item, more);
   });
   holder.append(card, more);
+  const get = getButton(item);
+  if (get) holder.append(get);
   return holder;
 }
 
@@ -3978,6 +3981,7 @@ function albumCard(album) {
   meta.append(title, sub);
   const cover = coverArt(artUrl(album.sourceId, album.artId), album.title);
   if (state.downloads.groups.some((g) => g.id === `album:${album.sourceId}/${album.id}`)) cover.append(downloadedBadge());
+  card.dataset.album = `album:${album.sourceId}/${album.id}`;
   card.append(cover, meta);
   card.addEventListener('click', () => showAlbum(album.sourceId, album.id));
   return card;
@@ -3986,7 +3990,14 @@ function albumCard(album) {
 function albumGrid(albums) {
   const grid = document.createElement('div');
   grid.className = 'grid browse-grid';
-  grid.append(...albums.map(albumCard));
+  grid.append(...albums.map((album) => {
+    const holder = document.createElement('div');
+    holder.className = 'item-holder';
+    holder.append(albumCard(album));
+    const get = albumGetButton(album);
+    if (get) holder.append(get);
+    return holder;
+  }));
   return grid;
 }
 
@@ -4125,7 +4136,10 @@ function trackRow(song, index, songs) {
   });
   // The same hold-down / right-click menu as a card: favourites, playlists.
   attachItemMenuGestures(row, song);
+  row.soundstormItem = song;
   li.append(row);
+  const get = getButton(song, true);
+  if (get) li.append(get);
   return li;
 }
 
@@ -7395,6 +7409,15 @@ function markDownloads() {
     const badge = spot.querySelector('.dl-badge');
     if (on && !badge) spot.append(downloadedBadge());
     else if (!on && badge) badge.remove();
+    // The gray arrow beside it: gone once it is here, back if it is removed.
+    const box = el.classList.contains('track-row') ? el.parentElement : el.closest('.item-holder');
+    if (!box) continue;
+    const get = box.querySelector(':scope > .dl-get');
+    if (on && get && !get.classList.contains('working')) get.remove();
+    else if (!on && !get && el.soundstormItem) {
+      const again = getButton(el.soundstormItem, el.classList.contains('track-row'));
+      if (again) box.append(again);
+    }
   }
   refreshDownloadsCard();
 }
@@ -7417,3 +7440,70 @@ $('downloads-clear').addEventListener('click', async () => {
   markMusicTabs();
   markDownloads();
 });
+
+/* ------------------------------------------------------ tap to download */
+
+// A gray arrow where the green tick goes, on anything that can be downloaded
+// and is not: tap it and it downloads, the arrow pulsing until the tick takes
+// its place. Not offline, and not where the browser keeps no downloads at
+// all (plain http). A card is itself a button, so the arrow sits beside it,
+// in the holder, over the corner of the cover - as the "..." does.
+function downloadsPossible() {
+  return 'caches' in window && !state.offline;
+}
+
+function makeGet(label, inRow, run) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = inRow ? 'dl-get dl-get-row' : 'dl-get';
+  button.setAttribute('aria-label', `Download ${label}`);
+  button.title = 'Download to this device';
+  button.append(icon('download'));
+  button.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (button.classList.contains('working')) return;
+    button.classList.add('working');
+    try {
+      await run((p) => { button.title = `Downloading\u2026 ${Math.floor((p || 0) * 100)}%`; });
+      button.remove();
+    } catch {
+      button.classList.remove('working');
+      button.title = 'Could not download. Tap to try again.';
+    }
+    markDownloads();
+  });
+  return button;
+}
+
+function getButton(item, inRow) {
+  if (!downloadsPossible() || isDownloaded(item)) return null;
+  if (item.kind === 'music') {
+    return makeGet(item.title, inRow, () => download({
+      id: `song:${selectionKey(item)}`, type: 'song', title: item.title,
+      subtitle: (item.creators || []).join(', '), sourceId: item.sourceId, artId: item.artId,
+    }, [item]));
+  }
+  if (!canDownload(item)) return null;
+  return makeGet(item.title, inRow, async (progress) => {
+    const big = isVideoItem(item);
+    if (big && !window.confirm(`Download "${item.title}"? A film or episode is usually one to a few GB, `
+      + 'and one that needs converting takes a while.')) throw new Error('declined');
+    await downloadBook(item, progress);
+  });
+}
+
+function albumGetButton(album) {
+  const id = `album:${album.sourceId}/${album.id}`;
+  if (!downloadsPossible() || state.downloads.groups.some((g) => g.id === id)) return null;
+  return makeGet(album.title, false, async (progress) => {
+    const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(album.sourceId)}/${escapeId(album.id)}`);
+    const songs = (ok && body && body.songs) || [];
+    if (!songs.length) throw new Error('no songs');
+    await download({ id, type: 'album', title: album.title, subtitle: album.artist, sourceId: album.sourceId, artId: album.artId },
+      songs, (done, total) => progress(done / total));
+    // The album card has no key of its own; its tick goes on here.
+    const holder = document.querySelector(`.item-holder > .album-card[data-album="${CSS.escape(id)}"]`);
+    if (holder) holder.querySelector('.art-wrap').append(downloadedBadge());
+  });
+}
