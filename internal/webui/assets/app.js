@@ -6509,9 +6509,11 @@ function albumCardFromHome(album) {
     // Every button in the row slides, the + included: left out, it stayed
     // where it was until the swipe ended, then jumped.
     g.rowPills = [...g.row.querySelectorAll('button')];
-    // Their layers are made once, by the stylesheet, not here: a layer made as
-    // the swipe starts is drawn only once in view, which a phone can be late
-    // with - the +, last in the row, popped in after the finger lifted.
+    // No layer of their own, from here or the stylesheet: on Android a layer
+    // that starts off the side of the row is drawn only once it has come into
+    // view, and the +, last in the row, popped in after the finger lifted.
+    // Painted with the row, which is small and drawn whole, they are already
+    // there as they slide in.
     state.pillSwiping = true;
     // A frame later: pressing the pill starts the next page's work - clearing,
     // ghost content, a request - which must not hold up the first frame of
