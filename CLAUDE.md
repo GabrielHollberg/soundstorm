@@ -665,8 +665,20 @@ fix it, both checked on the real install:
   next open. The reader is several modules, so the worker serves any
   `/static/` file network-first and the kept shell lists foliate's modules;
   without that the first offline test found `soundstormReader` undefined.
-  Films and TV are not offered (gigabytes, and what a browser cannot play is
-  converted live by the server); nor photos. Tested fully offline on the
+  Films, episodes and photos followed, at the owner's asking despite the
+  size. A film the browser can play is kept as it is; one it cannot is kept
+  as the HLS stream the app would play - the variant playlist and every
+  piece, plus hls.min.js - and played offline through hls.js from a
+  playlist rewritten to blob: addresses (the browser's own HLS will not
+  follow those). Only playlists go in the index; a removal reads the kept
+  playlist to find the pieces, or the index would outgrow localStorage.
+  The playlist is cached last, so a stopped download is not taken for a
+  whole one. A series card has no file and no episode list here, so
+  episodes download one by one or by the TV shelf's Download all. Photos
+  keep the preview the viewer shows and the thumbnail. Tested on a
+  throwaway Jellyfin with a generated MP4 (direct) and MKV (HLS): both
+  downloaded, both played offline from blobs, and removing the MKV took its
+  pieces. Tested fully offline on the
   mapped test name: a downloaded ebook opened at its place and a downloaded
   track played from a blob.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load

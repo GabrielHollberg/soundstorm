@@ -888,7 +888,7 @@ async function runSearch() {
   show($('results-bar'), !home);
   show($('results'), state.kind !== 'playlists' && !musicBrowse && !home);
   show($('download-all'), !home && !musicBrowse && ('caches' in window) && (
-    ['favourites', 'pairs', 'audiobook', 'ebook', 'document'].includes(state.kind)
+    ['favourites', 'pairs', 'audiobook', 'ebook', 'document', 'video', 'tv', 'picture'].includes(state.kind)
     || (state.kind === 'music' && state.musicView === 'songs')));
   if (home) {
     show($('select-toggle'), false);
@@ -1223,6 +1223,9 @@ function showPhoto(item) {
 
   const img = $('photo-image');
   img.src = photoPreview(item);
+  if (isDownloaded(item)) {
+    offlineURLFor(photoPreview(item)).then((u) => { if (u && photoShown === item) img.src = u; });
+  }
   img.alt = item.title;
   const place = item.extra && item.extra.place;
   $('photo-caption').textContent = [item.title, item.subtitle, place].filter(Boolean).join(' — ');
@@ -1618,6 +1621,9 @@ async function playVideo(item) {
     .filter(Boolean)
     .join(' — ');
   show($('video-overlay'), true);
+
+  // Downloaded: from the device, connection or not.
+  if (isDownloaded(item) && (await playKeptVideo(item, player))) return;
 
   // Ask before building a player: the answer decides which one to build.
   const { ok, body } = await api(
@@ -3155,7 +3161,7 @@ function renderMainMenu(item) {
       renderPlaylistMenu(item, (ok && body && body.playlists) || []);
     }, { chevron: true }));
   }
-  if (['audiobook', 'ebook', 'document'].includes(item.kind)) {
+  if (canDownload(item)) {
     const downloaded = isDownloaded(item);
     entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
       closeItemMenu();
@@ -3163,6 +3169,9 @@ function renderMainMenu(item) {
         await removeDownload(`book:${selectionKey(item)}`);
         showToast(`${item.title} removed from this device.`);
       } else {
+        const big = item.kind === 'video' || item.kind === 'tv' || (item.extra && item.extra.type === 'video');
+        if (big && !window.confirm(`Download "${item.title}"? A film or episode is usually one to a few GB, `
+          + 'and one that needs converting takes a while.')) return;
         await downloadWithToast(item.title, (progress) => downloadBook(item, progress));
       }
     }));
@@ -5301,6 +5310,11 @@ async function removeDownload(groupID) {
     if (stillNeeded.has(key)) continue;
     const kept = state.downloads.items[key];
     if (kept) {
+      const video = kept.dl && kept.dl.video;
+      if (video && video.mode === 'hls') {
+        const playlist = await cache.match(video.variant);
+        if (playlist) for (const url of hlsParts(await playlist.text(), video.variant)) await cache.delete(url);
+      }
       for (const url of (kept.dl && kept.dl.files) || [streamPath(kept)]) await cache.delete(url);
     }
     delete state.downloads.items[key];
@@ -5402,12 +5416,18 @@ async function downloadsView(offlineMode) {
     s.className = 'muted';
     const what = {
       audiobook: 'Audiobook', ebook: 'Book', document: 'Document', pair: 'Read & listen',
+      video: 'Film', tv: 'Episode', picture: 'Photo',
     }[group.type] || `${songs.length} song${songs.length === 1 ? '' : 's'}`;
     s.textContent = [group.subtitle, what].filter(Boolean).join(' \u00B7 ');
     text.append(t, s);
     const open = () => {
       if (group.type === 'pair') readAlong(group.pair, group);
-      else if (['audiobook', 'ebook', 'document'].includes(group.type)) play(songs[0]);
+      else if (group.type === 'picture') {
+        // The viewer steps through the photos on this device.
+        state.items = state.downloads.groups.filter((g) => g.type === 'picture')
+          .map((g) => state.downloads.items[g.keys[0]]).filter(Boolean);
+        play(songs[0]);
+      } else if (SINGLE_DOWNLOADS.includes(group.type)) play(songs[0]);
       else playQueue(songs, 0);
     };
     text.addEventListener('click', open);
@@ -6756,12 +6776,13 @@ async function keepArt(cache, item) {
 }
 
 // downloadBook keeps one audiobook, ebook or document; onProgress gets 0-1.
-async function downloadBook(item, onProgress = () => {}) {
+async function downloadBook(item, onProgress = () => {}, shouldStop) {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   const cache = await caches.open(OFFLINE_CACHE);
   const key = selectionKey(item);
   let files = [];
   let tracks = null;
+  let video = null;
   if (item.kind === 'audiobook') {
     const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
     if (!ok) throw new Error('could not read the audiobook');
@@ -6771,11 +6792,20 @@ async function downloadBook(item, onProgress = () => {}) {
       await keepURL(cache, urls[i], (got, total) => onProgress((i + (total ? got / total : 0)) / urls.length));
       files.push(urls[i]);
     }
+  } else if (isVideoItem(item)) {
+    const kept = await keepVideo(cache, item, onProgress, shouldStop);
+    files = kept.files;
+    video = kept.video;
+  } else if (item.kind === 'picture') {
+    // The picture the viewer shows; the thumbnail is the artwork, below.
+    await keepURL(cache, photoPreview(item));
+    files = [photoPreview(item)];
+    onProgress(1);
   } else {
     files = await keepBook(cache, item, onProgress);
   }
   files.push(...await keepArt(cache, item));
-  state.downloads.items[key] = { ...item, dl: { files, tracks } };
+  state.downloads.items[key] = { ...item, dl: { files, tracks, video } };
   const id = `book:${key}`;
   state.downloads.groups = state.downloads.groups.filter((g) => g.id !== id);
   state.downloads.groups.unshift({
@@ -6923,7 +6953,7 @@ async function wholeShelf(kind) {
   return items;
 }
 
-const bookTask = (item) => ({ label: item.title, run: (progress) => downloadBook(item, progress) });
+const bookTask = (item) => ({ label: item.title, run: (progress, stopped) => downloadBook(item, progress, stopped) });
 
 async function roomLeft() {
   if (!navigator.storage || !navigator.storage.estimate) return '';
@@ -6947,7 +6977,7 @@ $('download-all').addEventListener('click', () => {
         });
       }
       for (const it of items) {
-        if (['audiobook', 'ebook', 'document'].includes(it.kind) && !isDownloaded(it)) tasks.push(bookTask(it));
+        if (it.kind !== 'music' && canDownload(it) && !isDownloaded(it)) tasks.push(bookTask(it));
       }
       return tasks;
     });
@@ -6972,12 +7002,160 @@ $('download-all').addEventListener('click', () => {
       }];
     }, async (tasks) => window.confirm(
       `Download all ${tasks[0].label} to this device? That can be many GB.${await roomLeft()}`));
-  } else if (['audiobook', 'ebook', 'document'].includes(kind)) {
-    const names = { audiobook: 'audiobooks', ebook: 'ebooks', document: 'documents' };
-    bulkDownload(`all ${names[kind]}`, async () => (await wholeShelf(kind)).filter((it) => !isDownloaded(it)).map(bookTask),
+  } else if (['audiobook', 'ebook', 'document', 'video', 'tv', 'picture'].includes(kind)) {
+    const names = {
+      audiobook: 'audiobooks', ebook: 'ebooks', document: 'documents', video: 'films', tv: 'episodes', picture: 'photos',
+    };
+    const warn = {
+      audiobook: ' Audiobooks are often several hundred MB each.',
+      video: ' Films are usually one to a few GB each, and ones that need converting take a while.',
+      tv: ' Episodes are often several hundred MB each, and ones that need converting take a while.',
+    };
+    bulkDownload(`all ${names[kind]}`,
+      async () => (await wholeShelf(kind)).filter((it) => canDownload(it) && !isDownloaded(it)).map(bookTask),
       async (tasks) => window.confirm(
-        `Download ${tasks.length} ${names[kind]} to this device?`
-        + (kind === 'audiobook' ? ' Audiobooks are often several hundred MB each.' : '')
-        + await roomLeft()));
+        `Download ${tasks.length} ${names[kind]} to this device?${warn[kind] || ''}${await roomLeft()}`));
   }
 });
+
+/* ------------------------------------------- downloading films and photos */
+
+// Films, episodes and photos download too. A film the browser can play as
+// it is is kept as it is. One it cannot is kept as the streaming version the
+// app would play - the server's HLS playlist and every piece of it, which for
+// a file that only needs repackaging is quick and for one that needs
+// converting takes as long as the server takes to convert it. Played from the
+// device with hls.js, from a playlist rewritten to point at the kept pieces.
+// A series card itself is not a download: nothing lists its episodes here, so
+// episodes are downloaded one by one, or with Download all on the TV shelf.
+const SINGLE_DOWNLOADS = ['audiobook', 'ebook', 'document', 'video', 'tv', 'picture'];
+
+function isVideoItem(item) {
+  return item.kind === 'video' || item.kind === 'tv'
+    || (item.kind === 'picture' && item.extra && item.extra.type === 'video');
+}
+
+function canDownload(item) {
+  if (!item || !SINGLE_DOWNLOADS.includes(item.kind)) return false;
+  // A series has no file of its own; an episode says which one it is.
+  if (item.kind === 'tv') return Boolean(item.extra && item.extra.episode);
+  return true;
+}
+
+// hlsParts is every address a media playlist leads to: its pieces, and the
+// initialisation piece an fMP4 playlist names in EXT-X-MAP.
+function hlsParts(text, base) {
+  const parts = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXT-X-MAP:')) {
+      const m = line.match(/URI="([^"]+)"/);
+      if (m) parts.push(new URL(m[1], base).href);
+    } else if (!line.startsWith('#')) {
+      parts.push(new URL(line, base).href);
+    }
+  }
+  return parts;
+}
+
+async function keepVideo(cache, item, onProgress, shouldStop) {
+  const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+  if (!ok || !body) throw new Error('could not ask how to play it');
+  const files = [];
+  const subtitles = [];
+  for (const sub of body.subtitles || []) {
+    try {
+      await keepURL(cache, sub.url);
+      files.push(sub.url);
+      subtitles.push(sub);
+    } catch { /* a missing subtitle does not lose the film */ }
+  }
+  if (body.mode !== 'hls') {
+    const url = body.url || streamPath(item);
+    await keepURL(cache, url, (got, total) => onProgress(total ? got / total : 0));
+    files.push(url);
+    return { files, video: { mode: 'direct', url, subtitles } };
+  }
+  // The streaming version: the playlist names a variant, which names every piece.
+  // hls.js plays it back, so it has to be on the device too.
+  await keepURL(cache, '/static/vendor/hls.js/hls.min.js').catch(() => {});
+  const master = new URL(body.url, location.href).href;
+  const masterText = await (await fetch(master, { credentials: 'same-origin' })).text();
+  const first = masterText.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#'));
+  if (!first) throw new Error('the stream has no playlist');
+  const variant = new URL(first, master).href;
+  const variantResp = await fetch(variant, { credentials: 'same-origin' });
+  if (!variantResp.ok) throw new Error('the stream did not start');
+  const variantText = await variantResp.text();
+  const parts = hlsParts(variantText, variant);
+  for (let i = 0; i < parts.length; i++) {
+    if (shouldStop && shouldStop()) throw new Error('stopped');
+    await keepURL(cache, parts[i]);
+    onProgress((i + 1) / parts.length);
+  }
+  // Kept last, so a download that stopped part way is not taken for a whole one.
+  await cache.put(variant, new Response(variantText, { headers: { 'Content-Type': 'application/vnd.apple.mpegurl' } }));
+  files.push(variant);
+  return { files, video: { mode: 'hls', variant, subtitles } };
+}
+
+// playKeptVideo plays a downloaded film or episode from the device. False if
+// what was kept cannot be found, so the network can be tried instead.
+async function playKeptVideo(item, player) {
+  const kept = state.downloads.items[selectionKey(item)];
+  const video = kept && kept.dl && kept.dl.video;
+  if (!video) return false;
+  const subs = [];
+  for (const sub of video.subtitles || []) {
+    const url = await offlineURLFor(sub.url);
+    if (url) subs.push({ ...sub, url });
+  }
+  attachSubtitles(player, subs);
+  if (video.mode === 'direct') {
+    const url = await offlineURLFor(video.url);
+    if (!url) return false;
+    player.src = url;
+    player.play().catch(() => {});
+    return true;
+  }
+  const cache = await caches.open(OFFLINE_CACHE);
+  const playlist = await cache.match(video.variant);
+  if (!playlist) return false;
+  const text = await playlist.text();
+  // Each piece's address becomes the device's copy of it.
+  const local = {};
+  for (const url of hlsParts(text, video.variant)) {
+    local[url] = await offlineURLFor(url);
+    if (!local[url]) return false;
+  }
+  const rewritten = text.split('\n').map((raw) => {
+    const line = raw.trim();
+    if (line.startsWith('#EXT-X-MAP:')) {
+      return line.replace(/URI="([^"]+)"/, (_m, uri) => `URI="${local[new URL(uri, video.variant).href]}"`);
+    }
+    if (line && !line.startsWith('#')) return local[new URL(line, video.variant).href];
+    return raw;
+  }).join('\n');
+  const src = URL.createObjectURL(new Blob([rewritten], { type: 'application/vnd.apple.mpegurl' }));
+  // hls.js rather than the browser's own HLS, which will not follow a
+  // playlist of blob: addresses.
+  try {
+    const Hls = await loadHls();
+    if (!Hls || !Hls.isSupported()) throw new Error('no hls.js');
+    hls = new Hls({ enableWorker: true });
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (data && data.fatal) {
+        $('video-caption').textContent = `Could not play this download: ${data.details || 'stream error'}`;
+        detachHls();
+      }
+    });
+    hls.loadSource(src);
+    hls.attachMedia(player);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => player.play().catch(() => {}));
+  } catch {
+    player.src = src;
+    player.play().catch(() => {});
+  }
+  return true;
+}
