@@ -130,6 +130,18 @@ type Playback struct {
 	// Subtitles are offered whichever mode applies: a direct-played file can
 	// still have a sidecar, and a transcode can still carry embedded tracks.
 	Subtitles []SubtitleTrack `json:"subtitles,omitempty"`
+
+	// AudioTracks are a video's audio streams, when it has more than one to
+	// choose between - a film in two languages, say.
+	AudioTracks []AudioTrack `json:"audio,omitempty"`
+}
+
+// AudioTrack is one audio stream of a video.
+type AudioTrack struct {
+	Index    int    `json:"index"`
+	Label    string `json:"label"`
+	Language string `json:"language,omitempty"`
+	Default  bool   `json:"default,omitempty"`
 }
 
 // SubtitleTrack is one selectable subtitle stream.
@@ -680,4 +692,28 @@ type PhotoBrowser interface {
 	// OnThisDay is the photos taken on day's date in earlier years, newest
 	// year first.
 	OnThisDay(ctx context.Context, day time.Time, perYear int) ([]PhotoDay, error)
+}
+
+type audioStreamKey struct{}
+
+// WithAudioStream asks a Negotiator for a particular audio stream, by its
+// index among the file's streams: the one somebody chose while watching.
+func WithAudioStream(ctx context.Context, index int) context.Context {
+	return context.WithValue(ctx, audioStreamKey{}, index)
+}
+
+// AudioStreamFrom is the audio stream asked for, if one was.
+func AudioStreamFrom(ctx context.Context) (int, bool) {
+	i, ok := ctx.Value(audioStreamKey{}).(int)
+	return i, ok
+}
+
+// ShowBrowser is an optional interface for a television source that knows a
+// series' episodes, not just its name - which is how anybody watches one.
+type ShowBrowser interface {
+	// Episodes is a series' episodes in order, season by season, each
+	// carrying Extra["season"] and Extra["number"].
+	Episodes(ctx context.Context, seriesID string) ([]media.Item, error)
+	// NextEpisode is the episode after this one, if there is one.
+	NextEpisode(ctx context.Context, episodeID string) (media.Item, bool, error)
 }

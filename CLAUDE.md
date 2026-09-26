@@ -95,6 +95,28 @@ under us) and a 2.5GB image next to Navidrome's 348MB. That trade pays off
 because SoundStorm uses Jellyfin's transcoding: video a browser cannot decode is
 transcoded on the fly and served as HLS (see Gotchas).
 
+## Television, show by show
+
+Browsing the TV shelf lists shows only (`IncludeItemTypes=Series` when there
+is no search text); a search still finds an episode by name. A show opens its
+page (`GET /api/tv/show`, `source.ShowBrowser` over Jellyfin's
+`/Shows/{id}/Episodes`): the episodes season by season, each with this
+person's place from `state.Progress` (a bar part-watched, a tick past 93%),
+and one button for what to watch now - carry on, the one after the last
+finished, or the first. An episode Jellyfin found nothing about is named
+after its file; the title part is shown. When an episode ends, Up next
+counts eight seconds into the next (from the page's list, else
+`GET /api/tv/next`), Play now and Cancel beside it. Before this a TV item
+fell through `play()` to the audio player - episodes played as sound only.
+
+A file with more than one audio language gets an Audio picker beside
+Subtitles. Choosing one asks `/api/playback?audio=<stream index>`: a browser
+plays only a file's first audio track, so another language is always Jellyfin
+streaming HLS with `AudioStreamIndex`, and it plays on from the same moment.
+Checked end to end on a throwaway Jellyfin 12.1.0 with a generated show:
+seasons, Up next into season 2, and English to Spanish. Skipping intros is
+not built: Jellyfin knows where they are only with a plugin.
+
 ## One backend, two sources
 
 Films and series are separate Jellyfin libraries - different collection types,

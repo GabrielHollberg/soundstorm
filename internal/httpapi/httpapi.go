@@ -301,6 +301,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/books/pairs", s.handleBookPairs)
 	guarded.HandleFunc("GET /api/books/authors", s.handleAuthors)
 	guarded.HandleFunc("GET /api/books/series", s.handleSeries)
+	guarded.HandleFunc("GET /api/tv/show", s.handleShow)
+	guarded.HandleFunc("GET /api/tv/next", s.handleNextEpisode)
 	guarded.HandleFunc("GET /api/photos/people", s.handlePeople)
 	guarded.HandleFunc("PUT /api/photos/people", s.handleNamePerson)
 	guarded.HandleFunc("GET /api/photos/places", s.handlePlaces)
@@ -1553,7 +1555,11 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 
 	// Only video negotiates. Everything else is handed over as it is.
 	if negotiator, ok := src.(source.Negotiator); ok {
-		play, err := negotiator.Playback(r.Context(), itemID)
+		ctx := r.Context()
+		if a, err := strconv.Atoi(r.URL.Query().Get("audio")); err == nil && a >= 0 {
+			ctx = source.WithAudioStream(ctx, a)
+		}
+		play, err := negotiator.Playback(ctx, itemID)
 		if err != nil {
 			s.log.Warn("playback negotiation failed",
 				"source", sourceID, "item", itemID, "err", err)
@@ -1569,6 +1575,9 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 			// Subtitles are independent of how the video itself is delivered.
 			if tracks := subtitleList(sourceID, play.Subtitles); len(tracks) > 0 {
 				answer["subtitles"] = tracks
+			}
+			if len(play.AudioTracks) > 0 {
+				answer["audio"] = play.AudioTracks
 			}
 		}
 	}

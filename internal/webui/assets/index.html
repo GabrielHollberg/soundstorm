@@ -455,8 +455,23 @@
           Subtitles
           <select id="subtitle-select"></select>
         </label>
+        <!-- Only when the file has more than one language to choose from. -->
+        <label id="audio-picker" class="hidden">
+          Audio
+          <select id="audio-select"></select>
+        </label>
       </figcaption>
     </figure>
+    <!-- When an episode ends: the next one, after a short countdown. -->
+    <div id="up-next" class="up-next hidden" role="status">
+      <span class="up-next-label">Up next</span>
+      <strong id="up-next-title"></strong>
+      <div class="up-next-actions">
+        <button id="up-next-play" type="button">Play now</button>
+        <button id="up-next-cancel" class="ghost" type="button">Cancel</button>
+      </div>
+      <div class="up-next-bar"><i id="up-next-fill"></i></div>
+    </div>
   </div>
 
   <!-- Reader -------------------------------------------------------------

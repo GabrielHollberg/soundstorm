@@ -1288,6 +1288,11 @@ function play(item) {
     case 'video':
       playVideo(item);
       break;
+    case 'tv':
+      // A show opens its page; an episode plays.
+      if (item.extra && item.extra.type === 'Series') showShow(item);
+      else playVideo(item);
+      break;
     case 'picture':
       // A clip from a camera roll plays like any video; everything else is a
       // photo, shown in the viewer.
@@ -1714,9 +1719,10 @@ function detachHls() {
   }
 }
 
-async function playVideo(item) {
+async function playVideo(item, options = {}) {
   stopAudio();
   detachHls();
+  hideUpNext();
   startWatching(item);
 
   const player = $('video-player');
@@ -1729,12 +1735,14 @@ async function playVideo(item) {
   if (isDownloaded(item) && (await playKeptVideo(item, player))) return;
 
   // Ask before building a player: the answer decides which one to build.
+  const audioQuery = options.audio !== undefined ? `?audio=${options.audio}` : '';
   const { ok, body } = await api(
-    `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+    `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}${audioQuery}`);
   const mode = ok && body ? body.mode : 'direct';
   const url = ok && body && body.url ? body.url : streamPath(item);
 
   attachSubtitles(player, (ok && body && body.subtitles) || []);
+  attachAudioChoice(item, (ok && body && body.audio) || [], options.audio);
 
   if (mode !== 'hls') {
     player.src = url;
@@ -1824,6 +1832,7 @@ $('subtitle-select').addEventListener('change', (event) => {
 });
 
 function closeVideo() {
+  hideUpNext();
   // Before the source goes: once it does, currentTime is back to nothing.
   saveWatchPosition(true);
   state.watching = null;
@@ -1902,6 +1911,10 @@ async function saveWatchPosition(force) {
 }
 
 $('video-player').addEventListener('timeupdate', () => saveWatchPosition(false));
+$('video-player').addEventListener('ended', () => {
+  const watching = state.watching;
+  if (watching && watching.item.kind === 'tv') offerNextEpisode(watching.item);
+});
 $('video-player').addEventListener('pause', () => saveWatchPosition(true));
 $('video-overlay').addEventListener('click', (event) => {
   if (event.target === $('video-overlay')) closeVideo();
@@ -8790,3 +8803,199 @@ window.addEventListener('popstate', async () => {
   $('search-input').addEventListener('input', later);
   document.addEventListener('click', later, true);
 })();
+
+/* ------------------------------------------------------------ television */
+
+// A show's page: its episodes, season by season, with where this person is -
+// a bar along an episode part-watched, a tick on one finished - and one
+// button for what to watch now: carry on, or the next one, or the first.
+async function showShow(series) {
+  const seq = ++state.searchSeq;
+  const view = $('music-view');
+  show($('results'), false);
+  show($('results-bar'), true);
+  show(view, true);
+  startLoading(view);
+  const { ok, body } = await api(`/api/tv/show?${new URLSearchParams({ source: series.sourceId, id: series.id })}`);
+  if (seq !== state.searchSeq) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton('TV', () => runSearch()));
+    $('status').textContent = 'Could not load that show.';
+    return;
+  }
+  const episodes = body.episodes || [];
+  const progress = body.progress || {};
+  state.showEpisodes = episodes;
+  state.items = episodes;
+  $('status').textContent = episodes.length ? '' : 'No episodes yet.';
+  const seasons = [...new Set(episodes.map((e) => e.extra.season || '0'))];
+  const next = nextToWatch(episodes, progress);
+
+  const head = document.createElement('div');
+  head.className = 'show-head';
+  const poster = coverArt(artUrl(series.sourceId, series.artId), series.title);
+  poster.classList.add('show-poster');
+  const text = document.createElement('div');
+  text.className = 'show-text';
+  const title = document.createElement('h1');
+  title.textContent = series.title;
+  const meta = document.createElement('p');
+  meta.className = 'muted';
+  meta.textContent = [series.year, `${seasons.length} season${seasons.length === 1 ? '' : 's'}`]
+    .filter(Boolean).join(' \u00b7 ');
+  text.append(title, meta);
+  if (series.extra && series.extra.overview) {
+    const about = document.createElement('p');
+    about.className = 'show-about';
+    about.textContent = series.extra.overview;
+    text.append(about);
+  }
+  if (next) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'play-main';
+    const part = progress[next.id] > 0.005 && progress[next.id] < 0.93;
+    button.textContent = `\u25B6  ${part ? 'Resume' : 'Play'} ${episodeLabel(next)}`;
+    button.addEventListener('click', () => playVideo(next));
+    text.append(button);
+  }
+  head.append(poster, text);
+
+  const list = document.createElement('ol');
+  list.className = 'episode-list';
+  const showSeason = (season) => {
+    list.replaceChildren(...episodes.filter((e) => (e.extra.season || '0') === season)
+      .map((e) => episodeRow(e, progress[e.id] || 0)));
+    for (const b of pills.querySelectorAll('button')) b.classList.toggle('active', b.dataset.season === season);
+  };
+  const pills = document.createElement('div');
+  pills.className = 'show-seasons';
+  if (seasons.length > 1) {
+    for (const season of seasons) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.season = season;
+      b.textContent = season === '0' ? 'Specials' : `Season ${season}`;
+      b.addEventListener('click', () => showSeason(season));
+      pills.append(b);
+    }
+  }
+  showSeason(next ? (next.extra.season || '0') : seasons[0]);
+  view.replaceChildren(backButton('TV', () => runSearch()), head, pills, list);
+  window.scrollTo(0, 0);
+}
+
+const episodeLabel = (e) => (e.extra.season && e.extra.number ? `S${e.extra.season} E${e.extra.number}` : e.title);
+
+// What to watch now: one part-watched, else the one after the last finished,
+// else the first.
+function nextToWatch(episodes, progress) {
+  const part = episodes.find((e) => progress[e.id] > 0.005 && progress[e.id] < 0.93);
+  if (part) return part;
+  let lastDone = -1;
+  episodes.forEach((e, i) => { if (progress[e.id] >= 0.93) lastDone = i; });
+  return episodes[lastDone + 1] || episodes[0] || null;
+}
+
+function episodeRow(episode, fraction) {
+  const li = document.createElement('li');
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'episode-row';
+  const thumb = document.createElement('div');
+  thumb.className = 'episode-thumb';
+  if (episode.artId) {
+    const img = document.createElement('img');
+    img.src = artUrl(episode.sourceId, episode.artId);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    thumb.append(img);
+  }
+  if (fraction > 0.005 && fraction < 0.93) {
+    const bar = document.createElement('span');
+    bar.className = 'progress';
+    const fill = document.createElement('span');
+    fill.style.width = `${Math.round(fraction * 100)}%`;
+    bar.append(fill);
+    thumb.append(bar);
+  }
+  const text = document.createElement('div');
+  text.className = 'episode-text';
+  const name = document.createElement('strong');
+  name.textContent = `${episode.extra.number ? `${episode.extra.number}. ` : ''}${episode.title}`;
+  const meta = document.createElement('span');
+  meta.className = 'muted';
+  const minutes = Math.round((episode.durationSeconds || 0) / 60);
+  meta.textContent = [minutes ? `${minutes} min` : '', fraction >= 0.93 ? 'Watched' : ''].filter(Boolean).join(' \u00b7 ');
+  text.append(name, meta);
+  if (episode.extra.overview) {
+    const about = document.createElement('p');
+    about.textContent = episode.extra.overview;
+    text.append(about);
+  }
+  row.append(thumb, text);
+  if (fraction >= 0.93) {
+    const done = icon('check');
+    done.classList.add('episode-done');
+    row.append(done);
+  }
+  row.addEventListener('click', () => playVideo(episode));
+  li.append(row);
+  return li;
+}
+
+// When an episode ends, the next one - from the show's page if it was opened
+// there, else asked of the server - after a short countdown that Play now
+// skips and Cancel stops.
+let upNextTimer = 0;
+
+async function offerNextEpisode(episode) {
+  let next = null;
+  const list = state.showEpisodes || [];
+  const at = list.findIndex((e) => e.id === episode.id && e.sourceId === episode.sourceId);
+  if (at >= 0) next = list[at + 1] || null;
+  else {
+    const { ok, body } = await api(`/api/tv/next?${new URLSearchParams({ source: episode.sourceId, id: episode.id })}`);
+    if (ok && body && body.found) next = body.episode;
+  }
+  if (!next || !state.watching || state.watching.item.id !== episode.id) return;
+  $('up-next-title').textContent = `${episodeLabel(next)} \u00b7 ${next.title}`;
+  show($('up-next'), true);
+  const seconds = 8;
+  const started = Date.now();
+  const fill = $('up-next-fill');
+  clearInterval(upNextTimer);
+  upNextTimer = setInterval(() => {
+    const k = Math.min(1, (Date.now() - started) / (seconds * 1000));
+    fill.style.width = `${Math.round(k * 100)}%`;
+    if (k >= 1) playVideo(next);
+  }, 100);
+  $('up-next-play').onclick = () => playVideo(next);
+}
+
+function hideUpNext() {
+  clearInterval(upNextTimer);
+  show($('up-next'), false);
+}
+
+$('up-next-cancel').addEventListener('click', hideUpNext);
+
+// The audio language, when a file has more than one: choosing another plays
+// on from the same moment in it.
+function attachAudioChoice(item, tracks, chosen) {
+  const select = $('audio-select');
+  select.replaceChildren(...tracks.map((t) => {
+    const option = document.createElement('option');
+    option.value = String(t.index);
+    option.textContent = t.label;
+    return option;
+  }));
+  const current = chosen !== undefined ? chosen : (tracks.find((t) => t.default) || tracks[0] || {}).index;
+  if (current !== undefined) select.value = String(current);
+  select.onchange = async () => {
+    await saveWatchPosition(true);
+    playVideo(item, { audio: Number(select.value) });
+  };
+  show($('audio-picker'), tracks.length > 1);
+}

@@ -107,6 +107,7 @@ type jfItem struct {
 	ProductionYear    int               `json:"ProductionYear"`
 	RunTimeTicks      int64             `json:"RunTimeTicks"`
 	SeriesName        string            `json:"SeriesName"`
+	SeriesID          string            `json:"SeriesId"`
 	IndexNumber       *int              `json:"IndexNumber"`       // episode within season
 	ParentIndexNumber *int              `json:"ParentIndexNumber"` // season
 	ImageTags         map[string]string `json:"ImageTags"`
@@ -144,6 +145,12 @@ func (s *Source) searchParams(q media.Query) url.Values {
 	if q.Text != "" {
 		p.Set("searchTerm", q.Text)
 	} else {
+		// Browsing television is browsing shows: their episodes are on each
+		// show's own page, in order, not scattered among the shows by title.
+		// A search still finds an episode by name.
+		if strings.Contains(s.itemTypes, "Series") {
+			p.Set("IncludeItemTypes", "Series")
+		}
 		// Nothing to rank a browse by, so name order - and SortName is the
 		// field Jellyfin itself sorts on, which strips a leading "The".
 		p.Set("SortBy", "SortName")
@@ -239,8 +246,17 @@ func (s *Source) toItem(it jfItem) media.Item {
 	if it.ParentIndexNumber != nil && it.IndexNumber != nil {
 		item.Extra["episode"] = fmt.Sprintf("S%02dE%02d", *it.ParentIndexNumber, *it.IndexNumber)
 	}
+	// An episode Jellyfin found nothing about is named after its file,
+	// "Show - S01E02 - The Title": the title is the part worth showing.
+	if it.Type == "Episode" {
+		if m := fileEpisodeName.FindStringSubmatch(item.Title); m != nil {
+			item.Title = m[1]
+		}
+	}
 	return item
 }
+
+var fileEpisodeName = regexp.MustCompile(`(?i)^.*?\bS\d{1,3}E\d{1,4}\b\s*[-.]\s*(.+)$`)
 
 // StreamTarget hands over the original file.
 //
@@ -339,6 +355,7 @@ type playbackInfoResponse struct {
 		SupportsDirectStream bool          `json:"SupportsDirectStream"`
 		SupportsTranscoding  bool          `json:"SupportsTranscoding"`
 		MediaStreams         []mediaStream `json:"MediaStreams"`
+		DefaultAudioIndex    *int          `json:"DefaultAudioStreamIndex"`
 	} `json:"MediaSources"`
 	PlaySessionID string `json:"PlaySessionId"`
 }
@@ -528,16 +545,29 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 	// Offered in both modes: a direct-played file can have a sidecar, and a
 	// transcode can carry embedded tracks.
 	subtitles := s.subtitleTracks(itemID, ms.ID, ms.MediaStreams)
+	audio := audioTracks(ms.MediaStreams, ms.DefaultAudioIndex)
 
-	if (ms.SupportsDirectPlay || ms.SupportsDirectStream) && s.browserCanPlay(ms.Container) {
-		return source.Playback{Mode: source.PlaybackModeDirect, Subtitles: subtitles}, nil
+	// Another language than the file's default is a stream Jellyfin picks
+	// out for the browser: a browser plays only the first audio track of a
+	// file it is handed whole.
+	chosen, picked := source.AudioStreamFrom(ctx)
+	if picked && !hasAudio(audio, chosen) {
+		picked = false
+	}
+	if !picked && (ms.SupportsDirectPlay || ms.SupportsDirectStream) && s.browserCanPlay(ms.Container) {
+		return source.Playback{Mode: source.PlaybackModeDirect, Subtitles: subtitles, AudioTracks: audio}, nil
 	}
 
+	query := s.hlsParams(itemID, ms.ID)
+	if picked {
+		query.Set("AudioStreamIndex", strconv.Itoa(chosen))
+	}
 	return source.Playback{
-		Mode:      source.PlaybackModeHLS,
-		Path:      itemID + "/master.m3u8",
-		Query:     s.hlsParams(itemID, ms.ID),
-		Subtitles: subtitles,
+		Mode:        source.PlaybackModeHLS,
+		Path:        itemID + "/master.m3u8",
+		Query:       query,
+		Subtitles:   subtitles,
+		AudioTracks: audio,
 	}, nil
 }
 
@@ -842,4 +872,97 @@ func (s *Source) Recent(ctx context.Context, limit int) ([]media.Item, error) {
 	}
 	params.Set("Limit", strconv.Itoa(limit))
 	return s.fetchPage(ctx, params)
+}
+
+// audioTracks lists a file's audio streams when there is a choice - one
+// stream is no choice, and is not offered.
+func audioTracks(streams []mediaStream, defaultIndex *int) []source.AudioTrack {
+	var out []source.AudioTrack
+	for _, st := range streams {
+		if !strings.EqualFold(st.Type, "Audio") {
+			continue
+		}
+		language := strings.ToLower(st.Language)
+		if mapped, ok := iso639[language]; ok {
+			language = mapped
+		}
+		out = append(out, source.AudioTrack{
+			Index:    st.Index,
+			Label:    firstNonEmpty(st.Title, cleanDisplayTitle(st.DisplayTitle), st.Language, fmt.Sprintf("Audio %d", len(out)+1)),
+			Language: language,
+			Default:  defaultIndex != nil && *defaultIndex == st.Index,
+		})
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
+}
+
+func hasAudio(tracks []source.AudioTrack, index int) bool {
+	for _, t := range tracks {
+		if t.Index == index {
+			return true
+		}
+	}
+	return false
+}
+
+// Episodes is a series' episodes in order, season by season, for its page.
+func (s *Source) Episodes(ctx context.Context, seriesID string) ([]media.Item, error) {
+	if err := s.owns(ctx, seriesID); err != nil {
+		return nil, err
+	}
+	params := url.Values{
+		"Fields":    {"Overview,ParentIndexNumber,IndexNumber"},
+		"IsMissing": {"false"},
+	}
+	if s.cfg.UserID != "" {
+		params.Set("userId", s.cfg.UserID)
+	}
+	var resp itemsResponse
+	if err := s.http.JSON(ctx, "/Shows/"+url.PathEscape(seriesID)+"/Episodes", params, &resp); err != nil {
+		return nil, err
+	}
+	items := make([]media.Item, 0, len(resp.Items))
+	for _, it := range resp.Items {
+		item := s.toItem(it)
+		item.Extra["seriesId"] = seriesID
+		if it.ParentIndexNumber != nil {
+			item.Extra["season"] = strconv.Itoa(*it.ParentIndexNumber)
+		}
+		if it.IndexNumber != nil {
+			item.Extra["number"] = strconv.Itoa(*it.IndexNumber)
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// NextEpisode is the one after this, in the series' own order.
+func (s *Source) NextEpisode(ctx context.Context, episodeID string) (media.Item, bool, error) {
+	if err := s.owns(ctx, episodeID); err != nil {
+		return media.Item{}, false, err
+	}
+	params := url.Values{"Ids": {episodeID}, "Fields": {"ParentIndexNumber,IndexNumber"}}
+	if s.cfg.UserID != "" {
+		params.Set("userId", s.cfg.UserID)
+	}
+	var resp itemsResponse
+	if err := s.http.JSON(ctx, "/Items", params, &resp); err != nil {
+		return media.Item{}, false, err
+	}
+	if len(resp.Items) == 0 || resp.Items[0].SeriesID == "" {
+		return media.Item{}, false, nil
+	}
+	episodes, err := s.Episodes(ctx, resp.Items[0].SeriesID)
+	if err != nil {
+		return media.Item{}, false, err
+	}
+	for i, e := range episodes {
+		if e.ID == episodeID && i+1 < len(episodes) {
+			return episodes[i+1], true, nil
+		}
+	}
+	return media.Item{}, false, nil
 }
