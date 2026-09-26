@@ -4071,15 +4071,22 @@ function markMusicTabs() {
       : state.kind === 'fav-music' ? tab.dataset.view === 'favorites' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
-    // A swipe can land on a pill that is off the side of its strip.
-    if (on) {
-      const row = $('music-tabs');
-      const left = tab.offsetLeft - row.offsetLeft;
-      if (left < row.scrollLeft || left + tab.offsetWidth > row.scrollLeft + row.clientWidth) {
-        row.scrollTo({ left: left - 16, behavior: 'smooth' });
-      }
-    }
+    if (on && !state.pillSwiping) centerPill($('music-tabs'), tab, 'smooth');
   }
+}
+
+// The lit pill sits in the middle of its row. pillCenter is where the row
+// scrolls to for that; the row's spacers let the first and last pills get
+// there too.
+function pillCenter(row, pill) {
+  const r = row.getBoundingClientRect();
+  const p = pill.getBoundingClientRect();
+  return row.scrollLeft + (p.left + p.width / 2) - (r.left + r.width / 2);
+}
+
+function centerPill(row, pill, behavior) {
+  if (!row || !pill || !row.getClientRects().length) return;
+  row.scrollTo({ left: pillCenter(row, pill), behavior });
 }
 
 function artUrl(sourceId, artId) {
@@ -6126,6 +6133,11 @@ function renderTabs() {
   // The shelves inside the tab, when there is more than one to choose from.
   const box = $('subtabs');
   const shelves = state.tab === 'settings' ? settingsCategories() : tabShelves(state.tab).filter((o) => !o.inMusicTabs);
+  // Rebuilt on every change: put back where it was, then glide the lit pill
+  // to the middle - or jump there, for another tab's row.
+  const keep = box.scrollLeft;
+  const sameRow = box.dataset.tab === state.tab;
+  box.dataset.tab = state.tab;
   box.replaceChildren();
   if (shelves.length > 1) {
     for (const o of shelves) {
@@ -6143,6 +6155,8 @@ function renderTabs() {
   }
   show(box, shelves.length > 1);
   if (state.tab === 'settings') applySettingsView();
+  if (sameRow) box.scrollLeft = keep;
+  if (!state.pillSwiping) centerPill(box, box.querySelector('button.active'), sameRow ? 'smooth' : 'auto');
   // A tab whose shelves have all gone (emptied, or taken away): back home.
   if (state.tab !== 'home' && state.tab !== 'settings' && !tabShelves(state.tab).length) selectTab('home');
 }
@@ -6386,6 +6400,17 @@ function albumCardFromHome(album) {
   }
 
   const ease = 'cubic-bezier(.2,.7,.2,1)';
+  // The row of pills, eased to where it is going in step with the page.
+  function glideRow(row, to, ms) {
+    const from = row.scrollLeft;
+    const t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / ms);
+      row.scrollLeft = from + (to - from) * (1 - (1 - k) ** 3);
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
   const slide = (ghost, x, ms) => {
     ghost.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none';
     ghost.style.transform = `translate3d(${x}px, 0, 0)`;
@@ -6408,6 +6433,12 @@ function albumCardFromHome(album) {
     place(dir * window.innerWidth, 0);
     g.drawn = whenDrawn();
     document.documentElement.classList.add('swiping');
+    // The row of pills rides along: as the page follows the finger, the next
+    // pill moves toward the middle, arriving as the page does.
+    g.row = target.parentElement;
+    g.rowFrom = g.row.scrollLeft;
+    g.rowTo = pillCenter(g.row, target);
+    state.pillSwiping = true;
     // A frame later: pressing the pill starts the next page's work - clearing,
     // ghost content, a request - which must not hold up the first frame of
     // the page following the finger.
@@ -6427,6 +6458,8 @@ function albumCardFromHome(album) {
       if (swipe !== g) return;
       slide(swipe.ghost, at, 0);
       place(at + swipe.dir * window.innerWidth, 0);
+      const k = Math.min(1, Math.max(0, (-at * swipe.dir) / window.innerWidth));
+      swipe.row.scrollLeft = swipe.rowFrom + (swipe.rowTo - swipe.rowFrom) * k;
     });
   }
 
@@ -6440,6 +6473,7 @@ function albumCardFromHome(album) {
       // one is not there yet. Waiting for it first froze the swipe for as
       // long as the server took, which on a phone is the stall people felt.
       const ms = Math.round(150 + 150 * (1 - Math.abs(dx) / width));
+      glideRow(swipe.row, swipe.rowTo, ms);
       slide(ghost, -dir * width, ms);
       place(0, ms, ease);
       await settle(ms + 20);
@@ -6450,6 +6484,7 @@ function albumCardFromHome(album) {
     } else {
       // Not far enough: this page springs back, and the pill it was on is
       // pressed again behind it.
+      glideRow(swipe.row, swipe.rowFrom, 200);
       slide(ghost, 0, 200);
       place(dir * width, 200, ease);
       await settle(210);
@@ -6465,6 +6500,8 @@ function albumCardFromHome(album) {
     promote(false);
     document.documentElement.style.overflowAnchor = '';
     document.documentElement.classList.remove('swiping');
+    state.pillSwiping = false;
+    centerPill(swipe.row, swipe.row.querySelector('button.active'), 'smooth');
     busy = false;
   }
 
@@ -8063,6 +8100,7 @@ function applySettingsView() {
     const on = !terms.length && b.dataset.kind === state.settingsCat;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', String(on));
+    if (on && !state.pillSwiping) centerPill($('subtabs'), b, 'smooth');
   }
 }
 

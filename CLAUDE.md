@@ -578,6 +578,13 @@ Measured with the CPU slowed 4x and 250ms on every request: frames over
 34ms per swipe went from 1-2 to none, the worst from 34ms to 19ms. The
 emulator never showed the choppiness itself; a phone is the real check.
 
+**The lit pill sits in the middle of its row.** Spacers half the row wide at
+each end let the first and last pills get there. A tap glides the row
+(`centerPill`); a swipe carries it with the finger, the next pill reaching
+the middle as the page arrives, and eases it the rest of the way (or back)
+with the slide. `#subtabs` is rebuilt on every change, so its scroll is put
+back before centering, or it would jump from the start each time.
+
 **And `#app { overflow-x: clip }`, or the tab bar jumps.** A page mid-swipe
 hangs off the right of the screen, which made the page wider than the phone:
 a real Android phone zoomed out and the bottom tab bar glitched, the same

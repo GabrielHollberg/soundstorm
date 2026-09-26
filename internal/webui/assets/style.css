@@ -2722,3 +2722,11 @@ html.holding, html.holding body { overscroll-behavior: none; }
    repainted every frame), and the sliding copy of the old page paints alone. */
 html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 .swipe-ghost > * { contain: layout paint; }
+
+/* The lit pill sits in the middle of its row: spacers half the row wide at
+   either end let the first and last pills get there, and no pill shrinks. */
+#music-tabs::before, #music-tabs::after, #subtabs::before, #subtabs::after {
+  content: "";
+  flex: 0 0 calc(50% - 28px);
+}
+#music-tabs > button, #subtabs > button { flex: 0 0 auto; }
