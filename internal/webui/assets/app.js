@@ -239,7 +239,6 @@ function renderAccount() {
   // Hiding the controls is presentation, not permission - the server refuses
   // these calls for a member whether or not the form is on screen.
   show($('people-block'), Boolean(me.owner));
-  show($('select-toggle'), Boolean(me.owner));
   if (me.owner) {
     loadPeople();
     refreshRemote();
@@ -900,18 +899,15 @@ async function runSearch() {
     ['favourites', 'pairs', 'audiobook', 'ebook', 'document', 'video', 'tv', 'picture'].includes(state.kind)
     || (state.kind === 'music' && state.musicView === 'songs')));
   if (home) {
-    show($('select-toggle'), false);
     state.hasMore = false;
     await renderHome(seq);
     return;
   }
   if (musicBrowse) {
-    show($('select-toggle'), false);
     state.hasMore = false;
     await showMusicView(seq);
     return;
   }
-  show($('select-toggle'), Boolean(state.me && state.me.owner) && !own);
   if (state.kind === 'favourites') {
     await showFavourites(seq);
     return;
@@ -2799,7 +2795,6 @@ function setSelecting(on) {
   for (const card of $('results').querySelectorAll('.item.selected')) {
     card.classList.remove('selected');
   }
-  $('select-toggle').textContent = on ? 'Done' : 'Select';
   show($('select-bar'), on);
   resetSelectBar();
 }
@@ -2843,7 +2838,6 @@ function selectedPayload() {
   });
 }
 
-$('select-toggle').addEventListener('click', () => setSelecting(!state.selecting));
 $('select-cancel').addEventListener('click', () => setSelecting(false));
 
 $('select-all').addEventListener('click', () => {
@@ -3053,6 +3047,7 @@ const ICONS = {
   film: '<path d="M4 6h16v12H4zM4 10h16M8 6l-1.5 4M13 6l-1.5 4M18 6l-1.5 4"/>',
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5zM5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zM20 15a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z"/>',
   photo: '<path d="M4 6h16v12H4zM4 15l4.5-4.5 4 4 2.5-2.5L20 17M15.5 9.5h.01"/>',
   gear: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
@@ -3170,7 +3165,7 @@ function renderMainMenu(item) {
     const downloaded = isDownloaded(item);
     entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
       closeItemMenu();
-      if (downloaded) await removeDownload(`song:${selectionKey(item)}`);
+      if (downloaded) await removeItemDownload(item);
       else await download({ id: `song:${selectionKey(item)}`, type: 'song', title: item.title,
         subtitle: (item.creators || []).join(', '), sourceId: item.sourceId, artId: item.artId }, [item]);
     }));
@@ -3184,7 +3179,7 @@ function renderMainMenu(item) {
     entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
       closeItemMenu();
       if (downloaded) {
-        await removeDownload(`book:${selectionKey(item)}`);
+        await removeItemDownload(item);
         showToast(`${item.title} removed from this device.`);
       } else {
         const big = item.kind === 'video' || item.kind === 'tv' || (item.extra && item.extra.type === 'video');
@@ -3193,6 +3188,14 @@ function renderMainMenu(item) {
         await downloadWithToast(item.title, (progress) => downloadBook(item, progress));
       }
     }));
+  }
+  if (state.me && state.me.owner && !state.offline && item.sourceId !== 'storyteller') {
+    // Stopped here: the menu is redrawn at once, and a click reaching the
+    // page from a button no longer in the menu reads as a click outside it.
+    entries.push(menuItem('trash', 'Delete from library', (event) => {
+      event.stopPropagation();
+      renderDeleteMenu(item);
+    }, { className: 'menu-danger' }));
   }
   menu.replaceChildren(...entries, note);
 }
@@ -7259,7 +7262,7 @@ async function showOfflineShelf(seq, query) {
     return words.every((w) => text.includes(w));
   };
   const music = kind === 'music' || kind === 'playlists';
-  for (const id of ['album-sort', 'playlists-view', 'continue', 'select-toggle', 'download-all', 'loading-more']) {
+  for (const id of ['album-sort', 'playlists-view', 'continue', 'download-all', 'loading-more']) {
     show($(id), false);
   }
   show($('music-tabs'), music);
@@ -7506,4 +7509,100 @@ function albumGetButton(album) {
     const holder = document.querySelector(`.item-holder > .album-card[data-album="${CSS.escape(id)}"]`);
     if (holder) holder.querySelector('.art-wrap').append(downloadedBadge());
   });
+}
+
+/* -------------------------------------------- delete, from the hold menu */
+
+// Deleting is the owner's, from an item's hold (or right-click) menu, one
+// item at a time: the menu asks the server exactly what would go and says
+// so, the item goes to the bin for thirty days, and an Undo follows in the
+// message at the bottom. It used to be a Select mode with a bar.
+async function renderDeleteMenu(item) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const backLabel = document.createElement('span');
+  backLabel.textContent = 'Delete from library';
+  back.append(backLabel);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item);
+  });
+  const text = document.createElement('p');
+  text.className = 'menu-confirm';
+  text.textContent = 'Working out what that would delete\u2026';
+  menu.replaceChildren(back, text, note);
+
+  const payload = JSON.stringify({ items: [{ source: item.sourceId, id: item.id, title: item.title }] });
+  const { ok, body } = await api('/api/delete/preview', { method: 'POST', body: payload });
+  if (state.menuFor !== item) return;
+  if (!ok || !body) {
+    text.textContent = (body && body.error) || 'Could not work out what that would delete.';
+    return;
+  }
+  text.textContent = `Delete "${item.title}"? ${body.files} file${body.files === 1 ? '' : 's'}, `
+    + `${formatBytes(body.bytes)}. It stays in the bin for 30 days.`;
+  const confirm = menuItem('trash', 'Delete', async () => {
+    confirm.disabled = true;
+    const result = await api('/api/delete', { method: 'POST', body: payload });
+    if (!result.ok || !result.body) {
+      text.textContent = (result.body && result.body.error) || 'Could not delete.';
+      confirm.disabled = false;
+      return;
+    }
+    closeItemMenu();
+    const key = selectionKey(item);
+    for (const el of document.querySelectorAll(`[data-key="${CSS.escape(key)}"]`)) {
+      (el.closest('.item-holder') || el.closest('li') || el).remove();
+    }
+    state.items = (state.items || []).filter((it) => selectionKey(it) !== key);
+    // A copy on this device of something no longer in the library goes too.
+    if (isDownloaded(item)) removeItemDownload(item);
+    const entry = result.body.entry;
+    showToast(`Deleted "${item.title}".`, 'Undo', async () => {
+      const undone = await api('/api/delete/undo', { method: 'POST', body: JSON.stringify({ entry }) });
+      if (!undone.ok) {
+        showToast((undone.body && undone.body.error) || 'Could not undo.');
+        return;
+      }
+      showToast(`"${item.title}" is back.`);
+      // Back on disk; give the shelf a moment to notice before listing it.
+      setTimeout(runSearch, 3000);
+    }, 12000);
+  }, { className: 'menu-danger' });
+  const cancel = menuItem('close', 'Cancel', () => closeItemMenu());
+  menu.replaceChildren(back, text, confirm, cancel, note);
+}
+
+/* ----------------------------------- remove download, however it arrived */
+
+// Removing one item's download takes it off the device whichever download
+// brought it - on its own, as part of an album or playlist, or as half of a
+// Read & listen book (which goes whole: half of one cannot be read along).
+async function removeItemDownload(item) {
+  const key = selectionKey(item);
+  for (const group of [...state.downloads.groups]) {
+    if (!group.keys.includes(key)) continue;
+    if (group.keys.length === 1 || group.type === 'pair') await removeDownload(group.id);
+    else group.keys = group.keys.filter((k) => k !== key);
+  }
+  if (state.downloads.groups.some((g) => g.keys.includes(key))) return;
+  const kept = state.downloads.items[key];
+  if (kept) {
+    const cache = await caches.open(OFFLINE_CACHE);
+    const video = kept.dl && kept.dl.video;
+    if (video && video.mode === 'hls') {
+      const playlist = await cache.match(video.variant);
+      if (playlist) for (const url of hlsParts(await playlist.text(), video.variant)) await cache.delete(url);
+    }
+    for (const url of (kept.dl && kept.dl.files) || [streamPath(kept)]) await cache.delete(url);
+    delete state.downloads.items[key];
+  }
+  state.downloads.groups = state.downloads.groups.filter((g) => g.keys.length);
+  saveDownloadIndex();
+  markMusicTabs();
+  markDownloads();
 }

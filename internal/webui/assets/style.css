@@ -2565,3 +2565,7 @@ body.offline-mode .item-more { display: none; }
 .track-rows li > .track-row { flex: 1; min-width: 0; }
 .dl-get.dl-get-row { position: static; flex: 0 0 auto; width: 36px; height: 36px; filter: none; color: var(--muted); }
 body.offline-mode .dl-get { display: none; }
+
+/* Delete, in the hold menu: red, and a sentence saying what would go. */
+.menu-item.menu-danger { color: #ff7b7b; }
+.menu-confirm { margin: 8px 14px 10px; font-size: 14px; line-height: 1.45; color: var(--text); }

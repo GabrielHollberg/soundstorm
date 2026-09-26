@@ -699,7 +699,10 @@ fix it, both checked on the real install:
   arrow in the same corner, and tapping it downloads the item (films ask
   first). A card is itself a button, so the arrow is a sibling in the
   holder, placed with `100cqw` - covers are square, so the cover is the
-  holder's width tall. Hidden offline and where there is no Cache API. And downloads come first even online: the reader reads a downloaded
+  holder's width tall. Hidden offline and where there is no Cache API.
+  **Remove download** in the menu takes an item off the device whichever
+  download brought it - alone, in an album or playlist (it leaves the
+  group), or half of a Read & listen book (the pair goes whole). And downloads come first even online: the reader reads a downloaded
   book from the cache before asking the server, as songs, audiobooks, films
   and photos already did.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load
@@ -817,7 +820,13 @@ match the device.
 
 ## Deleting, into a bin
 
-The owner can select items and delete them. Two decisions shape it:
+The owner can delete items, from an item's hold (or right-click) menu:
+**Delete from library** asks the server for the preview and says it ("1
+file, 321 KB. It stays in the bin for 30 days"), then deletes, with Undo in
+the message at the bottom. It was a Select button and a bar first. The
+menu is redrawn in the click that opens the confirmation, so that click is
+stopped there - otherwise it reaches the page from a button no longer in
+the menu, reads as a click outside, and closes it. Two decisions shape it:
 
 - **Owner only.** Every other account shares these shelves with the rest of
   the house, so a member who could delete could empty one everybody uses. The
