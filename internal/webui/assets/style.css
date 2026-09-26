@@ -2682,11 +2682,11 @@ body.drag-selecting #audio-dock { pointer-events: none; }
 .home-view { padding-top: 0; }
 .home-view > .home-row:first-child, .home-view > :first-child { margin-top: 6px; }
 
-/* No scrollbars on anything that scrolls inside the page - strips, rows,
-   menus, lists: they scroll by touch, wheel and trackpad all the same. The
-   page itself keeps its own. */
-body * { scrollbar-width: none; }
-body *::-webkit-scrollbar { display: none; }
+/* No scrollbars anywhere - the page, strips, rows, menus, lists: they
+   scroll by touch, wheel and trackpad all the same. Important, because a
+   list's own rule (the Continue row's "thin") outranks a general one. */
+html, body, body * { scrollbar-width: none !important; }
+html::-webkit-scrollbar, body::-webkit-scrollbar, body *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
 
 /* While a hold has the finger, the browser does nothing else with it:
    no pull-to-refresh, no overscroll. */
