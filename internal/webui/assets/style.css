@@ -2414,9 +2414,11 @@ html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
   top: calc(var(--header-h, 64px) - 1px);
   z-index: 4;
   margin-top: 0;
-  /* As much room above the pills as below them, to the content. */
-  padding-top: 8px;
-  padding-bottom: 8px;
+  /* The same room above the buttons (to the search box: the header's 10px
+     and this 2px) as below them, to where the content scrolls under - that
+     edge, not the first line of a page at rest, is what the eye measures. */
+  padding-top: 2px;
+  padding-bottom: 12px;
   background: var(--bg);
 }
 /* The photo viewer: the photos either side share the middle cell and ride
