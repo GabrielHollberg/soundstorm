@@ -2508,3 +2508,33 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 /* Offline: what needs the server steps aside. */
 body.offline-mode #tabs [data-tab="settings"] { display: none; }
 body.offline-mode .item-more { display: none; }
+
+/* The downloaded badge: a small arrow in the cover's corner. */
+.art-wrap { position: relative; }
+.dl-badge {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0b0e13;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.dl-badge .icon { width: 13px; height: 13px; }
+.track-title .dl-badge {
+  position: static;
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  vertical-align: -2px;
+}
+.track-title .dl-badge .icon { width: 10px; height: 10px; }
+#downloads-block .downloads-head h2 { margin-top: 0; }
+#downloads-clear { margin-top: 12px; }

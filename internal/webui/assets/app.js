@@ -244,7 +244,9 @@ function renderAccount() {
     loadPeople();
     refreshRemote();
     refreshLyricsSetting();
-  } else {
+  }
+  refreshDownloadsCard();
+  if (!me.owner) {
     show($('lyrics-block'), false);
     show($('readalong-block'), false);
   }
@@ -1131,6 +1133,7 @@ function renderItem(item) {
   const key = selectionKey(item);
   card.dataset.key = key;
   card.classList.toggle('selected', state.selected.has(key));
+  if (isDownloaded(item)) wrap.append(downloadedBadge());
   card.addEventListener('click', (event) => {
     // The click that ends a long press is not a tap: the menu is open.
     if (state.suppressClick) {
@@ -3852,7 +3855,11 @@ $('album-order').addEventListener('change', (event) => {
 });
 
 function markMusicTabs() {
-  show($('downloads-tab'), hasDownloads());
+  // Offline, Music is what is downloaded: songs, albums, playlists.
+  for (const view of ['mixes', 'artists']) {
+    const pill = document.querySelector(`#music-tabs [data-view="${view}"]`);
+    if (pill) pill.classList.toggle('hidden', state.offline);
+  }
   for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
     const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
@@ -3969,7 +3976,9 @@ function albumCard(album) {
   sub.className = 'sub';
   sub.textContent = [album.artist, album.year].filter(Boolean).join(' · ');
   meta.append(title, sub);
-  card.append(coverArt(artUrl(album.sourceId, album.artId), album.title), meta);
+  const cover = coverArt(artUrl(album.sourceId, album.artId), album.title);
+  if (state.downloads.groups.some((g) => g.id === `album:${album.sourceId}/${album.id}`)) cover.append(downloadedBadge());
+  card.append(cover, meta);
   card.addEventListener('click', () => showAlbum(album.sourceId, album.id));
   return card;
 }
@@ -4105,6 +4114,7 @@ function trackRow(song, index, songs) {
   length.textContent = formatDuration(song.durationSeconds);
   row.append(number, name, length);
   row.dataset.key = selectionKey(song);
+  if (isDownloaded(song)) name.append(downloadedBadge());
   row.addEventListener('click', (event) => {
     if (state.suppressClick) {
       state.suppressClick = false;
@@ -5309,6 +5319,7 @@ async function download(group, items, onProgress, shouldStop) {
   saveDownloadIndex();
   keepShell();
   markMusicTabs();
+  markDownloads();
 }
 
 // removeDownload forgets a group, and deletes each song no other group needs.
@@ -5333,6 +5344,7 @@ async function removeDownload(groupID) {
   }
   saveDownloadIndex();
   markMusicTabs();
+  markDownloads();
 }
 
 async function clearDownloads() {
@@ -6826,6 +6838,7 @@ async function downloadBook(item, onProgress = () => {}, shouldStop) {
   saveDownloadIndex();
   keepShell();
   markMusicTabs();
+  markDownloads();
 }
 
 function pairDownloadID(pair) {
@@ -6875,6 +6888,7 @@ async function downloadPair(pair, onProgress = () => {}) {
   saveDownloadIndex();
   keepShell();
   markMusicTabs();
+  markDownloads();
 }
 
 // A download can take minutes for a long audiobook; the toast says how far.
@@ -6889,7 +6903,7 @@ async function downloadWithToast(title, run) {
         showToast(`Downloading ${title}\u2026 ${pct}%`, null, null, 600000);
       }
     });
-    showToast(`${title} is on this device. Find it in Music, Downloads.`);
+    showToast(`${title} is on this device.`);
   } catch {
     showToast(`Could not download ${title}.`);
   }
@@ -6943,8 +6957,8 @@ async function bulkDownload(title, makeTasks, confirmFirst) {
     }
     markMusicTabs();
     showToast(job.stop
-      ? `Stopped. ${done} of ${tasks.length} downloaded; find them in Music, Downloads.`
-      : `${done === tasks.length ? `Downloaded ${title}` : `Downloaded ${done} of ${tasks.length} from ${title}`}. Find them in Music, Downloads.`);
+      ? `Stopped. ${done} of ${tasks.length} downloaded.`
+      : `${done === tasks.length ? `Downloaded ${title}` : `Downloaded ${done} of ${tasks.length} from ${title}`}.`);
   } finally {
     state.bulk = null;
   }
@@ -7224,45 +7238,182 @@ window.addEventListener('offline', () => {
 window.addEventListener('online', () => { leaveOffline(); });
 
 async function showOfflineShelf(seq, query) {
-  const kind = state.kind;
+  let kind = state.kind;
   const words = (query || '').toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (item) => {
     const text = [item.title, item.subtitle, ...(item.creators || [])].join(' ').toLowerCase();
     return words.every((w) => text.includes(w));
   };
-  for (const id of ['music-tabs', 'album-sort', 'music-view', 'playlists-view', 'continue',
-    'select-toggle', 'download-all', 'loading-more']) show($(id), false);
-  show($('results-bar'), true);
+  const music = kind === 'music' || kind === 'playlists';
+  for (const id of ['album-sort', 'playlists-view', 'continue', 'select-toggle', 'download-all', 'loading-more']) {
+    show($(id), false);
+  }
+  show($('music-tabs'), music);
+  show($('music-view'), false);
+  show($('home-view'), kind === '' && !words.length);
+  show($('results-bar'), !(kind === '' && !words.length));
+  show($('results'), !(kind === '' && !words.length));
+  const kept = (k) => Object.values(state.downloads.items)
+    .filter((it) => it && it.kind === k && it.sourceId !== 'storyteller' && matches(it));
 
-  // Home and Music are the Downloads list: songs are kept as albums,
-  // playlists and the like, which is how they are best found again.
-  if (kind === '' || kind === 'music') {
-    const only = (g) => (kind === '' || MUSIC_GROUPS.includes(g.type))
-      && (!words.length || [g.title, g.subtitle].join(' ').toLowerCase().includes(words.join(' ')));
-    const view = await downloadsView(true, only);
-    if (seq !== state.searchSeq) return;
-    show($('results'), false);
-    show($('home-view'), true);
-    $('home-view').replaceChildren(view);
+  // Home: the same strips as online, one for each kind that is downloaded.
+  if (kind === '' && !words.length) {
+    const view = $('home-view');
+    view.replaceChildren();
+    const albums = state.downloads.groups.filter((g) => MUSIC_GROUPS.includes(g.type) && g.type !== 'song');
+    if (albums.length) view.append(homeRow('Music', albums.map(groupCard), () => selectKind('music')));
+    const songs = kept('music');
+    if (songs.length && !albums.length) view.append(homeRow('Songs', songs.map(renderItem), () => selectKind('music')));
+    const pairs = offlinePairs(matches);
+    if (pairs.length) view.append(homeRow('Read & listen', pairs.map(pairCard), () => selectKind('pairs')));
+    const names = { audiobook: 'Audiobooks', ebook: 'Books', document: 'Documents', video: 'Films', tv: 'TV', picture: 'Photos' };
+    const all = [];
+    for (const k of Object.keys(names)) {
+      const items = kept(k);
+      all.push(...items);
+      if (items.length) view.append(homeRow(names[k], items.map(renderItem), () => selectKind(k)));
+    }
+    state.items = all;
     $('status').textContent = '';
     return;
   }
-  show($('home-view'), false);
-  show($('results'), true);
+
   let cards;
-  if (kind === 'pairs') {
-    const pairs = state.downloads.groups.filter((g) => g.type === 'pair' && g.pair)
-      .map((g) => ({ ...g.pair, sync: g.readalong ? { state: 'ready' } : g.pair.sync }))
-      .filter((p) => matches(p.ebook));
-    cards = pairs.map(pairCard);
+  if (music) {
+    // Music: the same pills, over what is downloaded.
+    if (kind === 'playlists') state.musicView = 'playlists';
+    if (!['songs', 'albums', 'playlists'].includes(state.musicView)) state.musicView = 'songs';
+    markMusicTabs();
+    const view = state.musicView;
+    if (view === 'songs') {
+      const songs = kept('music');
+      state.items = songs;
+      cards = songs.map(renderItem);
+    } else {
+      const types = view === 'albums' ? ['album', 'artist'] : ['playlist', 'favourites', 'shelf'];
+      cards = state.downloads.groups
+        .filter((g) => types.includes(g.type) && (!words.length || [g.title, g.subtitle].join(' ').toLowerCase().includes(words.join(' '))))
+        .map(groupCard);
+    }
+  } else if (kind === 'pairs') {
+    cards = offlinePairs(matches).map(pairCard);
   } else {
-    const items = Object.values(state.downloads.items)
-      .filter((it) => it && it.kind === kind && it.sourceId !== 'storyteller' && matches(it));
+    const items = kept(kind);
     state.items = items;
     cards = items.map(renderItem);
   }
   $('results').replaceChildren(...cards);
   $('status').textContent = cards.length
     ? `${cards.length} on this device`
-    : (words.length ? 'Nothing downloaded matches.' : 'Nothing from this shelf is downloaded.');
+    : (words.length ? 'Nothing downloaded matches.' : 'Nothing here is downloaded.');
 }
+
+function offlinePairs(matches) {
+  return state.downloads.groups.filter((g) => g.type === 'pair' && g.pair)
+    .map((g) => ({ ...g.pair, sync: g.readalong ? { state: 'ready' } : g.pair.sync }))
+    .filter((p) => matches(p.ebook));
+}
+
+// groupCard is a downloaded album, playlist or the like, drawn as an album
+// is: its cover (from the device), its name, and what it is.
+function groupCard(group) {
+  const songs = group.keys.map((k) => state.downloads.items[k]).filter(Boolean);
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'item album-card';
+  const withArt = songs.find((s) => s.artId);
+  const cover = coverArt('', group.title);
+  if (withArt) {
+    offlineArtURL(withArt).then((u) => {
+      if (!u) return;
+      const img = document.createElement('img');
+      img.src = u;
+      img.alt = '';
+      // In place of the stand-in picture; the badge stays.
+      for (const child of [...cover.children]) if (!child.classList.contains('dl-badge')) child.remove();
+      cover.prepend(img);
+    });
+  }
+  cover.append(downloadedBadge());
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const title = document.createElement('span');
+  title.className = 'title';
+  title.textContent = group.title;
+  const sub = document.createElement('span');
+  sub.className = 'sub';
+  sub.textContent = [group.subtitle, `${songs.length} song${songs.length === 1 ? '' : 's'}`].filter(Boolean).join(' \u00b7 ');
+  meta.append(title, sub);
+  card.append(cover, meta);
+  card.addEventListener('click', () => showOfflineGroup(group, songs));
+  return card;
+}
+
+// showOfflineGroup is a downloaded album or playlist's page, as the online
+// album page lays it out.
+function showOfflineGroup(group, songs) {
+  const view = $('music-view');
+  show($('results'), false);
+  show($('results-bar'), false);
+  show($('music-view'), true);
+  const head = document.createElement('div');
+  head.className = 'album-head';
+  const text = document.createElement('div');
+  text.className = 'album-text';
+  const title = document.createElement('h2');
+  title.textContent = group.title;
+  const facts = document.createElement('span');
+  facts.className = 'muted';
+  facts.textContent = [group.subtitle, `${songs.length} song${songs.length === 1 ? '' : 's'}`].filter(Boolean).join(' \u00b7 ');
+  text.append(title, facts, playButtons(async () => songs));
+  head.append(text);
+  const list = document.createElement('ol');
+  list.className = 'track-rows';
+  songs.forEach((song, i) => list.append(trackRow(song, i, songs)));
+  view.replaceChildren(backButton(state.musicView === 'albums' ? 'Albums' : 'Playlists', () => runSearch()), head, list);
+  window.scrollTo(0, 0);
+}
+
+/* --------------------------------------------------- downloaded, marked */
+
+// A small badge on the cover of everything on this device, and beside a
+// downloaded song in an album's list, kept current as downloads come and go.
+function downloadedBadge() {
+  const badge = document.createElement('span');
+  badge.className = 'dl-badge';
+  badge.title = 'On this device';
+  badge.setAttribute('aria-label', 'Downloaded');
+  badge.append(icon('download'));
+  return badge;
+}
+
+function markDownloads() {
+  for (const el of document.querySelectorAll('[data-key]')) {
+    const on = Boolean(state.downloads.items[el.dataset.key]);
+    const spot = el.classList.contains('track-row') ? el.querySelector('.track-title') : el.querySelector('.art-wrap');
+    if (!spot) continue;
+    const badge = spot.querySelector('.dl-badge');
+    if (on && !badge) spot.append(downloadedBadge());
+    else if (!on && badge) badge.remove();
+  }
+  refreshDownloadsCard();
+}
+
+// Settings, Downloads: what is on this device, how much room it takes, and
+// a way to remove any of it - the list Music's Downloads pill used to hold.
+async function refreshDownloadsCard() {
+  const block = $('downloads-block');
+  if (!block || !('caches' in window)) return;
+  show(block, true);
+  if ($('account').classList.contains('hidden')) return;
+  $('downloads-manage').replaceChildren(await downloadsView(false));
+  show($('downloads-clear'), hasDownloads());
+}
+
+$('downloads-clear').addEventListener('click', async () => {
+  if (!window.confirm('Remove everything downloaded to this device? It all stays in your library.')) return;
+  await clearDownloads();
+  keepShell();
+  markMusicTabs();
+  markDownloads();
+});

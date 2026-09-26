@@ -106,7 +106,6 @@
       <button type="button" role="tab" data-view="songs">Songs</button>
       <button type="button" role="tab" data-view="albums">Albums</button>
       <button type="button" role="tab" data-view="artists">Artists</button>
-      <button type="button" role="tab" data-view="downloads" class="hidden" id="downloads-tab">Downloads</button>
     </div>
     <!-- How albums are ordered: its own line under the row, never squeezed
          into it - that once made the row wider than a phone. -->
@@ -281,6 +280,12 @@
 
       <!-- Owner only: whether song names may leave the house to find lyrics.
            Off until somebody turns it on. -->
+      <!-- What is downloaded to this device: to see, and to remove. -->
+      <div id="downloads-block" class="account-section card hidden">
+        <div id="downloads-manage"></div>
+        <button id="downloads-clear" class="ghost small hidden" type="button">Remove all downloads</button>
+      </div>
+
       <div id="lyrics-block" class="account-section card hidden">
         <h2>Lyrics</h2>
         <p class="muted">Songs with lyrics in their files always show those. For
