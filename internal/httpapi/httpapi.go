@@ -74,6 +74,7 @@ type Server struct {
 	setupCode        string
 	collections      *collections.Store
 	libMixes         libraryMixes
+	onThisDay        onThisDayCache
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -300,6 +301,10 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/books/pairs", s.handleBookPairs)
 	guarded.HandleFunc("GET /api/books/authors", s.handleAuthors)
 	guarded.HandleFunc("GET /api/books/series", s.handleSeries)
+	guarded.HandleFunc("GET /api/photos/people", s.handlePeople)
+	guarded.HandleFunc("PUT /api/photos/people", s.handleNamePerson)
+	guarded.HandleFunc("GET /api/photos/places", s.handlePlaces)
+	guarded.HandleFunc("GET /api/photos/on-this-day", s.handleOnThisDay)
 	guarded.HandleFunc("GET /api/prefs", s.handleGetPrefs)
 	guarded.HandleFunc("PATCH /api/prefs", s.handlePatchPrefs)
 	guarded.HandleFunc("POST /api/readalong", s.handleStartReadAlong)

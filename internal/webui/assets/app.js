@@ -923,7 +923,7 @@ async function runSearch() {
   if (fresh) {
     if (home) showSkeleton($('home-view'), 'home');
     else if (musicBrowse || bookBrowse) {
-      showSkeleton($('music-view'), 'grid', state.musicView === 'artists' || state.kind === 'authors');
+      showSkeleton($('music-view'), 'grid', state.musicView === 'artists' || state.kind === 'authors' || state.kind === 'people');
     } else if (state.kind === 'playlists') showSkeleton($('playlists-view'), 'grid');
     else showSkeleton($('results'), 'grid');
   }
@@ -943,7 +943,7 @@ async function runSearch() {
   }
   if (bookBrowse) {
     state.hasMore = false;
-    await showBookBrowse(seq);
+    await (PHOTO_BROWSE.has(state.kind) ? showPhotoBrowse(seq) : showBookBrowse(seq));
     return;
   }
   if (state.kind === 'pairs') {
@@ -3499,7 +3499,8 @@ function renderSearchHint() {
     '': 'everything', music: 'music', video: 'films', tv: 'TV', audiobook: 'audiobooks',
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
     favorites: 'your favorites', playlists: 'your playlists', pairs: 'books to read along with',
-    authors: 'authors', series: 'series', 'fav-music': 'your favorites', 'fav-watch': 'your favorites',
+    authors: 'authors', series: 'series', people: 'people', places: 'places',
+    'fav-music': 'your favorites', 'fav-watch': 'your favorites',
     'fav-books': 'your favorites', 'fav-photos': 'your favorites',
   };
   let what = shelves[state.kind] || 'everything';
@@ -5976,7 +5977,8 @@ const TABS = {
     { kind: 'authors', label: 'Authors' }, { kind: 'series', label: 'Series' },
     { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
     { kind: 'fav-books', label: 'Favorites' }],
-  photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'fav-photos', label: 'Favorites' }],
+  photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'people', label: 'People' },
+    { kind: 'places', label: 'Places' }, { kind: 'fav-photos', label: 'Favorites' }],
 };
 // Each tab's Favorites pill shows the favorites of the kinds it holds; the
 // Books tab also browses by author and by series. Here, beside TABS, because
@@ -5985,7 +5987,10 @@ const FAV_KINDS = {
   'fav-music': ['music'], 'fav-watch': ['video', 'tv'],
   'fav-books': ['audiobook', 'ebook', 'document'], 'fav-photos': ['picture'],
 };
-const BOOK_BROWSE = new Set(['authors', 'series']);
+// Pages of groups rather than a shelf's list: books by author and series,
+// photos by who is in them and where.
+const BOOK_BROWSE = new Set(['authors', 'series', 'people', 'places']);
+const PHOTO_BROWSE = new Set(['people', 'places']);
 state.tab = 'home';
 state.tabKind = {};
 
@@ -6000,6 +6005,7 @@ function shelfAvailable(kind) {
   if (kind === 'pairs') return state.pairCount > 0 && shelfAvailable('ebook') && shelfAvailable('audiobook');
   // Books by author and series: wherever there are books.
   if (kind === 'authors' || kind === 'series') return shelfAvailable('ebook') || shelfAvailable('audiobook');
+  if (kind === 'people' || kind === 'places') return shelfAvailable('picture');
   // A tab's favorites: while the tab has a shelf of its own to favorite from.
   if (FAV_KINDS[kind]) return FAV_KINDS[kind].some((k) => shelfAvailable(k));
   const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
@@ -6197,10 +6203,11 @@ const HOME_SHELVES = {
 async function renderHome(seq) {
   const view = $('home-view');
   $('status').textContent = '';
-  const [home, favs, played] = await Promise.all([
+  const [home, favs, played, memories] = await Promise.all([
     api('/api/home'),
     api('/api/favorites'),
     api('/api/music/mixes/recently-played'),
+    shelfAvailable('picture') ? api('/api/photos/on-this-day') : Promise.resolve({}),
   ]);
   if (seq !== state.searchSeq) return;
   view.replaceChildren();
@@ -6217,6 +6224,12 @@ async function renderHome(seq) {
       state.musicView = 'mixes';
       selectTab('music');
     }));
+  }
+  // Photos from this day in earlier years, a row for each year.
+  for (const day of (memories.ok && memories.body && memories.body.days) || []) {
+    all.push(...day.items);
+    const ago = new Date().getFullYear() - day.year;
+    view.append(homeRow(`On this day, ${ago} year${ago === 1 ? '' : 's'} ago`, day.items.map(renderItem)));
   }
   const albums = (home.ok && home.body && home.body.albums) || [];
   if (albums.length) {
@@ -8594,4 +8607,109 @@ function showSkeleton(view, shape, round) {
   } else {
     view.replaceChildren(grid());
   }
+}
+
+/* ------------------------------------------------- people and places */
+
+// Photos by who is in them and where they were taken. The photo server does
+// the recognizing; these pages show what it found, in SoundStorm's own
+// style. Somebody it found but nobody has named yet can be named here, for
+// the whole household.
+async function showPhotoBrowse(seq) {
+  const view = $('music-view');
+  const people = state.kind === 'people';
+  $('status').textContent = '';
+  if (!view.children.length) showSkeleton(view, 'grid', people);
+  const { ok, body } = await api(`/api/photos/${people ? 'people' : 'places'}`);
+  if (seq !== state.searchSeq) return;
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = ((ok && body && (people ? body.people : body.places)) || [])
+    .filter((g) => words.every((w) => `${g.name} ${g.subtitle || ''}`.toLowerCase().includes(w)));
+  const grid = document.createElement('div');
+  grid.className = people ? 'grid browse-grid artist-grid' : 'grid browse-grid';
+  grid.append(...list.map((g) => bookGroupCard(
+    { name: g.name || (people ? 'Add a name' : ''), cover: { sourceId: g.sourceId, artId: g.artId } },
+    people, g.subtitle || '', () => showPhotoGroup(g),
+  )));
+  if (people) {
+    for (const [i, g] of list.entries()) {
+      if (!g.name) grid.children[i].querySelector('.title').classList.add('unnamed');
+    }
+  }
+  view.replaceChildren(grid);
+  $('status').textContent = list.length ? ''
+    : (state.query ? `No ${people ? 'one' : 'place'} matches.`
+      : (people ? 'Nobody found in your photos yet. People appear once the photos have been looked through.'
+        : 'No places yet. Photos show here when they know where they were taken.'));
+}
+
+async function showPhotoGroup(group) {
+  const seq = ++state.searchSeq;
+  const view = $('music-view');
+  const people = state.kind === 'people';
+  startLoading(view);
+  const { ok, body } = await api(`/api/photos/${people ? 'people' : 'places'}?${new URLSearchParams({ id: group.id })}`);
+  if (seq !== state.searchSeq) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton(people ? 'People' : 'Places', () => runSearch()));
+    $('status').textContent = 'Could not load those photos.';
+    return;
+  }
+  const items = body.items || [];
+  state.items = items;
+  $('status').textContent = '';
+  const head = pageHead(group.name || (people ? 'Unnamed' : ''), [group.subtitle, `${items.length} photo${items.length === 1 ? '' : 's'}`]
+    .filter(Boolean).join(' \u00b7 '));
+  if (people) head.append(nameButton(group, head));
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...items.map(renderItem));
+  view.replaceChildren(backButton(people ? 'People' : 'Places', () => runSearch()), head, grid);
+  window.scrollTo(0, 0);
+}
+
+// Name, or rename, somebody the photo server found: a box in place of the
+// heading, Enter to keep, Escape to leave it.
+function nameButton(group, head) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost small name-person';
+  button.textContent = group.name ? 'Rename' : 'Add a name';
+  button.addEventListener('click', () => {
+    const h = head.querySelector('h1');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'name-person-input';
+    input.maxLength = 100;
+    input.value = group.name || '';
+    input.placeholder = 'Their name';
+    input.setAttribute('aria-label', 'Name');
+    h.replaceWith(input);
+    button.hidden = true;
+    input.focus();
+    let finished = false;
+    const done = async (keep) => {
+      // Once: Enter, then the box losing focus as it goes, must not both save.
+      if (finished) return;
+      finished = true;
+      if (keep && input.value.trim() !== (group.name || '')) {
+        const name = input.value.trim();
+        const { ok, body } = await api(`/api/photos/people?${new URLSearchParams({ id: group.id })}`, {
+          method: 'PUT', body: JSON.stringify({ name }),
+        });
+        if (!ok) showToast((body && body.error) || 'Could not change the name.');
+        else group.name = name;
+      }
+      h.textContent = group.name || 'Unnamed';
+      input.replaceWith(h);
+      button.textContent = group.name ? 'Rename' : 'Add a name';
+      button.hidden = false;
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') done(true);
+      if (event.key === 'Escape') done(false);
+    });
+    input.addEventListener('blur', () => { if (input.isConnected) done(true); });
+  });
+  return button;
 }

@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/httpx"
@@ -241,6 +243,12 @@ const PreviewSuffix = "@preview"
 // ArtTarget is the grid thumbnail, or with PreviewSuffix the large preview.
 // Both are JPEG or WebP whatever the original was.
 func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
+	if face, ok := strings.CutPrefix(artID, personArt); ok && face != "" {
+		return source.Target{
+			URL:     s.http.URL("/api/people/"+url.PathEscape(face)+"/thumbnail", nil),
+			Headers: map[string]string{"x-api-key": s.cfg.APIKey},
+		}, nil
+	}
 	id, preview := strings.CutSuffix(artID, PreviewSuffix)
 	if id == "" {
 		return source.Target{}, fmt.Errorf("immich %q: empty art id", s.id)
@@ -328,4 +336,176 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 // Recent is the newest photos - Immich's own browsing order already.
 func (s *Source) Recent(ctx context.Context, limit int) ([]media.Item, error) {
 	return s.Search(ctx, media.Query{Limit: limit})
+}
+
+// --- people, places, and this day in earlier years ---------------------------
+
+// personArt is the art id of somebody's face: ArtTarget knows it apart from a
+// picture's id by the prefix.
+const personArt = "person:"
+
+type person struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	IsHidden bool   `json:"isHidden"`
+}
+
+// People is everybody Immich has recognised in the pictures and not been told
+// to hide, in Immich's own order: the named, then by how often they appear.
+func (s *Source) People(ctx context.Context) ([]source.PhotoGroup, error) {
+	var out []source.PhotoGroup
+	for page := 1; page <= 20; page++ {
+		var r struct {
+			People      []person `json:"people"`
+			HasNextPage bool     `json:"hasNextPage"`
+		}
+		q := url.Values{"withHidden": {"false"}, "page": {fmt.Sprint(page)}, "size": {"500"}}
+		if err := s.http.JSON(ctx, "/api/people", q, &r); err != nil {
+			return nil, err
+		}
+		for _, p := range r.People {
+			if !p.IsHidden {
+				out = append(out, source.PhotoGroup{ID: p.ID, Name: p.Name, ArtID: personArt + p.ID})
+			}
+		}
+		if !r.HasNextPage {
+			break
+		}
+	}
+	return out, nil
+}
+
+// PersonPhotos is somebody's pictures, newest first.
+func (s *Source) PersonPhotos(ctx context.Context, id string, limit int) ([]media.Item, error) {
+	return s.photos(ctx, map[string]any{"personIds": []string{id}}, limit)
+}
+
+// NamePerson names somebody - for the whole household, as it is one library.
+func (s *Source) NamePerson(ctx context.Context, id, name string) error {
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Method: http.MethodPut,
+		Path:   "/api/people/" + url.PathEscape(id),
+		Body:   map[string]any{"name": name},
+	})
+	if err != nil {
+		return fmt.Errorf("immich %q: %w", s.id, err)
+	}
+	return resp.Err()
+}
+
+// Places is every town the pictures were taken in, each with one of its
+// pictures as a cover. The id carries the city, state and country, since two
+// towns can share a name.
+func (s *Source) Places(ctx context.Context) ([]source.PhotoGroup, error) {
+	var cities []struct {
+		ID       string `json:"id"`
+		ExifInfo *struct {
+			City    string `json:"city"`
+			State   string `json:"state"`
+			Country string `json:"country"`
+		} `json:"exifInfo"`
+	}
+	if err := s.http.JSON(ctx, "/api/search/cities", nil, &cities); err != nil {
+		return nil, err
+	}
+	out := make([]source.PhotoGroup, 0, len(cities))
+	for _, c := range cities {
+		if c.ExifInfo == nil || c.ExifInfo.City == "" {
+			continue
+		}
+		e := c.ExifInfo
+		out = append(out, source.PhotoGroup{
+			ID:       strings.Join([]string{e.City, e.State, e.Country}, "|"),
+			Name:     e.City,
+			Subtitle: strings.Trim(strings.Join([]string{e.State, e.Country}, ", "), ", "),
+			ArtID:    c.ID,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	return out, nil
+}
+
+// PlacePhotos is a town's pictures, newest first.
+func (s *Source) PlacePhotos(ctx context.Context, id string, limit int) ([]media.Item, error) {
+	city, rest, _ := strings.Cut(id, "|")
+	state, country, _ := strings.Cut(rest, "|")
+	if city == "" {
+		return nil, fmt.Errorf("immich %q: no such place", s.id)
+	}
+	body := map[string]any{"city": city}
+	if state != "" {
+		body["state"] = state
+	}
+	if country != "" {
+		body["country"] = country
+	}
+	return s.photos(ctx, body, limit)
+}
+
+// onThisDayYears is how far back a day of the year is looked for.
+const onThisDayYears = 25
+
+// OnThisDay asks for each earlier year's pictures from day's date, all at
+// once. Immich's own memories are made overnight, and only for days it has
+// found worth one; asking directly answers for any day.
+func (s *Source) OnThisDay(ctx context.Context, day time.Time, perYear int) ([]source.PhotoDay, error) {
+	days := make([]source.PhotoDay, onThisDayYears)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+	for i := range days {
+		year := day.Year() - 1 - i
+		days[i].Year = year
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { _ = recover() }()
+			from := time.Date(year, day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+			if from.Month() != day.Month() {
+				return // 29 February in a year without one
+			}
+			items, err := s.photos(ctx, map[string]any{
+				"takenAfter":  from.Format(time.RFC3339),
+				"takenBefore": from.AddDate(0, 0, 1).Format(time.RFC3339),
+			}, perYear)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			days[i].Items = items
+		}()
+	}
+	wg.Wait()
+	var out []source.PhotoDay
+	for _, d := range days {
+		if len(d.Items) > 0 {
+			out = append(out, d)
+		}
+	}
+	if len(out) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return out, nil
+}
+
+// photos is a metadata search within this library, newest first, without
+// what has gone offline or to the bin.
+func (s *Source) photos(ctx context.Context, filter map[string]any, limit int) ([]media.Item, error) {
+	body := map[string]any{"libraryId": s.cfg.LibraryID, "order": "desc", "isOffline": false, "withExif": true}
+	for k, v := range filter {
+		body[k] = v
+	}
+	found, err := s.page(ctx, "/api/search/metadata", body, limit)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]media.Item, 0, len(found))
+	for _, a := range found {
+		if a.IsOffline || a.IsTrashed {
+			continue
+		}
+		items = append(items, s.item(a, len(items)))
+	}
+	return items, nil
 }

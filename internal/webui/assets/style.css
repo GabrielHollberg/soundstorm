@@ -2737,3 +2737,13 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
   flex: 0 0 calc(50% - 28px);
 }
 #music-tabs > button, #subtabs > button { flex: 0 0 auto; }
+
+/* People: somebody not yet named reads as a prompt, and naming happens in
+   place of the heading. */
+.title.unnamed { color: var(--muted); font-style: italic; }
+.name-person { margin-top: 10px; }
+.name-person-input {
+  font: inherit; font-size: 24px; font-weight: 700; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 4px 10px; width: min(100%, 420px);
+}

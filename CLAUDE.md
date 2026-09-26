@@ -2644,6 +2644,20 @@ file mounts `library/` whole, so it holds - but somebody who mounts
 `invalid cross-device link` on every upload. The fix is a copy to a hidden
 temporary name beside the destination, then the rename.
 
+**People, Places and On this day** come from what Immich works out itself,
+through `source.PhotoBrowser`: `GET /api/people` (paged, hidden left out;
+a face is art id `person:<id>`, its `/api/people/{id}/thumbnail`), a
+person's photos by `personIds`, `GET /api/search/cities` for towns (the id
+carries city, state and country, since towns share names) and their photos
+by those fields - all checked against the live 3.2.2, read only. Somebody
+found but unnamed can be named from their page (`PUT /api/people/{id}`), by
+anyone who can see the photos: a name is for the household. On this day is
+SoundStorm's own, not Immich's memories, which are made overnight and only
+for days Immich picked (empty on the live library): one metadata search per
+earlier year, 25 years back, in parallel, cached an hour; 29 February only
+asks leap years. Albums are left out for now: the library had none, and
+checking them would have meant creating one on it.
+
 ## The reader
 
 Rendering is foliate-js (MIT), vendored under `internal/webui/assets/vendor/`.

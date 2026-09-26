@@ -650,3 +650,34 @@ type AudioLayout struct {
 type AudioLayouter interface {
 	AudioLayout(ctx context.Context, itemID string) (AudioLayout, error)
 }
+
+// PhotoGroup is a person, a place or an album in a photo library: a name, a
+// cover, and the photos behind it.
+type PhotoGroup struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Subtitle string `json:"subtitle,omitempty"`
+	ArtID    string `json:"artId,omitempty"`
+}
+
+// PhotoDay is one past year's photos from a day of the year.
+type PhotoDay struct {
+	Year  int          `json:"year"`
+	Items []media.Item `json:"items"`
+}
+
+// PhotoBrowser is an optional interface for a photo source that knows who is
+// in its pictures and where they were taken - how people look through photos,
+// rather than a camera roll by date alone. The backend does the recognising;
+// this only asks it.
+type PhotoBrowser interface {
+	People(ctx context.Context) ([]PhotoGroup, error)
+	PersonPhotos(ctx context.Context, id string, limit int) ([]media.Item, error)
+	// NamePerson names somebody the backend found in the pictures.
+	NamePerson(ctx context.Context, id, name string) error
+	Places(ctx context.Context) ([]PhotoGroup, error)
+	PlacePhotos(ctx context.Context, id string, limit int) ([]media.Item, error)
+	// OnThisDay is the photos taken on day's date in earlier years, newest
+	// year first.
+	OnThisDay(ctx context.Context, day time.Time, perYear int) ([]PhotoDay, error)
+}
