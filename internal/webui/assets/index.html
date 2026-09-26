@@ -284,6 +284,12 @@
       <!-- What is downloaded to this device: to see, and to remove. -->
       <div id="downloads-block" class="account-section card hidden" data-cat="library" data-words="downloads offline device storage remove">
         <div id="downloads-manage"></div>
+        <!-- Download a whole shelf: here, not on the shelves themselves,
+             where a button on every page got in the way. -->
+        <div id="download-shelves" class="download-shelves hidden">
+          <h3>Download a whole shelf</h3>
+          <div id="download-shelves-row" class="download-shelves-row"></div>
+        </div>
         <button id="downloads-clear" class="ghost small hidden" type="button">Remove all downloads</button>
       </div>
 
@@ -381,7 +387,6 @@
 
     <div id="results-bar" class="results-bar">
       <p id="status" class="muted"></p>
-      <button id="download-all" class="ghost small hidden" type="button">Download all</button>
     </div>
 
     <section id="results" class="grid"></section>

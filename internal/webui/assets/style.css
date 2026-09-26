@@ -270,18 +270,6 @@ header {
 /* No cover: the cloud on a dark tile (no-cover.svg, by scripts/make-icons.py). */
 .art-wrap img.no-cover { object-fit: cover; }
 
-.badge {
-  position: absolute;
-  top: 7px; left: 7px;
-  background: rgba(6, 9, 14, 0.82);
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  padding: 3px 7px;
-  border-radius: 5px;
-}
 .duration {
   position: absolute;
   bottom: 7px; right: 7px;
@@ -2392,7 +2380,6 @@ body { overflow-x: clip; }
 .home-strip::-webkit-scrollbar { display: none; }
 .home-strip > * { flex: 0 0 150px; width: 150px; scroll-snap-align: start; }
 @media (min-width: 900px) { .home-strip > * { flex-basis: 180px; width: 180px; } }
-.home-strip .badge { display: none; }
 .home-empty { padding: 30px 20px; }
 #app.viewing-account #home-view { display: none; }
 
@@ -2621,3 +2608,13 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 
 /* Settings: cards under another pill, or not matching the search. */
 #account .account-section.off-cat { display: none; }
+
+/* Settings, Downloads: a whole shelf at a time. */
+.download-shelves { margin: 14px 0 10px; }
+.download-shelves h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.download-shelves-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.download-shelves-row button { display: inline-flex; align-items: center; gap: 6px; }
+.download-shelves-row .icon { width: 16px; height: 16px; }
+
+/* In the Settings card, the list lines up with the rest of the card. */
+#downloads-block .downloads { margin: 0; }

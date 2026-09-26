@@ -722,6 +722,11 @@ fix it, both checked on the real install:
   first). A card is itself a button, so the arrow is a sibling in the
   holder, placed with `100cqw` - covers are square, so the cover is the
   holder's width tall. Hidden offline and where there is no Cache API.
+  **Download all** for a whole shelf (all songs, favourites, each book,
+  film and photo shelf) lives in Settings' Downloads card, one button per
+  shelf the account has: a button on every shelf page got in the way. An
+  artist page keeps its own, as an album keeps Download. Cards no longer
+  carry a kind label ("audiobook", "music"): each shelf is its own page.
   **Remove download** in the menu takes an item off the device whichever
   download brought it - alone, in an album or playlist (it leaves the
   group), or half of a Read Along book (the pair goes whole). And downloads come first even online: the reader reads a downloaded

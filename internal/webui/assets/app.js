@@ -899,9 +899,6 @@ async function runSearch() {
   show($('home-view'), home);
   show($('results-bar'), !home);
   show($('results'), state.kind !== 'playlists' && !musicBrowse && !home);
-  show($('download-all'), !home && !musicBrowse && ('caches' in window) && (
-    ['favourites', 'pairs', 'audiobook', 'ebook', 'document', 'video', 'tv', 'picture'].includes(state.kind)
-    || (state.kind === 'music' && state.musicView === 'songs')));
   if (home) {
     state.hasMore = false;
     await renderHome(seq);
@@ -1094,11 +1091,6 @@ function renderItem(item) {
   } else {
     wrap.append(fallbackArt(item));
   }
-
-  const badge = document.createElement('span');
-  badge.className = 'badge';
-  badge.textContent = item.kind;
-  wrap.append(badge);
 
   const duration = formatDuration(item.durationSeconds);
   if (duration) {
@@ -7011,8 +7003,7 @@ async function roomLeft() {
   return est && est.quota ? ` This device has about ${formatStorage(est.quota - (est.usage || 0))} free for SoundStorm.` : '';
 }
 
-$('download-all').addEventListener('click', () => {
-  const kind = state.kind;
+function downloadAllOf(kind) {
   if (kind === 'favourites') {
     bulkDownload('your favourites', async () => {
       const items = await loadFavouriteKeys();
@@ -7066,7 +7057,28 @@ $('download-all').addEventListener('click', () => {
       async (tasks) => window.confirm(
         `Download ${tasks.length} ${names[kind]} to this device?${warn[kind] || ''}${await roomLeft()}`));
   }
-});
+}
+
+// Settings, Downloads: a button for each whole shelf this account has.
+const WHOLE_SHELVES = [
+  { kind: 'music', label: 'All songs' }, { kind: 'favourites', label: 'Favourites' },
+  { kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
+  { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
+  { kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'picture', label: 'Photos' },
+];
+
+function renderDownloadShelves() {
+  const shelves = downloadsPossible() ? WHOLE_SHELVES.filter((s) => shelfAvailable(s.kind)) : [];
+  $('download-shelves-row').replaceChildren(...shelves.map((s) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost small';
+    b.append(icon('download'), document.createTextNode(s.label));
+    b.addEventListener('click', () => downloadAllOf(s.kind));
+    return b;
+  }));
+  show($('download-shelves'), shelves.length > 0);
+}
 
 /* ------------------------------------------- downloading films and photos */
 
@@ -7270,7 +7282,7 @@ async function showOfflineShelf(seq, query) {
     return words.every((w) => text.includes(w));
   };
   const music = kind === 'music' || kind === 'playlists';
-  for (const id of ['album-sort', 'playlists-view', 'continue', 'download-all', 'loading-more']) {
+  for (const id of ['album-sort', 'playlists-view', 'continue', 'loading-more']) {
     show($(id), false);
   }
   show($('music-tabs'), music);
@@ -7441,6 +7453,7 @@ async function refreshDownloadsCard() {
   show(block, true);
   if ($('account').classList.contains('hidden')) return;
   $('downloads-manage').replaceChildren(await downloadsView(false));
+  renderDownloadShelves();
   show($('downloads-clear'), hasDownloads());
 }
 
