@@ -7383,7 +7383,7 @@ function downloadedBadge() {
   badge.className = 'dl-badge';
   badge.title = 'On this device';
   badge.setAttribute('aria-label', 'Downloaded');
-  badge.append(icon('download'));
+  badge.append(icon('check'));
   return badge;
 }
 
