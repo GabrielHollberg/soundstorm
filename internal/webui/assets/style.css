@@ -989,7 +989,7 @@ button.danger {
 
 /* Continue --------------------------------------------------------------- */
 
-.continue { margin: 14px 20px 4px; }
+.continue { margin: 4px 20px 4px; }
 .continue h2 { margin: 0 0 10px; font-size: 16px; }
 /* One row that scrolls sideways, so carrying on never pushes the library off
    the first screen. The cards are the library's own, a little smaller. */
