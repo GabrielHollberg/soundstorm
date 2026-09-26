@@ -2359,7 +2359,6 @@ body:not(.dock-open) .toast { bottom: calc(var(--tabbar) + 18px); }
 }
 .subtabs button:hover { filter: none; color: var(--text); }
 .subtabs button.active { background: var(--text); border-color: var(--text); color: var(--bg); }
-#app.viewing-account #subtabs { display: none; }
 
 /* Nothing may make the page wider than the screen: a phone then zooms out to
    fit it, and the tab bar drops off the bottom. clip, not hidden, so the
@@ -2619,3 +2618,6 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 .menu-results { max-height: 300px; overflow-y: auto; }
 .menu-results .menu-item { align-items: flex-start; }
 .menu-results .menu-detail { display: block; }
+
+/* Settings: cards under another pill, or not matching the search. */
+#account .account-section.off-cat { display: none; }

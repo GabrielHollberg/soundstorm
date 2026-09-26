@@ -396,6 +396,8 @@ $('remote-toggle').addEventListener('change', async (event) => {
 function setAccountOpen(opening) {
   show($('account'), opening);
   $('app').classList.toggle('viewing-account', opening);
+  if (opening) enterSettingsSearch();
+  else leaveSettingsSearch();
   if (opening) {
     renderAccount();
     refreshDevices();
@@ -809,12 +811,14 @@ async function pollSetup() {
 
 $('search-form').addEventListener('submit', (event) => {
   event.preventDefault();
-  runSearch();
+  if (state.settingsSearching) applySettingsView();
+  else runSearch();
 });
 
 let debounce = null;
 $('search-input').addEventListener('input', () => {
   clearTimeout(debounce);
+  if (state.settingsSearching) { applySettingsView(); return; }
   debounce = setTimeout(runSearch, 280);
 });
 
@@ -5903,7 +5907,7 @@ function renderTabs() {
   show($('tabs'), !$('app').classList.contains('hidden'));
   // The shelves inside the tab, when there is more than one to choose from.
   const box = $('subtabs');
-  const shelves = state.tab === 'settings' ? [] : tabShelves(state.tab).filter((o) => !o.inMusicTabs);
+  const shelves = state.tab === 'settings' ? settingsCategories() : tabShelves(state.tab).filter((o) => !o.inMusicTabs);
   box.replaceChildren();
   if (shelves.length > 1) {
     for (const o of shelves) {
@@ -5915,11 +5919,12 @@ function renderTabs() {
       const on = o.kind === state.kind;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', String(on));
-      b.addEventListener('click', () => selectKind(o.kind));
+      b.addEventListener('click', () => (state.tab === 'settings' ? selectSettingsCat(o.kind) : selectKind(o.kind)));
       box.append(b);
     }
   }
   show(box, shelves.length > 1);
+  if (state.tab === 'settings') applySettingsView();
   // A tab whose shelves have all gone (emptied, or taken away): back home.
   if (state.tab !== 'home' && state.tab !== 'settings' && !tabShelves(state.tab).length) selectTab('home');
 }
@@ -6052,7 +6057,7 @@ function albumCardFromHome(album) {
 // throw the page away), and not from something that scrolls sideways
 // itself, like a strip of mixes.
 (function pillSwipe() {
-  const pages = ['album-sort', 'continue', 'results-bar', 'results', 'music-view', 'playlists-view'];
+  const pages = ['album-sort', 'continue', 'results-bar', 'results', 'music-view', 'playlists-view', 'account'];
   let g = null;      // the gesture under way
   let busy = false;  // a switch is animating
   let lift = 0;      // how far the real pages are drawn down, to look scrolled to the top
@@ -6078,7 +6083,7 @@ function albumCardFromHome(album) {
   // a short list - but not the header, the pills, the tab bar, the player or
   // anything laid over the page.
   function eligible(target) {
-    if (busy || $('app').classList.contains('hidden') || $('app').classList.contains('viewing-account')) return false;
+    if (busy || $('app').classList.contains('hidden')) return false;
     if (pills().length < 2) return false;
     const onPage = target === document.body || target === document.documentElement || target.closest('#app');
     if (!onPage || target.closest('header, #music-tabs, #subtabs, #album-sort, #tabs')) return false;
@@ -6116,7 +6121,7 @@ function albumCardFromHome(album) {
   // rebuilt. It carries on off the side while the real page - already the
   // next pill's - follows right behind it, edge to edge.
   function ghostOf() {
-    const shown = pages.map($).filter((el) => !el.classList.contains('hidden'));
+    const shown = pages.map($).filter((el) => !el.classList.contains('hidden') && el.getClientRects().length);
     const app = $('app').getBoundingClientRect();
     const ghost = document.createElement('div');
     ghost.className = 'swipe-ghost';
@@ -7743,3 +7748,92 @@ function renderPairPicker(item) {
   search.addEventListener('click', (event) => event.stopPropagation());
   find();
 }
+
+/* -------------------------------------------------------- settings pills */
+
+// Settings has pills like Music and Books - its cards grouped by what they
+// are about - and while it is open the search box searches settings: every
+// card whose text (or a few extra words it carries, like "offline" on
+// Downloads) holds every word typed, whichever pill it is under. The
+// library's own search is put back on leaving.
+const SETTINGS_CATS = [
+  { kind: 'library', label: 'Library' },
+  { kind: 'playback', label: 'Playback' },
+  { kind: 'devices', label: 'Devices' },
+  { kind: 'people', label: 'People' },
+  { kind: 'account', label: 'Account' },
+];
+
+const settingsCards = () => [...document.querySelectorAll('#account .account-section[data-cat]')];
+const settingsQuery = () => (state.settingsSearching ? $('search-input').value.trim().toLowerCase() : '');
+
+// The pills with at least one card this account can see, in the order the
+// person has put them (held and slid, like any row of pills).
+function settingsCategories() {
+  const cards = settingsCards();
+  const order = pillOrder('settings');
+  const rank = (kind) => { const i = order.indexOf(kind); return i < 0 ? 1e6 : i; };
+  return SETTINGS_CATS
+    .filter((c) => cards.some((card) => card.dataset.cat === c.kind && !card.classList.contains('hidden')))
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => (rank(a.c.kind) - rank(b.c.kind)) || (a.i - b.i))
+    .map(({ c }) => c);
+}
+
+function selectSettingsCat(kind) {
+  state.settingsCat = kind;
+  $('search-input').value = '';
+  applySettingsView();
+  window.scrollTo(0, 0);
+}
+
+function applySettingsView() {
+  const cats = settingsCategories();
+  if (!cats.some((c) => c.kind === state.settingsCat)) state.settingsCat = cats.length ? cats[0].kind : '';
+  const terms = settingsQuery().split(/\s+/).filter(Boolean);
+  let matches = 0;
+  for (const card of settingsCards()) {
+    const text = `${card.textContent} ${card.dataset.words || ''}`.toLowerCase();
+    const off = terms.length ? !terms.every((t) => text.includes(t)) : card.dataset.cat !== state.settingsCat;
+    card.classList.toggle('off-cat', off);
+    if (!off && !card.classList.contains('hidden')) matches++;
+  }
+  show($('settings-none'), terms.length > 0 && matches === 0);
+  // Searching looks through every pill, so none is lit.
+  for (const b of $('subtabs').querySelectorAll('button')) {
+    const on = !terms.length && b.dataset.kind === state.settingsCat;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  }
+}
+
+function enterSettingsSearch() {
+  if (state.settingsSearching) return;
+  state.settingsSearching = true;
+  const input = $('search-input');
+  state.librarySearch = input.value;
+  state.libraryPlaceholder = input.placeholder;
+  input.value = '';
+  input.placeholder = 'Search settings\u2026';
+}
+
+function leaveSettingsSearch() {
+  if (!state.settingsSearching) return;
+  state.settingsSearching = false;
+  const input = $('search-input');
+  input.value = state.librarySearch || '';
+  if (state.libraryPlaceholder) input.placeholder = state.libraryPlaceholder;
+}
+
+// Cards appear as the server answers (the owner's, remote access, devices),
+// so the pills follow them - redrawn only when which pills exist changes.
+(function followSettingsCards() {
+  let last = '';
+  const check = () => {
+    if (state.tab !== 'settings') return;
+    const now = settingsCategories().map((c) => c.kind).join();
+    if (now !== last) { last = now; renderTabs(); }
+  };
+  const observer = new MutationObserver(check);
+  for (const card of settingsCards()) observer.observe(card, { attributes: true, attributeFilter: ['class'] });
+})();

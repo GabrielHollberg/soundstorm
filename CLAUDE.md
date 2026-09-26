@@ -509,6 +509,19 @@ both read it from the DOM and `tabShelves`. The click that ends a hold is
 swallowed, and while a pill is up touchmove is prevented so the row cannot
 scroll away under it.
 
+**Settings has pills too, and its own search.** Its cards are grouped -
+Library, Playback, Devices, People, Account - by a `data-cat` on each, in
+the same `#subtabs` row the shelves use, so holding and sliding reorders
+them (kept as the `settings` pill row) and swiping steps between them: the
+swipe's page list includes `#account`. The ghost takes only pages actually
+on screen (`getClientRects`), because under Settings the lists are hidden
+by the stylesheet, not their class, and moving their cards into the ghost
+would lose them. A pill shows only when one of its cards is visible to
+this account, followed by an observer since the owner's cards appear
+late. While Settings is open the search box searches settings - every
+card holding all the words typed, in its text or its `data-words`, across
+every pill - and the library's query and placeholder come back on leaving.
+
 **Black at both ends, to meet Android's bars.** The theme colour (the
 status bar) is #000, and so are the header and the pills under it - one
 solid band, no blur, no line between them - and the phone's tab bar, with no

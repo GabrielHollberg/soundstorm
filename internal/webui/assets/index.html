@@ -149,8 +149,9 @@
         <h1>Settings</h1>
       </div>
       <p id="account-who" class="muted"></p>
+      <p id="settings-none" class="muted hidden">No settings match that.</p>
 
-      <div class="account-section card">
+      <div class="account-section card" data-cat="library" data-words="upload files folder scan rescan check new">
         <h2>Add media</h2>
         <p class="muted">Music, films, TV, audiobooks, ebooks, documents or
           photos. SoundStorm puts each one on the right shelf. You can also drag
@@ -171,7 +172,7 @@
            on and working. -->
       <!-- Per device, not per account: a phone on mobile data and the computer
            on the Wi-Fi want different things. Kept in this browser. -->
-      <div id="playback" class="account-section card">
+      <div id="playback" class="account-section card" data-cat="playback" data-words="quality data saver bitrate streaming crossfade">
         <h2>Playback on this device</h2>
         <label class="setting-row">
           <span>Streaming quality</span>
@@ -204,7 +205,7 @@
         <p id="playback-note" class="muted hidden" role="status"></p>
       </div>
 
-      <div id="devices" class="account-section card hidden">
+      <div id="devices" class="account-section card hidden" data-cat="devices" data-words="phone tv address link copy install app">
         <h2>Use on your phone or TV</h2>
         <p class="muted">Open this in the browser on a phone, tablet, TV or another
           computer on the same Wi-Fi, and sign in with the same account.</p>
@@ -221,7 +222,7 @@
         </div>
       </div>
 
-      <div class="account-section card">
+      <div class="account-section card" data-cat="account" data-words="password security sign in login">
         <h2>Change password</h2>
         <form id="password-form" class="stack-form">
           <label>
@@ -242,7 +243,7 @@
            auto HTTPS is on - without a real certificate there is nothing to
            offer. Off by default, and the warning is plain on purpose: this is
            the one switch that changes who can reach the server. -->
-      <div id="remote-block" class="account-section card hidden">
+      <div id="remote-block" class="account-section card hidden" data-cat="devices" data-words="remote away internet outside tailscale router port">
         <h2>Reach it from anywhere</h2>
         <p class="muted">Use SoundStorm away from home with the same login. No app
           or extra account needed.</p>
@@ -281,12 +282,12 @@
       <!-- Owner only: whether song names may leave the house to find lyrics.
            Off until somebody turns it on. -->
       <!-- What is downloaded to this device: to see, and to remove. -->
-      <div id="downloads-block" class="account-section card hidden">
+      <div id="downloads-block" class="account-section card hidden" data-cat="library" data-words="downloads offline device storage remove">
         <div id="downloads-manage"></div>
         <button id="downloads-clear" class="ghost small hidden" type="button">Remove all downloads</button>
       </div>
 
-      <div id="lyrics-block" class="account-section card hidden">
+      <div id="lyrics-block" class="account-section card hidden" data-cat="playback" data-words="lyrics words songs online lrclib">
         <h2>Lyrics</h2>
         <p class="muted">Songs with lyrics in their files always show those. For
           the rest, SoundStorm can look them up on
@@ -304,7 +305,7 @@
         <p id="lyrics-note" class="muted hidden" role="status"></p>
       </div>
 
-      <div id="readalong-block" class="account-section card hidden">
+      <div id="readalong-block" class="account-section card hidden" data-cat="playback" data-words="read along sync storyteller ebook audiobook pages">
         <h2>Read-along</h2>
         <p class="muted">When a book is on the shelf as both an ebook and an
           audiobook, SoundStorm can line the two up so the page turns with the
@@ -320,7 +321,7 @@
         <p id="readalong-note" class="muted hidden" role="status"></p>
       </div>
 
-      <div id="people-block" class="account-section card hidden">
+      <div id="people-block" class="account-section card hidden" data-cat="people" data-words="people users accounts family members add remove libraries">
         <h2>People</h2>
         <p class="muted">Everyone gets their own login and their own place in
           every book. Tick the shelves each person can see.</p>
@@ -341,7 +342,7 @@
         <p id="people-note" class="muted hidden" role="status"></p>
       </div>
 
-      <div class="account-section card account-signout">
+      <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout">
         <button id="logout" class="ghost" type="button">Sign out</button>
       </div>
     </section>
