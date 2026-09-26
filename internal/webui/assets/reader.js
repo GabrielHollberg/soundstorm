@@ -249,8 +249,13 @@ function startFollowing(view, timeline, audiobook) {
   };
   renderHighlightButton(follow);
   session.follow = follow;
+  // The book laying itself out when it opens (and again when its styles are
+  // set) reports a page change too; that is not somebody turning the page,
+  // and taking it for one held the page still for the first twelve seconds.
+  follow.settledAt = Date.now() + 2500;
   follow.onRelocate = () => {
-    if (!follow.movedByUs) follow.handsOffUntil = Date.now() + HANDS_OFF_MS;
+    if (follow.movedByUs || Date.now() < follow.settledAt) return;
+    follow.handsOffUntil = Date.now() + HANDS_OFF_MS;
   };
   view.addEventListener('relocate', follow.onRelocate);
   follow.timer = setInterval(() => tick(follow), FOLLOW_EVERY_MS);
@@ -310,8 +315,17 @@ async function tick(follow) {
   if (session.follow !== follow || follow.busy) return;
   const t = window.soundstormListening?.(follow.audiobook.sourceId, follow.audiobook.id);
   if (typeof t !== 'number' || !Number.isFinite(t)) return;
-  const index = sentenceAt(follow.timeline, t);
-  if (index < 0 || index === follow.index) return;
+  let index = sentenceAt(follow.timeline, t);
+  // Before the first sentence - an audiobook's opening credits, which are not
+  // in the book - go to where the reading will begin rather than sitting on
+  // the cover, but light nothing yet.
+  const early = index < 0;
+  if (early) {
+    if (follow.primed) return;
+    follow.primed = true;
+    index = 0;
+  }
+  if (index === follow.index) return;
   follow.index = index;
   follow.busy = true;
   try {
@@ -323,15 +337,16 @@ async function tick(follow) {
       try {
         await view.renderer.goTo(resolved);
       } finally {
-        // The relocate this causes arrives after goTo settles.
-        setTimeout(() => { follow.movedByUs = false; }, 100);
+        // The relocate this causes can arrive a little after goTo settles.
+        setTimeout(() => { follow.movedByUs = false; }, 400);
       }
     }
     const contents = view.renderer.getContents?.() || [];
     const shown = contents.find((c) => c.index === resolved.index);
     const el = shown && resolved.anchor && resolved.anchor(shown.doc);
     unlight(follow);
-    if (el && el.classList && follow.highlight) {
+    if (early) follow.index = -1; // the first sentence, not yet being read
+    else if (el && el.classList && follow.highlight) {
       el.classList.add('ss-reading');
       follow.lit = new WeakRef(el);
     }
