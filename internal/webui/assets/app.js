@@ -6576,11 +6576,15 @@ function albumCardFromHome(album) {
     // The pills were only drawn moved: now the row really scrolls there, in
     // the same frame as they come back to their places, so nothing jumps.
     swipe.row.scrollLeft = commit ? swipe.rowTo : swipe.rowFrom;
+    // With transitions off while they go back: the + has one of its own (for
+    // growing under a dragged pill), and let run it animated back from
+    // where it was drawn - leaving its place, then sliding in: a pop.
     for (const b of swipe.rowPills) {
-      b.style.transition = '';
+      b.style.transition = 'none';
       b.style.transform = '';
       b.style.willChange = '';
     }
+    requestAnimationFrame(() => { for (const b of swipe.rowPills) b.style.transition = ''; });
     state.pillSwiping = false;
     busy = false;
   }
