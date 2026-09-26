@@ -2496,6 +2496,17 @@ schedule despite `STORYTELLER_SYNC_CHANGELOG=false`, which only stops the one
 at start. Its secret key defaults like Immich's database password; both are
 reachable only on the compose network.
 
+**Books sync by themselves**, as soon as there is both an ebook and an
+audiobook of one: a background look two minutes after start, every half hour,
+and three minutes after audiobooks or ebooks are scanned (the audiobook server
+indexes in its own time). On unless the owner turns it off in Settings, stored
+as `readAlongManual` so absent means on. A pair it cannot start is not retried
+until the setting is turned on again or the server restarts; one Storyteller
+already has, finished or failed, is left alone - a failure retried every half
+hour would be the better part of an hour of CPU, repeated. On the real
+library the first look started all four pairs within two seconds, and
+Storyteller began cutting the 47-hour Monte Cristo at its chapter marks.
+
 Verified end to end on an isolated stack with synthetic speech: an EPUB 3 with
 two MP3s, and an EPUB 2 with a chaptered M4B. Both synced through SoundStorm's
 API; each timeline ended exactly where its recording did; in Chrome the lit

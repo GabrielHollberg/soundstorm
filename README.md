@@ -194,7 +194,9 @@ an audiobook. Tap the cover to read along: the audiobook starts and the book
 opens, with the player at the bottom of the page. **Read** or **Listen**
 does just one. You can read any book while music or an audiobook plays.
 
-Under each book, **Turn pages with the audio** syncs it: SoundStorm listens to
+New books are synced by themselves as soon as you have both the ebook and the
+audiobook (turn that off under **Settings → Read-along**); **Turn pages with
+the audio** under a book starts one yourself. Syncing: SoundStorm listens to
 the recording once (about 40 minutes for a 10-hour book on a recent PC) and
 lines it up with the text. After that, reading along turns the page by itself
 and highlights the sentence being read. Turn the page yourself to look back,
