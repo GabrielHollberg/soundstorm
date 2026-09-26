@@ -87,7 +87,21 @@ func (s *Server) listPairs(ctx context.Context) []bookPair {
 		}()
 	}
 	wg.Wait()
-	return matchBooks(ebooks, audiobooks)
+	wrong := s.store.NotPairs()
+	var pairs []bookPair
+	for _, p := range matchBooks(ebooks, audiobooks) {
+		if !wrong[notPairKey(itemRef{p.Ebook.SourceID, p.Ebook.ID}, itemRef{p.Audiobook.SourceID, p.Audiobook.ID})] {
+			pairs = append(pairs, p)
+		}
+	}
+	if pairs == nil {
+		pairs = []bookPair{}
+	}
+	return pairs
+}
+
+func notPairKey(ebook, audiobook itemRef) string {
+	return ebook.SourceID + "/" + ebook.ID + "|" + audiobook.SourceID + "/" + audiobook.ID
 }
 
 // matchBooks pairs every audiobook with the ebooks of the same book. Two

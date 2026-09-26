@@ -91,6 +91,41 @@ func (s *Server) handleStartReadAlong(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
+// handleNotSameBook marks a Read & listen match wrong - or, undone, right
+// again. Owner-only, like deleting: it changes the library for everyone, and
+// it deletes whatever Storyteller made of the pair, synced or waiting, since
+// following one book with another's voice is the thing to avoid. Storyteller
+// only ever deletes inside its own storage; the recording is the shelf's,
+// mounted read-only to it besides.
+func (s *Server) handleNotSameBook(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Ebook     itemRef `json:"ebook"`
+		Audiobook itemRef `json:"audiobook"`
+		Wrong     bool    `json:"wrong"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReadAlongBody)).Decode(&body); err != nil ||
+		body.Ebook.ID == "" || body.Audiobook.ID == "" || len(body.Ebook.ID)+len(body.Audiobook.ID) > 400 {
+		writeError(w, http.StatusBadRequest, "expected an ebook and an audiobook")
+		return
+	}
+	if err := s.store.SetNotPair(notPairKey(body.Ebook, body.Audiobook), body.Wrong); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Wrong {
+		if st, ok := s.readAlong(r.Context()); ok {
+			if layout, _, err := s.audiobookFiles(r.Context(), body.Audiobook); err == nil {
+				if book, found, err := st.ByFolder(r.Context(), layout.Folder); err == nil && found {
+					if err := st.Delete(r.Context(), book.UUID); err != nil {
+						s.log.Warn("read-along could not delete a wrong match", "err", err)
+					}
+				}
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"wrong": body.Wrong})
+}
+
 // handleReadAlongNext moves a pair's waiting sync to the front of the queue.
 func (s *Server) handleReadAlongNext(w http.ResponseWriter, r *http.Request) {
 	var body struct {

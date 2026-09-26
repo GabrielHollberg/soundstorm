@@ -2588,6 +2588,19 @@ choice is kept on the account like the pill order. So is **audiobook speed**
 the next chapter file resets the rate to the default. Read-along's timeline
 reads the player's own clock, so it follows at any speed.
 
+**A wrong match can be undone.** Title and author can match two different
+books, so a Read & listen card's hold menu offers the owner **Not the same
+book**: the pair is left out of the list for everyone (and so never synced
+by itself), and whatever Storyteller made of it is deleted - its own copies
+only; its delete touches nothing outside its storage, and the recording's
+folder is mounted read-only to it. Kept in state.json as `notPairs`, a
+decision like `StarterInstalled`, not a fact about the media. Undo in the
+toast. **Owner routes must be mounted as well as registered**: the owner
+mux answers only for paths also handed to it with `guarded.Handle`, and
+the read-along switch in Settings was registered, not mounted, and
+answered 404 unnoticed until the test for this feature went through the
+same door. `TestOwnerSettingsAnswer` now asks every owner setting.
+
 **Books sync by themselves**, as soon as there is both an ebook and an
 audiobook of one: a background look two minutes after start, every half hour,
 and three minutes after audiobooks or ebooks are scanned (the audiobook server

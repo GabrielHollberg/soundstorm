@@ -3144,6 +3144,10 @@ function renderMainMenu(item) {
   const menu = $('item-menu');
   const note = menuNote();
   const say = (text) => { note.textContent = text; show(note, Boolean(text)); };
+  if (item.kind === 'pair') {
+    renderPairMenu(item.pair, menu, note);
+    return;
+  }
   const faved = state.favourites.has(selectionKey(item));
   const entries = [
     menuHeader(item),
@@ -6498,7 +6502,17 @@ function pairCard(pair) {
   sub.textContent = [(ebook.creators || audiobook.creators || [])[0], edition].filter(Boolean).join(' \u00b7 ');
   meta.append(title, sub);
   card.append(coverArt(art, ebook.title), meta);
-  card.addEventListener('click', () => readAlong(pair));
+  card.addEventListener('click', (event) => {
+    // The click that ends a hold is not a tap: the menu is open.
+    if (state.suppressClick) {
+      state.suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    readAlong(pair);
+  });
+  attachItemMenuGestures(card, { ...ebook, kind: 'pair', pair });
 
   // Downloading is the corner arrow every card has; the tick once it is here.
   const cover = card.querySelector('.art-wrap');
@@ -7584,4 +7598,56 @@ async function removeItemDownload(item) {
   saveDownloadIndex();
   markMusicTabs();
   markDownloads();
+}
+
+/* ------------------------------------------- Read & listen: not the same */
+
+// A Read & listen card's hold menu. Title and author can match two different
+// books, so the owner can say they are not the same: the pair leaves the
+// shelf for everyone and is never synced (anything Storyteller made of it is
+// deleted), with an Undo.
+function renderPairMenu(pair, menu, note) {
+  const head = menuHeader({ ...pair.ebook, kind: 'ebook' });
+  const entries = [head];
+  const id = pairDownloadID(pair);
+  if (state.downloads.groups.some((g) => g.id === id)) {
+    entries.push(menuItem('download', 'Remove download', async () => {
+      closeItemMenu();
+      await removeDownload(id);
+      if (state.kind === 'pairs') runSearch();
+    }));
+  }
+  if (state.me && state.me.owner && !state.offline) {
+    entries.push(menuItem('close', 'Not the same book', async (event) => {
+      event.stopPropagation();
+      closeItemMenu();
+      const mark = (wrong) => api('/api/books/pairs/not-same', {
+        method: 'POST',
+        body: JSON.stringify({
+          ebook: { sourceId: pair.ebook.sourceId, id: pair.ebook.id },
+          audiobook: { sourceId: pair.audiobook.sourceId, id: pair.audiobook.id },
+          wrong,
+        }),
+      });
+      const { ok, body } = await mark(true);
+      if (!ok) {
+        showToast((body && body.error) || 'Could not change that.');
+        return;
+      }
+      if (state.kind === 'pairs') runSearch();
+      else refreshPairs();
+      showToast(`"${pair.ebook.title}" is no longer matched with its audiobook.`, 'Undo', async () => {
+        await mark(false);
+        if (state.kind === 'pairs') runSearch();
+        else refreshPairs();
+      }, 10000);
+    }, { className: 'menu-danger' }));
+  }
+  if (entries.length === 1) {
+    const none = document.createElement('p');
+    none.className = 'menu-confirm';
+    none.textContent = 'Tap the cover to read along.';
+    entries.push(none);
+  }
+  menu.replaceChildren(...entries, note);
 }

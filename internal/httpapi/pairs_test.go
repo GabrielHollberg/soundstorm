@@ -1,6 +1,9 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -54,5 +57,60 @@ func TestMatchBooksPairsEveryEditionOnTitleAndAuthor(t *testing.T) {
 	}
 	if len(pairs) != 3 {
 		t.Errorf("%d pairs, want 3", len(pairs))
+	}
+}
+
+// A match the owner marks as not the same book leaves Read & listen, and
+// marked right again it comes back.
+func TestNotTheSameBookLeavesReadAndListen(t *testing.T) {
+	ebooks := stub{id: "ebooks", kind: media.KindEbook, items: []media.Item{
+		{ID: "e1", SourceID: "ebooks", Kind: media.KindEbook, Title: "Emma", Creators: []string{"Jane Austen"}},
+	}}
+	audiobooks := stub{id: "audiobookshelf", kind: media.KindAudiobook, items: []media.Item{
+		{ID: "a1", SourceID: "audiobookshelf", Kind: media.KindAudiobook, Title: "Emma [B000]", Creators: []string{"Jane Austen"}},
+	}}
+	h := newHarness(t, ebooks, audiobooks)
+	h.signUp(t)
+
+	count := func() int {
+		_, body := h.do(t, http.MethodGet, "/api/books/pairs", "")
+		var got struct {
+			Pairs []json.RawMessage `json:"pairs"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("pairs: %v (%s)", err, body)
+		}
+		return len(got.Pairs)
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("%d pairs before, want 1", n)
+	}
+	mark := func(wrong bool) {
+		body := `{"ebook":{"sourceId":"ebooks","id":"e1"},"audiobook":{"sourceId":"audiobookshelf","id":"a1"},"wrong":` +
+			strconv.FormatBool(wrong) + `}`
+		if resp, b := h.do(t, http.MethodPost, "/api/books/pairs/not-same", body); resp.StatusCode != http.StatusOK {
+			t.Fatalf("not-same %v: %d %s", wrong, resp.StatusCode, b)
+		}
+	}
+	mark(true)
+	if n := count(); n != 0 {
+		t.Errorf("%d pairs after marking it wrong, want 0", n)
+	}
+	mark(false)
+	if n := count(); n != 1 {
+		t.Errorf("%d pairs after undoing, want 1", n)
+	}
+}
+
+// Every owner setting answers - an owner route registered but not mounted is
+// a 404, which the read-along switch was.
+func TestOwnerSettingsAnswer(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	for _, path := range []string{"/api/settings/lyrics", "/api/settings/readalong"} {
+		resp, body := h.do(t, http.MethodPut, path, `{"enabled":false}`)
+		if resp.StatusCode == http.StatusNotFound {
+			t.Errorf("%s: 404 %s", path, body)
+		}
 	}
 }

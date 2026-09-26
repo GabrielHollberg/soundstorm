@@ -201,6 +201,12 @@ type data struct {
 	// by themselves. Absent means on - the default is to sync - so it is
 	// stored the other way round from OnlineLyrics.
 	ReadAlongManual bool `json:"readAlongManual,omitempty"`
+	// NotPairs are Read & listen matches the owner has said are wrong, each
+	// "ebookSource/id|audiobookSource/id". A decision somebody made, like
+	// StarterInstalled - not a fact read off the media, so nothing here can
+	// go stale in a way that matters: an id that no longer exists simply
+	// never matches again.
+	NotPairs []string `json:"notPairs,omitempty"`
 
 	// DeviceKey signs the tokens that mark a browser as one an account has
 	// signed in on before (see auth.Manager.SignIn). Made on first use; a
@@ -981,5 +987,43 @@ func (s *Store) SetAutoReadAlong(on bool) error {
 		return nil
 	}
 	s.d.ReadAlongManual = !on
+	return s.save()
+}
+
+// MaxNotPairs bounds the wrong-match list.
+const MaxNotPairs = 1000
+
+// NotPairs is the set of Read & listen matches marked wrong.
+func (s *Store) NotPairs() map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]bool, len(s.d.NotPairs))
+	for _, k := range s.d.NotPairs {
+		out[k] = true
+	}
+	return out
+}
+
+// SetNotPair marks a match wrong, or right again.
+func (s *Store) SetNotPair(key string, wrong bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at := -1
+	for i, k := range s.d.NotPairs {
+		if k == key {
+			at = i
+		}
+	}
+	switch {
+	case wrong && at < 0:
+		if len(s.d.NotPairs) >= MaxNotPairs {
+			return fmt.Errorf("too many matches marked wrong")
+		}
+		s.d.NotPairs = append(s.d.NotPairs, key)
+	case !wrong && at >= 0:
+		s.d.NotPairs = append(s.d.NotPairs[:at], s.d.NotPairs[at+1:]...)
+	default:
+		return nil
+	}
 	return s.save()
 }

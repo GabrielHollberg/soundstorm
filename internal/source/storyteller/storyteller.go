@@ -370,6 +370,23 @@ func (s *Source) SyncNext(ctx context.Context, uuid string) error {
 	return nil
 }
 
+// Delete stops a book's sync and deletes it from Storyteller: its copy of
+// the ebook, its synced book and its working files - everything inside its
+// own storage, never the recording it referenced on the shelf.
+func (s *Source) Delete(ctx context.Context, uuid string) error {
+	_ = s.cancel(ctx, uuid)
+	resp, err := s.http.Do(ctx, httpx.Request{
+		Method: http.MethodDelete,
+		Path:   "/api/v2/books",
+		Body:   map[string]any{"books": []string{uuid}},
+	})
+	if err != nil {
+		return err
+	}
+	s.forget()
+	return resp.Err()
+}
+
 func (s *Source) cancel(ctx context.Context, uuid string) error {
 	resp, err := s.http.Do(ctx, httpx.Request{
 		Method: http.MethodDelete,
