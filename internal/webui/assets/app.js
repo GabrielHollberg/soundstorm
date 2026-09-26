@@ -244,6 +244,7 @@ function renderAccount() {
     refreshLyricsSetting();
   } else {
     show($('lyrics-block'), false);
+    show($('readalong-block'), false);
   }
 }
 
@@ -254,7 +255,25 @@ async function refreshLyricsSetting() {
   const has = ok && body && typeof body.onlineLyrics === 'boolean';
   show($('lyrics-block'), has);
   if (has) $('lyrics-toggle').checked = body.onlineLyrics;
+  // Read-along's setting rides on the same answer: owner only, and only where
+  // read-along is set up.
+  const along = ok && body && typeof body.autoReadAlong === 'boolean';
+  show($('readalong-block'), along);
+  if (along) $('readalong-toggle').checked = body.autoReadAlong;
 }
+
+$('readalong-toggle').addEventListener('change', async (event) => {
+  const enabled = event.target.checked;
+  const { ok, body } = await api('/api/settings/readalong', { method: 'PUT', body: JSON.stringify({ enabled }) });
+  if (!ok) {
+    event.target.checked = !enabled;
+    note($('readalong-note'), (body && body.error) || 'Could not change it.', true);
+    return;
+  }
+  note($('readalong-note'), enabled
+    ? 'On. Books on both shelves are synced one at a time, starting now.'
+    : 'Off. Sync a book yourself from Books, Read & listen.', false);
+});
 
 $('lyrics-toggle').addEventListener('change', async (event) => {
   const enabled = event.target.checked;

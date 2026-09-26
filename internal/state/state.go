@@ -197,6 +197,10 @@ type data struct {
 	// lyrics on LRCLIB. Off unless turned on: it sends a song's artist and
 	// title to an outside service, which nothing else here does.
 	OnlineLyrics bool `json:"onlineLyrics,omitempty"`
+	// ReadAlongManual is the owner turning off syncing books for read-along
+	// by themselves. Absent means on - the default is to sync - so it is
+	// stored the other way round from OnlineLyrics.
+	ReadAlongManual bool `json:"readAlongManual,omitempty"`
 
 	// DeviceKey signs the tokens that mark a browser as one an account has
 	// signed in on before (see auth.Manager.SignIn). Made on first use; a
@@ -958,5 +962,24 @@ func (s *Store) SetOnlineLyrics(on bool) error {
 		return nil
 	}
 	s.d.OnlineLyrics = on
+	return s.save()
+}
+
+// AutoReadAlong reports whether books are synced for read-along as soon as
+// there is both an ebook and an audiobook of them.
+func (s *Store) AutoReadAlong() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.d.ReadAlongManual
+}
+
+// SetAutoReadAlong turns syncing books by themselves on or off.
+func (s *Store) SetAutoReadAlong(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.ReadAlongManual == !on {
+		return nil
+	}
+	s.d.ReadAlongManual = !on
 	return s.save()
 }

@@ -98,6 +98,12 @@ type Server struct {
 	// and lastRescan is when one last actually fired - see scheduleRescan.
 	rescanMu     sync.Mutex
 	rescanTimers map[media.Kind]*time.Timer
+
+	// Read-along's background sync: a nudge after new books are scanned, and
+	// the pairs it could not start, so they are not tried every half hour.
+	autoKick chan struct{}
+	autoMu   sync.Mutex
+	autoSkip map[string]bool
 	lastRescan   map[media.Kind]time.Time
 }
 
@@ -208,6 +214,8 @@ func New(cfg Config) *Server {
 		lyrics:           cfg.Lyrics,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
+		autoKick:         make(chan struct{}, 1),
+		autoSkip:         map[string]bool{},
 	}
 }
 
@@ -317,6 +325,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
 	owner.HandleFunc("PUT /api/remote", s.handleSetRemote)
 	owner.HandleFunc("PUT /api/settings/lyrics", s.handleSetOnlineLyrics)
+	owner.HandleFunc("PUT /api/settings/readalong", s.handleSetAutoReadAlong)
 	owner.HandleFunc("POST /api/delete/preview", s.handleDeletePreview)
 	owner.HandleFunc("POST /api/delete", s.handleDelete)
 	owner.HandleFunc("POST /api/delete/undo", s.handleDeleteUndo)
@@ -440,6 +449,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if user.IsOwner() && s.lyrics != nil {
 			answer["onlineLyrics"] = s.store.OnlineLyrics()
+		}
+		if _, ok := s.readAlong(r.Context()); ok && user.IsOwner() {
+			answer["autoReadAlong"] = s.store.AutoReadAlong()
 		}
 	}
 	// The install's real https address, offered to a page that is not already
@@ -1332,6 +1344,10 @@ func (s *Server) scheduleRescan(kind media.Kind) {
 		s.lastRescan[kind] = time.Now()
 		s.rescanMu.Unlock()
 		s.rescanNow(kind)
+		// A new book or recording may complete a pair.
+		if kind == media.KindAudiobook || kind == media.KindEbook {
+			s.kickAutoReadAlong()
+		}
 	})
 }
 

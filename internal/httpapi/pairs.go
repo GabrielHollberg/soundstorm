@@ -33,7 +33,27 @@ type bookPair struct {
 func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), pairsDeadline)
 	defer cancel()
+	pairs := s.listPairs(ctx)
+	out := map[string]any{"pairs": pairs, "readalong": false}
+	if st, ok := s.readAlong(r.Context()); ok {
+		out["readalong"] = true
+		statuses := s.pairStatuses(ctx, st, pairs)
+		withStatus := make([]map[string]any, len(pairs))
+		for i, p := range pairs {
+			entry := map[string]any{"ebook": p.Ebook, "audiobook": p.Audiobook}
+			if st, ok := statuses[i]; ok {
+				entry["sync"] = st
+			}
+			withStatus[i] = entry
+		}
+		out["pairs"] = withStatus
+	}
+	writeJSON(w, http.StatusOK, out)
+}
 
+// listPairs lists both shelves, as far as ctx's account may see them, and
+// matches them.
+func (s *Server) listPairs(ctx context.Context) []bookPair {
 	var (
 		mu         sync.Mutex
 		wg         sync.WaitGroup
@@ -41,7 +61,7 @@ func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 		audiobooks []media.Item
 	)
 	// Through the registry, so a shelf this account may not see is never listed.
-	for _, src := range s.reg.All(r.Context()) {
+	for _, src := range s.reg.All(ctx) {
 		kind := src.Kind()
 		if kind != media.KindEbook && kind != media.KindAudiobook {
 			continue
@@ -67,22 +87,7 @@ func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	wg.Wait()
-	pairs := matchBooks(ebooks, audiobooks)
-	out := map[string]any{"pairs": pairs, "readalong": false}
-	if st, ok := s.readAlong(r.Context()); ok {
-		out["readalong"] = true
-		statuses := s.pairStatuses(ctx, st, pairs)
-		withStatus := make([]map[string]any, len(pairs))
-		for i, p := range pairs {
-			entry := map[string]any{"ebook": p.Ebook, "audiobook": p.Audiobook}
-			if st, ok := statuses[i]; ok {
-				entry["sync"] = st
-			}
-			withStatus[i] = entry
-		}
-		out["pairs"] = withStatus
-	}
-	writeJSON(w, http.StatusOK, out)
+	return matchBooks(ebooks, audiobooks)
 }
 
 // matchBooks pairs every audiobook with the ebooks of the same book. Two

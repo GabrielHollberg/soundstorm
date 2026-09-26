@@ -336,6 +336,10 @@ func run(log *slog.Logger) error {
 		Collections: collectionStore,
 	})
 
+	// Books with both an ebook and an audiobook are synced for read-along by
+	// themselves, unless the owner has turned that off.
+	go api.RunAutoReadAlong(ctx)
+
 	srv := &http.Server{
 		Addr:              listen,
 		Handler:           api.Routes(),
