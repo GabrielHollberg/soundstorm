@@ -214,6 +214,7 @@ async function showApp(me) {
   renderAccount();
   await loadFavouriteKeys();
   await loadPrefs();
+  if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
   maybeShowHoldTip();
   pollSetup();
@@ -2668,13 +2669,22 @@ async function moveToSecureName(name) {
     // so a changed certificate comes back as the browser's own warning rather
     // than this screen again. The text says so, because that warning is
     // alarming if nobody said it was coming.
-    message.textContent = 'Cannot reach SoundStorm.';
     const detail = document.createElement('p');
     detail.className = 'muted';
-    detail.textContent =
-      'Check that the computer running it is on, then try again. If your '
-      + 'browser warns that the connection is not private, that is expected '
-      + 'after SoundStorm is reinstalled: choose Advanced, then continue.';
+    if (navigator.onLine === false) {
+      // The device itself has no connection: say so plainly, and what does
+      // work without one.
+      message.textContent = 'You are offline.';
+      detail.textContent =
+        'SoundStorm needs a connection to your server. Songs you download play '
+        + 'without one: open an album or playlist and choose Download.';
+    } else {
+      message.textContent = 'Cannot reach SoundStorm.';
+      detail.textContent =
+        'Check that the computer running it is on, then try again. If your '
+        + 'browser warns that the connection is not private, that is expected '
+        + 'after SoundStorm is reinstalled: choose Advanced, then continue.';
+    }
     const again = document.createElement('button');
     again.type = 'button';
     again.textContent = 'Try again';
@@ -5144,11 +5154,21 @@ async function offlineArtURL(item) {
 }
 
 // keepShell saves the app itself for opening offline. The service worker only
-// serves it back on the real *.soundstorm.dev names (see sw.js).
+// serves it back on the real *.soundstorm.dev names (see sw.js), and it is
+// kept every time the app loads on one - not only once something has been
+// downloaded, or opening the app with no connection and no downloads was
+// Chrome's bare ERR_FAILED page rather than the app saying it is offline.
+// Each address is its own origin with its own copy.
+const SHELL_FILES = [
+  '/', '/static/app.js', '/static/style.css', '/static/reader.js', '/static/sw-register.js',
+  '/static/favicon.svg', '/static/cloud.svg', '/static/no-cover.svg', '/manifest.webmanifest',
+];
 async function keepShell() {
+  if (!('caches' in window)) return;
   try {
     const cache = await caches.open(OFFLINE_SHELL);
-    await cache.addAll(['/', '/static/app.js', '/static/style.css', '/static/favicon.svg', '/static/sw-register.js']);
+    // One at a time, so one missing file does not lose the rest.
+    await Promise.all(SHELL_FILES.map((f) => cache.add(f).catch(() => {})));
   } catch {
     // Offline start-up is a bonus; downloads still play with the app open.
   }

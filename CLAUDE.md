@@ -660,9 +660,16 @@ fix it, both checked on the real install:
   under a cached page, and a trusted, self-renewing certificate cannot do
   that. IP addresses, localhost and self-signed keep rule 3 exactly. The
   guard test now asserts that shape. Offline mode asks for no password: the
-  files are already on the device. The start-up offline path has not been
-  seen on a real soundstorm.dev name, only on localhost, where the server
-  was made unreachable.
+  files are already on the device. The shell used to be kept only once something
+  was downloaded, so opening the installed app with no connection and no
+  downloads was Chrome's bare ERR_FAILED (the worker answered
+  `Response.error()`), reported from a real phone. Now it is kept every time
+  the app loads on a soundstorm.dev name - each address is its own origin
+  with its own copy - and the boot screen says "You are offline" when the
+  device is, and what works without a connection. Tested on a mapped
+  `test.soundstorm.dev` over self-signed TLS (Chrome forces HTTPS on all of
+  .dev, so plain http cannot be used for this): signed in, no downloads,
+  network off, reopened - the app's own offline screen.
 
 ## Favourites and playlists
 
