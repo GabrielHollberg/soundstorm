@@ -897,6 +897,15 @@ async function runSearch() {
   show($('music-view'), musicBrowse || bookBrowse);
   show($('playlists-view'), state.kind === 'playlists');
   const home = state.kind === '' && !query;
+  // Another page - a tab, a pill, back from an album - shows nothing of the
+  // last one while it loads: the old list sitting there read as the new one.
+  // Typing on the same page keeps the results until the new ones arrive.
+  const page = `${state.kind}|${state.kind === 'music' ? state.musicView : ''}|${home}`;
+  if (page !== state.shownPage) {
+    state.shownPage = page;
+    for (const id of ['results', 'music-view', 'playlists-view', 'home-view']) $(id).replaceChildren();
+    $('status').textContent = home ? '' : 'Loading…';
+  }
   show($('home-view'), home);
   show($('results-bar'), !home);
   show($('results'), state.kind !== 'playlists' && !musicBrowse && !bookBrowse && !home);
@@ -3528,6 +3537,7 @@ async function showPlaylists() {
 
 async function showPlaylist(id) {
   const view = $('playlists-view');
+  startLoading(view);
   const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}`);
   if (!ok || !body) {
     showPlaylists();
@@ -4238,6 +4248,7 @@ function playButtons(getSongs) {
 
 async function showAlbum(sourceId, id) {
   const view = $('music-view');
+  startLoading(view);
   const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
   if (!ok || !body) return;
   const { album, songs } = body;
@@ -4313,6 +4324,7 @@ function trackRow(song, index, songs) {
 
 async function showArtist(sourceId, id) {
   const view = $('music-view');
+  startLoading(view);
   const { ok, body } = await api(`/api/music/artists/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
   if (!ok || !body) return;
   const { artist, albums } = body;
@@ -6270,10 +6282,12 @@ function albumCardFromHome(album) {
     return new Promise((resolve) => {
       let quiet;
       const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(); };
-      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 50); });
+      // Quiet is not drawn while the page still says it is loading.
+      const settled = () => { if (!$('status').textContent.startsWith('Loading')) done(); };
+      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(settled, 50); });
       for (const id of pages) observer.observe($(id), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
       const cap = setTimeout(done, 450);
-      quiet = setTimeout(done, 100);
+      quiet = setTimeout(settled, 100);
     });
   }
 
@@ -8323,7 +8337,7 @@ function pageHead(title, subtitle) {
 async function showAuthor(key) {
   const seq = ++state.searchSeq;
   const view = $('music-view');
-  $('status').textContent = 'Loading\u2026';
+  startLoading(view);
   const { ok, body } = await api(`/api/books/authors?${new URLSearchParams({ key })}`);
   if (seq !== state.searchSeq) return;
   $('status').textContent = ok && body ? '' : 'Could not load that author.';
@@ -8346,7 +8360,7 @@ async function showAuthor(key) {
 async function showSeries(key, fromAuthor) {
   const seq = ++state.searchSeq;
   const view = $('music-view');
-  $('status').textContent = 'Loading\u2026';
+  startLoading(view);
   const { ok, body } = await api(`/api/books/series?${new URLSearchParams({ key })}`);
   if (seq !== state.searchSeq) return;
   $('status').textContent = ok && body ? '' : 'Could not load that series.';
@@ -8368,4 +8382,13 @@ async function showSeries(key, fromAuthor) {
 // The server's key for a name: lower-case letters and digits of its reading form.
 function nameKeyOf(name) {
   return name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+// startLoading empties a view about to show another page, and says so, so
+// the page being left is not mistaken for the one on its way. The next list
+// page is then a fresh one, whatever runSearch last drew.
+function startLoading(view) {
+  view.replaceChildren();
+  $('status').textContent = 'Loading\u2026';
+  state.shownPage = null;
 }

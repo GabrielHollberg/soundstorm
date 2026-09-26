@@ -904,6 +904,14 @@ registers, every touchmove is prevented, the pill swipe stands down, and
 `html.holding` sets `overscroll-behavior: none` against pull-to-refresh -
 reported as selections refreshing the page or switching category.
 
+**A page being left shows nothing while the next one loads.** Switching
+tab, pill or page empties the old content at once and says "Loading..." -
+the last page sitting there read as the new one. Typing on the same page
+keeps the results until the new ones replace them (`state.shownPage` tells
+the two apart; detail pages clear through `startLoading`). The pill swipe's
+wait for the next page does not count a page that still says it is loading
+as drawn.
+
 **Content starts right under the bars.** The status line under the pills
 takes no room while it has nothing to say (`:has(#status:empty)`); it was
 an empty 20px on every page once the counts went.
