@@ -6577,7 +6577,7 @@ function albumCardFromHome(album) {
     // the same frame as they come back to their places, so nothing jumps.
     swipe.row.scrollLeft = commit ? swipe.rowTo : swipe.rowFrom;
     // With transitions off while they go back: the + has one of its own (for
-    // growing under a dragged pill), and let run it animated back from
+    // growing under a dragged pill), which animated it back from
     // where it was drawn - leaving its place, then sliding in: a pop.
     for (const b of swipe.rowPills) {
       b.style.transition = 'none';
