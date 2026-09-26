@@ -243,7 +243,11 @@ const HANDS_OFF_MS = 12000;
 
 function startFollowing(view, timeline, audiobook) {
   stopFollowing();
-  const follow = { view, timeline, audiobook, index: -1, lit: null, movedByUs: false, handsOffUntil: 0 };
+  const follow = {
+    view, timeline, audiobook, index: -1, lit: null, movedByUs: false, handsOffUntil: 0,
+    highlight: window.soundstormHighlight ? window.soundstormHighlight() : true,
+  };
+  renderHighlightButton(follow);
   session.follow = follow;
   follow.onRelocate = () => {
     if (!follow.movedByUs) follow.handsOffUntil = Date.now() + HANDS_OFF_MS;
@@ -254,8 +258,29 @@ function startFollowing(view, timeline, audiobook) {
   follow.handsOffUntil = 0;
 }
 
+// The Highlight button: shown while reading along, pressed while the
+// sentence being read is lit. Off, the page still turns with the voice.
+function renderHighlightButton(follow) {
+  const button = $('reader-highlight');
+  button.classList.toggle('hidden', !follow);
+  if (!follow) return;
+  button.setAttribute('aria-pressed', String(follow.highlight));
+  button.classList.toggle('on', follow.highlight);
+}
+
+$('reader-highlight').addEventListener('click', () => {
+  const follow = session.follow;
+  if (!follow) return;
+  follow.highlight = !follow.highlight;
+  if (!follow.highlight) unlight(follow);
+  else follow.index = -1; // light the current sentence straight away
+  renderHighlightButton(follow);
+  window.soundstormSetHighlight?.(follow.highlight);
+});
+
 function stopFollowing() {
   const follow = session.follow;
+  renderHighlightButton(null);
   if (!follow) return;
   clearInterval(follow.timer);
   follow.view.removeEventListener('relocate', follow.onRelocate);
@@ -306,7 +331,7 @@ async function tick(follow) {
     const shown = contents.find((c) => c.index === resolved.index);
     const el = shown && resolved.anchor && resolved.anchor(shown.doc);
     unlight(follow);
-    if (el && el.classList) {
+    if (el && el.classList && follow.highlight) {
       el.classList.add('ss-reading');
       follow.lit = new WeakRef(el);
     }

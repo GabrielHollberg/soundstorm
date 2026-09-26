@@ -213,6 +213,7 @@ async function showApp(me) {
   renderTabs();
   renderAccount();
   await loadFavouriteKeys();
+  await loadPrefs();
   refreshPairs();
   maybeShowHoldTip();
   pollSetup();
@@ -4622,6 +4623,8 @@ setIcon($('np-repeat'), 'repeat');
 function renderNowPlaying() {
   if ($('now-playing').classList.contains('hidden') || !audio.item) return;
   const item = audio.item;
+  show($('np-speed-wrap'), item.kind === 'audiobook');
+  renderSpeed();
   const art = artPath(item);
   for (const img of [$('np-cover'), $('np-thumb')]) {
     img.src = art || NO_COVER;
@@ -5605,21 +5608,62 @@ function tabShelves(tab) {
 // it. Kept on the device, like streaming quality: the phone and the computer
 // can differ.
 function pillOrder(row) {
-  try {
-    const saved = JSON.parse(localStorage.getItem(`soundstorm-pills-${row}`) || '[]');
-    return Array.isArray(saved) ? saved.filter((k) => typeof k === 'string') : [];
-  } catch {
-    return [];
-  }
+  const saved = state.prefs && state.prefs.pills && state.prefs.pills[row];
+  return Array.isArray(saved) ? saved : [];
 }
 
 function savePillOrder(row, keys) {
-  try {
-    localStorage.setItem(`soundstorm-pills-${row}`, JSON.stringify(keys));
-  } catch {
-    // A full or refused store only loses the order.
-  }
+  state.prefs = state.prefs || {};
+  state.prefs.pills = { ...(state.prefs.pills || {}), [row]: keys };
+  savePrefs({ pills: { [row]: keys } });
 }
+
+/* ------------------------------------------------------------ preferences */
+
+// A person's small choices - the order of each tab's pills, read-along's
+// highlight, audiobook speed - kept on their account so they follow them from
+// the phone to the computer.
+state.prefs = {};
+
+async function loadPrefs() {
+  const { ok, body } = await api('/api/prefs');
+  state.prefs = ok && body ? body : {};
+  // An order put together on this device before it was kept on the account
+  // is carried over the first time, then the device's copy is dropped.
+  if (!state.prefs.pills || !Object.keys(state.prefs.pills).length) {
+    const local = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('soundstorm-pills-')) continue;
+      try {
+        const keys = JSON.parse(localStorage.getItem(key));
+        if (Array.isArray(keys)) local[key.slice('soundstorm-pills-'.length)] = keys;
+      } catch { /* not ours to worry about */ }
+    }
+    if (Object.keys(local).length) {
+      state.prefs.pills = local;
+      savePrefs({ pills: local });
+    }
+  }
+  for (const key of Object.keys(localStorage).filter((k) => k.startsWith('soundstorm-pills-'))) {
+    localStorage.removeItem(key);
+  }
+  applyMusicPillOrder();
+  renderTabs();
+  applySpeed();
+}
+
+async function savePrefs(change) {
+  const { ok, body } = await api('/api/prefs', { method: 'PATCH', body: JSON.stringify(change) });
+  if (ok && body) state.prefs = body;
+}
+
+// For the reader, a module: read-along's highlight, on unless turned off.
+window.soundstormHighlight = () => !(state.prefs && state.prefs.readAlongHighlight === false);
+window.soundstormSetHighlight = (on) => {
+  state.prefs.readAlongHighlight = on;
+  savePrefs({ readAlongHighlight: on });
+};
 
 function selectKind(kind) {
   const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
@@ -6428,3 +6472,59 @@ applyMusicPillOrder();
     if (g && event.target.closest('#music-tabs, #subtabs')) event.preventDefault();
   });
 })();
+
+/* ------------------------------------------------------------------ speed */
+
+// How fast audiobooks play, from 0.75x to 3x, remembered on the account.
+// Music always plays at its own speed. Set as the default rate as well as
+// the current one, because giving the player a new file (the next chapter
+// of a multi-file book) resets the current rate to the default.
+function bookSpeed() {
+  const v = Number(state.prefs && state.prefs.audiobookSpeed);
+  return v >= 0.5 && v <= 3.5 ? v : 1;
+}
+
+function applySpeed() {
+  const player = $('audio-player');
+  const rate = audio.item && audio.item.kind === 'audiobook' ? bookSpeed() : 1;
+  player.defaultPlaybackRate = rate;
+  if (player.playbackRate !== rate) player.playbackRate = rate;
+}
+
+function renderSpeed() {
+  const v = bookSpeed();
+  $('np-speed').textContent = `${v}\u00d7`;
+  $('np-speed').classList.toggle('on', v !== 1);
+  for (const b of document.querySelectorAll('#np-speed-menu [data-speed]')) {
+    b.classList.toggle('chosen', Number(b.dataset.speed) === v);
+  }
+}
+
+for (const event of ['loadedmetadata', 'play']) {
+  $('audio-player').addEventListener(event, applySpeed);
+}
+$('np-speed').addEventListener('click', (event) => {
+  event.stopPropagation();
+  const menu = $('np-speed-menu');
+  const opening = menu.classList.contains('hidden');
+  show(menu, opening);
+  show($('np-sleep-menu'), false);
+  $('np-speed').setAttribute('aria-expanded', String(opening));
+});
+for (const choice of document.querySelectorAll('#np-speed-menu [data-speed]')) {
+  choice.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const v = Number(choice.dataset.speed);
+    state.prefs.audiobookSpeed = v;
+    applySpeed();
+    renderSpeed();
+    updateMediaSession();
+    show($('np-speed-menu'), false);
+    $('np-speed').setAttribute('aria-expanded', 'false');
+    savePrefs({ audiobookSpeed: v });
+  });
+}
+document.addEventListener('click', () => {
+  show($('np-speed-menu'), false);
+  $('np-speed').setAttribute('aria-expanded', 'false');
+});

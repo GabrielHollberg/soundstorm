@@ -298,6 +298,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/lyrics/{source}/{id}", s.handleLyrics)
 	guarded.HandleFunc("GET /api/home", s.handleHome)
 	guarded.HandleFunc("GET /api/books/pairs", s.handleBookPairs)
+	guarded.HandleFunc("GET /api/prefs", s.handleGetPrefs)
+	guarded.HandleFunc("PATCH /api/prefs", s.handlePatchPrefs)
 	guarded.HandleFunc("POST /api/readalong", s.handleStartReadAlong)
 	guarded.HandleFunc("POST /api/readalong/next", s.handleReadAlongNext)
 	guarded.HandleFunc("GET /api/readalong", s.handleReadAlong)

@@ -2493,3 +2493,23 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
   cursor: grabbing;
 }
+
+/* Audiobook speed, in Now Playing's bar: a pill with the speed on it. */
+.np-speed {
+  min-width: 44px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: none;
+  color: rgba(255, 255, 255, 0.8);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  -webkit-tap-highlight-color: transparent;
+}
+.np-speed.on { background: #fff; border-color: #fff; color: #0b0e13; }
+#np-speed-menu button.chosen { background: rgba(255, 255, 255, 0.12); }
+#np-speed-menu { min-width: 150px; }
+/* Read-along's highlight toggle, lit while it is on. */
+#reader-highlight.on { color: var(--accent); border-color: var(--accent); }

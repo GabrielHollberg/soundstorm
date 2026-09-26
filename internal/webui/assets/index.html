@@ -480,6 +480,8 @@
         <span id="reader-sub" class="muted"></span>
       </div>
       <span id="reader-progress" class="muted"></span>
+      <!-- Read-along only: light the sentence being read, or just turn the page. -->
+      <button id="reader-highlight" class="ghost hidden" type="button" aria-pressed="true">Highlight</button>
       <button id="reader-download" class="ghost" type="button">Download</button>
       <button id="reader-close" class="ghost" type="button" aria-label="Close reader">&times;</button>
     </header>
@@ -590,6 +592,22 @@
       <header class="np-bar">
         <button id="np-close" class="np-icon" type="button" aria-label="Close Now Playing"></button>
         <span class="np-label">Now Playing<span id="np-sleep-left" class="np-sleep-left hidden"></span></span>
+        <!-- Audiobooks only: how fast it plays. Remembered on the account. -->
+        <div class="np-sleep-wrap np-speed-wrap hidden" id="np-speed-wrap">
+          <button id="np-speed" class="np-speed" type="button" aria-label="Playback speed"
+                  aria-haspopup="true" aria-expanded="false" title="Playback speed">1&times;</button>
+          <div id="np-speed-menu" class="np-sleep-menu hidden" role="menu" aria-label="Playback speed">
+            <p>Speed</p>
+            <button type="button" role="menuitem" data-speed="0.75">0.75&times;</button>
+            <button type="button" role="menuitem" data-speed="1">1&times; normal</button>
+            <button type="button" role="menuitem" data-speed="1.25">1.25&times;</button>
+            <button type="button" role="menuitem" data-speed="1.5">1.5&times;</button>
+            <button type="button" role="menuitem" data-speed="1.75">1.75&times;</button>
+            <button type="button" role="menuitem" data-speed="2">2&times;</button>
+            <button type="button" role="menuitem" data-speed="2.5">2.5&times;</button>
+            <button type="button" role="menuitem" data-speed="3">3&times;</button>
+          </div>
+        </div>
         <div class="np-sleep-wrap">
           <button id="np-sleep" class="np-icon np-toggle" type="button" aria-label="Sleep timer"
                   aria-haspopup="true" aria-expanded="false" title="Sleep timer"></button>

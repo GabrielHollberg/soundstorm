@@ -70,6 +70,9 @@ type collection struct {
 	// reason as everything else here: Navidrome's play counts would be the
 	// whole house's, and only count plays somebody reported to it.
 	History map[string]*Play `json:"history,omitempty"`
+	// Prefs are this person's small choices, which follow them from device
+	// to device.
+	Prefs *Prefs `json:"prefs,omitempty"`
 }
 
 // Play is how often and when one song was listened to.
@@ -512,4 +515,101 @@ func (s *Store) History(userID string) ([]Play, error) {
 		out = append(out, *p)
 	}
 	return out, nil
+}
+
+// --- preferences --------------------------------------------------------------
+
+// Prefs are one person's small choices that follow them between devices: the
+// order of the pills in each tab, whether read-along lights the sentence being
+// read, and how fast audiobooks play.
+type Prefs struct {
+	Pills map[string][]string `json:"pills,omitempty"`
+	// Highlight is nil for the default, which is on.
+	Highlight *bool `json:"readAlongHighlight,omitempty"`
+	// BookSpeed is 0 for the default, which is normal speed.
+	BookSpeed float64 `json:"audiobookSpeed,omitempty"`
+}
+
+// Limits on what a preference can hold, so a client cannot grow the file.
+const (
+	maxPillRows   = 12
+	maxPillsInRow = 16
+	maxPillKey    = 32
+	MinBookSpeed  = 0.5
+	MaxBookSpeed  = 3.5
+)
+
+// Prefs is one person's preferences.
+func (s *Store) Prefs(userID string) (Prefs, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.load(userID)
+	if err != nil {
+		return Prefs{}, err
+	}
+	if c.Prefs == nil {
+		return Prefs{}, nil
+	}
+	return *c.Prefs, nil
+}
+
+// PrefsChange is what a client may change; a nil field is left as it is.
+type PrefsChange struct {
+	Pills     map[string][]string `json:"pills"`
+	Highlight *bool               `json:"readAlongHighlight"`
+	BookSpeed *float64            `json:"audiobookSpeed"`
+}
+
+// ErrBadPrefs is a preference outside what is allowed.
+var ErrBadPrefs = errors.New("that preference is not allowed")
+
+// ChangePrefs applies a change to one person's preferences and saves them.
+func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
+	if len(ch.Pills) > maxPillRows {
+		return Prefs{}, ErrBadPrefs
+	}
+	for row, keys := range ch.Pills {
+		if row == "" || len(row) > maxPillKey || len(keys) > maxPillsInRow {
+			return Prefs{}, ErrBadPrefs
+		}
+		for _, k := range keys {
+			if k == "" || len(k) > maxPillKey {
+				return Prefs{}, ErrBadPrefs
+			}
+		}
+	}
+	if ch.BookSpeed != nil && (*ch.BookSpeed < MinBookSpeed || *ch.BookSpeed > MaxBookSpeed) {
+		return Prefs{}, ErrBadPrefs
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.load(userID)
+	if err != nil {
+		return Prefs{}, err
+	}
+	if c.Prefs == nil {
+		c.Prefs = &Prefs{}
+	}
+	p := c.Prefs
+	for row, keys := range ch.Pills {
+		if p.Pills == nil {
+			p.Pills = map[string][]string{}
+		}
+		if len(p.Pills) >= maxPillRows && p.Pills[row] == nil {
+			return Prefs{}, ErrBadPrefs
+		}
+		p.Pills[row] = append([]string(nil), keys...)
+	}
+	if ch.Highlight != nil {
+		on := *ch.Highlight
+		p.Highlight = &on
+	}
+	if ch.BookSpeed != nil {
+		p.BookSpeed = *ch.BookSpeed
+	}
+	if err := s.save(userID, c); err != nil {
+		return Prefs{}, err
+	}
+	return *p, nil
 }
