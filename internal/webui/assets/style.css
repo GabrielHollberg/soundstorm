@@ -1752,21 +1752,6 @@ body.np-open { overflow: hidden; }
 .download-play, .download-remove { color: var(--text); }
 .download-remove { opacity: 0.6; }
 
-.offline-app { min-height: 100vh; }
-.offline-bar { display: flex; align-items: center; gap: 12px; }
-.offline-badge {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 182, 72, 0.15);
-  color: #ffd592;
-}
-.offline-bar .ghost { margin-left: auto; }
-.offline-note { margin: 12px 20px 0; }
-
 .np-lyrics-credit { font-size: 12px; opacity: 0.55; margin: 24px 0 8px; text-align: center; }
 
 /* The mini-player ------------------------------------------------------------
@@ -2519,3 +2504,7 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 .pair-actions .pair-download.done { color: var(--accent); border-color: var(--accent); }
 #download-all { margin-left: auto; }
 #download-all + #select-toggle { margin-left: 8px; }
+
+/* Offline: what needs the server steps aside. */
+body.offline-mode #tabs [data-tab="settings"] { display: none; }
+body.offline-mode .item-more { display: none; }

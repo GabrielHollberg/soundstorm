@@ -46,17 +46,20 @@ function bookParams(item) {
 // not answer - the same addresses, kept in the downloads cache by app.js.
 const OFFLINE_CACHE = 'soundstorm-offline-v1';
 async function fetchOrKept(url) {
+  // Downloaded: from the device, connection or not - quicker, and no data.
+  try {
+    const kept = await (await caches.open(OFFLINE_CACHE)).match(url);
+    if (kept) return kept;
+  } catch {
+    // no cache here; ask the server
+  }
   try {
     const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.ok) return resp;
   } catch {
-    // no connection; try the device
+    // no connection
   }
-  try {
-    return (await (await caches.open(OFFLINE_CACHE)).match(url)) || null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 function makeLoader(item) {

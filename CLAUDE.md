@@ -681,6 +681,16 @@ fix it, both checked on the real install:
   pieces. Tested fully offline on the
   mapped test name: a downloaded ebook opened at its place and a downloaded
   track played from a blob.
+- **Offline, the app stays itself and shows only downloads.** Opened offline
+  or losing the connection while open (the `offline` event, or a search
+  answering offline), it keeps its tabs; each shelf lists what is on the
+  device (Home and Music as the Downloads list, the rest as cards with their
+  covers from the cache), search looks through that, and Settings and the
+  list buttons step aside. The `online` event brings it back (a reload if it
+  was opened offline and never signed in). The separate offline screen is
+  gone. And downloads come first even online: the reader reads a downloaded
+  book from the cache before asking the server, as songs, audiobooks, films
+  and photos already did.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load
   may be answered from `soundstorm-offline-shell-v1` only on
   `*.soundstorm.dev` names, only when the network failed, and only once

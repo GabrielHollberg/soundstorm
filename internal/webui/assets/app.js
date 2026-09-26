@@ -862,6 +862,13 @@ async function runSearch() {
   const query = $('search-input').value.trim();
   state.query = query;
 
+  if (state.offline) {
+    const seq = ++state.searchSeq;
+    renderSearchHint();
+    await showOfflineShelf(seq, query);
+    return;
+  }
+
   if (!query) {
     // Counts may have moved while the user was searching, and the shelf about
     // to be listed is the thing they describe.
@@ -927,9 +934,13 @@ async function runSearch() {
   const params = new URLSearchParams({ q: query, limit: String(PAGE_SIZE) });
   if (state.kind) params.set('kind', state.kind);
 
-  const { ok, body } = await api(`/api/search?${params}`);
+  const { ok, body, offline } = await api(`/api/search?${params}`);
   if (seq !== state.searchSeq) return;
 
+  if (offline && hasDownloads()) {
+    enterOffline();
+    return;
+  }
   if (!ok || !body) {
     $('status').textContent = 'Search failed.';
     return;
@@ -1070,7 +1081,8 @@ function renderItem(item) {
   const art = artPath(item);
   if (art) {
     const img = document.createElement('img');
-    img.src = art;
+    if (state.offline) offlineArtURL(item).then((u) => { img.src = u || NO_COVER; });
+    else img.src = art;
     img.alt = '';
     img.loading = 'lazy';
     // A backend can have an artwork id but no actual file; fall back rather
@@ -5372,7 +5384,7 @@ function formatStorage(bytes) {
 }
 
 // downloadsView lists what is on this device: to play, and to remove.
-async function downloadsView(offlineMode) {
+async function downloadsView(offlineMode, only) {
   const wrap = document.createElement('div');
   wrap.className = 'downloads';
   const head = document.createElement('div');
@@ -5397,7 +5409,7 @@ async function downloadsView(offlineMode) {
   }
   const list = document.createElement('ul');
   list.className = 'download-list';
-  for (const group of state.downloads.groups) {
+  for (const group of state.downloads.groups.filter((g) => !only || only(g))) {
     const songs = group.keys.map((k) => state.downloads.items[k]).filter(Boolean);
     const li = document.createElement('li');
     const cover = document.createElement('div');
@@ -5461,13 +5473,10 @@ async function downloadsView(offlineMode) {
 async function showOfflineApp() {
   show($('boot'), false);
   show($('gate'), false);
-  show($('app'), false);
-  show($('tabs'), false);
-  show($('offline-app'), true);
-  $('offline-view').replaceChildren(await downloadsView(true));
+  show($('app'), true);
+  enterOffline(true);
 }
 
-$('offline-retry').addEventListener('click', () => location.reload());
 
 /* ------------------------------------------------------------- sleep timer */
 
@@ -5721,6 +5730,7 @@ function tabOf(kind) {
 }
 
 function shelfAvailable(kind) {
+  if (state.offline) return kind === '' || offlineKinds().has(kind);
   if (kind === '' || kind === 'favourites' || kind === 'playlists') return true;
   // Only once there is at least one book on both shelves.
   if (kind === 'pairs') return state.pairCount > 0 && shelfAvailable('ebook') && shelfAvailable('audiobook');
@@ -5838,7 +5848,8 @@ function renderTabs() {
   let any = false;
   for (const button of document.querySelectorAll('#tabs [data-tab]')) {
     const tab = button.dataset.tab;
-    const available = tab === 'home' || tab === 'settings' || tabShelves(tab).some((o) => !o.inMusicTabs);
+    const available = tab === 'home' || (tab === 'settings' && !state.offline)
+      || tabShelves(tab).some((o) => !o.inMusicTabs);
     show(button, available);
     any = any || (available && tab !== 'home');
     const on = tab === state.tab;
@@ -7158,4 +7169,100 @@ async function playKeptVideo(item, player) {
     player.play().catch(() => {});
   }
   return true;
+}
+
+/* ------------------------------------------------------------ offline mode */
+
+// With no connection to the server - opened offline, or the connection lost
+// while open - the app stays itself: the same tabs and shelves, each showing
+// only what is downloaded to this device, and search looking through that.
+// What needs the server (Settings, the Select and Download all buttons) steps
+// aside. When the connection comes back, so does everything else.
+state.offline = false;
+
+const MUSIC_GROUPS = ['song', 'album', 'playlist', 'artist', 'favourites', 'shelf', 'mix'];
+
+function offlineKinds() {
+  const kinds = new Set();
+  for (const item of Object.values(state.downloads.items)) {
+    if (item && item.kind && item.sourceId !== 'storyteller') kinds.add(item.kind);
+  }
+  if (state.downloads.groups.some((g) => g.type === 'pair')) kinds.add('pairs');
+  return kinds;
+}
+
+function enterOffline(atStart) {
+  if (state.offline) return;
+  state.offline = true;
+  document.body.classList.add('offline-mode');
+  show($('tabs'), true);
+  renderTabs();
+  if (state.tab === 'settings' || !tabShelves(state.tab).length) selectTab('home');
+  else runSearch();
+  if (!atStart) showToast("You're offline. Showing what's on this device.");
+}
+
+async function leaveOffline() {
+  if (!state.offline) return;
+  const { ok } = await api('/api/session');
+  if (!ok) return;
+  // Opened offline, the app never signed in: start it properly.
+  if (!state.me) {
+    location.reload();
+    return;
+  }
+  state.offline = false;
+  document.body.classList.remove('offline-mode');
+  renderTabs();
+  runSearch();
+  showToast('Back online.');
+}
+
+window.addEventListener('offline', () => {
+  if (hasDownloads() && !$('app').classList.contains('hidden')) enterOffline();
+});
+window.addEventListener('online', () => { leaveOffline(); });
+
+async function showOfflineShelf(seq, query) {
+  const kind = state.kind;
+  const words = (query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (item) => {
+    const text = [item.title, item.subtitle, ...(item.creators || [])].join(' ').toLowerCase();
+    return words.every((w) => text.includes(w));
+  };
+  for (const id of ['music-tabs', 'album-sort', 'music-view', 'playlists-view', 'continue',
+    'select-toggle', 'download-all', 'loading-more']) show($(id), false);
+  show($('results-bar'), true);
+
+  // Home and Music are the Downloads list: songs are kept as albums,
+  // playlists and the like, which is how they are best found again.
+  if (kind === '' || kind === 'music') {
+    const only = (g) => (kind === '' || MUSIC_GROUPS.includes(g.type))
+      && (!words.length || [g.title, g.subtitle].join(' ').toLowerCase().includes(words.join(' ')));
+    const view = await downloadsView(true, only);
+    if (seq !== state.searchSeq) return;
+    show($('results'), false);
+    show($('home-view'), true);
+    $('home-view').replaceChildren(view);
+    $('status').textContent = '';
+    return;
+  }
+  show($('home-view'), false);
+  show($('results'), true);
+  let cards;
+  if (kind === 'pairs') {
+    const pairs = state.downloads.groups.filter((g) => g.type === 'pair' && g.pair)
+      .map((g) => ({ ...g.pair, sync: g.readalong ? { state: 'ready' } : g.pair.sync }))
+      .filter((p) => matches(p.ebook));
+    cards = pairs.map(pairCard);
+  } else {
+    const items = Object.values(state.downloads.items)
+      .filter((it) => it && it.kind === kind && it.sourceId !== 'storyteller' && matches(it));
+    state.items = items;
+    cards = items.map(renderItem);
+  }
+  $('results').replaceChildren(...cards);
+  $('status').textContent = cards.length
+    ? `${cards.length} on this device`
+    : (words.length ? 'Nothing downloaded matches.' : 'Nothing from this shelf is downloaded.');
 }
