@@ -2383,12 +2383,19 @@ body { overflow-x: clip; }
    browser going back a page. */
 html:has(#music-tabs:not(.hidden)),
 html:has(#subtabs:not(.hidden)) { overscroll-behavior-x: none; }
+/* And sideways drags on the page are the app's from the first pixel. Without
+   this Safari decides within the first few pixels whether a drag is a scroll,
+   and one it has started scrolling ignores being told otherwise - the page
+   and the swipe fought, which looked rough on an iPhone. Strips that scroll
+   sideways, and the pills, are their own scroll containers and keep panning. */
+html:has(#music-tabs:not(.hidden)) body,
+html:has(#subtabs:not(.hidden)) body { touch-action: pan-y pinch-zoom; }
 /* A page mid-swipe hangs off the side of the screen. Unclipped, that made
    the page wider than the phone, which zoomed out and threw the tab bar
    about. clip, not hidden, so the sticky header still sticks. */
 #app { overflow-x: clip; position: relative; }
 /* The page leaving during a swipe: a copy, laid where the page was. */
-.swipe-ghost { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; will-change: transform; }
+.swipe-ghost { position: fixed; inset: 0; overflow: hidden; z-index: 3; pointer-events: none; will-change: transform; }
 /* The pills stay pinned under the header as the page scrolls, so they are
    in reach from anywhere down a list - and a swipe, which shows the next
    page from its top, has nothing above it to jump into view. */

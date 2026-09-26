@@ -578,6 +578,17 @@ Measured with the CPU slowed 4x and 250ms on every request: frames over
 34ms per swipe went from 1-2 to none, the worst from 34ms to 19ms. The
 emulator never showed the choppiness itself; a phone is the real check.
 
+**Rough on an iPhone, fine on Android**, which two things explain. Safari
+decides within a few pixels whether a drag is a scroll and then ignores
+being told otherwise, so under pills the body is `touch-action: pan-y
+pinch-zoom`: sideways drags are the app's from the first pixel (strips and
+the pills are scroll containers of their own and still pan). And the ghost
+was as tall as the list, which an iPhone rasterizes up front; it is now the
+screen's size (`position: fixed`, clipped). That took the list's height out
+of the page, so the page shrank, the scroll was pulled back and the next
+page drew lower - the body's height is held for the length of the swipe.
+No iPhone was available to check on; the emulator only confirms the layout.
+
 **The lit pill sits in the middle of its row.** Spacers half the row wide at
 each end let the first and last pills get there. A tap glides the row
 (`centerPill`); a swipe carries it with the finger, the next pill reaching

@@ -6379,7 +6379,6 @@ function albumCardFromHome(album) {
   // next pill's - follows right behind it, edge to edge.
   function ghostOf() {
     const shown = pages.map($).filter((el) => !el.classList.contains('hidden') && el.getClientRects().length);
-    const app = $('app').getBoundingClientRect();
     const ghost = document.createElement('div');
     ghost.className = 'swipe-ghost';
     ghost.inert = true;
@@ -6405,8 +6404,11 @@ function albumCardFromHome(album) {
       shell.style.cssText = '';
       shell.style.position = 'absolute';
       shell.style.margin = '0';
-      shell.style.left = `${r.left - app.left}px`;
-      shell.style.top = `${r.top - app.top}px`;
+      // Where it is on the screen: the ghost is the screen's size and clips
+      // the rest, so a long list costs one screenful to draw, not its whole
+      // length - which an iPhone paints up front, as a hitch.
+      shell.style.left = `${r.left}px`;
+      shell.style.top = `${r.top}px`;
       shell.style.width = `${r.width}px`;
       ghost.append(shell);
     });
@@ -6438,8 +6440,11 @@ function albumCardFromHome(album) {
     g.target = target;
     g.dir = dir;
     g.scroll = window.scrollY;
-    // Nodes leaving the page must not make the browser re-aim the scroll.
+    // Nodes leaving the page must not make the browser re-aim the scroll -
+    // nor, with the list's cards gone into the ghost, shorten the page and
+    // pull the scroll back, which drew the next page that much lower.
     document.documentElement.style.overflowAnchor = 'none';
+    document.body.style.minHeight = `${document.documentElement.scrollHeight}px`;
     g.ghost = ghostOf();
     lift = g.scroll;
     promote(true);
@@ -6514,6 +6519,7 @@ function albumCardFromHome(album) {
     }
     promote(false);
     document.documentElement.style.overflowAnchor = '';
+    document.body.style.minHeight = '';
     document.documentElement.classList.remove('swiping');
     // The pills were only drawn moved: now the row really scrolls there, in
     // the same frame as they come back to their places, so nothing jumps.
