@@ -2863,12 +2863,16 @@ function toggleSelected(item, card) {
 // out of the confirm or undo state it may have been in.
 function resetSelectBar() {
   const n = state.selected.size;
-  $('select-count').textContent = n
-    ? `${n} selected`
-    : 'Tap the things you want to delete';
+  $('select-count').textContent = n ? `${n} selected` : 'Tap to select';
   show($('select-all'), true);
   show($('select-cancel'), true);
+  show($('select-fav'), true);
+  show($('select-download'), downloadsPossible());
+  $('select-fav').disabled = n === 0;
+  $('select-download').disabled = n === 0;
   const del = $('select-delete');
+  // Deleting is the owner's; everybody can favourite and download.
+  show(del, Boolean(state.me && state.me.owner));
   del.textContent = 'Delete';
   del.disabled = n === 0;
   state.confirming = false;
@@ -2919,6 +2923,8 @@ $('select-delete').addEventListener('click', async () => {
       `Delete ${n} item${n === 1 ? '' : 's'}? ${body.files} file${body.files === 1 ? '' : 's'}, ` +
       `${formatBytes(body.bytes)}. They stay in the bin for 30 days.`;
     show($('select-all'), false);
+    show($('select-fav'), false);
+    show($('select-download'), false);
     del.textContent = `Delete ${n}`;
     state.confirming = true;
     return;
@@ -2953,7 +2959,10 @@ function offerUndo(result) {
   $('select-count').textContent = `Deleted ${n} item${n === 1 ? '' : 's'}.`;
   show($('select-all'), false);
   show($('select-cancel'), false);
+  show($('select-fav'), false);
+  show($('select-download'), false);
   const del = $('select-delete');
+  show(del, true);
   del.disabled = false;
   del.textContent = 'Undo';
   del.classList.replace('danger', 'ghost');
@@ -3734,6 +3743,8 @@ function attachItemMenuGestures(card, item) {
       state.suppressClick = true;
       if (navigator.vibrate) navigator.vibrate(12);
       openItemMenu(item, card.querySelector('.art-wrap') || card);
+      // Held, and the finger may now move on: that selects instead.
+      armDragSelect(card, item, event.pointerId, startX, startY);
     }, HOLD_MS);
   });
   card.addEventListener('pointermove', (event) => {
@@ -6287,6 +6298,7 @@ function albumCardFromHome(album) {
   }, { passive: true });
 
   document.addEventListener('touchmove', (event) => {
+    if (state.dragSelect) { g = null; return; }
     if (!g || event.touches.length !== 1) return;
     const t = event.touches[0];
     const dx = t.clientX - g.x;
@@ -7979,3 +7991,134 @@ function renderInfoMenu(item) {
   // Taller than the menu it replaces: placed again, so none of it is off screen.
   if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
 }
+
+/* ------------------------------------------------------ drag to select */
+
+// Hold an item, and without lifting move the finger on: the menu gives way
+// to selecting, and every item from the one held to the one under the finger
+// is selected - back up and they come off again, as in a phone's photos.
+// Near the bottom (or top) of the screen the page scrolls by itself, faster
+// the closer the finger, so any number can be selected in one drag. Lifting
+// leaves the bar to act on them: favourite, download, and for the owner
+// delete. Only in a shelf's list; not in the strips on Home.
+state.dragSelect = null;
+
+function armDragSelect(card, item, pointerId, x0, y0) {
+  if (!card.closest('#results')) return;
+  const onMove = (event) => {
+    if (event.pointerId !== pointerId) return;
+    if (!state.dragSelect) {
+      if (Math.hypot(event.clientX - x0, event.clientY - y0) < HOLD_SLOP) return;
+      startDragSelect(card, item);
+    }
+    state.dragSelect.x = event.clientX;
+    state.dragSelect.y = event.clientY;
+    dragSelectTo(event.clientX, event.clientY);
+  };
+  const onEnd = (event) => {
+    if (event.pointerId !== pointerId) return;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onEnd);
+    document.removeEventListener('pointercancel', onEnd);
+    if (state.dragSelect) {
+      cancelAnimationFrame(state.dragSelect.frame);
+      state.dragSelect = null;
+      document.body.classList.remove('drag-selecting');
+    }
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onEnd);
+  document.addEventListener('pointercancel', onEnd);
+}
+
+function startDragSelect(card, item) {
+  closeItemMenu();
+  state.suppressClick = true; // the lift at the end is not a tap
+  if (!state.selecting) setSelecting(true);
+  // The bar waits for the lift: over the bottom of the list it would hide
+  // the cards the finger is heading for.
+  document.body.classList.add('drag-selecting');
+  const key = selectionKey(item);
+  state.dragSelect = {
+    from: key,
+    before: new Set(state.selected.keys()), // what was selected already stays
+    x: 0, y: 0, frame: 0,
+  };
+  state.selected.set(key, item);
+  card.classList.add('selected');
+  resetSelectBar();
+  if (navigator.vibrate) navigator.vibrate(8);
+  const tick = () => {
+    const d = state.dragSelect;
+    if (!d) return;
+    // The bottom 120px of the screen (tab bar included) scroll down, the
+    // band under the header and pills scrolls up; faster nearer the edge.
+    const bottomEdge = window.innerHeight - 120;
+    const topEdge = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 0) + 80;
+    let speed = 0;
+    if (d.y > bottomEdge) speed = Math.min(1, (d.y - bottomEdge) / 120) * 26;
+    else if (d.y && d.y < topEdge) speed = -Math.min(1, (topEdge - d.y) / 80) * 26;
+    if (speed) {
+      window.scrollBy(0, speed);
+      dragSelectTo(d.x, d.y);
+    }
+    d.frame = requestAnimationFrame(tick);
+  };
+  state.dragSelect.frame = requestAnimationFrame(tick);
+}
+
+// Everything between the held card and the one under the finger, in the
+// order they are shown.
+function dragSelectTo(x, y) {
+  const d = state.dragSelect;
+  if (!d) return;
+  const under = document.elementFromPoint(x, y);
+  const holder = under && under.closest('#results .item-holder');
+  const target = holder && holder.querySelector('.item');
+  if (!target) return;
+  const cards = [...$('results').querySelectorAll('.item')];
+  const a = cards.findIndex((c) => c.dataset.key === d.from);
+  const b = cards.indexOf(target);
+  if (a < 0 || b < 0) return;
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  const byKey = new Map((state.items || []).map((it) => [selectionKey(it), it]));
+  cards.forEach((c, i) => {
+    const key = c.dataset.key;
+    const on = (i >= lo && i <= hi) || d.before.has(key);
+    const it = byKey.get(key);
+    if (on && it) state.selected.set(key, it);
+    else if (!on) state.selected.delete(key);
+    c.classList.toggle('selected', state.selected.has(key));
+  });
+  resetSelectBar();
+}
+
+// While a drag selects, the page must not scroll under the finger by itself.
+document.addEventListener('touchmove', (event) => {
+  if (state.dragSelect && event.cancelable) event.preventDefault();
+}, { passive: false });
+
+$('select-fav').addEventListener('click', async () => {
+  const items = [...state.selected.values()].filter((it) => !state.favourites.has(selectionKey(it)));
+  $('select-fav').disabled = true;
+  let done = 0;
+  for (const it of items) if (!(await setFavourite(it, true))) done++;
+  setSelecting(false);
+  showToast(items.length ? `Added ${done} to your favourites.` : 'Those are all favourites already.');
+});
+
+$('select-download').addEventListener('click', () => {
+  const items = [...state.selected.values()];
+  setSelecting(false);
+  bulkDownload(`${items.length} item${items.length === 1 ? '' : 's'}`, async () => items
+    .filter((it) => !isDownloaded(it) && (it.kind === 'music' || canDownload(it)))
+    .map((it) => (it.kind === 'music'
+      ? {
+        label: it.title,
+        run: (progress, stopped) => download({
+          id: `song:${selectionKey(it)}`, type: 'song', title: it.title,
+          subtitle: (it.creators || []).join(', '), sourceId: it.sourceId, artId: it.artId,
+        }, [it], (n, total) => progress(n / total), stopped),
+      }
+      : bookTask(it))));
+});

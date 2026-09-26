@@ -883,6 +883,17 @@ the menu, reads as a click outside, and closes it. Two decisions shape it:
   overwrites: a path whose place has been taken since stays in the bin and is
   reported.
 
+**Many at once: hold, then drag.** Holding opens the menu as ever; moving
+the finger on without lifting closes it and selects every item from the
+held one to the one under the finger, in the order shown, as a phone's
+photos do (back up and they come off; what was selected before stays).
+The bottom 120px of the screen scrolls the page down, and the band under
+the pills up, faster nearer the edge, so a drag reaches any number. The
+selection bar waits for the lift - over the list it hid the very cards the
+finger was heading for, and `elementFromPoint` found the bar - then offers
+Add to favourites and Download to everyone and Delete to the owner. Only
+in a shelf's list; the page swipe stands down while a drag selects.
+
 **Normalization at the edge again.** `source.FileLister` asks each adapter
 which files an item is, relative to its shelf. Each backend reports a path
 differently, checked against the live servers rather than their docs:

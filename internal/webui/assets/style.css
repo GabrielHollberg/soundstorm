@@ -2665,3 +2665,12 @@ body.offline-mode .fav-toggle { display: none; }
 .cover-queue { top: calc(100cqw - 42px); left: calc(50% - 17px); }
 .cover-next { top: calc(100cqw - 42px); right: 4px; }
 body.offline-mode .cover-queue, body.offline-mode .cover-next { display: none; }
+
+/* Selecting: the tick has the corner, so the cover's own buttons step aside. */
+.grid.selecting .fav-toggle,
+.grid.selecting .cover-btn,
+.grid.selecting .dl-get { display: none; }
+
+/* While a drag selects: the bar waits, and the player lets the finger through. */
+body.drag-selecting .select-bar { visibility: hidden; }
+body.drag-selecting #audio-dock { pointer-events: none; }
