@@ -62,6 +62,14 @@ param(
     # only in case is an error rather than a no-op.
     [string]$Library,
     [Alias('choose-library')][switch]$ChooseLibrary,
+    # Moving to another computer: -Export packs this install into a
+    # SoundStorm-move folder in the path given (-Move asks where, for the
+    # Start menu shortcut); -Import installs from one. -NoLibrary leaves the
+    # media out of an export, for somebody copying it themselves.
+    [string]$Export,
+    [switch]$Move,
+    [string]$Import,
+    [Alias('no-library')][switch]$NoLibrary,
     [switch]$Console
 )
 
@@ -610,7 +618,12 @@ function ConvertTo-ArgumentList($Bound) {
             if ($value.IsPresent) { $list += "-$key" }
         } else {
             $list += "-$key"
-            $list += ('"' + ("$value" -replace '"', '') + '"')
+            # A trailing backslash would escape the closing quote - "E:\" read
+            # back as E:" and the rest of the line - and a drive root is exactly
+            # where somebody saves a move. Doubled, it reads back as one.
+            $text = "$value" -replace '"', ''
+            if ($text.EndsWith('\')) { $text += '\' }
+            $list += ('"' + $text + '"')
         }
     }
     return $list
@@ -2454,6 +2467,12 @@ function Install-Shortcuts {
         "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -ChooseLibrary" $Dir `
         'Keep your music, films and books in a different folder or drive' $true
 
+    # Moving to a new computer, the same way: a window and a folder picker,
+    # never a typed path.
+    New-Shortcut (Join-Path $startMenu 'Move SoundStorm to another computer.lnk') $powershell `
+        "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$localScript`" -Move" $Dir `
+        'Pack up SoundStorm, with your accounts and media, to move to a new computer' $true
+
     # Tailscale is offered where it is needed - the account panel points here
     # when remote access cannot work on a connection - not asked about during
     # every install. This is the click-through way in; -Tailscale is the same.
@@ -2521,6 +2540,7 @@ function Remove-Shortcuts {
         (Join-Path $programs 'SoundStorm.lnk'),
         (Join-Path $programs 'Update SoundStorm.lnk'),
         (Join-Path $programs 'Move SoundStorm library.lnk'),
+        (Join-Path $programs 'Move SoundStorm to another computer.lnk'),
         (Join-Path $programs 'Set up Tailscale.lnk'),
         (Join-Path $programs 'Startup\SoundStorm.lnk')
     )) {
@@ -2610,6 +2630,265 @@ if ($Uninstall) {
     Write-Host "  Docker Desktop was left installed - other things may be using it."
     Write-Host ""
     exit 0
+}
+
+# --- moving it to another computer ---------------------------------------------
+
+# What a move carries besides the library: SoundStorm's own state (accounts,
+# the passwords it made on every backend, favourites, playlists, positions,
+# the install's name) and each backend's own database. Left out on purpose:
+# the caches and downloaded models, which rebuild themselves, and Tailscale's
+# node identity, which belongs to one machine. Kept in step with install.sh.
+$MoveVolumes = @('soundstorm-state', 'navidrome-data', 'jellyfin-config', 'abs-config', 'abs-metadata',
+    'immich-data', 'immich-db', 'storyteller-data')
+# Settings that describe this computer and its network, worked out again on
+# the new one.
+$MoveLocal = '^SOUNDSTORM_(PORT|TLS_HOSTS|LIBRARY_PATH|LIBRARY_HINT|GATEWAY|UPNP_URL)='
+$MoveImage = 'alpine:3'
+# The compose project, whose name prefixes every data volume. Always
+# soundstorm; overridable only so a move can be rehearsed on a throwaway
+# project without touching a real install's data.
+$Project = if ($env:SOUNDSTORM_PROJECT) { $env:SOUNDSTORM_PROJECT } else { 'soundstorm' }
+
+function Get-FolderSize([string]$Path) {
+    if (-not (Test-Path $Path)) { return 0 }
+    $sum = (Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Measure-Object -Property Length -Sum).Sum
+    if ($sum) { return [double]$sum } else { return 0 }
+}
+
+function Get-VolumeSize([string]$Volume) {
+    $r = Invoke-Docker @('run', '--rm', '-v', "${Volume}:/v:ro", $MoveImage, 'du', '-sk', '/v') -Capture
+    if ($r.ExitCode -ne 0) { return 0 }
+    $kb = ($r.Output -split '\s+')[0]
+    if ($kb -match '^\d+$') { return [double]$kb * 1024 } else { return 0 }
+}
+
+function Test-VolumeExists([string]$Volume) {
+    return (Invoke-Docker @('volume', 'inspect', $Volume) -Capture).ExitCode -eq 0
+}
+
+# Copy-Folder copies a folder tree with robocopy, keeping the window alive,
+# and returns the path of a log of what failed, or '' when nothing did.
+function Copy-Folder([string]$From, [string]$To, [string]$ErrorLog) {
+    New-Item -ItemType Directory -Force -Path $To | Out-Null
+    $process = Start-Process -FilePath 'robocopy.exe' -WindowStyle Hidden -PassThru -ArgumentList @(
+        "`"$From`"", "`"$To`"", '/E', '/R:1', '/W:1', '/NP', '/NFL', '/NDL', '/NJH', "/LOG:`"$ErrorLog`"")
+    Wait-ProcessPumped $process | Out-Null
+    # robocopy: 0-7 is success of one kind or another, 8 and up is failure.
+    if ($process.ExitCode -lt 8) {
+        Remove-Item -LiteralPath $ErrorLog -Force -ErrorAction SilentlyContinue
+        return ''
+    }
+    return $ErrorLog
+}
+
+# Write-MoveLaunchers puts a one-click installer for each kind of computer in
+# the move folder, each installing from the folder it sits in. The same two
+# files install.sh writes.
+function Write-MoveLaunchers([string]$Folder) {
+    $sh = @(
+        '#!/bin/sh',
+        '# Installs SoundStorm on this computer from the move folder this file is in.',
+        'here=$(cd "$(dirname "$0")" && pwd)',
+        'curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh -o /tmp/soundstorm-install.sh &&',
+        '	sh /tmp/soundstorm-install.sh --import "$here"'
+    ) -join "`n"
+    [IO.File]::WriteAllText((Join-Path $Folder 'install-here.sh'), "$sh`n", (New-Object Text.UTF8Encoding $false))
+    $q = "'"
+    $cmd = @(
+        '@echo off',
+        'rem Installs SoundStorm on this computer from the move folder this file is in.',
+        'setlocal',
+        'set "HERE=%~dp0"',
+        'set "HERE=%HERE:~0,-1%"',
+        'set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"',
+        'set "SOUNDSTORM_SETUP_URL=https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1"',
+        ('start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "$ProgressPreference = ' + $q + 'SilentlyContinue' + $q + '; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $f = Join-Path $env:TEMP ' + $q + 'soundstorm-install.ps1' + $q + '; try { Invoke-WebRequest -UseBasicParsing -Uri $env:SOUNDSTORM_SETUP_URL -OutFile $f } catch { Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show(' + $q + 'SoundStorm could not download its installer. Check the internet connection and try again.' + $q + ', ' + $q + 'SoundStorm Setup' + $q + '); exit 1 }; $env:SOUNDSTORM_WINDOW = ' + $q + '1' + $q + '; $q = [char]34; Start-Process -FilePath (Join-Path $PSHOME ' + $q + 'powershell.exe' + $q + ') -WindowStyle Hidden -ArgumentList (' + $q + '-NoProfile -ExecutionPolicy Bypass -STA -File ' + $q + ' + $q + $f + $q + ' + $q + ' -Import ' + $q + ' + $q + $env:HERE + $q)"'),
+        'exit /b 0'
+    ) -join "`r`n"
+    [IO.File]::WriteAllText((Join-Path $Folder 'Install SoundStorm here.cmd'), "$cmd`r`n", (New-Object Text.ASCIIEncoding))
+}
+
+# Select-MoveDestination asks where to put the move - usually an external
+# drive - and whether to bring the media. Returns $null when cancelled.
+function Select-MoveDestination([double]$LibraryBytes) {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $owner = New-TopmostOwner
+    try {
+        $picker = New-Object System.Windows.Forms.FolderBrowserDialog
+        $picker.Description = 'Choose where to put SoundStorm for the move - an external drive, or a folder the new computer can reach. A folder called SoundStorm-move is made there.'
+        $picker.ShowNewFolderButton = $true
+        if ($picker.ShowDialog($owner) -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+        $withLibrary = $true
+        if ($LibraryBytes -gt 0) {
+            $answer = [System.Windows.Forms.MessageBox]::Show($owner,
+                "Copy your music, films, books and photos too? That is about $(Format-Size $LibraryBytes).`r`n`r`nChoose No if you are moving the media yourself - on the drive it is already on, say.",
+                'SoundStorm - move to another computer',
+                [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
+                [System.Windows.Forms.MessageBoxIcon]::Question)
+            if ($answer -eq [System.Windows.Forms.DialogResult]::Cancel) { return $null }
+            $withLibrary = $answer -eq [System.Windows.Forms.DialogResult]::Yes
+        }
+        return [pscustomobject]@{ Path = $picker.SelectedPath; WithLibrary = $withLibrary }
+    } finally {
+        $owner.Dispose()
+    }
+}
+
+# Export-Move packs this install into <Destination>\SoundStorm-move. SoundStorm
+# is stopped while its data is copied - a database copied while it is being
+# written may not open on the other side - and started again afterwards,
+# whatever happened.
+function Export-Move([string]$Destination, [bool]$WithLibrary) {
+    if (-not (Test-Path (Join-Path $Dir 'docker-compose.yml'))) {
+        Stop-With "  SoundStorm is not installed in $Dir, so there is nothing to move."
+    }
+    if (-not (Test-Path -LiteralPath $Destination)) {
+        Stop-With "  $Destination does not exist. Choose a folder that does - an external drive, say."
+    }
+    $dest = Join-Path ([IO.Path]::GetFullPath($Destination)) 'SoundStorm-move'
+    if (Test-Path -LiteralPath $dest) {
+        Stop-With "  $dest is already there.`n`n  Move or delete it first, so an older move is not mixed into this one."
+    }
+    Set-Location $Dir
+    $library = Get-LibraryPath
+
+    Step "Step 1 of 4 - Checking there is room"
+    $need = 100MB
+    if ($WithLibrary) { $need += Get-FolderSize $library }
+    $volumes = @($MoveVolumes | Where-Object { Test-VolumeExists "${Project}_$_" })
+    foreach ($v in $volumes) { $need += Get-VolumeSize "${Project}_$v" }
+    $free = (New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($dest))).AvailableFreeSpace
+    if ($free -lt $need) {
+        Stop-With "  There is not enough room there: about $(Format-Size $need) is needed and $(Format-Size $free) is free.`n`n  Choose a bigger drive, or leave the media out and copy it yourself."
+    }
+    Good "About $(Format-Size $need) to copy, $(Format-Size $free) free."
+
+    New-Item -ItemType Directory -Force -Path (Join-Path $dest 'volumes') | Out-Null
+    Step "Step 2 of 4 - Copying accounts, settings and the media servers' data"
+    Note "SoundStorm is stopped while its data is copied, and started again after."
+    Invoke-Docker @('compose', 'stop') -Capture | Out-Null
+    try {
+        foreach ($v in $volumes) {
+            Note $v
+            # tar in a container: the volume is Docker's, and only a container
+            # can read it. Owners are kept as numbers, which each backend needs
+            # to read its own files on the other side.
+            $r = Invoke-Docker @('run', '--rm', '-v', "${Project}_${v}:/from:ro", '-v', "$(Join-Path $dest 'volumes'):/to",
+                $MoveImage, 'tar', '-cf', "/to/$v.tar", '-C', '/from', '.') -Capture
+            if ($r.ExitCode -ne 0) {
+                Stop-With "  Could not copy $v. SoundStorm has been started again, unchanged.`n`n  $($r.Output)"
+            }
+        }
+        # Plain line endings in everything the move writes: it may be read on
+        # a Mac or Linux, where a carriage return becomes part of every value.
+        $settings = Join-Path $dest 'settings.env'
+        $kept = @(Get-Content (Join-Path $Dir '.env') | Where-Object { $_ -notmatch $MoveLocal })
+        [IO.File]::WriteAllText($settings, (($kept -join "`n") + "`n"), (New-Object Text.ASCIIEncoding))
+        Protect-SecretFile $settings
+
+        Step "Step 3 of 4 - Copying your media"
+        if ($WithLibrary -and (Test-Path $library)) {
+            Note "This is the long part."
+            $failed = Copy-Folder $library (Join-Path $dest 'library') (Join-Path $dest 'copy-errors.txt')
+            if ($failed) {
+                Important "Some files could not be copied. They are listed in $failed - copy those by hand."
+            }
+        } else {
+            Note "Leaving the media out, as asked."
+        }
+
+        Write-MoveLaunchers $dest
+        $manifest = @('format=1', "created=$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))", 'from=Windows',
+            "library=$(if (Test-Path (Join-Path $dest 'library')) { 'yes' } else { 'no' })")
+        [IO.File]::WriteAllText((Join-Path $dest 'manifest.txt'), (($manifest -join "`n") + "`n"), (New-Object Text.ASCIIEncoding))
+    } finally {
+        Step "Step 4 of 4 - Starting SoundStorm again"
+        Invoke-Docker @('compose', 'start') -Capture | Out-Null
+    }
+
+    $lines = @(
+        'Everything is in:',
+        "*  $dest",
+        '',
+        'On the new computer, copy the folder over, then:',
+        '  Windows: double-click "Install SoundStorm here.cmd" inside it.',
+        '  Mac or Linux: sh install-here.sh, inside it.',
+        '',
+        'Anything changed here from now on does not move. Once the new computer is',
+        'working, uninstall SoundStorm here from Settings, Apps.'
+    )
+    if (-not (Test-Path (Join-Path $dest 'library'))) {
+        $lines += @('', 'Your media was not included. Copy it to the new computer yourself:', "*  $library")
+    }
+    Callout 'Packed up' $lines 'Green'
+    Start-Process explorer.exe -ArgumentList "`"$dest`""
+    Complete-Gui 'SoundStorm is packed up' 'Copy the SoundStorm-move folder to the new computer and open it there.' ''
+    exit 0
+}
+
+# Test-MoveFolder stops unless Path is a move folder this version can read.
+function Test-MoveFolder([string]$Path) {
+    $manifest = Join-Path $Path 'manifest.txt'
+    if (-not (Test-Path -LiteralPath $manifest)) {
+        Stop-With "  $Path is not a SoundStorm move folder: it has no manifest.txt.`n`n  Point -Import at the SoundStorm-move folder made by the move."
+    }
+    if (-not (Select-String -LiteralPath $manifest -Pattern '^format=1$' -Quiet)) {
+        Stop-With "  That move was made by a newer SoundStorm. Get the newest setup and try again."
+    }
+}
+
+# Import-Settings carries the install's own settings across - setup code,
+# secrets, https and remote access choices - on top of the fresh .env.
+function Import-Settings([string]$Path) {
+    $file = Join-Path $Path 'settings.env'
+    if (-not (Test-Path -LiteralPath $file)) { return }
+    foreach ($line in Get-Content -LiteralPath $file) {
+        if ($line -match $MoveLocal -or $line -notmatch '^(SOUNDSTORM_|TS_)[A-Z0-9_]*=') { continue }
+        $key, $value = $line -split '=', 2
+        Set-EnvSetting $key $value
+    }
+}
+
+# Import-Volumes restores the data volumes. Refused where SoundStorm already
+# has data: an import is for a computer it is new to.
+function Import-Volumes([string]$Path) {
+    if (Test-VolumeExists "${Project}_soundstorm-state") {
+        Stop-With "  This computer already has SoundStorm data, so importing would write over it.`n`n  Uninstall SoundStorm here first (Settings, Apps - your media is kept), then open the move again."
+    }
+    foreach ($tar in Get-ChildItem -LiteralPath (Join-Path $Path 'volumes') -Filter '*.tar' -ErrorAction SilentlyContinue) {
+        $v = $tar.BaseName
+        if ($MoveVolumes -notcontains $v) { Note "Skipping $v, which this version does not know."; continue }
+        Note $v
+        # Labelled as compose labels its own, so compose adopts it.
+        $made = Invoke-Docker @('volume', 'create', '--label', "com.docker.compose.project=$Project",
+            '--label', "com.docker.compose.volume=$v", "${Project}_$v") -Capture
+        if ($made.ExitCode -ne 0) { Stop-With "  Could not create the $v volume.`n`n  $($made.Output)" }
+        $r = Invoke-Docker @('run', '--rm', '-v', "${Project}_${v}:/to", '-v', "$(Join-Path $Path 'volumes'):/from:ro",
+            $MoveImage, 'sh', '-c', "cd /to && tar -xf /from/$v.tar") -Capture
+        if ($r.ExitCode -ne 0) { Stop-With "  Could not restore $v from the move folder.`n`n  $($r.Output)" }
+    }
+}
+
+if ($Export -or $Move) {
+    if ($Move -and -not $Export) {
+        $choice = Select-MoveDestination (Get-FolderSize (Get-LibraryPath))
+        if (-not $choice) { exit 0 }
+        $Export = $choice.Path
+        if (-not $choice.WithLibrary) { $NoLibrary = [switch]$true }
+    }
+    if ($env:SOUNDSTORM_WINDOW -eq '1' -and $script:WindowWanted) {
+        try {
+            New-SetupWindow 'Moving SoundStorm to another computer' `
+                'Packing up your accounts, settings and media into one folder to take to the new computer.' `
+                @('Checking there is room', 'Copying accounts and settings', 'Copying your media', 'Starting SoundStorm again')
+        } catch {
+            $script:Gui = $null
+        }
+    }
+    Initialize-Docker
+    Export-Move $Export (-not $NoLibrary)
 }
 
 # --- opening an install that is already here ----------------------------------
@@ -2743,6 +3022,14 @@ if ($elsewhere -and $env:SOUNDSTORM_FORCE -ne '1') {
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 Set-Location $Dir
 
+if ($Import) {
+    try { $Import = [IO.Path]::GetFullPath($Import) } catch { Stop-With "  Could not open $Import." }
+    Test-MoveFolder $Import
+    if (Test-Path 'docker-compose.yml') {
+        Stop-With "  SoundStorm is already installed in $Dir, so importing would write over it.`n`n  Uninstall it first (Settings, Apps - your media is kept), then open the move again."
+    }
+}
+
 $upgrade = (Test-Path 'docker-compose.yml') -and $env:SOUNDSTORM_FORCE -ne '1'
 if ($upgrade) {
     Note "Already installed here - updating it instead."
@@ -2848,6 +3135,10 @@ if ($Remote) {
 # run, not only written once - see Update-RouterSettings.
 $null = Update-RouterSettings
 
+# A move brings the install's own settings - setup code, secrets, choices -
+# on top of the fresh file, before anything below reads them.
+if ($Import) { Import-Settings $Import }
+
 # The first sign-up needs a setup code, so that whoever reaches the port
 # before the owner does - from the internet, once it faces it - cannot claim
 # the server. It goes into the address the browser is opened at below, so
@@ -2917,6 +3208,22 @@ $libraryPath = Get-LibraryPath
 
 foreach ($folder in 'music', 'movies', 'tv', 'audiobooks', 'ebooks', 'documents', 'pictures') {
     New-Item -ItemType Directory -Force -Path (Join-Path $libraryPath $folder) | Out-Null
+}
+
+# A move: the media first, then the data, and only then does anything start -
+# a backend started on empty volumes would set itself up afresh.
+if ($Import) {
+    if (Test-Path (Join-Path $Import 'library')) {
+        Note "Copying your media from the move folder. This is the long part."
+        $failed = Copy-Folder (Join-Path $Import 'library') $libraryPath (Join-Path $Dir 'move-copy-errors.txt')
+        if ($failed) { Important "Some files could not be copied. They are listed in $failed." }
+        if (Test-Path (Join-Path $Import 'windows-name-problems.txt')) {
+            Important "Some files have names Windows does not allow, and could not come across."
+            Important "They are listed in $(Join-Path $Import 'windows-name-problems.txt')."
+        }
+    }
+    Note "Restoring accounts, settings and the media servers' data."
+    Import-Volumes $Import
 }
 $scheme = Get-InstalledScheme
 

@@ -13,6 +13,8 @@
 #   --tailscale      also reach it away from home, over a tailnet
 #   --no-tailscale   stop doing that
 #   --uninstall      remove it, keeping the media library
+#   --export PATH    pack it up to move to another computer
+#   --import PATH    install it from a move made with --export
 #   --library PATH   keep the media library somewhere else - an external drive
 #
 # Written for /bin/sh rather than bash, because a stock Debian's /bin/sh is dash
@@ -25,6 +27,10 @@ REPO="${SOUNDSTORM_REPO:-GabrielHollberg/soundstorm}"
 BRANCH="${SOUNDSTORM_BRANCH:-main}"
 COMPOSE_URL="${SOUNDSTORM_COMPOSE_URL:-https://raw.githubusercontent.com/$REPO/$BRANCH/docker-compose.yml}"
 DIR="${SOUNDSTORM_DIR:-$PWD/soundstorm}"
+# The compose project, whose name prefixes every data volume. Always
+# soundstorm (docker-compose.yml says so); overridable only so a move can be
+# rehearsed on a throwaway project without touching a real install's data.
+PROJECT="${SOUNDSTORM_PROJECT:-soundstorm}"
 FIRST_PORT="${SOUNDSTORM_PORT:-8099}"
 
 # --- saying things ----------------------------------------------------------
@@ -74,7 +80,7 @@ format_code() {
 # die prints why it stopped and, more importantly, what to do about it. An
 # installer that says "error: 1" has failed twice.
 die() {
-	printf '\n%sSoundStorm could not start.%s\n\n%s\n\n' "$RED$BOLD" "$OFF" "$1" >&2
+	printf '\n%s%s%s\n\n%s\n\n' "$RED$BOLD" "${DIE_HEADING:-SoundStorm could not start.}" "$OFF" "$1" >&2
 	exit 1
 }
 
@@ -482,6 +488,234 @@ uninstall() {
 	exit 0
 }
 
+# --- moving it to another computer ------------------------------------------
+
+# What a move carries, besides the library: SoundStorm's own state (accounts,
+# the passwords it made on every backend, favourites, playlists, positions, the
+# install's name) and each backend's own database. Left out on purpose:
+# jellyfin-cache, immich-models and storyteller-models, which rebuild or
+# download themselves; and tailscale-state, a node identity that belongs to one
+# machine - the new one joins the tailnet afresh.
+MOVE_VOLUMES="soundstorm-state navidrome-data jellyfin-config abs-config abs-metadata immich-data immich-db storyteller-data"
+
+# Settings that describe this computer and its network rather than the
+# install. They are worked out again on the new one.
+MOVE_LOCAL='^SOUNDSTORM_(PORT|TLS_HOSTS|LIBRARY_PATH|LIBRARY_HINT|GATEWAY|UPNP_URL)='
+
+# windows_name_problems lists files under $1 that cannot exist on Windows:
+# names with a character Windows refuses, names ending in a dot or a space,
+# reserved device names, and two names in one folder that differ only in
+# case. Moving to Windows would fail on exactly these, halfway through a copy.
+windows_name_problems() {
+	find "$1" -mindepth 1 2>/dev/null | while IFS= read -r path; do
+		name=${path##*/}
+		case "$name" in
+			*[:\*\?\"\<\>\|\\]*|*.|*' ') printf '%s\n' "${path#"$1"/}" ;;
+		esac
+		case "$(printf '%s' "${name%%.*}" | tr '[:lower:]' '[:upper:]')" in
+			CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]) printf '%s\n' "${path#"$1"/}" ;;
+		esac
+	done
+	find "$1" -mindepth 1 2>/dev/null | awk '{ k = tolower($0); if (k in seen) print substr($0, length(root) + 2); seen[k] = 1 }' root="$1"
+}
+
+# export_move packs this install into a SoundStorm-move folder inside $1: the
+# data volumes as tar files, the settings that belong to the install, and
+# (unless NO_LIBRARY) a copy of the library. SoundStorm is stopped while its
+# data is copied - a database copied while it is being written is a database
+# that may not open - and started again after, whatever happened.
+export_move() {
+	[ -f "$DIR/docker-compose.yml" ] || die "SoundStorm is not installed in $DIR, so there is nothing to move.
+
+If it is installed somewhere else, run this with SOUNDSTORM_DIR set to that folder."
+	[ -d "$1" ] || die "$1 does not exist. Give a folder that does - an external drive, say."
+	dest="$(cd "$1" && pwd)/SoundStorm-move"
+	[ ! -e "$dest" ] || die "$dest is already there.
+
+Move or delete it first, so an older move is not mixed into this one."
+	cd "$DIR"
+	library=$(library_path)
+	DIE_HEADING='SoundStorm could not be packed up.'
+
+	say ""
+	say "${BOLD}Packing up SoundStorm to move to another computer${OFF}"
+
+	step "Checking there is room"
+	need=0
+	if [ -z "${NO_LIBRARY:-}" ] && [ -d "$library" ]; then
+		need=$(du -sk "$library" 2>/dev/null | awk '{ print $1 }')
+	fi
+	# The data, measured where it lives, plus a little to spare.
+	for v in $MOVE_VOLUMES; do
+		docker volume inspect "${PROJECT}_$v" >/dev/null 2>&1 || continue
+		size=$(docker run --rm -v "${PROJECT}_$v:/v:ro" "$MOVE_IMAGE" du -sk /v 2>/dev/null | awk '{ print $1 }')
+		need=$((need + ${size:-0}))
+	done
+	need=$((need + 100 * 1024))
+	avail=$(df -Pk "$1" | awk 'NR == 2 { print $4 }')
+	if [ -n "$avail" ] && [ "$avail" -lt "$need" ]; then
+		die "There is not enough room in $1: about $((need / 1024 / 1024 + 1)) GB is needed and $((avail / 1024 / 1024)) GB is free.
+
+Choose a bigger drive, or leave the media out with --no-library and copy it
+yourself."
+	fi
+	note "about $((need / 1024 / 1024 + 1)) GB to copy, $((avail / 1024 / 1024)) GB free"
+
+	mkdir -p "$dest/volumes"
+
+	if [ -z "${NO_LIBRARY:-}" ] && [ -d "$library" ]; then
+		problems=$(windows_name_problems "$library")
+		if [ -n "$problems" ]; then
+			printf '%s\n' "$problems" > "$dest/windows-name-problems.txt"
+			say ""
+			important "$(printf '%s\n' "$problems" | wc -l | tr -d ' ') files have names Windows does not allow. They move"
+			important "fine to a Mac or Linux, but not to Windows. The list is in"
+			important "$dest/windows-name-problems.txt"
+		fi
+	fi
+
+	step "Stopping SoundStorm while its data is copied"
+	$COMPOSE stop >/dev/null 2>&1 || true
+	# Started again however this ends, a failure included.
+	trap '$COMPOSE start >/dev/null 2>&1 || true' EXIT
+
+	step "Copying accounts, settings and the media servers' data"
+	me="$(id -u):$(id -g)"
+	for v in $MOVE_VOLUMES; do
+		docker volume inspect "${PROJECT}_$v" >/dev/null 2>&1 || continue
+		note "$v"
+		# tar inside a container: the volume is Docker's, and only a container
+		# can read it. Owners are kept as numbers, which is what each backend
+		# needs to read its own files on the other side.
+		docker run --rm -v "${PROJECT}_$v:/from:ro" -v "$dest/volumes:/to" "$MOVE_IMAGE" \
+			sh -c "tar -cf /to/$v.tar -C /from . && chown $me /to/$v.tar" ||
+			die "Could not copy $v. SoundStorm has been started again, unchanged."
+	done
+	(umask 077; grep -Ev "$MOVE_LOCAL" .env > "$dest/settings.env")
+
+	if [ -z "${NO_LIBRARY:-}" ] && [ -d "$library" ]; then
+		step "Copying your media"
+		note "this is the long part"
+		mkdir -p "$dest/library"
+		# Everything that can be copied is: a drive formatted for Windows
+		# refuses the names listed above, and one refused name must not cost
+		# the rest of the library. What failed is listed and said out loud.
+		if ! cp -R "$library/." "$dest/library/" 2>"$dest/copy-errors.txt"; then
+			say ""
+			important "$(wc -l < "$dest/copy-errors.txt" | tr -d ' ') files could not be copied, usually because the drive"
+			important "does not allow their names. They are listed in"
+			important "$dest/copy-errors.txt - copy those by hand."
+		fi
+		[ -s "$dest/copy-errors.txt" ] || rm -f "$dest/copy-errors.txt"
+	fi
+
+	write_move_launchers "$dest"
+	{
+		printf 'format=1\n'
+		printf 'created=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		printf 'from=%s\n' "$(uname -s)"
+		if [ -d "$dest/library" ]; then printf 'library=yes\n'; else printf 'library=no\n'; fi
+	} > "$dest/manifest.txt"
+
+	step "Starting SoundStorm again"
+	$COMPOSE start >/dev/null 2>&1 || true
+	trap - EXIT
+
+	say ""
+	say "${GREEN}${BOLD}Packed.${OFF} Everything is in"
+	say ""
+	say "    $dest"
+	say ""
+	say "On the new computer:"
+	say "  Windows:        copy the folder over and double-click"
+	say "                  \"Install SoundStorm here.cmd\" inside it"
+	say "  Mac or Linux:   sh \"<the folder>/install-here.sh\""
+	say ""
+	note "Anything changed here from now on does not move. Once the new computer"
+	note "is working, uninstall SoundStorm here: sh install.sh --uninstall"
+	if [ ! -d "$dest/library" ]; then
+		say ""
+		important "Your media was not included. Copy it to the new computer yourself:"
+		important "    $library"
+	fi
+	say ""
+	exit 0
+}
+
+# write_move_launchers puts a one-click installer for each kind of computer
+# inside the move folder, each installing from the folder it sits in.
+write_move_launchers() {
+	cat > "$1/install-here.sh" <<'EOF'
+#!/bin/sh
+# Installs SoundStorm on this computer from the move folder this file is in.
+here=$(cd "$(dirname "$0")" && pwd)
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh -o /tmp/soundstorm-install.sh &&
+	sh /tmp/soundstorm-install.sh --import "$here"
+EOF
+	chmod +x "$1/install-here.sh"
+	# A .cmd wants CRLF, or cmd.exe mishandles it.
+	printf '%s\r\n' \
+		'@echo off' \
+		'rem Installs SoundStorm on this computer from the move folder this file is in.' \
+		'setlocal' \
+		'set "HERE=%~dp0"' \
+		'set "HERE=%HERE:~0,-1%"' \
+		'set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"' \
+		'set "SOUNDSTORM_SETUP_URL=https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1"' \
+		'start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "$ProgressPreference = '"'"'SilentlyContinue'"'"'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $f = Join-Path $env:TEMP '"'"'soundstorm-install.ps1'"'"'; try { Invoke-WebRequest -UseBasicParsing -Uri $env:SOUNDSTORM_SETUP_URL -OutFile $f } catch { Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show('"'"'SoundStorm could not download its installer. Check the internet connection and try again.'"'"', '"'"'SoundStorm Setup'"'"'); exit 1 }; $env:SOUNDSTORM_WINDOW = '"'"'1'"'"'; $q = [char]34; Start-Process -FilePath (Join-Path $PSHOME '"'"'powershell.exe'"'"') -WindowStyle Hidden -ArgumentList ('"'"'-NoProfile -ExecutionPolicy Bypass -STA -File '"'"' + $q + $f + $q + '"'"' -Import '"'"' + $q + $env:HERE + $q)"' \
+		'exit /b 0' > "$1/Install SoundStorm here.cmd"
+}
+
+# check_move_folder says whether $1 is a move folder this version can read.
+check_move_folder() {
+	DIE_HEADING='SoundStorm could not be moved here.'
+	[ -f "$1/manifest.txt" ] || die "$1 is not a SoundStorm move folder: it has no manifest.txt.
+
+Point --import at the SoundStorm-move folder made by --export."
+	# A move written on Windows may carry carriage returns; either is fine.
+	tr -d '\r' < "$1/manifest.txt" | grep -q '^format=1$' || die "$1 was made by a newer SoundStorm. Update this installer and try again."
+}
+
+# import_volumes restores the data volumes from a move folder. Refused where
+# SoundStorm already has data: an import is for a computer it is new to, and
+# writing over accounts that exist here is not something to do by accident.
+import_volumes() {
+	if docker volume inspect "${PROJECT}_soundstorm-state" >/dev/null 2>&1; then
+		die "This computer already has SoundStorm data, so importing would write over it.
+
+Uninstall SoundStorm here first (sh install.sh --uninstall; your media is
+kept), then import again."
+	fi
+	for tarfile in "$1"/volumes/*.tar; do
+		[ -f "$tarfile" ] || continue
+		v=$(basename "$tarfile" .tar)
+		case " $MOVE_VOLUMES " in
+			*" $v "*) ;;
+			*) note "skipping $v, which this version does not know"; continue ;;
+		esac
+		note "$v"
+		# Labelled as compose labels its own, so compose adopts the volume
+		# rather than warning that something else made it.
+		docker volume create --label "com.docker.compose.project=$PROJECT" \
+			--label "com.docker.compose.volume=$v" "${PROJECT}_$v" >/dev/null ||
+			die "Could not create the $v volume."
+		docker run --rm -v "${PROJECT}_$v:/to" -v "$1/volumes:/from:ro" "$MOVE_IMAGE" \
+			sh -c "cd /to && tar -xf /from/$v.tar" ||
+			die "Could not restore $v from the move folder."
+	done
+}
+
+# import_settings carries the install's own settings across: the setup code,
+# secrets, https and remote access choices. What belongs to the old computer's
+# network is left out and worked out here.
+import_settings() {
+	[ -f "$1/settings.env" ] || return 0
+	tr -d '\r' < "$1/settings.env" | grep -Ev "$MOVE_LOCAL" | while IFS= read -r line; do
+		key=${line%%=*}
+		case "$key" in SOUNDSTORM_*|TS_*) set_env "$key" "${line#*=}" ;; esac
+	done
+}
+
 # --- go ---------------------------------------------------------------------
 
 # A loop rather than a case on $1: --https has to be able to arrive alongside
@@ -491,6 +725,10 @@ TAILSCALE=''
 REMOTE=''
 AUTHKEY=''
 LIBRARY=''
+IMPORT=''
+NO_LIBRARY=''
+EXPORT=''
+MOVE_IMAGE='alpine:3'
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--uninstall|-u)
@@ -526,6 +764,21 @@ while [ $# -gt 0 ]; do
 			LIBRARY="${1:-}"
 			[ -n "$LIBRARY" ] || die "--library needs a folder after it"
 			;;
+		--export)
+			shift
+			EXPORT="${1:-}"
+			[ -n "$EXPORT" ] || die "--export needs a folder after it, where the move is written"
+			;;
+		--no-library)
+			NO_LIBRARY=1
+			;;
+		--import)
+			shift
+			IMPORT="${1:-}"
+			[ -n "$IMPORT" ] || die "--import needs the SoundStorm-move folder after it"
+			IMPORT=$(cd "$IMPORT" 2>/dev/null && pwd) || die "Could not open ${1:-that folder}."
+			check_move_folder "$IMPORT"
+			;;
 		--help|-h)
 			say "SoundStorm installer"
 			say ""
@@ -538,6 +791,9 @@ while [ $# -gt 0 ]; do
 			say "  --no-remote      keep it to the home network"
 			say "  --uninstall      remove it, keeping your media library"
 			say "  --library PATH   keep the media library somewhere else"
+			say "  --export PATH    pack it up in PATH to move to another computer"
+			say "                   (--no-library leaves the media out)"
+			say "  --import PATH    install it here from a move folder"
 			say ""
 			exit 0
 			;;
@@ -549,6 +805,13 @@ Run with --help to see what this accepts."
 	esac
 	shift
 done
+
+# Packing up needs nothing below: no install, no update.
+if [ -n "$EXPORT" ]; then
+	need_docker
+	compose_cmd
+	export_move "$EXPORT"
+fi
 
 
 say ""
@@ -585,7 +848,7 @@ existing_install() {
 step "Setting up $DIR"
 
 previous=$(existing_install)
-if [ -n "$previous" ] && [ "$previous" != "$DIR" ] && [ ! -f "$DIR/docker-compose.yml" ]; then
+if [ -n "$previous" ] && [ "$previous" != "$DIR" ] && [ ! -f "$DIR/docker-compose.yml" ] && [ "${SOUNDSTORM_FORCE:-}" != "1" ]; then
 	die "SoundStorm is already installed in another folder:
 
   $previous
@@ -600,6 +863,13 @@ fi
 
 mkdir -p "$DIR"
 cd "$DIR"
+
+if [ -n "$IMPORT" ] && [ -f docker-compose.yml ]; then
+	die "SoundStorm is already installed in $DIR, so importing would write over it.
+
+Uninstall it first (sh install.sh --uninstall; your media is kept), then
+import again."
+fi
 
 if [ -f docker-compose.yml ] && [ "${SOUNDSTORM_FORCE:-}" != "1" ]; then
 	note "already installed here - upgrading it instead"
@@ -643,6 +913,12 @@ else
 	[ -n "$PORT" ] || PORT="$FIRST_PORT"
 fi
 
+# A move brings the install's own settings - setup code, secrets, choices -
+# on top of the fresh file, before anything below reads them.
+if [ -n "$IMPORT" ]; then
+	import_settings "$IMPORT"
+fi
+
 # After the port, so that on a fresh install this amends the file just written
 # rather than being overwritten by it.
 #
@@ -659,7 +935,7 @@ if [ -z "$SETUP_CODE" ]; then
 fi
 # Only a fresh install shows it: an existing one already has its owner.
 SETUP_QS=''
-if [ "$UPGRADE" != "1" ]; then
+if [ "$UPGRADE" != "1" ] && [ -z "$IMPORT" ]; then
 	SETUP_QS="/?setup=$SETUP_CODE"
 fi
 
@@ -754,6 +1030,18 @@ LIBRARY_DIR=$(library_path)
 for shelf in music movies tv audiobooks ebooks documents pictures; do
 	mkdir -p "$LIBRARY_DIR/$shelf"
 done
+
+# A move: the media first, then the data, and only then does anything start -
+# a backend started on empty volumes would set itself up afresh.
+if [ -n "$IMPORT" ]; then
+	if [ -d "$IMPORT/library" ]; then
+		step "Copying your media from the move folder"
+		note "this is the long part"
+		cp -R "$IMPORT/library/." "$LIBRARY_DIR/" || die "Could not copy the media into $LIBRARY_DIR."
+	fi
+	step "Restoring accounts, settings and the media servers' data"
+	import_volumes "$IMPORT"
+fi
 
 # Remote access. A separate decision from --https: one is about the wifi at
 # home, the other about being away from it.

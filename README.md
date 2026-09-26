@@ -691,6 +691,35 @@ memory and writes its own copy back, which would quietly undo the reset.
 Nothing else is touched: your media, your libraries and everyone else's
 accounts all survive, and devices already signed in stay signed in.
 
+### Moving to another computer
+
+SoundStorm packs itself into one folder - your accounts, favourites,
+playlists, listening and reading positions, the media servers' own data, and
+your media - to carry to a new computer on a USB drive or over the network.
+It works between Windows, Mac and Linux, in any direction.
+
+**Windows:** Start menu → **Move SoundStorm to another computer**, choose a
+drive, and say whether to bring the media.
+
+**Linux / macOS:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --export /media/usb
+```
+
+(`--no-library` leaves the media out, for when you are moving it yourself.)
+SoundStorm stops for as long as its data takes to copy, then starts again.
+
+On the new computer, open the `SoundStorm-move` folder and double-click
+**Install SoundStorm here.cmd** (Windows), or run `sh install-here.sh` inside
+it (Mac, Linux). It installs SoundStorm with everything in place; sign in as
+before. Then uninstall it on the old computer.
+
+A Mac or Linux library can hold file names Windows refuses (a colon, say, or
+two names differing only in capitals). Moving to Windows, the move lists
+those in `windows-name-problems.txt` so they can be renamed first. Tailscale
+is set up again on the new computer; everything else comes across.
+
 ### Removing it
 
 **Windows:** Settings → Apps → **SoundStorm** → Uninstall, like any other

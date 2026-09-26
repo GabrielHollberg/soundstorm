@@ -1142,6 +1142,54 @@ name**. It used to fall back to plain self-signed, https only, which would
 have broken the `http://localhost` address the installer prints. Caught while
 making auto the default, before it shipped.
 
+## Moving to another computer
+
+`--export PATH` / `-Export PATH` (and `-Move`, the Start menu shortcut with a
+folder picker) packs an install into `PATH/SoundStorm-move`; `--import` /
+`-Import` installs from one. In the installers, not the app, because it drives
+Docker - the thing SoundStorm is denied.
+
+What goes: every data volume except the caches and downloaded models
+(jellyfin-cache, immich-models, storyteller-models) and tailscale-state, a
+node identity that belongs to one machine. Each volume is a plain tar made in
+an `alpine:3` container, so owners travel as numbers and each backend can
+read its own files on the other side. `settings.env` is the `.env` without
+what describes the old computer (port, LAN address, gateway, UPnP, library
+path), which the new one works out afresh; setup code and secrets come
+across. The library is copied unless asked not to. SoundStorm is stopped for
+the copy - a database copied mid-write may not open - and started again
+whatever happens. The folder carries a launcher for each kind of computer,
+installing from the folder it sits in.
+
+Import refuses a computer that already has SoundStorm data or an install in
+the folder: writing over accounts is not something to do by accident. The
+volumes are restored before anything starts (a backend started on empty
+volumes sets itself up afresh), labelled as compose labels its own so compose
+adopts them without a warning.
+
+Rehearsed on throwaway compose projects - `SOUNDSTORM_PROJECT` exists only
+for that - in all four directions: Linux to Linux, Windows to Windows, Linux
+to Windows and Windows to Linux, checking settings, media, data and owners
+(10001 and 1000) arrived. What the rehearsals found:
+
+- **Line endings.** Windows wrote the manifest and settings with CRLF, so
+  Linux refused the manifest and would have read every setting with a
+  carriage return in its value. Both are written with LF now, and read
+  tolerating either.
+- **A Windows-formatted drive refuses some Linux names**, and one refused
+  name stopped the whole export. Now everything that can be copied is, and
+  the failures are listed. Names Windows cannot hold are listed up front
+  (`windows-name-problems.txt`), and a Windows import points at the list.
+- **`SOUNDSTORM_FORCE=1` did nothing in install.sh** against "installed in
+  another folder", though the message has always said it would. It does now.
+- **A drive root breaks the relaunch**: `-Export "E:\"` reached the hidden
+  copy as `E:"` plus the rest of the line, a trailing backslash escaping the
+  quote. `ConvertTo-ArgumentList` doubles it.
+
+Not exercised: the folder picker and window of `-Move`, and a full import of
+real backends (the rehearsals stood in a single container) - a second
+machine is what that needs.
+
 ## Getting back in
 
 Signup closes permanently once the first account exists, so a forgotten owner
