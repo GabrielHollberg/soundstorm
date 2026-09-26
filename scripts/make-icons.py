@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw SoundStorm's app icons from the cloud in the logo.
+"""Draw SoundStorm's app icons from the cloud in the logo, and its bolt.
 
 The logo arrived as a 500x500 PNG with the cloud only 150 pixels wide, too
 small to enlarge into a 512px icon without blur. The cloud is three shapes,
@@ -22,7 +22,10 @@ ASSETS = Path(__file__).resolve().parent.parent / "internal" / "webui" / "assets
 BIG = (234.0, 220.5, 43.5)      # centre x, centre y, radius
 SMALL = (283.0, 212.7, 23.7)
 BAR = (176.5, 207.0, 324.5, 249.0, 21.0)  # left, top, right, bottom, corner radius
-BOX = (176.5, 177.0, 324.5, 249.0)
+# A lightning bolt drops out of the cloud's flat bottom: the storm in the
+# name. It starts inside the bar, so the two read as one shape.
+BOLT = ((243, 240), (271, 240), (260, 261), (278, 261), (238, 302), (251, 273), (231, 273))
+BOX = (176.5, 177.0, 324.5, 302.0)
 # App icons: a white cloud on the app's own dark background, so the home
 # screen icon looks like the app it opens. (The favicon keeps the logo's black,
 # turning white in a dark browser.)
@@ -37,13 +40,14 @@ def cloud_svg():
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left - 12} {top - 12 - (w - h) / 2} {w + 24} {w + 24}">
   <!-- The SoundStorm cloud. Black, and white where the browser is dark, so the
        tab icon never disappears into the tab. Drawn by scripts/make-icons.py. -->
-  <style>path, circle, rect {{ fill: #000; }} @media (prefers-color-scheme: dark) {{ path, circle, rect {{ fill: #fff; }} }}</style>
+  <style>path, circle, rect, polygon {{ fill: #000; }} @media (prefers-color-scheme: dark) {{ path, circle, rect, polygon {{ fill: #fff; }} }}</style>
   <clipPath id="flat"><rect x="0" y="0" width="1000" height="{by2}"/></clipPath>
   <g clip-path="url(#flat)">
     <circle cx="{BIG[0]}" cy="{BIG[1]}" r="{BIG[2]}"/>
     <circle cx="{SMALL[0]}" cy="{SMALL[1]}" r="{SMALL[2]}"/>
     <rect x="{bx}" y="{by}" width="{bx2 - bx}" height="{by2 - by}" rx="{r}"/>
   </g>
+  <polygon points="{' '.join(f'{x},{y}' for x, y in BOLT)}"/>
 </svg>
 '''
 
@@ -61,6 +65,7 @@ def cloud_mark_svg():
     <circle cx="{SMALL[0]}" cy="{SMALL[1]}" r="{SMALL[2]}"/>
     <rect x="{bx}" y="{by}" width="{bx2 - bx}" height="{by2 - by}" rx="{r}"/>
   </g>
+  <polygon points="{' '.join(f'{x},{y}' for x, y in BOLT)}"/>
 </svg>
 '''
 
@@ -85,11 +90,13 @@ def placeholder_svg():
   </defs>
   <rect x="{x0:.1f}" y="{y0:.1f}" width="{side:.1f}" height="{side:.1f}" fill="url(#tile)"/>
   <!-- Opacity on the group, not on each shape, or the overlaps show. -->
-  <g opacity="0.28"><g clip-path="url(#flat)" fill="#ffffff">
+  <g opacity="0.28" fill="#ffffff"><g clip-path="url(#flat)">
     <circle cx="{BIG[0]}" cy="{BIG[1]}" r="{BIG[2]}"/>
     <circle cx="{SMALL[0]}" cy="{SMALL[1]}" r="{SMALL[2]}"/>
     <rect x="{bx}" y="{by}" width="{bx2 - bx}" height="{by2 - by}" rx="{r}"/>
-  </g></g>
+  </g>
+  <polygon points="{' '.join(f'{x},{y}' for x, y in BOLT)}"/>
+  </g>
 </svg>
 '''
 
@@ -115,6 +122,7 @@ def icon(size, cloud_width):
     d.rounded_rectangle((*pt(bx, by), *pt(bx2, by2)), radius=r * k, fill=INK)
     # Flat along the bottom of the bar: clear whatever hangs below it.
     d.rectangle((0, pt(0, by2)[1], s, s), fill=PAPER)
+    d.polygon([pt(x, y) for x, y in BOLT], fill=INK)
     return img.resize((size, size), Image.LANCZOS).convert("RGB")
 
 

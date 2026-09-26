@@ -1146,10 +1146,47 @@ function renderItem(item) {
     event.stopPropagation();
     openItemMenu(item, more);
   });
-  holder.append(card, more, heartButton(item));
+  holder.append(card, more, heartButton(item), coverButton('cover-info', 'info', `Info about ${item.title}`, () => {
+    // Info straight away: the hold menu's Info page, beside this card.
+    state.menuFor = item;
+    state.menuAnchor = card;
+    renderInfoMenu(item);
+  }));
+  if (item.kind === 'music') {
+    holder.append(
+      coverButton('cover-queue', 'queue', `Add ${item.title} to the queue`, () => {
+        // With nothing playing, there is no queue to add to: it plays.
+        const was = Boolean(audio.item);
+        queueAdd(item);
+        if (was) showToast(`Added "${item.title}" to the queue.`);
+      }),
+      coverButton('cover-next', 'next', `Play ${item.title} next`, () => {
+        const was = Boolean(audio.item);
+        queuePlayNext(item);
+        if (was) showToast(`"${item.title}" plays next.`);
+      }),
+    );
+  }
   const get = getButton(item);
   if (get) holder.append(get);
   return holder;
+}
+
+// The small buttons over a cover's corners - info, add to queue, play next -
+// drawn like the download arrow and the heart: plain icons with a shadow.
+function coverButton(className, iconName, label, run) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `cover-btn ${className}`;
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  b.append(icon(iconName));
+  b.addEventListener('click', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    run();
+  });
+  return b;
 }
 
 // The heart in a cover's top corner: empty, and a tap fills it red and adds

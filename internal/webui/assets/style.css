@@ -73,7 +73,10 @@ a:hover { color: var(--text); }
   content: "";
   flex: 0 0 auto;
   width: 1.45em;
-  height: 0.7em;
+  /* The bolt hangs below the cloud: the cloud stays centred on the name,
+     and the bolt takes no room of its own. */
+  height: 1.23em;
+  margin-bottom: -0.52em;
   background: currentColor;
   -webkit-mask: url(/static/cloud.svg) center / contain no-repeat;
   mask: url(/static/cloud.svg) center / contain no-repeat;
@@ -2642,3 +2645,25 @@ body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-sp
 .fav-toggle:active .icon { transform: scale(0.88); }
 .item-holder .item-more { right: 44px; }
 body.offline-mode .fav-toggle { display: none; }
+
+/* Over a cover: info top left; on a song, add to queue bottom middle and
+   play next bottom right. The download arrow keeps the bottom left and the
+   heart the top right. Bottom is the cover's width down, as for the arrow. */
+.cover-btn {
+  position: absolute;
+  z-index: 2;
+  width: 34px; height: 34px;
+  padding: 0;
+  display: grid; place-items: center;
+  border: none; background: none;
+  color: rgba(235, 238, 243, 0.85);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+  -webkit-tap-highlight-color: transparent;
+}
+.cover-btn:hover { color: #fff; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85)); }
+.cover-btn .icon { width: 20px; height: 20px; stroke-width: 2.4; }
+.cover-btn:active .icon { transform: scale(0.88); }
+.cover-info { top: 5px; left: 4px; }
+.cover-queue { top: calc(100cqw - 42px); left: calc(50% - 17px); }
+.cover-next { top: calc(100cqw - 42px); right: 4px; }
+body.offline-mode .cover-queue, body.offline-mode .cover-next { display: none; }

@@ -1,11 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="164.5 127.0 172.0 172.0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="164.5 153.5 172.0 172.0">
   <!-- The SoundStorm cloud. Black, and white where the browser is dark, so the
        tab icon never disappears into the tab. Drawn by scripts/make-icons.py. -->
-  <style>path, circle, rect { fill: #000; } @media (prefers-color-scheme: dark) { path, circle, rect { fill: #fff; } }</style>
+  <style>path, circle, rect, polygon { fill: #000; } @media (prefers-color-scheme: dark) { path, circle, rect, polygon { fill: #fff; } }</style>
   <clipPath id="flat"><rect x="0" y="0" width="1000" height="249.0"/></clipPath>
   <g clip-path="url(#flat)">
     <circle cx="234.0" cy="220.5" r="43.5"/>
     <circle cx="283.0" cy="212.7" r="23.7"/>
     <rect x="176.5" y="207.0" width="148.0" height="42.0" rx="21.0"/>
   </g>
+  <polygon points="243,240 271,240 260,261 278,261 238,302 251,273 231,273"/>
 </svg>

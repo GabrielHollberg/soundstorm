@@ -783,6 +783,11 @@ still lists newest first): the length is under **Info** in the hold menu,
 with everything else the backend said, and a menu page that grows is
 placed again so none of it is off screen.
 
+Info (top left) opens the hold menu's Info page beside the card; on a
+song, add to queue sits bottom middle and play next bottom right, beside
+the download arrow. With nothing playing either one simply plays the
+song, as the menu's items always have.
+
 **Favourites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A
 playlist of films has no player to play it in.
@@ -2739,7 +2744,9 @@ flat along the bottom), measured off that image, and `scripts/make-icons.py`
 draws every icon from them: the favicon (black, white in a dark browser),
 `cloud.svg` for the wordmark, and the PNG app icons - a white cloud on
 the app's own dark background, so the home screen icon looks like the app
-it opens. Change the icons by changing the script, not by editing the PNGs.
+it opens. A lightning bolt drops out of the cloud's flat bottom, for the storm in
+the name; the wordmark's mask is taller for it, with a negative bottom
+margin so the cloud stays centred on the name. Change the icons by changing the script, not by editing the PNGs.
 The wordmark is the cloud as a CSS mask in the text's colour, then the name
 in heavy italic, matching the logo.
 
