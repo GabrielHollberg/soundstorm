@@ -2717,3 +2717,8 @@ html.holding, html.holding body { overscroll-behavior: none; }
 .sk-title { height: 24px; width: 55%; margin-top: 4px; }
 @keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .sk-cover, .sk-line { animation: none; } }
+
+/* While a swipe moves: the shimmer holds still (a background that moves is
+   repainted every frame), and the sliding copy of the old page paints alone. */
+html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
+.swipe-ghost > * { contain: layout paint; }

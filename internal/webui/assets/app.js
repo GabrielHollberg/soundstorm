@@ -1118,6 +1118,7 @@ function renderItem(item) {
     else img.src = art;
     img.alt = '';
     img.loading = 'lazy';
+    img.decoding = 'async';
     // A backend can have an artwork id but no actual file; fall back rather
     // than showing a broken image.
     img.addEventListener('error', () => img.replaceWith(fallbackArt(item)));
@@ -4139,6 +4140,7 @@ function coverArt(src, label, round) {
     img.src = src;
     img.alt = '';
     img.loading = 'lazy';
+    img.decoding = 'async';
     img.addEventListener('error', () => img.replaceWith(round ? initials(label) : noCover()));
     wrap.append(img);
   } else {
@@ -5220,6 +5222,7 @@ function mixCover(mix) {
       img.src = artUrl(mix.sourceId, id);
       img.alt = '';
       img.loading = 'lazy';
+      img.decoding = 'async';
       wrap.append(img);
     }
   } else if (art.length) {
@@ -6404,7 +6407,11 @@ function albumCardFromHome(album) {
     promote(true);
     place(dir * window.innerWidth, 0);
     g.drawn = whenDrawn();
-    target.click();
+    document.documentElement.classList.add('swiping');
+    // A frame later: pressing the pill starts the next page's work - clearing,
+    // ghost content, a request - which must not hold up the first frame of
+    // the page following the finger.
+    requestAnimationFrame(() => target.click());
   }
 
   // Touch events arrive faster than frames on many phones: draw once a frame.
@@ -6429,7 +6436,9 @@ function albumCardFromHome(album) {
     const width = window.innerWidth;
     const { ghost, dir, dx, drawn, from, scroll } = swipe;
     if (commit) {
-      await drawn;
+      // Straight away: the page slides in with its ghost content if the real
+      // one is not there yet. Waiting for it first froze the swipe for as
+      // long as the server took, which on a phone is the stall people felt.
       const ms = Math.round(150 + 150 * (1 - Math.abs(dx) / width));
       slide(ghost, -dir * width, ms);
       place(0, ms, ease);
@@ -6455,6 +6464,7 @@ function albumCardFromHome(album) {
     }
     promote(false);
     document.documentElement.style.overflowAnchor = '';
+    document.documentElement.classList.remove('swiping');
     busy = false;
   }
 

@@ -567,6 +567,17 @@ The photo viewer does the same with two side images holding the previews
 either side, 16px apart; on commit the neighbor slides to the middle and
 the main image, hidden, swaps to it once decoded.
 
+**Still choppy on a phone, after the ghost content came in**, so four more.
+On lift the slide starts at once, the ghost content standing in, where it
+used to wait for the next page's data - a stall exactly as long as the
+server took. Pressing the next pill waits a frame, so its work (clearing,
+ghost content, the request) does not hold up the first frame of movement.
+The shimmer pauses while a swipe moves (`html.swiping`), since a moving
+background is a repaint every frame, and covers decode asynchronously.
+Measured with the CPU slowed 4x and 250ms on every request: frames over
+34ms per swipe went from 1-2 to none, the worst from 34ms to 19ms. The
+emulator never showed the choppiness itself; a phone is the real check.
+
 **And `#app { overflow-x: clip }`, or the tab bar jumps.** A page mid-swipe
 hangs off the right of the screen, which made the page wider than the phone:
 a real Android phone zoomed out and the bottom tab bar glitched, the same
