@@ -662,7 +662,7 @@ fix it, both checked on the real install:
 - **Downloads** live in the Cache API (`soundstorm-offline-v1`), with an index
   in localStorage. Downloaded songs always play from the device. Sign-out
   clears them.
-- **Books download too**: audiobooks, ebooks, documents, and Read & listen
+- **Books download too**: audiobooks, ebooks, documents, and Read Along
   pairs (both halves, plus a synced book's text - without its copy of the
   audio - and its timeline). All in the same cache as songs, keyed by the
   address the app would ask the server for, so one index and one Remove
@@ -711,7 +711,7 @@ fix it, both checked on the real install:
   holder's width tall. Hidden offline and where there is no Cache API.
   **Remove download** in the menu takes an item off the device whichever
   download brought it - alone, in an album or playlist (it leaves the
-  group), or half of a Read & listen book (the pair goes whole). And downloads come first even online: the reader reads a downloaded
+  group), or half of a Read Along book (the pair goes whole). And downloads come first even online: the reader reads a downloaded
   book from the cache before asking the server, as songs, audiobooks, films
   and photos already did.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load
@@ -2506,7 +2506,7 @@ under the reader) and the reader's page is laid out above the card, so no
 line hides behind it; Now Playing still opens over both. A film still stops,
 since it would play behind the book.
 
-**Read & listen** is a shelf in Books of what somebody has as both an ebook
+**Read Along** is a shelf in Books of what somebody has as both an ebook
 and an audiobook. `GET /api/books/pairs` lists both shelves through the
 registry (so access applies) and matches on a key with the edition noise
 taken out - anything bracketed (ASIN, Unabridged, Full-Cast Edition), a
@@ -2525,7 +2525,7 @@ recording to its text sentence by sentence is forced alignment - transcribe
 the audio, find it in the book - which is the expensive, ML-shaped layer this
 project does not own. So it is a backend: **Storyteller** (MIT, Docker),
 pinned by digest to web-v2.14.21 because its API moves between releases.
-SoundStorm provisions it, hands it pairs from Read & listen, and reads the
+SoundStorm provisions it, hands it pairs from Read Along, and reads the
 result. A cheap alternative - chapter-proportional guessing - was offered and
 declined: a page off by one reads as broken.
 
@@ -2588,8 +2588,21 @@ choice is kept on the account like the pill order. So is **audiobook speed**
 the next chapter file resets the rate to the default. Read-along's timeline
 reads the player's own clock, so it follows at any speed.
 
+**A missed match can be made by hand.** Holding an ebook offers the owner
+**Pair with its audiobook** (and an audiobook, its ebook): a search in the
+menu, started at the title with its edition noise taken out. Kept as
+`manualPairs`, the same key shape and the same kind of decision as
+`notPairs`; pairing takes a key off `notPairs`, and Not the same book takes
+it off `manualPairs`. A new pair kicks the auto-sync.
+
+**A failed sync does not unmatch.** Failure is usually Storyteller, not the
+match - a restart mid-job, a model download, a full disk - and a card
+offering Try again is recoverable where a vanished pair is not. Not the
+same book is the owner's call. A synced card says nothing under it: synced
+is the normal state, so only waiting, working and failed get a line.
+
 **A wrong match can be undone.** Title and author can match two different
-books, so a Read & listen card's hold menu offers the owner **Not the same
+books, so a Read Along card's hold menu offers the owner **Not the same
 book**: the pair is left out of the list for everyone (and so never synced
 by itself), and whatever Storyteller made of it is deleted - its own copies
 only; its delete touches nothing outside its storage, and the recording's

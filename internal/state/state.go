@@ -207,6 +207,9 @@ type data struct {
 	// go stale in a way that matters: an id that no longer exists simply
 	// never matches again.
 	NotPairs []string `json:"notPairs,omitempty"`
+	// ManualPairs are ebooks and audiobooks the owner has paired by hand,
+	// where the titles or authors differ too much to match, same shape.
+	ManualPairs []string `json:"manualPairs,omitempty"`
 
 	// DeviceKey signs the tokens that mark a browser as one an account has
 	// signed in on before (see auth.Manager.SignIn). Made on first use; a
@@ -1023,6 +1026,48 @@ func (s *Store) SetNotPair(key string, wrong bool) error {
 	case !wrong && at >= 0:
 		s.d.NotPairs = append(s.d.NotPairs[:at], s.d.NotPairs[at+1:]...)
 	default:
+		return nil
+	}
+	return s.save()
+}
+
+// ManualPairs is the list of pairs made by hand.
+func (s *Store) ManualPairs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.d.ManualPairs...)
+}
+
+// SetManualPair pairs an ebook and an audiobook by hand, or unpairs them.
+// Pairing also takes the two off the wrong-match list: the owner has just
+// said they are the same.
+func (s *Store) SetManualPair(key string, paired bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	remove := func(list []string) ([]string, bool) {
+		for i, k := range list {
+			if k == key {
+				return append(list[:i], list[i+1:]...), true
+			}
+		}
+		return list, false
+	}
+	changed := false
+	if paired {
+		if l, ok := remove(s.d.NotPairs); ok {
+			s.d.NotPairs, changed = l, true
+		}
+		if _, ok := remove(append([]string(nil), s.d.ManualPairs...)); !ok {
+			if len(s.d.ManualPairs) >= MaxNotPairs {
+				return fmt.Errorf("too many books paired by hand")
+			}
+			s.d.ManualPairs = append(s.d.ManualPairs, key)
+			changed = true
+		}
+	} else if l, ok := remove(s.d.ManualPairs); ok {
+		s.d.ManualPairs, changed = l, true
+	}
+	if !changed {
 		return nil
 	}
 	return s.save()

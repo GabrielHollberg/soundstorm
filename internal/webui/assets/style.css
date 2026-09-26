@@ -2459,7 +2459,7 @@ body:has(#reader-overlay:not(.hidden)) .dock {
   bottom: max(12px, env(safe-area-inset-bottom));
 }
 
-/* Read & listen: a book card with Read and Listen under it. */
+/* Read Along: a book card with Read and Listen under it. */
 .pair-holder { display: flex; flex-direction: column; min-width: 0; }
 .pair-actions { display: flex; gap: 6px; margin-top: 6px; }
 .pair-actions button {
@@ -2473,11 +2473,11 @@ body:has(#reader-overlay:not(.hidden)) .dock {
 }
 .pair-actions .icon { width: 16px; height: 16px; }
 
-/* Read & listen: whether the page turns with the audio. */
+/* Read Along: whether the page turns with the audio. */
 .pair-sync { margin-top: 6px; font-size: 12.5px; color: var(--muted); min-height: 18px; }
 .pair-sync .linkish { font-size: 12.5px; padding: 0; }
-.pair-sync.ready { display: flex; align-items: center; gap: 4px; color: var(--text); }
-.pair-sync.ready .icon { width: 14px; height: 14px; color: var(--accent); }
+/* Synced says nothing, and takes no room. */
+.pair-sync.ready { display: none; }
 .pair-bar { height: 3px; margin-top: 5px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .pair-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease-out; }
 
@@ -2515,7 +2515,7 @@ body:has(#reader-overlay:not(.hidden)) .dock {
 /* Read-along's highlight toggle, lit while it is on. */
 #reader-highlight.on { color: var(--accent); border-color: var(--accent); }
 
-/* Read & listen: the download button, a square beside Read and Listen. */
+/* Read Along: the download button, a square beside Read and Listen. */
 .pair-actions .pair-download { flex: 0 0 auto; width: 38px; padding: 6px 0; }
 .pair-actions .pair-download.done { color: var(--accent); border-color: var(--accent); }
 #download-all { margin-left: auto; }
@@ -2602,3 +2602,20 @@ body.offline-mode .dl-get { display: none; }
 /* The reader's page stops above an iPhone's home indicator. */
 #reader-overlay .reader-body { padding-bottom: env(safe-area-inset-bottom); }
 body.dock-open #reader-overlay .reader-body { padding-bottom: calc(var(--dock-space) - 12px + env(safe-area-inset-bottom)); }
+
+/* Pair by hand: a search box and results inside the hold menu. */
+.menu-search {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 6px 8px 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+.menu-results { max-height: 300px; overflow-y: auto; }
+.menu-results .menu-item { align-items: flex-start; }
+.menu-results .menu-detail { display: block; }

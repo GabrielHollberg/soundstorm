@@ -89,11 +89,33 @@ func (s *Server) listPairs(ctx context.Context) []bookPair {
 	wg.Wait()
 	wrong := s.store.NotPairs()
 	var pairs []bookPair
+	have := map[string]bool{}
 	for _, p := range matchBooks(ebooks, audiobooks) {
-		if !wrong[notPairKey(itemRef{p.Ebook.SourceID, p.Ebook.ID}, itemRef{p.Audiobook.SourceID, p.Audiobook.ID})] {
+		key := notPairKey(itemRef{p.Ebook.SourceID, p.Ebook.ID}, itemRef{p.Audiobook.SourceID, p.Audiobook.ID})
+		if !wrong[key] {
 			pairs = append(pairs, p)
+			have[key] = true
 		}
 	}
+	// Pairs made by hand, where both books are still on shelves this account
+	// can see.
+	byRef := map[string]media.Item{}
+	for _, it := range append(append([]media.Item(nil), ebooks...), audiobooks...) {
+		byRef[it.SourceID+"/"+it.ID] = it
+	}
+	for _, key := range s.store.ManualPairs() {
+		e, a, ok := strings.Cut(key, "|")
+		ebook, okE := byRef[e]
+		audiobook, okA := byRef[a]
+		if !ok || !okE || !okA || have[key] || ebook.Kind != media.KindEbook || audiobook.Kind != media.KindAudiobook {
+			continue
+		}
+		pairs = append(pairs, bookPair{Ebook: ebook, Audiobook: audiobook})
+		have[key] = true
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		return bookKey(pairs[i].Ebook.Title) < bookKey(pairs[j].Ebook.Title)
+	})
 	if pairs == nil {
 		pairs = []bookPair{}
 	}

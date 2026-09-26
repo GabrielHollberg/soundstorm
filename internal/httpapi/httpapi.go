@@ -330,6 +330,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/settings/lyrics", s.handleSetOnlineLyrics)
 	owner.HandleFunc("PUT /api/settings/readalong", s.handleSetAutoReadAlong)
 	owner.HandleFunc("POST /api/books/pairs/not-same", s.handleNotSameBook)
+	owner.HandleFunc("POST /api/books/pairs/by-hand", s.handlePairByHand)
 	owner.HandleFunc("POST /api/delete/preview", s.handleDeletePreview)
 	owner.HandleFunc("POST /api/delete", s.handleDelete)
 	owner.HandleFunc("POST /api/delete/undo", s.handleDeleteUndo)
@@ -343,6 +344,7 @@ func (s *Server) Routes() http.Handler {
 	// answers 404: the read-along switch did, unnoticed, until a test asked.
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/books/pairs/by-hand", s.auth.RequireOwner(owner))
 	// Deleting is the owner's alone: every other account shares these shelves
 	// with the rest of the house. See delete.go.
 	guarded.Handle("/api/delete", s.auth.RequireOwner(owner))

@@ -275,7 +275,7 @@ $('readalong-toggle').addEventListener('change', async (event) => {
   }
   note($('readalong-note'), enabled
     ? 'On. Books on both shelves are synced one at a time, starting now.'
-    : 'Off. Sync a book yourself from Books, Read & listen.', false);
+    : 'Off. Sync a book yourself from Books, Read Along.', false);
 });
 
 $('lyrics-toggle').addEventListener('change', async (event) => {
@@ -3048,6 +3048,7 @@ const ICONS = {
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5zM5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
   headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zM20 15a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z"/>',
   photo: '<path d="M4 6h16v12H4zM4 15l4.5-4.5 4 4 2.5-2.5L20 17M15.5 9.5h.01"/>',
   gear: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
@@ -3193,6 +3194,15 @@ function renderMainMenu(item) {
       }
     }));
   }
+  const pairable = (item.kind === 'audiobook'
+    || (item.kind === 'ebook' && ((item.extra && item.extra.format) || '').toLowerCase() !== 'pdf'));
+  if (pairable && state.me && state.me.owner && !state.offline) {
+    const other = item.kind === 'ebook' ? 'audiobook' : 'ebook';
+    entries.push(menuItem('link', `Pair with its ${other}`, (event) => {
+      event.stopPropagation();
+      renderPairPicker(item);
+    }, { chevron: true }));
+  }
   if (state.me && state.me.owner && !state.offline && item.sourceId !== 'storyteller') {
     // Stopped here: the menu is redrawn at once, and a click reaching the
     // page from a button no longer in the menu reads as a click outside it.
@@ -3308,7 +3318,7 @@ function renderSearchHint() {
   const shelves = {
     '': 'everything', music: 'music', video: 'films', tv: 'TV', audiobook: 'audiobooks',
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
-    favourites: 'your favourites', playlists: 'your playlists', pairs: 'books to read and listen to',
+    favourites: 'your favourites', playlists: 'your playlists', pairs: 'books to read along with',
   };
   let what = shelves[state.kind] || 'everything';
   if (state.kind === 'music' && ['songs', 'albums', 'artists'].includes(state.musicView)) what = state.musicView;
@@ -5460,7 +5470,7 @@ async function downloadsView(offlineMode, only) {
     const s = document.createElement('span');
     s.className = 'muted';
     const what = {
-      audiobook: 'Audiobook', ebook: 'Book', document: 'Document', pair: 'Read & listen',
+      audiobook: 'Audiobook', ebook: 'Book', document: 'Document', pair: 'Read Along',
       video: 'Film', tv: 'Episode', picture: 'Photo',
     }[group.type] || `${songs.length} song${songs.length === 1 ? '' : 's'}`;
     s.textContent = [group.subtitle, what].filter(Boolean).join(' \u00B7 ');
@@ -5752,7 +5762,7 @@ const TABS = {
   music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true }],
   watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }],
   books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
-    { kind: 'pairs', label: 'Read & listen' }, { kind: 'document', label: 'Documents' }],
+    { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' }],
   photos: [{ kind: 'picture', label: 'Photos' }],
 };
 state.tab = 'home';
@@ -6330,7 +6340,7 @@ function tintStatusBar(art) {
   img.src = art;
 }
 
-/* ------------------------------------------------------- read and listen */
+/* ------------------------------------------------------- Read Along */
 
 // Books there is both an ebook and an audiobook of, matched by the server on
 // title and author. A card's cover reads along - the audiobook starts and the
@@ -6363,7 +6373,7 @@ async function showPairs(seq, query) {
   state.pairsShown = true;
   $('results').replaceChildren(...shown.map(pairCard));
   $('status').textContent = shown.length
-    ? `${shown.length} book${shown.length === 1 ? '' : 's'} to read and listen to`
+    ? `${shown.length} book${shown.length === 1 ? '' : 's'} to read along with`
     : (terms.length ? 'Nothing matches.' : 'No book is on both shelves yet.');
   // While a book is syncing, keep its card current.
   clearTimeout(state.pairsPoll);
@@ -6454,8 +6464,8 @@ function renderSyncLine(pair, line) {
   }
   switch (sync.state) {
     case 'ready':
+      // Synced is the normal state: nothing to say.
       line.classList.add('ready');
-      line.append(icon('check'), document.createTextNode('Pages turn with the audio'));
       break;
     case 'failed':
     case 'stopped':
@@ -6728,7 +6738,7 @@ document.addEventListener('click', () => {
 /* ------------------------------------------------ downloading books */
 
 // Audiobooks, ebooks and documents can be kept on the device like songs, and
-// a Read & listen book as both halves - with its synced text and timeline,
+// a Read Along book as both halves - with its synced text and timeline,
 // so the page follows the voice offline too. Films and TV cannot: a film is
 // gigabytes, and one a browser cannot play is converted by the server as it
 // plays, which cannot happen with no server. Photos are not offered either:
@@ -6855,7 +6865,7 @@ function pairDownloadID(pair) {
   return `pair:${selectionKey(pair.ebook)}|${selectionKey(pair.audiobook)}`;
 }
 
-// downloadPair keeps both halves of a Read & listen book, and where it is
+// downloadPair keeps both halves of a Read Along book, and where it is
 // synced, the synced text (not its copy of the audio - the audiobook is
 // already here) and the timeline.
 async function downloadPair(pair, onProgress = () => {}) {
@@ -6921,7 +6931,7 @@ async function downloadWithToast(title, run) {
 
 /* -------------------------------------------------------- download all */
 
-// Download all: an artist's albums, the favourites, every Read & listen book,
+// Download all: an artist's albums, the favourites, every Read Along book,
 // or a whole shelf. One job at a time, one item after another, with its
 // progress and a Stop in the message at the bottom. A whole shelf says how
 // much it is and how much room the device has, and asks first.
@@ -7017,7 +7027,7 @@ $('download-all').addEventListener('click', () => {
       return tasks;
     });
   } else if (kind === 'pairs') {
-    bulkDownload('Read & listen', async () => {
+    bulkDownload('Read Along', async () => {
       const pairs = await refreshPairs();
       return pairs
         .filter((p) => !state.downloads.groups.some((g) => g.id === pairDownloadID(p)))
@@ -7275,7 +7285,7 @@ async function showOfflineShelf(seq, query) {
     const songs = kept('music');
     if (songs.length && !albums.length) view.append(homeRow('Songs', songs.map(renderItem), () => selectKind('music')));
     const pairs = offlinePairs(matches);
-    if (pairs.length) view.append(homeRow('Read & listen', pairs.map(pairCard), () => selectKind('pairs')));
+    if (pairs.length) view.append(homeRow('Read Along', pairs.map(pairCard), () => selectKind('pairs')));
     const names = { audiobook: 'Audiobooks', ebook: 'Books', document: 'Documents', video: 'Films', tv: 'TV', picture: 'Photos' };
     const all = [];
     for (const k of Object.keys(names)) {
@@ -7574,7 +7584,7 @@ async function renderDeleteMenu(item) {
 
 // Removing one item's download takes it off the device whichever download
 // brought it - on its own, as part of an album or playlist, or as half of a
-// Read & listen book (which goes whole: half of one cannot be read along).
+// Read Along book (which goes whole: half of one cannot be read along).
 async function removeItemDownload(item) {
   const key = selectionKey(item);
   for (const group of [...state.downloads.groups]) {
@@ -7600,9 +7610,9 @@ async function removeItemDownload(item) {
   markDownloads();
 }
 
-/* ------------------------------------------- Read & listen: not the same */
+/* ------------------------------------------- Read Along: not the same */
 
-// A Read & listen card's hold menu. Title and author can match two different
+// A Read Along card's hold menu. Title and author can match two different
 // books, so the owner can say they are not the same: the pair leaves the
 // shelf for everyone and is never synced (anything Storyteller made of it is
 // deleted), with an Undo.
@@ -7650,4 +7660,86 @@ function renderPairMenu(pair, menu, note) {
     entries.push(none);
   }
   menu.replaceChildren(...entries, note);
+}
+
+/* ------------------------------------------------------- pair by hand */
+
+// Pair with its audiobook (or ebook): when the matching missed - a subtitle,
+// an author spelled two ways - the owner picks the other half from a search
+// that starts at the book's own title. The pair joins Read Along for
+// everyone, and syncs by itself.
+function renderPairPicker(item) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const other = item.kind === 'ebook' ? 'audiobook' : 'ebook';
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = `Pair with its ${other}`;
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item);
+  });
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'menu-search';
+  search.placeholder = `Search ${other}s\u2026`;
+  // The title without its edition noise: "[B017V4IM1G]", "(Unabridged)".
+  search.value = item.title.replace(/\s*[\[(][^\])]*[\])]/g, '').split(':')[0].trim();
+  const list = document.createElement('div');
+  list.className = 'menu-results';
+  menu.replaceChildren(back, search, list, note);
+
+  let seq = 0;
+  const find = async () => {
+    const mine = ++seq;
+    const q = search.value.trim();
+    const params = new URLSearchParams({ q, kind: other, limit: '12' });
+    const { ok, body } = await api(`/api/search?${params}`);
+    if (mine !== seq || state.menuFor !== item) return;
+    const found = (ok && body && body.items) || [];
+    list.replaceChildren(...(found.length ? found.map((candidate) => {
+      const choice = menuItem(other === 'audiobook' ? 'headphones' : 'book', candidate.title, async (event) => {
+        event.stopPropagation();
+        const [ebook, audiobook] = item.kind === 'ebook' ? [item, candidate] : [candidate, item];
+        const pairIt = (paired) => api('/api/books/pairs/by-hand', {
+          method: 'POST',
+          body: JSON.stringify({
+            ebook: { sourceId: ebook.sourceId, id: ebook.id },
+            audiobook: { sourceId: audiobook.sourceId, id: audiobook.id },
+            paired,
+          }),
+        });
+        const result = await pairIt(true);
+        if (!result.ok) {
+          note.textContent = (result.body && result.body.error) || 'Could not pair them.';
+          show(note, true);
+          return;
+        }
+        closeItemMenu();
+        refreshPairs();
+        showToast(`Paired "${ebook.title}" with its audiobook. It's in Books, Read Along.`, 'Undo', async () => {
+          await pairIt(false);
+          refreshPairs();
+          if (state.kind === 'pairs') runSearch();
+        }, 10000);
+      }, { detail: (candidate.creators || []).join(', ') });
+      return choice;
+    }) : [(() => {
+      const none = document.createElement('p');
+      none.className = 'menu-confirm';
+      none.textContent = q ? `No ${other} matches that.` : `Type to find the ${other}.`;
+      return none;
+    })()]));
+  };
+  let timer = 0;
+  search.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(find, 250);
+  });
+  search.addEventListener('click', (event) => event.stopPropagation());
+  find();
 }

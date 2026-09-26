@@ -114,3 +114,48 @@ func TestOwnerSettingsAnswer(t *testing.T) {
 		}
 	}
 }
+
+// Books the matching misses can be paired by hand, and unpaired.
+func TestPairingByHand(t *testing.T) {
+	ebooks := stub{id: "ebooks", kind: media.KindEbook, items: []media.Item{
+		{ID: "e1", SourceID: "ebooks", Kind: media.KindEbook, Title: "The Hobbit", Creators: []string{"J.R.R. Tolkien"}},
+	}}
+	audiobooks := stub{id: "audiobookshelf", kind: media.KindAudiobook, items: []media.Item{
+		{ID: "a1", SourceID: "audiobookshelf", Kind: media.KindAudiobook, Title: "There and Back Again", Creators: []string{"Tolkien"}},
+	}}
+	h := newHarness(t, ebooks, audiobooks)
+	h.signUp(t)
+	count := func() int {
+		_, body := h.do(t, http.MethodGet, "/api/books/pairs", "")
+		var got struct {
+			Pairs []json.RawMessage `json:"pairs"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("pairs: %v (%s)", err, body)
+		}
+		return len(got.Pairs)
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("%d pairs before, want 0 - these titles should not match", n)
+	}
+	pair := func(on bool) {
+		body := `{"ebook":{"sourceId":"ebooks","id":"e1"},"audiobook":{"sourceId":"audiobookshelf","id":"a1"},"paired":` +
+			strconv.FormatBool(on) + `}`
+		if resp, b := h.do(t, http.MethodPost, "/api/books/pairs/by-hand", body); resp.StatusCode != http.StatusOK {
+			t.Fatalf("by-hand %v: %d %s", on, resp.StatusCode, b)
+		}
+	}
+	pair(true)
+	if n := count(); n != 1 {
+		t.Errorf("%d pairs after pairing by hand, want 1", n)
+	}
+	pair(false)
+	if n := count(); n != 0 {
+		t.Errorf("%d pairs after unpairing, want 0", n)
+	}
+	// Backwards is refused.
+	if resp, _ := h.do(t, http.MethodPost, "/api/books/pairs/by-hand",
+		`{"ebook":{"sourceId":"audiobookshelf","id":"a1"},"audiobook":{"sourceId":"ebooks","id":"e1"},"paired":true}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a backwards pair answered %d", resp.StatusCode)
+	}
+}

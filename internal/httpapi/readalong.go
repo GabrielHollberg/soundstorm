@@ -16,7 +16,7 @@ import (
 
 // Read-along: the page following the audiobook. Storyteller does the
 // matching (see internal/source/storyteller); these endpoints hand it a pair
-// from Read & listen, report how far it has got, and give the reader the
+// from Read Along, report how far it has got, and give the reader the
 // synced book with a timeline of its sentences on the audiobook's own clock.
 
 const maxReadAlongBody = 2048
@@ -91,7 +91,7 @@ func (s *Server) handleStartReadAlong(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-// handleNotSameBook marks a Read & listen match wrong - or, undone, right
+// handleNotSameBook marks a Read Along match wrong - or, undone, right
 // again. Owner-only, like deleting: it changes the library for everyone, and
 // it deletes whatever Storyteller made of the pair, synced or waiting, since
 // following one book with another's voice is the thing to avoid. Storyteller
@@ -108,7 +108,12 @@ func (s *Server) handleNotSameBook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "expected an ebook and an audiobook")
 		return
 	}
-	if err := s.store.SetNotPair(notPairKey(body.Ebook, body.Audiobook), body.Wrong); err != nil {
+	key := notPairKey(body.Ebook, body.Audiobook)
+	if body.Wrong {
+		// Not the same book undoes a pairing made by hand, too.
+		_ = s.store.SetManualPair(key, false)
+	}
+	if err := s.store.SetNotPair(key, body.Wrong); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -124,6 +129,40 @@ func (s *Server) handleNotSameBook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"wrong": body.Wrong})
+}
+
+// handlePairByHand pairs an ebook with an audiobook the matching missed -
+// different titles, or an author spelled two ways - or, undone, unpairs
+// them. Owner-only, like marking a match wrong: it changes the library for
+// everyone, and a new pair is then synced by itself.
+func (s *Server) handlePairByHand(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Ebook     itemRef `json:"ebook"`
+		Audiobook itemRef `json:"audiobook"`
+		Paired    bool    `json:"paired"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReadAlongBody)).Decode(&body); err != nil ||
+		body.Ebook.ID == "" || body.Audiobook.ID == "" || len(body.Ebook.ID)+len(body.Audiobook.ID) > 400 {
+		writeError(w, http.StatusBadRequest, "expected an ebook and an audiobook")
+		return
+	}
+	// Both must be real, and the right way round.
+	if src, ok := s.reg.ByID(r.Context(), body.Ebook.SourceID); !ok || src.Kind() != media.KindEbook {
+		writeError(w, http.StatusBadRequest, "that is not an ebook")
+		return
+	}
+	if src, ok := s.reg.ByID(r.Context(), body.Audiobook.SourceID); !ok || src.Kind() != media.KindAudiobook {
+		writeError(w, http.StatusBadRequest, "that is not an audiobook")
+		return
+	}
+	if err := s.store.SetManualPair(notPairKey(body.Ebook, body.Audiobook), body.Paired); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Paired {
+		s.kickAutoReadAlong()
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"paired": body.Paired})
 }
 
 // handleReadAlongNext moves a pair's waiting sync to the front of the queue.
