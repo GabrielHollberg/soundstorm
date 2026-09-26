@@ -112,6 +112,7 @@ type jfItem struct {
 	ParentIndexNumber *int              `json:"ParentIndexNumber"` // season
 	ImageTags         map[string]string `json:"ImageTags"`
 	CommunityRating   float64           `json:"CommunityRating"`
+	Genres            []string          `json:"Genres"`
 }
 
 func (s *Source) searchParams(q media.Query) url.Values {
@@ -119,7 +120,7 @@ func (s *Source) searchParams(q media.Query) url.Values {
 		"Recursive":        {"true"},
 		"IncludeItemTypes": {s.itemTypes},
 		"Limit":            {strconv.Itoa(q.LimitOr(25))},
-		"Fields":           {"Overview,ProductionYear,ParentIndexNumber,IndexNumber"},
+		"Fields":           {"Overview,ProductionYear,ParentIndexNumber,IndexNumber,Genres"},
 
 		// Jellyfin can hold episodes that have no file: with a user's
 		// "display missing episodes" preference on, it manufactures one per gap
@@ -234,6 +235,9 @@ func (s *Source) toItem(it jfItem) media.Item {
 	}
 	if it.Overview != "" {
 		item.Extra["overview"] = truncate(it.Overview, 400)
+	}
+	if len(it.Genres) > 0 {
+		item.Extra["genre"] = strings.Join(it.Genres, ", ")
 	}
 	if it.CommunityRating > 0 {
 		item.Extra["rating"] = strconv.FormatFloat(it.CommunityRating, 'f', 1, 64)

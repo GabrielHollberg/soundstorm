@@ -544,6 +544,21 @@ late. While Settings is open the search box searches settings - every
 card holding all the words typed, in its text or its `data-words`, across
 every pill - and the library's query and placeholder come back on leaving.
 
+**The + at the end of a row of categories** lists the ones put away; one
+tapped comes back and opens. Hold a category and drag it onto the + to put
+it away (never the last one; the row holds still over the +, or scrolling
+near the edge slid it from under the finger). Kept on the account as
+`prefs.hiddenPills` per row. A row missing there has the defaults, which
+put Genres away - so an empty list is stored as an empty list, never null,
+or "I added Genres back" would read as "defaults" and hide it again.
+
+**Genres** (Music, Watch, Books) are grouped by the server from the shelves
+it already lists and caches (`GET /api/genres?kinds=`), not asked of each
+backend: every item carries its genre (`Extra["genre"]`, now also from
+Jellyfin and Audiobookshelf; an EPUB's subjects as `tags`), and
+Audiobookshelf's entries are often several joined with commas ("Action &
+Adventure, Dystopian") - split, and one genre per name whatever its case.
+
 **Black at both ends, to meet Android's bars.** The theme color (the
 status bar) is #000, and so are the header and the pills under it - one
 solid band, no blur, no line between them - and the phone's tab bar, with no

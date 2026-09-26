@@ -526,6 +526,10 @@ func (s *Store) History(userID string) ([]Play, error) {
 // read, and how fast audiobooks play.
 type Prefs struct {
 	Pills map[string][]string `json:"pills,omitempty"`
+	// HiddenPills is each row's categories put away with the + button. A row
+	// absent here has the app's defaults; present, even empty, it is the
+	// person's own choice.
+	HiddenPills map[string][]string `json:"hiddenPills,omitempty"`
 	// Highlight is nil for the default, which is on.
 	Highlight *bool `json:"readAlongHighlight,omitempty"`
 	// BookSpeed is 0 for the default, which is normal speed.
@@ -557,9 +561,10 @@ func (s *Store) Prefs(userID string) (Prefs, error) {
 
 // PrefsChange is what a client may change; a nil field is left as it is.
 type PrefsChange struct {
-	Pills     map[string][]string `json:"pills"`
-	Highlight *bool               `json:"readAlongHighlight"`
-	BookSpeed *float64            `json:"audiobookSpeed"`
+	Pills       map[string][]string `json:"pills"`
+	HiddenPills map[string][]string `json:"hiddenPills"`
+	Highlight   *bool               `json:"readAlongHighlight"`
+	BookSpeed   *float64            `json:"audiobookSpeed"`
 }
 
 // ErrBadPrefs is a preference outside what is allowed.
@@ -567,16 +572,18 @@ var ErrBadPrefs = errors.New("that preference is not allowed")
 
 // ChangePrefs applies a change to one person's preferences and saves them.
 func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
-	if len(ch.Pills) > maxPillRows {
-		return Prefs{}, ErrBadPrefs
-	}
-	for row, keys := range ch.Pills {
-		if row == "" || len(row) > maxPillKey || len(keys) > maxPillsInRow {
+	for _, rows := range []map[string][]string{ch.Pills, ch.HiddenPills} {
+		if len(rows) > maxPillRows {
 			return Prefs{}, ErrBadPrefs
 		}
-		for _, k := range keys {
-			if k == "" || len(k) > maxPillKey {
+		for row, keys := range rows {
+			if row == "" || len(row) > maxPillKey || len(keys) > maxPillsInRow {
 				return Prefs{}, ErrBadPrefs
+			}
+			for _, k := range keys {
+				if k == "" || len(k) > maxPillKey {
+					return Prefs{}, ErrBadPrefs
+				}
 			}
 		}
 	}
@@ -602,6 +609,17 @@ func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
 			return Prefs{}, ErrBadPrefs
 		}
 		p.Pills[row] = append([]string(nil), keys...)
+	}
+	for row, keys := range ch.HiddenPills {
+		if p.HiddenPills == nil {
+			p.HiddenPills = map[string][]string{}
+		}
+		if len(p.HiddenPills) >= maxPillRows && p.HiddenPills[row] == nil {
+			return Prefs{}, ErrBadPrefs
+		}
+		// Never nil: an empty list is a choice (nothing put away), where a
+		// missing one means the defaults - which put Genres away.
+		p.HiddenPills[row] = append(make([]string, 0, len(keys)), keys...)
 	}
 	if ch.Highlight != nil {
 		on := *ch.Highlight

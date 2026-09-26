@@ -901,7 +901,7 @@ async function runSearch() {
   renderSearchHint();
   const musicBrowse = state.kind === 'music' && state.musicView !== 'songs'
     && !(state.musicView === 'mixes' && state.query);
-  show($('music-tabs'), state.kind === 'music' || state.kind === 'playlists' || state.kind === 'fav-music');
+  show($('music-tabs'), ['music', 'playlists', 'fav-music', 'genres-music'].includes(state.kind));
   markMusicTabs();
   const bookBrowse = BOOK_BROWSE.has(state.kind);
   show($('music-view'), musicBrowse || bookBrowse);
@@ -943,7 +943,8 @@ async function runSearch() {
   }
   if (bookBrowse) {
     state.hasMore = false;
-    await (PHOTO_BROWSE.has(state.kind) ? showPhotoBrowse(seq) : showBookBrowse(seq));
+    if (GENRE_KINDS[state.kind]) await showGenres(seq);
+    else await (PHOTO_BROWSE.has(state.kind) ? showPhotoBrowse(seq) : showBookBrowse(seq));
     return;
   }
   if (state.kind === 'pairs') {
@@ -3513,6 +3514,7 @@ function renderSearchHint() {
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
     favorites: 'your favorites', playlists: 'your playlists', pairs: 'books to read along with',
     authors: 'authors', series: 'series', people: 'people', places: 'places',
+    'genres-music': 'genres', 'genres-watch': 'genres', 'genres-books': 'genres',
     'fav-music': 'your favorites', 'fav-watch': 'your favorites',
     'fav-books': 'your favorites', 'fav-photos': 'your favorites',
   };
@@ -4066,6 +4068,11 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
       markMusicTabs();
       return;
     }
+    if (tab.dataset.view === 'genres') {
+      selectKind('genres-music');
+      markMusicTabs();
+      return;
+    }
     state.musicView = tab.dataset.view;
     // Albums are A to Z; only New music's See all lists them newest first.
     state.albumOrder = 'name';
@@ -4076,13 +4083,18 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
 
 function markMusicTabs() {
   // Offline, Music is what is downloaded: songs, albums, playlists.
-  for (const view of ['mixes', 'artists', 'favorites']) {
+  for (const view of ['mixes', 'artists', 'favorites', 'genres']) {
     const pill = document.querySelector(`#music-tabs [data-view="${view}"]`);
     if (pill) pill.classList.toggle('hidden', state.offline);
   }
+  const put = hiddenPills('music');
+  for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
+    tab.classList.toggle('pill-off', put.includes(tab.dataset.view));
+  }
   for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
     const on = state.kind === 'playlists' ? tab.dataset.view === 'playlists'
-      : state.kind === 'fav-music' ? tab.dataset.view === 'favorites' : tab.dataset.view === state.musicView;
+      : state.kind === 'fav-music' ? tab.dataset.view === 'favorites'
+        : state.kind === 'genres-music' ? tab.dataset.view === 'genres' : tab.dataset.view === state.musicView;
     tab.classList.toggle('active', on);
     tab.setAttribute('aria-selected', String(on));
     if (on && !state.pillSwiping) centerPill($('music-tabs'), tab, 'smooth');
@@ -5984,12 +5996,13 @@ setIcon($('photo-next'), 'forward');
 const TABS = {
   home: [{ kind: '', label: 'Home' }, { kind: 'favorites', label: 'Favorites', inMusicTabs: true }],
   music: [{ kind: 'music', label: 'Music' }, { kind: 'playlists', label: 'Playlists', inMusicTabs: true },
-    { kind: 'fav-music', label: 'Favorites', inMusicTabs: true }],
-  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'fav-watch', label: 'Favorites' }],
+    { kind: 'fav-music', label: 'Favorites', inMusicTabs: true }, { kind: 'genres-music', label: 'Genres', inMusicTabs: true }],
+  watch: [{ kind: 'video', label: 'Films' }, { kind: 'tv', label: 'TV' }, { kind: 'fav-watch', label: 'Favorites' },
+    { kind: 'genres-watch', label: 'Genres' }],
   books: [{ kind: 'audiobook', label: 'Audiobooks' }, { kind: 'ebook', label: 'Ebooks' },
     { kind: 'authors', label: 'Authors' }, { kind: 'series', label: 'Series' },
     { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
-    { kind: 'fav-books', label: 'Favorites' }],
+    { kind: 'fav-books', label: 'Favorites' }, { kind: 'genres-books', label: 'Genres' }],
   photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'people', label: 'People' },
     { kind: 'places', label: 'Places' }, { kind: 'fav-photos', label: 'Favorites' }],
 };
@@ -6002,7 +6015,11 @@ const FAV_KINDS = {
 };
 // Pages of groups rather than a shelf's list: books by author and series,
 // photos by who is in them and where.
-const BOOK_BROWSE = new Set(['authors', 'series', 'people', 'places']);
+const BOOK_BROWSE = new Set(['authors', 'series', 'people', 'places', 'genres-music', 'genres-watch', 'genres-books']);
+// Each tab's genres are of these shelves.
+const GENRE_KINDS = { 'genres-music': ['music'], 'genres-watch': ['video', 'tv'], 'genres-books': ['audiobook', 'ebook'] };
+// A category the + button starts with put away: nobody's tab changes until they add it.
+const DEFAULT_HIDDEN = { music: ['genres'], watch: ['genres-watch'], books: ['genres-books'] };
 const PHOTO_BROWSE = new Set(['people', 'places']);
 state.tab = 'home';
 state.tabKind = {};
@@ -6019,6 +6036,7 @@ function shelfAvailable(kind) {
   // Books by author and series: wherever there are books.
   if (kind === 'authors' || kind === 'series') return shelfAvailable('ebook') || shelfAvailable('audiobook');
   if (kind === 'people' || kind === 'places') return shelfAvailable('picture');
+  if (GENRE_KINDS[kind]) return GENRE_KINDS[kind].some((k) => shelfAvailable(k));
   // A tab's favorites: while the tab has a shelf of its own to favorite from.
   if (FAV_KINDS[kind]) return FAV_KINDS[kind].some((k) => shelfAvailable(k));
   const chip = document.querySelector(`#filters .chip[data-kind="${kind}"]`);
@@ -6029,8 +6047,9 @@ function shelfAvailable(kind) {
 
 function tabShelves(tab) {
   const order = pillOrder(tab);
+  const put = hiddenPills(tab);
   const rank = (kind) => { const i = order.indexOf(kind); return i < 0 ? 1e6 : i; };
-  return (TABS[tab] || []).filter((o) => shelfAvailable(o.kind))
+  return (TABS[tab] || []).filter((o) => shelfAvailable(o.kind) && !put.includes(o.kind))
     .map((o, i) => ({ o, i }))
     .sort((a, b) => (rank(a.o.kind) - rank(b.o.kind)) || (a.i - b.i))
     .map(({ o }) => o);
@@ -6155,9 +6174,10 @@ function renderTabs() {
   // The same pills as now: only the lit one changes, and the row stays put -
   // rebuilding it mid-swipe snapped it back for a frame.
   const sameRow = box.dataset.tab === state.tab;
-  const current = [...box.querySelectorAll('button')].map((b) => b.dataset.kind).join();
+  const current = [...box.querySelectorAll('button[data-kind]')].map((b) => b.dataset.kind).join();
+  const addable = state.tab !== 'settings' && pillsToAdd(state.tab).length > 0;
   if (sameRow && shelves.length > 1 && current === shelves.map((o) => o.kind).join()) {
-    for (const b of box.querySelectorAll('button')) {
+    for (const b of box.querySelectorAll('button[data-kind]')) {
       const on = state.tab === 'settings' ? b.dataset.kind === state.settingsCat : b.dataset.kind === state.kind;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', String(on));
@@ -6187,7 +6207,8 @@ function renderTabs() {
       box.append(b);
     }
   }
-  show(box, shelves.length > 1);
+  if (state.tab !== 'settings' && shelves.length) box.append(addPillButton());
+  show(box, shelves.length > 1 || addable);
   if (state.tab === 'settings') applySettingsView();
   if (sameRow) box.scrollLeft = keep;
   if (!state.pillSwiping) centerPill(box, box.querySelector('button.active'), sameRow ? 'smooth' : 'auto');
@@ -6346,7 +6367,7 @@ function albumCardFromHome(album) {
 
   const pills = () => {
     const row = ['music-tabs', 'subtabs'].map($).find((el) => !el.classList.contains('hidden'));
-    return row ? [...row.querySelectorAll('button')].filter((b) => !b.classList.contains('hidden')) : [];
+    return row ? [...row.querySelectorAll('button')].filter(isPill) : [];
   };
 
   function scrollsSideways(el) {
@@ -6482,7 +6503,7 @@ function albumCardFromHome(album) {
     g.row = target.parentElement;
     g.rowFrom = g.row.scrollLeft;
     g.rowTo = pillCenter(g.row, target);
-    g.rowPills = [...g.row.querySelectorAll('button')];
+    g.rowPills = [...g.row.querySelectorAll('button')].filter(isPill);
     for (const b of g.rowPills) b.style.willChange = 'transform';
     state.pillSwiping = true;
     // A frame later: pressing the pill starts the next page's work - clearing,
@@ -6888,6 +6909,7 @@ function applyMusicPillOrder() {
   buttons.map((b, i) => ({ b, i }))
     .sort((x, y) => (rank(x.b) - rank(y.b)) || (x.i - y.i))
     .forEach(({ b }) => row.append(b));
+  row.append(row.querySelector('.pill-add'));
 }
 applyMusicPillOrder();
 
@@ -6898,10 +6920,11 @@ applyMusicPillOrder();
 
   const rowOf = (el) => el && el.closest('#music-tabs, #subtabs');
   const keyOf = (b) => b.dataset.view || b.dataset.kind;
-  const pillsIn = (row) => [...row.querySelectorAll('button')].filter((b) => !b.classList.contains('hidden'));
+  const pillsIn = (row) => [...row.querySelectorAll('button')].filter(isPill);
 
   function start(event) {
     const pill = event.target.closest('#music-tabs button, #subtabs button');
+    if (pill && !isPill(pill)) return;
     if (!pill || g || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const row = rowOf(pill);
     g = { pill, row, x: event.clientX, y: event.clientY, id: event.pointerId, lifted: false };
@@ -6952,7 +6975,7 @@ applyMusicPillOrder();
     const at = now < 0 ? others.length : now;
     if (target !== at) {
       const before = new Map(pills.map((p) => [p, p.getBoundingClientRect().left]));
-      row.insertBefore(pill, others[target] || null);
+      row.insertBefore(pill, others[target] || row.querySelector('.pill-add'));
       flip(pillsIn(row), before);
     }
     // The pill itself sits under the finger, wherever its slot is now.
@@ -6968,15 +6991,43 @@ applyMusicPillOrder();
       if (Math.hypot(event.clientX - g.x, event.clientY - g.y) > SLOP) end(false);
       return;
     }
+    // Over the +, it is being put away rather than moved - and the row holds
+    // still: near the edge it would scroll, and slide the + from under the
+    // finger.
+    const plus = g.row.querySelector('.pill-add');
+    const r = plus && plus.getBoundingClientRect();
+    g.overPlus = Boolean(r && event.clientX > r.left - 10 && event.clientX < r.right + 10);
+    if (plus) plus.classList.toggle('drop-target', g.overPlus);
+    if (g.overPlus) {
+      // Under the finger, a little smaller: it is on its way out.
+      g.pill.style.transition = 'none';
+      g.pill.style.transform = '';
+      const slot = g.pill.getBoundingClientRect().left;
+      g.pill.style.transform = `translateX(${event.clientX - g.grab - slot}px) scale(0.9)`;
+      return;
+    }
     follow(event.clientX);
   }
 
   function end(commit = true) {
     if (!g) return;
     clearTimeout(g.timer);
-    const { pill, row, lifted } = g;
+    const { pill, row, lifted, overPlus } = g;
     g = null;
     if (!lifted) return;
+    const plus = row.querySelector('.pill-add');
+    if (plus) plus.classList.remove('drop-target');
+    if (commit && overPlus) {
+      pill.classList.remove('lifted');
+      row.classList.remove('reordering');
+      pill.style.transition = '';
+      pill.style.transform = '';
+      const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+      pill.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => pill.removeEventListener('click', swallow, { capture: true }), 400);
+      putPillAway(row, keyOf(pill));
+      return;
+    }
     pill.classList.remove('lifted');
     row.classList.remove('reordering');
     pill.style.transition = 'transform 0.18s ease-out';
@@ -8998,4 +9049,169 @@ function attachAudioChoice(item, tracks, chosen) {
     playVideo(item, { audio: Number(select.value) });
   };
   show($('audio-picker'), tracks.length > 1);
+}
+
+/* ------------------------------------------------ choosing the categories */
+
+// The + at the end of a row of categories: tap it for the ones put away, and
+// one tapped comes back; hold a category and drag it onto the + to put it
+// away. Genres start put away. Kept on the account, like the order.
+const isPill = (b) => !b.classList.contains('hidden') && !b.classList.contains('pill-off') && !b.classList.contains('pill-add');
+
+function hiddenPills(row) {
+  const saved = state.prefs && state.prefs.hiddenPills && state.prefs.hiddenPills[row];
+  return Array.isArray(saved) ? saved : (DEFAULT_HIDDEN[row] || []);
+}
+
+function setHiddenPills(row, keys) {
+  state.prefs = state.prefs || {};
+  state.prefs.hiddenPills = { ...(state.prefs.hiddenPills || {}), [row]: keys };
+  savePrefs({ hiddenPills: { [row]: keys } });
+}
+
+// What the + offers for a row: its categories put away, that this account has.
+function pillsToAdd(row) {
+  const put = hiddenPills(row);
+  if (row === 'music') {
+    return [...document.querySelectorAll('#music-tabs [data-view]')]
+      .filter((b) => put.includes(b.dataset.view) && !(state.offline && b.classList.contains('hidden')))
+      .map((b) => ({ key: b.dataset.view, label: b.textContent }));
+  }
+  return (TABS[row] || []).filter((o) => put.includes(o.kind) && shelfAvailable(o.kind))
+    .map((o) => ({ key: o.kind, label: o.label }));
+}
+
+function addPillButton() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pill-add';
+  b.setAttribute('aria-label', 'Add a category');
+  b.append(icon('plus'));
+  b.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openPillPicker(state.tab, b);
+  });
+  return b;
+}
+
+function openPillPicker(row, anchor) {
+  const menu = $('item-menu');
+  if (state.menuFor === 'pills' && !menu.classList.contains('hidden')) { closeItemMenu(); return; }
+  state.menuFor = 'pills';
+  state.menuAnchor = anchor;
+  const head = document.createElement('div');
+  head.className = 'menu-head';
+  const title = document.createElement('strong');
+  title.textContent = 'Add a category';
+  head.append(title);
+  const choices = pillsToAdd(row);
+  const entries = choices.map((c) => menuItem('plus', c.label, (event) => {
+    event.stopPropagation();
+    closeItemMenu();
+    setHiddenPills(row, hiddenPills(row).filter((k) => k !== c.key));
+    if (row === 'music') {
+      markMusicTabs();
+      const pill = document.querySelector(`#music-tabs [data-view="${c.key}"]`);
+      if (pill) pill.click();
+    } else {
+      renderTabs();
+      selectKind(c.key);
+    }
+  }));
+  if (!entries.length) {
+    const none = document.createElement('p');
+    none.className = 'menu-confirm';
+    none.textContent = 'Every category is showing. To put one away, hold it and drag it onto the +.';
+    entries.push(none);
+  }
+  menu.replaceChildren(head, ...entries);
+  placeMenu(menu, anchor);
+}
+
+// A category dropped on the +: put away, unless it is the last one showing.
+function putPillAway(row, key) {
+  const rowKey = row.id === 'music-tabs' ? 'music' : state.tab;
+  if (!key || pillsIn(row).length <= 1) return;
+  setHiddenPills(rowKey, [...new Set([...hiddenPills(rowKey), key])]);
+  const wasOn = row.querySelector('button.active');
+  const leaving = wasOn && (wasOn.dataset.view || wasOn.dataset.kind) === key;
+  if (rowKey === 'music') {
+    markMusicTabs();
+    if (leaving) {
+      const first = [...row.querySelectorAll('[data-view]')].find(isPill);
+      if (first) first.click();
+    }
+  } else {
+    renderTabs();
+    if (leaving) {
+      const first = tabShelves(rowKey).find((o) => !o.inMusicTabs);
+      if (first) selectKind(first.kind);
+    }
+  }
+  showToast('Put away. Tap + to bring it back.');
+}
+
+function pillsIn(row) {
+  return [...row.querySelectorAll('button')].filter(isPill);
+}
+
+// Music's + is part of the page; the tabs' are made with their rows.
+(function musicPlus() {
+  const plus = document.querySelector('#music-tabs .pill-add');
+  if (!plus) return;
+  plus.append(icon('plus'));
+  plus.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openPillPicker('music', plus);
+  });
+})();
+
+/* ------------------------------------------------------------------ genres */
+
+// A tab's genres, most common first, each opening what is in it - across the
+// tab's shelves, as the server groups them.
+const genreNoun = (kind, n) => {
+  const word = kind === 'genres-music' ? 'song' : kind === 'genres-books' ? 'book' : 'title';
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+};
+
+async function showGenres(seq) {
+  const view = $('music-view');
+  const kind = state.kind;
+  $('status').textContent = '';
+  if (!view.children.length) showSkeleton(view, 'grid');
+  const { ok, body } = await api(`/api/genres?${new URLSearchParams({ kinds: GENRE_KINDS[kind].join(',') })}`);
+  if (seq !== state.searchSeq) return;
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = ((ok && body && body.genres) || []).filter((g) => words.every((w) => g.name.toLowerCase().includes(w)));
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...list.map((g) => bookGroupCard(g, false, genreNoun(kind, g.count), () => showGenre(g, kind))));
+  view.replaceChildren(grid);
+  $('status').textContent = list.length ? ''
+    : (state.query ? 'No genre matches.' : 'No genres yet. They come from what each file says it is.');
+}
+
+async function showGenre(genre, kind) {
+  const seq = ++state.searchSeq;
+  const view = $('music-view');
+  startLoading(view);
+  const { ok, body } = await api(`/api/genres?${new URLSearchParams({ kinds: GENRE_KINDS[kind].join(','), name: genre.name })}`);
+  if (seq !== state.searchSeq) return;
+  if (!ok || !body) {
+    view.replaceChildren(backButton('Genres', () => runSearch()));
+    $('status').textContent = 'Could not load that genre.';
+    return;
+  }
+  const items = body.items || [];
+  state.items = items;
+  $('status').textContent = '';
+  const parts = [backButton('Genres', () => runSearch()), pageHead(genre.name, genreNoun(kind, items.length))];
+  if (kind === 'genres-music' && items.length) parts.push(playButtons(async () => items));
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...items.map(renderItem));
+  parts.push(grid);
+  view.replaceChildren(...parts);
+  window.scrollTo(0, 0);
 }

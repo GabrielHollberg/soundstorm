@@ -172,3 +172,21 @@ func TestHistoryCountsAndForgetsTheOldestFirst(t *testing.T) {
 		t.Errorf("u2 has %d plays of u1's", len(other))
 	}
 }
+
+// Putting nothing away is a choice, kept as an empty list - read back as
+// missing, it would mean the defaults, which put Genres away again.
+func TestNothingPutAwayStaysAChoice(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	if _, err := s.ChangePrefs("u1", PrefsChange{HiddenPills: map[string][]string{"music": {}}}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _ := Open(dir)
+	p, err := reopened.Prefs("u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := p.HiddenPills["music"]; !ok || got == nil || len(got) != 0 {
+		t.Errorf("hiddenPills[music] = %#v (present %v), want an empty list", got, ok)
+	}
+}

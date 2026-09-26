@@ -115,13 +115,14 @@ type libraryItem struct {
 		AudioFiles []audioFile `json:"audioFiles"`
 		Chapters   []chapter   `json:"chapters"`
 		Metadata   struct {
-			Title         string `json:"title"`
-			Subtitle      string `json:"subtitle"`
-			AuthorName    string `json:"authorName"`
-			NarratorName  string `json:"narratorName"`
-			SeriesName    string `json:"seriesName"`
-			PublishedYear string `json:"publishedYear"`
-			ISBN          string `json:"isbn"`
+			Title         string   `json:"title"`
+			Subtitle      string   `json:"subtitle"`
+			AuthorName    string   `json:"authorName"`
+			NarratorName  string   `json:"narratorName"`
+			SeriesName    string   `json:"seriesName"`
+			PublishedYear string   `json:"publishedYear"`
+			ISBN          string   `json:"isbn"`
+			Genres        []string `json:"genres"`
 		} `json:"metadata"`
 	} `json:"media"`
 }
@@ -281,6 +282,9 @@ func convertItems(sourceID string, found []libraryItem) []media.Item {
 		}
 		if md.ISBN != "" {
 			item.Extra["isbn"] = md.ISBN
+		}
+		if len(md.Genres) > 0 {
+			item.Extra["genre"] = strings.Join(md.Genres, ", ")
 		}
 		// The book's folder on the shelf: read-along knows a synced book by it.
 		if li.RelPath != "" && !li.IsFile {

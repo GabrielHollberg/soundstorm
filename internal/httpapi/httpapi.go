@@ -301,6 +301,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/books/pairs", s.handleBookPairs)
 	guarded.HandleFunc("GET /api/books/authors", s.handleAuthors)
 	guarded.HandleFunc("GET /api/books/series", s.handleSeries)
+	guarded.HandleFunc("GET /api/genres", s.handleGenres)
 	guarded.HandleFunc("GET /api/tv/show", s.handleShow)
 	guarded.HandleFunc("GET /api/tv/next", s.handleNextEpisode)
 	guarded.HandleFunc("GET /api/photos/people", s.handlePeople)
