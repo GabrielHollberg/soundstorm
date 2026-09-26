@@ -5593,7 +5593,32 @@ function shelfAvailable(kind) {
 }
 
 function tabShelves(tab) {
-  return (TABS[tab] || []).filter((o) => shelfAvailable(o.kind));
+  const order = pillOrder(tab);
+  const rank = (kind) => { const i = order.indexOf(kind); return i < 0 ? 1e6 : i; };
+  return (TABS[tab] || []).filter((o) => shelfAvailable(o.kind))
+    .map((o, i) => ({ o, i }))
+    .sort((a, b) => (rank(a.o.kind) - rank(b.o.kind)) || (a.i - b.i))
+    .map(({ o }) => o);
+}
+
+// The order somebody has put a row of pills in, by holding one and sliding
+// it. Kept on the device, like streaming quality: the phone and the computer
+// can differ.
+function pillOrder(row) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`soundstorm-pills-${row}`) || '[]');
+    return Array.isArray(saved) ? saved.filter((k) => typeof k === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePillOrder(row, keys) {
+  try {
+    localStorage.setItem(`soundstorm-pills-${row}`, JSON.stringify(keys));
+  } catch {
+    // A full or refused store only loses the order.
+  }
 }
 
 function selectKind(kind) {
@@ -5653,6 +5678,7 @@ function renderTabs() {
       b.type = 'button';
       b.setAttribute('role', 'tab');
       b.textContent = o.label;
+      b.dataset.kind = o.kind;
       const on = o.kind === state.kind;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', String(on));
@@ -6263,3 +6289,142 @@ function pairCard(pair) {
   holder.append(card, actions, line);
   return holder;
 }
+
+/* ---------------------------------------------- reordering a row of pills */
+
+// Hold a pill and slide it along the row to move it. The hold is the same
+// 450ms as a card's; moving first is a scroll of the row, lifting early a tap.
+// Once it lifts, the row stops scrolling under the finger, the pill follows
+// it, and the others slide out of its way as it passes their middles. Music's
+// row is the static buttons, put in order at start; a tab's shelf row is
+// built by renderTabs, which reads the order through tabShelves.
+function applyMusicPillOrder() {
+  const row = $('music-tabs');
+  const order = pillOrder('music');
+  const buttons = [...row.querySelectorAll('[data-view]')];
+  const rank = (b) => { const i = order.indexOf(b.dataset.view); return i < 0 ? 1e6 : i; };
+  buttons.map((b, i) => ({ b, i }))
+    .sort((x, y) => (rank(x.b) - rank(y.b)) || (x.i - y.i))
+    .forEach(({ b }) => row.append(b));
+}
+applyMusicPillOrder();
+
+(function pillReorder() {
+  const HOLD_MS = 450;
+  const SLOP = 10;
+  let g = null;
+
+  const rowOf = (el) => el && el.closest('#music-tabs, #subtabs');
+  const keyOf = (b) => b.dataset.view || b.dataset.kind;
+  const pillsIn = (row) => [...row.querySelectorAll('button')].filter((b) => !b.classList.contains('hidden'));
+
+  function start(event) {
+    const pill = event.target.closest('#music-tabs button, #subtabs button');
+    if (!pill || g || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const row = rowOf(pill);
+    g = { pill, row, x: event.clientX, y: event.clientY, id: event.pointerId, lifted: false };
+    g.timer = setTimeout(() => lift(event.clientX), HOLD_MS);
+  }
+
+  function lift(x) {
+    if (!g) return;
+    g.lifted = true;
+    g.grab = x - g.pill.getBoundingClientRect().left;
+    g.row.classList.add('reordering');
+    g.pill.classList.add('lifted');
+    if (navigator.vibrate) navigator.vibrate(12);
+  }
+
+  // Slide the siblings from where they were to where they now are, so a
+  // reorder reads as them moving aside rather than jumping.
+  function flip(pills, before) {
+    for (const p of pills) {
+      if (p === g.pill) continue;
+      const was = before.get(p);
+      const now = p.getBoundingClientRect().left;
+      if (was === undefined || was === now) continue;
+      p.style.transition = 'none';
+      p.style.transform = `translateX(${was - now}px)`;
+      requestAnimationFrame(() => {
+        p.style.transition = 'transform 0.18s ease-out';
+        p.style.transform = '';
+      });
+    }
+  }
+
+  function follow(x) {
+    const { pill, row } = g;
+    // The row scrolls itself when the pill is dragged near either end.
+    const box = row.getBoundingClientRect();
+    if (x < box.left + 40) row.scrollLeft -= 8;
+    else if (x > box.right - 40) row.scrollLeft += 8;
+
+    const pills = pillsIn(row);
+    const others = pills.filter((p) => p !== pill);
+    let target = others.length;
+    for (let i = 0; i < others.length; i++) {
+      const r = others[i].getBoundingClientRect();
+      if (x < r.left + r.width / 2) { target = i; break; }
+    }
+    const now = others.indexOf(pills[pills.indexOf(pill) + 1]);
+    const at = now < 0 ? others.length : now;
+    if (target !== at) {
+      const before = new Map(pills.map((p) => [p, p.getBoundingClientRect().left]));
+      row.insertBefore(pill, others[target] || null);
+      flip(pillsIn(row), before);
+    }
+    // The pill itself sits under the finger, wherever its slot is now.
+    pill.style.transition = 'none';
+    pill.style.transform = '';
+    const slot = pill.getBoundingClientRect().left;
+    pill.style.transform = `translateX(${x - g.grab - slot}px) scale(1.06)`;
+  }
+
+  function move(event) {
+    if (!g || event.pointerId !== g.id) return;
+    if (!g.lifted) {
+      if (Math.hypot(event.clientX - g.x, event.clientY - g.y) > SLOP) end(false);
+      return;
+    }
+    follow(event.clientX);
+  }
+
+  function end(commit = true) {
+    if (!g) return;
+    clearTimeout(g.timer);
+    const { pill, row, lifted } = g;
+    g = null;
+    if (!lifted) return;
+    pill.classList.remove('lifted');
+    row.classList.remove('reordering');
+    pill.style.transition = 'transform 0.18s ease-out';
+    pill.style.transform = '';
+    setTimeout(() => { pill.style.transition = ''; }, 200);
+    // The lift ends in a click on the pill; it is not a choice of shelf.
+    const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+    pill.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => pill.removeEventListener('click', swallow, { capture: true }), 400);
+    if (!commit) return;
+    const keys = [...row.querySelectorAll('button')].map(keyOf).filter(Boolean);
+    if (row.id === 'music-tabs') {
+      savePillOrder('music', keys);
+    } else {
+      // Shelves the account cannot see now keep their place for later.
+      const kept = pillOrder(state.tab).filter((k) => !keys.includes(k));
+      savePillOrder(state.tab, [...keys, ...kept]);
+    }
+  }
+
+  document.addEventListener('pointerdown', start);
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', () => end(true));
+  document.addEventListener('pointercancel', () => end(false));
+  // While a pill is up, the row must not scroll away under the finger, and a
+  // held touch must not become the browser's own long-press.
+  document.addEventListener('touchmove', (event) => {
+    if (g && g.lifted && event.cancelable) event.preventDefault();
+  }, { passive: false });
+  document.addEventListener('contextmenu', (event) => {
+    if (g && event.target.closest('#music-tabs, #subtabs')) event.preventDefault();
+  });
+})();

@@ -499,6 +499,15 @@ a real library), Immich's own newest-first, and for the folders SoundStorm
 reads itself the file's modification time. Typing on Home searches
 everything.
 
+**The pills can be put in any order**: hold one (450ms, as a card) and slide
+it; the others move aside as it passes their middles (a FLIP animation), and
+the row scrolls near its ends. Kept per device in localStorage
+(`soundstorm-pills-music`, `soundstorm-pills-<tab>`), like streaming quality.
+Swiping between pills, and the shelf a tab opens on, follow the order, since
+both read it from the DOM and `tabShelves`. The click that ends a hold is
+swallowed, and while a pill is up touchmove is prevented so the row cannot
+scroll away under it.
+
 A page wider than the phone made the phone zoom out and dropped the tab bar
 off the bottom: the album sort sat inside the music row. The row is now
 pills that scroll inside their own strip, and `body { overflow-x: clip }`
