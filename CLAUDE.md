@@ -959,6 +959,19 @@ keep it (dune across audiobooks and ebooks).
 **Home runs in three groups**: Continue and Recently played, then every New
 row (music first), then the favorites. They used to interleave.
 
+**Back steps back through the app before leaving it.** Reported on Android:
+the back gesture closed the app from inside a film. The app never changed
+the address, so back had nothing else to go back to. One history entry is
+kept armed while anything back should close is open (`backTarget`, in
+order: menu, selection, photo, book, film, Now Playing, Settings, a detail
+page, a search, any tab but Home); back pops it, the top thing closes, and
+it is armed again if anything is left. It is seen, not remembered: the
+overlays and tabs are watched for class changes and every click is
+followed, a tick later, by a check - a click's own handler runs after a
+listener on the document, so checking at once missed the page it opened.
+Something closed by its own x takes the entry away (`history.back`, the
+pop ignored), so back never needs pressing twice.
+
 **Content starts right under the bars.** The status line under the pills
 takes no room while it has nothing to say (`:has(#status:empty)`); it was
 an empty 20px on every page once the counts went.

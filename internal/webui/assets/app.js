@@ -8713,3 +8713,80 @@ function nameButton(group, head) {
   });
   return button;
 }
+
+/* ------------------------------------------------------------ going back */
+
+// The phone's back gesture (and a browser's back button) steps back through
+// the app before it leaves it: a menu, then Now Playing, a book, a film or a
+// photo, then an album or other page back to its list, then a search, then
+// any tab back to Home - and only from Home with nothing open does back
+// leave. The app never changed the address, so back used to have nothing to
+// go back to but the app itself.
+//
+// One history entry is kept armed while anything is open that back should
+// close; back pops it, the topmost thing closes, and it is armed again if
+// anything is still open. Whatever closes by other means (the x, a tap
+// outside) takes the entry away again, so back never has to be pressed twice.
+const backState = { armed: false, ignore: 0 };
+
+function shown(id) {
+  const el = $(id);
+  return Boolean(el) && !el.classList.contains('hidden');
+}
+
+function backTarget() {
+  if (shown('item-menu')) return () => closeItemMenu();
+  if (state.selecting) return () => setSelecting(false);
+  if (shown('photo-overlay')) return () => closePhoto();
+  if (shown('reader-overlay')) return () => window.soundstormReader && window.soundstormReader.close();
+  if (shown('video-overlay')) return () => closeVideo();
+  if (shown('now-playing')) return () => closeNowPlaying();
+  if (state.tab === 'settings') return () => selectTab('home');
+  if (state.detailPage) return () => runSearch();
+  if ($('search-input').value.trim()) return () => { $('search-input').value = ''; runSearch(); };
+  if (state.tab && state.tab !== 'home') return () => selectTab('home');
+  return null;
+}
+
+function syncBack() {
+  const wanted = Boolean(backTarget());
+  if (wanted && !backState.armed) {
+    history.pushState({ soundstorm: 'back' }, '');
+    backState.armed = true;
+  } else if (!wanted && backState.armed) {
+    backState.armed = false;
+    backState.ignore += 1;
+    history.back();
+  }
+}
+
+window.addEventListener('popstate', async () => {
+  if (backState.ignore > 0) {
+    backState.ignore -= 1;
+    return;
+  }
+  backState.armed = false;
+  const close = backTarget();
+  if (close) await close();
+  syncBack();
+});
+
+// Screens opening and closing are seen as they happen - the overlays showing
+// or hiding - so nothing that opens one has to remember to arm back.
+(function watchForBack() {
+  let queued = false;
+  const later = () => {
+    if (queued) return;
+    queued = true;
+    // After the event that caused it has been fully handled: a click's own
+    // handler (opening an album, say) runs after a listener on the document.
+    setTimeout(() => { queued = false; syncBack(); }, 0);
+  };
+  const observer = new MutationObserver(later);
+  for (const id of ['item-menu', 'photo-overlay', 'reader-overlay', 'video-overlay', 'now-playing', 'account', 'music-view', 'home-view']) {
+    if ($(id)) observer.observe($(id), { attributes: true, attributeFilter: ['class'] });
+  }
+  observer.observe($('tabs'), { attributes: true, subtree: true, attributeFilter: ['class'] });
+  $('search-input').addEventListener('input', later);
+  document.addEventListener('click', later, true);
+})();
