@@ -653,6 +653,22 @@ fix it, both checked on the real install:
 - **Downloads** live in the Cache API (`soundstorm-offline-v1`), with an index
   in localStorage. Downloaded songs always play from the device. Sign-out
   clears them.
+- **Books download too**: audiobooks, ebooks, documents, and Read & listen
+  pairs (both halves, plus a synced book's text - without its copy of the
+  audio - and its timeline). All in the same cache as songs, keyed by the
+  address the app would ask the server for, so one index and one Remove
+  serve everything. The reader falls back to that cache when a fetch fails;
+  a downloaded audiobook always plays from the device via a map from its
+  kept file addresses to blob URLs (`audio.urlMap`, applied in `startAt`).
+  Listening and reading positions are also kept on the device, marked
+  unsynced until a save reaches the server, and an unsynced one wins on the
+  next open. The reader is several modules, so the worker serves any
+  `/static/` file network-first and the kept shell lists foliate's modules;
+  without that the first offline test found `soundstormReader` undefined.
+  Films and TV are not offered (gigabytes, and what a browser cannot play is
+  converted live by the server); nor photos. Tested fully offline on the
+  mapped test name: a downloaded ebook opened at its place and a downloaded
+  track played from a blob.
 - **Opening offline bends sw.js rule 3, on one condition only.** A page load
   may be answered from `soundstorm-offline-shell-v1` only on
   `*.soundstorm.dev` names, only when the network failed, and only once
