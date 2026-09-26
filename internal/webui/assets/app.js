@@ -6133,10 +6133,25 @@ function renderTabs() {
   // The shelves inside the tab, when there is more than one to choose from.
   const box = $('subtabs');
   const shelves = state.tab === 'settings' ? settingsCategories() : tabShelves(state.tab).filter((o) => !o.inMusicTabs);
-  // Rebuilt on every change: put back where it was, then glide the lit pill
-  // to the middle - or jump there, for another tab's row.
-  const keep = box.scrollLeft;
+  // The same pills as now: only the lit one changes, and the row stays put -
+  // rebuilding it mid-swipe snapped it back for a frame.
   const sameRow = box.dataset.tab === state.tab;
+  const current = [...box.querySelectorAll('button')].map((b) => b.dataset.kind).join();
+  if (sameRow && shelves.length > 1 && current === shelves.map((o) => o.kind).join()) {
+    for (const b of box.querySelectorAll('button')) {
+      const on = state.tab === 'settings' ? b.dataset.kind === state.settingsCat : b.dataset.kind === state.kind;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+    }
+    show(box, true);
+    if (state.tab === 'settings') applySettingsView();
+    if (!state.pillSwiping) centerPill(box, box.querySelector('button.active'), 'smooth');
+    if (state.tab !== 'home' && state.tab !== 'settings' && !tabShelves(state.tab).length) selectTab('home');
+    return;
+  }
+  // Otherwise rebuilt: put back where it was, then glide the lit pill to the
+  // middle - or jump there, for another tab's row.
+  const keep = box.scrollLeft;
   box.dataset.tab = state.tab;
   box.replaceChildren();
   if (shelves.length > 1) {
@@ -6400,16 +6415,14 @@ function albumCardFromHome(album) {
   }
 
   const ease = 'cubic-bezier(.2,.7,.2,1)';
-  // The row of pills, eased to where it is going in step with the page.
-  function glideRow(row, to, ms) {
-    const from = row.scrollLeft;
-    const t0 = performance.now();
-    const step = (t) => {
-      const k = Math.min(1, (t - t0) / ms);
-      row.scrollLeft = from + (to - from) * (1 - (1 - k) ** 3);
-      if (k < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
+  // The pills drawn shifted along their row, by a transform the compositor
+  // moves - scrolling the row every frame made the phone lay it out again
+  // each time. Eased over ms, in step with the page, when ms is given.
+  function shiftPills(swipe, by, ms) {
+    for (const b of swipe.rowPills) {
+      b.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none';
+      b.style.transform = by ? `translate3d(${-by}px, 0, 0)` : '';
+    }
   }
   const slide = (ghost, x, ms) => {
     ghost.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none';
@@ -6438,6 +6451,8 @@ function albumCardFromHome(album) {
     g.row = target.parentElement;
     g.rowFrom = g.row.scrollLeft;
     g.rowTo = pillCenter(g.row, target);
+    g.rowPills = [...g.row.querySelectorAll('button')];
+    for (const b of g.rowPills) b.style.willChange = 'transform';
     state.pillSwiping = true;
     // A frame later: pressing the pill starts the next page's work - clearing,
     // ghost content, a request - which must not hold up the first frame of
@@ -6459,7 +6474,7 @@ function albumCardFromHome(album) {
       slide(swipe.ghost, at, 0);
       place(at + swipe.dir * window.innerWidth, 0);
       const k = Math.min(1, Math.max(0, (-at * swipe.dir) / window.innerWidth));
-      swipe.row.scrollLeft = swipe.rowFrom + (swipe.rowTo - swipe.rowFrom) * k;
+      shiftPills(swipe, (swipe.rowTo - swipe.rowFrom) * k, 0);
     });
   }
 
@@ -6473,7 +6488,7 @@ function albumCardFromHome(album) {
       // one is not there yet. Waiting for it first froze the swipe for as
       // long as the server took, which on a phone is the stall people felt.
       const ms = Math.round(150 + 150 * (1 - Math.abs(dx) / width));
-      glideRow(swipe.row, swipe.rowTo, ms);
+      shiftPills(swipe, swipe.rowTo - swipe.rowFrom, ms);
       slide(ghost, -dir * width, ms);
       place(0, ms, ease);
       await settle(ms + 20);
@@ -6484,7 +6499,7 @@ function albumCardFromHome(album) {
     } else {
       // Not far enough: this page springs back, and the pill it was on is
       // pressed again behind it.
-      glideRow(swipe.row, swipe.rowFrom, 200);
+      shiftPills(swipe, 0, 200);
       slide(ghost, 0, 200);
       place(dir * width, 200, ease);
       await settle(210);
@@ -6500,8 +6515,15 @@ function albumCardFromHome(album) {
     promote(false);
     document.documentElement.style.overflowAnchor = '';
     document.documentElement.classList.remove('swiping');
+    // The pills were only drawn moved: now the row really scrolls there, in
+    // the same frame as they come back to their places, so nothing jumps.
+    swipe.row.scrollLeft = commit ? swipe.rowTo : swipe.rowFrom;
+    for (const b of swipe.rowPills) {
+      b.style.transition = '';
+      b.style.transform = '';
+      b.style.willChange = '';
+    }
     state.pillSwiping = false;
-    centerPill(swipe.row, swipe.row.querySelector('button.active'), 'smooth');
     busy = false;
   }
 
