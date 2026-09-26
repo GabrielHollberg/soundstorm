@@ -6175,7 +6175,10 @@ function renderTabs() {
   // rebuilding it mid-swipe snapped it back for a frame.
   const sameRow = box.dataset.tab === state.tab;
   const current = [...box.querySelectorAll('button[data-kind]')].map((b) => b.dataset.kind).join();
-  const addable = state.tab !== 'settings' && pillsToAdd(state.tab).length > 0;
+  // Music has its own row of pills, with its own +; Home and Settings have
+  // nothing to add. Only the other tabs' rows get one here.
+  const plusHere = !['settings', 'music', 'home'].includes(state.tab);
+  const addable = plusHere && pillsToAdd(state.tab).length > 0;
   if (sameRow && shelves.length > 1 && current === shelves.map((o) => o.kind).join()) {
     for (const b of box.querySelectorAll('button[data-kind]')) {
       const on = state.tab === 'settings' ? b.dataset.kind === state.settingsCat : b.dataset.kind === state.kind;
@@ -6207,7 +6210,7 @@ function renderTabs() {
       box.append(b);
     }
   }
-  if (state.tab !== 'settings' && shelves.length) box.append(addPillButton());
+  if (plusHere && shelves.length) box.append(addPillButton());
   show(box, shelves.length > 1 || addable);
   if (state.tab === 'settings') applySettingsView();
   if (sameRow) box.scrollLeft = keep;

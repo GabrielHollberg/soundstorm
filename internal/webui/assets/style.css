@@ -2785,11 +2785,13 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 
 /* The + at the end of a row of categories, and what is put away. */
 .pill-off { display: none !important; }
-.pill-add {
+/* By id: the rows' own button rules (padding, border, background) would
+   otherwise outrank it and stretch it into an oval. */
+#music-tabs .pill-add, #subtabs .pill-add {
   flex: 0 0 auto; width: 38px; height: 38px; padding: 0; border-radius: 999px;
   display: grid; place-items: center; border: 1px dashed var(--border);
   background: none; color: var(--muted); -webkit-tap-highlight-color: transparent;
   transition: transform 0.15s ease-out, background 0.15s ease-out, color 0.15s ease-out;
 }
-.pill-add .icon { width: 18px; height: 18px; }
-.pill-add.drop-target { transform: scale(1.18); background: #3a1d22; border-color: #ff7b7b; color: #ff7b7b; }
+#music-tabs .pill-add .icon, #subtabs .pill-add .icon { width: 18px; height: 18px; }
+#music-tabs .pill-add.drop-target, #subtabs .pill-add.drop-target { transform: scale(1.18); background: #3a1d22; border-color: #ff7b7b; color: #ff7b7b; }
