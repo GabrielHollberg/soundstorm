@@ -2899,7 +2899,7 @@ body.recap-open { overflow: hidden; }
 .np-art-buttons .icon { width: 24px; height: 24px; }
 .np-art-buttons .cover-info { top: 8px; left: 8px; }
 .np-art-buttons .fav-toggle { top: 8px; right: 8px; }
-.np-art-buttons .dl-get, .np-art-buttons .dl-badge { top: auto; left: auto; bottom: 12px; right: 12px; }
+.np-art-buttons .dl-get, .np-art-buttons .dl-badge { top: auto; right: auto; bottom: 12px; left: 12px; }
 #np-shuffle, #np-repeat { top: calc(50% - 22px); filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9)); }
 #np-shuffle { left: 6px; }
 #np-repeat { right: 6px; }
