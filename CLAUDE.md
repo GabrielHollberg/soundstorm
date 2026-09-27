@@ -504,7 +504,10 @@ judged on in its first minute:
   The one under the finger gets a white glow about 140px across, fading
   softly - a thumb covers about 45px, and a glow the icon's size hid under it -
   coming in over about a third of a second and going a little slower. Its
-  name shows left-aligned on the title's line, clear of a right thumb; an option that is on
+  name shows left-aligned on the title's line, clear of a right thumb, and
+  says what letting go will do, not how things are ("Turn shuffle off" while
+  it is on; repeat reads Repeat all, Repeat this song, Turn repeat off, in
+  its cycle); an option that is on
   (shuffle, repeat, a sleep timer, downloaded) is the accent's colour, so it
   never looks like the finger's glow; a favorite's heart is red. Nothing else answers the finger while they
   show - the swipe stands down. Right-click still opens the full menu, and

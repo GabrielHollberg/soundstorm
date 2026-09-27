@@ -10641,17 +10641,19 @@ function holdIconList(item) {
     render();
     placeMenu($('item-menu'), state.menuAnchor);
   };
-  const repeatName = { off: 'off', all: 'all', one: 'this song' }[audio.repeat] || 'off';
+  // Each name says what letting go on it will do, not how things are now:
+  // "Turn shuffle off" while it is on.
+  const repeatNext = { off: 'Repeat all', all: 'Repeat this song', one: 'Turn repeat off' }[audio.repeat] || 'Repeat all';
   const list = [
-    { spot: 'tl', icon: 'info', label: 'Info', run: () => menuAt(() => renderInfoMenu(item)) },
-    { spot: 'tm', icon: 'moon', label: sleep.until || sleep.atSongEnd ? 'Sleep timer: on' : 'Sleep timer',
+    { spot: 'tl', icon: 'info', label: 'Show info', run: () => menuAt(() => renderInfoMenu(item)) },
+    { spot: 'tm', icon: 'moon', label: sleep.until || sleep.atSongEnd ? 'Change the sleep timer' : 'Set a sleep timer',
       on: Boolean(sleep.until || sleep.atSongEnd), run: () => menuAt(() => renderSleepMenu(item, { nowPlaying: true })) },
     { spot: 'tr', icon: 'heart', label: faved ? 'Remove from favorites' : 'Add to favorites', filled: faved, heart: true,
       run: async () => {
         const problem = await setFavorite(item, !faved);
         showToast(problem || (faved ? 'Removed from favorites.' : 'Added to favorites.'));
       } },
-    { spot: 'bl', icon: 'download', label: downloaded ? 'Remove download' : 'Download', on: downloaded,
+    { spot: 'bl', icon: 'download', label: downloaded ? 'Remove from this device' : 'Download to this device', on: downloaded,
       run: async () => {
         if (downloaded) {
           await removeItemDownload(item);
@@ -10667,7 +10669,7 @@ function holdIconList(item) {
   ];
   if (music) {
     list.push(
-      { spot: 'ml', icon: 'shuffle', label: `Shuffle: ${audio.shuffle ? 'on' : 'off'}`, on: audio.shuffle,
+      { spot: 'ml', icon: 'shuffle', label: audio.shuffle ? 'Turn shuffle off' : 'Turn shuffle on', on: audio.shuffle,
         run: () => {
           setShuffle(!audio.shuffle);
           showToast(`Shuffle ${audio.shuffle ? 'on' : 'off'}.`);
@@ -10678,17 +10680,17 @@ function holdIconList(item) {
           const { ok, body } = await api('/api/playlists');
           menuAt(() => renderPlaylistMenu(item, (ok && body && body.playlists) || []));
         } },
-      { spot: 'mr', icon: 'repeat', label: `Repeat: ${repeatName}`, on: audio.repeat !== 'off', one: audio.repeat === 'one',
+      { spot: 'mr', icon: 'repeat', label: repeatNext, on: audio.repeat !== 'off', one: audio.repeat === 'one',
         run: () => {
           cycleRepeat();
           showToast(`Repeat ${{ off: 'off', all: 'all', one: 'this song' }[audio.repeat] || 'off'}.`);
         } },
-      { spot: 'bm', icon: 'queue', label: audio.showQueue ? 'Hide up next' : 'Up next', on: audio.showQueue,
+      { spot: 'bm', icon: 'queue', label: audio.showQueue ? 'Hide up next' : 'Show up next', on: audio.showQueue,
         run: () => {
           audio.showQueue = !audio.showQueue;
           renderLyrics();
         } },
-      { spot: 'br', icon: 'radio', label: 'Songs like this', run: () => playLikeThis() },
+      { spot: 'br', icon: 'radio', label: 'Play songs like this next', run: () => playLikeThis() },
     );
   }
   return list;
