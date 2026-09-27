@@ -5021,13 +5021,16 @@ const npSwipe = (() => {
     return false;
   };
   let startX = 0;
+  let scrollsY = false;
   let axis = null;   // 'y' closes, 'x' changes song
   let dx = 0;
   panel.addEventListener('touchstart', (event) => {
     const t = event.touches[0];
-    armed = event.touches.length === 1 && !npSwipe.busy &&
-      !event.target.closest('input, #np-queue') &&
-      !(event.target.closest('#np-lyrics') && scrolledDown(event.target));
+    armed = event.touches.length === 1 && !npSwipe.busy && !event.target.closest('input');
+    // Up next, and lyrics scrolled down, scroll up and down themselves: a
+    // drag that way there is theirs, but a sideways one still changes song.
+    scrollsY = Boolean(event.target.closest('#np-queue')
+      || (event.target.closest('#np-lyrics') && scrolledDown(event.target)));
     dragging = false;
     axis = null;
     dy = 0;
@@ -5045,8 +5048,17 @@ const npSwipe = (() => {
     const t = event.touches[0];
     const d = t.clientY - startY;
     const across = t.clientX - startX;
+    // A song being moved in Up next is the finger's only job.
+    if (queueDrag.active) {
+      armed = false;
+      return;
+    }
     if (!axis) {
       if (Math.max(Math.abs(d), Math.abs(across)) < 8) return;
+      if (Math.abs(across) <= Math.abs(d) && scrollsY) {
+        armed = false;
+        return;
+      }
       if (Math.abs(across) > Math.abs(d)) {
         axis = 'x';
         npSwipe.start();
@@ -5184,6 +5196,14 @@ $('audio-player').addEventListener('volumechange', () => {
   }, { passive: true });
   dock.addEventListener('touchmove', (event) => {
     if (!active) return;
+    // A hold opened the menu: the finger is the menu's now.
+    if (shown('item-menu')) {
+      active = false;
+      dock.style.transition = '';
+      dock.style.transform = '';
+      dock.style.opacity = '';
+      return;
+    }
     const t = event.touches[0];
     dy = t.clientY - startY;
     dx = t.clientX - startX;
@@ -10355,12 +10375,12 @@ document.addEventListener('keydown', (event) => {
 // it into a record, and a swipe still changes song; right-click opens it too.
 const npHold = { at: 0 };
 
-function openNowPlayingMenu() {
+function openNowPlayingMenu(anchor = $('np-cover')) {
   const item = audio.item;
   if (!item) return;
   const menu = $('item-menu');
   state.menuFor = item;
-  state.menuAnchor = $('np-cover');
+  state.menuAnchor = anchor;
   state.menuOpts = { nowPlaying: true };
   renderMainMenu(item, state.menuOpts);
   placeMenu(menu, state.menuAnchor);
@@ -10390,9 +10410,16 @@ function playerMenuItems(item, opts) {
     renderSleepMenu(item, opts);
   }, { chevron: true, detail: left }));
   if (item.kind === 'music') {
-    out.push(menuItem('queue', audio.showQueue ? 'Hide up next' : 'Up next', () => {
+    const open = !$('now-playing').classList.contains('hidden');
+    out.push(menuItem('queue', open && audio.showQueue ? 'Hide up next' : 'Up next', () => {
       closeItemMenu();
-      audio.showQueue = !audio.showQueue;
+      // From the mini-player, Up next is Now Playing opened on the queue.
+      if (!open) {
+        openNowPlaying();
+        audio.showQueue = true;
+      } else {
+        audio.showQueue = !audio.showQueue;
+      }
       renderLyrics();
     }));
   }
@@ -10553,3 +10580,41 @@ window.addEventListener('click', (event) => {
   event.stopPropagation();
   event.preventDefault();
 }, true);
+
+// Holding the mini-player opens the same menu as holding Now Playing, from
+// wherever the music is. Not on its buttons, which answer a touch already.
+(() => {
+  const dock = $('audio-dock');
+  let timer = null;
+  let x = 0;
+  let y = 0;
+  const skip = (el) => el.closest('.dock-buttons, input, #audio-close');
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+  };
+  dock.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || skip(event.target)) return;
+    x = event.clientX;
+    y = event.clientY;
+    cancel();
+    timer = setTimeout(() => {
+      timer = null;
+      state.heldAt = performance.now();
+      if (navigator.vibrate) navigator.vibrate(10);
+      holdStarted();
+      openNowPlayingMenu(dock);
+      followMenuFinger(event.pointerId, x, y);
+    }, HOLD_MS);
+  });
+  dock.addEventListener('pointermove', (event) => {
+    if (timer && Math.hypot(event.clientX - x, event.clientY - y) > HOLD_SLOP) cancel();
+  });
+  for (const type of ['pointerup', 'pointercancel']) dock.addEventListener(type, cancel);
+  dock.addEventListener('contextmenu', (event) => {
+    if (skip(event.target)) return;
+    event.preventDefault();
+    cancel();
+    if (!state.holding) openNowPlayingMenu(dock);
+  });
+})();

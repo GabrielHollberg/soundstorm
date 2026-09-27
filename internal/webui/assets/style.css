@@ -3048,3 +3048,6 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 /* Holding Now Playing's cover opens its menu: not the browser's own image
    menu, and no text selection. */
 #np-cover, #now-playing .np-main { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* Holding the mini-player opens its menu, not the browser's own. */
+#audio-dock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
