@@ -3008,3 +3008,22 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 #np-sleep.on, #np-queue-toggle.on, #np-shuffle.on, #np-repeat.on { background: #fff; color: #0b0d12; }
 #np-sleep::after, #np-queue-toggle::after, #np-shuffle::after, #np-repeat::after { display: none; }
 #np-sleep:not(.on), #np-queue-toggle:not(.on), #np-shuffle:not(.on), #np-repeat:not(.on), #np-similar { color: #fff; }
+
+/* Softer: the dark behind a cover's buttons fades out toward its edge rather
+   than ending in a hard circle, and the blur (which has a hard edge) goes.
+   Solid enough behind the icon itself to read on any art. */
+.fav-toggle, .cover-btn, .dl-get, .dl-badge,
+.np-art-buttons .cover-btn, .np-art-buttons .fav-toggle, .np-art-buttons .dl-get,
+#np-sleep, #np-queue-toggle, #np-shuffle, #np-repeat, #np-similar {
+  background: radial-gradient(circle closest-side, rgba(8, 10, 14, 0.62) 0%, rgba(8, 10, 14, 0.5) 45%, rgba(8, 10, 14, 0.2) 75%, rgba(8, 10, 14, 0) 100%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.fav-toggle:hover, .cover-btn:hover, .dl-get:hover {
+  background: radial-gradient(circle closest-side, rgba(8, 10, 14, 0.8) 0%, rgba(8, 10, 14, 0.65) 45%, rgba(8, 10, 14, 0.25) 75%, rgba(8, 10, 14, 0) 100%);
+}
+#np-sleep.on, #np-queue-toggle.on, #np-shuffle.on, #np-repeat.on {
+  background: radial-gradient(circle closest-side, #fff 0%, #fff 52%, rgba(255, 255, 255, 0.55) 72%, rgba(255, 255, 255, 0) 100%);
+  color: #0b0d12;
+}
+.track-title .dl-badge { background: none; }
