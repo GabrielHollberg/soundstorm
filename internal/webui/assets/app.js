@@ -4535,6 +4535,17 @@ async function showArtistAbout(sourceId, id, box) {
       more.textContent = 'More on Wikipedia';
       parts.push(more);
     }
+    // Wikipedia's text is CC BY-SA: it says where it came from and under what terms.
+    const credit = document.createElement('p');
+    credit.className = 'artist-bio-credit';
+    credit.append(document.createTextNode('From Wikipedia, available under '));
+    const license = document.createElement('a');
+    license.href = 'https://creativecommons.org/licenses/by-sa/4.0/';
+    license.target = '_blank';
+    license.rel = 'noopener noreferrer';
+    license.textContent = 'CC BY-SA 4.0';
+    credit.append(license, document.createTextNode('.'));
+    parts.push(credit);
   }
   box.replaceChildren(...parts);
 }
@@ -5650,7 +5661,7 @@ function renderLyrics() {
     // LRCLIB asks nothing in return; saying where the words came from is the least owed.
     const credit = document.createElement('p');
     credit.className = 'np-lyrics-credit';
-    credit.textContent = 'Lyrics from LRCLIB';
+    credit.textContent = 'Lyrics from LRCLIB, contributed by its community';
     box.append(credit);
   }
   audio.lyricIndex = -1;
