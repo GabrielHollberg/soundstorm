@@ -5115,9 +5115,9 @@ setIcon($('np-shuffle'), 'shuffle');
 setIcon($('np-similar'), 'radio');
 
 // The buttons over the big cover, as over every card: info top left, the
-// heart top right, download bottom left, where the cards have it. Add to queue and play next are
-// left off - the song is already playing. Rebuilt only when the song, or
-// whether it is a favorite or downloaded, changes.
+// heart top right, download bottom left, where the cards have it. Add to
+// queue and play next are left off - the song is already playing. Rebuilt
+// only when the song, or whether it is a favorite or downloaded, changes.
 function renderArtButtons(item) {
   const box = $('np-art-buttons');
   $('now-playing').classList.toggle('not-music', item.kind !== 'music');
