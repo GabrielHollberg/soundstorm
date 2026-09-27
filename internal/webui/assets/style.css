@@ -2952,3 +2952,15 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 #np-sleep:not(.on), #np-queue-toggle:not(.on) { color: rgba(255, 255, 255, 0.8); }
 /* The menu is not an overlay button: it takes its own taps, laid over the cover. */
 #np-sleep-wrap .np-sleep-menu { pointer-events: auto; }
+
+/* The title and the artist line each on one line, scrolling when too long
+   (see setNpLine). */
+#np-title, #np-sub { white-space: nowrap; overflow: hidden; }
+.np-line-run { display: inline-block; }
+#np-title.scrolling, #np-sub.scrolling {
+  text-align: left;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.np-line-copy { padding-left: 48px; }
+.np-text { min-width: 0; width: 100%; }

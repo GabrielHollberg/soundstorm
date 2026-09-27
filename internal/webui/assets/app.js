@@ -4655,6 +4655,9 @@ function queueChanged() {
 
 function openNowPlaying() {
   if (!audio.item) return;
+  // Measured again once it has a size: a title set while it was hidden
+  // could not tell whether it fitted.
+  requestAnimationFrame(() => fitNpLines());
   audio.showQueue = false;
   audio.lyricsBig = false;
   renderLyrics();
@@ -5220,9 +5223,9 @@ function renderNowPlaying() {
   }
   setBackdrop(art);
   tintStatusBar(art);
-  $('np-title').textContent = item.title;
-  $('np-sub').textContent = [(item.creators || []).join(', '), (item.extra && item.extra.album) || item.subtitle]
-    .filter(Boolean).join(' \u2014 ');
+  setNpLine($('np-title'), item.title);
+  setNpLine($('np-sub'), [(item.creators || []).join(', '), (item.extra && item.extra.album) || item.subtitle]
+    .filter(Boolean).join(' \u2014 '));
 
   const player = $('audio-player');
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
@@ -6613,6 +6616,59 @@ for (const type of ['play', 'pause', 'ended']) {
     $('now-playing').classList.toggle('playing', !$('audio-player').paused);
   });
 }
+
+// Now Playing's title and artist line are always one line each, so the
+// screen is laid out the same for every song: one too long for its line
+// scrolls sideways, pausing at the start of each pass, as music apps do.
+// They used to wrap, and a two- or three-line title pushed everything under
+// it up over the cover. The whole title is in Info.
+const MARQUEE_GAP = 48;      // px between the end of the text and its repeat
+const MARQUEE_SPEED = 32;    // px a second
+function setNpLine(el, text) {
+  if (el.dataset.text === text) return;
+  el.dataset.text = text;
+  const run = document.createElement('span');
+  run.className = 'np-line-run';
+  run.textContent = text;
+  el.replaceChildren(run);
+  el.setAttribute('aria-label', text);
+  fitNpLine(el);
+}
+
+function fitNpLine(el) {
+  const run = el.querySelector('.np-line-run');
+  if (!run) return;
+  // Measured without the repeat, as the plain text.
+  for (const a of run.getAnimations()) a.cancel();
+  el.classList.remove('scrolling');
+  run.textContent = el.dataset.text || '';
+  const width = run.scrollWidth;
+  if (!el.clientWidth || width <= el.clientWidth + 1 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const copy = document.createElement('span');
+  copy.className = 'np-line-copy';
+  copy.setAttribute('aria-hidden', 'true');
+  copy.textContent = el.dataset.text || '';
+  run.append(copy);
+  const shift = width + MARQUEE_GAP;
+  // Two seconds' pause at the start of every pass, then a steady scroll that
+  // ends where the repeat has taken the text's place, so the loop is seamless.
+  const moving = (shift / MARQUEE_SPEED) * 1000;
+  const hold = 2000 / (moving + 2000);
+  el.classList.add('scrolling');
+  run.animate([
+    { transform: 'translateX(0)', offset: 0 },
+    { transform: 'translateX(0)', offset: hold },
+    { transform: `translateX(-${shift}px)`, offset: 1 },
+  ], { duration: moving + 2000, iterations: Infinity });
+}
+
+function fitNpLines() {
+  fitNpLine($('np-title'));
+  fitNpLine($('np-sub'));
+}
+window.addEventListener('resize', () => {
+  if (!$('now-playing').classList.contains('hidden')) fitNpLines();
+});
 
 // Now Playing's blurred backdrop fades from one cover to the next, only once
 // the new one is decoded, rather than swapping (or, for a song without a

@@ -509,6 +509,16 @@ judged on in its first minute:
   songs-like step aside for an audiobook. The play controls sit above the
   timeline, at the owner's asking, in every view (the panel and strip views
   order them 3 and 4).
+- **The title and the artist line are one line each**, and scroll sideways
+  when too long - a two-second pause at the start of each pass, then a
+  seamless loop onto a repeat of the text (Web Animations, since a keyframe
+  offset cannot come from a CSS variable). They used to wrap, and on a phone
+  the column under the cover is pinned to the bottom, so a two- or
+  three-line title spilled upward over the cover (measured: 45-86px on short
+  screens). One line each fixes long titles everywhere. Very short screens
+  (iPhone SE, 360x640) still overlap by a fixed 19-36px whatever the title;
+  shrinking the cover to fit was built and then set aside at the owner's
+  call, as not needed yet.
 - **A tap turns the cover into a record**: it rounds into a disc that turns
   (20s a turn) while the music plays and stops where it is on pause; another
   tap squares it. Kept on the account (`prefs.coverSpin`), so it stays as
