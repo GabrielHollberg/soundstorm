@@ -4756,9 +4756,15 @@ const npSwipe = (() => {
   let bigCover = false;
   const self = { busy: false };
 
+  // The translate property, not transform: a spinning record turns with
+  // rotate, and a browser applies transform after rotate - so a slide by
+  // transform went off at the record's angle. translate comes first, and a
+  // slide stays sideways whatever the turn.
   const put = (el, x, ms, opacity) => {
-    el.style.transition = ms ? `transform ${ms}ms ease-out, opacity ${ms}ms ease-out` : 'none';
-    el.style.transform = x ? `translateX(${x}px)` : '';
+    // Back at rest, the stylesheet's own transitions (the cover rounding
+    // into a record) apply again.
+    el.style.transition = ms ? `translate ${ms}ms ease-out, opacity ${ms}ms ease-out` : (x ? 'none' : '');
+    el.style.translate = x ? `${x}px 0` : '';
     if (opacity !== undefined) el.style.opacity = opacity === 1 ? '' : String(opacity);
   };
   const artOf = (n) => (n && artPath(n.item)) || NO_COVER;
@@ -5195,6 +5201,16 @@ function renderNowPlaying() {
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
   renderArtButtons(item);
   $('now-playing').classList.toggle('spin', coverSpins());
+  // A new song is a new record: it starts from the top, as the cover that
+  // slid in did, rather than at the angle the last one had reached.
+  if (renderNowPlaying.song !== selectionKey(item)) {
+    renderNowPlaying.song = selectionKey(item);
+    for (const img of [$('np-cover'), $('np-thumb')]) {
+      img.style.animation = 'none';
+      void img.offsetWidth;
+      img.style.animation = '';
+    }
+  }
   $('now-playing').classList.toggle('playing', !$('audio-player').paused);
   $('np-shuffle').setAttribute('aria-pressed', String(audio.shuffle));
   $('np-shuffle').classList.toggle('on', audio.shuffle);

@@ -476,10 +476,15 @@ judged on in its first minute:
 - **A tap turns the cover into a record**: it rounds into a disc that turns
   (20s a turn) while the music plays and stops where it is on pause; another
   tap squares it. Kept on the account (`prefs.coverSpin`), so it stays as
-  left, on every device. The turn is the `rotate` property rather than a
-  transform, because the sideways swipe moves the cover with `transform` and
-  the two have to add up; the end of a swipe is not taken for a tap. Still
-  under reduced motion.
+  left, on every device. The turn is the `rotate` property and the swipe
+  slides with the `translate` property, never `transform`: a browser applies
+  translate, then rotate, then transform, so a slide by transform went off at
+  the record's angle - reported as covers moving off "in a weird direction".
+  Measured after: a swipe at 72 degrees moved the cover 150px sideways and
+  0px up or down. A new song's record starts from the top (the animation
+  restarts), as the cover that slid in did, instead of jumping to the old
+  one's angle. The end of a swipe is not taken for a tap. Still under
+  reduced motion.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.
