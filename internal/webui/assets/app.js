@@ -2855,7 +2855,6 @@ function setSelecting(on) {
   for (const card of $('results').querySelectorAll('.item.selected')) {
     card.classList.remove('selected');
   }
-  show($('select-bar'), on);
   if (!on && state.menuFor === 'selection') closeItemMenu();
   resetSelectBar();
 }
@@ -2875,25 +2874,10 @@ function toggleSelected(item, card) {
 // The selection's menu: the same menu as one item's, from the bottom of the
 // screen, with only what can be done to many at once. It stays open while
 // selecting, so more can be tapped in or out, and says how many.
-// While selecting, the foot of the screen says only how many and offers
-// Done: the menu for them is a hold on any selected one away (see
-// attachItemMenuGestures), so it never covers the cards still to be picked.
+// Nothing at the foot of the screen while selecting: the ticks say what is
+// selected, and the menu for them is a hold on any selected one away (see
+// attachItemMenuGestures). A menu already open follows the selection.
 function resetSelectBar() {
-  const bar = $('select-bar');
-  const n = state.selected.size;
-  const count = document.createElement('span');
-  count.className = 'select-count';
-  count.textContent = `${n} selected`;
-  const hint = document.createElement('span');
-  hint.className = 'select-hint';
-  hint.textContent = 'Hold one for options';
-  const done = document.createElement('button');
-  done.type = 'button';
-  done.className = 'select-done';
-  done.textContent = 'Done';
-  done.addEventListener('click', () => setSelecting(false));
-  bar.replaceChildren(count, hint, done);
-  // A selection's menu already open follows the count.
   if (state.menuFor === 'selection' && !$('item-menu').classList.contains('hidden')) renderSelectMenu();
 }
 

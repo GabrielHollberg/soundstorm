@@ -1211,8 +1211,10 @@ any selected card opens the menu for the selection: one alone gets its full
 menu (info, delete and all - closing it ends selecting), several get what
 can be done to many. That menu is a hold away rather than a sheet at the
 foot of the screen, which covered the cards still to be picked ("hard to
-select more"); the foot shows only "N selected", a hint and Done. Taking
-off the last one, Done, Escape or Back leave selecting. Where nothing is
+select more"). Nothing shows at the foot of the screen - a slim "N
+selected / Done" strip lived for a day and went at the owner's asking; the
+ticks say what is selected. Taking off the last one, an action in the menu,
+its Clear selection, Escape or Back leave selecting. Where nothing is
 selected from - Home's rows, album cards, Now Playing's cover - a hold opens
 the menu as before. A mouse's right-click (and the hover "...") still opens
 a card's menu at once; holding the mouse button selects. A Select option in
