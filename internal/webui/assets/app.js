@@ -3301,6 +3301,17 @@ function renderMainMenu(item, opts = {}) {
   const faved = state.favorites.has(selectionKey(item));
   const entries = [menuHeader(item)];
   if (opts.nowPlaying) entries.push(...playerMenuItems(item, opts));
+  // Selecting several, said in words: the hold-and-drag way to it was too
+  // hidden to find, and the menu now takes a slide towards it.
+  const heldCard = state.menuAnchor && state.menuAnchor.closest('#results .item-holder');
+  if (heldCard && !opts.nowPlaying) {
+    entries.push(menuItem('check', 'Select', () => {
+      closeItemMenu();
+      if (!state.selecting) setSelecting(true);
+      const card = heldCard.querySelector('.item');
+      if (card && !state.selected.has(selectionKey(item))) toggleSelected(item, card);
+    }));
+  }
   entries.push(
     menuItem('heart', faved ? 'Remove from favorites' : 'Add to favorites', async () => {
       const problem = await setFavorite(item, !faved);
@@ -10476,8 +10487,11 @@ function followMenuFinger(pointerId, x0, y0) {
     if (chosen) chosen.click();
     else closeItemMenu();
     // The browser's own click for this lift, if it sends one, is not a
-    // second choice or a click outside.
+    // second choice or a click outside. A slide usually sends none, so the
+    // card's own "swallow the lift" is let go too, or it would eat the next
+    // real tap.
     state.swallowClickUntil = performance.now() + 500;
+    setTimeout(() => { state.suppressClick = false; }, 500);
   };
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onEnd);

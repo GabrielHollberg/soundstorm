@@ -1199,6 +1199,14 @@ the menu in place (Shuffle, Repeat, a second page) used to close it: its
 button is gone from the page by the time the click reaches the page's
 "click outside" rule, which now ignores a click on a removed element.
 
+**Select, in the hold menu, first.** Reported as "I can't figure out how to
+do multiselect": the drag below was the only way in, and once the menu took
+the slide towards it, it was undiscoverable. Choosing **Select** (tapped, or
+slid to) selects the held item and turns selection on; tapping others then
+adds them. Only in a shelf's list, where selecting exists. After a slide
+and lift the card's own "swallow the lift" is let go after half a second,
+or it ate the next real tap - there is usually no click for it to swallow.
+
 **Many at once: hold, then drag.** Holding opens the menu as ever; moving
 the finger on to *another card* without lifting closes it and selects every
 item from the held one to the one under the finger (a finger that has been
