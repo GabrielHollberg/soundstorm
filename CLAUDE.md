@@ -499,7 +499,11 @@ judged on in its first minute:
   in a square in the middle. The veil behind them takes the cover's own size
   about its centre, never its bounding box: a spinning record is rotated,
   and the box around a turned square is up to 1.4 times as wide - it drew a
-  dark ring around the disc (measured: 404px box, 300px disc, at 63 degrees). Nothing else answers the finger while they
+  dark ring around the disc (measured: 404px box, 300px disc, at 63 degrees).
+  The veil is the only dark: no shadow behind each icon (the owner's call).
+  The one under the finger gets a white glow; an option that is on
+  (shuffle, repeat, a sleep timer, downloaded) is the accent's colour, so it
+  never looks like the finger's glow; a favorite's heart is red. Nothing else answers the finger while they
   show - the swipe stands down. Right-click still opens the full menu, and
   the mini-player's hold opens the menu (below). Before the icons, a hold
   opened that menu, which is what the rest of this entry describes:
