@@ -4679,7 +4679,11 @@ function npTransition(update) {
     update();
     return;
   }
-  document.startViewTransition(update);
+  // A transition the browser declines (another already running, the page
+  // hidden) still applies the change; the refusal is not an error to show.
+  const t = document.startViewTransition(update);
+  t.ready.catch(() => {});
+  t.finished.catch(() => {});
 }
 
 // The strip grows into the full lyrics when tapped - a tap there never jumps
@@ -4696,9 +4700,13 @@ $('np-lyrics').addEventListener('click', (event) => {
   });
 }, true);
 document.querySelector('#now-playing .np-head').addEventListener('click', () => {
-  if (audio.npMode !== 'lyrics' || !matchMedia('(max-width: 760px)').matches) return;
+  // On a phone the lyrics and Up next hide the big cover, and with it the
+  // buttons on it - Up next's own among them - so the small cover is the way
+  // back from either.
+  if (!['lyrics', 'queue'].includes(audio.npMode) || !matchMedia('(max-width: 760px)').matches) return;
   npTransition(() => {
     audio.lyricsBig = false;
+    audio.showQueue = false;
     renderLyrics();
   });
 });
@@ -5152,7 +5160,7 @@ function renderArtButtons(item) {
   if (box.dataset.key === key) return;
   box.dataset.key = key;
   for (const el of [...box.children]) {
-    if (!['np-shuffle', 'np-repeat', 'np-similar'].includes(el.id)) el.remove();
+    if (!el.classList.contains('np-art-fixed')) el.remove();
   }
   box.append(coverButton('cover-info', 'info', `Info about ${item.title}`, () => {
     state.menuFor = item;
@@ -5290,6 +5298,8 @@ $('audio-meta').addEventListener('keydown', (event) => {
   }
 });
 $('np-close').addEventListener('click', closeNowPlaying);
+setIcon($('np-exit'), 'close');
+$('np-exit').addEventListener('click', stopAudio);
 $('np-play').addEventListener('click', () => {
   const player = $('audio-player');
   if (player.paused) player.play().catch(() => {});

@@ -488,7 +488,15 @@ judged on in its first minute:
   a WebView app loses the lock-screen controls and background playback.
 - **The big cover carries the card buttons**: info top left, the heart top
   right, download bottom left, as on every card, and shuffle and repeat at
-  its left and right middle. Add to queue and play next are left off: the
+  its left and right middle. The sleep timer is top middle (its menu drops
+  from there) and Up next bottom middle. The header keeps only the arrow,
+  which puts Now Playing away with the music going on, and an **X** top
+  right, which stops the music and closes the mini-player too
+  (`stopAudio`). On a phone the lyrics and Up next views hide the big
+  cover and its buttons, so the small cover by the title returns from
+  either. The cover morph's `view-transition-name` is on `#np-cover` alone:
+  the swipe's side covers share the class, and two elements with one name
+  aborted every transition ("invalid state"), found while checking this. Add to queue and play next are left off: the
   song is already playing. The buttons are a layer sharing the cover's grid
   cell at the cover's size (every width rule for the cover names both), take
   the only taps so the cover still swipes, and ride the swipe with it. Info

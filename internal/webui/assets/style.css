@@ -1953,7 +1953,9 @@ body.np-open { overflow: hidden; }
    so the browser morphs one into the other; the title, the lyrics and the
    controls each glide to where they now sit. */
 @media (max-width: 760px) {
-  .now-playing .np-cover { view-transition-name: np-art; }
+  /* The big cover only, by id: the swipe's side covers share its class, and
+     two elements with one name abort the whole transition. */
+  .now-playing #np-cover { view-transition-name: np-art; }
   .now-playing .np-thumb { view-transition-name: np-art; }
   .now-playing .np-text { view-transition-name: np-title; }
   .now-playing .np-lyrics { view-transition-name: np-lyrics; }
@@ -2940,3 +2942,13 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 
 /* A song without lyrics keeps the lyrics' space, and says so there. */
 .np-lyrics-none { margin: 0; text-align: center; font-size: 15px; color: rgba(255, 255, 255, 0.45); }
+
+/* The sleep timer top middle of the cover, Up next bottom middle. Their menu
+   drops down from the middle. */
+#np-sleep-wrap { top: 8px; left: calc(50% - 22px); }
+#np-sleep-wrap .np-sleep-menu { right: auto; left: 50%; transform: translateX(-50%); }
+#np-queue-toggle { bottom: 6px; left: calc(50% - 22px); }
+#np-sleep-wrap .np-icon, #np-queue-toggle { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9)); }
+#np-sleep:not(.on), #np-queue-toggle:not(.on) { color: rgba(255, 255, 255, 0.8); }
+/* The menu is not an overlay button: it takes its own taps, laid over the cover. */
+#np-sleep-wrap .np-sleep-menu { pointer-events: auto; }
