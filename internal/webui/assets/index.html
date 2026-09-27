@@ -452,14 +452,14 @@
          menus. -->
     <div id="item-menu-backdrop" class="item-menu-backdrop hidden"></div>
     <!-- Shown once, on a touch screen: the menu is behind a gesture. -->
-    <p id="hold-tip" class="hold-tip hidden" role="status">Tip: hold down on anything
-      for favorites and playlists.</p>
+    <p id="hold-tip" class="hold-tip hidden" role="status">Tip: hold down on a song to
+      select it, and hold it again for its options.</p>
     <div id="item-menu" class="item-menu hidden" role="menu"></div>
 
     <!-- While selecting: how many, and what to do with them. The same bar asks
          for confirmation, saying exactly what goes, and afterwards offers the
          undo - so a delete never happens anywhere the person is not looking. -->
-    <div id="select-bar" class="item-menu select-menu hidden" role="menu" aria-label="Selected items"></div>
+    <div id="select-bar" class="select-strip hidden" role="status" aria-label="Selected items"></div>
 
     <!-- Watched by an IntersectionObserver: when this scrolls into view the
          next page is fetched and appended. Zero height, so it changes no

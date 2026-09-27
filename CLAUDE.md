@@ -1199,20 +1199,25 @@ the menu in place (Shuffle, Repeat, a second page) used to close it: its
 button is gone from the page by the time the click reaches the page's
 "click outside" rule, which now ignores a click on a removed element.
 
-**Select, in the hold menu, first.** Reported as "I can't figure out how to
-do multiselect": the drag below was the only way in, and once the menu took
-the slide towards it, it was undiscoverable. Choosing **Select** (tapped, or
-slid to) selects the held item and turns selection on; tapping others then
-adds them. Only in a shelf's list, where selecting exists. After a slide
-and lift the card's own "swallow the lift" is let go after half a second,
-or it ate the next real tap - there is usually no click for it to swallow.
+**In a shelf's list, a hold selects - the owner's design.** Holding a card
+selects it (no menu); keeping the finger down and sliding onto other cards
+selects them too, and after lifting, a tap adds or takes off one. Holding
+any selected card opens the menu for the selection: one alone gets its full
+menu (info, delete and all - closing it ends selecting), several get what
+can be done to many. That menu is a hold away rather than a sheet at the
+foot of the screen, which covered the cards still to be picked ("hard to
+select more"); the foot shows only "N selected", a hint and Done. Taking
+off the last one, Done, Escape or Back leave selecting. Where nothing is
+selected from - Home's rows, album cards, Now Playing's cover - a hold opens
+the menu as before. A mouse's right-click (and the hover "...") still opens
+a card's menu at once; holding the mouse button selects. A Select option in
+the menu lived for one commit and went: holding is the way in.
 
-**Many at once: hold, then drag.** Holding opens the menu as ever; moving
-the finger on to *another card* without lifting closes it and selects every
-item from the held one to the one under the finger (a finger that has been
-on the menu is choosing from it for the rest of that touch; the menu opens
-over the held card's lower half, so a slide straight down reaches the menu,
-not the next row - slide sideways or up to select), in the order shown, as a phone's
+**Many at once: hold, then drag.** Moving the finger on to *another card*
+without lifting selects every item from the held one to the one under the
+finger (selecting starts on reaching another card, looked for through any
+dimmed backdrop; a finger that has been on a menu is choosing from it for
+the rest of that touch), in the order shown, as a phone's
 photos do (back up and they come off; what was selected before stays).
 The bottom 120px of the screen scrolls the page down, and the band under
 the pills up, faster nearer the edge, so a drag reaches any number. The

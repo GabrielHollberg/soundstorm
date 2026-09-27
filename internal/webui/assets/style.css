@@ -3050,3 +3050,32 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 /* Holding Now Playing's cover opens its menu: not the browser's own image
    menu, and no text selection. */
 #np-cover { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* While selecting: a slim strip at the foot of the screen, the count and
+   Done - the menu for the selection is a hold on one of them. */
+.select-strip {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 20px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 18px;
+  max-width: calc(100% - 24px);
+  border-radius: 999px;
+  background: rgba(20, 23, 30, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+.select-strip.hidden { display: none; }
+.select-count { font-weight: 700; }
+.select-hint { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.select-done { padding: 8px 16px; border-radius: 999px; }
+body.dock-open .select-strip { bottom: calc(var(--dock-space) + 12px); }
+@media (max-width: 760px) {
+  .select-strip { bottom: calc(var(--tabbar) + 12px); }
+  body.dock-open .select-strip { bottom: calc(var(--dock-space) + var(--tabbar) + 12px); }
+}

@@ -2856,6 +2856,7 @@ function setSelecting(on) {
     card.classList.remove('selected');
   }
   show($('select-bar'), on);
+  if (!on && state.menuFor === 'selection') closeItemMenu();
   resetSelectBar();
 }
 
@@ -2864,14 +2865,55 @@ function toggleSelected(item, card) {
   if (state.selected.has(key)) state.selected.delete(key);
   else state.selected.set(key, item);
   card.classList.toggle('selected', state.selected.has(key));
+  if (!state.selected.size) {
+    setSelecting(false);
+    return;
+  }
   resetSelectBar();
 }
 
 // The selection's menu: the same menu as one item's, from the bottom of the
 // screen, with only what can be done to many at once. It stays open while
 // selecting, so more can be tapped in or out, and says how many.
+// While selecting, the foot of the screen says only how many and offers
+// Done: the menu for them is a hold on any selected one away (see
+// attachItemMenuGestures), so it never covers the cards still to be picked.
 function resetSelectBar() {
-  renderSelectMenu();
+  const bar = $('select-bar');
+  const n = state.selected.size;
+  const count = document.createElement('span');
+  count.className = 'select-count';
+  count.textContent = `${n} selected`;
+  const hint = document.createElement('span');
+  hint.className = 'select-hint';
+  hint.textContent = 'Hold one for options';
+  const done = document.createElement('button');
+  done.type = 'button';
+  done.className = 'select-done';
+  done.textContent = 'Done';
+  done.addEventListener('click', () => setSelecting(false));
+  bar.replaceChildren(count, hint, done);
+  // A selection's menu already open follows the count.
+  if (state.menuFor === 'selection' && !$('item-menu').classList.contains('hidden')) renderSelectMenu();
+}
+
+// The menu for what is selected, opened by holding one of them: one alone
+// gets its full menu, as a hold always gave; several get what can be done to
+// many at once.
+function openSelectionMenu(anchor) {
+  const items = [...state.selected.values()];
+  const menu = $('item-menu');
+  state.menuAnchor = anchor;
+  if (items.length === 1) {
+    state.menuFor = items[0];
+    state.menuOpts = { fromSelection: true };
+    renderMainMenu(items[0], state.menuOpts);
+  } else {
+    state.menuFor = 'selection';
+    state.menuOpts = {};
+    renderSelectMenu();
+  }
+  placeMenu(menu, anchor);
 }
 
 function formatBytes(n) {
@@ -2903,7 +2945,7 @@ function selectMenuBack(label) {
 }
 
 function renderSelectMenu() {
-  const box = $('select-bar');
+  const box = $('item-menu');
   const items = [...state.selected.values()];
   const n = items.length;
   const head = document.createElement('div');
@@ -2911,7 +2953,7 @@ function renderSelectMenu() {
   const title = document.createElement('strong');
   title.textContent = n ? `${n} selected` : 'Nothing selected';
   const sub = document.createElement('span');
-  sub.textContent = 'Tap items to add or take them off';
+  sub.textContent = 'Tap more to add them, or tap one to take it off';
   head.append(title, sub);
   const entries = [head];
   const songs = n > 0 && items.every((it) => it.kind === 'music');
@@ -2973,17 +3015,17 @@ function renderSelectMenu() {
   entries.push(menuItem('check', 'Select all shown', () => {
     for (const item of state.items || []) state.selected.set(selectionKey(item), item);
     for (const card of $('results').querySelectorAll('.item')) card.classList.add('selected');
-    renderSelectMenu();
+    resetSelectBar();
   }));
   if (n && state.me && state.me.owner && !state.offline) {
     entries.push(menuItem('trash', 'Delete from library', () => renderSelectDelete(), { className: 'menu-danger' }));
   }
-  entries.push(menuItem('close', 'Cancel', () => setSelecting(false)));
+  entries.push(menuItem('close', 'Clear selection', () => setSelecting(false)));
   box.replaceChildren(...entries);
 }
 
 function renderSelectPlaylists(items, lists) {
-  const box = $('select-bar');
+  const box = $('item-menu');
   const note = menuNote();
   const add = async (id) => {
     let failed = '';
@@ -3032,7 +3074,7 @@ function renderSelectPlaylists(items, lists) {
 // Delete: the server says exactly what would go, the owner confirms, and it
 // goes to the bin for thirty days with an Undo in the message at the bottom.
 async function renderSelectDelete() {
-  const box = $('select-bar');
+  const box = $('item-menu');
   const text = document.createElement('p');
   text.className = 'menu-confirm';
   text.textContent = 'Working out what that would delete\u2026';
@@ -3269,6 +3311,10 @@ function closeItemMenu() {
   show($('item-menu-backdrop'), false);
   for (const lifted of document.querySelectorAll('.item-holder.lifted')) lifted.classList.remove('lifted');
   state.menuFor = null;
+  // A lone selected item's menu was the end of selecting it.
+  const wasSelection = state.menuOpts && state.menuOpts.fromSelection;
+  state.menuOpts = {};
+  if (wasSelection && state.selecting) setSelecting(false);
 }
 
 function openItemMenu(item, anchor) {
@@ -3301,17 +3347,6 @@ function renderMainMenu(item, opts = {}) {
   const faved = state.favorites.has(selectionKey(item));
   const entries = [menuHeader(item)];
   if (opts.nowPlaying) entries.push(...playerMenuItems(item, opts));
-  // Selecting several, said in words: the hold-and-drag way to it was too
-  // hidden to find, and the menu now takes a slide towards it.
-  const heldCard = state.menuAnchor && state.menuAnchor.closest('#results .item-holder');
-  if (heldCard && !opts.nowPlaying) {
-    entries.push(menuItem('check', 'Select', () => {
-      closeItemMenu();
-      if (!state.selecting) setSelecting(true);
-      const card = heldCard.querySelector('.item');
-      if (card && !state.selected.has(selectionKey(item))) toggleSelected(item, card);
-    }));
-  }
   entries.push(
     menuItem('heart', faved ? 'Remove from favorites' : 'Add to favorites', async () => {
       const problem = await setFavorite(item, !faved);
@@ -3840,7 +3875,7 @@ $('audio-next').addEventListener('click', () => {
 /* ---------------------------------------------------------- press and hold */
 
 // How to reach an item's menu, in the words for this device.
-const MENU_HOW = state.sheetMenus ? 'Hold down on' : 'Right-click';
+const MENU_HOW = state.sheetMenus ? 'Hold down twice on' : 'Right-click';
 
 // attachItemMenuGestures opens a card's menu without a button for it: hold
 // down on a touch screen, right-click with a mouse, the menu key on a
@@ -3861,8 +3896,13 @@ function attachItemMenuGestures(card, item) {
     timer = null;
     card.classList.remove('pressing');
   };
+  // In a shelf's list a hold selects: the item is selected, and the finger
+  // may slide on across others to select them too, or lift and tap more.
+  // A hold on one already selected opens the menu for the selection. Where
+  // there is nothing to select (Home's rows, say) a hold opens the menu.
+  const inList = () => Boolean(card.closest('#results'));
   card.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' || state.selecting) return;
+    if (event.button !== 0 || (event.pointerType === 'mouse' && !inList())) return;
     startX = event.clientX;
     startY = event.clientY;
     card.classList.add('pressing');
@@ -3872,11 +3912,18 @@ function attachItemMenuGestures(card, item) {
       state.suppressClick = true;
       if (navigator.vibrate) navigator.vibrate(12);
       holdStarted();
-      openItemMenu(item, card.querySelector('.art-wrap') || card);
-      // Held, and the finger may now move on: onto the menu it picks an
-      // option; across the other cards it selects them instead.
-      followMenuFinger(event.pointerId, startX, startY);
-      armDragSelect(card, item, event.pointerId, startX, startY);
+      const anchor = card.querySelector('.art-wrap') || card;
+      if (inList() && state.selecting && state.selected.has(selectionKey(item))) {
+        openSelectionMenu(anchor);
+        followMenuFinger(event.pointerId, startX, startY);
+      } else if (inList()) {
+        if (!state.selecting) setSelecting(true);
+        if (!state.selected.has(selectionKey(item))) toggleSelected(item, card);
+        armDragSelect(card, item, event.pointerId, startX, startY);
+      } else {
+        openItemMenu(item, anchor);
+        followMenuFinger(event.pointerId, startX, startY);
+      }
     }, HOLD_MS);
   });
   card.addEventListener('pointermove', (event) => {
@@ -3889,9 +3936,12 @@ function attachItemMenuGestures(card, item) {
   // either way it is ours, not the browser's "open in new tab".
   card.addEventListener('contextmenu', (event) => {
     event.preventDefault();
-    if (state.selecting) return;
     cancel();
-    if (!state.menuFor) openItemMenu(item, card.querySelector('.art-wrap') || card);
+    // Right-click is a mouse's menu, straight away; Android also reports a
+    // long press as one, which the hold above has already answered.
+    if (state.holding || state.menuFor) return;
+    if (state.selecting && state.selected.has(selectionKey(item))) openSelectionMenu(card.querySelector('.art-wrap') || card);
+    else if (!state.selecting) openItemMenu(item, card.querySelector('.art-wrap') || card);
   });
   card.addEventListener('keydown', (event) => {
     if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
@@ -8955,7 +9005,7 @@ function armDragSelect(card, item, pointerId, x0, y0) {
       if (Math.hypot(event.clientX - x0, event.clientY - y0) < HOLD_SLOP) return;
       // A finger that has gone into the menu is choosing from it for the
       // rest of this touch, wherever it goes after.
-      if (menuFinger.entered || fingerOverMenu(event.clientX, event.clientY)) return;
+      if ((menuFinger.id === pointerId && menuFinger.entered) || fingerOverMenu(event.clientX, event.clientY)) return;
       // And selecting starts on reaching another card, not on leaving this
       // one's middle: the menu opens over the held card's lower half, so the
       // way to it is across the card itself.
@@ -10481,6 +10531,7 @@ function followMenuFinger(pointerId, x0, y0) {
     document.removeEventListener('pointerup', onEnd);
     document.removeEventListener('pointercancel', onEnd);
     menuFinger.id = null;
+    menuFinger.entered = false;
     const chosen = event.type === 'pointerup' ? lit : null;
     light(null);
     if (!moved || state.dragSelect || $('item-menu').classList.contains('hidden')) return;
