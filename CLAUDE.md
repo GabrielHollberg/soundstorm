@@ -464,11 +464,15 @@ judged on in its first minute:
   song is already playing. The buttons are a layer sharing the cover's grid
   cell at the cover's size (every width rule for the cover names both), take
   the only taps so the cover still swipes, and ride the swipe with it. Info
-  from here opens the item menu above Now Playing. To the right of play,
-  **songs like this** keeps the song playing and makes what follows its song
-  radio - sounds-alike once the analysis has heard it - carrying on without
-  end; a spacer on the left keeps play in the middle. Shuffle, repeat and
-  songs-like step aside for an audiobook.
+  from here opens the item menu above Now Playing. Bottom right of the
+  cover, **songs like this** keeps the song playing and makes what follows
+  its song radio - sounds-alike once the analysis has heard it - carrying on
+  without end, and says so in a message ("Similar songs added to the queue",
+  or "...replacing your queue" when it did). Messages raised from Now Playing
+  sit above it; they used to show beneath it, unseen. Shuffle, repeat and
+  songs-like step aside for an audiobook. The play controls sit above the
+  timeline, at the owner's asking, in every view (the panel and strip views
+  order them 3 and 4).
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.

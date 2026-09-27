@@ -5125,7 +5125,7 @@ function renderArtButtons(item) {
   if (box.dataset.key === key) return;
   box.dataset.key = key;
   for (const el of [...box.children]) {
-    if (el.id !== 'np-shuffle' && el.id !== 'np-repeat') el.remove();
+    if (!['np-shuffle', 'np-repeat', 'np-similar'].includes(el.id)) el.remove();
   }
   box.append(coverButton('cover-info', 'info', `Info about ${item.title}`, () => {
     state.menuFor = item;

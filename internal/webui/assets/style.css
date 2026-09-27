@@ -1681,8 +1681,8 @@ body.np-open { overflow: hidden; }
   flex-direction: column;
 }
 .now-playing.panel-on #np-queue { flex: 1; min-height: 0; max-height: none; }
-.now-playing.panel-on .np-progress { order: 3; }
-.now-playing.panel-on .np-controls { order: 4; }
+.now-playing.panel-on .np-controls { order: 3; }
+.now-playing.panel-on .np-progress { order: 4; }
 @media (max-width: 760px) {
   .now-playing.panel-on .np-cover-wrap { display: none; }
   .now-playing.panel-on .np-main { display: flex; padding-bottom: 0; }
@@ -1942,8 +1942,8 @@ body.np-open { overflow: hidden; }
   .now-playing.strip-on .np-lyric { font-size: 20px; padding: 3px 4%; }
   .now-playing.strip-on .np-lyric.gap { padding: 10px 0; }
   .now-playing.strip-on .np-lyrics-credit { display: none; }
-  .now-playing.strip-on .np-progress { order: 3; }
-  .now-playing.strip-on .np-controls { order: 4; }
+  .now-playing.strip-on .np-controls { order: 3; }
+  .now-playing.strip-on .np-progress { order: 4; }
 }
 
 /* The move between the big cover and the full lyrics, as a view transition.
@@ -2905,9 +2905,12 @@ body.recap-open { overflow: hidden; }
 #np-repeat { right: 6px; }
 #np-shuffle:not(.on), #np-repeat:not(.on) { color: rgba(255, 255, 255, 0.8); }
 .now-playing.not-music #np-shuffle, .now-playing.not-music #np-repeat,
-.now-playing.not-music #np-similar, .now-playing.not-music .np-spacer { visibility: hidden; }
-.np-spacer { width: 44px; height: 44px; flex: none; }
-#np-similar { color: rgba(255, 255, 255, 0.85); }
+.now-playing.not-music #np-similar { visibility: hidden; }
+/* Songs like this, bottom right of the cover (download has bottom left). */
+#np-similar { top: auto; left: auto; bottom: 6px; right: 6px; color: rgba(255, 255, 255, 0.85);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9)); }
+/* Play, with previous and next on a computer, in the middle of its row. */
+.np-controls { justify-content: center; gap: 36px; }
 #np-similar:disabled { opacity: 0.4; }
 /* Info opened from Now Playing sits above it. */
 body.np-open .item-menu { z-index: 75; }

@@ -696,6 +696,8 @@
           <div id="np-art-buttons" class="np-art-buttons">
             <button id="np-shuffle" class="np-icon np-toggle" type="button" aria-label="Shuffle" aria-pressed="false"></button>
             <button id="np-repeat" class="np-icon np-toggle" type="button" aria-label="Repeat: off"></button>
+            <button id="np-similar" class="np-icon" type="button" aria-label="Play songs like this"
+                    title="Play songs like this next"></button>
           </div>
         </div>
         <div class="np-side">
@@ -708,18 +710,15 @@
               <p id="np-sub"></p>
             </div>
           </div>
-          <div class="np-progress">
-            <input id="np-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
-            <div class="np-times"><span id="np-time">0:00</span><span id="np-length">0:00</span></div>
-          </div>
+          <!-- The controls above the timeline, at the owner's asking. -->
           <div class="np-controls">
-            <!-- As wide as the button on the right, so play stays in the middle. -->
-            <span class="np-spacer" aria-hidden="true"></span>
             <button id="np-prev" class="np-icon" type="button" aria-label="Previous"></button>
             <button id="np-play" class="np-icon np-play" type="button" aria-label="Play or pause"></button>
             <button id="np-next" class="np-icon" type="button" aria-label="Next"></button>
-            <button id="np-similar" class="np-icon" type="button" aria-label="Play songs like this"
-                    title="Play songs like this next"></button>
+          </div>
+          <div class="np-progress">
+            <input id="np-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
+            <div class="np-times"><span id="np-time">0:00</span><span id="np-length">0:00</span></div>
           </div>
           <!-- The middle of the screen: the lyrics when the song has them,
                Up next when asked for, otherwise nothing and the cover leads. -->
