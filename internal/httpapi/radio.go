@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
@@ -45,6 +46,8 @@ type radioParams struct {
 	From     int      `json:"from"`
 	Until    int      `json:"until"`
 	Genres   []string `json:"genres"`
+	Moods    []string `json:"moods"`  // the tuner's moods, from the sound analysis
+	Energy   *float64 `json:"energy"` // 0 calm ... 1 full on
 	Exclude  []string `json:"exclude"`
 	Size     int      `json:"size"`
 }
@@ -231,9 +234,28 @@ func hasGenre(it media.Item, wanted map[string]bool) bool {
 	return false
 }
 
+// heard is what the sound analysis says, for a station: every analyzed song's
+// moods, and for a station from a song, album or artist, the songs that sound
+// like it, nearest first. Empty without the analysis.
+type heard struct {
+	moods songMoods
+	like  []string
+}
+
+// moodWeight is how strongly a song belongs on a mood's station: only the
+// songs well above the library's middle for that mood, the more so the
+// further above.
+func moodWeight(score float64) float64 {
+	x := score - 0.6
+	if x <= 0 {
+		return 0
+	}
+	return x * x
+}
+
 // buildStation makes one batch of a station. similar gives the artists (by
 // name key) like one, that are in the library; nil without music discovery.
-func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListening, similar func(artist string) []string) (station, error) {
+func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListening, similar func(artist string) []string, h heard) (station, error) {
 	size := p.Size
 	if size <= 0 {
 		size = radioBatch
@@ -296,6 +318,22 @@ func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListe
 	case "time":
 		return timeTravel(rng, p, songs, size)
 
+	case "mood":
+		d, ok := moodByID(p.Seed)
+		if !ok {
+			return station{}, fmt.Errorf("no such mood")
+		}
+		if len(h.moods) == 0 {
+			return station{}, fmt.Errorf("moods appear once SoundStorm has listened to your music")
+		}
+		return weighted(d.Title, d.Subtitle, func(it media.Item) float64 {
+			m, ok := h.moods[it.ID]
+			if !ok {
+				return 0
+			}
+			return moodWeight(m[d.ID]) * (1 + 0.5*l.familiarity(it))
+		})
+
 	case "discover":
 		if similar == nil {
 			return station{}, fmt.Errorf("discovery radio needs music discovery on")
@@ -329,6 +367,35 @@ func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListe
 		default:
 			return station{}, fmt.Errorf("no such song")
 		}
+		if len(h.like) > 0 {
+			// The sound analysis heard which songs sound like it: those,
+			// nearest most often, with a few of the artist's own.
+			rank := map[string]int{}
+			for i, id := range h.like {
+				if _, seen := rank[id]; !seen {
+					rank[id] = i
+				}
+			}
+			own := 0.3
+			if p.Mode == "artist" {
+				own = 1.5
+			}
+			st, err := weighted(title, "Songs that sound like it", func(it media.Item) float64 {
+				if i, ok := rank[it.ID]; ok {
+					return 1 + 2*(1-float64(i)/float64(len(h.like)))
+				}
+				if nameKey(artistOf(it)) == nameKey(artist) {
+					return own
+				}
+				return 0
+			})
+			if err == nil {
+				if ok && p.Mode == "song" && !excluded[songKey(seed)] {
+					st.Songs = append([]media.Item{seed}, withoutID(st.Songs, seed.ID)...)
+				}
+				return st, nil
+			}
+		}
 		near := map[string]bool{}
 		if similar != nil {
 			for _, s := range similar(artist) {
@@ -360,13 +427,7 @@ func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListe
 		})
 		// A song's radio starts with the song.
 		if err == nil && ok && p.Mode == "song" && !excluded[songKey(seed)] {
-			rest := []media.Item{seed}
-			for _, it := range st.Songs {
-				if it.ID != seed.ID {
-					rest = append(rest, it)
-				}
-			}
-			st.Songs = rest
+			st.Songs = append([]media.Item{seed}, withoutID(st.Songs, seed.ID)...)
 		}
 		return st, err
 
@@ -397,10 +458,46 @@ func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListe
 			}
 			fam := l.familiarity(it)
 			closeness := 1 - math.Abs(f-fam)
-			return 0.02 + closeness*closeness*closeness
+			return (0.02 + closeness*closeness*closeness) * tunedSound(p, h, it)
 		})
 	}
 	return station{}, fmt.Errorf("no such station")
+}
+
+// tunedSound is how well a song fits the tuner's moods and energy, as a
+// multiplier: 1 when neither was chosen or nothing has been analyzed.
+func tunedSound(p radioParams, h heard, it media.Item) float64 {
+	if len(h.moods) == 0 || (len(p.Moods) == 0 && p.Energy == nil) {
+		return 1
+	}
+	m, ok := h.moods[it.ID]
+	if !ok {
+		return 0.01
+	}
+	factor := 1.0
+	if len(p.Moods) > 0 {
+		best := 0.0
+		for _, id := range p.Moods {
+			best = math.Max(best, m[id])
+		}
+		factor = math.Max(0.01, (best-0.5)*4)
+	}
+	if p.Energy != nil {
+		e := math.Max(0, math.Min(1, *p.Energy))
+		c := 1 - math.Abs(m["energy"]-e)
+		factor *= c * c * c
+	}
+	return factor
+}
+
+func withoutID(songs []media.Item, id string) []media.Item {
+	out := make([]media.Item, 0, len(songs))
+	for _, it := range songs {
+		if it.ID != id {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func customSubtitle(p radioParams, f float64) string {
@@ -426,6 +523,11 @@ func customSubtitle(p radioParams, f float64) string {
 			until = strconv.Itoa(p.Until)
 		}
 		parts = append(parts, strings.Trim(from+"-"+until, "-"))
+	}
+	for _, id := range p.Moods {
+		if d, ok := moodByID(id); ok {
+			parts = append(parts, d.Title)
+		}
 	}
 	if len(p.Genres) > 0 {
 		parts = append(parts, strings.Join(p.Genres, ", "))
@@ -481,7 +583,7 @@ func timeTravel(rng *rand.Rand, p radioParams, songs []media.Item, size int) (st
 
 // radioCatalog is what the Radio page offers: its stations, each with a
 // collage drawn from a first taste of it, and what the tuner can choose from.
-func (s *Server) radioCatalog(pool []media.Item, l radioListening, similar func(string) []string, sourceID string) map[string]any {
+func (s *Server) radioCatalog(pool []media.Item, l radioListening, similar func(string) []string, h heard, sourceID string) map[string]any {
 	modes := []string{"library", "deep", "time"}
 	if similar != nil {
 		modes = append(modes, "discover")
@@ -489,7 +591,7 @@ func (s *Server) radioCatalog(pool []media.Item, l radioListening, similar func(
 	rng := rand.New(rand.NewPCG(uint64(l.now.UnixNano()), 7))
 	stations := []map[string]any{}
 	for _, mode := range modes {
-		st, err := buildStation(rng, radioParams{Mode: mode, Size: 16}, pool, l, similar)
+		st, err := buildStation(rng, radioParams{Mode: mode, Size: 16}, pool, l, similar, h)
 		if err != nil {
 			continue
 		}
@@ -518,7 +620,19 @@ func (s *Server) radioCatalog(pool []media.Item, l radioListening, similar func(
 	for _, k := range topArtists(genres, 16) {
 		top = append(top, names[k])
 	}
-	return map[string]any{"stations": stations, "genres": top, "years": map[string]int{"from": minYear, "until": maxYear}}
+	moods := []map[string]any{}
+	if len(h.moods) > 0 {
+		for _, d := range moodDefs {
+			st, err := buildStation(rng, radioParams{Mode: "mood", Seed: d.ID, Size: 16}, pool, l, similar, h)
+			if err != nil {
+				continue
+			}
+			moods = append(moods, map[string]any{"mode": "mood", "seed": d.ID, "title": d.Title, "subtitle": d.Subtitle,
+				"covers": stationCovers(st.Songs), "sourceId": sourceID})
+		}
+	}
+	return map[string]any{"stations": stations, "moods": moods, "genres": top,
+		"years": map[string]int{"from": minYear, "until": maxYear}}
 }
 
 // stationCovers is up to four covers from different albums.
@@ -571,12 +685,18 @@ func (s *Server) handleRadio(w http.ResponseWriter, r *http.Request) {
 	if s.discovering() {
 		similar = s.similarInLibrary(r.Context(), pool, p)
 	}
+	h := heard{moods: s.moods(r.Context())}
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, s.radioCatalog(pool, l, similar, src.ID()))
+		catalog := s.radioCatalog(pool, l, similar, h, src.ID())
+		catalog["listening"] = s.listening(r.Context(), len(pool))
+		writeJSON(w, http.StatusOK, catalog)
 		return
 	}
+	if p.Mode == "song" || p.Mode == "album" || p.Mode == "artist" {
+		h.like = s.soundsLike(r.Context(), p, pool)
+	}
 	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), rand.Uint64()))
-	st, err := buildStation(rng, p, pool, l, similar)
+	st, err := buildStation(rng, p, pool, l, similar, h)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -621,5 +741,85 @@ func (s *Server) similarInLibrary(ctx context.Context, pool []media.Item, p radi
 			}
 		}
 		return out
+	}
+}
+
+// listening is how far the sound analysis has got, for the Radio page: nil
+// without it.
+func (s *Server) listening(ctx context.Context, total int) map[string]any {
+	am, ok := s.sonic(ctx)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	a, err := am.Progress(ctx)
+	if err != nil {
+		return nil
+	}
+	return map[string]any{"running": a.Running, "songs": min(a.Songs, total), "total": total}
+}
+
+// soundsLike is the songs that sound like a station's seed, nearest first,
+// from the sound analysis: the song itself, a few of the album's songs, or
+// a few of the artist's. Nil without the analysis, or before it has heard
+// the seed.
+func (s *Server) soundsLike(ctx context.Context, p radioParams, pool []media.Item) []string {
+	am, ok := s.sonic(ctx)
+	if !ok {
+		return nil
+	}
+	var seeds []string
+	switch p.Mode {
+	case "song":
+		seeds = []string{p.Seed}
+	case "album":
+		var album, artist string
+		for _, it := range pool {
+			if it.ID == p.Seed {
+				album, artist = it.Extra["album"], nameKey(artistOf(it))
+			}
+		}
+		for _, it := range pool {
+			if len(seeds) < 4 && album != "" && it.Extra["album"] == album && nameKey(artistOf(it)) == artist {
+				seeds = append(seeds, it.ID)
+			}
+		}
+	case "artist":
+		var theirs []string
+		for _, it := range pool {
+			if nameKey(artistOf(it)) == nameKey(p.Seed) {
+				theirs = append(theirs, it.ID)
+			}
+		}
+		rand.Shuffle(len(theirs), func(i, j int) { theirs[i], theirs[j] = theirs[j], theirs[i] })
+		seeds = theirs[:min(5, len(theirs))]
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	lists := make([][]string, len(seeds))
+	var wg sync.WaitGroup
+	for i, id := range seeds {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { _ = recover() }()
+			lists[i], _ = am.Similar(ctx, id, 60)
+		}()
+	}
+	wg.Wait()
+	// Interleaved, so the nearest of every seed come first.
+	var out []string
+	for i := 0; ; i++ {
+		added := false
+		for _, l := range lists {
+			if i < len(l) {
+				out = append(out, l[i])
+				added = true
+			}
+		}
+		if !added {
+			return out
+		}
 	}
 }

@@ -66,6 +66,8 @@ services:
       # Read-along. Storyteller's data folder is mounted below, read-only,
       # which is where the synced books are read from.
       SOUNDSTORM_STORYTELLER_URL: http://storyteller:8001
+      # Sound analysis, for moods and "sounds like" in Radio.
+      SOUNDSTORM_AUDIOMUSE_URL: http://audiomuse:8000
       # SoundStorm creates and owns this folder. Ebooks are read straight out of
       # it, since an EPUB describes itself and needs no backend; the other
       # three folders are handed to the server that indexes them.
@@ -141,6 +143,7 @@ services:
       - audiobookshelf
       - immich-server
       - storyteller
+      - audiomuse
     healthcheck:
       # Either scheme: the same container serves plain HTTP or TLS depending on
       # SOUNDSTORM_TLS, and a healthcheck that only knew one would report the
@@ -225,6 +228,57 @@ services:
       # upgraded to EPUB 3.
       - ${SOUNDSTORM_LIBRARY_PATH:-./library}/audiobooks:/audiobooks:ro
     # Deliberately no ports. SoundStorm reaches it at http://storyteller:8001.
+
+  # Sound analysis: AudioMuse-AI listens to every song once and says how it
+  # feels - mood, energy, tempo - and which songs sound alike, which is
+  # machine learning over the audio and so a backend, as read-along is.
+  # SoundStorm sets it up, gives it a Navidrome account of its own to read
+  # songs through (it needs no folder), and reads the results for Radio.
+  # The first listen takes hours for a big library, in the background; after
+  # that it looks for new songs every night. Its models ship in the image.
+  #
+  # Pinned by digest: it releases every week, and every call SoundStorm makes
+  # was checked against this build (3.6.3). Run unmodified (AGPL-3.0).
+  audiomuse:
+    image: ghcr.io/neptunehub/audiomuse-ai@sha256:301b2d5c280f43c6e79823337455b6b7d575d7b8040a6f150266804350c51eab
+    container_name: soundstorm-audiomuse
+    restart: unless-stopped
+    environment: &audiomuse-env
+      SERVICE_TYPE: flask
+      TZ: UTC
+      POSTGRES_HOST: audiomuse-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: audiomuse
+      POSTGRES_PASSWORD: ${SOUNDSTORM_AUDIOMUSE_DB_PASSWORD:-soundstorm-audiomuse}
+      POSTGRES_DB: audiomuse
+    depends_on:
+      - audiomuse-db
+    # Deliberately no ports. SoundStorm reaches it at http://audiomuse:8000.
+
+  audiomuse-worker:
+    image: ghcr.io/neptunehub/audiomuse-ai@sha256:301b2d5c280f43c6e79823337455b6b7d575d7b8040a6f150266804350c51eab
+    container_name: soundstorm-audiomuse-worker
+    restart: unless-stopped
+    environment:
+      <<: *audiomuse-env
+      SERVICE_TYPE: worker
+    volumes:
+      # Each song is fetched here while it is listened to, then deleted.
+      - audiomuse-temp:/app/temp_audio
+    depends_on:
+      - audiomuse-db
+
+  audiomuse-db:
+    image: postgres:15-alpine
+    container_name: soundstorm-audiomuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: audiomuse
+      POSTGRES_PASSWORD: ${SOUNDSTORM_AUDIOMUSE_DB_PASSWORD:-soundstorm-audiomuse}
+      POSTGRES_DB: audiomuse
+    volumes:
+      # Hours of listening: moved with the rest when the server moves.
+      - audiomuse-db:/var/lib/postgresql/data
 
   # Pictures. Immich is four containers - the server, the machine learning
   # that makes "dog on a beach" find a photo, a Postgres with vector search,
@@ -339,3 +393,5 @@ volumes:
   immich-db:
   storyteller-data:
   storyteller-models:
+  audiomuse-db:
+  audiomuse-temp:

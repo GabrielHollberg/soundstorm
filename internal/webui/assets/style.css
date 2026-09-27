@@ -2821,3 +2821,7 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 .tuner-genres { display: flex; flex-wrap: wrap; gap: 8px; }
 .radio-tuner .play-main { justify-self: start; }
 .artist-bio-credit { margin: 8px 20px 0; font-size: 12px; color: var(--muted); }
+
+/* How far the sound analysis has got, above the stations. */
+.radio-listening { margin: 4px 20px 14px; font-size: 13px; color: var(--muted); max-width: 70ch; }
+.tuner-row input[type=range].unset { opacity: 0.45; }

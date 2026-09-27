@@ -35,6 +35,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 	"github.com/GabrielHollberg/soundstorm/internal/source/audiobookshelf"
+	"github.com/GabrielHollberg/soundstorm/internal/source/audiomuse"
 	"github.com/GabrielHollberg/soundstorm/internal/source/immich"
 	"github.com/GabrielHollberg/soundstorm/internal/source/jellyfin"
 	"github.com/GabrielHollberg/soundstorm/internal/source/localbooks"
@@ -366,6 +367,9 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 	case "storyteller":
 		m.set(t.ID, StatusProvisioning, "setting up read-along", "")
 		return provisionStoryteller(ctx, c, log)
+	case "audiomuse":
+		m.set(t.ID, StatusProvisioning, "setting up sound analysis", "")
+		return provisionAudioMuse(ctx, c, m.store, log)
 	default:
 		return state.Backend{}, fmt.Errorf("unknown backend type %q", t.Type)
 	}
@@ -502,6 +506,15 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			Timeout:          20 * time.Second,
 			DataDir:          t.MediaPath,
 			AudiobooksRemote: t.AudiobooksRemote,
+		})
+		return one(s, err)
+
+	case "audiomuse":
+		s, err := audiomuse.New(audiomuse.Config{
+			ID:      t.ID,
+			BaseURL: t.BaseURL,
+			Token:   creds.Token,
+			Timeout: 20 * time.Second,
 		})
 		return one(s, err)
 

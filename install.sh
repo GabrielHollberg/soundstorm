@@ -493,10 +493,10 @@ uninstall() {
 # What a move carries, besides the library: SoundStorm's own state (accounts,
 # the passwords it made on every backend, favorites, playlists, positions, the
 # install's name) and each backend's own database. Left out on purpose:
-# jellyfin-cache, immich-models and storyteller-models, which rebuild or
+# jellyfin-cache, immich-models, storyteller-models and audiomuse-temp, which rebuild or
 # download themselves; and tailscale-state, a node identity that belongs to one
 # machine - the new one joins the tailnet afresh.
-MOVE_VOLUMES="soundstorm-state navidrome-data jellyfin-config abs-config abs-metadata immich-data immich-db storyteller-data"
+MOVE_VOLUMES="soundstorm-state navidrome-data jellyfin-config abs-config abs-metadata immich-data immich-db storyteller-data audiomuse-db"
 
 # Settings that describe this computer and its network rather than the
 # install. They are worked out again on the new one.

@@ -753,6 +753,62 @@ Similar artists come from the discovery cache only, except for an artist
 station's own seed, which is looked up while the person waits. The catalog
 (`GET`) draws a first taste of each station for its collage.
 
+## Moods, and the backend that listens
+
+Asked for as "we're still missing mood". Measured first, on the real library
+(4,413 songs): 42% are tagged just "Pop", none carry a tempo or mood tag, and
+MusicBrainz's tags name moods for famous albums only (OK Computer:
+melancholic, lonely; Nevermind: grunge and nothing else). Mood from metadata
+would have been a guess from "Pop". Hearing mood is machine learning over the
+audio - the layer this project does not own - so it is a backend, the
+Storyteller pattern: **AudioMuse-AI** (AGPL-3.0, run unmodified, three
+containers: web, worker, Postgres), pinned by digest to 3.6.3 because it
+releases weekly. The owner chose this over tags-only, knowing the cost.
+
+Checked live against 3.6.3 before building, in a throwaway stack:
+
+- **Provisioned with nobody logging in.** `/api/setup` answers without a
+  login until the first save and never after (a second unauthenticated save
+  is a 401; a made-up token is refused) - Jellyfin's startup wizard again.
+  SoundStorm generates its API token and admin password, and gives it a
+  **non-admin Navidrome account of its own** (`audiomuse`, made through
+  Navidrome's native `/api/user`; it sees every song and is refused a scan),
+  reset rather than refused if AudioMuse's volumes were wiped and Navidrome's
+  were not. It reads songs through Navidrome, so it mounts no folder.
+- **Nothing leaves the house**: its models ship in the image (1.9GB, nothing
+  downloaded), and its third-party lyrics lookup is switched off at setup.
+  Lyrics transcription is off too - hours of CPU for nothing shown.
+- **Song ids are Navidrome's own**, so `/api/sync` (the whole analysis,
+  500 a page, `include_embeddings=false`) joins to SoundStorm's songs with no
+  matching. Six classifiers (danceable, aggressive, happy, party, relaxed,
+  sad), energy, tempo, key, top style tags.
+- **The classifiers answer in a narrow band** - a solo piano Aria scored 0.58
+  to 0.63 on all six - so the raw numbers mean little and their order means a
+  lot. Every feature becomes its rank in *this* library (ties share one), and
+  a mood is an average of ranks (`moods.go`): Chill is relaxed, calm, not
+  aggressive; Focus leans on the instrumental tag. A station takes songs
+  scoring over 0.6, weighted by how far over.
+- **Timing, measured:** about 9 seconds a song on the development machine,
+  so the real library's first listen is roughly 11 hours in the background;
+  worker memory peaked around 700MB. A nightly listen is scheduled through its
+  `/api/cron`, and SoundStorm's "look for new files" hook starts one three
+  minutes after a music scan (debounced), once Navidrome has indexed the
+  arrivals.
+
+What it gives Radio: a **Moods** row (Chill, Feel good, Melancholy, Intense,
+Party, Focus), mood chips and an **Energy** slider in the station builder
+(off until moved), and song, album and artist radio built from what
+**sounds like** the seed (`/api/similar_tracks`, a few seeds interleaved),
+falling back to similar artists and genres when a song has not been heard
+yet. The page says how far the listening has got while it is under way.
+Registered as a music source that finds nothing, so access applies.
+
+Verified end to end on the preview: the preview SoundStorm provisioned a
+fresh AudioMuse-AI on its first attempt, the 14 test songs were heard, all six
+mood stations appeared, and song radio came back "Songs that sound like it".
+Its song-path (`/api/find_path`) and text-to-sound search (`/api/clap/search`,
+"rainy day piano") are there for later.
+
 ## Music, phase 2: mixes, lyrics, downloads
 
 - **Listening history is SoundStorm's, per person**, in the collections file:

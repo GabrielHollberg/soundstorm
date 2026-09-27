@@ -27,7 +27,7 @@ func radioPool() []media.Item {
 func seeded() *rand.Rand { return rand.New(rand.NewPCG(1, 2)) }
 
 func TestAStationNeverRepeatsAnArtistWithinAFewSongs(t *testing.T) {
-	st, err := buildStation(seeded(), radioParams{Mode: "library", Size: 20}, radioPool(), radioListening{now: time.Now()}, nil)
+	st, err := buildStation(seeded(), radioParams{Mode: "library", Size: 20}, radioPool(), radioListening{now: time.Now()}, nil, heard{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestDeepCutsAreUnplayedSongsByArtistsYouPlay(t *testing.T) {
 	for _, it := range pool[:3] { // three Radiohead songs, played a lot
 		l.plays[songKey(it)] = collections.Play{Item: it, Count: 9, Last: time.Now()}
 	}
-	st, err := buildStation(seeded(), radioParams{Mode: "deep", Size: 50}, pool, l, nil)
+	st, err := buildStation(seeded(), radioParams{Mode: "deep", Size: 50}, pool, l, nil, heard{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestDeepCutsAreUnplayedSongsByArtistsYouPlay(t *testing.T) {
 }
 
 func TestTimeTravelGoesForwardAndCarriesOn(t *testing.T) {
-	st, err := buildStation(seeded(), radioParams{Mode: "time", Size: 8}, radioPool(), radioListening{now: time.Now()}, nil)
+	st, err := buildStation(seeded(), radioParams{Mode: "time", Size: 8}, radioPool(), radioListening{now: time.Now()}, nil, heard{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestTimeTravelGoesForwardAndCarriesOn(t *testing.T) {
 			t.Fatalf("went back from %d to %d", st.Songs[i-1].Year, st.Songs[i].Year)
 		}
 	}
-	next, _ := buildStation(seeded(), radioParams{Mode: "time", Size: 8, From: st.Next}, radioPool(), radioListening{now: time.Now()}, nil)
+	next, _ := buildStation(seeded(), radioParams{Mode: "time", Size: 8, From: st.Next}, radioPool(), radioListening{now: time.Now()}, nil, heard{})
 	if next.Songs[0].Year < st.Next {
 		t.Errorf("the next batch started at %d, before %d", next.Songs[0].Year, st.Next)
 	}
@@ -85,7 +85,7 @@ func TestTheTunerKeepsToItsYearsAndFamiliarity(t *testing.T) {
 		}
 	}
 	one := 1.0
-	st, err := buildStation(seeded(), radioParams{Mode: "custom", Familiar: &one, From: 2000, Until: 2012, Size: 10}, pool, l, nil)
+	st, err := buildStation(seeded(), radioParams{Mode: "custom", Familiar: &one, From: 2000, Until: 2012, Size: 10}, pool, l, nil, heard{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestTheTunerKeepsToItsYearsAndFamiliarity(t *testing.T) {
 
 func TestSongRadioStartsWithTheSongAndSkipsWhatIsQueued(t *testing.T) {
 	pool := radioPool()
-	st, err := buildStation(seeded(), radioParams{Mode: "song", Seed: "Muse-4", Exclude: []string{"nd/Muse-5"}, Size: 10}, pool, radioListening{now: time.Now()}, nil)
+	st, err := buildStation(seeded(), radioParams{Mode: "song", Seed: "Muse-4", Exclude: []string{"nd/Muse-5"}, Size: 10}, pool, radioListening{now: time.Now()}, nil, heard{})
 	if err != nil {
 		t.Fatal(err)
 	}

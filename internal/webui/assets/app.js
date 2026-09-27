@@ -766,6 +766,7 @@ const SETUP_SHELVES = {
   documents: 'Documents',
   calibreweb: 'Calibre library',
   storyteller: 'Read-along',
+  audiomuse: 'Sound analysis',
 };
 
 async function pollSetup() {
@@ -5435,7 +5436,32 @@ async function topUpRadio() {
 
 // The Radio page: the stations, then a tuner to build one by hand.
 function radioPage(catalog) {
-  const stations = (catalog && catalog.stations) || [];
+  const parts = [];
+  const heard = catalog && catalog.listening;
+  // Duplicates are heard once, so a finished library can sit just short of its total.
+  if (heard && heard.total && (heard.running || heard.songs < heard.total * 0.9)) {
+    // The sound analysis listens to every song once, which for a big library
+    // takes hours; saying how far it has got explains missing moods.
+    const line = document.createElement('p');
+    line.className = 'radio-listening';
+    line.textContent = heard.songs
+      ? `Listening to your music to learn how it sounds: ${heard.songs.toLocaleString()} of ${heard.total.toLocaleString()} songs so far. Moods fill in as it goes.`
+      : 'SoundStorm will listen to each of your songs once, in the background, to learn its mood. Moods appear here as it goes.';
+    parts.push(line);
+  }
+  parts.push(stationGrid((catalog && catalog.stations) || []));
+  const moods = (catalog && catalog.moods) || [];
+  if (moods.length) {
+    const h = document.createElement('h3');
+    h.className = 'section-title';
+    h.textContent = 'Moods';
+    parts.push(h, stationGrid(moods));
+  }
+  if (catalog) parts.push(radioTuner(catalog));
+  return parts;
+}
+
+function stationGrid(stations) {
   const grid = document.createElement('div');
   grid.className = 'grid browse-grid mix-grid';
   for (const st of stations) {
@@ -5457,10 +5483,10 @@ function radioPage(catalog) {
     badge.append(icon('radio'));
     cover.append(badge);
     card.append(cover, meta);
-    card.addEventListener('click', () => startRadio({ mode: st.mode }));
+    card.addEventListener('click', () => startRadio(st.seed ? { mode: st.mode, seed: st.seed } : { mode: st.mode }));
     grid.append(card);
   }
-  return catalog ? [grid, radioTuner(catalog)] : [grid];
+  return grid;
 }
 
 const TUNER_KEY = 'soundstorm-tuner';
@@ -5522,6 +5548,53 @@ function radioTuner(catalog) {
     yearRow.append(pickYear('From', saved.from, false), pickYear('Until', saved.until, true));
   }
 
+  // Moods and energy, once the sound analysis has heard something.
+  const moodChoice = new Set(Array.isArray(saved.moods) ? saved.moods : []);
+  const moodRow = document.createElement('div');
+  moodRow.className = 'tuner-genres tuner-moods';
+  let energy = null;
+  const energyLabel = document.createElement('label');
+  energyLabel.className = 'tuner-row';
+  const moodsKnown = (catalog && catalog.moods) || [];
+  if (moodsKnown.length) {
+    for (const m of moodsKnown) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = m.title;
+      const mark = () => {
+        b.classList.toggle('active', moodChoice.has(m.seed));
+        b.setAttribute('aria-pressed', String(moodChoice.has(m.seed)));
+      };
+      mark();
+      b.addEventListener('click', () => {
+        if (moodChoice.has(m.seed)) moodChoice.delete(m.seed);
+        else moodChoice.add(m.seed);
+        mark();
+      });
+      moodRow.append(b);
+    }
+    const energyName = document.createElement('span');
+    energyName.textContent = 'Energy';
+    energy = document.createElement('input');
+    energy.type = 'range';
+    energy.min = '0';
+    energy.max = '100';
+    energy.value = String(Number.isFinite(saved.energy) ? Math.round(saved.energy * 100) : 50);
+    // Off until moved: most stations should not be held to one energy.
+    energy.dataset.set = Number.isFinite(saved.energy) ? '1' : '';
+    energy.classList.toggle('unset', !energy.dataset.set);
+    energy.addEventListener('input', () => { energy.dataset.set = '1'; energy.classList.remove('unset'); });
+    const energyEnds = document.createElement('div');
+    energyEnds.className = 'tuner-ends';
+    for (const t of ['Calm', 'Any', 'Full on']) {
+      const s = document.createElement('span');
+      s.textContent = t;
+      energyEnds.append(s);
+    }
+    energyLabel.append(energyName, energy, energyEnds);
+  }
+
   const chosen = new Set(Array.isArray(saved.genres) ? saved.genres : []);
   const genreRow = document.createElement('div');
   genreRow.className = 'tuner-genres';
@@ -5552,12 +5625,15 @@ function radioTuner(catalog) {
       from: selects[0] && selects[0].value ? Number(selects[0].value) : 0,
       until: selects[1] && selects[1].value ? Number(selects[1].value) : 0,
       genres: [...chosen],
+      moods: [...moodChoice],
+      energy: energy && energy.dataset.set ? Number(energy.value) / 100 : undefined,
     };
     try { localStorage.setItem(TUNER_KEY, JSON.stringify(params)); } catch { /* private mode */ }
     startRadio(params);
   });
 
   box.append(h, famLabel);
+  if (moodRow.children.length) box.append(moodRow, energyLabel);
   if (yearRow.children.length) box.append(yearRow);
   if (genreRow.children.length) box.append(genreRow);
   box.append(go);

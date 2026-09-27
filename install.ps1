@@ -2640,7 +2640,7 @@ if ($Uninstall) {
 # the caches and downloaded models, which rebuild themselves, and Tailscale's
 # node identity, which belongs to one machine. Kept in step with install.sh.
 $MoveVolumes = @('soundstorm-state', 'navidrome-data', 'jellyfin-config', 'abs-config', 'abs-metadata',
-    'immich-data', 'immich-db', 'storyteller-data')
+    'immich-data', 'immich-db', 'storyteller-data', 'audiomuse-db')
 # Settings that describe this computer and its network, worked out again on
 # the new one.
 $MoveLocal = '^SOUNDSTORM_(PORT|TLS_HOSTS|LIBRARY_PATH|LIBRARY_HINT|GATEWAY|UPNP_URL)='

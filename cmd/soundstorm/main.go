@@ -493,6 +493,11 @@ func targetsFromEnv(lib *library.Library) ([]provision.Target, error) {
 			AudiobooksRemote: env("SOUNDSTORM_STORYTELLER_AUDIOBOOKS", "/audiobooks"),
 		})
 	}
+	// Sound analysis: AudioMuse-AI listens to every song once, for mood and
+	// "sounds like". It reads songs through Navidrome, so it needs no folder.
+	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_AUDIOMUSE_URL")); url != "" {
+		targets = append(targets, provision.Target{ID: "audiomuse", Type: "audiomuse", BaseURL: url})
+	}
 	// Escape hatch for an existing Calibre server elsewhere on the network.
 	// This one does need credentials typed, which is why it is not the default.
 	if url := strings.TrimSpace(os.Getenv("SOUNDSTORM_CALIBREWEB_URL")); url != "" {

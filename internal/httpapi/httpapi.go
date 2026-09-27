@@ -72,6 +72,8 @@ const maxProgressBody = 8 << 10
 
 // Server wires everything to HTTP handlers.
 type Server struct {
+	// moodCache keeps mood scores for the sound analysis they came from.
+	moodCache        moodCache
 	setupCode        string
 	collections      *collections.Store
 	libMixes         libraryMixes
