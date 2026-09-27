@@ -3051,3 +3051,52 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 
 /* Holding the mini-player opens its menu, not the browser's own. */
 #audio-dock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* Now Playing's options while a finger holds the screen: a veil over the
+   cover and the old icons in their old places, a 3 by 3 with Add to
+   playlist in the middle. The one under the finger grows and is named. */
+.np-hold-layer {
+  position: fixed;
+  z-index: 72;
+  border-radius: 14px;
+  background: radial-gradient(circle, rgba(8, 10, 14, 0.25), rgba(8, 10, 14, 0.55));
+  pointer-events: none;
+  animation: np-hold-in 0.16s ease-out;
+}
+.np-hold-layer.round { border-radius: 50%; }
+.np-hold-layer.hidden { display: none; }
+@keyframes np-hold-in { from { opacity: 0; transform: scale(0.97); } }
+.np-hold-icons { position: absolute; inset: 0; }
+.np-hold-icon {
+  position: absolute;
+  width: 54px; height: 54px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle closest-side, rgba(8, 10, 14, 0.62) 0%, rgba(8, 10, 14, 0.5) 45%, rgba(8, 10, 14, 0.2) 75%, rgba(8, 10, 14, 0) 100%);
+  transform: translate(-50%, -50%);
+  transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.np-hold-icon .icon { width: 24px; height: 24px; }
+.np-hold-icon.at-tl { left: 15%; top: 15%; }
+.np-hold-icon.at-tm { left: 50%; top: 15%; }
+.np-hold-icon.at-tr { left: 85%; top: 15%; }
+.np-hold-icon.at-ml { left: 15%; top: 50%; }
+.np-hold-icon.at-c  { left: 50%; top: 50%; }
+.np-hold-icon.at-mr { left: 85%; top: 50%; }
+.np-hold-icon.at-bl { left: 15%; top: 85%; }
+.np-hold-icon.at-bm { left: 50%; top: 85%; }
+.np-hold-icon.at-br { left: 85%; top: 85%; }
+.np-hold-icon.on { background: radial-gradient(circle closest-side, #fff 0%, #fff 52%, rgba(255, 255, 255, 0.55) 72%, rgba(255, 255, 255, 0) 100%); color: #0b0d12; }
+.np-hold-icon.faved { color: #ff3b5c; }
+.np-hold-icon.one::after { content: "1"; position: absolute; top: 11px; right: 11px; font-size: 10px; font-weight: 800; }
+.np-hold-icon.lit { transform: translate(-50%, -50%) scale(1.3); }
+.np-hold-icon.lit:not(.on) { background: radial-gradient(circle closest-side, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 50%, rgba(255, 255, 255, 0.3) 75%, rgba(255, 255, 255, 0) 100%); color: #0b0d12; }
+.np-hold-icon.lit.faved:not(.on) { color: #ff3b5c; }
+.np-hold-caption {
+  position: absolute; left: 0; right: 0; bottom: -40px; margin: 0;
+  text-align: center; font-weight: 700; font-size: 15px; color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+/* While the icons show, the title steps aside for the caption. */
+.now-playing.hold-icons .np-text { opacity: 0; transition: opacity 0.12s ease; }

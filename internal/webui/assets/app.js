@@ -5041,7 +5041,8 @@ const npSwipe = (() => {
   }, { passive: true });
   panel.addEventListener('touchmove', (event) => {
     if (!armed) return;
-    if (shown('item-menu')) {
+    // A hold put up the menu or the icons: the finger is theirs now.
+    if (shown('item-menu') || shown('np-hold-layer')) {
       armed = false;
       return;
     }
@@ -10484,8 +10485,7 @@ const NP_HOLD_SKIP = 'input, a, #np-queue, .np-bar button, .np-controls button, 
       state.heldAt = npHold.at;
       if (navigator.vibrate) navigator.vibrate(10);
       holdStarted();
-      openNowPlayingMenu();
-      followMenuFinger(event.pointerId, x, y);
+      showHoldIcons(event.pointerId, x, y);
     }, HOLD_MS);
   });
   panel.addEventListener('pointermove', (event) => {
@@ -10618,3 +10618,151 @@ window.addEventListener('click', (event) => {
     if (!state.holding) openNowPlayingMenu(dock);
   });
 })();
+
+/* ------------------------------------------ Now Playing's options, on hold */
+
+// Holding anywhere on Now Playing shows its options as icons over the cover,
+// where buttons used to sit, for as long as the finger stays down: slide
+// onto one and it grows and says what it is; let go on it and it is done;
+// let go anywhere else and they are gone. An icon counts only once the
+// finger has moved onto it, so the one that appears under a still thumb is
+// not chosen by lifting it. With the cover hidden (a phone's lyrics or Up
+// next) they appear in a square in the middle of the screen.
+const HOLD_SPOTS = ['tl', 'tm', 'tr', 'ml', 'c', 'mr', 'bl', 'bm', 'br'];
+
+function holdIconList(item) {
+  const music = item.kind === 'music';
+  const faved = state.favorites.has(selectionKey(item));
+  const downloaded = isDownloaded(item);
+  const menuAt = (render) => {
+    state.menuFor = item;
+    state.menuAnchor = $('np-cover').offsetWidth ? $('np-cover') : $('np-title');
+    state.menuOpts = { nowPlaying: true };
+    render();
+    placeMenu($('item-menu'), state.menuAnchor);
+  };
+  const repeatName = { off: 'off', all: 'all', one: 'this song' }[audio.repeat] || 'off';
+  const list = [
+    { spot: 'tl', icon: 'info', label: 'Info', run: () => menuAt(() => renderInfoMenu(item)) },
+    { spot: 'tm', icon: 'moon', label: sleep.until || sleep.atSongEnd ? 'Sleep timer: on' : 'Sleep timer',
+      on: Boolean(sleep.until || sleep.atSongEnd), run: () => menuAt(() => renderSleepMenu(item, { nowPlaying: true })) },
+    { spot: 'tr', icon: 'heart', label: faved ? 'Remove from favorites' : 'Add to favorites', filled: faved, heart: true,
+      run: async () => {
+        const problem = await setFavorite(item, !faved);
+        showToast(problem || (faved ? 'Removed from favorites.' : 'Added to favorites.'));
+      } },
+    { spot: 'bl', icon: 'download', label: downloaded ? 'Remove download' : 'Download', on: downloaded,
+      run: async () => {
+        if (downloaded) {
+          await removeItemDownload(item);
+          showToast(`${item.title} removed from this device.`);
+        } else if (music) {
+          await downloadWithToast(item.title, (progress) => download({ id: `song:${selectionKey(item)}`, type: 'song',
+            title: item.title, subtitle: (item.creators || []).join(', '), sourceId: item.sourceId, artId: item.artId },
+          [item], (k, total) => progress(k / total)));
+        } else {
+          await downloadWithToast(item.title, (progress) => downloadBook(item, progress));
+        }
+      } },
+  ];
+  if (music) {
+    list.push(
+      { spot: 'ml', icon: 'shuffle', label: `Shuffle: ${audio.shuffle ? 'on' : 'off'}`, on: audio.shuffle,
+        run: () => {
+          setShuffle(!audio.shuffle);
+          showToast(`Shuffle ${audio.shuffle ? 'on' : 'off'}.`);
+        } },
+      // A plain plus: Up next's list icon is too like the playlist one.
+      { spot: 'c', icon: 'plus', label: 'Add to playlist',
+        run: async () => {
+          const { ok, body } = await api('/api/playlists');
+          menuAt(() => renderPlaylistMenu(item, (ok && body && body.playlists) || []));
+        } },
+      { spot: 'mr', icon: 'repeat', label: `Repeat: ${repeatName}`, on: audio.repeat !== 'off', one: audio.repeat === 'one',
+        run: () => {
+          cycleRepeat();
+          showToast(`Repeat ${{ off: 'off', all: 'all', one: 'this song' }[audio.repeat] || 'off'}.`);
+        } },
+      { spot: 'bm', icon: 'queue', label: audio.showQueue ? 'Hide up next' : 'Up next', on: audio.showQueue,
+        run: () => {
+          audio.showQueue = !audio.showQueue;
+          renderLyrics();
+        } },
+      { spot: 'br', icon: 'radio', label: 'Songs like this', run: () => playLikeThis() },
+    );
+  }
+  return list;
+}
+
+function showHoldIcons(pointerId, x0, y0) {
+  const item = audio.item;
+  if (!item) return;
+  const layer = $('np-hold-layer');
+  const box = $('np-hold-icons');
+  const caption = $('np-hold-caption');
+  // Over the cover where it shows; otherwise a square in the middle.
+  const cover = $('np-cover');
+  let r = cover.offsetWidth ? cover.getBoundingClientRect() : null;
+  if (!r) {
+    const side = Math.min(window.innerWidth * 0.8, window.innerHeight * 0.6, 360);
+    r = { left: (window.innerWidth - side) / 2, top: (window.innerHeight - side) / 2, width: side, height: side };
+  }
+  Object.assign(layer.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  layer.classList.toggle('round', $('now-playing').classList.contains('spin') && cover.offsetWidth > 0);
+  const icons = holdIconList(item);
+  box.replaceChildren(...icons.map((it) => {
+    const b = document.createElement('span');
+    b.className = `np-hold-icon at-${it.spot}${it.on ? ' on' : ''}${it.heart && it.filled ? ' faved' : ''}${it.one ? ' one' : ''}`;
+    b.append(icon(it.icon, it.filled));
+    b.soundstormHold = it;
+    return b;
+  }));
+  caption.textContent = '';
+  show(layer, true);
+  // The caption names the icon under the finger where the title was.
+  $('now-playing').classList.add('hold-icons');
+  const t = $('np-title').getBoundingClientRect();
+  Object.assign(caption.style, { position: 'fixed', left: `${t.left}px`, width: `${t.width}px`,
+    top: `${t.top}px`, bottom: 'auto', lineHeight: `${t.height}px` });
+
+  let moved = false;
+  let lit = null;
+  const light = (el) => {
+    if (lit === el) return;
+    if (lit) lit.classList.remove('lit');
+    lit = el;
+    if (lit) lit.classList.add('lit');
+    caption.textContent = lit ? lit.soundstormHold.label : '';
+  };
+  // Found by where the finger is over each icon's own circle, with a little
+  // room around it, rather than by what is on top there.
+  const iconAt = (x, y) => [...box.children].find((el) => {
+    const b = el.getBoundingClientRect();
+    const cx = b.left + b.width / 2;
+    const cy = b.top + b.height / 2;
+    return Math.hypot(x - cx, y - cy) <= b.width * 0.75;
+  }) || null;
+  const onMove = (event) => {
+    if (event.pointerId !== pointerId) return;
+    if (!moved && Math.hypot(event.clientX - x0, event.clientY - y0) < HOLD_SLOP) return;
+    moved = true;
+    light(iconAt(event.clientX, event.clientY));
+  };
+  const onEnd = (event) => {
+    if (event.pointerId !== pointerId) return;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onEnd);
+    document.removeEventListener('pointercancel', onEnd);
+    const chosen = event.type === 'pointerup' && moved && lit ? lit.soundstormHold : null;
+    light(null);
+    show(layer, false);
+    $('now-playing').classList.remove('hold-icons');
+    // The lift is not a tap on whatever is under it.
+    state.swallowClickUntil = performance.now() + 500;
+    setTimeout(() => { state.suppressClick = false; }, 500);
+    if (chosen) chosen.run();
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onEnd);
+  document.addEventListener('pointercancel', onEnd);
+}
