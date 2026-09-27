@@ -516,6 +516,14 @@ judged on in its first minute:
   the toggles (shuffle, repeat, sleep, Up next) show "on" as a soft white
   glow, solid behind the dark icon; a favorite's heart stays red. Up next's rows carry each
   song's cover, and stack from the top rather than spreading down the list.
+- **Up next is rearranged by holding a song and dragging it** (the cards'
+  450ms hold and 10px slop): it lifts, the rest slide aside to show where it
+  will land, the list scrolls near its edges, and letting go moves it
+  (`queueMove`). Moving before the hold completes is a scroll and a quick
+  tap still plays the song; the lift at the end is swallowed, not taken for
+  a tap. A non-passive touchmove stops the browser scrolling once a song is
+  up, and Now Playing does not rebuild the list mid-drag. Checked with touch
+  events: the playing song carried on, the order changed as dragged.
 - **The title and the artist line are one line each**, and scroll sideways
   when too long - a two-second pause at the start of each pass, then a
   seamless loop onto a repeat of the text (Web Animations, since a keyframe

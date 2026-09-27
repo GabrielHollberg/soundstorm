@@ -4593,6 +4593,19 @@ function queueAdd(item) {
   queueChanged();
 }
 
+// Whether a song in Up next is being dragged to a new place (see below).
+const queueDrag = { active: false };
+
+// Moves a song still to come from one place in the queue to another.
+function queueMove(from, to) {
+  const q = audio.queue;
+  if (!q || from === to) return;
+  if (from <= q.index || to <= q.index || from >= q.items.length || to >= q.items.length) return;
+  const [song] = q.items.splice(from, 1);
+  q.items.splice(to, 0, song);
+  queueChanged();
+}
+
 function queueRemove(position) {
   const q = audio.queue;
   if (!q || position <= q.index || position >= q.items.length) return;
@@ -5253,6 +5266,12 @@ function renderNowPlaying() {
   $('np-next').disabled = !q || (q.index + 1 >= q.items.length && audio.repeat === 'off');
 
   const list = $('np-queue');
+  // Mid-drag the rows are the drag's; they are drawn afresh when it ends.
+  if (queueDrag.active) {
+    loadLyrics(item);
+    syncNowPlayingTime();
+    return;
+  }
   list.replaceChildren();
   const upcoming = q ? q.items.slice(q.index + 1) : [];
   upcoming.forEach((song, i) => {
@@ -10175,3 +10194,118 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowLeft') { event.preventDefault(); stepRecap(-1); }
   if (event.key === 'Escape') closeRecap();
 });
+
+/* ------------------------------------------------------ rearranging Up next */
+
+// Hold a song in Up next - as long as a card's hold - and it lifts; drag it
+// and the others slide aside to show where it will go; let go and it is
+// there. Moving before the hold completes is a scroll, and a quick tap still
+// plays the song. Near the top or bottom of the list it scrolls.
+(() => {
+  const list = $('np-queue');
+  const EDGE = 48;
+  let hold = null;
+  let drag = null;
+  let swallowClick = false;
+
+  const rowsOf = () => [...list.children];
+  const cancelHold = () => {
+    if (hold) clearTimeout(hold.timer);
+    hold = null;
+  };
+
+  const place = () => {
+    if (!drag) return;
+    const dy = drag.y - drag.startY + (list.scrollTop - drag.startScroll);
+    drag.li.style.transform = `translateY(${dy}px)`;
+    const to = Math.max(0, Math.min(drag.rows.length - 1, drag.from + Math.round(dy / drag.step)));
+    drag.to = to;
+    drag.rows.forEach((row, i) => {
+      if (row === drag.li) return;
+      let shift = 0;
+      if (drag.from < i && i <= to) shift = -drag.step;
+      else if (to <= i && i < drag.from) shift = drag.step;
+      row.style.transform = shift ? `translateY(${shift}px)` : '';
+    });
+  };
+
+  // Near an edge of the list, it scrolls, faster the nearer.
+  const edgeScroll = () => {
+    if (!drag) return;
+    const r = list.getBoundingClientRect();
+    let by = 0;
+    if (drag.y < r.top + EDGE) by = -Math.ceil((r.top + EDGE - drag.y) / 6);
+    else if (drag.y > r.bottom - EDGE) by = Math.ceil((drag.y - (r.bottom - EDGE)) / 6);
+    if (by) {
+      list.scrollTop += by;
+      place();
+    }
+    drag.frame = requestAnimationFrame(edgeScroll);
+  };
+
+  const start = () => {
+    const li = hold.li;
+    const rows = rowsOf();
+    const from = rows.indexOf(li);
+    if (from < 0) return;
+    const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+    drag = { li, rows, from, to: from, startY: hold.y, y: hold.y, startScroll: list.scrollTop,
+      step: li.getBoundingClientRect().height + gap };
+    hold = null;
+    queueDrag.active = true;
+    list.classList.add('reordering');
+    li.classList.add('dragging');
+    if (navigator.vibrate) navigator.vibrate(10);
+    drag.frame = requestAnimationFrame(edgeScroll);
+  };
+
+  const finish = (commit) => {
+    const d = drag;
+    drag = null;
+    queueDrag.active = false;
+    cancelAnimationFrame(d.frame);
+    list.classList.remove('reordering');
+    d.li.classList.remove('dragging');
+    for (const row of d.rows) row.style.transform = '';
+    swallowClick = true;
+    setTimeout(() => { swallowClick = false; }, 400);
+    const q = audio.queue;
+    if (commit && q && d.to !== d.from) queueMove(q.index + 1 + d.from, q.index + 1 + d.to);
+    else renderNowPlaying();
+  };
+
+  list.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || drag || event.target.closest('.np-remove')) return;
+    const li = event.target.closest('#np-queue > li');
+    if (!li) return;
+    cancelHold();
+    hold = { li, x: event.clientX, y: event.clientY, timer: setTimeout(start, HOLD_MS) };
+  });
+  list.addEventListener('pointermove', (event) => {
+    if (hold && Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > HOLD_SLOP) cancelHold();
+    if (!drag) return;
+    drag.y = event.clientY;
+    place();
+  });
+  const end = (commit) => () => {
+    cancelHold();
+    if (drag) finish(commit);
+  };
+  list.addEventListener('pointerup', end(true));
+  list.addEventListener('pointercancel', end(false));
+  // Once a song is lifted the finger moves it, not the list: the browser
+  // must not take the gesture for a scroll.
+  list.addEventListener('touchmove', (event) => {
+    if (drag && event.cancelable) event.preventDefault();
+  }, { passive: false });
+  // The lift at the end of a hold, or of a drag, is not a tap on the song.
+  list.addEventListener('click', (event) => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.stopPropagation();
+    event.preventDefault();
+  }, true);
+  list.addEventListener('contextmenu', (event) => {
+    if (hold || drag) event.preventDefault();
+  });
+})();
