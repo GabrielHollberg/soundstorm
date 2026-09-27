@@ -3042,3 +3042,7 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 }
 #np-queue.reordering li:hover { background: none; }
 #np-queue.reordering li.dragging:hover { background: rgba(40, 44, 54, 0.96); }
+
+/* Holding Now Playing's cover opens its menu: not the browser's own image
+   menu, and no text selection. */
+#np-cover { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

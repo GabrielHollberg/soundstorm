@@ -1202,76 +1202,10 @@ function renderItem(item) {
     event.stopPropagation();
     openItemMenu(item, more);
   });
-  holder.append(card, more, heartButton(item), coverButton('cover-info', 'info', `Info about ${item.title}`, () => {
-    // Info straight away: the hold menu's Info page, beside this card.
-    state.menuFor = item;
-    state.menuAnchor = card;
-    renderInfoMenu(item);
-  }));
-  if (item.kind === 'music') {
-    holder.append(
-      coverButton('cover-queue', 'queue', `Add ${item.title} to the queue`, () => {
-        // With nothing playing, there is no queue to add to: it plays.
-        const was = Boolean(audio.item);
-        queueAdd(item);
-        if (was) showToast(`Added "${item.title}" to the queue.`);
-      }),
-      coverButton('cover-next', 'next', `Play ${item.title} next`, () => {
-        const was = Boolean(audio.item);
-        queuePlayNext(item);
-        if (was) showToast(`"${item.title}" plays next.`);
-      }),
-    );
-  }
-  const get = getButton(item);
-  if (get) holder.append(get);
+  // Nothing else over the cover: every option is in the menu a hold (or a
+  // right-click) opens. Only the green tick for a download is drawn on it.
+  holder.append(card, more);
   return holder;
-}
-
-// The small buttons over a cover's corners - info, add to queue, play next -
-// drawn like the download arrow and the heart: plain icons with a shadow.
-function coverButton(className, iconName, label, run) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = `cover-btn ${className}`;
-  b.setAttribute('aria-label', label);
-  b.title = label;
-  b.append(icon(iconName));
-  b.addEventListener('click', (event) => {
-    event.stopPropagation();
-    event.preventDefault();
-    run();
-  });
-  return b;
-}
-
-// The heart in a cover's top corner: empty, and a tap fills it red and adds
-// the item to favorites; a tap on a full one takes it off again. A sibling
-// of the card, like the download arrow, since a card is itself a button.
-function heartButton(item) {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'fav-toggle';
-  const paint = (on) => {
-    b.classList.toggle('on', on);
-    b.replaceChildren(icon('heart', on));
-    b.setAttribute('aria-label', on ? `Remove ${item.title} from favorites` : `Add ${item.title} to favorites`);
-    b.setAttribute('aria-pressed', String(on));
-  };
-  paint(state.favorites.has(selectionKey(item)));
-  b.soundstormPaint = paint;
-  b.addEventListener('click', async (event) => {
-    event.stopPropagation();
-    event.preventDefault();
-    const on = !b.classList.contains('on');
-    paint(on); // at once; put back if the server says no
-    const problem = await setFavorite(item, on);
-    if (problem) {
-      paint(!on);
-      showToast(problem);
-    }
-  });
-  return b;
 }
 
 const GLYPHS = {
@@ -3345,6 +3279,7 @@ function openItemMenu(item, anchor) {
   }
   state.menuFor = item;
   state.menuAnchor = anchor;
+  state.menuOpts = {};
   renderMainMenu(item);
   placeMenu(menu, anchor);
 }
@@ -3355,7 +3290,7 @@ function menuNote() {
   return note;
 }
 
-function renderMainMenu(item) {
+function renderMainMenu(item, opts = {}) {
   const menu = $('item-menu');
   const note = menuNote();
   const say = (text) => { note.textContent = text; show(note, Boolean(text)); };
@@ -3364,15 +3299,18 @@ function renderMainMenu(item) {
     return;
   }
   const faved = state.favorites.has(selectionKey(item));
-  const entries = [
-    menuHeader(item),
+  const entries = [menuHeader(item)];
+  if (opts.nowPlaying) entries.push(...playerMenuItems(item, opts));
+  entries.push(
     menuItem('heart', faved ? 'Remove from favorites' : 'Add to favorites', async () => {
       const problem = await setFavorite(item, !faved);
       if (problem) say(problem);
       else closeItemMenu();
     }, { filled: faved, className: 'menu-favorite' }),
-  ];
-  if (item.kind === 'music') {
+  );
+  // What is playing needs no radio of its own (Songs like this, above), and
+  // is already in the queue.
+  if (item.kind === 'music' && !opts.nowPlaying) {
     entries.push(menuItem('radio', 'Start radio', () => {
       closeItemMenu();
       startRadio({ mode: 'song', seed: item.id });
@@ -3392,6 +3330,17 @@ function renderMainMenu(item) {
       else await download({ id: `song:${selectionKey(item)}`, type: 'song', title: item.title,
         subtitle: (item.creators || []).join(', '), sourceId: item.sourceId, artId: item.artId }, [item]);
     }));
+  }
+  if (item.kind === 'music' && opts.nowPlaying) {
+    const downloaded = isDownloaded(item);
+    entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
+      closeItemMenu();
+      if (downloaded) await removeItemDownload(item);
+      else await download({ id: `song:${selectionKey(item)}`, type: 'song', title: item.title,
+        subtitle: (item.creators || []).join(', '), sourceId: item.sourceId, artId: item.artId }, [item]);
+    }));
+  }
+  if (item.kind === 'music') {
     entries.push(menuItem('playlist', 'Add to playlist', async () => {
       const { ok, body } = await api('/api/playlists');
       renderPlaylistMenu(item, (ok && body && body.playlists) || []);
@@ -3449,7 +3398,7 @@ function renderPlaylistMenu(item, lists) {
   const backLabel = document.createElement('span');
   backLabel.textContent = 'Add to playlist';
   back.append(backLabel);
-  back.addEventListener('click', () => renderMainMenu(item));
+  back.addEventListener('click', () => renderMainMenu(item, state.menuOpts));
 
   const add = async (id) => {
     const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}/items`, {
@@ -3520,6 +3469,9 @@ function placeMenu(menu, anchor) {
 
 document.addEventListener('click', (event) => {
   const menu = $('item-menu');
+  // The finger lifting at the end of a hold on Now Playing's cover lands on
+  // the dimmed page over it, and is not a click outside the menu it opened.
+  if (performance.now() - (state.heldAt || 0) < 700) return;
   if (!menu.classList.contains('hidden') && !menu.contains(event.target)
       && !event.target.closest('.item-more')) closeItemMenu();
 });
@@ -4260,8 +4212,111 @@ function albumCard(album) {
   if (state.downloads.groups.some((g) => g.id === `album:${album.sourceId}/${album.id}`)) cover.append(downloadedBadge());
   card.dataset.album = `album:${album.sourceId}/${album.id}`;
   card.append(cover, meta);
-  card.addEventListener('click', () => showAlbum(album.sourceId, album.id));
+  card.addEventListener('click', (event) => {
+    // The lift at the end of a hold: not a tap, and not a click outside the
+    // menu the hold just opened, which would close it.
+    if (state.suppressClick) {
+      state.suppressClick = false;
+      event.stopPropagation();
+      return;
+    }
+    showAlbum(album.sourceId, album.id);
+  });
+  attachAlbumMenu(card, album);
   return card;
+}
+
+// Holding an album (or right-clicking it) opens its menu, as a song's does:
+// play, shuffle, its radio, and download. The download arrow on its cover
+// went with every other button over covers.
+function attachAlbumMenu(card, album) {
+  let timer = null;
+  let x = 0;
+  let y = 0;
+  const open = () => openAlbumMenu(album, card.querySelector('.art-wrap') || card);
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+    card.classList.remove('pressing');
+  };
+  card.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' || state.selecting) return;
+    x = event.clientX;
+    y = event.clientY;
+    card.classList.add('pressing');
+    timer = setTimeout(() => {
+      timer = null;
+      card.classList.remove('pressing');
+      state.suppressClick = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      open();
+    }, HOLD_MS);
+  });
+  card.addEventListener('pointermove', (event) => {
+    if (timer && Math.hypot(event.clientX - x, event.clientY - y) > HOLD_SLOP) cancel();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) card.addEventListener(type, cancel);
+  card.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    cancel();
+    open();
+  });
+}
+
+function openAlbumMenu(album, anchor) {
+  const menu = $('item-menu');
+  state.menuFor = album;
+  state.menuAnchor = anchor;
+  state.menuOpts = {};
+  const songs = async () => {
+    const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(album.sourceId)}/${escapeId(album.id)}`);
+    return (ok && body && body.songs) || [];
+  };
+  const id = `album:${album.sourceId}/${album.id}`;
+  const downloaded = state.downloads.groups.some((g) => g.id === id);
+  const head = menuHeader({ title: album.title, kind: 'music', creators: album.artist ? [album.artist] : [] });
+  const entries = [
+    head,
+    menuItem('play', 'Play', async () => {
+      closeItemMenu();
+      const list = await songs();
+      if (list.length) playQueue(list, 0);
+    }),
+    menuItem('shuffle', 'Shuffle', async () => {
+      closeItemMenu();
+      const list = await songs();
+      if (list.length) playQueue(shuffled(list), 0);
+    }),
+    menuItem('radio', 'Album radio', async () => {
+      closeItemMenu();
+      const list = await songs();
+      if (list.length) startRadio({ mode: 'album', seed: list[0].id });
+    }),
+  ];
+  if (downloadsPossible()) {
+    entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
+      closeItemMenu();
+      if (downloaded) {
+        await removeDownload(id);
+        showToast(`${album.title} removed from this device.`);
+      } else {
+        const list = await songs();
+        if (!list.length) return;
+        await downloadWithToast(album.title, (progress) => download(
+          { id, type: 'album', title: album.title, subtitle: album.artist, sourceId: album.sourceId, artId: album.artId },
+          list, (done, total) => progress(done / total)));
+      }
+      // The album card's tick: markDownloads knows songs, not albums.
+      const have = state.downloads.groups.some((g) => g.id === id);
+      for (const wrap of document.querySelectorAll(`.album-card[data-album="${CSS.escape(id)}"] .art-wrap`)) {
+        const badge = wrap.querySelector('.dl-badge');
+        if (have && !badge) wrap.append(downloadedBadge());
+        else if (!have && badge) badge.remove();
+      }
+    }));
+  }
+  menu.replaceChildren(...entries);
+  placeMenu(menu, anchor);
 }
 
 function albumGrid(albums) {
@@ -4271,8 +4326,6 @@ function albumGrid(albums) {
     const holder = document.createElement('div');
     holder.className = 'item-holder';
     holder.append(albumCard(album));
-    const get = albumGetButton(album);
-    if (get) holder.append(get);
     return holder;
   }));
   return grid;
@@ -4766,7 +4819,6 @@ const npSwipe = (() => {
   const GAP = 24;
   const wrap = document.querySelector('.np-cover-wrap');
   const cover = $('np-cover');
-  const artButtons = $('np-art-buttons');
   const head = document.querySelector('#now-playing .np-head');
   const sides = {};
   for (const by of [-1, 1]) {
@@ -4818,7 +4870,6 @@ const npSwipe = (() => {
   const draw = (d, ms) => {
     if (bigCover) {
       put(cover, d, ms);
-      put(artButtons, d, ms);
       put(sides[-1], d - w, ms);
       put(sides[1], d + w, ms);
       put(head, 0, ms, 1 - Math.min(Math.abs(d) / w, 1) * 0.7);
@@ -4877,7 +4928,6 @@ const npSwipe = (() => {
       cover.src = sides[by].src || artOf(near[by]);
       try { await cover.decode(); } catch { /* shown when it loads */ }
       put(cover, 0, 0);
-      put(artButtons, 0, 0);
       stepTrack(by);
       await frame();
       for (const b of [-1, 1]) { put(sides[b], 0, 0); sides[b].style.visibility = 'hidden'; }
@@ -4923,7 +4973,7 @@ const npSwipe = (() => {
   panel.addEventListener('touchstart', (event) => {
     const t = event.touches[0];
     armed = event.touches.length === 1 && !npSwipe.busy &&
-      !event.target.closest('input, #np-queue, #np-sleep-menu') &&
+      !event.target.closest('input, #np-queue') &&
       !(event.target.closest('#np-lyrics') && scrolledDown(event.target));
     dragging = false;
     axis = null;
@@ -4935,6 +4985,10 @@ const npSwipe = (() => {
   }, { passive: true });
   panel.addEventListener('touchmove', (event) => {
     if (!armed) return;
+    if (shown('item-menu')) {
+      armed = false;
+      return;
+    }
     const t = event.touches[0];
     const d = t.clientY - startY;
     const across = t.clientX - startX;
@@ -4993,7 +5047,6 @@ function setIcon(button, name, filled) {
 }
 
 setIcon($('np-close'), 'down');
-setIcon($('np-queue-toggle'), 'queue');
 setIcon($('dock-play'), 'play', true);
 setIcon($('dock-prev'), 'prev', true);
 setIcon($('dock-next'), 'skip', true);
@@ -5162,34 +5215,6 @@ for (const event of ['play', 'pause']) {
 }
 setIcon($('np-prev'), 'prev', true);
 setIcon($('np-next'), 'skip', true);
-setIcon($('np-shuffle'), 'shuffle');
-setIcon($('np-similar'), 'radio');
-
-// The buttons over the big cover, as over every card: info top left, the
-// heart top right, download bottom left, where the cards have it. Add to
-// queue and play next are left off - the song is already playing. Rebuilt
-// only when the song, or whether it is a favorite or downloaded, changes.
-function renderArtButtons(item) {
-  const box = $('np-art-buttons');
-  $('now-playing').classList.toggle('not-music', item.kind !== 'music');
-  const key = [selectionKey(item), state.favorites.has(selectionKey(item)), isDownloaded(item), state.offline].join('|');
-  if (box.dataset.key === key) return;
-  box.dataset.key = key;
-  for (const el of [...box.children]) {
-    if (!el.classList.contains('np-art-fixed')) el.remove();
-  }
-  box.append(coverButton('cover-info', 'info', `Info about ${item.title}`, () => {
-    state.menuFor = item;
-    state.menuAnchor = $('np-cover');
-    renderInfoMenu(item);
-  }));
-  if (!state.offline) box.append(heartButton(item));
-  if (isDownloaded(item)) box.append(downloadedBadge());
-  else {
-    const get = getButton(item);
-    if (get) box.append(get);
-  }
-}
 
 // Songs like this one: the song keeps playing, and what comes after it
 // becomes songs that sound like it (or, before the sound analysis has heard
@@ -5197,13 +5222,10 @@ function renderArtButtons(item) {
 async function playLikeThis() {
   const item = audio.item;
   if (!item || item.kind !== 'music') return;
-  const button = $('np-similar');
-  button.disabled = true;
   const params = { mode: 'song', seed: item.id };
   const { ok, body } = await api('/api/music/radio', {
     method: 'POST', body: JSON.stringify({ ...params, exclude: [`${item.sourceId}/${item.id}`] }),
   });
-  button.disabled = false;
   if (audio.item !== item) return;
   const songs = ((ok && body && body.songs) || []).filter((s) => !(s.id === item.id && s.sourceId === item.sourceId));
   if (!songs.length) {
@@ -5221,8 +5243,6 @@ async function playLikeThis() {
     ? 'Similar songs are up next, replacing your queue.'
     : 'Similar songs added to the queue.');
 }
-$('np-similar').addEventListener('click', playLikeThis);
-setIcon($('np-repeat'), 'repeat');
 
 function renderNowPlaying() {
   if ($('now-playing').classList.contains('hidden') || !audio.item) return;
@@ -5242,7 +5262,6 @@ function renderNowPlaying() {
 
   const player = $('audio-player');
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
-  renderArtButtons(item);
   $('now-playing').classList.toggle('spin', coverSpins());
   npSwipe.prime();
   // A new song is a new record: it starts from the top, as the cover that
@@ -5256,11 +5275,6 @@ function renderNowPlaying() {
     }
   }
   $('now-playing').classList.toggle('playing', !$('audio-player').paused);
-  $('np-shuffle').setAttribute('aria-pressed', String(audio.shuffle));
-  $('np-shuffle').classList.toggle('on', audio.shuffle);
-  $('np-repeat').classList.toggle('on', audio.repeat !== 'off');
-  $('np-repeat').dataset.mode = audio.repeat;
-  $('np-repeat').setAttribute('aria-label', `Repeat: ${audio.repeat}`);
   const q = audio.queue;
   $('np-prev').disabled = false;
   $('np-next').disabled = !q || (q.index + 1 >= q.items.length && audio.repeat === 'off');
@@ -5345,8 +5359,6 @@ $('np-next').addEventListener('click', () => {
   if (q && q.index + 1 >= q.items.length && audio.repeat !== 'off') playQueueAt(0);
   else mediaNext();
 });
-$('np-shuffle').addEventListener('click', () => setShuffle(!audio.shuffle));
-$('np-repeat').addEventListener('click', cycleRepeat);
 $('np-seek').addEventListener('input', () => {
   state.seeking = true;
   const player = $('audio-player');
@@ -5839,9 +5851,6 @@ async function loadLyrics(item) {
 
 function renderLyrics() {
   const has = Boolean(audio.lyrics && audio.lyrics.lines.length);
-  const toggle = $('np-queue-toggle');
-  toggle.classList.toggle('on', audio.showQueue);
-  toggle.setAttribute('aria-pressed', String(audio.showQueue));
   // Four ways the screen can be laid out:
   //   queue  - Up next in the middle, a small cover beside the title;
   //   lyrics - the lyrics in the middle, the same small cover;
@@ -5965,10 +5974,6 @@ function fillLyric(box, lyrics, index, ms) {
   el.style.setProperty('--p', p.toFixed(3));
 }
 
-$('np-queue-toggle').addEventListener('click', () => {
-  audio.showQueue = !audio.showQueue;
-  renderLyrics();
-});
 // timeupdate comes four times a second; a line change between them would lag,
 // so while lyrics are showing they are also checked on every frame.
 (function lyricFrame() {
@@ -6308,9 +6313,6 @@ function sleepTick() {
 
 function renderSleep() {
   const on = Boolean(sleep.until || sleep.atSongEnd);
-  $('np-sleep').classList.toggle('on', on);
-  $('np-sleep').setAttribute('aria-pressed', String(on));
-  show($('np-sleep-off'), on);
   const label = $('np-sleep-left');
   if (sleep.atSongEnd) {
     label.textContent = 'Stops after this song';
@@ -6347,26 +6349,6 @@ function fadeOutAndPause() {
   requestAnimationFrame(step);
 }
 
-setIcon($('np-sleep'), 'moon');
-$('np-sleep').addEventListener('click', (event) => {
-  event.stopPropagation();
-  const menu = $('np-sleep-menu');
-  const opening = menu.classList.contains('hidden');
-  show(menu, opening);
-  $('np-sleep').setAttribute('aria-expanded', String(opening));
-});
-for (const choice of document.querySelectorAll('#np-sleep-menu [data-minutes]')) {
-  choice.addEventListener('click', (event) => {
-    event.stopPropagation();
-    setSleep(choice.dataset.minutes === 'off' ? null : choice.dataset.minutes);
-    show($('np-sleep-menu'), false);
-    $('np-sleep').setAttribute('aria-expanded', 'false');
-  });
-}
-document.addEventListener('click', () => {
-  show($('np-sleep-menu'), false);
-  $('np-sleep').setAttribute('aria-expanded', 'false');
-});
 renderSleep();
 
 /* --------------------------------------------------------------- crossfade */
@@ -6632,8 +6614,14 @@ function coverSpins() {
   return Boolean(state.prefs && state.prefs.coverSpin);
 }
 
-$('np-cover').addEventListener('click', () => {
-  // The end of a swipe is not a tap.
+$('np-cover').addEventListener('click', (event) => {
+  // The end of a hold that opened the menu is not a tap, and must not reach
+  // the page as a click outside the menu, which would close it.
+  if (performance.now() - npHold.at < 700) {
+    event.stopPropagation();
+    return;
+  }
+  // Nor is the end of a swipe.
   if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
   const on = !coverSpins();
   state.prefs = state.prefs || {};
@@ -7726,7 +7714,6 @@ $('np-speed').addEventListener('click', (event) => {
   const menu = $('np-speed-menu');
   const opening = menu.classList.contains('hidden');
   show(menu, opening);
-  show($('np-sleep-menu'), false);
   $('np-speed').setAttribute('aria-expanded', String(opening));
 });
 for (const choice of document.querySelectorAll('#np-speed-menu [data-speed]')) {
@@ -8448,8 +8435,10 @@ function markDownloads() {
     const badge = spot.querySelector('.dl-badge');
     if (on && !badge) spot.append(downloadedBadge());
     else if (!on && badge) badge.remove();
-    // The gray arrow beside it: gone once it is here, back if it is removed.
-    const box = el.classList.contains('track-row') ? el.parentElement : el.closest('.item-holder');
+    // The gray arrow beside a song in a list: gone once it is here, back if
+    // it is removed. Covers carry no buttons; their menu downloads.
+    if (!el.classList.contains('track-row')) continue;
+    const box = el.parentElement;
     if (!box) continue;
     const get = box.querySelector(':scope > .dl-get');
     if (on && get && !get.classList.contains('working')) get.remove();
@@ -8533,21 +8522,6 @@ function getButton(item, inRow) {
   });
 }
 
-function albumGetButton(album) {
-  const id = `album:${album.sourceId}/${album.id}`;
-  if (!downloadsPossible() || state.downloads.groups.some((g) => g.id === id)) return null;
-  return makeGet(album.title, false, async (progress) => {
-    const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(album.sourceId)}/${escapeId(album.id)}`);
-    const songs = (ok && body && body.songs) || [];
-    if (!songs.length) throw new Error('no songs');
-    await download({ id, type: 'album', title: album.title, subtitle: album.artist, sourceId: album.sourceId, artId: album.artId },
-      songs, (done, total) => progress(done / total));
-    // The album card has no key of its own; its tick goes on here.
-    const holder = document.querySelector(`.item-holder > .album-card[data-album="${CSS.escape(id)}"]`);
-    if (holder) holder.querySelector('.art-wrap').append(downloadedBadge());
-  });
-}
-
 /* -------------------------------------------- delete, from the hold menu */
 
 // Deleting is the owner's, from an item's hold (or right-click) menu, one
@@ -8566,7 +8540,7 @@ async function renderDeleteMenu(item) {
   back.append(backLabel);
   back.addEventListener('click', (event) => {
     event.stopPropagation();
-    renderMainMenu(item);
+    renderMainMenu(item, state.menuOpts);
   });
   const text = document.createElement('p');
   text.className = 'menu-confirm';
@@ -8715,7 +8689,7 @@ function renderPairPicker(item) {
   back.append(label);
   back.addEventListener('click', (event) => {
     event.stopPropagation();
-    renderMainMenu(item);
+    renderMainMenu(item, state.menuOpts);
   });
   const search = document.createElement('input');
   search.type = 'search';
@@ -8916,7 +8890,7 @@ function renderInfoMenu(item) {
   back.append(label);
   back.addEventListener('click', (event) => {
     event.stopPropagation();
-    renderMainMenu(item);
+    renderMainMenu(item, state.menuOpts);
   });
   const title = document.createElement('p');
   title.className = 'menu-info-title';
@@ -10307,5 +10281,124 @@ document.addEventListener('keydown', (event) => {
   }, true);
   list.addEventListener('contextmenu', (event) => {
     if (hold || drag) event.preventDefault();
+  });
+})();
+
+/* ------------------------------------------------------ Now Playing's menu */
+
+// Holding the big cover opens its menu: the player's options first - songs
+// like this, shuffle, repeat, the sleep timer, Up next - then the song's own,
+// as on any card. They used to be buttons over the cover. A tap still turns
+// it into a record, and a swipe still changes song; right-click opens it too.
+const npHold = { at: 0 };
+
+function openNowPlayingMenu() {
+  const item = audio.item;
+  if (!item) return;
+  const menu = $('item-menu');
+  state.menuFor = item;
+  state.menuAnchor = $('np-cover');
+  state.menuOpts = { nowPlaying: true };
+  renderMainMenu(item, state.menuOpts);
+  placeMenu(menu, state.menuAnchor);
+}
+
+function playerMenuItems(item, opts) {
+  const again = () => renderMainMenu(item, opts);
+  const out = [];
+  if (item.kind === 'music') {
+    out.push(menuItem('radio', 'Songs like this', () => {
+      closeItemMenu();
+      playLikeThis();
+    }));
+    out.push(menuItem('shuffle', 'Shuffle', () => {
+      setShuffle(!audio.shuffle);
+      again();
+    }, { detail: audio.shuffle ? 'On' : 'Off' }));
+    out.push(menuItem('repeat', 'Repeat', () => {
+      cycleRepeat();
+      again();
+    }, { detail: { off: 'Off', all: 'All', one: 'This song' }[audio.repeat] || 'Off' }));
+  }
+  const left = sleep.atSongEnd ? 'After this song'
+    : sleep.until ? `${Math.max(1, Math.round((sleep.until - Date.now()) / 60000))} min` : 'Off';
+  out.push(menuItem('moon', 'Sleep timer', (event) => {
+    event.stopPropagation();
+    renderSleepMenu(item, opts);
+  }, { chevron: true, detail: left }));
+  if (item.kind === 'music') {
+    out.push(menuItem('queue', audio.showQueue ? 'Hide up next' : 'Up next', () => {
+      closeItemMenu();
+      audio.showQueue = !audio.showQueue;
+      renderLyrics();
+    }));
+  }
+  return out;
+}
+
+// The sleep timer's choices, as a second page of the menu.
+function renderSleepMenu(item, opts) {
+  const menu = $('item-menu');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = 'Sleep timer';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item, opts);
+  });
+  const choose = (value, message) => () => {
+    setSleep(value);
+    closeItemMenu();
+    showToast(message);
+  };
+  const rows = [
+    menuItem('moon', 'In 15 minutes', choose('15', 'Stops in 15 minutes.')),
+    menuItem('moon', 'In 30 minutes', choose('30', 'Stops in 30 minutes.')),
+    menuItem('moon', 'In 45 minutes', choose('45', 'Stops in 45 minutes.')),
+    menuItem('moon', 'In 1 hour', choose('60', 'Stops in an hour.')),
+    menuItem('moon', item.kind === 'audiobook' ? 'At the end of this chapter' : 'At the end of this song',
+      choose('song', item.kind === 'audiobook' ? 'Stops after this chapter.' : 'Stops after this song.')),
+  ];
+  if (sleep.until || sleep.atSongEnd) rows.push(menuItem('close', 'Turn off', choose(null, 'Sleep timer off.')));
+  menu.replaceChildren(back, ...rows);
+  placeMenu(menu, state.menuAnchor);
+}
+
+(() => {
+  const cover = $('np-cover');
+  cover.draggable = false;
+  let timer = null;
+  let x = 0;
+  let y = 0;
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+  };
+  cover.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    x = event.clientX;
+    y = event.clientY;
+    cancel();
+    timer = setTimeout(() => {
+      timer = null;
+      npHold.at = performance.now();
+      state.heldAt = npHold.at;
+      if (navigator.vibrate) navigator.vibrate(10);
+      openNowPlayingMenu();
+    }, HOLD_MS);
+  });
+  cover.addEventListener('pointermove', (event) => {
+    if (timer && Math.hypot(event.clientX - x, event.clientY - y) > HOLD_SLOP) cancel();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) cover.addEventListener(type, cancel);
+  cover.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    cancel();
+    npHold.at = performance.now();
+    openNowPlayingMenu();
   });
 })();

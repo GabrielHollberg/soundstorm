@@ -486,36 +486,34 @@ judged on in its first minute:
   Chrome ships that (in progress, 2026). An APK was considered for this and
   declined: a Trusted Web Activity runs in Chrome and has the same bars, and
   a WebView app loses the lock-screen controls and background playback.
-- **The big cover carries the card buttons**: info top left, the heart top
-  right, download bottom left, as on every card, and shuffle and repeat at
-  its left and right middle. The sleep timer is top middle (its menu drops
-  from there) and Up next bottom middle. The header keeps only the arrow,
-  which puts Now Playing away with the music going on, and an **X** top
-  right, which stops the music and closes the mini-player too
-  (`stopAudio`). On a phone the lyrics and Up next views hide the big
-  cover and its buttons, so the small cover by the title returns from
-  either. The cover morph's `view-transition-name` is on `#np-cover` alone:
-  the swipe's side covers share the class, and two elements with one name
-  aborted every transition ("invalid state"), found while checking this. Add to queue and play next are left off: the
-  song is already playing. The buttons are a layer sharing the cover's grid
-  cell at the cover's size (every width rule for the cover names both), take
-  the only taps so the cover still swipes, and ride the swipe with it. Info
-  from here opens the item menu above Now Playing. Bottom right of the
-  cover, **songs like this** keeps the song playing and makes what follows
-  its song radio - sounds-alike once the analysis has heard it - carrying on
-  without end, and says so in a message ("Similar songs added to the queue",
-  or "...replacing your queue" when it did). Messages raised from Now Playing
-  sit above it; they used to show beneath it, unseen. Shuffle, repeat and
-  songs-like step aside for an audiobook. The play controls sit above the
-  timeline, at the owner's asking, in every view (the panel and strip views
-  order them 3 and 4).
-- **Buttons over a cover read on any art**: a solid white icon on a soft
-  dark shadow that fades out toward its edge (a radial gradient, no blur),
-  on cards and on Now Playing's cover alike - bare icons vanished on pale
-  and busy covers, and hard dark circles were "too stark". On the big cover
-  the toggles (shuffle, repeat, sleep, Up next) show "on" as a soft white
-  glow, solid behind the dark icon; a favorite's heart stays red. Up next's rows carry each
-  song's cover, and stack from the top rather than spreading down the list.
+- **No buttons over the big cover: holding it opens its menu** (and
+  right-click), at the owner's asking - the card buttons, shuffle, repeat,
+  the sleep timer, Up next and songs like this had crowded onto it. The
+  player's options come first (`playerMenuItems`): **Songs like this**,
+  Shuffle and Repeat with their state beside them (changing one keeps the
+  menu open), the **Sleep timer** as a page of its own, and Up next; then
+  the song's own - favorite, download, playlist, info, delete - without
+  play next and add to queue, as the song is already playing. An audiobook
+  gets only the sleep timer. A tap still turns the cover into a record and a
+  swipe still changes song; the lift at the end of a hold is neither, and
+  must not reach the page as a click outside the menu - it lands on the
+  dimmed page over the cover - so the outside-click rule skips it
+  (`state.heldAt`), the trap the card hold met first. The sleep timer's
+  countdown still shows under "Now Playing". **Songs like this** keeps the
+  song playing and makes what follows its song radio - sounds-alike once
+  the analysis has heard it - carrying on without end, and says so in a
+  message ("Similar songs added to the queue", or "...replacing your
+  queue"). Messages raised from Now Playing sit above it; they used to show
+  beneath it, unseen. The header keeps only the arrow, which puts Now
+  Playing away with the music going on, and an **X** top right, which stops
+  the music and closes the mini-player too (`stopAudio`). On a phone the
+  small cover by the title returns from the lyrics or Up next. The cover
+  morph's `view-transition-name` is on `#np-cover` alone: the swipe's side
+  covers share the class, and two elements with one name aborted every
+  transition ("invalid state"). The play controls sit above the timeline,
+  at the owner's asking, in every view (the panel and strip views order
+  them 3 and 4). Up next's rows carry each song's cover, and stack from the
+  top rather than spreading down the list.
 - **Up next is rearranged by holding a song and dragging it** (the cards'
   450ms hold and 10px slop): it lifts, the rest slide aside to show where it
   will land, the list scrolls near its edges, and letting go moves it
@@ -1029,11 +1027,9 @@ http, or in a browser without Wake Lock, the screen sleeps as before.
   downloads is a card in Settings. Everything downloaded wears a small badge
   on its cover (and beside a song in an album's list), repainted by
   `markDownloads` whenever downloads change. The badge is a plain green
-  tick; anything downloadable that is not downloaded wears a plain gray
-  arrow in the same corner, and tapping it downloads the item (films ask
-  first). A card is itself a button, so the arrow is a sibling in the
-  holder, placed with `100cqw` - covers are square, so the cover is the
-  holder's width tall. Hidden offline and where there is no Cache API.
+  tick, the one mark still drawn on a cover. Downloading is from the hold
+  menu (an album's too, see below); a song in an album's list keeps its
+  gray arrow. Hidden offline and where there is no Cache API.
   **Download all** for a whole shelf (all songs, favorites, each book,
   film and photo shelf) lives in Settings' Downloads card, one button per
   shelf the account has: a button on every shelf page got in the way. An
@@ -1084,21 +1080,17 @@ playing something else. Lists are filtered through the registry each time they
 are shown, so a favorite on a shelf an account has since lost is hidden. It
 is not a way back in.
 
-**A heart on every cover** (top right, where nothing else sits on a
-phone): an outline, and a tap fills it red and favorites the item - at
-once, put back if the server refuses. A sibling of the card in its
-holder, like the download arrow. The small heart that used to mark a
-favorite in the bottom corner went with it, and the desktop's hover "..."
-moved left of the heart. Covers also lost their length, the pages their
-counts ("25 songs") and Albums its sort (A to Z; New music's See all
-still lists newest first): the length is under **Info** in the hold menu,
-with everything else the backend said, and a menu page that grows is
-placed again so none of it is off screen.
-
-Info (top left) opens the hold menu's Info page beside the card; on a
-song, add to queue sits bottom middle and play next bottom right, beside
-the download arrow. With nothing playing either one simply plays the
-song, as the menu's items always have.
+**Nothing over a cover but the downloaded tick.** For a while every cover
+carried buttons - a heart, info, add to queue, play next, download - and
+then they went, at the owner's asking: they cluttered the art, and every
+one of them was already in the menu a hold opens (right-click, or the
+desktop's hover "..."). An **album card** has a hold menu of its own for
+the same reason - play, shuffle, album radio, download - since its
+download arrow went too. Covers also lost their length, the pages their
+counts ("25 songs") and Albums its sort (A to Z; New music's See all still
+lists newest first): the length is under **Info** in the hold menu, with
+everything else the backend said, and a menu page that grows is placed
+again so none of it is off screen.
 
 **Favorites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A

@@ -682,30 +682,8 @@
       <div class="np-main">
         <div class="np-cover-wrap">
           <img id="np-cover" class="np-cover" alt="">
-          <!-- Over the big cover, as over every card: info, the heart and
-               download in the corners, shuffle and repeat at the sides. -->
-          <div id="np-art-buttons" class="np-art-buttons">
-            <!-- The sleep timer top middle, Up next bottom middle. -->
-            <div class="np-sleep-wrap np-art-fixed" id="np-sleep-wrap">
-              <button id="np-sleep" class="np-icon np-toggle" type="button" aria-label="Sleep timer"
-                      aria-haspopup="true" aria-expanded="false" title="Sleep timer"></button>
-              <div id="np-sleep-menu" class="np-sleep-menu hidden" role="menu" aria-label="Sleep timer">
-                <p>Stop playing</p>
-                <button type="button" role="menuitem" data-minutes="15">In 15 minutes</button>
-                <button type="button" role="menuitem" data-minutes="30">In 30 minutes</button>
-                <button type="button" role="menuitem" data-minutes="45">In 45 minutes</button>
-                <button type="button" role="menuitem" data-minutes="60">In 1 hour</button>
-                <button type="button" role="menuitem" data-minutes="song">At the end of this song</button>
-                <button type="button" role="menuitem" data-minutes="off" id="np-sleep-off">Turn off</button>
-              </div>
-            </div>
-            <button id="np-queue-toggle" class="np-icon np-toggle np-art-fixed" type="button"
-                    aria-label="Up next" aria-pressed="false"></button>
-            <button id="np-shuffle" class="np-icon np-toggle np-art-fixed" type="button" aria-label="Shuffle" aria-pressed="false"></button>
-            <button id="np-repeat" class="np-icon np-toggle np-art-fixed" type="button" aria-label="Repeat: off"></button>
-            <button id="np-similar" class="np-icon np-art-fixed" type="button" aria-label="Play songs like this"
-                    title="Play songs like this next"></button>
-          </div>
+          <!-- No buttons over it: holding it opens its menu, with the player's
+               own options first (see openNowPlayingMenu). -->
         </div>
         <div class="np-side">
           <!-- The small cover beside the title only shows on a phone while the
