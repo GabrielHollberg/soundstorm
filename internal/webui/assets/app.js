@@ -4741,6 +4741,7 @@ const npSwipe = (() => {
   const GAP = 24;
   const wrap = document.querySelector('.np-cover-wrap');
   const cover = $('np-cover');
+  const artButtons = $('np-art-buttons');
   const head = document.querySelector('#now-playing .np-head');
   const sides = {};
   for (const by of [-1, 1]) {
@@ -4786,6 +4787,7 @@ const npSwipe = (() => {
   const draw = (d, ms) => {
     if (bigCover) {
       put(cover, d, ms);
+      put(artButtons, d, ms);
       put(sides[-1], d - w, ms);
       put(sides[1], d + w, ms);
       put(head, 0, ms, 1 - Math.min(Math.abs(d) / w, 1) * 0.7);
@@ -4824,10 +4826,13 @@ const npSwipe = (() => {
       await settle(240);
       const url = artOf(near[by]);
       cover.style.visibility = 'hidden';
+      artButtons.style.visibility = 'hidden';
       stepTrack(by);
       await coverShows(url);
       put(cover, 0, 0);
+      put(artButtons, 0, 0);
       cover.style.visibility = '';
+      artButtons.style.visibility = '';
       for (const b of [-1, 1]) { put(sides[b], 0, 0); sides[b].style.visibility = 'hidden'; }
       put(head, 0, 0, 1);
     } else {
@@ -5107,6 +5112,59 @@ for (const event of ['play', 'pause']) {
 setIcon($('np-prev'), 'prev', true);
 setIcon($('np-next'), 'skip', true);
 setIcon($('np-shuffle'), 'shuffle');
+setIcon($('np-similar'), 'radio');
+
+// The buttons over the big cover, as over every card: info top left, the
+// heart top right, download bottom right. Add to queue and play next are
+// left off - the song is already playing. Rebuilt only when the song, or
+// whether it is a favorite or downloaded, changes.
+function renderArtButtons(item) {
+  const box = $('np-art-buttons');
+  $('now-playing').classList.toggle('not-music', item.kind !== 'music');
+  const key = [selectionKey(item), state.favorites.has(selectionKey(item)), isDownloaded(item), state.offline].join('|');
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  for (const el of [...box.children]) {
+    if (el.id !== 'np-shuffle' && el.id !== 'np-repeat') el.remove();
+  }
+  box.append(coverButton('cover-info', 'info', `Info about ${item.title}`, () => {
+    state.menuFor = item;
+    state.menuAnchor = $('np-cover');
+    renderInfoMenu(item);
+  }));
+  if (!state.offline) box.append(heartButton(item));
+  if (isDownloaded(item)) box.append(downloadedBadge());
+  else {
+    const get = getButton(item);
+    if (get) box.append(get);
+  }
+}
+
+// Songs like this one: the song keeps playing, and what comes after it
+// becomes songs that sound like it (or, before the sound analysis has heard
+// it, songs by artists like it) - a station that carries on without end.
+async function playLikeThis() {
+  const item = audio.item;
+  if (!item || item.kind !== 'music') return;
+  const button = $('np-similar');
+  button.disabled = true;
+  const params = { mode: 'song', seed: item.id };
+  const { ok, body } = await api('/api/music/radio', {
+    method: 'POST', body: JSON.stringify({ ...params, exclude: [`${item.sourceId}/${item.id}`] }),
+  });
+  button.disabled = false;
+  if (audio.item !== item) return;
+  const songs = ((ok && body && body.songs) || []).filter((s) => !(s.id === item.id && s.sourceId === item.sourceId));
+  if (!songs.length) {
+    showToast((body && body.error) || 'No songs like this one yet.');
+    return;
+  }
+  audio.queue = { items: [item, ...songs], index: 0, original: null };
+  audio.radio = { params, title: body.title, next: 0, loading: false };
+  queueChanged();
+  showToast(`Up next: songs like ${item.title}.`);
+}
+$('np-similar').addEventListener('click', playLikeThis);
 setIcon($('np-repeat'), 'repeat');
 
 function renderNowPlaying() {
@@ -5128,6 +5186,7 @@ function renderNowPlaying() {
 
   const player = $('audio-player');
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
+  renderArtButtons(item);
   $('np-shuffle').setAttribute('aria-pressed', String(audio.shuffle));
   $('np-shuffle').classList.toggle('on', audio.shuffle);
   $('np-repeat').classList.toggle('on', audio.repeat !== 'off');

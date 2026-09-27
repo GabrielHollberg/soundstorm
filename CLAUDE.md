@@ -458,6 +458,17 @@ judged on in its first minute:
   Chrome ships that (in progress, 2026). An APK was considered for this and
   declined: a Trusted Web Activity runs in Chrome and has the same bars, and
   a WebView app loses the lock-screen controls and background playback.
+- **The big cover carries the card buttons**: info top left, the heart top
+  right, download bottom right, as on every card, and shuffle and repeat at
+  its left and right middle. Add to queue and play next are left off: the
+  song is already playing. The buttons are a layer sharing the cover's grid
+  cell at the cover's size (every width rule for the cover names both), take
+  the only taps so the cover still swipes, and ride the swipe with it. Info
+  from here opens the item menu above Now Playing. To the right of play,
+  **songs like this** keeps the song playing and makes what follows its song
+  radio - sounds-alike once the analysis has heard it - carrying on without
+  end; a spacer on the left keeps play in the middle. Shuffle, repeat and
+  songs-like step aside for an audiobook.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.

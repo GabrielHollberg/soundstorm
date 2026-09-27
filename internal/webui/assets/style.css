@@ -1532,7 +1532,7 @@ body.np-open { overflow: hidden; }
 
 @media (max-width: 760px) {
   .np-main { grid-template-columns: 1fr; gap: 22px; align-content: start; padding-top: 8px; }
-  .np-cover { width: min(100%, 360px); }
+  .np-cover, .np-art-buttons { width: min(100%, 360px); }
   .np-text h2 { font-size: 22px; }
   .np-controls { max-width: none; }
   #np-queue { max-height: none; }
@@ -1916,7 +1916,7 @@ body.np-open { overflow: hidden; }
     min-height: 0;
     padding-bottom: 0;
   }
-  .now-playing.strip-on .np-cover { width: min(100%, 40vh); }
+  .now-playing.strip-on .np-cover, .now-playing.strip-on .np-art-buttons { width: min(100%, 40vh); }
   .now-playing.strip-on .np-side {
     display: flex;
     flex-direction: column;
@@ -2885,3 +2885,30 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 .recap-periods { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .recap-play { align-self: flex-start; }
 body.recap-open { overflow: hidden; }
+
+/* Now Playing's cover carries the card buttons, laid exactly over it: the
+   cover and this layer share the wrap's one grid cell, the same width and
+   square. Only the buttons take taps, so the cover still swipes. */
+.np-cover-wrap > .np-cover, .np-art-buttons { grid-area: 1 / 1; }
+.np-art-buttons {
+  position: relative; z-index: 1; width: min(100%, 460px); aspect-ratio: 1;
+  pointer-events: none;
+}
+.np-art-buttons > * { position: absolute; pointer-events: auto; }
+.np-art-buttons .cover-btn, .np-art-buttons .fav-toggle { width: 44px; height: 44px; }
+.np-art-buttons .icon { width: 24px; height: 24px; }
+.np-art-buttons .cover-info { top: 8px; left: 8px; }
+.np-art-buttons .fav-toggle { top: 8px; right: 8px; }
+.np-art-buttons .dl-get, .np-art-buttons .dl-badge { top: auto; left: auto; bottom: 12px; right: 12px; }
+#np-shuffle, #np-repeat { top: calc(50% - 22px); filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.9)); }
+#np-shuffle { left: 6px; }
+#np-repeat { right: 6px; }
+#np-shuffle:not(.on), #np-repeat:not(.on) { color: rgba(255, 255, 255, 0.8); }
+.now-playing.not-music #np-shuffle, .now-playing.not-music #np-repeat,
+.now-playing.not-music #np-similar, .now-playing.not-music .np-spacer { visibility: hidden; }
+.np-spacer { width: 44px; height: 44px; flex: none; }
+#np-similar { color: rgba(255, 255, 255, 0.85); }
+#np-similar:disabled { opacity: 0.4; }
+/* Info opened from Now Playing sits above it. */
+body.np-open .item-menu { z-index: 75; }
+body.np-open .item-menu-backdrop { z-index: 74; }
