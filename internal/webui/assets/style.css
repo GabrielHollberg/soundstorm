@@ -1509,7 +1509,7 @@ body.np-open { overflow: hidden; }
 }
 
 .np-next h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.6); }
-#np-queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 34vh; overflow-y: auto; }
+#np-queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; align-content: start; max-height: 34vh; overflow-y: auto; }
 #np-queue li { display: flex; align-items: center; gap: 6px; border-radius: 8px; }
 #np-queue li:hover { background: rgba(255, 255, 255, 0.07); }
 .np-queue-song {
@@ -1526,8 +1526,11 @@ body.np-open { overflow: hidden; }
   -webkit-tap-highlight-color: transparent;
 }
 .np-queue-song:hover { filter: none; }
-.np-queue-song strong, .np-queue-song span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.np-queue-song span { font-size: 12.5px; color: rgba(255, 255, 255, 0.6); font-weight: 400; }
+.np-queue-song { display: flex; align-items: center; gap: 12px; }
+.np-queue-art { width: 44px; height: 44px; flex: none; border-radius: 6px; object-fit: cover; background: rgba(255, 255, 255, 0.06); }
+.np-queue-words { display: grid; gap: 1px; min-width: 0; }
+.np-queue-words strong, .np-queue-words span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-queue-words span { font-size: 12.5px; color: rgba(255, 255, 255, 0.6); font-weight: 400; }
 .np-remove { width: 36px; height: 36px; opacity: 0.6; }
 .np-remove .icon { width: 16px; height: 16px; }
 #np-queue-empty { color: rgba(255, 255, 255, 0.55); }
@@ -2964,3 +2967,44 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 }
 .np-line-copy { padding-left: 48px; }
 .np-text { min-width: 0; width: 100%; }
+
+/* Buttons over a cover read on any art: a solid white icon on a dark,
+   slightly blurred circle, rather than a bare icon with a shadow that
+   vanished on a pale or busy cover. On a card and in Now Playing alike. */
+.fav-toggle, .cover-btn, .dl-get, .dl-badge {
+  border-radius: 50%;
+  background: rgba(8, 10, 14, 0.58);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  filter: none;
+}
+.fav-toggle:hover, .cover-btn:hover, .dl-get:hover { color: #fff; background: rgba(8, 10, 14, 0.78); filter: none; }
+.fav-toggle, .cover-btn, .dl-get { width: 32px; height: 32px; }
+.fav-toggle { top: 6px; right: 6px; }
+.cover-info { top: 6px; left: 6px; }
+.fav-toggle .icon, .cover-btn .icon, .dl-get .icon { width: 17px; height: 17px; }
+.fav-toggle.on { color: #ff3b5c; }
+.dl-badge { width: 26px; height: 26px; color: #22c55e; }
+.dl-badge .icon { width: 16px; height: 16px; }
+.track-title .dl-badge { background: none; backdrop-filter: none; -webkit-backdrop-filter: none; width: 16px; height: 16px; }
+
+/* Now Playing's cover: the same, a size up, and the toggles show "on" as a
+   white circle with a dark icon. */
+.np-art-buttons .cover-btn, .np-art-buttons .fav-toggle, .np-art-buttons .dl-get,
+#np-sleep, #np-queue-toggle, #np-shuffle, #np-repeat, #np-similar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: rgba(8, 10, 14, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  filter: none;
+}
+.np-art-buttons .dl-badge { width: 44px; height: 44px; }
+.np-art-buttons .icon { width: 22px; height: 22px; }
+.np-art-buttons .dl-badge .icon { width: 22px; height: 22px; }
+.np-art-buttons .fav-toggle.on { color: #ff3b5c; }
+#np-sleep.on, #np-queue-toggle.on, #np-shuffle.on, #np-repeat.on { background: #fff; color: #0b0d12; }
+#np-sleep::after, #np-queue-toggle::after, #np-shuffle::after, #np-repeat::after { display: none; }
+#np-sleep:not(.on), #np-queue-toggle:not(.on), #np-shuffle:not(.on), #np-repeat:not(.on), #np-similar { color: #fff; }

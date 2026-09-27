@@ -5261,11 +5261,23 @@ function renderNowPlaying() {
     const go = document.createElement('button');
     go.type = 'button';
     go.className = 'np-queue-song';
+    // Its cover beside it, as in an album's list, so the queue can be read
+    // at a glance.
+    const art = document.createElement('img');
+    art.className = 'np-queue-art';
+    art.alt = '';
+    art.loading = 'lazy';
+    art.decoding = 'async';
+    art.src = artPath(song) || NO_COVER;
+    art.onerror = () => { art.onerror = null; art.src = NO_COVER; };
+    const words = document.createElement('span');
+    words.className = 'np-queue-words';
     const t = document.createElement('strong');
     t.textContent = song.title;
     const s = document.createElement('span');
     s.textContent = (song.creators || []).join(', ') || song.subtitle || '';
-    go.append(t, s);
+    words.append(t, s);
+    go.append(art, words);
     go.addEventListener('click', () => playQueueAt(position));
     const remove = document.createElement('button');
     remove.type = 'button';

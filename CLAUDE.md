@@ -509,6 +509,12 @@ judged on in its first minute:
   songs-like step aside for an audiobook. The play controls sit above the
   timeline, at the owner's asking, in every view (the panel and strip views
   order them 3 and 4).
+- **Buttons over a cover read on any art**: a solid white icon on a dark,
+  slightly blurred circle, on cards and on Now Playing's cover alike - bare
+  icons with a shadow vanished on pale and busy covers. On the big cover the
+  toggles (shuffle, repeat, sleep, Up next) show "on" as a white circle with
+  a dark icon; a favorite's heart stays red. Up next's rows carry each
+  song's cover, and stack from the top rather than spreading down the list.
 - **The title and the artist line are one line each**, and scroll sideways
   when too long - a two-second pause at the start of each pass, then a
   seamless loop onto a repeat of the text (Web Animations, since a keyframe
