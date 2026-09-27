@@ -3131,6 +3131,9 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
   top: calc(100cqw - 54px);
   z-index: 2;
   width: 44px; height: 44px;
+  /* No padding: a button's own 16px each side left the icon 12px to sit
+     in, and it spilled 4px to the right. */
+  padding: 0;
   display: grid; place-items: center;
   border: none; border-radius: 50%;
   background: var(--accent);
