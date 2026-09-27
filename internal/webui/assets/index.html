@@ -296,6 +296,30 @@
         <button id="downloads-clear" class="ghost small hidden" type="button">Remove all downloads</button>
       </div>
 
+      <!-- Per person: sending their plays to their own ListenBrainz account. -->
+      <div id="scrobble-block" class="account-section card hidden" data-cat="playback" data-words="scrobble scrobbling listenbrainz last.fm plays history stats">
+        <h2>Scrobbling</h2>
+        <p class="muted">Keep a lifelong record of what you listen to on
+          <a href="https://listenbrainz.org" target="_blank" rel="noopener noreferrer">ListenBrainz</a>,
+          free and open, with statistics and recommendations. Every song you
+          play here, on any device, is sent to your own account there.</p>
+        <div id="scrobble-off">
+          <p class="muted small-print">Sign in to ListenBrainz, open
+            <a href="https://listenbrainz.org/settings/" target="_blank" rel="noopener noreferrer">your settings</a>,
+            copy your <strong>User token</strong> and paste it here.</p>
+          <form id="scrobble-form" class="scrobble-form">
+            <input id="scrobble-token" type="password" autocomplete="off" spellcheck="false"
+              placeholder="ListenBrainz user token" aria-label="ListenBrainz user token">
+            <button type="submit">Connect</button>
+          </form>
+        </div>
+        <div id="scrobble-on" class="hidden">
+          <p id="scrobble-who"></p>
+          <button id="scrobble-disconnect" class="ghost small" type="button">Disconnect</button>
+        </div>
+        <p id="scrobble-note" class="muted hidden" role="status"></p>
+      </div>
+
       <div id="lyrics-block" class="account-section card hidden" data-cat="playback" data-words="lyrics words songs online lrclib">
         <h2>Lyrics</h2>
         <p class="muted">Songs with lyrics in their files always show those. For
@@ -611,6 +635,13 @@
     <button type="button" data-tab="photos"><span class="tab-icon" data-icon="photo"></span><span>Photos</span></button>
     <button type="button" data-tab="settings"><span class="tab-icon" data-icon="gear"></span><span>Settings</span></button>
   </nav>
+
+  <!-- The year in music: slides, tapped through like a story. -->
+  <section id="recap-overlay" class="recap hidden" aria-label="Your year in music">
+    <div id="recap-bars" class="recap-bars"></div>
+    <button id="recap-close" class="recap-close" type="button" aria-label="Close"></button>
+    <div id="recap-slide" class="recap-slide"></div>
+  </section>
 
   <!-- A short message with one action (Undo), above the player. -->
   <div id="toast" class="toast hidden" role="status">

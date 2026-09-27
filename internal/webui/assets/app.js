@@ -246,6 +246,7 @@ function renderAccount() {
     refreshLyricsSetting();
   }
   refreshDownloadsCard();
+  refreshScrobbling();
   if (!me.owner) {
     show($('lyrics-block'), false);
     show($('readalong-block'), false);
@@ -1970,6 +1971,11 @@ const SAVE_EVERY_MS = 10000;
 
 function playAudio(item, fromQueue) {
   audio.counted = false;
+  if (item && item.kind === 'music' && state.scrobbling && !state.offline) {
+    // Their ListenBrainz profile shows what is playing; the play itself is
+    // sent by the server once it counts.
+    api('/api/scrobble/now', { method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }) });
+  }
   // Anything started by hand ends a playlist; the queue only carries on
   // through its own songs.
   if (!fromQueue) audio.queue = null;
@@ -4166,7 +4172,7 @@ async function showMusicView(seq) {
     const { ok, body } = await api('/api/music/mixes');
     if (seq !== state.searchSeq) return;
     const mixes = (ok && body && body.mixes) || [];
-    view.replaceChildren(mixGrid(mixes));
+    view.replaceChildren(...(mixes.length ? [recapBanner()] : []), mixGrid(mixes));
     $('status').textContent = mixes.length ? '' : 'No music yet.';
     return;
   }
@@ -9162,6 +9168,7 @@ function backTarget() {
   if (shown('reader-overlay')) return () => window.soundstormReader && window.soundstormReader.close();
   if (shown('video-overlay')) return () => closeVideo();
   if (shown('now-playing')) return () => closeNowPlaying();
+  if (shown('recap-overlay')) return () => closeRecap();
   if (state.tab === 'settings') return () => selectTab('home');
   if (state.detailPage) return () => runSearch();
   if ($('search-input').value.trim()) return () => { $('search-input').value = ''; runSearch(); };
@@ -9204,7 +9211,7 @@ window.addEventListener('popstate', async () => {
     setTimeout(() => { queued = false; syncBack(); }, 0);
   };
   const observer = new MutationObserver(later);
-  for (const id of ['item-menu', 'photo-overlay', 'reader-overlay', 'video-overlay', 'now-playing', 'account', 'music-view', 'home-view']) {
+  for (const id of ['item-menu', 'photo-overlay', 'reader-overlay', 'video-overlay', 'now-playing', 'recap-overlay', 'account', 'music-view', 'home-view']) {
     if ($(id)) observer.observe($(id), { attributes: true, attributeFilter: ['class'] });
   }
   observer.observe($('tabs'), { attributes: true, subtree: true, attributeFilter: ['class'] });
@@ -9572,3 +9579,352 @@ async function showGenre(genre, kind) {
   view.replaceChildren(...parts);
   window.scrollTo(0, 0);
 }
+
+/* --------------------------------------------------------------- scrobbling */
+
+// Scrobbling is each person's own: their ListenBrainz account, their token.
+state.scrobbling = false;
+
+async function refreshScrobbling() {
+  const { ok, body } = await api('/api/scrobble');
+  const available = ok && body && body.available;
+  show($('scrobble-block'), Boolean(available));
+  if (!available) return;
+  state.scrobbling = Boolean(body.connected && !body.problem);
+  show($('scrobble-off'), !body.connected);
+  show($('scrobble-on'), Boolean(body.connected));
+  if (body.connected) {
+    const waiting = body.pending ? ` ${body.pending} play${body.pending === 1 ? '' : 's'} waiting to send.` : '';
+    $('scrobble-who').textContent = `Sending your plays to ListenBrainz as ${body.userName}.${waiting}`;
+    if (body.problem) note($('scrobble-note'), body.problem, true);
+  }
+}
+
+$('scrobble-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const token = $('scrobble-token').value.trim();
+  if (!token) return;
+  const button = event.target.querySelector('button');
+  button.disabled = true;
+  const { ok, body } = await api('/api/scrobble', { method: 'PUT', body: JSON.stringify({ token }) });
+  button.disabled = false;
+  if (!ok) {
+    note($('scrobble-note'), (body && body.error) || 'Could not connect.', true);
+    return;
+  }
+  $('scrobble-token').value = '';
+  note($('scrobble-note'), `Connected. Songs you play from now on appear on ListenBrainz as ${body.userName}'s.`, false);
+  refreshScrobbling();
+});
+
+$('scrobble-disconnect').addEventListener('click', async () => {
+  const { ok } = await api('/api/scrobble', { method: 'DELETE' });
+  if (ok) {
+    note($('scrobble-note'), 'Disconnected. Nothing more is sent.', false);
+    refreshScrobbling();
+  }
+});
+
+/* ------------------------------------------------------------ year in music */
+
+// A recap of somebody's listening, tapped through like a story: this year so
+// far, any earlier year, or all time. Private to them, any day of the year.
+const recap = { data: null, slides: [], index: 0, period: 'year', year: 0 };
+
+function recapBanner() {
+  const year = new Date().getFullYear();
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'recap-banner';
+  const title = document.createElement('strong');
+  title.textContent = `Your ${year} in music`;
+  const sub = document.createElement('span');
+  sub.textContent = 'Top songs, artists and how you listened, so far';
+  card.append(title, sub);
+  card.addEventListener('click', () => openRecap('year', year));
+  return card;
+}
+
+async function openRecap(period, year) {
+  recap.period = period;
+  recap.year = year;
+  const params = new URLSearchParams({ period, tz: String(-new Date().getTimezoneOffset()) });
+  if (period === 'year' && year) params.set('year', String(year));
+  const { ok, body } = await api(`/api/recap?${params}`);
+  if (!ok || !body) {
+    showToast('Your recap could not be made just now.');
+    return;
+  }
+  recap.data = body;
+  recap.slides = recapSlides(body);
+  recap.index = 0;
+  show($('recap-overlay'), true);
+  document.body.classList.add('recap-open');
+  drawRecap();
+}
+
+function closeRecap() {
+  show($('recap-overlay'), false);
+  document.body.classList.remove('recap-open');
+}
+
+function recapEl(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+function recapPeriodLabel(d) {
+  if (d.period === 'all') return 'All time';
+  return d.year === new Date().getFullYear() ? `Your ${d.year} so far` : `Your ${d.year}`;
+}
+
+// The switch between this year, earlier years and all time.
+function recapPeriods(d) {
+  const row = recapEl('div', 'recap-periods');
+  const years = (d.years && d.years.length ? d.years : [new Date().getFullYear()]);
+  const choices = years.map((y) => ({ period: 'year', year: y, label: String(y) }));
+  choices.push({ period: 'all', year: 0, label: 'All time' });
+  for (const c of choices) {
+    const b = recapEl('button', 'chip', c.label);
+    b.type = 'button';
+    const on = c.period === d.period && (c.period === 'all' || c.year === d.year);
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+    b.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (!on) openRecap(c.period, c.year);
+    });
+    row.append(b);
+  }
+  return row;
+}
+
+function recapCover(item, round) {
+  const art = item.artId ? artUrl(item.sourceId, item.artId) : '';
+  return coverArt(art, item.name, round);
+}
+
+function recapList(items, withArt) {
+  const list = recapEl('ol', 'recap-list');
+  items.forEach((it, i) => {
+    const row = recapEl('li');
+    row.append(recapEl('span', 'recap-rank', String(i + 1)));
+    if (withArt) row.append(recapCover(it, false));
+    const text = recapEl('span', 'recap-text');
+    text.append(recapEl('strong', '', it.name));
+    const bits = [it.sub, `${it.plays} play${it.plays === 1 ? '' : 's'}`].filter(Boolean);
+    text.append(recapEl('span', '', bits.join(' · ')));
+    row.append(text);
+    list.append(row);
+  });
+  return list;
+}
+
+function playRecapSongs(d) {
+  const songs = (d.topSongs || []).map((s) => s.item).filter(Boolean);
+  if (!songs.length) return;
+  closeRecap();
+  playQueue(songs, 0);
+}
+
+function recapPlayButton(d) {
+  const songs = (d.topSongs || []).filter((s) => s.item);
+  if (!songs.length) return null;
+  const b = recapEl('button', 'play-main recap-play', `\u25B6  Play your top ${songs.length}`);
+  b.type = 'button';
+  b.addEventListener('click', (event) => {
+    event.stopPropagation();
+    playRecapSongs(d);
+  });
+  return b;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAYS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+
+function peakIndex(values) {
+  let best = 0;
+  values.forEach((v, i) => { if (v > values[best]) best = i; });
+  return best;
+}
+
+// When somebody listens most, in words.
+function listenerKind(hours) {
+  const h = peakIndex(hours);
+  if (h < 5) return ['A night owl', 'Your music comes out after midnight.'];
+  if (h < 10) return ['An early bird', 'You start the day with music.'];
+  if (h < 17) return ['A daytime listener', 'Music keeps your day going.'];
+  if (h < 22) return ['An evening listener', 'You wind down with music.'];
+  return ['A late-night listener', 'Your music plays late into the night.'];
+}
+
+function shortDate(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Each slide is a function that fills a box. Slides with nothing to say are
+// left out, so a new listener sees a short recap rather than empty ones.
+function recapSlides(d) {
+  const slides = [];
+  slides.push((box) => {
+    box.classList.add('recap-intro');
+    box.append(recapEl('span', 'recap-kicker', recapPeriodLabel(d)));
+    if (!d.plays) {
+      box.append(recapEl('h2', '', 'Nothing yet'),
+        recapEl('p', 'recap-lede', d.period === 'all'
+          ? 'Play some music and this fills in.'
+          : 'Songs you play from now on count toward this year. All time has what you have played so far.'));
+    } else {
+      box.append(recapEl('span', 'recap-big', d.minutes.toLocaleString()),
+        recapEl('span', 'recap-unit', `minute${d.minutes === 1 ? '' : 's'} of music`),
+        recapEl('p', 'recap-lede', `${d.plays.toLocaleString()} plays · ${d.songs.toLocaleString()} songs · ${d.artists.toLocaleString()} artists`));
+      if (d.since && d.period === 'year' && new Date(d.since).getMonth() > 0) {
+        box.append(recapEl('p', 'recap-small', `Counting since ${new Date(d.since).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}, when SoundStorm started keeping track.`));
+      }
+    }
+    box.append(recapPeriods(d));
+  });
+  if (!d.plays) return slides;
+
+  const artists = d.topArtists || [];
+  if (artists.length) {
+    slides.push((box) => {
+      const top = artists[0];
+      box.append(recapEl('span', 'recap-kicker', 'Your top artist'));
+      const art = recapCover(top, true);
+      art.classList.add('recap-hero');
+      box.append(art, recapEl('h2', '', top.name),
+        recapEl('p', 'recap-lede', `${top.plays.toLocaleString()} plays · ${top.minutes.toLocaleString()} minutes`));
+      if (artists.length > 1) box.append(recapList(artists.slice(1).map((a) => ({ ...a, sub: '' })), false));
+    });
+  }
+  const songs = d.topSongs || [];
+  if (songs.length) {
+    slides.push((box) => {
+      box.append(recapEl('span', 'recap-kicker', 'Your top songs'), recapList(songs.slice(0, 5), true));
+      const play = recapPlayButton(d);
+      if (play) box.append(play);
+    });
+  }
+  const albums = d.topAlbums || [];
+  if (albums.length) {
+    slides.push((box) => {
+      box.append(recapEl('span', 'recap-kicker', 'Your top albums'), recapList(albums, true));
+    });
+  }
+  if (d.hours && d.months) {
+    slides.push((box) => {
+      const [kind, line] = listenerKind(d.hours);
+      box.append(recapEl('span', 'recap-kicker', 'How you listened'), recapEl('h2', '', kind), recapEl('p', 'recap-lede', line));
+      const chart = recapEl('div', 'recap-chart');
+      const peak = Math.max(1, ...d.months);
+      d.months.forEach((n, i) => {
+        const col = recapEl('div', 'recap-col');
+        const bar = recapEl('span', 'recap-bar');
+        bar.style.height = `${Math.round((n / peak) * 100)}%`;
+        bar.title = `${MONTHS[i]}: ${n} plays`;
+        col.append(bar, recapEl('span', 'recap-col-label', MONTHS[i][0]));
+        chart.append(col);
+      });
+      box.append(chart,
+        recapEl('p', 'recap-small', `Your biggest month was ${MONTHS[peakIndex(d.months)]}, and you listened most on ${WEEKDAYS[peakIndex(d.weekdays)]}.`));
+    });
+  }
+  if (d.streak || d.newArtists || d.first) {
+    slides.push((box) => {
+      box.append(recapEl('span', 'recap-kicker', 'Milestones'));
+      const facts = recapEl('div', 'recap-facts');
+      const fact = (big, line) => {
+        const f = recapEl('div', 'recap-fact');
+        f.append(recapEl('strong', '', big), recapEl('span', '', line));
+        facts.append(f);
+      };
+      if (d.streak && d.streak.days > 1) {
+        fact(`${d.streak.days} days`, `in a row with music, ${shortDate(d.streak.from)} to ${shortDate(d.streak.to)}`);
+      }
+      if (d.newArtists) {
+        fact(`${d.newArtists} new`, `artist${d.newArtists === 1 ? '' : 's'} you had never played before${d.newTop ? `, most of all ${d.newTop.name}` : ''}`);
+      }
+      if (d.first) {
+        const when = d.firstAt ? new Date(d.firstAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) : '';
+        fact(d.first.name, `by ${d.first.sub}, your first song of the year${when ? `, on ${when}` : ''}`);
+      }
+      box.append(facts);
+    });
+  }
+  if ((d.moods && d.moods.length) || (d.topGenres && d.topGenres.length)) {
+    slides.push((box) => {
+      box.append(recapEl('span', 'recap-kicker', 'How it sounded'));
+      if (d.moods && d.moods.length) {
+        box.append(recapEl('h2', '', `Mostly ${d.moods[0].title.toLowerCase()}`));
+        const bars = recapEl('div', 'recap-moods');
+        for (const m of d.moods) {
+          const row = recapEl('div', 'recap-mood');
+          const fill = recapEl('span', 'recap-mood-fill');
+          fill.style.width = `${m.share}%`;
+          row.append(recapEl('span', 'recap-mood-name', m.title), fill, recapEl('span', 'recap-mood-share', `${m.share}%`));
+          bars.append(row);
+        }
+        box.append(bars);
+      }
+      if (d.topGenres && d.topGenres.length) {
+        box.append(recapEl('p', 'recap-small', `Top genres: ${d.topGenres.map((g) => g.name).join(', ')}.`));
+      }
+    });
+  }
+  slides.push((box) => {
+    box.classList.add('recap-intro');
+    box.append(recapEl('span', 'recap-kicker', recapPeriodLabel(d)),
+      recapEl('h2', '', artists.length ? `${artists[0].name}, ${songs.length ? `"${songs[0].name}"` : ''}`.replace(/, $/, '') : 'Thanks for listening'),
+      recapEl('p', 'recap-lede', d.period === 'year' && d.year === new Date().getFullYear()
+        ? 'Your year so far. It keeps counting.' : 'That was your music.'));
+    const play = recapPlayButton(d);
+    if (play) box.append(play);
+    box.append(recapPeriods(d));
+  });
+  return slides;
+}
+
+function drawRecap() {
+  const bars = $('recap-bars');
+  bars.replaceChildren(...recap.slides.map((_, i) => {
+    const b = recapEl('span', 'recap-bar-seg');
+    b.classList.toggle('done', i <= recap.index);
+    return b;
+  }));
+  const box = $('recap-slide');
+  box.className = 'recap-slide';
+  box.replaceChildren();
+  recap.slides[recap.index](box);
+}
+
+function stepRecap(by) {
+  const next = recap.index + by;
+  if (next < 0) return;
+  if (next >= recap.slides.length) {
+    closeRecap();
+    return;
+  }
+  recap.index = next;
+  drawRecap();
+}
+
+$('recap-close').append(icon('close'));
+$('recap-close').addEventListener('click', (event) => {
+  event.stopPropagation();
+  closeRecap();
+});
+// A tap on the left third goes back, anywhere else forward - as a story does.
+$('recap-slide').addEventListener('click', (event) => {
+  if (event.target.closest('button, a')) return;
+  stepRecap(event.clientX < window.innerWidth / 3 ? -1 : 1);
+});
+document.addEventListener('keydown', (event) => {
+  if (!shown('recap-overlay')) return;
+  if (event.key === 'ArrowRight' || event.key === ' ') { event.preventDefault(); stepRecap(1); }
+  if (event.key === 'ArrowLeft') { event.preventDefault(); stepRecap(-1); }
+  if (event.key === 'Escape') closeRecap();
+});

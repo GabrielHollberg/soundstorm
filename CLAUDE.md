@@ -809,6 +809,53 @@ mood stations appeared, and song radio came back "Songs that sound like it".
 Its song-path (`/api/find_path`) and text-to-sound search (`/api/clap/search`,
 "rainy day piano") are there for later.
 
+## Scrobbling, and the year in music
+
+**Every play is now logged with its moment** (`collections/listens.go`):
+one append-only file per person per year, a line per play carrying what the
+song was, so recording costs one small write and a year is one file. History
+only ever kept a count per song, which says what but not when. A damaged
+last line (a crash mid-write) is skipped. Removing a person removes their
+listens. Not in `soundstorm backup` (which carries the collections files);
+a move carries the whole state folder, these included.
+
+**Scrobbling is ListenBrainz, per person**, because it needs no app key:
+each person pastes their own user token (Settings > Scrobbling), checked
+with `validate-token` (which answers 200 `valid:false` for a bad one -
+checked live). Plays are sent from the server, so every device counts and
+the token never reaches a browser; the API never returns it. A play is
+queued in the person's collections file as `RecordPlay` records it, sent in
+the background, and taken off by song and moment once sent, so plays queued
+meanwhile survive; what fails waits (1,000 at most) and is retried after the
+next play and every quarter hour. A 401 stops sending and says "connect
+again", keeping the queue for the reconnect. "single" for one listen,
+"import" for a batch, a thousand a request; songs without an artist are
+never sent. The player also sends "playing now". **Last.fm is not built**:
+it needs an API key and secret registered to the project, which the owner
+has to create.
+
+**The year in music** (`GET /api/recap`) is a story of slides from Mixes'
+banner, tapped through (left third back), for this year so far, any year
+with listens, or all time. It is minutes, plays, top artists, songs (25
+listed, five shown, all playable) and albums, genres, a month chart,
+the busiest weekday, a listener kind from the peak hour, the longest streak,
+artists new that year (against earlier listens and History's first plays)
+and the first song. With the sound analysis, it adds how the year sounded:
+the share of plays whose strongest mood was each. The app sends its time zone
+offset (`tz`, minutes east), since the server runs in UTC and a 10pm play
+belongs to its own evening; a local year reads the UTC files either side.
+All time comes from History's counts, so it says something from the first
+day; the year starts counting the day this shipped, and says so.
+
+## Read Along keeps the screen on
+
+While a book follows its audiobook, nobody touches the phone, so it used to
+sleep mid-chapter. The reader holds a screen wake lock
+(`navigator.wakeLock`) from the moment it starts following until it stops,
+asking again when the page becomes visible, since the browser drops the
+lock whenever the page is hidden. It needs a secure context: over plain
+http, or in a browser without Wake Lock, the screen sleeps as before.
+
 ## Music, phase 2: mixes, lyrics, downloads
 
 - **Listening history is SoundStorm's, per person**, in the collections file:

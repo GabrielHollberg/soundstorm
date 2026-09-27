@@ -75,6 +75,8 @@ type collection struct {
 	// Prefs are this person's small choices, which follow them from device
 	// to device.
 	Prefs *Prefs `json:"prefs,omitempty"`
+	// Scrobbler is where this person's plays are also sent, if anywhere.
+	Scrobbler *Scrobbler `json:"scrobbler,omitempty"`
 }
 
 // Play is how often and when one song was listened to.
@@ -398,6 +400,7 @@ func (s *Store) Forget(userID string) error {
 	if err != nil {
 		return err
 	}
+	s.forgetListens(userID)
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -501,6 +504,16 @@ func (s *Store) RecordPlay(userID string, item media.Item, at time.Time) error {
 	p.Item = item
 	p.Count++
 	p.Last = at
+	l := ListenOf(item, at)
+	if err := s.logListen(userID, l); err != nil {
+		return err
+	}
+	if c.Scrobbler != nil {
+		c.Scrobbler.Pending = append(c.Scrobbler.Pending, l)
+		if over := len(c.Scrobbler.Pending) - MaxPending; over > 0 {
+			c.Scrobbler.Pending = c.Scrobbler.Pending[over:]
+		}
+	}
 	return s.save(userID, c)
 }
 

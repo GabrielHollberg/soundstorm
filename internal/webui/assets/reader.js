@@ -309,7 +309,40 @@ function startFollowing(view, timeline, audiobook) {
   follow.timer = setInterval(() => tick(follow), FOLLOW_EVERY_MS);
   // The first page shown is wherever the voice is, not the saved place.
   follow.handsOffUntil = 0;
+  keepAwake(true);
 }
+
+// While a book reads along, the screen stays on: the pages turn by
+// themselves, so nobody is touching the phone to keep it awake. A wake lock
+// lasts only while the page is visible - the browser drops it when the
+// phone is locked or the app is left - so it is asked for again on return.
+// Where there is no Wake Lock (older browsers, plain http, which is not a
+// secure context), the screen simply sleeps as before.
+let wakeLock = null;
+async function keepAwake(on) {
+  if (!on) {
+    const lock = wakeLock;
+    wakeLock = null;
+    if (lock) lock.release().catch(() => {});
+    return;
+  }
+  if (wakeLock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    if (!session.follow) {
+      lock.release().catch(() => {});
+      return;
+    }
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+  } catch {
+    // Refused - low battery mode, or not allowed here. Nothing to do.
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && session.follow) keepAwake(true);
+});
 
 // The Highlight button: shown while reading along, pressed while the
 // sentence being read is lit. Off, the page still turns with the voice.
@@ -339,6 +372,7 @@ function stopFollowing() {
   follow.view.removeEventListener('relocate', follow.onRelocate);
   unlight(follow);
   session.follow = null;
+  keepAwake(false);
 }
 
 // The sentence playing at t: the last one starting at or before it.

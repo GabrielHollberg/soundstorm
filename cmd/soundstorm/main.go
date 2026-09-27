@@ -40,6 +40,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/portmap"
 	"github.com/GabrielHollberg/soundstorm/internal/provision"
+	"github.com/GabrielHollberg/soundstorm/internal/scrobble"
 	"github.com/GabrielHollberg/soundstorm/internal/servetls"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 	"github.com/GabrielHollberg/soundstorm/internal/starter"
@@ -341,12 +342,14 @@ func run(log *slog.Logger) error {
 		SetupCode:   setupCode,
 		Lyrics:      lyricsFinder,
 		Discover:    discoverFinder,
+		Scrobble:    scrobble.New(),
 		Collections: collectionStore,
 	})
 
 	// Books with both an ebook and an audiobook are synced for read-along by
 	// themselves, unless the owner has turned that off.
 	go api.RunAutoReadAlong(ctx)
+	go api.RunScrobbles(ctx)
 
 	srv := &http.Server{
 		Addr:              listen,

@@ -80,6 +80,7 @@ func (s *Server) handleRecordPlay(w http.ResponseWriter, r *http.Request) {
 		s.collectionsError(w, err)
 		return
 	}
+	go s.sendScrobbles(user.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"recorded": true})
 }
 

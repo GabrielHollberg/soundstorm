@@ -57,6 +57,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/lyrics"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/provision"
+	"github.com/GabrielHollberg/soundstorm/internal/scrobble"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 	"github.com/GabrielHollberg/soundstorm/internal/stream"
@@ -94,6 +95,8 @@ type Server struct {
 	setRemoteAccess  func(bool) error
 	lyrics           *lyrics.Finder
 	discover         *discover.Finder
+	scrobble         *scrobble.Client
+	scrobbling       sync.Map // account id -> a send in progress
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -166,6 +169,9 @@ type Config struct {
 	Lyrics *lyrics.Finder
 	// Discover asks about artists online, when the owner has turned it on.
 	Discover *discover.Finder
+	// Scrobble sends plays to the ListenBrainz account a person connected.
+	// Nil disables scrobbling.
+	Scrobble *scrobble.Client
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -220,6 +226,7 @@ func New(cfg Config) *Server {
 		collections:      cfg.Collections,
 		lyrics:           cfg.Lyrics,
 		discover:         cfg.Discover,
+		scrobble:         cfg.Scrobble,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -325,6 +332,11 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/readalong", s.handleReadAlong)
 	guarded.HandleFunc("GET /api/music/mixes/{id}", s.handleMix)
 	guarded.HandleFunc("POST /api/history", s.handleRecordPlay)
+	guarded.HandleFunc("GET /api/scrobble", s.handleScrobbleStatus)
+	guarded.HandleFunc("PUT /api/scrobble", s.handleScrobbleConnect)
+	guarded.HandleFunc("DELETE /api/scrobble", s.handleScrobbleDisconnect)
+	guarded.HandleFunc("POST /api/scrobble/now", s.handleNowPlaying)
+	guarded.HandleFunc("GET /api/recap", s.handleRecap)
 	// Favorites and playlists, per person. See favorites.go.
 	guarded.HandleFunc("GET /api/favorites", s.handleFavorites)
 	guarded.HandleFunc("PUT /api/favorites", s.handleAddFavorite)
