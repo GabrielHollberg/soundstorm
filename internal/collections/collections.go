@@ -547,6 +547,9 @@ type Prefs struct {
 	Highlight *bool `json:"readAlongHighlight,omitempty"`
 	// BookSpeed is 0 for the default, which is normal speed.
 	BookSpeed float64 `json:"audiobookSpeed,omitempty"`
+	// CoverSpin is whether Now Playing's cover is a spinning disc; nil is the
+	// default, a square.
+	CoverSpin *bool `json:"coverSpin,omitempty"`
 }
 
 // Limits on what a preference can hold, so a client cannot grow the file.
@@ -578,6 +581,7 @@ type PrefsChange struct {
 	HiddenPills map[string][]string `json:"hiddenPills"`
 	Highlight   *bool               `json:"readAlongHighlight"`
 	BookSpeed   *float64            `json:"audiobookSpeed"`
+	CoverSpin   *bool               `json:"coverSpin"`
 }
 
 // ErrBadPrefs is a preference outside what is allowed.
@@ -637,6 +641,10 @@ func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
 	if ch.Highlight != nil {
 		on := *ch.Highlight
 		p.Highlight = &on
+	}
+	if ch.CoverSpin != nil {
+		on := *ch.CoverSpin
+		p.CoverSpin = &on
 	}
 	if ch.BookSpeed != nil {
 		p.BookSpeed = *ch.BookSpeed

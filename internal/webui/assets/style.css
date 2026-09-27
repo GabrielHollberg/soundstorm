@@ -2918,3 +2918,20 @@ body.np-open .item-menu-backdrop { z-index: 74; }
 
 /* A message raised from Now Playing shows above it, at its foot. */
 body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
+
+/* Now Playing's cover as a record: tapped, it rounds into a disc that turns
+   while the music plays and holds still on pause. Tapped again, it squares.
+   The turn is the rotate property, not a transform, since the sideways swipe
+   moves the cover with transform and the two must add up, not fight. */
+.np-cover, .np-thumb { transition: border-radius 0.45s ease; }
+.now-playing.spin .np-cover, .now-playing.spin .np-thumb { border-radius: 50%; }
+.now-playing.spin #np-cover, .now-playing.spin .np-thumb {
+  animation: np-spin 20s linear infinite;
+  animation-play-state: paused;
+}
+.now-playing.spin.playing #np-cover, .now-playing.spin.playing .np-thumb { animation-play-state: running; }
+@keyframes np-spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .now-playing.spin #np-cover, .now-playing.spin .np-thumb { animation: none; }
+}
+#np-cover { cursor: pointer; -webkit-tap-highlight-color: transparent; }

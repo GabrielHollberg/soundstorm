@@ -473,6 +473,13 @@ judged on in its first minute:
   songs-like step aside for an audiobook. The play controls sit above the
   timeline, at the owner's asking, in every view (the panel and strip views
   order them 3 and 4).
+- **A tap turns the cover into a record**: it rounds into a disc that turns
+  (20s a turn) while the music plays and stops where it is on pause; another
+  tap squares it. Kept on the account (`prefs.coverSpin`), so it stays as
+  left, on every device. The turn is the `rotate` property rather than a
+  transform, because the sideways swipe moves the cover with `transform` and
+  the two have to add up; the end of a swipe is not taken for a tap. Still
+  under reduced motion.
 - **Cover to lyrics is a view transition**: the big cover and the small one
   share a `view-transition-name`, only one ever on screen, so the browser
   morphs one into the other. Browsers without them just switch.

@@ -4913,6 +4913,7 @@ const npSwipe = (() => {
   }, { passive: false });
   const end = () => {
     if (!dragging) return;
+    npSwipe.draggedAt = performance.now();
     dragging = false;
     armed = false;
     if (axis === 'x') {
@@ -5193,6 +5194,8 @@ function renderNowPlaying() {
   const player = $('audio-player');
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
   renderArtButtons(item);
+  $('now-playing').classList.toggle('spin', coverSpins());
+  $('now-playing').classList.toggle('playing', !$('audio-player').paused);
   $('np-shuffle').setAttribute('aria-pressed', String(audio.shuffle));
   $('np-shuffle').classList.toggle('on', audio.shuffle);
   $('np-repeat').classList.toggle('on', audio.repeat !== 'off');
@@ -6523,6 +6526,28 @@ async function loadPrefs() {
 async function savePrefs(change) {
   const { ok, body } = await api('/api/prefs', { method: 'PATCH', body: JSON.stringify(change) });
   if (ok && body) state.prefs = body;
+}
+
+// Now Playing's cover as a spinning disc, a tap away and back: kept on the
+// account, so it stays the way somebody left it, on every device.
+function coverSpins() {
+  return Boolean(state.prefs && state.prefs.coverSpin);
+}
+
+$('np-cover').addEventListener('click', () => {
+  // The end of a swipe is not a tap.
+  if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
+  const on = !coverSpins();
+  state.prefs = state.prefs || {};
+  state.prefs.coverSpin = on;
+  $('now-playing').classList.toggle('spin', on);
+  savePrefs({ coverSpin: on });
+});
+// It spins only while the music plays, and stops where it is on pause.
+for (const type of ['play', 'pause', 'ended']) {
+  $('audio-player').addEventListener(type, () => {
+    $('now-playing').classList.toggle('playing', !$('audio-player').paused);
+  });
 }
 
 // For the reader, a module: read-along's highlight, on unless turned off.
