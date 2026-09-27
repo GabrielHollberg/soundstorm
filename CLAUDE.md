@@ -491,7 +491,14 @@ judged on in its first minute:
   lyrics (a held line does not jump there) - but not what already answers a
   touch: play, the header's buttons, the timeline, Up next, a menu
   (`NP_HOLD_SKIP`). Every hold menu swallows the lift that ends it, moved or
-  not, so the lift touches nothing underneath. It was the cover alone first,
+  not, so the lift touches nothing underneath. **The mini-player's hold opens
+  the same menu** (not on its buttons), and its own swipes stand down once
+  the menu is up; its Up next opens Now Playing on the queue. **A sideways
+  swipe anywhere on Now Playing changes song** - it always listened to the
+  whole screen, but refused to start on lyrics that had scrolled (so a drag
+  there could scroll them) and on Up next, and lyrics scroll as a song plays:
+  now those refuse only an up-and-down drag, which stays theirs. It was the
+  cover alone first,
   at the owner's asking - the card buttons, shuffle, repeat,
   the sleep timer, Up next and songs like this had crowded onto it. The
   player's options come first (`playerMenuItems`): **Songs like this**,
