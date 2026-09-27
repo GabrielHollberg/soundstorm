@@ -496,7 +496,10 @@ judged on in its first minute:
   it; let go anywhere else, or without having moved (so the icon that
   appears under a still thumb is not chosen), and they go. Info, sleep and
   add to playlist open their menu page. With the cover hidden they appear
-  in a square in the middle. Nothing else answers the finger while they
+  in a square in the middle. The veil behind them takes the cover's own size
+  about its centre, never its bounding box: a spinning record is rotated,
+  and the box around a turned square is up to 1.4 times as wide - it drew a
+  dark ring around the disc (measured: 404px box, 300px disc, at 63 degrees). Nothing else answers the finger while they
   show - the swipe stands down. Right-click still opens the full menu, and
   the mini-player's hold opens the menu (below). Before the icons, a hold
   opened that menu, which is what the rest of this entry describes:

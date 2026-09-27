@@ -10702,7 +10702,16 @@ function showHoldIcons(pointerId, x0, y0) {
   const caption = $('np-hold-caption');
   // Over the cover where it shows; otherwise a square in the middle.
   const cover = $('np-cover');
-  let r = cover.offsetWidth ? cover.getBoundingClientRect() : null;
+  let r = null;
+  if (cover.offsetWidth) {
+    // Its own size about its centre, not its bounding box: a spinning record
+    // is rotated, and the box around a turned square is up to 1.4 times as
+    // wide - which drew the veil as a dark ring around the disc.
+    const b = cover.getBoundingClientRect();
+    const w = cover.offsetWidth;
+    const h = cover.offsetHeight;
+    r = { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - h / 2, width: w, height: h };
+  }
   if (!r) {
     const side = Math.min(window.innerWidth * 0.8, window.innerHeight * 0.6, 360);
     r = { left: (window.innerWidth - side) / 2, top: (window.innerHeight - side) / 2, width: side, height: side };
