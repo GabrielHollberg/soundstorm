@@ -5159,10 +5159,16 @@ async function playLikeThis() {
     showToast((body && body.error) || 'No songs like this one yet.');
     return;
   }
+  // Said plainly, since the button is new to people: what was coming up is
+  // replaced, and saying so beats somebody wondering where their queue went.
+  const q = audio.queue;
+  const replaced = q && q.items[q.index] === item && q.items.length > q.index + 1;
   audio.queue = { items: [item, ...songs], index: 0, original: null };
   audio.radio = { params, title: body.title, next: 0, loading: false };
   queueChanged();
-  showToast(`Up next: songs like ${item.title}.`);
+  showToast(replaced
+    ? 'Similar songs are up next, replacing your queue.'
+    : 'Similar songs added to the queue.');
 }
 $('np-similar').addEventListener('click', playLikeThis);
 setIcon($('np-repeat'), 'repeat');

@@ -2912,3 +2912,6 @@ body.recap-open { overflow: hidden; }
 /* Info opened from Now Playing sits above it. */
 body.np-open .item-menu { z-index: 75; }
 body.np-open .item-menu-backdrop { z-index: 74; }
+
+/* A message raised from Now Playing shows above it, at its foot. */
+body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
