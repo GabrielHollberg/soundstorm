@@ -4809,12 +4809,25 @@ const npSwipe = (() => {
   };
 
   const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  // Until the new song's cover is the one on screen, and drawn.
-  async function coverShows(url) {
-    const want = new URL(url, location.href).href;
-    for (let i = 0; i < 60 && cover.src !== want; i++) await new Promise((r) => requestAnimationFrame(r));
-    try { await cover.decode(); } catch { /* shown when it loads */ }
-  }
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+
+  // The covers either side are fetched and decoded as soon as a song starts,
+  // so the one a swipe brings in is already drawn. They used to be asked for
+  // only when the finger moved, and slid in blank on a phone.
+  self.prime = () => {
+    if (self.busy) return;
+    for (const by of [-1, 1]) {
+      const n = neighborTrack(by);
+      if (!n) continue;
+      const img = sides[by];
+      const url = artOf(n);
+      if (img.dataset.src !== url) {
+        img.src = url;
+        img.dataset.src = url;
+        img.decode().catch(() => {});
+      }
+    }
+  };
 
   self.end = async (dx, speed) => {
     const by = dx < 0 ? 1 : -1;
@@ -4830,17 +4843,23 @@ const npSwipe = (() => {
     if (bigCover) {
       draw(-by * w, 230);
       await settle(240);
-      const url = artOf(near[by]);
-      cover.style.visibility = 'hidden';
-      artButtons.style.visibility = 'hidden';
-      stepTrack(by);
-      await coverShows(url);
+      // The cover that slid in stays where it is. Behind it the main cover
+      // takes the same picture - already loaded, so at once - and returns to
+      // the middle, the song changes (which starts a record from the top, as
+      // the one that slid in is), and only then does the slid-in one step
+      // aside. It used to hide the main cover and wait for the new song's
+      // picture to be asked for and drawn, which was the pop-in.
+      cover.src = sides[by].src || artOf(near[by]);
+      try { await cover.decode(); } catch { /* shown when it loads */ }
       put(cover, 0, 0);
       put(artButtons, 0, 0);
-      cover.style.visibility = '';
-      artButtons.style.visibility = '';
+      stepTrack(by);
+      await frame();
       for (const b of [-1, 1]) { put(sides[b], 0, 0); sides[b].style.visibility = 'hidden'; }
       put(head, 0, 0, 1);
+      self.busy = false;
+      self.prime();
+      return;
     } else {
       put(head, -by * 300, 160, 0);
       await settle(170);
@@ -5201,6 +5220,7 @@ function renderNowPlaying() {
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
   renderArtButtons(item);
   $('now-playing').classList.toggle('spin', coverSpins());
+  npSwipe.prime();
   // A new song is a new record: it starts from the top, as the cover that
   // slid in did, rather than at the angle the last one had reached.
   if (renderNowPlaying.song !== selectionKey(item)) {

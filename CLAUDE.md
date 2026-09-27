@@ -411,6 +411,20 @@ judged on in its first minute:
   restart of this one; the lock screen's previous keeps the 3-second rule.
   A song played on its own from Songs has no queue, so there is nothing to
   swipe to, as there was nothing for the old next button either.
+
+  **The cover that slides in is the one that stays.** Reported as skipping
+  being glitchy and the art slow to appear. The neighbors' covers used to be
+  asked for only when the finger started moving, and at the end the main
+  cover was hidden until the new song's picture had been asked for again and
+  drawn - up to a second of waiting. Now the covers either side are fetched
+  and decoded as soon as a song starts (`npSwipe.prime`, from
+  `renderNowPlaying`), and on commit the main cover takes the slid-in
+  picture behind it (already loaded), comes back under it, the song changes,
+  and only then does the slid-in one step aside. Checked frame by frame with
+  250ms of latency on every request: the next cover was drawn before the
+  swipe, slid in drawn, and the handoff showed no blank or wrong frame.
+  Covers are small (40-190KB on the real library, measured), so size was
+  never the cost.
 - **Now Playing has one layout, the lyrics one.** Title at the top, the
   middle for the lyrics, controls at the bottom; there is no lyrics button,
   because lyrics always show when a song has them. A computer keeps the big
