@@ -721,6 +721,38 @@ fix it, both checked on the real install:
   Navidrome's getIndexes/getMusicDirectory were no help: in 0.64 they answer
   with tag-based artists and albums under folder-shaped names.
 
+## Radio
+
+Asked for as "blow Plexamp out of the water". Plexamp's radio rests on
+analysing every track's audio, the ML layer this project does not own, so
+these stations rest on what is already here: the whole music shelf, this
+person's plays and favorites, and - with music discovery on - which artists
+people play together. What Plexamp does not do, and these do:
+
+- **A tuner.** Build a station by hand: how familiar (never played ...
+  favorites, a weight peaking at the chosen familiarity), which decades, which
+  genres. Kept per device in localStorage.
+- **Stations:** Library radio (everything, leaning to what you love), Deep
+  cuts (unplayed songs by the artists you play most), Time travel (the
+  library year by year, carrying on where the last batch stopped), Discovery
+  radio (artists like your favorites that you rarely play; discovery only),
+  and radio from a song, an album or an artist - the artist page's mix is now
+  Artist radio. Song radio starts with the song.
+- **Sequenced, not shuffled.** Weighted draw (Efraimidis-Spirakis), no artist
+  more than their share of a batch, then ordered so no artist repeats within
+  three songs and no album plays twice in a row. The share cap is what makes
+  the spread possible: a draw where one artist has half the songs cannot be
+  spread, whatever the order.
+- **Endless.** `POST /api/music/radio` answers a batch of 25; the app asks for
+  the next while five songs remain, sending the queued ids (up to 1,500) so
+  nothing repeats. Once everything is excluded a station starts over rather
+  than stopping. Starting any other queue ends the station.
+- Songs played in the last six hours are drawn a tenth as often.
+
+Similar artists come from the discovery cache only, except for an artist
+station's own seed, which is looked up while the person waits. The catalog
+(`GET`) draws a first taste of each station for its collage.
+
 ## Music, phase 2: mixes, lyrics, downloads
 
 - **Listening history is SoundStorm's, per person**, in the collections file:

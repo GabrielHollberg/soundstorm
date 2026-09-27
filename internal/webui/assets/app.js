@@ -3274,6 +3274,7 @@ const ICONS = {
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3.2"/>',
   volume: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  radio: '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke-width="2.2"/>',
 };
 
 function icon(name, filled) {
@@ -3365,6 +3366,10 @@ function renderMainMenu(item) {
     }, { filled: faved, className: 'menu-favorite' }),
   ];
   if (item.kind === 'music') {
+    entries.push(menuItem('radio', 'Start radio', () => {
+      closeItemMenu();
+      startRadio({ mode: 'song', seed: item.id });
+    }));
     entries.push(menuItem('next', 'Play next', () => {
       queuePlayNext(item);
       closeItemMenu();
@@ -3819,6 +3824,8 @@ function showToast(message, actionLabel, action, ms = 6000) {
 
 function playQueue(items, start) {
   if (!items.length) return;
+  // Any queue started by hand ends a station; startRadio sets it again after.
+  audio.radio = null;
   audio.queue = { items: items.slice(), index: 0, original: null };
   playQueueAt(start);
   // Starting music by hand opens the full player, as a music app does. The
@@ -3837,6 +3844,7 @@ function playQueueAt(index) {
   if (!audio.queue) return;
   audio.queue.index = index;
   playAudio(audio.queue.items[index], true);
+  topUpRadio();
 }
 
 function renderQueue() {
@@ -4099,7 +4107,7 @@ for (const tab of document.querySelectorAll('#music-tabs [data-view]')) {
 
 function markMusicTabs() {
   // Offline, Music is what is downloaded: songs, albums, playlists.
-  for (const view of ['mixes', 'artists', 'favorites', 'genres']) {
+  for (const view of ['mixes', 'radio', 'artists', 'favorites', 'genres']) {
     const pill = document.querySelector(`#music-tabs [data-view="${view}"]`);
     if (pill) pill.classList.toggle('hidden', state.offline);
   }
@@ -4159,6 +4167,13 @@ async function showMusicView(seq) {
     const mixes = (ok && body && body.mixes) || [];
     view.replaceChildren(mixGrid(mixes));
     $('status').textContent = mixes.length ? '' : 'No music yet.';
+    return;
+  }
+  if (state.musicView === 'radio') {
+    const { ok, body } = await api('/api/music/radio');
+    if (seq !== state.searchSeq) return;
+    view.replaceChildren(...radioPage(ok ? body : null));
+    $('status').textContent = ok ? '' : 'No music yet.';
     return;
   }
   if (state.musicView === 'albums') {
@@ -4354,6 +4369,15 @@ async function showAlbum(sourceId, id) {
   facts.textContent = [album.year, `${songs.length} song${songs.length === 1 ? '' : 's'}`,
     formatLength(album.durationSeconds)].filter(Boolean).join(' · ');
   const albumButtons = playButtons(async () => songs);
+  if (songs.length && !state.offline) {
+    const radio = document.createElement('button');
+    radio.type = 'button';
+    radio.className = 'ghost';
+    radio.textContent = 'Radio';
+    radio.title = 'A station that starts from this album and keeps going';
+    radio.addEventListener('click', () => startRadio({ mode: 'album', seed: songs[0].id }));
+    albumButtons.append(radio);
+  }
   albumButtons.append(downloadButton({
     id: `album:${album.sourceId}/${album.id}`, type: 'album', title: album.title,
     subtitle: album.artist, sourceId: album.sourceId, artId: album.artId,
@@ -4436,9 +4460,9 @@ async function showArtist(sourceId, id) {
   const radio = document.createElement('button');
   radio.type = 'button';
   radio.className = 'ghost';
-  radio.textContent = 'Artist mix';
-  radio.title = 'Their songs, with artists like them';
-  radio.addEventListener('click', () => playMix(`artist:${id}`));
+  radio.textContent = 'Artist radio';
+  radio.title = 'Their songs, with artists like them, without end';
+  radio.addEventListener('click', () => startRadio({ mode: 'artist', seed: artist.name }));
   const keepAll = document.createElement('button');
   keepAll.type = 'button';
   keepAll.className = 'ghost';
@@ -5363,6 +5387,170 @@ function mixGrid(mixes) {
     grid.append(card);
   }
   return grid;
+}
+
+/* ------------------------------------------------------------------- radio */
+
+// Stations that never end. The server picks each batch (internal/httpapi
+// radio.go); the app asks for the next one while five songs are still to
+// come, sending what is already queued so nothing repeats.
+audio.radio = null; // { params, title, next, loading }
+
+async function startRadio(params) {
+  const { ok, body } = await api('/api/music/radio', { method: 'POST', body: JSON.stringify(params) });
+  if (!ok || !body || !body.songs || !body.songs.length) {
+    showToast((body && body.error) || 'Nothing in the library fits that station.');
+    return;
+  }
+  playQueue(body.songs, 0);
+  audio.radio = { params, title: body.title, next: body.next || 0, loading: false };
+}
+
+async function topUpRadio() {
+  const r = audio.radio;
+  const q = audio.queue;
+  if (!r || !q || r.loading || q.items.length - q.index > 5) return;
+  r.loading = true;
+  const params = { ...r.params, exclude: q.items.slice(-1500).map((it) => `${it.sourceId}/${it.id}`) };
+  if (params.mode === 'time' && r.next) params.from = r.next;
+  const { ok, body } = await api('/api/music/radio', { method: 'POST', body: JSON.stringify(params) });
+  r.loading = false;
+  if (audio.radio !== r || audio.queue !== q || !ok || !body || !body.songs) return;
+  if (body.next) r.next = body.next;
+  q.items.push(...body.songs);
+  if (q.original) q.original.push(...body.songs);
+  queueChanged();
+}
+
+// The Radio page: the stations, then a tuner to build one by hand.
+function radioPage(catalog) {
+  const stations = (catalog && catalog.stations) || [];
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid mix-grid';
+  for (const st of stations) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'item mix-card radio-card';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = st.title;
+    const sub = document.createElement('span');
+    sub.className = 'sub';
+    sub.textContent = st.subtitle;
+    meta.append(title, sub);
+    const cover = mixCover(st);
+    const badge = document.createElement('span');
+    badge.className = 'radio-badge';
+    badge.append(icon('radio'));
+    cover.append(badge);
+    card.append(cover, meta);
+    card.addEventListener('click', () => startRadio({ mode: st.mode }));
+    grid.append(card);
+  }
+  return catalog ? [grid, radioTuner(catalog)] : [grid];
+}
+
+const TUNER_KEY = 'soundstorm-tuner';
+
+function radioTuner(catalog) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(TUNER_KEY) || '{}') || {}; } catch { saved = {}; }
+  const box = document.createElement('section');
+  box.className = 'radio-tuner';
+  const h = document.createElement('h3');
+  h.className = 'section-title';
+  h.textContent = 'Build a station';
+
+  const famLabel = document.createElement('label');
+  famLabel.className = 'tuner-row';
+  const famName = document.createElement('span');
+  famName.textContent = 'How familiar';
+  const fam = document.createElement('input');
+  fam.type = 'range';
+  fam.min = '0';
+  fam.max = '100';
+  fam.value = String(Number.isFinite(saved.familiar) ? Math.round(saved.familiar * 100) : 50);
+  const ends = document.createElement('div');
+  ends.className = 'tuner-ends';
+  for (const t of ['New to you', 'A mix', 'Favorites']) {
+    const s = document.createElement('span');
+    s.textContent = t;
+    ends.append(s);
+  }
+  famLabel.append(famName, fam, ends);
+
+  const years = (catalog && catalog.years) || {};
+  const yearRow = document.createElement('div');
+  yearRow.className = 'tuner-row tuner-years';
+  const selects = [];
+  if (years.from && years.until) {
+    const decades = [];
+    for (let d = Math.floor(years.from / 10) * 10; d <= years.until; d += 10) decades.push(d);
+    const pickYear = (label, value, until) => {
+      const l = document.createElement('label');
+      const t = document.createElement('span');
+      t.textContent = label;
+      const sel = document.createElement('select');
+      const any = document.createElement('option');
+      any.value = '';
+      any.textContent = 'Any';
+      sel.append(any);
+      for (const d of decades) {
+        const o = document.createElement('option');
+        o.value = String(until ? d + 9 : d);
+        o.textContent = until ? `${d + 9}` : `${d}`;
+        sel.append(o);
+      }
+      sel.value = value ? String(value) : '';
+      l.append(t, sel);
+      selects.push(sel);
+      return l;
+    };
+    yearRow.append(pickYear('From', saved.from, false), pickYear('Until', saved.until, true));
+  }
+
+  const chosen = new Set(Array.isArray(saved.genres) ? saved.genres : []);
+  const genreRow = document.createElement('div');
+  genreRow.className = 'tuner-genres';
+  for (const g of (catalog && catalog.genres) || []) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = g;
+    b.classList.toggle('active', chosen.has(g));
+    b.setAttribute('aria-pressed', String(chosen.has(g)));
+    b.addEventListener('click', () => {
+      if (chosen.has(g)) chosen.delete(g);
+      else chosen.add(g);
+      b.classList.toggle('active', chosen.has(g));
+      b.setAttribute('aria-pressed', String(chosen.has(g)));
+    });
+    genreRow.append(b);
+  }
+
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'play-main';
+  go.textContent = '\u25B6  Play station';
+  go.addEventListener('click', () => {
+    const params = {
+      mode: 'custom',
+      familiar: Number(fam.value) / 100,
+      from: selects[0] && selects[0].value ? Number(selects[0].value) : 0,
+      until: selects[1] && selects[1].value ? Number(selects[1].value) : 0,
+      genres: [...chosen],
+    };
+    try { localStorage.setItem(TUNER_KEY, JSON.stringify(params)); } catch { /* private mode */ }
+    startRadio(params);
+  });
+
+  box.append(h, famLabel);
+  if (yearRow.children.length) box.append(yearRow);
+  if (genreRow.children.length) box.append(genreRow);
+  box.append(go);
+  return box;
 }
 
 async function playMix(id) {
