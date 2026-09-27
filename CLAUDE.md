@@ -486,8 +486,13 @@ judged on in its first minute:
   Chrome ships that (in progress, 2026). An APK was considered for this and
   declined: a Trusted Web Activity runs in Chrome and has the same bars, and
   a WebView app loses the lock-screen controls and background playback.
-- **No buttons over the big cover: holding it opens its menu** (and
-  right-click), at the owner's asking - the card buttons, shuffle, repeat,
+- **No buttons over the big cover: holding anywhere on Now Playing opens
+  its menu** (and right-click) - the cover, the background, the title, the
+  lyrics (a held line does not jump there) - but not what already answers a
+  touch: play, the header's buttons, the timeline, Up next, a menu
+  (`NP_HOLD_SKIP`). Every hold menu swallows the lift that ends it, moved or
+  not, so the lift touches nothing underneath. It was the cover alone first,
+  at the owner's asking - the card buttons, shuffle, repeat,
   the sleep timer, Up next and songs like this had crowded onto it. The
   player's options come first (`playerMenuItems`): **Songs like this**,
   Shuffle and Repeat with their state beside them (changing one keeps the

@@ -10447,9 +10447,14 @@ function renderSleepMenu(item, opts) {
   placeMenu(menu, state.menuAnchor);
 }
 
+// Anywhere on the screen, not only the cover: a hold on the background,
+// the title or the lyrics opens the menu too. Not on what already answers a
+// touch - play, the header's buttons, the timeline, Up next (a hold there
+// moves a song), a menu.
+const NP_HOLD_SKIP = 'input, a, #np-queue, .np-bar button, .np-controls button, #np-speed-wrap, #item-menu';
 (() => {
-  const cover = $('np-cover');
-  cover.draggable = false;
+  const panel = $('now-playing');
+  $('np-cover').draggable = false;
   let timer = null;
   let x = 0;
   let y = 0;
@@ -10457,8 +10462,8 @@ function renderSleepMenu(item, opts) {
     clearTimeout(timer);
     timer = null;
   };
-  cover.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
+  panel.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.target.closest(NP_HOLD_SKIP)) return;
     x = event.clientX;
     y = event.clientY;
     cancel();
@@ -10472,13 +10477,15 @@ function renderSleepMenu(item, opts) {
       followMenuFinger(event.pointerId, x, y);
     }, HOLD_MS);
   });
-  cover.addEventListener('pointermove', (event) => {
+  panel.addEventListener('pointermove', (event) => {
     if (timer && Math.hypot(event.clientX - x, event.clientY - y) > HOLD_SLOP) cancel();
   });
-  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) cover.addEventListener(type, cancel);
-  cover.addEventListener('contextmenu', (event) => {
+  for (const type of ['pointerup', 'pointercancel']) panel.addEventListener(type, cancel);
+  panel.addEventListener('contextmenu', (event) => {
+    if (event.target.closest(NP_HOLD_SKIP)) return;
     event.preventDefault();
     cancel();
+    if (state.holding) return; // a long press Android also reports; answered above
     npHold.at = performance.now();
     openNowPlayingMenu();
   });
@@ -10534,7 +10541,13 @@ function followMenuFinger(pointerId, x0, y0) {
     menuFinger.entered = false;
     const chosen = event.type === 'pointerup' ? lit : null;
     light(null);
-    if (!moved || state.dragSelect || $('item-menu').classList.contains('hidden')) return;
+    if (!moved) {
+      // Lifted where it was held: the menu stays open to tap, and the
+      // lift itself touches nothing under it - a lyric line, say.
+      state.swallowClickUntil = performance.now() + 500;
+      return;
+    }
+    if (state.dragSelect || $('item-menu').classList.contains('hidden')) return;
     if (chosen) chosen.click();
     else closeItemMenu();
     // The browser's own click for this lift, if it sends one, is not a

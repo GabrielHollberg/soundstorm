@@ -3049,7 +3049,7 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 
 /* Holding Now Playing's cover opens its menu: not the browser's own image
    menu, and no text selection. */
-#np-cover { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+#np-cover, #now-playing .np-main { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
 /* While selecting: a slim strip at the foot of the screen, the count and
    Done - the menu for the selection is a hold on one of them. */
