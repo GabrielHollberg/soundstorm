@@ -107,7 +107,7 @@ func TestNotTheSameBookLeavesReadAndListen(t *testing.T) {
 func TestOwnerSettingsAnswer(t *testing.T) {
 	h := newHarness(t)
 	h.signUp(t)
-	for _, path := range []string{"/api/settings/lyrics", "/api/settings/readalong"} {
+	for _, path := range []string{"/api/settings/lyrics", "/api/settings/readalong", "/api/settings/discovery"} {
 		resp, body := h.do(t, http.MethodPut, path, `{"enabled":false}`)
 		if resp.StatusCode == http.StatusNotFound {
 			t.Errorf("%s: 404 %s", path, body)

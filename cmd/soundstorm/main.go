@@ -33,6 +33,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
+	"github.com/GabrielHollberg/soundstorm/internal/discover"
 	"github.com/GabrielHollberg/soundstorm/internal/httpapi"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/lyrics"
@@ -296,6 +297,12 @@ func run(log *slog.Logger) error {
 		log.Warn("online lyrics unavailable", "err", err)
 		lyricsFinder = nil
 	}
+	// What is found out about artists is kept beside the state too.
+	discoverFinder, err := discover.New(filepath.Join(stateDir, "discover"))
+	if err != nil {
+		log.Warn("music discovery unavailable", "err", err)
+		discoverFinder = nil
+	}
 
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
@@ -333,6 +340,7 @@ func run(log *slog.Logger) error {
 		},
 		SetupCode:   setupCode,
 		Lyrics:      lyricsFinder,
+		Discover:    discoverFinder,
 		Collections: collectionStore,
 	})
 

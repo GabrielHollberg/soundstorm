@@ -746,6 +746,21 @@ fix it, both checked on the real install:
   a file under the state dir's `lyrics/` for good (none re-asks after 30 days);
   never in the music folders, which are the user's and scanned. Checked live:
   a real song came back synced, 56 lines.
+- **Music discovery** (`internal/discover`) is the second thing that sends
+  anything out of the house, so it is an owner setting, off by default,
+  like online lyrics (`onlineDiscovery`). MusicBrainz names the artist (a
+  confident match only: another artist's bio is worse than none), ListenBrainz
+  gives the artists people play in the same sessions, and Wikipedia - found
+  through MusicBrainz's Wikidata link - the bio. No key or account for any of
+  them, which is why not Last.fm. MusicBrainz's one request a second and
+  User-Agent are kept to; every answer, none included, is kept on disk
+  under the state dir for months. Only artists in the library are ever
+  offered. It gives an artist's page an About and Similar artists in your
+  library, the artist mix artists like them (genres only without it), and
+  "More like" mixes around the three most played artists - from what is
+  already known, the rest looked up in the background, so the mixes page
+  never waits on the network. Checked live: Radiohead came back with 50
+  similar artists and its Wikipedia summary in 2.5s, then 54us from disk.
 - **Downloads** live in the Cache API (`soundstorm-offline-v1`), with an index
   in localStorage. Downloaded songs always play from the device. Sign-out
   clears them.

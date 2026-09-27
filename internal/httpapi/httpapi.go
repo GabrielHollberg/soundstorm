@@ -51,6 +51,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
+	"github.com/GabrielHollberg/soundstorm/internal/discover"
 	"github.com/GabrielHollberg/soundstorm/internal/federate"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/lyrics"
@@ -90,6 +91,7 @@ type Server struct {
 	remoteStatus     func() RemoteState
 	setRemoteAccess  func(bool) error
 	lyrics           *lyrics.Finder
+	discover         *discover.Finder
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -160,6 +162,8 @@ type Config struct {
 	// Lyrics looks up lyrics a song's files lack, when the owner has turned
 	// that on. Nil disables it whatever the setting says.
 	Lyrics *lyrics.Finder
+	// Discover asks about artists online, when the owner has turned it on.
+	Discover *discover.Finder
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -213,6 +217,7 @@ func New(cfg Config) *Server {
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
 		collections:      cfg.Collections,
 		lyrics:           cfg.Lyrics,
+		discover:         cfg.Discover,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -294,6 +299,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/albums/{source}/{id}", s.handleAlbum)
 	guarded.HandleFunc("GET /api/music/artists", s.handleArtists)
 	guarded.HandleFunc("GET /api/music/artists/{source}/{id}", s.handleArtist)
+	guarded.HandleFunc("GET /api/music/artists/{source}/{id}/about", s.handleArtistAbout)
 	// Mixes and listening history. See mixes.go.
 	guarded.HandleFunc("GET /api/music/mixes", s.handleMixes)
 	guarded.HandleFunc("GET /api/music/lyrics/{source}/{id}", s.handleLyrics)
@@ -338,6 +344,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
 	owner.HandleFunc("PUT /api/remote", s.handleSetRemote)
 	owner.HandleFunc("PUT /api/settings/lyrics", s.handleSetOnlineLyrics)
+	owner.HandleFunc("PUT /api/settings/discovery", s.handleSetOnlineDiscovery)
 	owner.HandleFunc("PUT /api/settings/readalong", s.handleSetAutoReadAlong)
 	owner.HandleFunc("POST /api/books/pairs/not-same", s.handleNotSameBook)
 	owner.HandleFunc("POST /api/books/pairs/by-hand", s.handlePairByHand)
@@ -350,6 +357,7 @@ func (s *Server) Routes() http.Handler {
 	// whole server - so it mounts the same owner guard.
 	guarded.Handle("/api/remote", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/lyrics", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/settings/discovery", s.auth.RequireOwner(owner))
 	// Every owner route must be mounted here as well as registered above, or it
 	// answers 404: the read-along switch did, unnoticed, until a test asked.
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
@@ -469,6 +477,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if user.IsOwner() && s.lyrics != nil {
 			answer["onlineLyrics"] = s.store.OnlineLyrics()
+		}
+		if user.IsOwner() && s.discover != nil {
+			answer["onlineDiscovery"] = s.store.OnlineDiscovery()
 		}
 		if _, ok := s.readAlong(r.Context()); ok && user.IsOwner() {
 			answer["autoReadAlong"] = s.store.AutoReadAlong()

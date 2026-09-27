@@ -197,6 +197,10 @@ type data struct {
 	// lyrics on LRCLIB. Off unless turned on: it sends a song's artist and
 	// title to an outside service, which nothing else here does.
 	OnlineLyrics bool `json:"onlineLyrics,omitempty"`
+	// OnlineDiscovery is whether the owner lets SoundStorm ask MusicBrainz,
+	// ListenBrainz and Wikipedia about artists: similar artists and bios. Off
+	// unless turned on, for the same reason as OnlineLyrics.
+	OnlineDiscovery bool `json:"onlineDiscovery,omitempty"`
 	// ReadAlongManual is the owner turning off syncing books for read-along
 	// by themselves. Absent means on - the default is to sync - so it is
 	// stored the other way round from OnlineLyrics.
@@ -1070,5 +1074,23 @@ func (s *Store) SetManualPair(key string, paired bool) error {
 	if !changed {
 		return nil
 	}
+	return s.save()
+}
+
+// OnlineDiscovery reports whether asking about artists online is on.
+func (s *Store) OnlineDiscovery() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.d.OnlineDiscovery
+}
+
+// SetOnlineDiscovery turns asking about artists online on or off.
+func (s *Store) SetOnlineDiscovery(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.OnlineDiscovery == on {
+		return nil
+	}
+	s.d.OnlineDiscovery = on
 	return s.save()
 }

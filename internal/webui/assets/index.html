@@ -313,6 +313,26 @@
         <p id="lyrics-note" class="muted hidden" role="status"></p>
       </div>
 
+      <!-- Owner only: whether artist names may leave the house, for bios and
+           similar artists. Off until somebody turns it on. -->
+      <div id="discovery-block" class="account-section card hidden" data-cat="playback" data-words="discovery similar artists bio radio musicbrainz listenbrainz wikipedia">
+        <h2>Music discovery</h2>
+        <p class="muted">Artist pages can show a short bio and the artists like them
+          that you already have, and artist mixes can play those artists too.
+          SoundStorm finds out from
+          <a href="https://musicbrainz.org" target="_blank" rel="noopener noreferrer">MusicBrainz</a>,
+          <a href="https://listenbrainz.org" target="_blank" rel="noopener noreferrer">ListenBrainz</a>
+          and Wikipedia - free and open, no account needed.</p>
+        <label class="remote-switch">
+          <input id="discovery-toggle" type="checkbox">
+          <span>Find out about artists online</span>
+        </label>
+        <p class="muted small-print">Sends an artist's name when you open their
+          page or play a mix of them. Nothing else leaves your server, and each
+          artist is asked about once - the answers are kept for months.</p>
+        <p id="discovery-note" class="muted hidden" role="status"></p>
+      </div>
+
       <div id="readalong-block" class="account-section card hidden" data-cat="playback" data-words="read along sync storyteller ebook audiobook pages">
         <h2>Read-along</h2>
         <p class="muted">When a book is on the shelf as both an ebook and an

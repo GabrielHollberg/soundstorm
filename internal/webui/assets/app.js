@@ -261,6 +261,9 @@ async function refreshLyricsSetting() {
   if (has) $('lyrics-toggle').checked = body.onlineLyrics;
   // Read-along's setting rides on the same answer: owner only, and only where
   // read-along is set up.
+  const discovery = ok && body && typeof body.onlineDiscovery === 'boolean';
+  show($('discovery-block'), discovery);
+  if (discovery) $('discovery-toggle').checked = body.onlineDiscovery;
   const along = ok && body && typeof body.autoReadAlong === 'boolean';
   show($('readalong-block'), along);
   if (along) $('readalong-toggle').checked = body.autoReadAlong;
@@ -277,6 +280,19 @@ $('readalong-toggle').addEventListener('change', async (event) => {
   note($('readalong-note'), enabled
     ? 'On. Books on both shelves are synced one at a time, starting now.'
     : 'Off. Sync a book yourself from Books, Read Along.', false);
+});
+
+$('discovery-toggle').addEventListener('change', async (event) => {
+  const enabled = event.target.checked;
+  const { ok, body } = await api('/api/settings/discovery', { method: 'PUT', body: JSON.stringify({ enabled }) });
+  if (!ok) {
+    event.target.checked = !enabled;
+    note($('discovery-note'), (body && body.error) || 'Could not change it.', true);
+    return;
+  }
+  note($('discovery-note'), enabled
+    ? 'On. Open an artist to see their bio and the artists like them.'
+    : 'Off. Artist mixes go back to mixing in songs of the same genre.', false);
 });
 
 $('lyrics-toggle').addEventListener('change', async (event) => {
@@ -4421,7 +4437,7 @@ async function showArtist(sourceId, id) {
   radio.type = 'button';
   radio.className = 'ghost';
   radio.textContent = 'Artist mix';
-  radio.title = 'Their songs, with others from the same genres';
+  radio.title = 'Their songs, with artists like them';
   radio.addEventListener('click', () => playMix(`artist:${id}`));
   const keepAll = document.createElement('button');
   keepAll.type = 'button';
@@ -4441,9 +4457,62 @@ async function showArtist(sourceId, id) {
   const heading = document.createElement('h3');
   heading.className = 'section-title';
   heading.textContent = 'Albums';
+  const about = document.createElement('div');
+  about.className = 'artist-about';
   view.replaceChildren(backButton(state.musicView === 'albums' ? 'Albums' : 'Artists', () => runSearch()),
-    head, heading, albumGrid(albums.map((a) => ({ ...a, sourceId: a.sourceId || sourceId }))));
+    head, heading, albumGrid(albums.map((a) => ({ ...a, sourceId: a.sourceId || sourceId }))), about);
   window.scrollTo(0, 0);
+  showArtistAbout(sourceId, id, about);
+}
+
+// Below an artist's albums, with music discovery on: a few lines about them
+// and the artists like them that are in the library. Filled in once it has
+// been found out, so the page never waits on it.
+async function showArtistAbout(sourceId, id, box) {
+  const { ok, body } = await api(`/api/music/artists/${encodeURIComponent(sourceId)}/${escapeId(id)}/about`);
+  if (!box.isConnected || !ok || !body || !body.enabled) return;
+  const parts = [];
+  if (body.similar && body.similar.length) {
+    const h = document.createElement('h3');
+    h.className = 'section-title';
+    h.textContent = 'Similar artists in your library';
+    const strip = document.createElement('div');
+    strip.className = 'home-strip similar-strip';
+    for (const a of body.similar) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'item artist-card';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const name = document.createElement('span');
+      name.className = 'title';
+      name.textContent = a.name;
+      meta.append(name);
+      card.append(coverArt(artUrl(a.sourceId, a.artId), a.name, true), meta);
+      card.addEventListener('click', () => showArtist(a.sourceId, a.id));
+      strip.append(card);
+    }
+    parts.push(h, strip);
+  }
+  if (body.bio) {
+    const h = document.createElement('h3');
+    h.className = 'section-title';
+    h.textContent = 'About';
+    const text = document.createElement('p');
+    text.className = 'artist-bio';
+    text.textContent = body.bio;
+    parts.push(h, text);
+    if (body.bioUrl) {
+      const more = document.createElement('a');
+      more.className = 'artist-bio-link';
+      more.href = body.bioUrl;
+      more.target = '_blank';
+      more.rel = 'noopener noreferrer';
+      more.textContent = 'More on Wikipedia';
+      parts.push(more);
+    }
+  }
+  box.replaceChildren(...parts);
 }
 
 /* ----------------------------------------------------- the queue, grown up */

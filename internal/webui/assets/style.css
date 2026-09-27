@@ -2797,3 +2797,8 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 #music-tabs .pill-add .icon, #subtabs .pill-add .icon { width: 18px; height: 18px; }
 #music-tabs .pill-add.drop-target, #subtabs .pill-add.drop-target { transform: scale(1.18); background: #3a1d22; border-color: #ff7b7b; color: #ff7b7b; }
 
+/* An artist's bio and the artists like them, under their albums. */
+.artist-about { padding-bottom: 30px; }
+.similar-strip .artist-card { flex: 0 0 110px; }
+.artist-bio { margin: 0 20px 6px; font-size: 14px; line-height: 1.5; color: var(--muted); max-width: 70ch; }
+.artist-bio-link { display: inline-block; margin: 0 20px; font-size: 14px; }

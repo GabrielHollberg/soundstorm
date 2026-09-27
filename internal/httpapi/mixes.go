@@ -157,6 +157,7 @@ func (s *Server) handleMixes(w http.ResponseWriter, r *http.Request) {
 			cards = append(cards, mixCard{ID: "rediscover", Title: "Rediscover",
 				Subtitle: "Favorites you haven't played lately", Covers: covers(playItems(old)), SourceID: src.ID()})
 		}
+		cards = append(cards, s.moreLikeCards(r, src, byCount)...)
 	}
 
 	// From the library itself.
@@ -252,6 +253,8 @@ func (s *Server) handleMix(w http.ResponseWriter, r *http.Request) {
 		songs, err = mixer.RandomSongs(r.Context(), mixSize, "", decade, decade+9)
 	case strings.HasPrefix(id, "artist:"):
 		songs, err = s.artistMix(r, src, mixer, strings.TrimPrefix(id, "artist:"))
+	case strings.HasPrefix(id, "like:"):
+		songs, err = s.moreLike(r, src, strings.TrimPrefix(id, "like:"))
 	default:
 		writeError(w, http.StatusNotFound, "no such mix")
 		return
@@ -321,7 +324,21 @@ func (s *Server) artistMix(r *http.Request, src source.Source, mixer source.MixS
 	for _, t := range own {
 		seen[t.ID] = true
 	}
+	// Artists like them, from what the owner's music discovery found out -
+	// the thing an artist's radio should be. Genres are what is left without
+	// it: the nearest thing without anybody to ask.
+	if artist, _, err := browser.Artist(r.Context(), artistID); err == nil {
+		for _, t := range s.similarSongs(r, browser, artist.Name, 6, 4) {
+			if !seen[t.ID] {
+				seen[t.ID] = true
+				others = append(others, t)
+			}
+		}
+	}
 	for g := range genres {
+		if len(others) > 0 {
+			break
+		}
 		drawn, err := mixer.RandomSongs(r.Context(), 40, g, 0, 0)
 		if err != nil {
 			continue
