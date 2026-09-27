@@ -1187,9 +1187,24 @@ the menu, reads as a click outside, and closes it. Two decisions shape it:
   overwrites: a path whose place has been taken since stays in the bin and is
   reported.
 
+**Press, slide, release.** A menu opened by a hold (a card, an album, Now
+Playing's cover) is used without lifting the finger: slide over it and the
+option under the finger lights; lift on one and it is chosen; slide off and
+nothing is lit, and lifting there closes the menu. Lifting without having
+moved leaves the menu open to tap. Nothing lights until the finger moves -
+`:hover` and `:active` only apply with a real pointer now, since on a touch
+screen they stuck to whatever the finger rested on when the menu appeared.
+The browser's own click for the lift is swallowed. An option that redraws
+the menu in place (Shuffle, Repeat, a second page) used to close it: its
+button is gone from the page by the time the click reaches the page's
+"click outside" rule, which now ignores a click on a removed element.
+
 **Many at once: hold, then drag.** Holding opens the menu as ever; moving
-the finger on without lifting closes it and selects every item from the
-held one to the one under the finger, in the order shown, as a phone's
+the finger on to *another card* without lifting closes it and selects every
+item from the held one to the one under the finger (a finger that has been
+on the menu is choosing from it for the rest of that touch; the menu opens
+over the held card's lower half, so a slide straight down reaches the menu,
+not the next row - slide sideways or up to select), in the order shown, as a phone's
 photos do (back up and they come off; what was selected before stays).
 The bottom 120px of the screen scrolls the page down, and the band under
 the pills up, faster nearer the edge, so a drag reaches any number. The

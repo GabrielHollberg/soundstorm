@@ -3472,6 +3472,10 @@ document.addEventListener('click', (event) => {
   // The finger lifting at the end of a hold on Now Playing's cover lands on
   // the dimmed page over it, and is not a click outside the menu it opened.
   if (performance.now() - (state.heldAt || 0) < 700) return;
+  // An option that redraws the menu in place (Shuffle, Repeat, a second
+  // page) has taken its own button out of the page by the time the click
+  // arrives here; it came from inside, not outside.
+  if (!event.target.isConnected) return;
   if (!menu.classList.contains('hidden') && !menu.contains(event.target)
       && !event.target.closest('.item-more')) closeItemMenu();
 });
@@ -3858,7 +3862,9 @@ function attachItemMenuGestures(card, item) {
       if (navigator.vibrate) navigator.vibrate(12);
       holdStarted();
       openItemMenu(item, card.querySelector('.art-wrap') || card);
-      // Held, and the finger may now move on: that selects instead.
+      // Held, and the finger may now move on: onto the menu it picks an
+      // option; across the other cards it selects them instead.
+      followMenuFinger(event.pointerId, startX, startY);
       armDragSelect(card, item, event.pointerId, startX, startY);
     }, HOLD_MS);
   });
@@ -4249,7 +4255,9 @@ function attachAlbumMenu(card, album) {
       card.classList.remove('pressing');
       state.suppressClick = true;
       if (navigator.vibrate) navigator.vibrate(12);
+      holdStarted();
       open();
+      followMenuFinger(event.pointerId, x, y);
     }, HOLD_MS);
   });
   card.addEventListener('pointermove', (event) => {
@@ -8934,6 +8942,16 @@ function armDragSelect(card, item, pointerId, x0, y0) {
     if (event.pointerId !== pointerId) return;
     if (!state.dragSelect) {
       if (Math.hypot(event.clientX - x0, event.clientY - y0) < HOLD_SLOP) return;
+      // A finger that has gone into the menu is choosing from it for the
+      // rest of this touch, wherever it goes after.
+      if (menuFinger.entered || fingerOverMenu(event.clientX, event.clientY)) return;
+      // And selecting starts on reaching another card, not on leaving this
+      // one's middle: the menu opens over the held card's lower half, so the
+      // way to it is across the card itself.
+      // Looked for through the dimmed page the menu lays over the others.
+      const holder = document.elementsFromPoint(event.clientX, event.clientY)
+        .map((el) => el.closest('.item-holder')).find(Boolean);
+      if (!holder || holder.contains(card)) return;
       startDragSelect(card, item);
     }
     state.dragSelect.x = event.clientX;
@@ -10388,7 +10406,9 @@ function renderSleepMenu(item, opts) {
       npHold.at = performance.now();
       state.heldAt = npHold.at;
       if (navigator.vibrate) navigator.vibrate(10);
+      holdStarted();
       openNowPlayingMenu();
+      followMenuFinger(event.pointerId, x, y);
     }, HOLD_MS);
   });
   cover.addEventListener('pointermove', (event) => {
@@ -10402,3 +10422,72 @@ function renderSleepMenu(item, opts) {
     openNowPlayingMenu();
   });
 })();
+
+/* ------------------------------------------- press, slide and release */
+
+// A menu opened by holding can be used without lifting the finger: slide it
+// over the options and the one under it lights; lift on one and it is
+// chosen; slide off the menu and nothing is lit, and lifting there closes
+// the menu. Lifting without having moved leaves the menu open to tap, as it
+// always was. Nothing is lit until the finger moves, so whatever happened to
+// be under it when the menu appeared is not taken for a choice.
+const menuFinger = { id: null, entered: false };
+
+function fingerOverMenu(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return Boolean(el && el.closest('#item-menu'));
+}
+
+function followMenuFinger(pointerId, x0, y0) {
+  menuFinger.id = pointerId;
+  menuFinger.entered = false;
+  let moved = false;
+  let lit = null;
+  const light = (el) => {
+    if (lit === el) return;
+    if (lit) lit.classList.remove('finger');
+    lit = el;
+    if (lit) lit.classList.add('finger');
+  };
+  const onMove = (event) => {
+    if (event.pointerId !== pointerId) return;
+    if (!moved && Math.hypot(event.clientX - x0, event.clientY - y0) < HOLD_SLOP) return;
+    moved = true;
+    const menu = $('item-menu');
+    if (menu.classList.contains('hidden') || state.dragSelect) {
+      light(null);
+      return;
+    }
+    const el = document.elementFromPoint(event.clientX, event.clientY);
+    const inMenu = el && el.closest('#item-menu');
+    if (inMenu) menuFinger.entered = true;
+    // Only the menu's own buttons light; the header and a text box do not.
+    light(inMenu ? el.closest('#item-menu button:not([type="submit"])') : null);
+  };
+  const onEnd = (event) => {
+    if (event.pointerId !== pointerId) return;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onEnd);
+    document.removeEventListener('pointercancel', onEnd);
+    menuFinger.id = null;
+    const chosen = event.type === 'pointerup' ? lit : null;
+    light(null);
+    if (!moved || state.dragSelect || $('item-menu').classList.contains('hidden')) return;
+    if (chosen) chosen.click();
+    else closeItemMenu();
+    // The browser's own click for this lift, if it sends one, is not a
+    // second choice or a click outside.
+    state.swallowClickUntil = performance.now() + 500;
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onEnd);
+  document.addEventListener('pointercancel', onEnd);
+}
+
+window.addEventListener('click', (event) => {
+  if (performance.now() > (state.swallowClickUntil || 0)) return;
+  state.swallowClickUntil = 0;
+  state.suppressClick = false;
+  event.stopPropagation();
+  event.preventDefault();
+}, true);

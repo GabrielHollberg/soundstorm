@@ -1137,12 +1137,16 @@ button.danger {
   font-size: 14px;
   text-align: left;
 }
-.menu-item:hover, .menu-item:focus-visible, .menu-back:hover {
-  background: rgba(255, 255, 255, 0.06);
-  filter: none;
-  outline: none;
+/* Hover only where there is a real pointer: on a touch screen :hover and
+   :active stick to whatever the finger rests on, which lit an option just
+   for being under the finger when the menu opened. A finger sliding over
+   the menu lights the one under it instead (.finger). */
+.menu-item:focus-visible { background: rgba(255, 255, 255, 0.06); filter: none; outline: none; }
+@media (hover: hover) {
+  .menu-item:hover, .menu-back:hover { background: rgba(255, 255, 255, 0.06); filter: none; outline: none; }
+  .menu-item:active { background: rgba(255, 255, 255, 0.1); }
 }
-.menu-item:active { background: rgba(255, 255, 255, 0.1); }
+.menu-item.finger, .menu-back.finger { background: rgba(255, 255, 255, 0.12); }
 .menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-detail { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .menu-item .icon-chevron { width: 16px; height: 16px; color: var(--muted); }
