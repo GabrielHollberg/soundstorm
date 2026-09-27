@@ -429,8 +429,22 @@ judged on in its first minute:
   middle for the lyrics, controls at the bottom; there is no lyrics button,
   because lyrics always show when a song has them. A computer keeps the big
   cover on the left; a phone puts a small one beside the title. The top-right
-  button is Up next, which takes the lyrics' place. A song with no lyrics
-  shows its cover in the middle instead - there is nothing else to put there.
+  button is Up next, which takes the lyrics' place.
+
+  **A song keeps the lyrics layout whether it has lyrics or not, and while
+  they load - a reversal.** A song without lyrics used to get a layout of
+  its own (the cover alone), and so did every song until its lyrics had
+  arrived, so each song change jumped once they came, and a song without
+  them jumped back: reported as things glitching when lyrics load. Now
+  everything sits exactly where it would with lyrics; the space is empty
+  while they load (so a song that has them never flashes "none") and says
+  "No lyrics for this song" quietly when there are none. Only an audiobook
+  keeps the cover-alone layout, as it never has lyrics. Measured on phone
+  and computer, a song with lyrics, one without, loading and loaded: cover,
+  title, controls, timeline and the lyrics box identical to the pixel. The
+  blurred backdrop fades from one cover to the next once the new one is
+  decoded (two layers taking turns), rather than swapping, or vanishing for a
+  song without a cover.
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into
   the full lyrics (a tap there never seeks), and tapping the small cover at

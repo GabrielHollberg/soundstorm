@@ -4686,7 +4686,8 @@ function npTransition(update) {
 // to a line, since the lines are too small a target to aim at. The small
 // cover at the top shrinks them back.
 $('np-lyrics').addEventListener('click', (event) => {
-  if (audio.npMode !== 'strip') return;
+  // Nothing to grow into without lyrics.
+  if (audio.npMode !== 'strip' || !(audio.lyrics && audio.lyrics.lines.length)) return;
   event.stopPropagation();
   event.preventDefault();
   npTransition(() => {
@@ -5209,8 +5210,7 @@ function renderNowPlaying() {
     img.src = art || NO_COVER;
     img.onerror = () => { img.onerror = null; img.src = NO_COVER; };
   }
-  if (art) $('np-backdrop').src = art;
-  else $('np-backdrop').removeAttribute('src');
+  setBackdrop(art);
   tintStatusBar(art);
   $('np-title').textContent = item.title;
   $('np-sub').textContent = [(item.creators || []).join(', '), (item.extra && item.extra.album) || item.subtitle]
@@ -5803,11 +5803,18 @@ function renderLyrics() {
   //   lyrics - the lyrics in the middle, the same small cover;
   //   strip  - a phone's default: the big cover, and under the title a strip
   //            of the few lines around the one being sung (tap it for lyrics);
-  //   cover  - no lyrics at all: the big cover and nothing else.
+  //   cover  - an audiobook: the big cover and nothing else.
   // A computer has room for the cover beside the lyrics, so it never strips.
+  //
+  // A song keeps the lyrics layout whether or not it has lyrics, and while
+  // they load: everything sits exactly where it would with them, and the
+  // space says so quietly when there are none. Switching layout on the
+  // answer made every song change jump once its lyrics arrived, and jump
+  // back for a song without.
   const phone = matchMedia('(max-width: 760px)').matches;
+  const music = Boolean(audio.item && audio.item.kind === 'music');
   const mode = audio.showQueue ? 'queue'
-    : !has ? 'cover'
+    : !music ? 'cover'
     : (audio.lyricsBig || !phone) ? 'lyrics' : 'strip';
   audio.npMode = mode;
   const showing = mode === 'lyrics' || mode === 'strip';
@@ -5819,7 +5826,18 @@ function renderLyrics() {
   $('now-playing').classList.toggle('strip-on', mode === 'strip');
   const box = $('np-lyrics');
   box.replaceChildren();
-  if (!has) return;
+  if (!has) {
+    box.classList.remove('unsynced');
+    // Nothing while they load, so a song that has them does not flash a
+    // "none" first.
+    if (music && audio.lyrics && !audio.lyrics.loading) {
+      const none = document.createElement('p');
+      none.className = 'np-lyrics-none';
+      none.textContent = 'No lyrics for this song';
+      box.append(none);
+    }
+    return;
+  }
   box.classList.toggle('unsynced', !audio.lyrics.synced);
   audio.lyrics.lines.forEach((line, i) => {
     const el = document.createElement(audio.lyrics.synced ? 'button' : 'p');
@@ -6584,6 +6602,31 @@ for (const type of ['play', 'pause', 'ended']) {
   $('audio-player').addEventListener(type, () => {
     $('now-playing').classList.toggle('playing', !$('audio-player').paused);
   });
+}
+
+// Now Playing's blurred backdrop fades from one cover to the next, only once
+// the new one is decoded, rather than swapping (or, for a song without a
+// cover, vanishing) at once. Two layers take turns in front.
+const backdrops = [$('np-backdrop'), $('np-backdrop-2')];
+let frontBackdrop = 0;
+function setBackdrop(art) {
+  const want = art ? new URL(art, location.href).href : '';
+  if (setBackdrop.want === want) return;
+  setBackdrop.want = want;
+  const front = backdrops[frontBackdrop];
+  if (!art) {
+    front.classList.add('faded');
+    return;
+  }
+  const back = backdrops[1 - frontBackdrop];
+  const swap = () => {
+    if (setBackdrop.want !== want) return;
+    back.classList.remove('faded');
+    front.classList.add('faded');
+    frontBackdrop = 1 - frontBackdrop;
+  };
+  back.src = art;
+  back.decode().then(swap, swap);
 }
 
 // For the reader, a module: read-along's highlight, on unless turned off.

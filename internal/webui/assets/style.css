@@ -1406,6 +1406,8 @@ body.np-open { overflow: hidden; }
   pointer-events: none;
 }
 .np-backdrop:not([src]) { display: none; }
+.np-backdrop { transition: opacity 0.8s ease; }
+.np-backdrop.faded { opacity: 0; }
 .np-inner {
   position: relative;
   height: 100%;
@@ -2935,3 +2937,6 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
   .now-playing.spin #np-cover, .now-playing.spin .np-thumb { animation: none; }
 }
 #np-cover { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+/* A song without lyrics keeps the lyrics' space, and says so there. */
+.np-lyrics-none { margin: 0; text-align: center; font-size: 15px; color: rgba(255, 255, 255, 0.45); }
