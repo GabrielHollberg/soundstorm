@@ -45,6 +45,11 @@ const (
 var (
 	ErrNotFound = errors.New("no such playlist")
 	ErrFull     = errors.New("that list is full")
+	// ErrAlreadyIn is a song added to a playlist it is already in: a
+	// playlist holds each song once.
+	ErrAlreadyIn = errors.New("that song is already in this playlist")
+	// ErrBadSort is an order a playlist does not offer.
+	ErrBadSort = errors.New("that is not a way to order a playlist")
 )
 
 // Entry is one item in a list, as it was when it was added.
@@ -60,7 +65,14 @@ type Playlist struct {
 	Items     []Entry   `json:"items"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Sort is how its songs are shown and played: "" is A to Z by title,
+	// "artist", "added" (newest first), or "custom" - the order they were
+	// put in and dragged to, which Items always keeps whatever the sort.
+	Sort string `json:"sort,omitempty"`
 }
+
+// PlaylistSorts are the orders a playlist can be shown in.
+var PlaylistSorts = map[string]bool{"": true, "title": true, "artist": true, "added": true, "custom": true}
 
 type collection struct {
 	// "favourites" is the name on disk since the first file: kept, or every
@@ -320,6 +332,25 @@ func (s *Store) RenamePlaylist(userID, id, name string) error {
 	return s.save(userID, c)
 }
 
+// SetPlaylistSort chooses how a playlist's songs are ordered. Items keep
+// their own order, so choosing "custom" again brings a hand-made order back.
+func (s *Store) SetPlaylistSort(userID, id, sort string) error {
+	if !PlaylistSorts[sort] {
+		return ErrBadSort
+	}
+	if sort == "title" {
+		sort = ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, c, err := s.find(userID, id)
+	if err != nil {
+		return err
+	}
+	p.Sort = sort
+	return s.save(userID, c)
+}
+
 // DeletePlaylist removes a playlist. The songs in it are untouched - a
 // playlist only ever pointed at them.
 func (s *Store) DeletePlaylist(userID, id string) error {
@@ -347,6 +378,11 @@ func (s *Store) AddToPlaylist(userID, id string, item media.Item) (int, error) {
 	p, c, err := s.find(userID, id)
 	if err != nil {
 		return 0, err
+	}
+	for _, e := range p.Items {
+		if sameItem(e, item.SourceID, item.ID) {
+			return 0, ErrAlreadyIn
+		}
 	}
 	if len(p.Items) >= MaxPlaylistItems {
 		return 0, ErrFull
@@ -653,4 +689,51 @@ func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
 		return Prefs{}, err
 	}
 	return *p, nil
+}
+
+// Ordered is a playlist's entries in the order its sort shows them, each with
+// its place in Items - what removing and moving go by.
+func (p Playlist) Ordered() []OrderedEntry {
+	out := make([]OrderedEntry, len(p.Items))
+	for i, e := range p.Items {
+		out[i] = OrderedEntry{Entry: e, Position: i}
+	}
+	low := func(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+	artist := func(e Entry) string {
+		if len(e.Item.Creators) > 0 {
+			return low(e.Item.Creators[0])
+		}
+		return ""
+	}
+	switch p.Sort {
+	case "custom":
+	case "added":
+		sort.SliceStable(out, func(i, j int) bool { return out[i].AddedAt.After(out[j].AddedAt) })
+	case "artist":
+		sort.SliceStable(out, func(i, j int) bool {
+			a, b := out[i].Entry, out[j].Entry
+			if artist(a) != artist(b) {
+				return artist(a) < artist(b)
+			}
+			if low(a.Item.Extra["album"]) != low(b.Item.Extra["album"]) {
+				return low(a.Item.Extra["album"]) < low(b.Item.Extra["album"])
+			}
+			return low(a.Item.Title) < low(b.Item.Title)
+		})
+	default:
+		sort.SliceStable(out, func(i, j int) bool {
+			a, b := out[i].Entry, out[j].Entry
+			if low(a.Item.Title) != low(b.Item.Title) {
+				return low(a.Item.Title) < low(b.Item.Title)
+			}
+			return artist(a) < artist(b)
+		})
+	}
+	return out
+}
+
+// OrderedEntry is an entry and its place in its playlist's Items.
+type OrderedEntry struct {
+	Entry
+	Position int
 }

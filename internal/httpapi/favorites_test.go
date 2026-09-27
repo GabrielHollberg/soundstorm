@@ -108,12 +108,21 @@ func TestPlaylistsHoldSongsInOrder(t *testing.T) {
 	if resp, _ := h.do(t, http.MethodPost, "/api/playlists/"+p.ID+"/items", `{"source":"ebooks","id":"b1"}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a book in a playlist = %d, want 400", resp.StatusCode)
 	}
+	// Each song once.
+	if resp, _ := h.do(t, http.MethodPost, "/api/playlists/"+p.ID+"/items", `{"source":"navidrome","id":"b"}`); resp.StatusCode != http.StatusConflict {
+		t.Errorf("a song added twice = %d, want 409", resp.StatusCode)
+	}
+	// A hand-made order is Custom order; the default is A to Z.
+	if resp, body := h.do(t, http.MethodPatch, "/api/playlists/"+p.ID, `{"sort":"custom"}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("sort: %d %s", resp.StatusCode, body)
+	}
 	h.do(t, http.MethodPost, "/api/playlists/"+p.ID+"/move", `{"from":2,"to":0}`)
 	h.do(t, http.MethodDelete, "/api/playlists/"+p.ID+"/items/1", "")
 
 	_, body = h.do(t, http.MethodGet, "/api/playlists/"+p.ID, "")
 	var got struct {
 		Name  string
+		Sort  string
 		Items []struct{ ID string } `json:"items"`
 	}
 	_ = json.Unmarshal(body, &got)
@@ -121,7 +130,7 @@ func TestPlaylistsHoldSongsInOrder(t *testing.T) {
 	for _, it := range got.Items {
 		order += it.ID
 	}
-	if got.Name != "Road trip" || order != "cb" {
+	if got.Name != "Road trip" || order != "cb" || got.Sort != "custom" {
 		t.Errorf("playlist = %q %q, want Road trip with c then b", got.Name, order)
 	}
 

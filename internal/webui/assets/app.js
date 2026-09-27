@@ -3013,11 +3013,16 @@ function renderSelectPlaylists(items, lists) {
   const note = menuNote();
   const add = async (id) => {
     let failed = '';
+    let added = 0;
+    let there = 0;
     for (const it of items) {
-      const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}/items`, {
+      const { ok, status, body } = await api(`/api/playlists/${encodeURIComponent(id)}/items`, {
         method: 'POST', body: JSON.stringify({ source: it.sourceId, id: it.id }),
       });
+      // Already in it: a playlist holds each song once, so it is skipped.
+      if (status === 409) { there++; continue; }
       if (!ok) { failed = (body && body.error) || 'Could not add them all.'; break; }
+      added++;
     }
     if (failed) {
       note.textContent = failed;
@@ -3025,7 +3030,10 @@ function renderSelectPlaylists(items, lists) {
       return;
     }
     setSelecting(false);
-    showToast(`Added ${items.length} song${items.length === 1 ? '' : 's'} to the playlist.`);
+    const s = (n) => (n === 1 ? '' : 's');
+    showToast(there
+      ? (added ? `Added ${added} song${s(added)}; ${there} ${there === 1 ? 'was' : 'were'} already in it.` : 'Those are all in it already.')
+      : `Added ${added} song${s(added)} to the playlist.`);
   };
   const list = document.createElement('div');
   list.className = 'menu-scroll';
@@ -3435,7 +3443,10 @@ function renderPlaylistMenu(item, lists) {
       method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }),
     });
     if (!ok) say((body && body.error) || 'Could not add it.');
-    else closeItemMenu();
+    else {
+      closeItemMenu();
+      showToast(`Added to ${(lists.find((l) => l.id === id) || {}).name || 'the playlist'}.`);
+    }
   };
 
   const rows = lists.map((list) => menuItem('playlist', list.name, () => add(list.id),
@@ -3539,6 +3550,10 @@ function renderSearchHint() {
   $('search-input').setAttribute('aria-label', hint.slice(0, -1));
 }
 
+// The Playlists page: a card for each, A to Z, like every other shelf - a
+// collage of its covers, its name and how many songs. Tap to open it; the
+// shuffle button on its cover plays it shuffled straight away; a hold offers
+// play, shuffle and delete. "New playlist" comes first.
 async function showPlaylists() {
   const view = $('playlists-view');
   const { ok, body } = await api('/api/playlists');
@@ -3548,45 +3563,213 @@ async function showPlaylists() {
   const lists = all.filter((list) => words.every((w) => list.name.toLowerCase().includes(w)));
   view.replaceChildren();
 
-  const title = document.createElement('h2');
-  title.textContent = 'Playlists';
-  view.append(title);
+  const form = document.createElement('form');
+  form.className = 'playlist-new-form hidden';
+  const input = document.createElement('input');
+  input.placeholder = 'Name the new playlist';
+  input.maxLength = 100;
+  input.setAttribute('aria-label', 'New playlist name');
+  const create = document.createElement('button');
+  create.type = 'submit';
+  create.textContent = 'Create';
+  form.append(input, create);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) return;
+    const made = await api('/api/playlists', { method: 'POST', body: JSON.stringify({ name }) });
+    if (made.ok && made.body && made.body.id) showPlaylist(made.body.id);
+    else showToast((made.body && made.body.error) || 'Could not make the playlist.');
+  });
+  view.append(form);
 
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid mix-grid playlist-grid';
+  if (!words.length) {
+    const holder = document.createElement('div');
+    holder.className = 'item-holder';
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'item mix-card playlist-new';
+    const art = document.createElement('div');
+    art.className = 'art-wrap mix-cover playlist-new-art';
+    art.append(icon('plus'));
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const t = document.createElement('span');
+    t.className = 'title';
+    t.textContent = 'New playlist';
+    meta.append(t);
+    card.append(art, meta);
+    card.addEventListener('click', () => {
+      show(form, true);
+      input.focus();
+    });
+    holder.append(card);
+    grid.append(holder);
+  }
+  for (const list of lists) grid.append(playlistCard(list));
+  view.append(grid);
   if (!lists.length) {
     const empty = document.createElement('p');
-    empty.className = 'muted';
+    empty.className = 'muted playlist-empty';
     empty.textContent = all.length
       ? 'No playlists match.'
-      : `No playlists yet. ${MENU_HOW} any song and choose Add to playlist.`;
+      : `No playlists yet. Make one here, or ${MENU_HOW.toLowerCase()} any song and choose Add to playlist.`;
     view.append(empty);
+  }
+}
+
+async function playlistSongs(id) {
+  const got = await api(`/api/playlists/${encodeURIComponent(id)}`);
+  return (got.ok && got.body && got.body.items) || [];
+}
+
+async function playPlaylist(id, shuffle) {
+  const songs = await playlistSongs(id);
+  if (!songs.length) {
+    showToast('That playlist is empty.');
     return;
   }
-  const ul = document.createElement('ul');
-  ul.className = 'playlist-list';
-  for (const list of lists) {
-    const li = document.createElement('li');
-    const open = document.createElement('button');
-    open.type = 'button';
-    open.className = 'playlist-open';
-    open.textContent = list.name;
-    open.addEventListener('click', () => showPlaylist(list.id));
-    const count = document.createElement('span');
-    count.className = 'muted';
-    count.textContent = `${list.count} song${list.count === 1 ? '' : 's'}`;
-    const play = document.createElement('button');
-    play.type = 'button';
-    play.className = 'small';
-    play.textContent = 'Play';
-    play.disabled = !list.count;
-    play.addEventListener('click', async () => {
-      const got = await api(`/api/playlists/${encodeURIComponent(list.id)}`);
-      if (got.ok && got.body) playQueue(got.body.items, 0);
-    });
-    li.append(open, count, play);
-    ul.append(li);
-  }
-  view.append(ul);
+  playQueue(shuffle ? shuffled(songs) : songs, 0);
 }
+
+function playlistCover(list) {
+  const wrap = document.createElement('div');
+  wrap.className = 'art-wrap mix-cover';
+  const art = (list.covers || []).slice(0, 4);
+  if (art.length >= 4) wrap.classList.add('collage');
+  for (const c of art.length >= 4 ? art : art.slice(0, 1)) {
+    const img = document.createElement('img');
+    img.src = artUrl(c.sourceId, c.artId);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    wrap.append(img);
+  }
+  if (!art.length) wrap.append(noCover());
+  return wrap;
+}
+
+function playlistCard(list) {
+  const holder = document.createElement('div');
+  holder.className = 'item-holder';
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'item mix-card playlist-card';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const title = document.createElement('span');
+  title.className = 'title';
+  title.textContent = list.name;
+  const sub = document.createElement('span');
+  sub.className = 'sub';
+  sub.textContent = `${list.count} song${list.count === 1 ? '' : 's'}`;
+  meta.append(title, sub);
+  card.append(playlistCover(list), meta);
+  card.addEventListener('click', (event) => {
+    if (state.suppressClick) {
+      state.suppressClick = false;
+      event.stopPropagation();
+      return;
+    }
+    showPlaylist(list.id);
+  });
+  // Shuffle it from here, as a mix plays from its card.
+  const shuffle = document.createElement('button');
+  shuffle.type = 'button';
+  shuffle.className = 'playlist-shuffle';
+  shuffle.setAttribute('aria-label', `Shuffle ${list.name}`);
+  shuffle.title = 'Shuffle';
+  shuffle.append(icon('shuffle'));
+  shuffle.disabled = !list.count;
+  shuffle.addEventListener('click', (event) => {
+    event.stopPropagation();
+    playPlaylist(list.id, true);
+  });
+  holder.append(card, shuffle);
+  attachHoldMenu(card, () => openPlaylistMenu(list, card.querySelector('.art-wrap') || card));
+  return holder;
+}
+
+// A hold (or right-click) that opens a menu, for cards that are not items -
+// playlists - with the same timing, slop and press-slide-release as the rest.
+function attachHoldMenu(card, open) {
+  let timer = null;
+  let x = 0;
+  let y = 0;
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+    card.classList.remove('pressing');
+  };
+  card.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' || event.button !== 0) return;
+    x = event.clientX;
+    y = event.clientY;
+    card.classList.add('pressing');
+    timer = setTimeout(() => {
+      timer = null;
+      card.classList.remove('pressing');
+      state.suppressClick = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      holdStarted();
+      open();
+      followMenuFinger(event.pointerId, x, y);
+    }, HOLD_MS);
+  });
+  card.addEventListener('pointermove', (event) => {
+    if (timer && Math.hypot(event.clientX - x, event.clientY - y) > HOLD_SLOP) cancel();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) card.addEventListener(type, cancel);
+  card.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    cancel();
+    if (!state.holding) open();
+  });
+}
+
+function openPlaylistMenu(list, anchor) {
+  const menu = $('item-menu');
+  state.menuFor = list;
+  state.menuAnchor = anchor;
+  state.menuOpts = {};
+  const head = document.createElement('div');
+  head.className = 'menu-head';
+  const t = document.createElement('strong');
+  t.textContent = list.name;
+  const sub = document.createElement('span');
+  sub.textContent = `Playlist \u00b7 ${list.count} song${list.count === 1 ? '' : 's'}`;
+  head.append(t, sub);
+  const entries = [head];
+  if (list.count) {
+    entries.push(
+      menuItem('play', 'Play', () => { closeItemMenu(); playPlaylist(list.id, false); }),
+      menuItem('shuffle', 'Shuffle', () => { closeItemMenu(); playPlaylist(list.id, true); }),
+    );
+  }
+  entries.push(menuItem('trash', 'Delete playlist', (event) => {
+    // Two taps, not a browser dialog: the first asks, the second deletes.
+    event.stopPropagation();
+    const b = event.currentTarget;
+    if (!b.classList.contains('confirming')) {
+      b.classList.add('confirming');
+      b.querySelector('.menu-label').textContent = 'Tap again to delete';
+      return;
+    }
+    closeItemMenu();
+    api(`/api/playlists/${encodeURIComponent(list.id)}`, { method: 'DELETE' }).then(() => showPlaylists());
+  }, { className: 'menu-danger' }));
+  menu.replaceChildren(...entries);
+  placeMenu(menu, anchor);
+}
+
+const PLAYLIST_SORTS = [
+  ['title', 'A to Z'],
+  ['artist', 'Artist'],
+  ['added', 'Recently added'],
+  ['custom', 'Custom order'],
+];
 
 async function showPlaylist(id) {
   const view = $('playlists-view');
@@ -3633,6 +3816,27 @@ async function showPlaylist(id) {
     id: `playlist:${id}`, type: 'playlist', title: body.name, subtitle: 'Playlist',
     sourceId: first.sourceId, artId: first.artId,
   }, songs));
+  // How its songs are ordered: A to Z unless chosen otherwise, and played in
+  // the order shown. Custom order is the hand-made one, dragged by handles.
+  const sortBy = body.sort || 'title';
+  const sortButton = document.createElement('button');
+  sortButton.type = 'button';
+  sortButton.className = 'ghost small playlist-sort';
+  sortButton.append(document.createTextNode(`Sort: ${(PLAYLIST_SORTS.find(([k]) => k === sortBy) || PLAYLIST_SORTS[0])[1]}`), icon('down'));
+  sortButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const menu = $('item-menu');
+    state.menuFor = 'playlist-sort';
+    state.menuAnchor = sortButton;
+    state.menuOpts = {};
+    menu.replaceChildren(...PLAYLIST_SORTS.map(([key, label]) => menuItem(key === sortBy ? 'check' : 'playlist', label, async () => {
+      closeItemMenu();
+      if (key === sortBy) return;
+      await api(path, { method: 'PATCH', body: JSON.stringify({ sort: key }) });
+      showPlaylist(id);
+    })));
+    placeMenu(menu, sortButton);
+  });
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'ghost small playlist-delete';
@@ -3648,7 +3852,11 @@ async function showPlaylist(id) {
     await api(path, { method: 'DELETE' });
     showPlaylists();
   });
-  text.append(kind, title, facts, buttons, remove);
+  // Its order and deleting it, on a line of their own under the play row.
+  const tools = document.createElement('div');
+  tools.className = 'playlist-tools';
+  tools.append(sortButton, remove);
+  text.append(kind, title, facts, buttons, tools);
   head.append(cover, text);
   view.append(back, head);
 
@@ -3705,17 +3913,21 @@ async function showPlaylist(id) {
       });
     });
 
-    const handle = document.createElement('button');
-    handle.type = 'button';
-    handle.className = 'np-icon playlist-handle';
-    handle.setAttribute('aria-label', `Move ${song.title}`);
-    handle.append(icon('grip'));
-    attachReorder(handle, li, list, async (from, to) => {
-      await api(`${path}/move`, { method: 'POST', body: JSON.stringify({ from: songs[from].position, to: songs[to].position }) });
-      showPlaylist(id);
-    });
-
-    li.append(play, drop, handle);
+    li.append(play, drop);
+    // Moving a song by hand is what Custom order is; in the others the
+    // order is worked out, so there is nothing to drag.
+    if (sortBy === 'custom') {
+      const handle = document.createElement('button');
+      handle.type = 'button';
+      handle.className = 'np-icon playlist-handle';
+      handle.setAttribute('aria-label', `Move ${song.title}`);
+      handle.append(icon('grip'));
+      attachReorder(handle, li, list, async (from, to) => {
+        await api(`${path}/move`, { method: 'POST', body: JSON.stringify({ from: songs[from].position, to: songs[to].position }) });
+        showPlaylist(id);
+      });
+      li.append(handle);
+    }
     list.append(li);
   });
   view.append(list);

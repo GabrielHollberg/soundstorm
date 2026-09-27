@@ -3120,3 +3120,32 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 }
 /* While the icons show, the title steps aside for the caption. */
 .now-playing.hold-icons .np-text { opacity: 0; transition: opacity 0.12s ease; }
+
+/* Playlists: cards like the mixes, "New playlist" first, and a shuffle
+   button on each cover, as a mix has its play button. */
+.playlist-new-art { display: grid; place-items: center; color: var(--muted); border: 2px dashed var(--border); background: none; }
+.playlist-new-art .icon { width: 40px; height: 40px; }
+.playlist-shuffle {
+  position: absolute;
+  right: 10px;
+  top: calc(100cqw - 54px);
+  z-index: 2;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%;
+  background: var(--accent);
+  color: #0b0d12;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  -webkit-tap-highlight-color: transparent;
+}
+.playlist-shuffle .icon { width: 20px; height: 20px; }
+.playlist-shuffle:disabled { display: none; }
+.grid.selecting .playlist-shuffle { display: none; }
+.playlist-new-form { display: flex; gap: 8px; margin: 4px 20px 14px; }
+.playlist-new-form.hidden { display: none; }
+.playlist-new-form input { flex: 1; min-width: 0; }
+.playlist-empty { margin: 8px 20px; }
+.playlist-sort { display: inline-flex; align-items: center; gap: 4px; }
+.playlist-sort .icon { width: 14px; height: 14px; }
+.playlist-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.playlist-tools .playlist-delete { margin: 0; }

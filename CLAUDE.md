@@ -1130,6 +1130,21 @@ lists newest first): the length is under **Info** in the hold menu, with
 everything else the backend said, and a menu page that grows is placed
 again so none of it is off screen.
 
+**A playlist holds each song once, and shows its songs A to Z unless told
+otherwise.** Adding one already there is a 409 ("already in this
+playlist"); adding several skips those and says how many. Each playlist
+has its own **Sort** (on its page, beside Delete): A to Z (the default,
+stored as nothing), Artist, Recently added, or Custom order - the order the
+songs were put in and dragged to, which `Items` always keeps whatever the
+sort, so choosing Custom again brings a hand-made order back. The server
+returns songs in the sorted order (`Playlist.Ordered`), each with its
+position in `Items` for removing and moving, and they play in that order.
+Drag handles only show in Custom order. The **Playlists page** is cards,
+A to Z, like the mixes: a collage of up to four covers, name and count,
+"New playlist" first; tapping opens one, a shuffle button on the cover
+plays it shuffled (as a mix card has its play button), a hold offers Play,
+Shuffle and Delete. It was a plain list of names with Play buttons.
+
 **Favorites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A
 playlist of films has no player to play it in.

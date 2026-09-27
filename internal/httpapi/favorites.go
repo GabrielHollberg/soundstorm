@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -64,6 +66,10 @@ func (s *Server) collectionsError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "no such playlist")
 	case errors.Is(err, collections.ErrFull):
 		writeError(w, http.StatusInsufficientStorage, "that list is full")
+	case errors.Is(err, collections.ErrAlreadyIn):
+		writeError(w, http.StatusConflict, "That song is already in this playlist.")
+	case errors.Is(err, collections.ErrBadSort):
+		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		s.log.Warn("collections", "err", err)
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -117,7 +123,22 @@ func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 // --- playlists ----------------------------------------------------------------
 
 func playlistSummary(p collections.Playlist) map[string]any {
-	return map[string]any{"id": p.ID, "name": p.Name, "count": len(p.Items), "updatedAt": p.UpdatedAt}
+	sortName := p.Sort
+	if sortName == "" {
+		sortName = "title"
+	}
+	// Up to four covers from different albums, for the card's collage, in
+	// the order the playlist shows its songs.
+	covers := []map[string]string{}
+	seen := map[string]bool{}
+	for _, e := range p.Ordered() {
+		if a := e.Item.ArtID; a != "" && !seen[a] && len(covers) < 4 {
+			seen[a] = true
+			covers = append(covers, map[string]string{"sourceId": e.Item.SourceID, "artId": a})
+		}
+	}
+	return map[string]any{"id": p.ID, "name": p.Name, "count": len(p.Items), "updatedAt": p.UpdatedAt,
+		"sort": sortName, "covers": covers}
 }
 
 func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +151,10 @@ func (s *Server) handlePlaylists(w http.ResponseWriter, r *http.Request) {
 		s.collectionsError(w, err)
 		return
 	}
+	// A to Z by name, as a shelf is.
+	sort.SliceStable(lists, func(i, j int) bool {
+		return strings.ToLower(lists[i].Name) < strings.ToLower(lists[j].Name)
+	})
 	out := make([]map[string]any, 0, len(lists))
 	for _, p := range lists {
 		out = append(out, playlistSummary(p))
@@ -174,10 +199,12 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 		media.Item
 		Position int `json:"position"`
 	}
+	// In the order the playlist's sort shows them - which is also the order
+	// they play in.
 	items := make([]row, 0, len(p.Items))
-	for i, e := range p.Items {
+	for _, e := range p.Ordered() {
 		if _, ok := s.reg.ByID(r.Context(), e.Item.SourceID); ok {
-			items = append(items, row{Item: e.Item, Position: i})
+			items = append(items, row{Item: e.Item, Position: e.Position})
 		}
 	}
 	out := playlistSummary(p)
@@ -190,18 +217,28 @@ func (s *Server) handleRenamePlaylist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// A new name, a new order, or both.
 	var body struct {
-		Name string `json:"name"`
+		Name *string `json:"name"`
+		Sort *string `json:"sort"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCollectionBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "expected a JSON body with name")
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxCollectionBody)).Decode(&body); err != nil || (body.Name == nil && body.Sort == nil) {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with name or sort")
 		return
 	}
-	if err := s.collections.RenamePlaylist(user.ID, r.PathValue("id"), body.Name); err != nil {
-		s.collectionsError(w, err)
-		return
+	if body.Name != nil {
+		if err := s.collections.RenamePlaylist(user.ID, r.PathValue("id"), *body.Name); err != nil {
+			s.collectionsError(w, err)
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"renamed": true})
+	if body.Sort != nil {
+		if err := s.collections.SetPlaylistSort(user.ID, r.PathValue("id"), *body.Sort); err != nil {
+			s.collectionsError(w, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"renamed": body.Name != nil, "sorted": body.Sort != nil})
 }
 
 func (s *Server) handleDeletePlaylist(w http.ResponseWriter, r *http.Request) {

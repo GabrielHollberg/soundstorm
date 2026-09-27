@@ -48,10 +48,14 @@ func TestPlaylistsKeepTheirOrder(t *testing.T) {
 	if err != nil || p.Name != "Road trip" {
 		t.Fatalf("CreatePlaylist = %+v, %v", p, err)
 	}
-	for _, id := range []string{"a", "b", "c", "a"} {
+	for _, id := range []string{"a", "b", "c", "d"} {
 		if _, err := s.AddToPlaylist("u1", p.ID, song(id)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// A playlist holds each song once.
+	if _, err := s.AddToPlaylist("u1", p.ID, song("b")); err != ErrAlreadyIn {
+		t.Errorf("adding a song twice = %v, want ErrAlreadyIn", err)
 	}
 	order := func() string {
 		got, _ := s.Playlist("u1", p.ID)
@@ -61,15 +65,15 @@ func TestPlaylistsKeepTheirOrder(t *testing.T) {
 		}
 		return out
 	}
-	if order() != "abca" {
+	if order() != "abcd" {
 		t.Fatalf("order = %s", order())
 	}
 	_ = s.MovePlaylistItem("u1", p.ID, 3, 0)
-	if order() != "aabc" {
+	if order() != "dabc" {
 		t.Errorf("after moving the last to the front: %s", order())
 	}
 	_ = s.RemoveFromPlaylist("u1", p.ID, 1)
-	if order() != "abc" {
+	if order() != "dbc" {
 		t.Errorf("after removing the second: %s", order())
 	}
 	if _, err := s.Playlist("u2", p.ID); err != ErrNotFound {
@@ -188,5 +192,43 @@ func TestNothingPutAwayStaysAChoice(t *testing.T) {
 	}
 	if got, ok := p.HiddenPills["music"]; !ok || got == nil || len(got) != 0 {
 		t.Errorf("hiddenPills[music] = %#v (present %v), want an empty list", got, ok)
+	}
+}
+
+func TestAPlaylistShowsItsSongsInItsOwnOrder(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	p, _ := s.CreatePlaylist("u1", "Mix")
+	add := func(id, title, artist string) {
+		it := song(id)
+		it.Title, it.Creators = title, []string{artist}
+		if _, err := s.AddToPlaylist("u1", p.ID, it); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Millisecond) // distinct added times
+	}
+	add("1", "Zebra", "Alpha")
+	add("2", "apple", "Charlie")
+	add("3", "Mango", "Bravo")
+	order := func() string {
+		got, _ := s.Playlist("u1", p.ID)
+		out := ""
+		for _, e := range got.Ordered() {
+			out += e.Item.ID
+		}
+		return out
+	}
+	if order() != "231" {
+		t.Errorf("A to Z (the default) = %s, want 231", order())
+	}
+	for sort, want := range map[string]string{"artist": "132", "added": "321", "custom": "123", "title": "231"} {
+		if err := s.SetPlaylistSort("u1", p.ID, sort); err != nil {
+			t.Fatal(err)
+		}
+		if order() != want {
+			t.Errorf("%s = %s, want %s", sort, order(), want)
+		}
+	}
+	if err := s.SetPlaylistSort("u1", p.ID, "random"); err != ErrBadSort {
+		t.Errorf("a made-up order = %v", err)
 	}
 }
