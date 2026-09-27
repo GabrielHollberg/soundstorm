@@ -501,7 +501,8 @@ judged on in its first minute:
   and the box around a turned square is up to 1.4 times as wide - it drew a
   dark ring around the disc (measured: 404px box, 300px disc, at 63 degrees).
   The veil is the only dark: no shadow behind each icon (the owner's call).
-  The one under the finger gets a white glow; an option that is on
+  The one under the finger gets a white glow about 140px across, fading
+  softly - a thumb covers about 45px, and a glow the icon's size hid under it; an option that is on
   (shuffle, repeat, a sleep timer, downloaded) is the accent's colour, so it
   never looks like the finger's glow; a favorite's heart is red. Nothing else answers the finger while they
   show - the swipe stands down. Right-click still opens the full menu, and
