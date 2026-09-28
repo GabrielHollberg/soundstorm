@@ -5685,6 +5685,55 @@ function closeLooks() {
   show($('np-looks'), false);
   $('np-looks-btn').setAttribute('aria-expanded', 'false');
 }
+// vizLead: how far ahead of the player's clock the visuals run on this device,
+// in seconds - positive shows each moment sooner. Reported on a phone's own
+// speaker as the lightning landing late, while in Chrome on a computer it
+// struck on every boom: the gap between the clock a page reads and the sound
+// is the device's, and nothing a page can ask reports it. So it is set by eye,
+// in the Looks sheet, and kept per device.
+const VIZ_LEAD_KEY = 'soundstorm-viz-lead';
+function vizLead() {
+  const v = Number(localStorage.getItem(VIZ_LEAD_KEY));
+  return Number.isFinite(v) ? Math.max(-0.5, Math.min(1, v)) : 0;
+}
+function vizLeadLabel(v) {
+  if (Math.abs(v) < 0.001) return 'On time';
+  return `${Math.abs(v).toFixed(1)} s ${v > 0 ? 'sooner' : 'later'}`;
+}
+// The Looks sheet's timing row: Sooner and Later step by a tenth of a second,
+// and the sheet stays open so the change can be judged by eye.
+function looksTiming() {
+  const row = document.createElement('div');
+  row.className = 'np-looks-timing';
+  const label = document.createElement('span');
+  label.className = 'np-looks-timing-name';
+  label.textContent = 'Timing';
+  const value = document.createElement('span');
+  value.className = 'np-looks-timing-value';
+  value.textContent = vizLeadLabel(vizLead());
+  const step = (by, name) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'np-look';
+    b.textContent = name;
+    b.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const next = Math.round((vizLead() + by) * 10) / 10;
+      localStorage.setItem(VIZ_LEAD_KEY, String(Math.max(-0.5, Math.min(1, next))));
+      value.textContent = vizLeadLabel(vizLead());
+      // Carry on from the next boom after the new moment.
+      const t = ($('audio-player').currentTime || 0) + vizLead();
+      viz.bigAt = undefined;
+      viz.nextBoom = viz.heard && viz.heard.booms ? viz.heard.booms.filter((bm) => bm.t < t - 0.05).length : 0;
+    });
+    return b;
+  };
+  row.append(label, step(-0.1, 'Later'), value, step(0.1, 'Sooner'));
+  const hint = document.createElement('p');
+  hint.className = 'np-looks-hint';
+  hint.textContent = 'If the visuals land after the beat, choose Sooner.';
+  return [row, hint];
+}
 function renderLooks() {
   const body = $('np-looks-body');
   if (!body) return;
@@ -5716,7 +5765,7 @@ function renderLooks() {
       return b;
     }));
     return [h, grid];
-  }));
+  }), ...looksTiming());
 }
 $('np-looks-btn').addEventListener('click', (event) => {
   event.stopPropagation();
@@ -12272,7 +12321,10 @@ const viz = {
     const w = back.width, h = back.height;
     if (!w || !h) { this.raf = requestAnimationFrame((ts) => this.frame(ts)); return; }
 
-    const t = player.currentTime || 0;
+    // The song's moment as it is heard: the player's clock plus this device's
+    // own timing adjustment (vizLead), for a phone whose speaker runs behind
+    // or ahead of the clock the page can read.
+    const t = (player.currentTime || 0) + vizLead();
     const e = this.energy;
     const lv = this.level;
     let beat = this.beat;
@@ -12554,7 +12606,7 @@ $('audio-player').addEventListener('play', () => {
 });
 // A jump in the song starts the "what stands out" comparison afresh.
 $('audio-player').addEventListener('seeked', () => {
-  const t = $('audio-player').currentTime || 0;
+  const t = ($('audio-player').currentTime || 0) + vizLead();
   viz.bigAt = undefined;
   viz.nextBoom = viz.heard && viz.heard.booms ? viz.heard.booms.filter((bm) => bm.t < t - 0.05).length : 0;
   viz.kickPeaks = [];

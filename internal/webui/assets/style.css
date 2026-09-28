@@ -3302,6 +3302,10 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
   color: inherit; font-size: 13px; line-height: 1.15; -webkit-tap-highlight-color: transparent;
   min-width: 0;
 }
+.np-looks-timing { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 6px; margin: 12px 2px 0; }
+.np-looks-timing-name { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-right: 4px; }
+.np-looks-timing-value { font-size: 13px; text-align: center; min-width: 88px; font-variant-numeric: tabular-nums; }
+.np-looks-hint { margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
 .np-look span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-look .icon { width: 16px; height: 16px; flex: none; opacity: 0.8; }
 .np-look.on { border-color: var(--accent); background: rgba(90, 150, 255, 0.16); }

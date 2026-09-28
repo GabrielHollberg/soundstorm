@@ -708,6 +708,17 @@ judged on in its first minute:
   with the real file served from disk: strikes at 37.50, 37.93 and 38.25s,
   none else between 0:34 and 0:40. Saved analyses are version 4, carrying the
   booms; older downloads are heard again. The drop and measure code is gone.
+  **Timing is set by eye, per device.** Then reported from a phone's own
+  speaker as the strikes landing late, the first around the last boom. The
+  code was on time against the player's clock - the same analysis from the
+  96 kbps copy the app hears found the booms within 30ms, and with the CPU
+  slowed 6x frames stayed at 17ms and strikes at 37.49, 37.92 and 38.24s - so
+  the gap is between that clock and the device's sound, which nothing a page
+  can ask reports. The Looks sheet has a **Timing** row (Later, Sooner, a
+  tenth of a second a step, -0.5 to +1s, kept in localStorage as
+  `soundstorm-viz-lead`); the visualizer reads the clock plus it, and the
+  sheet stays open so it can be judged against the music. Checked: 0.3s
+  sooner moved the strikes to 37.19, 37.61 and 37.93s.
   **The Looks sheet** lost its Done button (cut off on a phone): a choice
   closes it, names only (three to a row fit), no scrolling on an iPhone 13,
   and Now Playing's swipe and hold stand down inside it - a scroll in it
