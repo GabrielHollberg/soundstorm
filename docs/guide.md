@@ -103,7 +103,11 @@ they're sung.
 ![Now Playing on a computer, lyrics lit up as they're sung](shots/desktop-now-playing.png)
 
 - **Swipe sideways** anywhere to go to the next or previous song.
-- **Tap the cover** to change how it looks, tapping again for the next look:
+- **The sparkle button** at the top of Now Playing opens **Cover looks**: every
+  look in one place, grouped as Covers, Visualizers and Full screen. Tap one to
+  try it straight away; Done or a tap outside closes it.
+- **Tap the cover** to go round the cover, a spinning disc, a record and the
+  last visualizer you used. The looks are:
   - the cover
   - a spinning disc
   - a **record**, with the cover as its label and the song, artist and album
@@ -112,11 +116,11 @@ they're sung.
     to the actual song: its beats, the kick and snare, and how loud it is.
     They are **Orb** (a glowing orb and a vortex of light trails),
     **Spectrum**, **Warp**, **Waves**, **Kaleidoscope** and **Fireworks**,
-    all in the cover's colours - plus **Flow**, an experimental one that fills
-    the whole screen behind the title and controls.
+    all in the cover's colours.
+  - six **full-screen** ones that fill the whole screen behind the title and
+    controls: **Flow**, **Storm** (rain and lightning), **Synthwave**,
+    **Galaxy**, **Aurora** and **Lava**.
 
-  Hold anywhere on Now Playing (or open its menu) and choose **Cover look** to
-  jump straight to one.
 
   Your choice is remembered on every device.
 - **Hold anywhere** to show every option as icons over the cover: info, sleep

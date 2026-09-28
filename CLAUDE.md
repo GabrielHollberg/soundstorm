@@ -655,6 +655,22 @@ judged on in its first minute:
   **Holding on a visualizer** draws no dark square over the animation: each
   icon gets a small dark glow of its own (`.np-hold-layer.viz`).
 
+  **Fifteen looks in three groups, picked in Now Playing** (`COVER_GROUPS`):
+  Covers (cover, disc, record), Visualizers where the cover is (Orb,
+  Spectrum, Warp, Waves, Kaleidoscope, Fireworks) and Full screen (Flow,
+  Storm, Synthwave, Galaxy, Aurora, Lava - `FULL_SCENES`, drawn on
+  `#np-stage` like Flow, `cover-full` on Now Playing). A **Looks** button in
+  Now Playing's top bar opens a sheet of all of them, grouped, the current one
+  ticked; it stays open while somebody tries them, each applying at once
+  behind it, and goes with Done or a tap elsewhere. The menu's Cover look opens
+  the same sheet. A tap on the cover now goes round cover, disc, record and
+  the last visualizer used (kept per device), rather than all fifteen. Storm
+  is rain plus a branching bolt and a flash on a loud bar's first beat;
+  Synthwave a neon grid racing under a striped sun that pulses on the kick;
+  Galaxy a spiral whose inner stars turn faster, arms winding tighter when
+  loud; Aurora curtains with hanging folds; Lava soft blobs rising, bubbles on
+  the snare. All ran at 58-59fps in Chrome on the preview.
+
   **No reduced-motion exception for these looks, and that was the iPhone
   bug.** Reported as the spinning and moving covers doing nothing on an
   iPhone 13 while working on Android. In Playwright's WebKit with an

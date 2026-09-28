@@ -682,6 +682,10 @@
         </div>
         <!-- Out of the player altogether: the music stops and the mini-player
              goes too. The arrow on the left only puts Now Playing away. -->
+        <!-- The cover's looks, picked right here: the cover, a disc, a record,
+             the visualizers and the full-screen ones. -->
+        <button id="np-looks-btn" class="np-icon" type="button" aria-label="Cover looks"
+                aria-haspopup="dialog" title="Cover looks"></button>
         <button id="np-exit" class="np-icon" type="button" aria-label="Stop and close the player"
                 title="Stop and close"></button>
       </header>
@@ -721,6 +725,13 @@
           </div>
         </div>
       </div>
+    </div>
+    <div id="np-looks" class="np-looks hidden" role="dialog" aria-label="Cover looks">
+      <div class="np-looks-head">
+        <strong>Cover looks</strong>
+        <button id="np-looks-done" type="button" class="np-looks-done">Done</button>
+      </div>
+      <div id="np-looks-body" class="np-looks-body"></div>
     </div>
   </section>
 
