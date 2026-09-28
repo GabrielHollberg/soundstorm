@@ -1912,6 +1912,13 @@ body.np-open { overflow: hidden; }
   .now-playing .np-text, .now-playing.panel-on .np-head .np-text { text-align: center; }
 }
 .now-playing.panel-on .np-head { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* A phone's lyrics view: the title and artist centred at the top, with no
+   small cover beside them - the lyrics are the whole middle. */
+@media (max-width: 760px) {
+  .now-playing.lyrics-on .np-thumb { display: none; }
+  .now-playing.lyrics-on .np-head { justify-content: center; cursor: default; }
+  .now-playing.lyrics-on .np-head .np-text { text-align: center; }
+}
 
 /* A phone's default: the big cover, the title under it, and a strip of the
    lines around the one being sung. Everything fits one screen. */

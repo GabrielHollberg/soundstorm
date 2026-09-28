@@ -447,6 +447,14 @@ judged on in its first minute:
   blurred backdrop fades from one cover to the next once the new one is
   decoded (two layers taking turns), rather than swapping, or vanishing for a
   song without a cover.
+  **Then a phone lost the strip and the "no lyrics" line, at the owner's
+  asking:** a song is always the big lyrics, the title and artist centred at
+  the top with no small cover beside them (`lyrics-on`), and a song without
+  lyrics leaves the middle empty, the title where it would be. The cover
+  itself no longer shows on a phone for a song, so the looks drawn where the
+  cover is (disc, record, Orb and the other cover visualizers) have nowhere
+  to draw there; the full-screen looks still run behind the lyrics. What
+  follows is how it was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into
   the full lyrics (a tap there never seeks), and tapping the small cover at

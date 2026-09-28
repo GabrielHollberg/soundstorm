@@ -6285,24 +6285,22 @@ async function loadLyrics(item) {
 
 function renderLyrics() {
   const has = Boolean(audio.lyrics && audio.lyrics.lines.length);
-  // Four ways the screen can be laid out:
+  // Three ways the screen can be laid out:
   //   queue  - Up next in the middle, a small cover beside the title;
-  //   lyrics - the lyrics in the middle, the same small cover;
-  //   strip  - a phone's default: the big cover, and under the title a strip
-  //            of the few lines around the one being sung (tap it for lyrics);
+  //   lyrics - the lyrics in the middle, big; on a phone the title centred at
+  //            the top with no cover by it, on a computer the cover beside;
   //   cover  - an audiobook: the big cover and nothing else.
-  // A computer has room for the cover beside the lyrics, so it never strips.
+  // A phone's default used to be a fourth, the strip - the big cover with a
+  // few small lines of lyrics under the title, tapped to grow. The owner
+  // asked for the big lyrics only.
   //
   // A song keeps the lyrics layout whether or not it has lyrics, and while
   // they load: everything sits exactly where it would with them, and the
-  // space says so quietly when there are none. Switching layout on the
+  // space is simply empty when there are none. Switching layout on the
   // answer made every song change jump once its lyrics arrived, and jump
   // back for a song without.
-  const phone = matchMedia('(max-width: 760px)').matches;
   const music = Boolean(audio.item && audio.item.kind === 'music');
-  const mode = audio.showQueue ? 'queue'
-    : !music ? 'cover'
-    : (audio.lyricsBig || !phone) ? 'lyrics' : 'strip';
+  const mode = audio.showQueue ? 'queue' : !music ? 'cover' : 'lyrics';
   audio.npMode = mode;
   const showing = mode === 'lyrics' || mode === 'strip';
   show($('np-lyrics'), showing);
@@ -6311,18 +6309,14 @@ function renderLyrics() {
   // controls at the bottom - whenever the middle is not the cover.
   $('now-playing').classList.toggle('panel-on', mode === 'lyrics' || mode === 'queue');
   $('now-playing').classList.toggle('strip-on', mode === 'strip');
+  $('now-playing').classList.toggle('lyrics-on', mode === 'lyrics');
   const box = $('np-lyrics');
   box.replaceChildren();
   if (!has) {
+    // No words for a song without lyrics - the space is left empty, with the
+    // title where it always is (the owner's call; "No lyrics for this song"
+    // used to sit there).
     box.classList.remove('unsynced');
-    // Nothing while they load, so a song that has them does not flash a
-    // "none" first.
-    if (music && audio.lyrics && !audio.lyrics.loading) {
-      const none = document.createElement('p');
-      none.className = 'np-lyrics-none';
-      none.textContent = 'No lyrics for this song';
-      box.append(none);
-    }
     return;
   }
   box.classList.toggle('unsynced', !audio.lyrics.synced);
