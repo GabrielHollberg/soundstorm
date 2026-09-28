@@ -12020,6 +12020,12 @@ function applyCoverStyle() {
   np.classList.toggle('cover-full', FULL_STYLES.includes(style));
   renderCoverDeco();
   renderLooks();
+  // The song's beats, bass and loudness for the visualizer - asked for here,
+  // not only while the cover is on screen as it once was: every visualizer
+  // is full screen now and a phone never shows the cover under them, so the
+  // analysis stopped being asked for at all and they fell back to a slow
+  // pulse of no song in particular.
+  if (VIZ_STYLES.includes(style) && audio.item && audio.item.kind === 'music') keepTime(audio.item);
   if (VIZ_STYLES.includes(style)) viz.start();
   else viz.stop();
 }
@@ -12054,7 +12060,6 @@ function renderCoverDeco() {
       tp.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     }
   }
-  if (VIZ_STYLES.includes(style)) keepTime(item);
 }
 
 // The moving cover keeps the song's tempo, from the sound analysis, and moves

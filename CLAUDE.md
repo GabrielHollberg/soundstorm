@@ -497,6 +497,14 @@ judged on in its first minute:
   had any navigation, has it now; without a chapter list the files stand in.
   Checked with a stand-in book in the preview (no Audiobookshelf there):
   Chapter Two landed at 1:00, +30 at 1:32, -30 back at 1:03.
+
+  **Hiding the cover had quietly switched off the song analysis.** The
+  owner reported the animations feeling like plain tempo again, and they
+  were: `keepTime` - which asks for the tempo and has the song heard - ran
+  only from `renderCoverDeco`, after its early return for a cover not on
+  screen, and a phone's Now Playing stopped showing the cover. It is asked
+  for from `applyCoverStyle` now, whenever a visualizer shows. Checked with
+  the cover hidden: the click track's 120 beats arrived, the first at 0.23s.
   What follows is how it was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into
