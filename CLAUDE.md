@@ -462,7 +462,15 @@ judged on in its first minute:
   of the lyrics box, which starts under the title - measured on all six,
   the line's centre within a pixel of the screen's. **A tap no longer
   changes the look** - the Looks button is the only way (a tap by the title
-  was changing it by accident). What follows is how it was:
+  was changing it by accident). **Then Lyrics became a look of its own**
+  (`lyrics`, in the server's `CoverStyles` too, and the default for an
+  account that never chose): on a phone the title is always at the top and
+  under it is exactly one thing - the lyrics, the cover centred on the
+  screen as a square, disc or record (`min(84vw, 52vh)`), or a visualizer
+  with no lyrics over it, the owner's choice among the ways offered. The
+  lyrics box stays in place, invisible, under the other looks, so nothing
+  moves. A computer treats Lyrics as the cover beside the lyrics, as before.
+  What follows is how it was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into
   the full lyrics (a tap there never seeks), and tapping the small cover at

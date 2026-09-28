@@ -636,8 +636,9 @@ type Prefs struct {
 	CoverStyle string `json:"coverStyle,omitempty"`
 }
 
-// CoverStyles are the ways Now Playing can show a cover.
-var CoverStyles = map[string]bool{"square": true, "spin": true, "vinyl": true, "pulse": true,
+// CoverStyles are the ways Now Playing can fill the screen under the title:
+// the lyrics, the cover as a square, a disc or a record, or a visualizer.
+var CoverStyles = map[string]bool{"lyrics": true, "square": true, "spin": true, "vinyl": true, "pulse": true,
 	"bars": true, "warp": true, "waves": true, "kaleido": true, "fireworks": true, "flow": true,
 	"storm": true, "synthwave": true, "galaxy": true, "aurora": true, "lava": true}
 

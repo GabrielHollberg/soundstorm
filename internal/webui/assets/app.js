@@ -7080,7 +7080,10 @@ async function savePrefs(change) {
 // is, and visualizers filling the whole screen. The visualizers all follow the
 // song itself (see listenTo and viz).
 const COVER_GROUPS = [
-  { name: 'Covers', styles: ['square', 'spin', 'vinyl'] },
+  // Lyrics is a look of its own (the owner's asking): on a phone the title
+  // is always at the top and everything under it is the chosen look - the
+  // lyrics, the cover centred on the screen, or a visualizer - one at a time.
+  { name: 'Lyrics and covers', styles: ['lyrics', 'square', 'spin', 'vinyl'] },
   // Every visualizer fills the screen, centred on it (the owner's asking:
   // the six that drew where the cover is had nowhere to draw once a phone's
   // Now Playing became the lyrics alone).
@@ -7089,7 +7092,7 @@ const COVER_GROUPS = [
 ];
 const COVER_STYLES = COVER_GROUPS.flatMap((g) => g.styles);
 const COVER_STYLE_NAMES = {
-  square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Orb', bars: 'Spectrum',
+  lyrics: 'Lyrics', square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Orb', bars: 'Spectrum',
   warp: 'Warp', waves: 'Waves', kaleido: 'Kaleidoscope', fireworks: 'Fireworks',
   flow: 'Flow', storm: 'Storm', synthwave: 'Synthwave', galaxy: 'Galaxy', aurora: 'Aurora', lava: 'Lava',
 };
@@ -7099,7 +7102,7 @@ const VIZ_STYLES = FULL_STYLES;
 function coverStyle() {
   const p = state.prefs || {};
   if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
-  return p.coverSpin ? 'spin' : 'square';
+  return p.coverSpin ? 'spin' : 'lyrics';
 }
 function coverSpins() {
   return coverStyle() === 'spin';
