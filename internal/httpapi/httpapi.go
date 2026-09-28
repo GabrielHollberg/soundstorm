@@ -346,6 +346,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("DELETE /api/favorites", s.handleRemoveFavorite)
 	guarded.HandleFunc("GET /api/playlists", s.handlePlaylists)
 	guarded.HandleFunc("POST /api/playlists", s.handleCreatePlaylist)
+	guarded.HandleFunc("POST /api/playlists/import", s.handleImportPlaylist)
 	guarded.HandleFunc("GET /api/playlists/{id}", s.handlePlaylist)
 	guarded.HandleFunc("PATCH /api/playlists/{id}", s.handleRenamePlaylist)
 	guarded.HandleFunc("DELETE /api/playlists/{id}", s.handleDeletePlaylist)

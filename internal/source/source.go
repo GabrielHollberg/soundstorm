@@ -553,6 +553,19 @@ type ItemGetter interface {
 	ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 }
 
+// SongFileLister is an optional interface for a music shelf that can list
+// every song with its file's path relative to the shelf - what a playlist
+// file from another player names its songs by.
+type SongFileLister interface {
+	SongFiles(ctx context.Context) ([]SongFile, error)
+}
+
+// SongFile is one song and where its file sits on the shelf.
+type SongFile struct {
+	Item media.Item
+	Path string // relative to the shelf, "/"-separated
+}
+
 // Album is one album, as a music shelf lists it.
 type Album struct {
 	ID              string  `json:"id"`

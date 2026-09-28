@@ -315,6 +315,45 @@ func (s *Store) CreatePlaylist(userID, name string) (Playlist, error) {
 	return *p, nil
 }
 
+// ImportPlaylist makes a playlist holding items, in their order, each once and
+// no more than a playlist holds, in one write. It keeps that order (a custom
+// sort): the order was somebody's choice in the player it came from.
+func (s *Store) ImportPlaylist(userID, name string, items []media.Item) (Playlist, error) {
+	name, ok := CleanName(name)
+	if !ok {
+		return Playlist{}, fmt.Errorf("a playlist needs a name of up to %d characters", MaxNameLength)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.load(userID)
+	if err != nil {
+		return Playlist{}, err
+	}
+	if len(c.Playlists) >= MaxPlaylists {
+		return Playlist{}, ErrFull
+	}
+	raw := make([]byte, 8)
+	if _, err := rand.Read(raw); err != nil {
+		return Playlist{}, err
+	}
+	now := time.Now().UTC()
+	p := &Playlist{ID: hex.EncodeToString(raw), Name: name, Items: []Entry{}, CreatedAt: now, UpdatedAt: now, Sort: "custom"}
+	seen := map[string]bool{}
+	for _, it := range items {
+		key := it.SourceID + "/" + it.ID
+		if seen[key] || len(p.Items) >= MaxPlaylistItems {
+			continue
+		}
+		seen[key] = true
+		p.Items = append(p.Items, Entry{Item: it, AddedAt: now})
+	}
+	c.Playlists = append(c.Playlists, p)
+	if err := s.save(userID, c); err != nil {
+		return Playlist{}, err
+	}
+	return *p, nil
+}
+
 // RenamePlaylist changes a playlist's name.
 func (s *Store) RenamePlaylist(userID, id, name string) error {
 	name, ok := CleanName(name)

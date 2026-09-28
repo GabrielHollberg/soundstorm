@@ -1145,6 +1145,25 @@ A to Z, like the mixes: a collage of up to four covers, name and count,
 plays it shuffled (as a mix card has its play button), a hold offers Play,
 Shuffle and Delete. It was a plain list of names with Play buttons.
 
+**Playlists come in from other players as M3U** - asked for as bringing
+somebody's Plexamp playlists across. Plexamp keeps them on the Plex server,
+which has no export button, so any M3U will do: Plex's API or a tool writes
+one, as do iTunes, Jellyfin and most players. **Import playlist** on the
+Playlists page takes one or more files (`POST /api/playlists/import`, the
+text in the body; the app decodes UTF-8 strictly, else Windows-1252, for old
+iTunes files). Each song is found on the music shelf by the tail of its path
+first - the last three, two or one segments, so the same files moved under
+another root match - through `source.SongFileLister`, which the folder view's
+cached song list already answers with real paths; then by artist and title
+from `#EXTINF` (or read off an `Artist/Album/01 Title` path), case,
+punctuation, a leading "The" and a trailing "(Remastered)" set aside, the
+length choosing between versions. A file name alone, or a title alone, must
+agree on length when one is given. What is not found is named back to the
+person, never guessed. A file becomes one playlist in one write, each song
+once, in the file's order (Custom sort). Checked in the preview with a
+Plex-shaped file: four of five found - by path, by tags with a Windows path,
+through "(Remastered)", by a relative path - and the fifth reported.
+
 **Favorites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A
 playlist of films has no player to play it in.

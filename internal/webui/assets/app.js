@@ -3255,6 +3255,7 @@ const ICONS = {
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3.2"/>',
   volume: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   radio: '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke-width="2.2"/>',
 };
 
@@ -3559,8 +3560,9 @@ function renderSearchHint() {
 // The Playlists page: a card for each, A to Z, like every other shelf - a
 // collage of its covers, its name and how many songs. Tap to open it; the
 // shuffle button on its cover plays it shuffled straight away; a hold offers
-// play, shuffle and delete. "New playlist" comes first.
-async function showPlaylists() {
+// play, shuffle and delete. "New playlist" comes first, then "Import
+// playlist", which takes M3U files from another player.
+async function showPlaylists(report) {
   const view = $('playlists-view');
   const { ok, body } = await api('/api/playlists');
   const all = (ok && body && body.playlists) || [];
@@ -3588,6 +3590,7 @@ async function showPlaylists() {
     else showToast((made.body && made.body.error) || 'Could not make the playlist.');
   });
   view.append(form);
+  if (report) view.append(report);
 
   const grid = document.createElement('div');
   grid.className = 'grid browse-grid mix-grid playlist-grid';
@@ -3613,6 +3616,7 @@ async function showPlaylists() {
     });
     holder.append(card);
     grid.append(holder);
+    grid.append(importPlaylistCard());
   }
   for (const list of lists) grid.append(playlistCard(list));
   view.append(grid);
@@ -10994,4 +10998,135 @@ function showHoldIcons(pointerId, x0, y0) {
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onEnd);
   document.addEventListener('pointercancel', onEnd);
+}
+
+/* ------------------------------------------------------ importing playlists */
+
+// Playlists from another player - Plexamp by way of Plex, iTunes, Jellyfin,
+// anything that saves M3U. The server finds each song on the music shelf
+// (by where its file sat, then by artist, title and length) and says which it
+// could not; nothing is guessed. Each file becomes one playlist, in its order.
+function importPlaylistCard() {
+  const holder = document.createElement('div');
+  holder.className = 'item-holder';
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'item mix-card playlist-new playlist-import';
+  const art = document.createElement('div');
+  art.className = 'art-wrap mix-cover playlist-new-art';
+  art.append(icon('upload'));
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const t = document.createElement('span');
+  t.className = 'title';
+  t.textContent = 'Import playlist';
+  const sub = document.createElement('span');
+  sub.className = 'sub';
+  sub.textContent = 'M3U from another player';
+  meta.append(t, sub);
+  card.append(art, meta);
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = '.m3u,.m3u8,audio/x-mpegurl,audio/mpegurl,application/vnd.apple.mpegurl';
+  file.multiple = true;
+  file.hidden = true;
+  file.addEventListener('change', () => {
+    const files = [...file.files];
+    file.value = '';
+    if (files.length) importPlaylists(files);
+  });
+  card.addEventListener('click', () => file.click());
+  holder.append(card, file);
+  return holder;
+}
+
+// readPlaylistText decodes a playlist file: .m3u8 is UTF-8 by definition; a
+// plain .m3u is UTF-8 from anything recent and Windows-1252 from older
+// players (iTunes on Windows), so UTF-8 is tried strictly first.
+async function readPlaylistText(file) {
+  const bytes = await file.arrayBuffer();
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
+}
+
+async function importPlaylists(files) {
+  showToast(files.length > 1 ? `Importing ${files.length} playlists...` : `Importing ${files[0].name}...`, '', null, 60000);
+  const results = [];
+  for (const f of files) {
+    const name = f.name.replace(/\.m3u8?$/i, '');
+    let text;
+    try {
+      text = await readPlaylistText(f);
+    } catch {
+      results.push({ name, error: 'Could not read the file.' });
+      continue;
+    }
+    const { ok, body } = await api('/api/playlists/import', { method: 'POST', body: JSON.stringify({ name, m3u: text }) });
+    if (ok && body && body.playlist) {
+      results.push({ name: body.playlist.name, id: body.playlist.id, added: body.added, total: body.total,
+        missing: body.missing || [], missingCount: body.missingCount || 0 });
+    } else {
+      results.push({ name, error: (body && body.error) || 'Could not import it.', missing: (body && body.missing) || [] });
+    }
+  }
+  const done = results.filter((r) => r.id);
+  if (files.length === 1 && done.length === 1 && !done[0].missingCount) {
+    showToast(`Imported ${done[0].name}: all ${done[0].added} songs.`);
+    showPlaylist(done[0].id);
+    return;
+  }
+  showToast(done.length
+    ? `Imported ${done.length} of ${results.length} playlist${results.length === 1 ? '' : 's'}.`
+    : 'Nothing was imported.');
+  if (!$('playlists-view').classList.contains('hidden')) showPlaylists(importReport(results));
+}
+
+// importReport says, per file, how many songs came across and which did not,
+// above the playlists until the page is left.
+function importReport(results) {
+  const box = document.createElement('div');
+  box.className = 'import-report';
+  for (const r of results) {
+    const row = document.createElement('details');
+    row.className = 'import-row';
+    const head = document.createElement('summary');
+    if (r.id) {
+      head.textContent = r.missingCount
+        ? `${r.name}: ${r.added} of ${r.total} songs. ${r.missingCount} not in your library.`
+        : `${r.name}: all ${r.added} songs.`;
+    } else {
+      head.textContent = `${r.name}: ${r.error}`;
+    }
+    row.append(head);
+    if (r.missing && r.missing.length) {
+      const list = document.createElement('ul');
+      for (const m of r.missing) {
+        const li = document.createElement('li');
+        li.textContent = m;
+        list.append(li);
+      }
+      const more = (r.missingCount || r.missing.length) - r.missing.length;
+      if (more > 0) {
+        const li = document.createElement('li');
+        li.className = 'muted';
+        li.textContent = `and ${more} more`;
+        list.append(li);
+      }
+      row.append(list);
+    } else {
+      row.classList.add('plain');
+    }
+    box.append(row);
+  }
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'import-report-close';
+  close.setAttribute('aria-label', 'Dismiss');
+  close.append(icon('close'));
+  close.addEventListener('click', () => box.remove());
+  box.append(close);
+  return box;
 }

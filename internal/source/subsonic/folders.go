@@ -78,6 +78,7 @@ type folderArtist struct {
 }
 
 type folderLibrary struct {
+	songs   []song // every song, paths relative to the music folder
 	albums  []*folderAlbum
 	artists []*folderArtist
 	byAlbum map[string]*folderAlbum
@@ -154,7 +155,7 @@ func (s *Source) library(ctx context.Context) (*folderLibrary, error) {
 
 // groupByFolder turns songs into folder albums and artists.
 func groupByFolder(songs []song) *folderLibrary {
-	lib := &folderLibrary{byAlbum: map[string]*folderAlbum{}, byName: map[string]*folderArtist{}}
+	lib := &folderLibrary{songs: songs, byAlbum: map[string]*folderAlbum{}, byName: map[string]*folderArtist{}}
 	for _, sg := range songs {
 		parts := strings.Split(strings.Trim(strings.ReplaceAll(sg.Path, "\\", "/"), "/"), "/")
 		if inBundle(parts) {
@@ -516,4 +517,18 @@ func (s *Source) SearchMusic(ctx context.Context, text string) ([]source.Album, 
 		}
 	}
 	return albums, artists, nil
+}
+
+// SongFiles lists every song with its path in the music folder, from the
+// same cached listing the folder view groups.
+func (s *Source) SongFiles(ctx context.Context) ([]source.SongFile, error) {
+	lib, err := s.library(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]source.SongFile, 0, len(lib.songs))
+	for _, sg := range lib.songs {
+		out = append(out, source.SongFile{Item: s.songItem(sg), Path: strings.Trim(strings.ReplaceAll(sg.Path, "\\", "/"), "/")})
+	}
+	return out, nil
 }
