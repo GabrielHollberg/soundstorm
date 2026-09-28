@@ -175,7 +175,7 @@
            on and working. -->
       <!-- Per device, not per account: a phone on mobile data and the computer
            on the Wi-Fi want different things. Kept in this browser. -->
-      <div id="playback" class="account-section card" data-cat="playback" data-words="quality data saver bitrate streaming crossfade">
+      <div id="playback" class="account-section card" data-cat="playback" data-words="quality data saver bitrate streaming crossfade screen awake always on sleep lock">
         <h2>Playback on this device</h2>
         <label class="setting-row">
           <span>Streaming quality</span>
@@ -199,6 +199,16 @@
         </label>
         <p id="crossfade-unavailable" class="muted small-print hidden">This browser does not let
           a web page set the volume (every iPhone), so it cannot crossfade.</p>
+        <label class="setting-row">
+          <span>Keep the screen on</span>
+          <select id="awake-select">
+            <option value="off">Off</option>
+            <option value="np">While Now Playing is open</option>
+            <option value="app">Always, while the app is open</option>
+          </select>
+        </label>
+        <p id="awake-unavailable" class="muted small-print hidden">This browser can keep the
+          screen on only for a secure address: open SoundStorm at its https address to use it.</p>
         <p class="muted small-print">Lower qualities use less data and start faster
           on a slow connection. Downloads always keep the original. Crossfade
           leaves an album that is playing in order alone, so it still flows as

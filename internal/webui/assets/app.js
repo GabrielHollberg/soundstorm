@@ -6861,6 +6861,50 @@ $('crossfade-select').addEventListener('change', (event) => {
   note($('playback-note'), 'Saved.', false);
 });
 
+// Keep the screen on: never, while Now Playing is open (to watch a
+// visualizer, or a phone on a stand), or whenever the app is on screen. Per
+// device, like the rest of this card. A screen wake lock, which the browser
+// drops whenever the page is hidden, so it is asked for again on coming back.
+// Only on a secure address; the reader holds its own while reading along.
+const AWAKE_KEY = 'soundstorm-screen-awake';
+const awake = { lock: null, asking: false };
+function awakeMode() {
+  try { return localStorage.getItem(AWAKE_KEY) || 'off'; } catch { return 'off'; }
+}
+async function updateAwake() {
+  if (!('wakeLock' in navigator)) return;
+  const want = wantAwake();
+  if (want && !awake.lock && !awake.asking) {
+    awake.asking = true;
+    try {
+      awake.lock = await navigator.wakeLock.request('screen');
+      awake.lock.addEventListener('release', () => { awake.lock = null; });
+    } catch { /* refused: battery saver, or not allowed here */ }
+    awake.asking = false;
+    // Things may have changed while it was being asked for.
+    if (awake.lock && !wantAwake()) { awake.lock.release().catch(() => {}); awake.lock = null; }
+  } else if (!want && awake.lock) {
+    awake.lock.release().catch(() => {});
+    awake.lock = null;
+  }
+}
+function wantAwake() {
+  const mode = awakeMode();
+  return document.visibilityState === 'visible'
+    && (mode === 'app' || (mode === 'np' && !$('now-playing').classList.contains('hidden')));
+}
+$('awake-select').value = awakeMode();
+$('awake-select').disabled = !('wakeLock' in navigator);
+show($('awake-unavailable'), !('wakeLock' in navigator));
+$('awake-select').addEventListener('change', (event) => {
+  try { localStorage.setItem(AWAKE_KEY, event.target.value); } catch { /* this session only */ }
+  note($('playback-note'), 'Saved.', false);
+  updateAwake();
+});
+document.addEventListener('visibilitychange', updateAwake);
+new MutationObserver(updateAwake).observe($('now-playing'), { attributes: true, attributeFilter: ['class'] });
+updateAwake();
+
 // The photo viewer's buttons, drawn once the icons above exist.
 setIcon($('photo-close'), 'down');
 $('photo-download').replaceChildren(icon('download'));

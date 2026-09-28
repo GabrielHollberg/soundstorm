@@ -1144,6 +1144,17 @@ asking again when the page becomes visible, since the browser drops the
 lock whenever the page is hidden. It needs a secure context: over plain
 http, or in a browser without Wake Lock, the screen sleeps as before.
 
+**Keep the screen on** is a setting in Playback on this device: off, while
+Now Playing is open (to watch a visualizer, or a phone on a stand), or always
+while the app is on screen. Per device, in localStorage, like the rest of that
+card. It holds a screen wake lock while the choice applies, asks again when
+the page comes back (the browser drops the lock whenever it is hidden), and
+lets go the moment it no longer applies - Now Playing is watched for class
+changes. Only on a secure address, where the card says so otherwise; the
+reader's read-along lock is separate. Checked in the preview: held with Now
+Playing open, released on closing it, held everywhere in "always", released
+when turned off.
+
 ## Music, phase 2: mixes, lyrics, downloads
 
 - **Listening history is SoundStorm's, per person**, in the collections file:

@@ -145,6 +145,9 @@ its menu.
 - **Even volume.** Songs with ReplayGain tags play at the same loudness.
 - **Sleep timer.** Stop after 15 minutes to an hour, or at the end of the song,
   fading out.
+- **Keep the screen on.** Under **Settings → Playback on this device**: off,
+  while Now Playing is open (for watching the visualizers), or always while the
+  app is open. Set on each device separately.
 
 iPhones don't let a web page set the volume, so crossfade and even volume don't
 work there.
