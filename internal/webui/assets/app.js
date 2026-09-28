@@ -6932,8 +6932,14 @@ async function savePrefs(change) {
 // a spinning disc, a record (the cover as its label, the song's name round
 // it), and moving with the music (pulsing at the song's tempo). Kept on the
 // account, so it stays the way somebody left it, on every device.
-const COVER_STYLES = ['square', 'spin', 'vinyl', 'pulse'];
-const COVER_STYLE_NAMES = { square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Visualizer' };
+const COVER_STYLES = ['square', 'spin', 'vinyl', 'pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
+const COVER_STYLE_NAMES = {
+  square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Orb', bars: 'Spectrum',
+  warp: 'Warp', waves: 'Waves', kaleido: 'Kaleidoscope', fireworks: 'Fireworks',
+};
+// The visualizers: the cover gives way to one of these, all following the
+// song itself (see listenTo and viz).
+const VIZ_STYLES = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
 function coverStyle() {
   const p = state.prefs || {};
   if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
@@ -10677,6 +10683,12 @@ function playerMenuItems(item, opts) {
     renderSleepMenu(item, opts);
   }, { chevron: true, detail: left }));
   if (item.kind === 'music') {
+    out.push(menuItem('image', 'Cover look', (event) => {
+      event.stopPropagation();
+      renderLookMenu(item, opts);
+    }, { chevron: true, detail: COVER_STYLE_NAMES[coverStyle()] }));
+  }
+  if (item.kind === 'music') {
     const open = !$('now-playing').classList.contains('hidden');
     out.push(menuItem('queue', open && audio.showQueue ? 'Hide up next' : 'Up next', () => {
       closeItemMenu();
@@ -10694,6 +10706,34 @@ function playerMenuItems(item, opts) {
 }
 
 // The sleep timer's choices, as a second page of the menu.
+// Cover look: every look at once, so a visualizer is a tap away rather than
+// eight taps on the cover.
+function renderLookMenu(item, opts) {
+  const menu = $('item-menu');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = 'Cover look';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item, opts);
+  });
+  const current = coverStyle();
+  const rows = COVER_STYLES.map((style) => menuItem(style === current ? 'check' : (VIZ_STYLES.includes(style) ? 'radio' : 'image'),
+    COVER_STYLE_NAMES[style], () => {
+      closeItemMenu();
+      state.prefs = state.prefs || {};
+      state.prefs.coverStyle = style;
+      applyCoverStyle();
+      savePrefs({ coverStyle: style });
+    }));
+  menu.replaceChildren(back, ...rows);
+  placeMenu(menu, state.menuAnchor);
+}
+
 function renderSleepMenu(item, opts) {
   const menu = $('item-menu');
   const back = document.createElement('button');
@@ -11640,8 +11680,9 @@ function applyCoverStyle() {
   for (const s of COVER_STYLES) np.classList.toggle(`cover-${s}`, s === style);
   np.classList.toggle('spin', style === 'spin');
   np.classList.toggle('round', style === 'spin' || style === 'vinyl');
+  np.classList.toggle('cover-viz', VIZ_STYLES.includes(style));
   renderCoverDeco();
-  if (style === 'pulse') viz.start();
+  if (VIZ_STYLES.includes(style)) viz.start();
   else viz.stop();
 }
 
@@ -11650,7 +11691,7 @@ function renderCoverDeco() {
   const style = coverStyle();
   const deco = coverDeco();
   const cover = $('np-cover');
-  const on = (style === 'vinyl' || style === 'pulse') && cover.offsetWidth > 0 && audio.item;
+  const on = (style === 'vinyl' || VIZ_STYLES.includes(style)) && cover.offsetWidth > 0 && audio.item;
   deco.classList.toggle('shown', Boolean(on));
   if (!on) return;
   Object.assign(deco.style, {
@@ -11675,7 +11716,7 @@ function renderCoverDeco() {
       tp.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     }
   }
-  if (style === 'pulse') keepTime(item);
+  if (VIZ_STYLES.includes(style)) keepTime(item);
 }
 
 // The moving cover keeps the song's tempo, from the sound analysis, and moves
@@ -11954,7 +11995,7 @@ const viz = {
     const deco = $('np-deco');
     const back = deco && deco.querySelector('.np-viz:not(.np-viz-trails)');
     const front = deco && deco.querySelector('.np-viz-trails');
-    if (!back || np.classList.contains('hidden') || !np.classList.contains('cover-pulse') || !deco.classList.contains('shown')) {
+    if (!back || np.classList.contains('hidden') || !np.classList.contains('cover-viz') || !deco.classList.contains('shown')) {
       this.stop();
       return;
     }
@@ -12019,6 +12060,28 @@ const viz = {
     // A clock that runs with the music and idles slowly without it.
     this.clock = (this.clock || 0) + dt * (0.25 + 0.75 * lv) * (0.5 + 0.5 * e + 0.6 * loudness);
     const ck = this.clock;
+
+    const style = coverStyle();
+    if (style !== 'pulse') {
+      const scene = VIZ_SCENES[style];
+      const g = back.getContext('2d');
+      const f = front.getContext('2d');
+      const newBeat = playing && beatNo !== this.sceneBeat;
+      if (newBeat) this.sceneBeat = beatNo;
+      if (this.sceneFor !== style) {
+        // A fresh start for each scene: nothing left over from the last.
+        this.sceneFor = style;
+        this.scene = {};
+        f.clearRect(0, 0, w, h);
+      }
+      scene(this.scene, {
+        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat,
+        kick, snare, loud: loudness, lv, e, drive, bright, playing,
+      });
+      if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
+      return;
+    }
+    this.sceneFor = 'pulse';
 
     // ---- the orb, redrawn whole
     const g = back.getContext('2d');
@@ -12159,8 +12222,292 @@ const viz = {
   },
 };
 $('audio-player').addEventListener('play', () => {
-  if ($('now-playing').classList.contains('cover-pulse')) viz.start();
+  if ($('now-playing').classList.contains('cover-viz')) viz.start();
 });
+
+// The other visualizers. Each is given the moment of the music (m: the beat's
+// phase, which beat, a new beat, the kick and snare, how loud, how energetic,
+// the cover's colours) and two canvases: g, cleared for it each frame, and f,
+// which it may fade itself for trails. st is its own state, fresh each time it
+// is chosen. They draw round (cx, cy), the cover's middle; size is the
+// cover's width, and the canvases are 180% of it.
+const VIZ_SCENES = {
+  // Spectrum: a mirrored equalizer across the screen, bass in the middle
+  // jumping with the kick, highs at the edges snapping with the snare, peak
+  // caps falling slowly, and a reflection below.
+  bars(st, m) {
+    const { g, f, w, h, cx, cy, size, pal, rgba, dt, ck, kick, snare, loud, lv, drive, bright } = m;
+    f.clearRect(0, 0, w, h);
+    g.clearRect(0, 0, w, h);
+    const half = 24;
+    if (!st.v) { st.v = new Float32Array(half); st.peak = new Float32Array(half); }
+    const span = size * 0.56; // each side: the whole fits a phone's width
+    const base = cy + size * 0.18;
+    const bw = span / half;
+    // A glow under them, brighter when loud.
+    const glow = g.createRadialGradient(cx, base, 0, cx, base, size * 0.9);
+    glow.addColorStop(0, rgba(pal[0], 0.25 * bright * (0.4 + 0.6 * lv)));
+    glow.addColorStop(1, rgba(pal[0], 0));
+    g.fillStyle = glow;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < half; i++) {
+      const fq = i / (half - 1);
+      const low = Math.exp(-fq * 3.5);
+      const high = fq ** 1.4;
+      const wander = 0.5 + 0.5 * Math.sin(ck * (2.1 + (i % 5) * 0.37) + i * 1.9);
+      const target = lv * (low * kick * 1.1 + high * snare * 0.9 + (0.15 + 0.55 * loud) * (0.35 + 0.65 * wander) * (1 - 0.4 * fq)) * drive;
+      st.v[i] = target > st.v[i] ? st.v[i] + (target - st.v[i]) * 0.6 : Math.max(target, st.v[i] - dt * 1.6);
+      st.peak[i] = Math.max(st.peak[i] - dt * 0.45, st.v[i]);
+    }
+    g.globalCompositeOperation = 'lighter';
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < half; i++) {
+        const x = cx + side * (i + 0.5) * bw - bw * 0.36;
+        const bh = Math.max(size * 0.012, st.v[i] * size * 0.62);
+        const c = pal[i % 3];
+        const grad = g.createLinearGradient(0, base - bh, 0, base);
+        grad.addColorStop(0, rgba(c, 0.95 * (0.5 + 0.5 * bright)));
+        grad.addColorStop(1, rgba(pal[(i + 1) % 3], 0.55 * (0.5 + 0.5 * bright)));
+        g.fillStyle = grad;
+        g.fillRect(x, base - bh, bw * 0.72, bh);
+        // The reflection, faint and squashed.
+        g.fillStyle = rgba(c, 0.16 * bright);
+        g.fillRect(x, base + size * 0.02, bw * 0.72, bh * 0.35);
+        // The peak cap.
+        g.fillStyle = `rgba(255, 255, 255, ${0.5 + 0.4 * bright})`;
+        g.fillRect(x, base - st.peak[i] * size * 0.62 - size * 0.02, bw * 0.72, size * 0.01);
+      }
+    }
+    g.globalCompositeOperation = 'source-over';
+  },
+
+  // Warp: a hyperspace tunnel - stars streaking past, faster as it gets
+  // louder and on every kick, and turning rings of a tunnel flashing on the
+  // first beat of a bar.
+  warp(st, m) {
+    const { g, f, w, h, cx, cy, size, dpr, pal, rgba, dt, ck, kick, loud, lv, e, downbeat, phase, bright } = m;
+    f.clearRect(0, 0, w, h);
+    g.clearRect(0, 0, w, h);
+    if (!st.stars) {
+      st.stars = Array.from({ length: 320 }, () => ({ x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: Math.random(), c: Math.floor(Math.random() * 3) }));
+      st.rings = Array.from({ length: 9 }, (_, i) => i / 9);
+    }
+    const speed = (0.08 + (0.35 + 1.4 * loud) * lv * (0.6 + 0.6 * e) + 1.2 * kick) * dt;
+    const focal = size * 0.32;
+    // A flash in the middle on the kick.
+    const core = g.createRadialGradient(cx, cy, 0, cx, cy, size * (0.35 + 0.3 * kick));
+    core.addColorStop(0, `rgba(255, 255, 255, ${0.08 + 0.45 * kick})`);
+    core.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    g.fillStyle = core;
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'lighter';
+    // The tunnel: hexagons coming towards you, turning.
+    for (let i = 0; i < st.rings.length; i++) {
+      st.rings[i] -= speed * 0.35;
+      if (st.rings[i] <= 0.05) st.rings[i] += 1;
+      const z = st.rings[i];
+      const r = focal * 0.9 / z;
+      const turn = ck * 0.5 + i * 0.35;
+      g.strokeStyle = rgba(pal[i % 3], Math.min(1, (1 - z) * 1.2) * (0.25 + 0.5 * bright));
+      g.lineWidth = (1 + (downbeat ? 3 * (1 - phase) : 0) + 2 * (1 - z)) * dpr;
+      g.beginPath();
+      for (let k = 0; k <= 6; k++) {
+        const a = turn + (k / 6) * Math.PI * 2;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (k) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.stroke();
+    }
+    // The stars: each a streak from where it was a moment ago.
+    g.lineCap = 'round';
+    for (const s of st.stars) {
+      const z0 = s.z;
+      s.z -= speed;
+      if (s.z <= 0.02) { s.x = Math.random() * 2 - 1; s.y = Math.random() * 2 - 1; s.z = 1; continue; }
+      const x0 = cx + (s.x / z0) * focal, y0 = cy + (s.y / z0) * focal;
+      const x1 = cx + (s.x / s.z) * focal, y1 = cy + (s.y / s.z) * focal;
+      g.strokeStyle = rgba(pal[s.c], Math.min(1, (1 - s.z) * 1.4) * (0.4 + 0.6 * bright));
+      g.lineWidth = (0.6 + 2.2 * (1 - s.z)) * dpr;
+      g.beginPath();
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+      g.stroke();
+    }
+    g.globalCompositeOperation = 'source-over';
+  },
+
+  // Waves: glowing ribbons across the screen, each the space between two
+  // travelling waves, so it twists. Loudness raises them, a kick bulges them,
+  // the snare ripples them.
+  waves(st, m) {
+    const { g, f, w, h, cx, cy, size, pal, rgba, ck, kick, snare, loud, lv, drive, bright } = m;
+    f.clearRect(0, 0, w, h);
+    g.clearRect(0, 0, w, h);
+    const x0 = cx - size * 0.9;
+    const x1 = cx + size * 0.9;
+    const steps = 90;
+    g.globalCompositeOperation = 'lighter';
+    for (let r = 0; r < 5; r++) {
+      const amp = size * (0.05 + (0.1 + 0.22 * loud) * lv * drive * 0.8 + 0.16 * kick) * (1 - r * 0.11);
+      const k = 2.2 + r * 0.7;
+      const sp = (0.8 + r * 0.35) * (r % 2 ? -1 : 1);
+      const ripple = 0.25 * snare;
+      const wave = (u, ph) => {
+        const env = Math.sin(Math.PI * u);
+        return cy + amp * env * (Math.sin(k * u * Math.PI * 2 + ck * sp * 2 + ph + r) + ripple * Math.sin(u * 40 + ck * 9 + r));
+      };
+      const top = [];
+      const bottom = [];
+      for (let p = 0; p <= steps; p++) {
+        const u = p / steps;
+        top.push([x0 + (x1 - x0) * u, wave(u, 0)]);
+        bottom.push([x0 + (x1 - x0) * u, wave(u, 0.9 + 0.3 * Math.sin(ck + r))]);
+      }
+      const c = pal[r % 3];
+      const grad = g.createLinearGradient(x0, 0, x1, 0);
+      grad.addColorStop(0, rgba(c, 0));
+      grad.addColorStop(0.5, rgba(c, (0.28 + 0.12 * lv) * (0.4 + 0.6 * bright)));
+      grad.addColorStop(1, rgba(c, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      top.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      for (let i = bottom.length - 1; i >= 0; i--) g.lineTo(bottom[i][0], bottom[i][1]);
+      g.closePath();
+      g.fill();
+      // A bright edge along the top.
+      g.strokeStyle = rgba(c, 0.55 * (0.4 + 0.6 * bright));
+      g.lineWidth = 1.5 * m.dpr;
+      g.beginPath();
+      top.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.stroke();
+    }
+    g.globalCompositeOperation = 'source-over';
+  },
+
+  // Kaleidoscope: shapes in one wedge, mirrored ten ways. They swell on the
+  // kick, turn on the snare, and the whole thing snaps round on each bar and
+  // spins faster when it is loud.
+  kaleido(st, m) {
+    const { g, f, w, h, cx, cy, size, pal, rgba, dt, kick, snare, loud, lv, downbeat, phase, bright } = m;
+    f.clearRect(0, 0, w, h);
+    g.clearRect(0, 0, w, h);
+    if (!st.shapes) {
+      st.shapes = Array.from({ length: 8 }, (_, i) => ({ r: 0.15 + (i / 8) * 0.75, a: Math.random(), s: 0.04 + Math.random() * 0.07, kind: i % 3, c: i % 3, sp: 0.3 + Math.random() }));
+      st.spin = 0;
+    }
+    st.spin += dt * (0.1 + 0.9 * loud * lv) + (downbeat ? dt * 3 * (1 - phase) : 0);
+    const seg = (Math.PI * 2) / 10;
+    const R = size * 0.62;
+    g.save();
+    g.translate(cx, cy);
+    g.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 10; k++) {
+      for (const mirror of [1, -1]) {
+        g.save();
+        g.rotate(k * seg + st.spin);
+        g.scale(1, mirror);
+        for (const sh of st.shapes) {
+          const a = (0.5 + 0.5 * Math.sin(st.spin * sh.sp * 3 + sh.a * 6)) * seg * 0.5;
+          const r = R * (sh.r + 0.08 * Math.sin(st.spin * 2 + sh.a * 9) + 0.1 * kick);
+          const x = Math.cos(a) * r;
+          const y = Math.sin(a) * r;
+          const sz = R * sh.s * (1 + 1.2 * kick) * (0.6 + 0.6 * loud);
+          g.fillStyle = rgba(pal[sh.c], (0.35 + 0.3 * lv) * (0.4 + 0.6 * bright));
+          g.beginPath();
+          if (sh.kind === 0) {
+            g.arc(x, y, sz, 0, Math.PI * 2);
+          } else {
+            const turn = st.spin * 2 + snare * 2;
+            const n = sh.kind === 1 ? 3 : 4;
+            for (let p = 0; p <= n; p++) {
+              const t = turn + (p / n) * Math.PI * 2;
+              if (p) g.lineTo(x + Math.cos(t) * sz, y + Math.sin(t) * sz);
+              else g.moveTo(x + Math.cos(t) * sz, y + Math.sin(t) * sz);
+            }
+          }
+          g.fill();
+        }
+        g.restore();
+      }
+    }
+    // A star in the middle.
+    const core = g.createRadialGradient(0, 0, 0, 0, 0, R * (0.25 + 0.2 * kick));
+    core.addColorStop(0, `rgba(255, 255, 255, ${0.25 + 0.5 * kick})`);
+    core.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    g.fillStyle = core;
+    g.beginPath();
+    g.arc(0, 0, R * 0.5, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+    g.globalCompositeOperation = 'source-over';
+  },
+
+  // Fireworks: a burst on every beat, bigger on the first of a bar, crackle
+  // on the snare, falling with gravity and leaving trails.
+  fireworks(st, m) {
+    const { g, f, w, h, cx, cy, size, dpr, pal, rgba, dt, newBeat, downbeat, snare, loud, lv, e, bright, playing } = m;
+    g.clearRect(0, 0, w, h);
+    f.globalCompositeOperation = 'destination-out';
+    f.fillStyle = `rgba(0, 0, 0, ${playing ? 0.14 : 0.3})`;
+    f.fillRect(0, 0, w, h);
+    if (!st.sparks) { st.sparks = []; st.flashes = []; st.snare = 0; }
+    const burst = (x, y, n, power, c) => {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const v = size * power * (0.35 + Math.random() * 0.75);
+        st.sparks.push({ x, y, px: x, py: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, fade: 0.55 + Math.random() * 0.45, c });
+      }
+      st.flashes.push({ x, y, life: 1, r: size * power * 0.6, c });
+    };
+    if (newBeat) {
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.random() * size * 0.45;
+      const n = Math.round((24 + 60 * loud) * (downbeat ? 1.8 : 1) * (0.6 + 0.6 * e));
+      burst(cx + Math.cos(a) * d, cy - size * 0.1 + Math.sin(a) * d * 0.7, n, (downbeat ? 1.1 : 0.75) * (0.6 + 0.6 * loud), Math.floor(Math.random() * 3));
+    }
+    if (snare - st.snare > 0.35 && lv > 0.3) {
+      const a = Math.random() * Math.PI * 2;
+      burst(cx + Math.cos(a) * size * 0.5, cy + Math.sin(a) * size * 0.4, 14, 0.35, Math.floor(Math.random() * 3));
+    }
+    st.snare = snare;
+    if (st.sparks.length > 650) st.sparks.splice(0, st.sparks.length - 650);
+    // Glows where the bursts went off.
+    g.globalCompositeOperation = 'lighter';
+    st.flashes = st.flashes.filter((fl) => {
+      fl.life -= dt * 2.2;
+      if (fl.life <= 0) return false;
+      const grad = g.createRadialGradient(fl.x, fl.y, 0, fl.x, fl.y, fl.r);
+      grad.addColorStop(0, rgba(pal[fl.c], 0.45 * fl.life * bright));
+      grad.addColorStop(1, rgba(pal[fl.c], 0));
+      g.fillStyle = grad;
+      g.fillRect(fl.x - fl.r, fl.y - fl.r, fl.r * 2, fl.r * 2);
+      return true;
+    });
+    g.globalCompositeOperation = 'source-over';
+    // The sparks, as streaks on the fading canvas.
+    const gravity = size * 0.45;
+    f.globalCompositeOperation = 'lighter';
+    f.lineCap = 'round';
+    st.sparks = st.sparks.filter((p) => {
+      p.life -= dt * p.fade;
+      if (p.life <= 0) return false;
+      p.px = p.x; p.py = p.y;
+      p.vx *= 1 - dt * 1.4;
+      p.vy = p.vy * (1 - dt * 1.4) + gravity * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      f.strokeStyle = rgba(pal[p.c], Math.min(1, p.life * 1.3) * (0.5 + 0.5 * bright));
+      f.lineWidth = (0.8 + 1.8 * p.life) * dpr;
+      f.beginPath();
+      f.moveTo(p.px, p.py);
+      f.lineTo(p.x, p.y);
+      f.stroke();
+      return true;
+    });
+    f.globalCompositeOperation = 'source-over';
+  },
+};
 window.addEventListener('resize', () => {
   if (!$('now-playing').classList.contains('hidden')) renderCoverDeco();
 });

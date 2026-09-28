@@ -108,9 +108,14 @@ they're sung.
   - a spinning disc
   - a **record**, with the cover as its label and the song, artist and album
     printed round it
-  - **visualizer**: the cover gives way to a glowing orb in its colours that
-    morphs and pulses with the song, with a vortex of light trails thrown out
-    on every beat, livelier for more energetic songs.
+  - six **visualizers**, which replace the cover with something that moves
+    to the actual song: its beats, the kick and snare, and how loud it is.
+    They are **Orb** (a glowing orb and a vortex of light trails),
+    **Spectrum**, **Warp**, **Waves**, **Kaleidoscope** and **Fireworks**,
+    all in the cover's colours.
+
+  Hold anywhere on Now Playing (or open its menu) and choose **Cover look** to
+  jump straight to one.
 
   Your choice is remembered on every device.
 - **Hold anywhere** to show every option as icons over the cover: info, sleep

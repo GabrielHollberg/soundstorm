@@ -3240,9 +3240,9 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 /* The visualizer (see viz in app.js) takes the cover's place: two canvases,
    larger than the cover, over its own hidden image - which stays, since the
    swipe and the hold icons work on it. */
-.now-playing.cover-pulse #np-cover { opacity: 0; }
-.now-playing.cover-pulse .np-thumb { border-radius: 50%; }
-.now-playing.cover-pulse .np-viz {
+.now-playing.cover-viz #np-cover { opacity: 0; }
+.now-playing.cover-viz .np-thumb { border-radius: 50%; }
+.now-playing.cover-viz .np-viz {
   display: block; position: absolute;
   left: -40%; top: -40%; width: 180%; height: 180%;
 }
@@ -3253,7 +3253,7 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
    the title after it still draws on top where a short screen (an iPhone in
    Safari) brings the two together. Lifting the cover hid the title there. */
 .np-cover-wrap { isolation: isolate; }
-.now-playing.cover-pulse .np-deco { z-index: -1; }
+.now-playing.cover-viz .np-deco { z-index: -1; }
 .now-playing.cover-vinyl .np-deco { z-index: 1; }
 
 /* Change cover's note. */

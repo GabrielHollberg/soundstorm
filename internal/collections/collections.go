@@ -631,12 +631,14 @@ type Prefs struct {
 	// default, a square.
 	CoverSpin *bool `json:"coverSpin,omitempty"`
 	// CoverStyle is how Now Playing shows the cover: "square", "spin",
-	// "vinyl" or "pulse". Empty falls back to CoverSpin, which came first.
+	// "vinyl", or one of the visualizers ("pulse" is the orb). Empty falls
+	// back to CoverSpin, which came first.
 	CoverStyle string `json:"coverStyle,omitempty"`
 }
 
 // CoverStyles are the ways Now Playing can show a cover.
-var CoverStyles = map[string]bool{"square": true, "spin": true, "vinyl": true, "pulse": true}
+var CoverStyles = map[string]bool{"square": true, "spin": true, "vinyl": true, "pulse": true,
+	"bars": true, "warp": true, "waves": true, "kaleido": true, "fireworks": true}
 
 // Limits on what a preference can hold, so a client cannot grow the file.
 const (

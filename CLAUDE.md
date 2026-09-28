@@ -611,6 +611,22 @@ judged on in its first minute:
   tempo alone keeps time. Not compensated: Bluetooth output latency, which a
   page cannot measure without an AudioContext of its own.
 
+  **Six visualizers, not one** (`VIZ_STYLES`, `VIZ_SCENES`): the orb
+  ("Orb", still `pulse`), then Spectrum (a mirrored equalizer, bass in the
+  middle on the kick, highs at the edges on the snare, falling peak caps, a
+  reflection), Warp (stars streaking past faster when loud and on kicks, a
+  turning hexagon tunnel flashing on each bar), Waves (twisting ribbons, each
+  the space between two travelling waves), Kaleidoscope (shapes in a wedge
+  mirrored ten ways, snapping round on each bar) and Fireworks (a burst on
+  every beat, bigger on a bar's first, crackle on the snare, gravity and
+  trails). One frame loop reads the music once - beat, phase, new beat,
+  kick, snare, loudness - and hands it to the scene; each keeps its own state,
+  fresh when chosen. `cover-viz` on Now Playing marks any of them. Nine looks
+  is a lot of tapping, so Now Playing's menu has **Cover look** to jump to
+  one. All ran at 58fps in Chrome on the preview; Fireworks draws nothing in
+  headless WebKit only because that cannot play audio, and it bursts on beats
+  while playing.
+
   **No reduced-motion exception for these looks, and that was the iPhone
   bug.** Reported as the spinning and moving covers doing nothing on an
   iPhone 13 while working on Android. In Playwright's WebKit with an
