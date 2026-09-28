@@ -226,6 +226,7 @@ async function showApp(me) {
   renderAccount();
   await loadFavoriteKeys();
   await Promise.all([loadPrefs(), loadMyArt()]);
+  setTimeout(prepareDownloads, 20000);
   if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
   maybeShowHoldTip();
@@ -6428,6 +6429,8 @@ async function download(group, items, onProgress, shouldStop) {
   keepShell();
   markMusicTabs();
   markDownloads();
+  // Hear them now, while online, so the visualizer is ready offline.
+  prepareDownloads();
 }
 
 // removeDownload forgets a group, and deletes each song no other group needs.
@@ -6447,6 +6450,7 @@ async function removeDownload(groupID) {
         if (playlist) for (const url of hlsParts(await playlist.text(), video.variant)) await cache.delete(url);
       }
       for (const url of (kept.dl && kept.dl.files) || [streamPath(kept)]) await cache.delete(url);
+      await cache.delete(heardURL(kept));
     }
     delete state.downloads.items[key];
   }
@@ -8957,6 +8961,7 @@ async function removeItemDownload(item) {
       if (playlist) for (const url of hlsParts(await playlist.text(), video.variant)) await cache.delete(url);
     }
     for (const url of (kept.dl && kept.dl.files) || [streamPath(kept)]) await cache.delete(url);
+    await cache.delete(heardURL(kept));
     delete state.downloads.items[key];
   }
   state.downloads.groups = state.downloads.groups.filter((g) => g.keys.length);
@@ -11733,7 +11738,12 @@ async function keepTime(item) {
   const key = selectionKey(item);
   if (!(key in soundOf)) {
     soundOf[key] = null;
-    if (item.kind === 'music') {
+    // A downloaded song kept its tempo and energy with what was heard in it,
+    // so offline needs no answer from the server.
+    const kept = await loadHeard(item);
+    if (kept && kept.sound) {
+      soundOf[key] = kept.sound;
+    } else if (item.kind === 'music') {
       const { ok, body } = await api(`/api/music/sound?id=${encodeURIComponent(item.id)}`);
       soundOf[key] = ok && body && body.known ? body : null;
     }
@@ -11772,10 +11782,98 @@ const heardSongs = new Map();
 function listenTo(item, tempo) {
   const key = selectionKey(item);
   if (heardSongs.has(key)) return heardSongs.get(key);
-  const job = hearSong(item, tempo).catch(() => null);
+  const job = (async () => {
+    const kept = await loadHeard(item);
+    if (kept) return kept;
+    const heard = await hearSong(item, tempo);
+    if (heard && isDownloaded(item)) saveHeard(item, heard, soundOf[key] || null);
+    return heard;
+  })().catch(() => null);
   heardSongs.set(key, job);
   while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
   return job;
+}
+
+// What was heard in a downloaded song is kept beside it on the device (the
+// downloads cache, under a /__heard/ address nothing ever fetches), with the
+// analysis's tempo and energy, so offline the visualizer is in time from the
+// first beat and needs nothing from the server. Loudness and the two bands
+// are kept as bytes (0 to 255): about 45KB for a four-minute song. Removing
+// the download removes it; signing out clears it with the rest.
+function heardURL(item) {
+  return `/__heard/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`;
+}
+
+const toB64 = (bytes) => {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+};
+const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+const toBytes = (floats) => Uint8Array.from(floats, (v) => Math.round(Math.max(0, Math.min(1, v)) * 255));
+const fromBytes = (bytes) => Float32Array.from(bytes, (v) => v / 255);
+
+async function saveHeard(item, heard, sound) {
+  if (!window.caches) return;
+  try {
+    const kept = {
+      v: 1, fps: heard.fps, down: heard.down,
+      loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
+      beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
+      sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
+    };
+    const cache = await caches.open(OFFLINE_CACHE);
+    await cache.put(heardURL(item), new Response(JSON.stringify(kept), { headers: { 'Content-Type': 'application/json' } }));
+  } catch { /* heard again next time */ }
+}
+
+async function loadHeard(item) {
+  if (!window.caches || !isDownloaded(item)) return null;
+  try {
+    const resp = await caches.match(heardURL(item), { cacheName: OFFLINE_CACHE });
+    if (!resp) return null;
+    const k = await resp.json();
+    if (k.v !== 1) return null;
+    const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
+    return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+  } catch {
+    return null;
+  }
+}
+
+// prepareDownloads hears every downloaded song not heard yet, one at a time,
+// resting between songs and waiting while the app is not on screen, so it is
+// never in the way. Run after a download and a little after opening.
+let preparing = false;
+async function prepareDownloads() {
+  if (preparing || !window.caches || !(window.OfflineAudioContext || window.webkitOfflineAudioContext)) return;
+  preparing = true;
+  const rest = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const cache = await caches.open(OFFLINE_CACHE);
+    for (const item of Object.values(state.downloads.items)) {
+      if (!item || item.kind !== 'music' || !isDownloaded(item)) continue;
+      if (await cache.match(heardURL(item))) continue;
+      while (document.hidden) await rest(3000);
+      const key = selectionKey(item);
+      if (!(key in soundOf) && !state.offline) {
+        const { ok, body } = await api(`/api/music/sound?id=${encodeURIComponent(item.id)}`);
+        soundOf[key] = ok && body && body.known ? body : null;
+      }
+      const sound = soundOf[key];
+      let tempo = 0;
+      if (sound && sound.tempo > 0) {
+        tempo = sound.tempo;
+        while (tempo < 70) tempo *= 2;
+        while (tempo > 150) tempo /= 2;
+      }
+      const heard = await hearSong(item, tempo).catch(() => null);
+      if (heard) await saveHeard(item, heard, sound);
+      await rest(1200);
+    }
+  } finally {
+    preparing = false;
+  }
 }
 
 // songBytes is the song to listen to: the whole file already in memory for
@@ -11785,14 +11883,14 @@ async function songBytes(item) {
   if (audio.item === item && (player.currentSrc || '').startsWith('blob:')) {
     return (await fetch(player.currentSrc)).arrayBuffer();
   }
-  try {
-    const res = await fetch(`${streamPath(item)}?kbps=96`);
-    if (res.ok) return res.arrayBuffer();
-  } catch { /* offline: try the device */ }
-  if (window.caches) {
+  // A downloaded song is read from the device: no network, and it works
+  // offline.
+  if (window.caches && isDownloaded(item)) {
     const kept = await caches.match(streamPath(item), { cacheName: OFFLINE_CACHE, ignoreSearch: true });
     if (kept) return kept.arrayBuffer();
   }
+  const res = await fetch(`${streamPath(item)}?kbps=96`);
+  if (res.ok) return res.arrayBuffer();
   throw new Error('no audio to listen to');
 }
 

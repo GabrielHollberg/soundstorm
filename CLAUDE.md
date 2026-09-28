@@ -611,6 +611,22 @@ judged on in its first minute:
   tempo alone keeps time. Not compensated: Bluetooth output latency, which a
   page cannot measure without an AudioContext of its own.
 
+  **Downloaded songs are heard ahead of time, and offline** (`saveHeard`,
+  `loadHeard`, `prepareDownloads`). Asked for so offline was not the
+  tempo-only version. What is heard in a downloaded song - the beats, the
+  bar's first beat, loudness and the two bands as bytes, and AudioMuse's tempo
+  and energy - is kept beside it in the downloads cache under a `/__heard/`
+  address nothing fetches: about 45KB for a four-minute song. It is made when
+  the song is downloaded (while online, so the tempo comes too), and a sweep a
+  little after opening hears downloads from before this, one at a time,
+  resting between songs and waiting while the app is hidden. Playing reads the
+  kept copy first, and `keepTime` takes the kept tempo rather than asking the
+  server; a downloaded song's audio is read from the device rather than
+  fetched. Removing the download removes it; signing out clears it. Checked:
+  kept 0.3s after a download finished; then offline with nothing in memory,
+  the downloaded click track played from a blob and the visualizer had its
+  beats (120, mean error 11ms) within 0.3s of pressing play.
+
   **Six visualizers, not one** (`VIZ_STYLES`, `VIZ_SCENES`): the orb
   ("Orb", still `pulse`), then Spectrum (a mirrored equalizer, bass in the
   middle on the kick, highs at the edges on the snare, falling peak caps, a
