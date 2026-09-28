@@ -105,7 +105,7 @@ they're sung.
 - **Swipe sideways** anywhere to go to the next or previous song.
 - **The sparkle button** at the top of Now Playing opens **Cover looks**: every
   look in one place, grouped as Covers, Visualizers and Full screen. Tap one to
-  try it straight away; Done or a tap outside closes it.
+  switch to it.
 - **Tap the cover** to go round the cover, a spinning disc, a record and the
   last visualizer you used. The looks are:
   - the cover

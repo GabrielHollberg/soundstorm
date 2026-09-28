@@ -671,6 +671,27 @@ judged on in its first minute:
   loud; Aurora curtains with hanging folds; Lava soft blobs rising, bubbles on
   the snare. All ran at 58-59fps in Chrome on the preview.
 
+  **What stands out, not every beat.** Everything used to react hard to
+  every beat, and a kick on every beat of a whole song pumped relentlessly
+  (asked for as getting rid of "the most common consistent overwhelming tempo
+  beats"). Now each beat's kick is compared with the typical kick of the last
+  two bars (`kickPeaks`), and a surge in loudness against the last four
+  seconds: a steady beat settles into a soft pulse, and an accent, a fill or a
+  drop after a quiet part hits hard (`novelty`). Big moments - bursts, pushes,
+  pulses - fire on a beat that stands out (over 0.4) or a bar's first, not all
+  four. The comparison starts afresh after a seek (judged only after four
+  beats), or the first beats after a jump looked like a drop. Measured on the
+  click track: a steady loud part averaged 0.08 (peaks 0.42); the jump from
+  quiet to loud hit 0.91. Without the song's analysis, only a soft pulse,
+  a little more on each bar. **Storm** was made calmer on the same request:
+  rain over the whole screen (spawned left of it for the wind) and slower,
+  lightning at most every eight seconds, on a standout moment in a loud part,
+  and only a third of those - once in sixteen loud seconds when measured.
+  **The Looks sheet** lost its Done button (cut off on a phone): a choice
+  closes it, names only (three to a row fit), no scrolling on an iPhone 13,
+  and Now Playing's swipe and hold stand down inside it - a scroll in it
+  could drag Now Playing closed.
+
   **No reduced-motion exception for these looks, and that was the iPhone
   bug.** Reported as the spinning and moving covers doing nothing on an
   iPhone 13 while working on Android. In Playwright's WebKit with an

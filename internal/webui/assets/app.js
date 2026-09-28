@@ -5275,7 +5275,7 @@ const npSwipe = (() => {
   let dx = 0;
   panel.addEventListener('touchstart', (event) => {
     const t = event.touches[0];
-    armed = event.touches.length === 1 && !npSwipe.busy && !event.target.closest('input');
+    armed = event.touches.length === 1 && !npSwipe.busy && !event.target.closest('input') && !event.target.closest('#np-looks');
     // Up next, and lyrics scrolled down, scroll up and down themselves: a
     // drag that way there is theirs, but a sideways one still changes song.
     scrollsY = Boolean(event.target.closest('#np-queue')
@@ -5673,9 +5673,9 @@ $('np-close').addEventListener('click', closeNowPlaying);
 setIcon($('np-exit'), 'close');
 setIcon($('np-looks-btn'), 'sparkle');
 
-// The Looks sheet: every look, grouped, picked right in Now Playing. It stays
-// open while somebody tries them - each applies at once behind it - and goes
-// with Done or a tap anywhere else.
+// The Looks sheet: every look, grouped, picked right in Now Playing. Choosing
+// one closes it; so does a tap anywhere else. Its taps and scrolls are its
+// own: Now Playing's swipe and hold stand down inside it.
 function openLooks() {
   renderLooks();
   show($('np-looks'), true);
@@ -5699,7 +5699,9 @@ function renderLooks() {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `np-look${style === current ? ' on' : ''}`;
-      b.append(icon(style === current ? 'check' : group.name === 'Covers' ? 'image' : group.name === 'Full screen' ? 'sparkle' : 'radio'));
+      // Names only, so they fit three to a row on a phone; the current one
+      // is ticked.
+      if (style === current) b.append(icon('check'));
       const label = document.createElement('span');
       label.textContent = COVER_STYLE_NAMES[style];
       b.append(label);
@@ -5709,6 +5711,7 @@ function renderLooks() {
         state.prefs.coverStyle = style;
         applyCoverStyle();
         savePrefs({ coverStyle: style });
+        closeLooks();
       });
       return b;
     }));
@@ -5719,10 +5722,6 @@ $('np-looks-btn').addEventListener('click', (event) => {
   event.stopPropagation();
   if ($('np-looks').classList.contains('hidden')) openLooks();
   else closeLooks();
-});
-$('np-looks-done').addEventListener('click', (event) => {
-  event.stopPropagation();
-  closeLooks();
 });
 document.addEventListener('click', (event) => {
   if ($('np-looks').classList.contains('hidden')) return;
@@ -10824,7 +10823,7 @@ function renderSleepMenu(item, opts) {
 // the title or the lyrics opens the menu too. Not on what already answers a
 // touch - play, the header's buttons, the timeline, Up next (a hold there
 // moves a song), a menu.
-const NP_HOLD_SKIP = 'input, a, #np-queue, .np-bar button, .np-controls button, #np-speed-wrap, #item-menu';
+const NP_HOLD_SKIP = 'input, a, #np-queue, .np-bar button, .np-controls button, #np-speed-wrap, #item-menu, #np-looks';
 (() => {
   const panel = $('now-playing');
   $('np-cover').draggable = false;
@@ -12175,9 +12174,12 @@ const viz = {
     let phase = (t % beat) / beat;
     let beatNo = Math.floor(t / beat);
     let downbeat = beatNo % 4 === 0;
-    let kick = Math.exp(-phase * 5) * lv;
-    let snare = (beatNo % 2 === 1 ? Math.exp(-phase * 6) : 0) * lv;
+    // Without the song's own analysis, only a soft pulse, a little more at
+    // the start of each bar.
+    let kick = Math.exp(-phase * 5) * lv * (downbeat ? 0.45 : 0.15);
+    let snare = (beatNo % 2 === 1 ? Math.exp(-phase * 6) * 0.15 : 0) * lv;
     let loudness = 0.6;
+    let novelty = 0; // how much this beat stands out from the last few
     const heard = this.heard && audio.item && this.heard.key === selectionKey(audio.item) ? this.heard : null;
     if (heard) {
       // The beat the song is on, from the list of beats found in it.
@@ -12202,9 +12204,40 @@ const viz = {
       // A hit is a jump in level, as big in a soft passage as a loud one, so
       // it is scaled by how loud the song is there.
       const hitScale = 0.25 + 0.75 * loudness;
-      kick = Math.max(this.kickEnv, Math.exp(-phase * 6) * 0.35) * lv * hitScale;
-      snare = this.snareEnv * lv * hitScale;
+      // What stands out, not every beat. A kick on every beat of a whole song
+      // pumped everything relentlessly (asked for as getting rid of the
+      // "consistent overwhelming tempo beats"), so each hit is measured
+      // against the typical hit of the last two bars: a steady beat settles
+      // into a soft pulse, and an accent, a fill or a drop after a quiet bit
+      // is what hits hard. A surge in loudness counts the same way.
+      if (beatNo !== this.peakBeat) {
+        this.peakBeat = beatNo;
+        const ahead = Math.min(heard.low.length - 1, fi + 2);
+        let kp = 0, sp = 0;
+        for (let i = fi; i <= ahead; i++) { kp = Math.max(kp, heard.low[i]); sp = Math.max(sp, heard.high[i]); }
+        const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0.5);
+        this.kickPeaks = this.kickPeaks || [];
+        this.snarePeaks = this.snarePeaks || [];
+        // Judged only against a few beats of this part of the song: right
+        // after a seek the last bars were somewhere else entirely.
+        this.beatNovelty = this.kickPeaks.length >= 4 ? Math.max(0, Math.min(1, (kp - mean(this.kickPeaks) * 1.05) / 0.35)) : 0;
+        this.kickPeaks.push(kp);
+        this.snarePeaks.push(sp);
+        if (this.kickPeaks.length > 8) this.kickPeaks.shift();
+        if (this.snarePeaks.length > 8) this.snarePeaks.shift();
+      }
+      const typicalK = this.kickPeaks && this.kickPeaks.length ? this.kickPeaks.reduce((x, y) => x + y, 0) / this.kickPeaks.length : 0.5;
+      const typicalS = this.snarePeaks && this.snarePeaks.length ? this.snarePeaks.reduce((x, y) => x + y, 0) / this.snarePeaks.length : 0.5;
+      this.loudAvg = (this.loudAvg === undefined ? loudness : this.loudAvg) + (loudness - (this.loudAvg || 0)) * Math.min(1, dt / 4);
+      const surge = Math.max(0, Math.min(1, (loudness - this.loudAvg) / 0.25));
+      const kickNew = Math.max(0, this.kickEnv - typicalK * 0.95);
+      const snareNew = Math.max(0, this.snareEnv - typicalS * 0.95);
+      kick = Math.min(1, 0.3 * this.kickEnv + 1.3 * kickNew + 0.5 * surge) * lv * hitScale;
+      snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
+      novelty = Math.max(this.beatNovelty || 0, surge);
     }
+    this.kickNow = kick; // for a look from outside: how hard this moment hits
+    this.noveltyNow = novelty;
     const bar = (t / (beat * 4)) % 1;
     // How hard everything moves: the song's energy, and how loud it is right
     // now - a quiet verse calms it, the chorus lets it go.
@@ -12227,8 +12260,11 @@ const viz = {
       const scene = VIZ_SCENES[style];
       const g = back.getContext('2d');
       const f = front.getContext('2d');
-      const newBeat = playing && beatNo !== this.sceneBeat;
-      if (newBeat) this.sceneBeat = beatNo;
+      const anyBeat = playing && beatNo !== this.sceneBeat;
+      if (anyBeat) this.sceneBeat = beatNo;
+      // Big moments only: a beat that stands out, or the first of a bar -
+      // not all four.
+      const newBeat = anyBeat && (novelty > 0.4 || downbeat);
       if (this.sceneFor !== style) {
         // A fresh start for each scene: nothing left over from the last.
         this.sceneFor = style;
@@ -12236,7 +12272,7 @@ const viz = {
         f.clearRect(0, 0, w, h);
       }
       scene(this.scene, {
-        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat,
+        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty,
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
       if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
@@ -12352,9 +12388,9 @@ const viz = {
       }
     }
     // Every beat throws them outward; a spring brings them back.
-    if (playing && beatNo !== this.lastBeat) {
+    if (playing && beatNo !== this.lastBeat && (novelty > 0.4 || downbeat)) {
       this.lastBeat = beatNo;
-      const push = (0.5 + 0.9 * e) * (downbeat ? 1.6 : 1) * (0.3 + 0.9 * (this.loudEnv === undefined ? 0.6 : this.loudEnv));
+      const push = (0.4 + 0.9 * e) * (0.6 + 1.4 * novelty) * (0.3 + 0.9 * (this.loudEnv === undefined ? 0.6 : this.loudEnv));
       for (const d of this.dots) d.v += push * (0.4 + Math.random() * 0.8);
     }
     for (const d of this.dots) {
@@ -12384,6 +12420,13 @@ const viz = {
 };
 $('audio-player').addEventListener('play', () => {
   if ($('now-playing').classList.contains('cover-viz')) viz.start();
+});
+// A jump in the song starts the "what stands out" comparison afresh.
+$('audio-player').addEventListener('seeked', () => {
+  viz.kickPeaks = [];
+  viz.snarePeaks = [];
+  viz.loudAvg = undefined;
+  viz.beatNovelty = 0;
 });
 
 // Flow's scene, full screen: particles swirling through a moving current round
@@ -12486,12 +12529,18 @@ const FULL_SCENES = {
     f.clearRect(0, 0, w, h);
     g.clearRect(0, 0, w, h);
     if (!st.drops) {
-      st.drops = Array.from({ length: 280 }, () => ({ x: Math.random() * w, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
+      // Spread wider than the screen to the left, which the wind blows
+      // across, so the rain covers all of it.
+      st.drops = Array.from({ length: 420 }, () => ({ x: -w * 0.35 + Math.random() * w * 1.35, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
       st.bolts = [];
       st.splash = [];
+      st.lastBolt = -1e9;
     }
-    // Lightning: a jagged path down from the top, with branches.
-    if (newBeat && downbeat && loud > 0.3) {
+    // Lightning: rare - a big moment in a loud part, at most every eight
+    // seconds and not every time. A jagged path down, with branches.
+    st.now = (st.now || 0) + dt;
+    if (newBeat && loud > 0.5 && st.now - st.lastBolt > 8 && Math.random() < 0.35) {
+      st.lastBolt = st.now;
       const pts = [];
       let x = w * (0.2 + Math.random() * 0.6);
       let y = 0;
@@ -12519,7 +12568,7 @@ const FULL_SCENES = {
     }
     g.globalCompositeOperation = 'lighter';
     // Rain, slanted with a wind that drifts.
-    const fall = h * (0.7 + 1.8 * loud * lv + 0.8 * kick) * dt;
+    const fall = h * (0.28 + 0.5 * loud * lv + 0.15 * kick) * dt;
     const wind = Math.sin(ck * 0.3) * 0.15 + 0.12;
     g.lineCap = 'round';
     for (const d of st.drops) {
@@ -12535,7 +12584,7 @@ const FULL_SCENES = {
       if (d.y > h) {
         if (Math.random() < 0.3) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c });
         d.y = -h * 0.05 * Math.random();
-        d.x = Math.random() * w * 1.2 - w * 0.1;
+        d.x = -w * 0.35 + Math.random() * w * 1.35;
       }
     }
     st.splash = st.splash.filter((sp) => {
