@@ -11702,6 +11702,187 @@ async function keepTime(item) {
     viz.beat = 60 / bpm;
     viz.energy = Math.max(0, Math.min(1, sound.energy || 0));
   }
+  // The song's own beats and loudness, worked out on the device; until they
+  // arrive the tempo alone keeps time.
+  listenTo(item, sound && sound.tempo > 0 ? 60 / viz.beat : 0).then((heard) => {
+    if (heard && audio.item === item) viz.heard = { key, ...heard };
+  }).catch(() => {});
+}
+
+/* ------------------------------------------ listening for the visualizer */
+
+// The visualizer follows the song itself, not only its tempo: where every
+// beat falls, which one starts each bar, how loud it is from moment to
+// moment, and the kick and snare hits. A copy of the song is decoded on the
+// side - an OfflineAudioContext, which plays nothing - so the music keeps
+// playing through the ordinary audio element and nothing changes about the
+// lock screen (routing playback itself through Web Audio is what stops it
+// when an iPhone locks). Once per song, kept for the last few.
+const HEARD_KEEP = 6;
+const heardSongs = new Map();
+
+function listenTo(item, tempo) {
+  const key = selectionKey(item);
+  if (heardSongs.has(key)) return heardSongs.get(key);
+  const job = hearSong(item, tempo).catch(() => null);
+  heardSongs.set(key, job);
+  while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
+  return job;
+}
+
+// songBytes is the song to listen to: the whole file already in memory for
+// gapless playback, or a downloaded copy, or else a small 96 kbps copy.
+async function songBytes(item) {
+  const player = $('audio-player');
+  if (audio.item === item && (player.currentSrc || '').startsWith('blob:')) {
+    return (await fetch(player.currentSrc)).arrayBuffer();
+  }
+  try {
+    const res = await fetch(`${streamPath(item)}?kbps=96`);
+    if (res.ok) return res.arrayBuffer();
+  } catch { /* offline: try the device */ }
+  if (window.caches) {
+    const kept = await caches.match(streamPath(item), { cacheName: OFFLINE_CACHE, ignoreSearch: true });
+    if (kept) return kept.arrayBuffer();
+  }
+  throw new Error('no audio to listen to');
+}
+
+async function hearSong(item, tempo) {
+  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!Offline || item.kind !== 'music') return null;
+  const bytes = await songBytes(item);
+  // 11025 a second is plenty for beats and loudness, and a quarter of the
+  // memory; an older Safari refuses low rates for a context, so higher ones
+  // are the fallback.
+  let ctx = null;
+  let SR = 0;
+  for (const rate of [11025, 22050, 44100]) {
+    try { ctx = new Offline(1, rate, rate); SR = rate; break; } catch { /* next */ }
+  }
+  if (!ctx) return null;
+  const HOP = 256 * Math.round(SR / 11025); // about 23ms a frame, whatever the rate
+  const pcm = await new Promise((resolve, reject) => {
+    const p = ctx.decodeAudioData(bytes, resolve, reject);
+    if (p && p.then) p.then(resolve, reject);
+  });
+  const left = pcm.getChannelData(0);
+  const right = pcm.numberOfChannels > 1 ? pcm.getChannelData(1) : null;
+  const fps = SR / HOP;
+  const frames = Math.floor(pcm.length / HOP);
+  if (frames < fps * 5) return null;
+  const loud = new Float32Array(frames);
+  const low = new Float32Array(frames);
+  const high = new Float32Array(frames);
+  // Two one-pole filters split the low end (kick, bass) from the top (snare,
+  // hats): cheap, and enough to tell them apart.
+  const kLow = 1 - Math.exp((-2 * Math.PI * 150) / SR);
+  const kHigh = 1 - Math.exp((-2 * Math.PI * 2500) / SR);
+  let lp = 0, hpState = 0;
+  for (let f = 0; f < frames; f++) {
+    let sx = 0, sl = 0, sh = 0;
+    for (let i = f * HOP, end = i + HOP; i < end; i++) {
+      const x = right ? (left[i] + right[i]) * 0.5 : left[i];
+      lp += kLow * (x - lp);
+      hpState += kHigh * (x - hpState);
+      const hp = x - hpState;
+      sx += x * x; sl += lp * lp; sh += hp * hp;
+    }
+    loud[f] = 10 * Math.log10(sx / HOP + 1e-10);
+    low[f] = 10 * Math.log10(sl / HOP + 1e-10);
+    high[f] = 10 * Math.log10(sh / HOP + 1e-10);
+  }
+  // Onsets: how sharply each band got louder.
+  const lowOn = new Float32Array(frames);
+  const highOn = new Float32Array(frames);
+  const onset = new Float32Array(frames);
+  for (let f = 1; f < frames; f++) {
+    lowOn[f] = Math.max(0, low[f] - low[f - 1]);
+    highOn[f] = Math.max(0, high[f] - high[f - 1]);
+    onset[f] = lowOn[f] + 0.6 * highOn[f] + 0.4 * Math.max(0, loud[f] - loud[f - 1]);
+  }
+  // Loudness as 0 to 1 within this song: quiet verse to its loudest chorus.
+  const scale = (arr, lo, hi) => {
+    const sorted = Float32Array.from(arr).sort();
+    const a = sorted[Math.floor(sorted.length * lo)];
+    const b = sorted[Math.floor(sorted.length * hi)];
+    const out = new Float32Array(arr.length);
+    for (let i = 0; i < arr.length; i++) out[i] = Math.max(0, Math.min(1, (arr[i] - a) / (b - a || 1)));
+    return out;
+  };
+  // How loud a part of the song feels is its energy over about half a second,
+  // not one 23ms slice - between the hits a slice is near silence in a loud
+  // chorus as in a quiet verse.
+  const win = Math.max(1, Math.round(fps * 0.25));
+  const energy = Float64Array.from(loud, (db) => 10 ** (db / 10));
+  const felt = new Float32Array(frames);
+  let run = 0;
+  for (let f = 0; f < frames + win; f++) {
+    if (f < frames) run += energy[f];
+    if (f - 2 * win - 1 >= 0) run -= energy[f - 2 * win - 1];
+    const c = f - win;
+    if (c >= 0 && c < frames) {
+      const n = Math.min(frames - 1, c + win) - Math.max(0, c - win) + 1;
+      felt[c] = 10 * Math.log10(run / n + 1e-10);
+    }
+  }
+  const loudN = scale(felt, 0.05, 0.97);
+  const lowOnN = scale(lowOn, 0.5, 0.995);
+  const highOnN = scale(highOn, 0.5, 0.995);
+
+  // The tempo: the lag at which the onsets repeat best, between 70 and 170
+  // beats a minute, leaning towards the analysis's own tempo when there is one.
+  let mean = 0;
+  for (let f = 0; f < frames; f++) mean += onset[f];
+  mean /= frames;
+  let sd = 0;
+  for (let f = 0; f < frames; f++) sd += (onset[f] - mean) ** 2;
+  sd = Math.sqrt(sd / frames) || 1;
+  const on = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) on[f] = (onset[f] - mean) / sd;
+  const prior = tempo > 0 ? tempo : 120;
+  let bestLag = Math.round((60 / prior) * fps);
+  let best = -Infinity;
+  for (let lag = Math.round((60 / 170) * fps); lag <= Math.round((60 / 70) * fps); lag++) {
+    let sum = 0;
+    for (let f = lag; f < frames; f++) sum += on[f] * on[f - lag];
+    sum /= frames - lag;
+    const octaves = Math.log2((60 * fps) / lag / prior);
+    const weighted = sum * Math.exp(-0.5 * (octaves / (tempo > 0 ? 0.25 : 0.9)) ** 2);
+    if (weighted > best) { best = weighted; bestLag = lag; }
+  }
+  const period = bestLag;
+
+  // The beats themselves: dynamic programming (Ellis, 2007) - every frame's
+  // best chain of beats ending there, rewarding onsets and punishing gaps
+  // that stray from the period, so it follows a tempo that wanders.
+  const score = new Float32Array(frames);
+  const back = new Int32Array(frames).fill(-1);
+  const tight = 100;
+  for (let i = 0; i < frames; i++) {
+    let bestPrev = -Infinity;
+    let bj = -1;
+    const from = i - Math.round(period * 2);
+    const to = i - Math.round(period / 2);
+    for (let j = Math.max(0, from); j <= to; j++) {
+      const gap = Math.log((i - j) / period);
+      const v = score[j] - tight * gap * gap;
+      if (v > bestPrev) { bestPrev = v; bj = j; }
+    }
+    score[i] = on[i] + (bj >= 0 ? bestPrev : 0);
+    back[i] = bj;
+  }
+  let end = frames - 1;
+  for (let i = Math.max(0, frames - period); i < frames; i++) if (score[i] > score[end]) end = i;
+  const beatFrames = [];
+  for (let i = end; i >= 0; i = back[i]) beatFrames.push(i);
+  beatFrames.reverse();
+  const beats = Float64Array.from(beatFrames, (f) => f / fps);
+  // Which beat starts each bar: the one of four where the kick lands hardest.
+  const hit = [0, 0, 0, 0];
+  beatFrames.forEach((f, k) => { hit[k % 4] += lowOnN[f] + lowOnN[Math.min(frames - 1, f + 1)]; });
+  const down = hit.indexOf(Math.max(...hit));
+  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down };
 }
 
 // coverPalette picks up to three colours from a cover's 16x16 pixels: the
@@ -11785,23 +11966,55 @@ const viz = {
     if (!w || !h) { this.raf = requestAnimationFrame((ts) => this.frame(ts)); return; }
 
     const t = player.currentTime || 0;
-    const beat = this.beat;
     const e = this.energy;
     const lv = this.level;
-    const phase = (t % beat) / beat;
-    const beatNo = Math.floor(t / beat);
-    const kick = Math.exp(-phase * 5) * lv;
-    const snare = (beatNo % 2 === 1 ? Math.exp(-phase * 6) : 0) * lv;
+    let beat = this.beat;
+    let phase = (t % beat) / beat;
+    let beatNo = Math.floor(t / beat);
+    let downbeat = beatNo % 4 === 0;
+    let kick = Math.exp(-phase * 5) * lv;
+    let snare = (beatNo % 2 === 1 ? Math.exp(-phase * 6) : 0) * lv;
+    let loudness = 0.6;
+    const heard = this.heard && audio.item && this.heard.key === selectionKey(audio.item) ? this.heard : null;
+    if (heard) {
+      // The beat the song is on, from the list of beats found in it.
+      const bs = heard.beats;
+      let lo = 0, hi = bs.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= t) lo = mid; else hi = mid - 1; }
+      if (bs.length > 1 && bs[lo] <= t) {
+        const next = lo + 1 < bs.length ? bs[lo + 1] : bs[lo] + (bs[lo] - bs[Math.max(0, lo - 1)] || beat);
+        beat = next - bs[lo];
+        phase = Math.min(1, (t - bs[lo]) / beat);
+        beatNo = lo;
+        downbeat = (lo - heard.down) % 4 === 0;
+      }
+      // Loudness and the hits, where the song actually is, a little smoothed
+      // on the way down so a hit is seen rather than flickered.
+      const fi = Math.max(0, Math.min(heard.loud.length - 1, Math.floor(t * heard.fps)));
+      const fall = Math.exp(-dt * 7);
+      this.kickEnv = Math.max((this.kickEnv || 0) * fall, heard.low[fi]);
+      this.snareEnv = Math.max((this.snareEnv || 0) * fall, heard.high[fi]);
+      this.loudEnv = (this.loudEnv || heard.loud[fi]) + (heard.loud[fi] - (this.loudEnv || 0)) * Math.min(1, dt * 6);
+      loudness = this.loudEnv;
+      // A hit is a jump in level, as big in a soft passage as a loud one, so
+      // it is scaled by how loud the song is there.
+      const hitScale = 0.25 + 0.75 * loudness;
+      kick = Math.max(this.kickEnv, Math.exp(-phase * 6) * 0.35) * lv * hitScale;
+      snare = this.snareEnv * lv * hitScale;
+    }
     const bar = (t / (beat * 4)) % 1;
-    const downbeat = beatNo % 4 === 0;
-    const drive = 0.45 + 0.8 * e; // how hard everything moves
+    // How hard everything moves: the song's energy, and how loud it is right
+    // now - a quiet verse calms it, the chorus lets it go.
+    const drive = (0.25 + 0.9 * loudness) * (0.6 + 0.7 * e);
+    // And how bright it all is: dim in a quiet passage, blazing when loud.
+    const bright = 0.35 + 0.65 * loudness;
     const cx = w / 2, cy = h / 2;
     const size = w / 1.8; // the cover's size: the canvas is 180% of it
     const R0 = size * 0.3;
     const pal = this.palette;
     const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
     // A clock that runs with the music and idles slowly without it.
-    this.clock = (this.clock || 0) + dt * (0.25 + 0.75 * lv) * (0.7 + 0.6 * e);
+    this.clock = (this.clock || 0) + dt * (0.25 + 0.75 * lv) * (0.5 + 0.5 * e + 0.6 * loudness);
     const ck = this.clock;
 
     // ---- the orb, redrawn whole
@@ -11815,7 +12028,7 @@ const viz = {
       const y = cy + Math.sin(ang * 1.2) * R0 * 0.9;
       const r = R0 * (2.2 + 0.5 * kick * drive);
       const grad = g.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, rgba(pal[i], 0.22 * (0.4 + 0.6 * lv)));
+      grad.addColorStop(0, rgba(pal[i], 0.22 * (0.4 + 0.6 * lv) * bright));
       grad.addColorStop(1, rgba(pal[i], 0));
       g.fillStyle = grad;
       g.fillRect(0, 0, w, h);
@@ -11860,15 +12073,15 @@ const viz = {
       }
       g.closePath();
       const grad = g.createRadialGradient(cx, cy, R * 0.15, cx, cy, R * 1.25);
-      grad.addColorStop(0, rgba(pal[l % 3], 0.05));
-      grad.addColorStop(0.6, rgba(pal[l % 3], 0.2 + 0.1 * lv));
-      grad.addColorStop(1, rgba(pal[l % 3], 0.04));
+      grad.addColorStop(0, rgba(pal[l % 3], 0.05 * bright));
+      grad.addColorStop(0.6, rgba(pal[l % 3], (0.2 + 0.1 * lv) * bright));
+      grad.addColorStop(1, rgba(pal[l % 3], 0.04 * bright));
       g.fillStyle = grad;
       g.fill();
     });
     // A bright core that flashes on the kick.
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, R0 * (0.9 + 0.5 * kick));
-    core.addColorStop(0, `rgba(255, 255, 255, ${0.18 + 0.4 * kick})`);
+    core.addColorStop(0, `rgba(255, 255, 255, ${0.1 + 0.1 * bright + 0.4 * kick})`);
     core.addColorStop(1, 'rgba(255, 255, 255, 0)');
     g.fillStyle = core;
     g.fillRect(0, 0, w, h);
@@ -11876,7 +12089,7 @@ const viz = {
     g.lineWidth = 1.4 * dpr;
     for (let i = 0; i < 3; i++) {
       const R = R0 * (1.35 + i * 0.16) * (1 + 0.12 * kick * drive);
-      g.strokeStyle = rgba(pal[(i + 1) % 3], 0.35 + 0.35 * lv);
+      g.strokeStyle = rgba(pal[(i + 1) % 3], (0.35 + 0.35 * lv) * bright);
       g.beginPath();
       for (let p = 0; p <= pts; p++) {
         const th = (p / pts) * TAU;
@@ -11914,7 +12127,7 @@ const viz = {
     // Every beat throws them outward; a spring brings them back.
     if (playing && beatNo !== this.lastBeat) {
       this.lastBeat = beatNo;
-      const push = (0.5 + 0.9 * e) * (downbeat ? 1.6 : 1);
+      const push = (0.5 + 0.9 * e) * (downbeat ? 1.6 : 1) * (0.3 + 0.9 * (this.loudEnv === undefined ? 0.6 : this.loudEnv));
       for (const d of this.dots) d.v += push * (0.4 + Math.random() * 0.8);
     }
     for (const d of this.dots) {
@@ -11926,7 +12139,7 @@ const viz = {
       const y = cy + Math.sin(d.a) * rr * 0.92;
       // A streak from where it was, so the trails are smooth lines rather
       // than a string of dots one frame apart.
-      f.strokeStyle = rgba(pal[d.c], 0.55 + 0.4 * lv);
+      f.strokeStyle = rgba(pal[d.c], (0.55 + 0.4 * lv) * (0.45 + 0.55 * bright));
       f.lineWidth = d.size * dpr * (1 + kick * 0.6);
       f.lineCap = 'round';
       f.beginPath();

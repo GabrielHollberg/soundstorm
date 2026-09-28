@@ -588,6 +588,29 @@ judged on in its first minute:
   iPhone 13 profile. It sits behind the (hidden) cover inside the wrap, which
   is its own layer (`isolation`), so the title always draws on top.
 
+  **It follows the song itself, not only its tempo** (`listenTo`,
+  `hearSong`). Reported as the timing seeming slightly off, with loud and
+  quiet asked to count: the tempo alone put the first beat at 0:00, and a
+  tempo slightly wrong drifted. Now a copy of the song - the gapless blob
+  already in memory, a download, or else a 96 kbps stream - is decoded on an
+  OfflineAudioContext, which plays nothing, so playback stays on the audio
+  element and the iPhone lock screen is untouched. At 11025 a second
+  (22050 or 44100 where an older Safari refuses low rates), 23ms frames give
+  loudness (energy over half a second: one slice between hits is near silence
+  in a loud chorus too), a low band (kick) and a high band (snare, hats) from
+  two one-pole filters, and onsets. The tempo is the onsets' autocorrelation,
+  leaning on AudioMuse-AI's tempo when there is one; the beats come from
+  Ellis's dynamic-programming tracker, so a wandering tempo is followed; the
+  bar's first beat is where the kick lands hardest. Measured on a generated
+  click track (120 bpm, first beat at 0.23s, a quiet section): all 120 beats,
+  mean error 13ms (max 24ms, one frame), loudness 0.02 in the quiet part
+  against 0.87 in the loud, about a second to analyse. The visualizer then
+  takes its beat from the list, its hits from the bands (scaled by loudness,
+  since an onset in dB is as big in a soft passage as a loud one), and its
+  size, speed and brightness from loudness. Until the analysis arrives, the
+  tempo alone keeps time. Not compensated: Bluetooth output latency, which a
+  page cannot measure without an AudioContext of its own.
+
   **No reduced-motion exception for these looks, and that was the iPhone
   bug.** Reported as the spinning and moving covers doing nothing on an
   iPhone 13 while working on Android. In Playwright's WebKit with an
