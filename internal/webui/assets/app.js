@@ -11403,7 +11403,10 @@ function showHoldIcons(pointerId, x0, y0) {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onEnd);
     document.removeEventListener('pointercancel', onEnd);
-    const chosen = event.type === 'pointerup' && moved && lit ? lit.soundstormHold : null;
+    // Whatever is under the finger when it lifts is chosen, moved or not: a
+    // thumb that came down on play and stayed there means play (the owner's
+    // asking - it used to take moving off and back on).
+    const chosen = event.type === 'pointerup' && lit ? lit.soundstormHold : null;
     if (event.type === 'pointerup' && seekTo !== null) player.currentTime = seekTo * player.duration;
     state.seeking = false;
     light(null);
@@ -11415,6 +11418,8 @@ function showHoldIcons(pointerId, x0, y0) {
     setTimeout(() => { state.suppressClick = false; }, 500);
     if (chosen) chosen.run();
   };
+  // Lit at once if the finger is already on one as they appear.
+  light(iconAt(x0, y0));
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onEnd);
   document.addEventListener('pointercancel', onEnd);

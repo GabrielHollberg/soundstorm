@@ -554,8 +554,11 @@ judged on in its first minute:
   playlist** (a plain plus: Up next's list icon was too like it) between
   them, download, Up next and songs like this along the bottom. Slide onto
   one and it grows and is named where the title was; let go on it to use
-  it; let go anywhere else, or without having moved (so the icon that
-  appears under a still thumb is not chosen), and they go. Info, sleep and
+  it; let go anywhere else and they go. The icon a thumb came down on is
+  lit at once and chosen on letting go without moving - a reversal: it
+  used to need moving off and back on, so the icon under a still thumb was
+  never chosen, and the owner put a thumb on play, held, lifted, and
+  nothing played. Info, sleep and
   add to playlist open their menu page. With the cover hidden they appear
   in a square in the middle. The veil behind them takes the cover's own size
   about its centre, never its bounding box: a spinning record is rotated,
