@@ -11914,7 +11914,7 @@ async function saveHeard(item, heard, sound) {
   if (!window.caches) return;
   try {
     const kept = {
-      v: 2, fps: heard.fps, down: heard.down, drops: Array.from(heard.drops || []),
+      v: 3, fps: heard.fps, down: heard.down, drops: Array.from(heard.drops || []), bass: toB64(toBytes(heard.bass || [])),
       loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
       beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
       sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
@@ -11930,9 +11930,9 @@ async function loadHeard(item) {
     const resp = await caches.match(heardURL(item), { cacheName: OFFLINE_CACHE });
     if (!resp) return null;
     const k = await resp.json();
-    if (k.v !== 2) return null; // from before drops were found: heard again
+    if (k.v !== 3) return null; // from before drops and the bass were kept: heard again
     const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
-    return { fps: k.fps, down: k.down, drops: k.drops || [], loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+    return { fps: k.fps, down: k.down, drops: k.drops || [], bass: fromBytes(fromB64(k.bass || '')), loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
   } catch {
     return null;
   }
@@ -12166,7 +12166,7 @@ async function hearSong(item, tempo) {
     if (drops.every((d) => Math.abs(d - t) >= 8)) drops.push(t);
   }
   drops.sort((a, b) => a - b);
-  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down, drops };
+  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down, drops, bass };
 }
 
 // coverPalette picks up to three colours from a cover's 16x16 pixels: the
@@ -12321,19 +12321,41 @@ const viz = {
       snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
       novelty = Math.max(this.beatNovelty || 0, surge);
     }
-    // A drop: the moment one of the song's drops is reached (drop), and a
-    // glow that fades over a second and a half after it (dropEnv).
+    // The lightning moments. A drop, and then the first beat of every measure
+    // for as long as the heavy part it began lasts - until the bass falls
+    // away for a second and a half. drop is such a moment, firstDrop the drop
+    // itself, dropEnv a glow fading after the last one.
     let drop = false;
-    let dropEnv = 0;
+    let firstDrop = false;
     if (heard && heard.drops) {
       for (let i = 0; i < heard.drops.length; i++) {
         const since = t - heard.drops[i];
-        if (since >= 0 && since < 1.6) {
-          dropEnv = Math.max(dropEnv, 1 - since / 1.6);
-          if (playing && since < 0.3 && this.lastDrop !== i) { this.lastDrop = i; drop = true; }
+        if (playing && since >= 0 && since < 0.3 && this.lastDrop !== i) {
+          this.lastDrop = i;
+          firstDrop = true;
+          this.inDrop = true;
+          this.lowRun = 0;
+          // A drop is the first beat of a measure: the measures that follow
+          // are counted from it, whatever the song's own guess was.
+          this.dropBeat = beatNo;
         }
       }
     }
+    if (this.inDrop && heard && heard.bass && heard.bass.length) {
+      const b = heard.bass[Math.max(0, Math.min(heard.bass.length - 1, Math.floor(t * heard.fps)))];
+      this.lowRun = b < 0.45 ? (this.lowRun || 0) + dt : 0;
+      if (this.lowRun > 1.5) this.inDrop = false;
+    }
+    const fromDrop = this.dropBeat === undefined ? downbeat : ((beatNo - this.dropBeat) % 4 + 4) % 4 === 0;
+    const measureStart = playing && fromDrop && beatNo !== this.bigBeat;
+    if (firstDrop || (this.inDrop && measureStart)) {
+      drop = true;
+      this.bigBeat = beatNo;
+      this.bigAt = t;
+      this.bigLen = firstDrop ? 1.6 : 1.1;
+    }
+    const sinceBig = t - (this.bigAt === undefined ? -99 : this.bigAt);
+    const dropEnv = sinceBig >= 0 && sinceBig < (this.bigLen || 1.6) ? 1 - sinceBig / (this.bigLen || 1.6) : 0;
     if (drop) this.beatNovelty = 1;
     this.kickNow = kick; // for a look from outside: how hard this moment hits
     this.noveltyNow = novelty;
@@ -12371,7 +12393,7 @@ const viz = {
         f.clearRect(0, 0, w, h);
       }
       scene(this.scene, {
-        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, dropEnv,
+        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, firstDrop, dropEnv,
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
       if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
@@ -12527,8 +12549,30 @@ $('audio-player').addEventListener('play', () => {
   if ($('now-playing').classList.contains('cover-viz')) viz.start();
 });
 // A jump in the song starts the "what stands out" comparison afresh.
+// dropSectionAt: whether t is in the heavy part a drop began - after a drop,
+// with the bass not away for a second and a half since.
+function dropSectionAt(heard, t) {
+  if (!heard || !heard.drops || !heard.bass || !heard.bass.length) return false;
+  const last = [...heard.drops].filter((d) => d <= t).pop();
+  if (last === undefined) return false;
+  let run = 0;
+  for (let i = Math.floor(last * heard.fps), end = Math.min(heard.bass.length, Math.floor(t * heard.fps)); i < end; i++) {
+    run = heard.bass[i] < 0.45 ? run + 1 : 0;
+    if (run > heard.fps * 1.5) return false;
+  }
+  return true;
+}
 $('audio-player').addEventListener('seeked', () => {
-  viz.lastDrop = -1;
+  const t = $('audio-player').currentTime || 0;
+  viz.inDrop = viz.heard ? dropSectionAt(viz.heard, t) : false;
+  if (viz.inDrop) {
+    const last = viz.heard.drops.filter((d) => d <= t).pop();
+    viz.dropBeat = viz.heard.beats.findIndex((b) => b >= last - 0.05);
+  }
+  viz.lowRun = 0;
+  viz.bigAt = undefined;
+  // The drop just behind the new place does not fire again; one ahead does.
+  viz.lastDrop = viz.heard && viz.heard.drops ? viz.heard.drops.filter((d) => d <= t - 0.3).length - 1 : -1;
   viz.kickPeaks = [];
   viz.snarePeaks = [];
   viz.loudAvg = undefined;
@@ -12644,7 +12688,7 @@ const FULL_SCENES = {
     }
     // Lightning is for a bass drop, and only that: a double strike, jagged
     // paths down with branches, and a flash.
-    for (let strike = 0; m.drop && strike < 2; strike++) {
+    for (let strike = 0; m.drop && strike < (m.firstDrop ? 2 : 1); strike++) {
       const pts = [];
       let x = w * (0.2 + Math.random() * 0.6);
       let y = 0;
@@ -13186,11 +13230,14 @@ const VIZ_SCENES = {
       }
       st.flashes.push({ x, y, life: 1, r: size * power * 0.6, c });
     };
-    if (m.drop) {
+    if (m.firstDrop) {
       // The drop: a great burst in the middle, and two more beside it.
       burst(cx, cy - size * 0.1, 180, 1.5, 0);
       burst(cx - size * 0.45, cy, 70, 0.9, 1);
       burst(cx + size * 0.45, cy, 70, 0.9, 2);
+    } else if (m.drop) {
+      // Each measure of the heavy part after it: one great burst.
+      burst(cx + (Math.random() - 0.5) * size * 0.5, cy - size * 0.15, 110, 1.2, Math.floor(Math.random() * 3));
     } else if (newBeat) {
       const a = Math.random() * Math.PI * 2;
       const d = Math.random() * size * 0.45;

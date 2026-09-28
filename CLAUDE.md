@@ -703,6 +703,19 @@ judged on in its first minute:
   the background pass; a seek clears the last drop, so jumping back replays
   it. On the click track: one drop found, at 40.24s (the beat is 40.23s), no
   strike in fourteen seconds of steady loud beats, a double strike at 40.3s.
+  **Then: on the first beat of every measure, through the heavy part.**
+  Asked next for "first beat of every measure" - read as the drop, then every
+  measure while the heavy bass it began lasts (confirming or correcting that
+  reading was offered). The analysis keeps the bass level (saved analyses are
+  version 3); a heavy part runs from a drop until the bass stays under 0.45
+  for a second and a half. Its measures are counted from the drop itself - a
+  drop is the "one" - not from the song's own guess at the downbeat, which on
+  the click track put the first strike a second after the drop. A seek works
+  out whether the new place is in a heavy part and where its measures fall
+  (`dropSectionAt`). Storm strikes twice on the drop and once on each measure
+  after; Fireworks gives the finale on the drop and a great burst each
+  measure. Measured: no strike before the drop, then 40.3, 42.3, 44.3, 46.3,
+  48.3s, and 52.3, 54.3, 56.3s after seeking into the heavy part.
   **The Looks sheet** lost its Done button (cut off on a phone): a choice
   closes it, names only (three to a row fit), no scrolling on an iPhone 13,
   and Now Playing's swipe and hold stand down inside it - a scroll in it
