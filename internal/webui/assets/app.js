@@ -11860,7 +11860,7 @@ async function keepTime(item) {
   // The song's own beats and loudness, worked out on the device; until they
   // arrive the tempo alone keeps time.
   listenTo(item, sound && sound.tempo > 0 ? 60 / viz.beat : 0).then((heard) => {
-    if (heard && audio.item === item) viz.heard = { key, ...heard };
+    if (heard && audio.item === item) { viz.heard = { key, ...heard }; viz.nextBoom = 0; viz.bigAt = undefined; }
   }).catch(() => {});
 }
 
@@ -11914,7 +11914,7 @@ async function saveHeard(item, heard, sound) {
   if (!window.caches) return;
   try {
     const kept = {
-      v: 3, fps: heard.fps, down: heard.down, drops: Array.from(heard.drops || []), bass: toB64(toBytes(heard.bass || [])),
+      v: 4, fps: heard.fps, down: heard.down, booms: (heard.booms || []).map((bm) => [+bm.t.toFixed(3), bm.first ? 1 : 0]),
       loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
       beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
       sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
@@ -11930,9 +11930,9 @@ async function loadHeard(item) {
     const resp = await caches.match(heardURL(item), { cacheName: OFFLINE_CACHE });
     if (!resp) return null;
     const k = await resp.json();
-    if (k.v !== 3) return null; // from before drops and the bass were kept: heard again
+    if (k.v !== 4) return null; // from before the booms were found: heard again
     const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
-    return { fps: k.fps, down: k.down, drops: k.drops || [], bass: fromBytes(fromB64(k.bass || '')), loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+    return { fps: k.fps, down: k.down, booms: (k.booms || []).map(([bt, first]) => ({ t: bt, first: Boolean(first) })), loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
   } catch {
     return null;
   }
@@ -12022,14 +12022,31 @@ async function hearSong(item, tempo) {
   const kLow = 1 - Math.exp((-2 * Math.PI * 150) / SR);
   const kHigh = 1 - Math.exp((-2 * Math.PI * 2500) / SR);
   let lp = 0, hpState = 0;
+  // And the sub-bass under 100 Hz, through a proper two-pole filter, at twice
+  // the frame rate: where the big booms are, timed closely enough to strike
+  // lightning on.
+  const w0 = (2 * Math.PI * 100) / SR;
+  const al = Math.sin(w0) / (2 * 0.707);
+  const cw = Math.cos(w0);
+  const qa0 = 1 + al, qb0 = (1 - cw) / 2 / qa0, qb1 = (1 - cw) / qa0, qa1 = (-2 * cw) / qa0, qa2 = (1 - al) / qa0;
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  const subHop = HOP / 2;
+  const sub = new Float32Array(frames * 2);
   for (let f = 0; f < frames; f++) {
-    let sx = 0, sl = 0, sh = 0;
+    let sx = 0, sl = 0, sh = 0, ss = 0;
     for (let i = f * HOP, end = i + HOP; i < end; i++) {
       const x = right ? (left[i] + right[i]) * 0.5 : left[i];
       lp += kLow * (x - lp);
       hpState += kHigh * (x - hpState);
       const hp = x - hpState;
       sx += x * x; sl += lp * lp; sh += hp * hp;
+      const y = qb0 * x + qb1 * x1 + qb0 * x2 - qa1 * y1 - qa2 * y2;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      ss += y * y;
+      if ((i - f * HOP + 1) % subHop === 0) {
+        sub[f * 2 + ((i - f * HOP + 1) / subHop) - 1] = 10 * Math.log10(ss / subHop + 1e-10);
+        ss = 0;
+      }
     }
     loud[f] = 10 * Math.log10(sx / HOP + 1e-10);
     low[f] = 10 * Math.log10(sl / HOP + 1e-10);
@@ -12126,47 +12143,50 @@ async function hearSong(item, tempo) {
   beatFrames.forEach((f, k) => { hit[k % 4] += lowOnN[f] + lowOnN[Math.min(frames - 1, f + 1)]; });
   const down = hit.indexOf(Math.max(...hit));
 
-  // The drops: where the deep bass slams in - its level over the next second
-  // well above the four seconds before, and loud. Kept for the moments that
-  // deserve lightning. The bass level is the low band's energy over half a
-  // second, as loudness is, 0 to 1 within the song.
-  const lowEnergy = Float64Array.from(low, (db) => 10 ** (db / 10));
-  const bassDb = new Float32Array(frames);
-  run = 0;
-  for (let f = 0; f < frames + win; f++) {
-    if (f < frames) run += lowEnergy[f];
-    if (f - 2 * win - 1 >= 0) run -= lowEnergy[f - 2 * win - 1];
-    const c = f - win;
-    if (c >= 0 && c < frames) {
-      const n = Math.min(frames - 1, c + win) - Math.max(0, c - win) + 1;
-      bassDb[c] = 10 * Math.log10(run / n + 1e-10);
+  // The booms: runs of big hits in the deep bass, one after another faster
+  // than the beat - the "boom boom boom" at 0:37 in Imagine Dragons'
+  // Thunder, which is what lightning is for. A hit is the sub-bass jumping
+  // 10dB or more over the lowest of the 150ms before it, within 60ms, to at
+  // least the song's middling hit level: a hit out of a lull, not merely a
+  // loud one. A run is three or more, each under 0.45s after the last. Worked
+  // out on the real file: with a jump of 8dB the ordinary drumming at 0:36
+  // counted and the booms were one run among six; at 10dB the runs are
+  // exactly 37.48, 37.91 and 38.22s, and the same again at 1:21 and 1:23.
+  const sfps = SR / subHop;
+  const hits = [];
+  const subAhead = Math.round(0.06 * sfps);
+  const subBack = Math.round(0.15 * sfps);
+  for (let f = subBack; f < sub.length - subAhead; f++) {
+    if (sub[f] - sub[f - 1] <= 1.5) continue;
+    let peak = -200, floor = 200;
+    for (let k = 0; k < subAhead; k++) peak = Math.max(peak, sub[f + k]);
+    for (let k = 1; k <= subBack; k++) floor = Math.min(floor, sub[f - k]);
+    const jump = peak - floor;
+    if (jump < 6) continue;
+    const last = hits[hits.length - 1];
+    if (last && f - last.f < 0.18 * sfps) {
+      if (jump > last.jump) hits[hits.length - 1] = { f, jump, peak };
+    } else {
+      hits.push({ f, jump, peak });
     }
   }
-  const bass = scale(bassDb, 0.05, 0.97);
-  const sum = new Float64Array(frames + 1);
-  for (let f = 0; f < frames; f++) sum[f + 1] = sum[f] + bass[f];
-  const avg = (a, b) => (sum[b] - sum[a]) / Math.max(1, b - a);
-  const after = Math.round(fps * 1);
-  const before = Math.round(fps * 4);
-  const gap = Math.round(fps * 0.3);
-  const found = [];
-  for (let f = before; f < frames - after; f += 2) {
-    const up = avg(f, f + after);
-    const rise = up - avg(f - before, f - gap);
-    if (up > 0.62 && rise > 0.33) found.push({ f, rise });
+  const booms = [];
+  if (hits.length > 8) {
+    const peaks = hits.map((h) => h.peak).sort((x, y) => x - y);
+    const middling = peaks[Math.floor(peaks.length / 2)];
+    const solid = hits.filter((h) => h.jump >= 10 && h.peak >= middling);
+    let run = [];
+    const close = () => {
+      if (run.length >= 3) run.forEach((h, k) => booms.push({ t: h.f / sfps, first: k === 0 }));
+      run = [];
+    };
+    for (const h of solid) {
+      if (run.length && (h.f - run[run.length - 1].f) / sfps > 0.45) close();
+      run.push(h);
+    }
+    close();
   }
-  // The strongest rise of each cluster, at least eight seconds apart, moved
-  // onto the beat it lands on.
-  found.sort((a, b) => b.rise - a.rise);
-  const drops = [];
-  for (const c of found) {
-    let t = c.f / fps;
-    const onBeat = beats.find((b) => b >= t - 0.15 && b <= t + 0.6);
-    if (onBeat !== undefined) t = onBeat;
-    if (drops.every((d) => Math.abs(d - t) >= 8)) drops.push(t);
-  }
-  drops.sort((a, b) => a - b);
-  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down, drops, bass };
+  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down, booms };
 }
 
 // coverPalette picks up to three colours from a cover's 16x16 pixels: the
@@ -12321,41 +12341,25 @@ const viz = {
       snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
       novelty = Math.max(this.beatNovelty || 0, surge);
     }
-    // The lightning moments. A drop, and then the first beat of every measure
-    // for as long as the heavy part it began lasts - until the bass falls
-    // away for a second and a half. drop is such a moment, firstDrop the drop
-    // itself, dropEnv a glow fading after the last one.
+    // The lightning moments: each boom in a run of booms, as it lands (drop),
+    // the first of a run marked (firstDrop), and a glow fading after the last
+    // one (dropEnv).
     let drop = false;
     let firstDrop = false;
-    if (heard && heard.drops) {
-      for (let i = 0; i < heard.drops.length; i++) {
-        const since = t - heard.drops[i];
-        if (playing && since >= 0 && since < 0.3 && this.lastDrop !== i) {
-          this.lastDrop = i;
-          firstDrop = true;
-          this.inDrop = true;
-          this.lowRun = 0;
-          // A drop is the first beat of a measure: the measures that follow
-          // are counted from it, whatever the song's own guess was.
-          this.dropBeat = beatNo;
+    if (heard && heard.booms && heard.booms.length) {
+      let i = this.nextBoom || 0;
+      while (i < heard.booms.length && heard.booms[i].t <= t) {
+        if (playing && t - heard.booms[i].t < 0.15) {
+          drop = true;
+          firstDrop = firstDrop || heard.booms[i].first;
+          this.bigAt = heard.booms[i].t;
         }
+        i++;
       }
-    }
-    if (this.inDrop && heard && heard.bass && heard.bass.length) {
-      const b = heard.bass[Math.max(0, Math.min(heard.bass.length - 1, Math.floor(t * heard.fps)))];
-      this.lowRun = b < 0.45 ? (this.lowRun || 0) + dt : 0;
-      if (this.lowRun > 1.5) this.inDrop = false;
-    }
-    const fromDrop = this.dropBeat === undefined ? downbeat : ((beatNo - this.dropBeat) % 4 + 4) % 4 === 0;
-    const measureStart = playing && fromDrop && beatNo !== this.bigBeat;
-    if (firstDrop || (this.inDrop && measureStart)) {
-      drop = true;
-      this.bigBeat = beatNo;
-      this.bigAt = t;
-      this.bigLen = firstDrop ? 1.6 : 1.1;
+      this.nextBoom = i;
     }
     const sinceBig = t - (this.bigAt === undefined ? -99 : this.bigAt);
-    const dropEnv = sinceBig >= 0 && sinceBig < (this.bigLen || 1.6) ? 1 - sinceBig / (this.bigLen || 1.6) : 0;
+    const dropEnv = sinceBig >= 0 && sinceBig < 0.9 ? 1 - sinceBig / 0.9 : 0;
     if (drop) this.beatNovelty = 1;
     this.kickNow = kick; // for a look from outside: how hard this moment hits
     this.noveltyNow = novelty;
@@ -12549,30 +12553,10 @@ $('audio-player').addEventListener('play', () => {
   if ($('now-playing').classList.contains('cover-viz')) viz.start();
 });
 // A jump in the song starts the "what stands out" comparison afresh.
-// dropSectionAt: whether t is in the heavy part a drop began - after a drop,
-// with the bass not away for a second and a half since.
-function dropSectionAt(heard, t) {
-  if (!heard || !heard.drops || !heard.bass || !heard.bass.length) return false;
-  const last = [...heard.drops].filter((d) => d <= t).pop();
-  if (last === undefined) return false;
-  let run = 0;
-  for (let i = Math.floor(last * heard.fps), end = Math.min(heard.bass.length, Math.floor(t * heard.fps)); i < end; i++) {
-    run = heard.bass[i] < 0.45 ? run + 1 : 0;
-    if (run > heard.fps * 1.5) return false;
-  }
-  return true;
-}
 $('audio-player').addEventListener('seeked', () => {
   const t = $('audio-player').currentTime || 0;
-  viz.inDrop = viz.heard ? dropSectionAt(viz.heard, t) : false;
-  if (viz.inDrop) {
-    const last = viz.heard.drops.filter((d) => d <= t).pop();
-    viz.dropBeat = viz.heard.beats.findIndex((b) => b >= last - 0.05);
-  }
-  viz.lowRun = 0;
   viz.bigAt = undefined;
-  // The drop just behind the new place does not fire again; one ahead does.
-  viz.lastDrop = viz.heard && viz.heard.drops ? viz.heard.drops.filter((d) => d <= t - 0.3).length - 1 : -1;
+  viz.nextBoom = viz.heard && viz.heard.booms ? viz.heard.booms.filter((bm) => bm.t < t - 0.05).length : 0;
   viz.kickPeaks = [];
   viz.snarePeaks = [];
   viz.loudAvg = undefined;
@@ -13236,7 +13220,7 @@ const VIZ_SCENES = {
       burst(cx - size * 0.45, cy, 70, 0.9, 1);
       burst(cx + size * 0.45, cy, 70, 0.9, 2);
     } else if (m.drop) {
-      // Each measure of the heavy part after it: one great burst.
+      // Each boom after it: one great burst.
       burst(cx + (Math.random() - 0.5) * size * 0.5, cy - size * 0.15, 110, 1.2, Math.floor(Math.random() * 3));
     } else if (newBeat) {
       const a = Math.random() * Math.PI * 2;

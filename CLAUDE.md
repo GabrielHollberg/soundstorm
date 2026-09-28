@@ -687,35 +687,27 @@ judged on in its first minute:
   rain over the whole screen (spawned left of it for the wind) and slower,
   lightning at most every eight seconds, on a standout moment in a loud part,
   and only a third of those - once in sixteen loud seconds when measured.
-  **Lightning is for bass drops, and so are the other big flashes.** Asked
-  for as "lightning type stuff should be reserved for deep bass beat drops".
-  The analysis now finds the drops (`drops` in `hearSong`): the low band's
-  energy over half a second, 0 to 1 within the song, and a drop wherever its
-  level over the next second is loud (over 0.62) and well above the four
-  seconds before (a rise over 0.33) - the strongest of each cluster, at least
-  eight seconds apart, moved onto the beat it lands on. Nothing before four
-  seconds in, so a song that starts loud has no drop. Storm strikes (twice,
-  with a flash) only on a drop; the Orb's white shock ring and flash, Flow's
-  big white wave, Galaxy's ripple, Warp's tunnel surge and a Fireworks finale
-  are drop-only too, while beats and bars keep their smaller coloured
-  reactions. A song without a drop has no lightning at all. Saved analyses
-  went to version 2 to carry the drops, so older downloads are heard again by
-  the background pass; a seek clears the last drop, so jumping back replays
-  it. On the click track: one drop found, at 40.24s (the beat is 40.23s), no
-  strike in fourteen seconds of steady loud beats, a double strike at 40.3s.
-  **Then: on the first beat of every measure, through the heavy part.**
-  Asked next for "first beat of every measure" - read as the drop, then every
-  measure while the heavy bass it began lasts (confirming or correcting that
-  reading was offered). The analysis keeps the bass level (saved analyses are
-  version 3); a heavy part runs from a drop until the bass stays under 0.45
-  for a second and a half. Its measures are counted from the drop itself - a
-  drop is the "one" - not from the song's own guess at the downbeat, which on
-  the click track put the first strike a second after the drop. A seek works
-  out whether the new place is in a heavy part and where its measures fall
-  (`dropSectionAt`). Storm strikes twice on the drop and once on each measure
-  after; Fireworks gives the finale on the drop and a great burst each
-  measure. Measured: no strike before the drop, then 40.3, 42.3, 44.3, 46.3,
-  48.3s, and 52.3, 54.3, 56.3s after seeking into the heavy part.
+  **Lightning is for booms: runs of big bass hits right in a row.** It went
+  through three readings in a row, each the owner's correction of the last:
+  bass drops, then every measure after a drop, and then what was actually
+  meant - "when there are multiple loud beats in the background right in a
+  row", the "boom boom boom" at 0:37 in Imagine Dragons' Thunder, the owner's
+  own example (found in the real library and analysed in place, never
+  copied or changed). `hearSong` keeps the sub-bass under 100 Hz through a
+  two-pole filter at 12ms frames; a hit is that level jumping 10dB or more
+  over the lowest of the 150ms before it, within 60ms, to at least the song's
+  middling hit level - a hit out of a lull, not merely a loud one - and a run
+  is three or more, each under 0.45s after the last. Worked out on the file:
+  at 8dB the ordinary drumming at 0:36 qualified and the booms were one run
+  of six; at 10dB the runs are exactly 37.48, 37.91 and 38.22s, then the
+  same at 1:21 and 1:23, and nothing in the verses. Each boom is a lightning
+  moment timed to the hit, not the beat grid (`booms`, `nextBoom`, the first
+  of a run marked): Storm strikes (twice on a run's first), and the Orb's
+  shock ring, Flow's big wave, Galaxy's ripple, Warp's surge and a Fireworks
+  burst (the finale on a run's first) go with it. Played in the preview
+  with the real file served from disk: strikes at 37.50, 37.93 and 38.25s,
+  none else between 0:34 and 0:40. Saved analyses are version 4, carrying the
+  booms; older downloads are heard again. The drop and measure code is gone.
   **The Looks sheet** lost its Done button (cut off on a phone): a choice
   closes it, names only (three to a row fit), no scrolling on an iPhone 13,
   and Now Playing's swipe and hold stand down inside it - a scroll in it
