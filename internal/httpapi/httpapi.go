@@ -83,9 +83,13 @@ type Server struct {
 	positions   allowance
 	// plex holds each person's Plex sign-in while they import; plexPins
 	// limits how often they may start one. plexOverride is for tests.
-	plex             plexSessions
-	plexPins         allowance
-	plexOverride     *plex.Client
+	plex         plexSessions
+	plexPins     allowance
+	plexOverride *plex.Client
+	// artUploads limits how often somebody may upload a cover; sounds keeps
+	// the library's energy ranks for Now Playing's moving cover.
+	artUploads       allowance
+	sounds           soundCache
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache
 	reg              *source.Registry
@@ -321,6 +325,11 @@ func (s *Server) Routes() http.Handler {
 	// Mixes and listening history. See mixes.go.
 	guarded.HandleFunc("GET /api/music/mixes", s.handleMixes)
 	guarded.HandleFunc("GET /api/music/radio", s.handleRadio)
+	guarded.HandleFunc("GET /api/music/sound", s.handleSongSound)
+	guarded.HandleFunc("GET /api/myart", s.handleMyArt)
+	guarded.HandleFunc("PUT /api/myart", s.handleSetMyArt)
+	guarded.HandleFunc("DELETE /api/myart", s.handleRemoveMyArt)
+	guarded.HandleFunc("GET /api/myart/{name}", s.handleMyArtFile)
 	guarded.HandleFunc("POST /api/music/radio", s.handleRadio)
 	guarded.HandleFunc("GET /api/music/lyrics/{source}/{id}", s.handleLyrics)
 	guarded.HandleFunc("GET /api/home", s.handleHome)

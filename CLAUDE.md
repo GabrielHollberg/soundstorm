@@ -552,6 +552,43 @@ judged on in its first minute:
   at the owner's asking, in every view (the panel and strip views order
   them 3 and 4). Up next's rows carry each song's cover, and stack from the
   top rather than spreading down the list.
+- **Four looks for the cover, a tap moving to the next** (`coverStyle` on
+  the account; `coverSpin` from before still reads as "spin"): the cover, a
+  spinning disc, a **record** and **moving with the music**. The record and the
+  moving cover are a layer (`#np-deco`) laid exactly over the cover image,
+  which stays in place (hidden, for the record), because the swipe, the hold
+  icons and the cover morph all work on that image; the swipe moves the layer
+  with it. The record is grooves turning at 4s a turn, the cover as the
+  label, and the title, artist and album round it on an SVG textPath, whole
+  repeats only (a first version cut "GLASSHOUS" off where the ring closed);
+  the light on it stays still. **Moving with the music keeps the song's tempo,
+  not its beats.** Hearing the beats means routing the music through Web
+  Audio, which is what stops it when an iPhone locks (see Leveling), so the
+  pulse, the rings and a glow in the cover's colour (`--np-glow`, averaged
+  alongside the status bar's) run at the tempo AudioMuse-AI measured
+  (`GET /api/music/sound`), folded into 70-150 bpm, bigger for a song more
+  energetic than most of the library (energy as a rank, as moods are), and
+  lined up with the song's position on play and seek. A song not yet heard
+  breathes slowly. Checked in the preview: each look, the saved choice, the
+  record's words, and the rings drawn in the cover's colour.
+- **Covers of one's own** (`collections/art.go`, `/api/myart`): Change cover in
+  a song's or an album's menu, for the song alone or the whole album. The
+  picture is cropped square and shrunk to 1000px on the device, and kept per
+  person under the state dir's `art/<account>/`, named by its content, so one
+  picture for an album is stored once. Keys name what it replaces:
+  `song:<source>/<id>`, or `art:<source>/<art id>` with Navidrome's version
+  suffix (`al-<id>_<hash>`) dropped, so an edited file keeps the choice. A song
+  on an album shares the album's cover id, so a song's own cover has to be
+  keyed by the song, and the app decides (`artPath`, `artUrl`,
+  `withOverride`): the song's, then the album's, then the library's. An album
+  choice covers its songs' own cover ids too (a song with embedded art has
+  one), and drops single-song choices on that album. An overridden address
+  carries the original after a `#` (never sent), which is how `repaintCovers`
+  re-points every image on the page without knowing whose card it is. Only
+  JPEG, PNG and WebP by their bytes (never SVG), 4MB, 5,000 covers and 1,000
+  pictures a person; served only to their owner, `nosniff`, sandboxed;
+  unused pictures are deleted; removing a person removes theirs. Not in
+  `soundstorm backup`, which carries the collection files but not pictures.
 - **Up next is rearranged by holding a song and dragging it** (the cards'
   450ms hold and 10px slop): it lifts, the rest slide aside to show where it
   will land, the list scrolls near its edges, and letting go moves it

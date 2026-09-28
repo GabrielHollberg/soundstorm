@@ -89,6 +89,10 @@ type collection struct {
 	Prefs *Prefs `json:"prefs,omitempty"`
 	// Scrobbler is where this person's plays are also sent, if anywhere.
 	Scrobbler *Scrobbler `json:"scrobbler,omitempty"`
+	// Art is this person's own covers: a key naming what it replaces
+	// ("song:<source>/<id>" or "art:<source>/<art id>") to the image's file
+	// name under art/<account>/.
+	Art map[string]string `json:"art,omitempty"`
 }
 
 // Play is how often and when one song was listened to.
@@ -476,6 +480,7 @@ func (s *Store) Forget(userID string) error {
 		return err
 	}
 	s.forgetListens(userID)
+	os.RemoveAll(filepath.Join(s.dir, "art", userID))
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -625,7 +630,13 @@ type Prefs struct {
 	// CoverSpin is whether Now Playing's cover is a spinning disc; nil is the
 	// default, a square.
 	CoverSpin *bool `json:"coverSpin,omitempty"`
+	// CoverStyle is how Now Playing shows the cover: "square", "spin",
+	// "vinyl" or "pulse". Empty falls back to CoverSpin, which came first.
+	CoverStyle string `json:"coverStyle,omitempty"`
 }
+
+// CoverStyles are the ways Now Playing can show a cover.
+var CoverStyles = map[string]bool{"square": true, "spin": true, "vinyl": true, "pulse": true}
 
 // Limits on what a preference can hold, so a client cannot grow the file.
 const (
@@ -657,6 +668,7 @@ type PrefsChange struct {
 	Highlight   *bool               `json:"readAlongHighlight"`
 	BookSpeed   *float64            `json:"audiobookSpeed"`
 	CoverSpin   *bool               `json:"coverSpin"`
+	CoverStyle  *string             `json:"coverStyle"`
 }
 
 // ErrBadPrefs is a preference outside what is allowed.
@@ -680,6 +692,9 @@ func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
 		}
 	}
 	if ch.BookSpeed != nil && (*ch.BookSpeed < MinBookSpeed || *ch.BookSpeed > MaxBookSpeed) {
+		return Prefs{}, ErrBadPrefs
+	}
+	if ch.CoverStyle != nil && !CoverStyles[*ch.CoverStyle] {
 		return Prefs{}, ErrBadPrefs
 	}
 
@@ -720,6 +735,9 @@ func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
 	if ch.CoverSpin != nil {
 		on := *ch.CoverSpin
 		p.CoverSpin = &on
+	}
+	if ch.CoverStyle != nil {
+		p.CoverStyle = *ch.CoverStyle
 	}
 	if ch.BookSpeed != nil {
 		p.BookSpeed = *ch.BookSpeed

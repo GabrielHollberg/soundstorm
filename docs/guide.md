@@ -103,8 +103,15 @@ they're sung.
 ![Now Playing on a computer, lyrics lit up as they're sung](shots/desktop-now-playing.png)
 
 - **Swipe sideways** anywhere to go to the next or previous song.
-- **Tap the cover** to turn it into a spinning record, and tap again to square
-  it.
+- **Tap the cover** to change how it looks, tapping again for the next look:
+  - the cover
+  - a spinning disc
+  - a **record**, with the cover as its label and the song, artist and album
+    printed round it
+  - **moving with the music**: the cover pulses at the song's tempo, with rings
+    in its colours going out on the beat, livelier for more energetic songs.
+
+  Your choice is remembered on every device.
 - **Hold anywhere** to show every option as icons over the cover: info, sleep
   timer, favorite, shuffle, add to playlist, repeat, download, up next, and
   **songs like this**. Slide onto one and let go to use it.
@@ -206,6 +213,12 @@ A menu can be used without lifting your finger: slide onto an option and let go.
 **Selecting several:** in a list, holding an item selects it. Keep your finger
 down and slide across others to select them too, or lift and tap more. Then
 **hold any selected item** for the menu for all of them.
+
+**Your own covers.** Don't like a cover? Hold a song and choose **Change
+cover**, then **For this song** or **For the whole album**, and pick a picture.
+Albums have it in their menu too. The picture is cropped square and shown
+everywhere for you: lists, Now Playing, the lock screen. Nobody else in the
+house sees it. **Use the original cover** in the same menu puts it back.
 
 **Favorites** can be anything (songs, films, books, photos). Every tab has a
 Favorites category, and Home has a row for each.

@@ -95,8 +95,13 @@ function subtitleFor(item) {
 // with a trailing wildcard.
 const escapeId = (id) => String(id).split('/').map(encodeURIComponent).join('/');
 
-const artPath = (item) =>
-  item.artId ? `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId)}` : '';
+// A person's own covers (Change cover in a song's or album's menu) win over
+// the library's: a song's own first, then its album's. See withOverride.
+const artPath = (item) => {
+  const songKey = item.kind === 'music' ? `song:${item.sourceId}/${item.id}` : '';
+  const orig = item.artId ? `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId)}` : '';
+  return withOverride(orig, songKey, item.artId ? artKeyFor(item.sourceId, item.artId) : '');
+};
 const streamPath = (item) =>
   `/api/stream/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`;
 
@@ -220,7 +225,7 @@ async function showApp(me) {
   renderTabs();
   renderAccount();
   await loadFavoriteKeys();
-  await loadPrefs();
+  await Promise.all([loadPrefs(), loadMyArt()]);
   if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
   maybeShowHoldTip();
@@ -3255,6 +3260,8 @@ const ICONS = {
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3.2"/>',
   volume: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  image: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9.5" cy="10" r="1.6"/><path d="M5 17l4.5-4.5 3 3 2.5-2.5L19 17"/>',
+  album: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/>',
   upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   radio: '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke-width="2.2"/>',
 };
@@ -3405,6 +3412,12 @@ function renderMainMenu(item, opts = {}) {
         await downloadWithToast(item.title, (progress) => downloadBook(item, progress));
       }
     }));
+  }
+  if (item.kind === 'music' && !state.offline) {
+    entries.push(menuItem('image', 'Change cover', (event) => {
+      event.stopPropagation();
+      renderCoverMenu({ song: item }, () => renderMainMenu(item, opts));
+    }, { chevron: true }));
   }
   entries.push(menuItem('info', 'Info', (event) => {
     event.stopPropagation();
@@ -3891,7 +3904,7 @@ async function showPlaylist(id) {
     const thumb = document.createElement('img');
     thumb.alt = '';
     thumb.loading = 'lazy';
-    thumb.src = song.artId ? artUrl(song.sourceId, song.artId) : NO_COVER;
+    thumb.src = artPath(song) || NO_COVER;
     thumb.addEventListener('error', () => { thumb.src = NO_COVER; }, { once: true });
     const words = document.createElement('span');
     words.className = 'playlist-words';
@@ -4372,7 +4385,8 @@ function centerPill(row, pill, behavior) {
 }
 
 function artUrl(sourceId, artId) {
-  return artId ? `/api/art/${encodeURIComponent(sourceId)}/${escapeId(artId)}` : '';
+  if (!artId) return '';
+  return withOverride(`/api/art/${encodeURIComponent(sourceId)}/${escapeId(artId)}`, '', artKeyFor(sourceId, artId));
 }
 
 function formatLength(seconds) {
@@ -4568,6 +4582,12 @@ function openAlbumMenu(album, anchor) {
       if (list.length) startRadio({ mode: 'album', seed: list[0].id });
     }),
   ];
+  if (!state.offline) {
+    entries.push(menuItem('image', 'Change cover', (event) => {
+      event.stopPropagation();
+      renderCoverMenu({ album, songs }, () => openAlbumMenu(album, anchor));
+    }, { chevron: true }));
+  }
   if (downloadsPossible()) {
     entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
       closeItemMenu();
@@ -5145,6 +5165,7 @@ const npSwipe = (() => {
   const draw = (d, ms) => {
     if (bigCover) {
       put(cover, d, ms);
+      put(coverDeco(), d, ms);
       put(sides[-1], d - w, ms);
       put(sides[1], d + w, ms);
       put(head, 0, ms, 1 - Math.min(Math.abs(d) / w, 1) * 0.7);
@@ -5558,7 +5579,7 @@ function renderNowPlaying() {
 
   const player = $('audio-player');
   setIcon($('np-play'), player.paused ? 'play' : 'pause', true);
-  $('now-playing').classList.toggle('spin', coverSpins());
+  applyCoverStyle();
   npSwipe.prime();
   // A new song is a new record: it starts from the top, as the cover that
   // slid in did, rather than at the angle the last one had reached.
@@ -6904,10 +6925,19 @@ async function savePrefs(change) {
   if (ok && body) state.prefs = body;
 }
 
-// Now Playing's cover as a spinning disc, a tap away and back: kept on the
+// Now Playing's cover has four looks, a tap moving to the next: the cover,
+// a spinning disc, a record (the cover as its label, the song's name round
+// it), and moving with the music (pulsing at the song's tempo). Kept on the
 // account, so it stays the way somebody left it, on every device.
+const COVER_STYLES = ['square', 'spin', 'vinyl', 'pulse'];
+const COVER_STYLE_NAMES = { square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Moving with the music' };
+function coverStyle() {
+  const p = state.prefs || {};
+  if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
+  return p.coverSpin ? 'spin' : 'square';
+}
 function coverSpins() {
-  return Boolean(state.prefs && state.prefs.coverSpin);
+  return coverStyle() === 'spin';
 }
 
 $('np-cover').addEventListener('click', (event) => {
@@ -6919,11 +6949,12 @@ $('np-cover').addEventListener('click', (event) => {
   }
   // Nor is the end of a swipe.
   if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
-  const on = !coverSpins();
+  const next = COVER_STYLES[(COVER_STYLES.indexOf(coverStyle()) + 1) % COVER_STYLES.length];
   state.prefs = state.prefs || {};
-  state.prefs.coverSpin = on;
-  $('now-playing').classList.toggle('spin', on);
-  savePrefs({ coverSpin: on });
+  state.prefs.coverStyle = next;
+  applyCoverStyle();
+  showToast(COVER_STYLE_NAMES[next], '', null, 1400);
+  savePrefs({ coverStyle: next });
 });
 // It spins only while the music plays, and stops where it is on pause.
 for (const type of ['play', 'pause', 'ended']) {
@@ -7599,6 +7630,15 @@ function tintStatusBar(art) {
       const l = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
       const out = [r, gr, b].map((v) => Math.round(Math.max(0, Math.min(255, (l + (v - l) * 1.4) * 0.45))));
       setStatusBar(`#${out.map((v) => v.toString(16).padStart(2, '0')).join('')}`);
+      // The moving cover's glow: the whole cover's colour, brightened.
+      const all = g.getImageData(0, 0, 16, 16).data;
+      let rr = 0, gg = 0, bb = 0;
+      for (let i = 0; i < all.length; i += 4) { rr += all[i]; gg += all[i + 1]; bb += all[i + 2]; }
+      const k = all.length / 4;
+      const top = Math.max(rr, gg, bb) / k || 1;
+      const lift = Math.min(2.2, 235 / top);
+      $('now-playing').style.setProperty('--np-glow',
+        `rgb(${[rr, gg, bb].map((v) => Math.round(Math.min(255, (v / k) * lift))).join(', ')})`);
     } catch {
       setStatusBar('#07090d');
     }
@@ -10941,7 +10981,7 @@ function showHoldIcons(pointerId, x0, y0) {
     r = { left: (window.innerWidth - side) / 2, top: (window.innerHeight - side) / 2, width: side, height: side };
   }
   Object.assign(layer.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-  layer.classList.toggle('round', $('now-playing').classList.contains('spin') && cover.offsetWidth > 0);
+  layer.classList.toggle('round', $('now-playing').classList.contains('round') && cover.offsetWidth > 0);
   const icons = holdIconList(item);
   box.replaceChildren(...icons.map((it) => {
     const b = document.createElement('span');
@@ -11354,3 +11394,325 @@ function renderPlexPlaylists() {
   note.textContent = 'Each becomes a playlist here. Songs not in your library are listed afterwards.';
   panel.replaceChildren(plexPanelHead('Import from Plex'), plexServerPicker(), list, note, go);
 }
+
+/* ------------------------------------------------------------ own covers */
+
+// Somebody's own picture for a song or an album, shown to them alone: kept on
+// the server per person (collections/art.go), keyed by what it replaces.
+state.myArt = {};
+
+async function loadMyArt() {
+  const { ok, body } = await api('/api/myart');
+  state.myArt = (ok && body && body.art) || {};
+}
+
+// An album cover's id carries a version after an underscore (Navidrome's
+// al-<id>_<hash>), which changes when the file does; the person's choice
+// should not.
+function artKeyFor(sourceId, artId) {
+  return `art:${sourceId}/${String(artId).replace(/^((?:al|mf|ar|pl)-[^_]+)_.*$/, '$1')}`;
+}
+
+// withOverride is the person's picture when they have one, carrying the
+// original address and the song it was for after a #, so it can be put back
+// (repaintCovers) without knowing which card an image belongs to. A fragment
+// is never sent to the server.
+function withOverride(orig, songKey, artKey) {
+  const mine = state.myArt && ((songKey && state.myArt[songKey]) || (artKey && state.myArt[artKey]));
+  if (!mine) return orig;
+  return `${mine}#o=${encodeURIComponent(orig)}${songKey ? `&s=${encodeURIComponent(songKey)}` : ''}`;
+}
+
+// repaintCovers points every cover on the page at the person's current
+// choice, after one changes.
+function repaintCovers() {
+  for (const img of document.querySelectorAll('img')) {
+    const src = img.getAttribute('src') || '';
+    let orig = '';
+    let song = '';
+    const at = src.indexOf('#o=');
+    if (at >= 0) {
+      const q = new URLSearchParams(src.slice(at + 1));
+      orig = q.get('o') || '';
+      song = q.get('s') || '';
+    } else if (src.startsWith('/api/art/')) {
+      orig = src;
+    } else {
+      continue;
+    }
+    const m = orig.match(/^\/api\/art\/([^/]+)\/(.+)$/);
+    const artKey = m ? artKeyFor(decodeURIComponent(m[1]), m[2].split('/').map(decodeURIComponent).join('/')) : '';
+    const next = withOverride(orig, song, artKey) || NO_COVER;
+    if (next !== src) img.src = next;
+  }
+  if (audio.item) {
+    const art = artPath(audio.item) || NO_COVER;
+    $('audio-art').src = art;
+    $('dock-backdrop').src = art;
+    updateMediaSession();
+    renderNowPlaying();
+    renderQueue();
+  }
+}
+
+// pickCoverImage asks for a picture and hands back a square JPEG of it, at
+// most 1000px: covers are square, and a phone photo is several megabytes.
+function pickCoverImage() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.addEventListener('cancel', () => resolve(null), { once: true });
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) { resolve(null); return; }
+      try {
+        const bmp = await createImageBitmap(file);
+        const side = Math.min(bmp.width, bmp.height);
+        const out = Math.min(1000, side);
+        const c = document.createElement('canvas');
+        c.width = out;
+        c.height = out;
+        c.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, out, out);
+        c.toBlob((blob) => resolve(blob), 'image/jpeg', 0.9);
+      } catch {
+        showToast("That picture can't be opened here. Try a JPEG or PNG.");
+        resolve(null);
+      }
+    }, { once: true });
+    input.click();
+  });
+}
+
+// The keys a choice replaces: a song alone, or an album - its cover and every
+// song's, since a song with its own embedded picture has its own cover id.
+async function coverKeys(target, scope) {
+  if (scope === 'song') return { keys: [`song:${target.song.sourceId}/${target.song.id}`], songs: [target.song] };
+  let songs = [];
+  if (target.songs) {
+    songs = await target.songs();
+  } else {
+    const s = target.song;
+    const album = (s.extra && s.extra.album) || '';
+    const artist = (s.creators || [])[0] || '';
+    const { ok, body } = await api(`/api/search?q=${encodeURIComponent(album)}&kind=music&limit=200`);
+    songs = ((ok && body && body.items) || []).filter((it) =>
+      it.sourceId === s.sourceId && ((it.extra && it.extra.album) || '') === album && ((it.creators || [])[0] || '') === artist);
+    if (!songs.some((it) => it.id === s.id)) songs.push(s);
+  }
+  const keys = new Set();
+  const albumArt = target.album && target.album.artId;
+  if (albumArt) keys.add(artKeyFor(target.album.sourceId, albumArt));
+  for (const it of songs) if (it.artId) keys.add(artKeyFor(it.sourceId, it.artId));
+  return { keys: [...keys], songs };
+}
+
+async function setCover(target, scope) {
+  const blob = await pickCoverImage();
+  if (!blob) return;
+  closeItemMenu();
+  const { keys, songs } = await coverKeys(target, scope);
+  if (!keys.length) { showToast('That has no cover to replace.'); return; }
+  const query = keys.map((k) => `key=${encodeURIComponent(k)}`).join('&');
+  let res;
+  try {
+    res = await fetch(`/api/myart?${query}`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+  } catch {
+    showToast('Could not save the cover.');
+    return;
+  }
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body) { showToast((body && body.error) || 'Could not save the cover.'); return; }
+  state.myArt = body.art || {};
+  // A new album cover replaces any single song's own from before, or those
+  // songs would keep the old choice.
+  if (scope === 'album') {
+    const stale = songs.map((it) => `song:${it.sourceId}/${it.id}`).filter((k) => state.myArt[k]);
+    if (stale.length) await removeCovers(stale);
+  }
+  repaintCovers();
+  showToast(scope === 'song' ? 'Cover changed for this song. Only you see it.' : 'Cover changed for the album. Only you see it.');
+}
+
+async function removeCovers(keys) {
+  const query = keys.map((k) => `key=${encodeURIComponent(k)}`).join('&');
+  const { ok, body } = await api(`/api/myart?${query}`, { method: 'DELETE' });
+  if (ok && body) state.myArt = body.art || {};
+  return ok;
+}
+
+// The menu page: this song or the whole album, and the original back.
+function renderCoverMenu(target, backTo) {
+  const menu = $('item-menu');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = 'Change cover';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    backTo();
+  });
+  const note = document.createElement('p');
+  note.className = 'menu-note';
+  note.textContent = 'Pick a picture. Only you will see it.';
+  const rows = [];
+  const s = target.song;
+  const songKey = s ? `song:${s.sourceId}/${s.id}` : '';
+  const albumKey = target.album ? artKeyFor(target.album.sourceId, target.album.artId)
+    : (s && s.artId ? artKeyFor(s.sourceId, s.artId) : '');
+  if (s) rows.push(menuItem('image', 'For this song', () => setCover(target, 'song')));
+  rows.push(menuItem('album', s ? 'For the whole album' : 'Choose a picture', () => setCover(target, 'album')));
+  const mine = (songKey && state.myArt[songKey]) || (albumKey && state.myArt[albumKey]);
+  if (mine) {
+    rows.push(menuItem('close', 'Use the original cover', async () => {
+      closeItemMenu();
+      const { keys } = await coverKeys(target, 'album');
+      if (songKey) keys.push(songKey);
+      if (await removeCovers(keys)) {
+        repaintCovers();
+        showToast('The original cover is back.');
+      }
+    }));
+  }
+  menu.replaceChildren(back, note, ...rows);
+  placeMenu(menu, state.menuAnchor);
+}
+
+/* ---------------------------------------------------- the cover's looks */
+
+// The record and the moving cover are drawn in a layer laid exactly over the
+// cover image, which stays where it is (the swipe, the hold icons and the
+// cover morph all work on it), and moves with it.
+function coverDeco() {
+  let deco = $('np-deco');
+  if (deco) return deco;
+  deco = document.createElement('div');
+  deco.id = 'np-deco';
+  deco.className = 'np-deco';
+  deco.setAttribute('aria-hidden', 'true');
+  const vinyl = document.createElement('div');
+  vinyl.className = 'np-vinyl';
+  const disc = document.createElement('div');
+  disc.className = 'np-vinyl-disc';
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('class', 'np-vinyl-text');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('id', 'np-vinyl-path');
+  path.setAttribute('d', 'M50,50 m-31,0 a31,31 0 1,1 62,0 a31,31 0 1,1 -62,0');
+  path.setAttribute('fill', 'none');
+  const text = document.createElementNS(ns, 'text');
+  const tp = document.createElementNS(ns, 'textPath');
+  tp.setAttribute('href', '#np-vinyl-path');
+  tp.setAttribute('id', 'np-vinyl-words');
+  text.append(tp);
+  svg.append(path, text);
+  const labelImg = document.createElement('div');
+  labelImg.className = 'np-vinyl-label';
+  const hole = document.createElement('div');
+  hole.className = 'np-vinyl-hole';
+  disc.append(svg, labelImg, hole);
+  const sheen = document.createElement('div');
+  sheen.className = 'np-vinyl-sheen';
+  vinyl.append(disc, sheen);
+  const rings = document.createElement('div');
+  rings.className = 'np-rings';
+  for (let i = 0; i < 3; i++) rings.append(document.createElement('span'));
+  deco.append(rings, vinyl);
+  document.querySelector('.np-cover-wrap').append(deco);
+  return deco;
+}
+
+function applyCoverStyle() {
+  const np = $('now-playing');
+  const style = coverStyle();
+  for (const s of COVER_STYLES) np.classList.toggle(`cover-${s}`, s === style);
+  np.classList.toggle('spin', style === 'spin');
+  np.classList.toggle('round', style === 'spin' || style === 'vinyl');
+  renderCoverDeco();
+}
+
+// Lays the layer over the cover and fills it for this song.
+function renderCoverDeco() {
+  const style = coverStyle();
+  const deco = coverDeco();
+  const cover = $('np-cover');
+  const on = (style === 'vinyl' || style === 'pulse') && cover.offsetWidth > 0 && audio.item;
+  deco.classList.toggle('shown', Boolean(on));
+  if (!on) return;
+  Object.assign(deco.style, {
+    left: `${cover.offsetLeft}px`, top: `${cover.offsetTop}px`,
+    width: `${cover.offsetWidth}px`, height: `${cover.offsetHeight}px`,
+  });
+  const item = audio.item;
+  const key = selectionKey(item);
+  if (style === 'vinyl') {
+    deco.querySelector('.np-vinyl-label').style.backgroundImage = `url("${(artPath(item) || NO_COVER).replace(/"/g, '%22')}")`;
+    if (deco.dataset.words !== key) {
+      deco.dataset.words = key;
+      const parts = [item.title, (item.creators || []).join(', '), (item.extra && item.extra.album) || '']
+        .filter(Boolean).map((p) => p.toUpperCase());
+      // Whole repeats only, so no name is cut off where the ring closes.
+      let unit = `${parts.join('  •  ')}  •  `;
+      if (unit.length > 84) unit = `${unit.slice(0, 80).trimEnd()}…  •  `;
+      const words = unit.repeat(Math.max(1, Math.floor(84 / unit.length)));
+      const tp = $('np-vinyl-words');
+      tp.textContent = words;
+      tp.setAttribute('textLength', '192');
+      tp.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+    }
+  }
+  if (style === 'pulse') keepTime(item);
+}
+
+// The moving cover keeps the song's tempo, from the sound analysis, and moves
+// more for a song that is more energetic than most of the library. Not the
+// beats themselves - hearing those means routing the music through the page's
+// audio processing, which stops it when an iPhone locks - but its pace, lined
+// up with where the song has got to. A song not yet analysed breathes slowly.
+const soundOf = {};
+async function keepTime(item) {
+  const np = $('now-playing');
+  const key = selectionKey(item);
+  if (!(key in soundOf)) {
+    soundOf[key] = null;
+    if (item.kind === 'music') {
+      const { ok, body } = await api(`/api/music/sound?id=${encodeURIComponent(item.id)}`);
+      soundOf[key] = ok && body && body.known ? body : null;
+    }
+  }
+  if (audio.item !== item) return;
+  const sound = soundOf[key];
+  let beat = 3.2;
+  let energy = 0.35;
+  if (sound && sound.tempo > 0) {
+    // Very slow or fast tempos are felt at double or half.
+    let bpm = sound.tempo;
+    while (bpm < 70) bpm *= 2;
+    while (bpm > 150) bpm /= 2;
+    beat = 60 / bpm;
+    energy = Math.max(0, Math.min(1, sound.energy || 0));
+  }
+  np.style.setProperty('--beat', `${beat.toFixed(3)}s`);
+  np.style.setProperty('--beat-amp', (1.012 + energy * 0.045).toFixed(3));
+  np.style.setProperty('--ring-alpha', (0.35 + energy * 0.5).toFixed(2));
+  alignBeat();
+}
+
+// Starts the pulse where the song is, so it does not drift off after a seek.
+function alignBeat() {
+  const np = $('now-playing');
+  if (!np.classList.contains('cover-pulse')) return;
+  const beat = parseFloat(np.style.getPropertyValue('--beat')) || 3.2;
+  const t = $('audio-player').currentTime || 0;
+  np.style.setProperty('--beat-delay', `${-(t % beat).toFixed(3)}s`);
+  np.style.setProperty('--ring-delay', `${-(t % (beat * 3)).toFixed(3)}s`);
+}
+for (const type of ['play', 'seeked']) $('audio-player').addEventListener(type, alignBeat);
+window.addEventListener('resize', () => {
+  if (!$('now-playing').classList.contains('hidden')) renderCoverDeco();
+});

@@ -3195,3 +3195,97 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 
 /* The page Plex's sign-in tab lands on. */
 body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; text-align: center; }
+
+/* Now Playing's looks. The record and the moving cover are a layer laid over
+   the cover image (#np-deco), which holds still for the swipe and hold. */
+.np-deco { position: absolute; display: none; pointer-events: none; }
+.np-deco.shown { display: block; }
+.np-deco > * { display: none; }
+
+/* The record: black grooves turning, the cover as its label, the song's
+   name round the label. */
+.now-playing.cover-vinyl #np-cover { opacity: 0; }
+.now-playing.cover-vinyl .np-thumb, .now-playing.cover-vinyl .np-cover-side { border-radius: 50%; }
+.now-playing.cover-vinyl .np-vinyl { display: block; position: absolute; inset: 0; }
+.np-vinyl-disc {
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 27%, rgba(0, 0, 0, 0.55) 27.5% 28.5%, transparent 29%),
+    repeating-radial-gradient(circle, #121212 0 0.7px, #1b1b1b 0.7px 1.6px, #0f0f0f 1.6px 2.3px),
+    #111;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.04);
+  animation: np-spin 4s linear infinite;
+  animation-play-state: paused;
+}
+.now-playing.cover-vinyl.playing .np-vinyl-disc { animation-play-state: running; }
+.np-vinyl-label {
+  position: absolute; left: 26%; top: 26%; width: 48%; height: 48%; border-radius: 50%;
+  background-size: cover; background-position: center;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.6);
+}
+.np-vinyl-hole {
+  position: absolute; left: calc(50% - 2.2%); top: calc(50% - 2.2%); width: 4.4%; height: 4.4%;
+  border-radius: 50%; background: #0b0b0b; box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.25);
+}
+.np-vinyl-text { position: absolute; inset: 0; width: 100%; height: 100%; }
+.np-vinyl-text text { fill: rgba(255, 255, 255, 0.78); font-size: 3.4px; font-weight: 700; letter-spacing: 0.4px; }
+/* The light on a record stays put while it turns under it. */
+.np-vinyl-sheen {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 20deg, transparent 0 8%, rgba(255, 255, 255, 0.09) 12%, transparent 18% 50%,
+    rgba(255, 255, 255, 0.07) 58%, transparent 64%);
+  mix-blend-mode: screen;
+}
+
+/* Moving with the music: the cover beats at the song's tempo, a glow in its
+   own colour breathing behind it and rings going out on the beat. */
+.now-playing.cover-pulse .np-rings { display: block; position: absolute; inset: 0; }
+.now-playing.cover-pulse #np-cover {
+  animation: np-beat var(--beat, 3.2s) ease-out infinite;
+  animation-delay: var(--beat-delay, 0s);
+  animation-play-state: paused;
+}
+.now-playing.cover-pulse.playing #np-cover { animation-play-state: running; }
+@keyframes np-beat {
+  0% { scale: 1; }
+  10% { scale: var(--beat-amp, 1.03); }
+  45% { scale: 1; }
+}
+.np-rings span {
+  position: absolute; inset: 0; border-radius: 16px;
+  border: 2px solid var(--np-glow, rgba(255, 255, 255, 0.7));
+  box-shadow: 0 0 28px var(--np-glow, rgba(255, 255, 255, 0.5));
+  opacity: 0;
+  animation: np-ring calc(var(--beat, 3.2s) * 3) ease-out infinite;
+  animation-play-state: paused;
+}
+.np-rings span:nth-child(2) { animation-delay: calc(var(--ring-delay, 0s) - var(--beat, 3.2s)); }
+.np-rings span:nth-child(3) { animation-delay: calc(var(--ring-delay, 0s) - var(--beat, 3.2s) * 2); }
+.np-rings span:nth-child(1) { animation-delay: var(--ring-delay, 0s); }
+.now-playing.cover-pulse.playing .np-rings span { animation-play-state: running; }
+@keyframes np-ring {
+  0% { opacity: var(--ring-alpha, 0.6); scale: 1; }
+  100% { opacity: 0; scale: 1.28; }
+}
+.now-playing.cover-pulse .np-rings::before {
+  content: ""; position: absolute; inset: 6%; border-radius: 24px;
+  background: var(--np-glow, rgba(255, 255, 255, 0.4));
+  filter: blur(40px); opacity: 0.55;
+  animation: np-glow var(--beat, 3.2s) ease-out infinite;
+  animation-delay: var(--beat-delay, 0s);
+  animation-play-state: paused;
+}
+.now-playing.cover-pulse.playing .np-rings::before { animation-play-state: running; }
+@keyframes np-glow { 0% { opacity: 0.35; } 10% { opacity: 0.8; } 60% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .np-vinyl-disc, .now-playing.cover-pulse #np-cover, .np-rings span, .np-rings::before { animation: none !important; }
+}
+
+/* The glow and rings sit behind the moving cover; the record over its own
+   (hidden) cover. */
+.now-playing.cover-pulse #np-cover { position: relative; z-index: 1; }
+.now-playing.cover-pulse .np-deco { z-index: 0; }
+.now-playing.cover-vinyl .np-deco { z-index: 1; }
+
+/* Change cover's note. */
+.menu-note { margin: 4px 14px 8px; color: var(--muted); font-size: 13px; }
