@@ -1,71 +1,131 @@
 <p align="center">
-  <img src="internal/webui/assets/icons/icon-192.png" width="96" alt="">
+  <img src="internal/webui/assets/icons/icon-192.png" width="96" alt="SoundStorm logo">
 </p>
 
-# SoundStorm
+<h1 align="center">SoundStorm</h1>
 
-**One login and one search box over your whole media library.** Films, music,
-audiobooks and ebooks, all answering the same search and playing in the same
-window. No API keys, no second login, nothing to configure.
+<p align="center">
+  <strong>Your music, films, TV, audiobooks, ebooks and photos in one app.<br>
+  One login, one search box. It runs at home on your own computer.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/GabrielHollberg/soundstorm/releases/latest/download/SoundStorm-Setup.cmd"><strong>⬇ Download for Windows</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#mac-and-linux">Mac and Linux</a>
+  &nbsp;·&nbsp;
+  <a href="docs/guide.md">User guide</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/GabrielHollberg/soundstorm/releases">What's new</a>
+</p>
+
+<p align="center">
+  <img src="docs/shots/phone-home.png" width="230" alt="Home on a phone">
+  &nbsp;
+  <img src="docs/shots/phone-now-playing.png" width="230" alt="Now Playing with lyrics on a phone">
+  &nbsp;
+  <img src="docs/shots/phone-playlists.png" width="230" alt="Playlists on a phone">
+</p>
+
+SoundStorm turns a computer at home into your own streaming service. Put your
+files in its folders, or drag them onto the window, and they appear, sorted,
+with covers, ready to play on every phone, tablet, TV browser and computer in
+the house. There are no subscriptions, no adverts and no accounts with anybody
+but yourself, and nothing to set up by hand.
+
+## What you get
+
+**Music**
+- A proper music player: gapless playback, crossfade, even volume across songs,
+  a sleep timer, and lock-screen and headphone controls.
+- Synced lyrics that light up line by line.
+- **Radio** that never runs out: from any song, album or artist, by **mood**
+  (Chill, Feel good, Focus, Party...) or by decade and genre. SoundStorm
+  listens to your music to learn how it sounds.
+- Mixes, favorites and playlists. **Import your playlists from Plex/Plexamp**,
+  or from any player that saves M3U files.
+- Download songs to your phone for when you're offline.
+- **Your year in music**, a recap of your listening, and optional
+  [ListenBrainz](https://listenbrainz.org) scrobbling.
+
+**Films and TV**
+- Plays anything, including files a browser normally can't. They are converted
+  as they play.
+- Subtitles, a choice of audio languages, **Continue watching**, and **Up next**
+  into the next episode.
+
+**Books**
+- Read ebooks (EPUB, PDF) and listen to audiobooks in the app. Your place is
+  kept on every device.
+- **Read along**: when you have a book as both an ebook and an audiobook, the
+  pages turn by themselves with the narration.
+
+**Photos**
+- Browse by date, people and places. Search by what's *in* a picture ("beach",
+  "dog"). iPhone HEIC photos just work.
+
+**For the whole household**
+- Everyone gets their own login, with their own favorites, playlists, history
+  and place in every book.
+- Choose which shelves each person can see, so the kids can have no films, for
+  example.
+- Install it on phones like an app, with its own icon and no browser bars.
+- Secure (HTTPS) automatically, with nothing to set up. Reaching it from outside
+  the house is optional and off until you turn it on.
+
+<p align="center">
+  <img src="docs/shots/desktop-home.png" width="780" alt="SoundStorm's home page on a computer">
+</p>
+
+## What you need
+
+| | |
+| --- | --- |
+| **Computer** | Windows 10 or 11, a Mac, or Linux, left switched on while you use it |
+| **Memory** | 8 GB minimum, 16 GB recommended |
+| **Disk** | About 20 GB for SoundStorm itself, plus room for your media |
+| **Internet** | For the first install (a large download); afterwards it runs at home |
+
+Phones, tablets and other computers need nothing installed: they use SoundStorm
+in their web browser, or add it to their home screen as an app.
 
 ## Install
 
-### 🪟&nbsp; Windows
+### Windows
 
-**[⬇ Download SoundStorm-Setup.cmd](https://github.com/GabrielHollberg/soundstorm/releases/latest/download/SoundStorm-Setup.cmd)**, then:
+1. **[Download SoundStorm-Setup.cmd](https://github.com/GabrielHollberg/soundstorm/releases/latest/download/SoundStorm-Setup.cmd)**
+2. **Right-click** the downloaded file → **Properties** → tick **Unblock** at the bottom → **OK**
+3. **Double-click** it.
 
-1. **Right-click the downloaded file → Properties**
-2. Tick **Unblock** at the bottom → **OK**
-3. **Double-click it**
+A setup window walks you through the rest. Expect **10 to 30 minutes**, mostly
+downloading, and keep the window open until it says it's finished. Along the way:
 
-It installs Docker for you if you do not have it, starts it if it is not
-running, and leaves a SoundStorm icon on your desktop.
+- **Windows asks for permission** to install Docker (the engine SoundStorm runs
+  on) and sometimes Windows Subsystem for Linux. Click **Yes**.
+- **Docker Desktop opens a window of its own.** You **don't** need a Docker
+  account: click **Accept**, then **Skip** on the sign-in and the questions.
+  You can close that window afterwards.
+- **You choose where to keep your library.** Keep the suggested folder, or pick
+  one on another drive.
+- **"Windows Security Alert"** for Docker Desktop Backend: click **Allow access**.
+  If it asks **"Is this your home network?"**, click **Yes** at home, so your
+  phone and TV can reach SoundStorm.
 
-**What to expect.** A blank window blinks for a moment — Windows opens one for
-any `.cmd` file — and then the setup window opens and ticks through four
-steps. There are no console windows to read or close. The
-first install takes 10 to 30 minutes, mostly downloading. Leave it open: it
-says when it is finished, and ends with your setup code and an **Open
-SoundStorm** button. If something goes wrong it says what, in the same window,
-and **Show details** has the full log (also saved as `SoundStorm-setup.log` in
-your temp folder). Along the way:
-
-- **Windows asks for permission** to install Docker, and sometimes Windows
-  Subsystem for Linux. Click **Yes**.
-- **Docker Desktop opens a window of its own** the first time. You do **not**
-  need a Docker account: click **Accept** on the agreement, then **Skip** on the
-  sign-in and on the questions about you. Close that window afterwards if you
-  like; Docker keeps running, and the setup carries on by itself.
-- **A window asks where to keep your library**, showing the free space on each
-  drive. Click **Continue** to keep it in your SoundStorm folder, or **Choose a
-  different folder...** to pick one, for example on an external drive. Network
-  drives cannot be used, because Docker cannot read them. To move it later,
-  open **Move SoundStorm library** from the Start menu: it opens the same
-  window, then both folders so you can drag your files across.
-- **A "Windows Security Alert" may appear** for Docker Desktop Backend. Click
-  **Allow access**. If the setup then asks **"Is this your home network?"**,
-  click **Yes** at home: Windows treats new Wi-Fi networks as public, which
-  stops your phone and TV reaching SoundStorm. The setup marks the network
-  private and opens SoundStorm's port to devices on it (one more permission
-  prompt), and changes nothing if you click **No**.
-- **At the end your browser opens SoundStorm.** Choose a username and password —
-  that is your account. If the page asks for a **setup code**, it is in the
-  yellow box at the bottom of the setup window, and saved in the `.env` file in
-  your SoundStorm folder.
-
-> **Why the Unblock step?** Windows Smart App Control refuses to run *any*
-> script downloaded from the web — you get "An Application Control policy has
-> blocked this file" with no way to continue. That is about the file extension,
-> not about SoundStorm, and unblocking is how Windows expects you to say you
-> trust it. Skipping it is the number one reason nothing happens when you
-> double-click.
+When it's done, your browser opens SoundStorm and there's a SoundStorm icon on
+your desktop.
 
 <details>
-<summary>Rather paste a command than click through Properties?</summary>
+<summary><strong>Why the "Unblock" step?</strong></summary>
 
-Open PowerShell and paste this. It saves the installer and runs it — two
-steps on purpose, because piping a downloaded script straight into PowerShell
-is the pattern Windows Defender blocks as malware:
+Windows blocks *every* script downloaded from the internet ("An Application
+Control policy has blocked this file"). That is about the file type, not about
+SoundStorm, and ticking **Unblock** is how Windows lets you say you trust it.
+Skipping it is the most common reason nothing happens when you double-click.
+
+</details>
+
+<details>
+<summary>Rather paste a command? (PowerShell)</summary>
 
 ```powershell
 irm https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.ps1 -OutFile "$env:TEMP\soundstorm.ps1"
@@ -74,30 +134,19 @@ powershell -ExecutionPolicy Bypass -File "$env:TEMP\soundstorm.ps1"
 
 </details>
 
-### 🐧&nbsp; Linux &nbsp;·&nbsp; 🍎&nbsp; macOS
+### Mac and Linux
+
+Install [Docker](https://docs.docker.com/get-docker/) first (on a Mac, Docker
+Desktop), then run this in a terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh
 ```
 
-Needs [Docker](https://docs.docker.com/engine/install/) already installed.
-
----
-
-**Either way**, it downloads about 8GB of media servers, sets them all up, and
-opens your browser. Pick a username and password on the first screen and you
-are in.
-
-It wants a machine with **8GB of memory** or more. Most of that is the photo
-server's ability to search your pictures by what is in them.
-
-![One search returning an ebook, a film, music and an audiobook in a single ranked list](docs/shots/2-search.png)
+It downloads everything, sets it all up and prints the address to open.
 
 <details>
-<summary>Other ways to install it</summary>
-
-**By hand, anywhere.** The installer is a convenience, not a requirement — it
-downloads one file and runs one command, and so can you:
+<summary>Already use Docker Compose? Install by hand</summary>
 
 ```sh
 mkdir soundstorm && cd soundstorm
@@ -105,937 +154,159 @@ curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/doc
 docker compose up -d
 ```
 
-Then open <http://localhost:8099>. To use a different port, put
-`SOUNDSTORM_PORT=9000` in a `.env` file beside the compose file.
+Open <http://localhost:8099>. The setup code for the first account is printed in
+`docker compose logs soundstorm`. More options are in the [user guide](docs/guide.md#advanced-settings).
 
 </details>
 
-## The idea
-
-Installing self-hosted media servers is a solved problem — Umbrel, CasaOS,
-Unraid and a dozen compose stacks all do it. What none of them finish is the
-*integration*: you end up with four containers, four admin accounts to create,
-four API keys to mint, four web UIs and four search boxes.
-
-SoundStorm is that last mile. It runs the specialist servers, provisions their
-credentials itself, and puts one interface on top:
-
-| | |
-| --- | --- |
-| **Music** | Navidrome — best-in-class tag handling, fast scanner, smart playlists |
-| **Films and TV** | Jellyfin — metadata, artwork, season/episode structure |
-| **Audiobooks** | Audiobookshelf — author/narrator/series, per-title listening position |
-| **Ebooks** | SoundStorm itself — EPUB and PDF, read in the browser |
-| **Pictures** | Immich — thumbnails, iPhone HEIC and raw photos, search by what is *in* a picture |
-
-Using the real servers instead of reimplementing them is the whole trick. When
-you search "dune" and get a film back with a real poster and a real synopsis,
-that is Jellyfin's metadata work, not SoundStorm's.
-
-## Status
-
-This is a **working vertical slice**, not a finished product. What runs today:
-
-- one command installs it — published multi-arch images, no build step, no
-  repository to clone
-- SoundStorm provisions every one of them on first boot — **zero API keys typed**
-- **drag and drop**: files and folders dropped on the window are sorted into the
-  right library automatically
-- **accounts**: the first visit creates the owner, who adds everyone else; each
-  person keeps their own place in every book and sees only the libraries they
-  are given
-- **HTTPS with a real certificate, automatically**: every install gets its own
-  `*.home.soundstorm.dev` address that every browser and phone already trusts —
-  no warning, nothing to install, no account
-- **remote access, opt-in**: turn it on and the server gets a second
-  `*.net.soundstorm.dev` address reachable from anywhere, opening the router port
-  itself (NAT-PMP/PCP/UPnP, or IPv6 with no forwarding) and telling you what to
-  forward by hand when it cannot
-- one search across all four, merged and ranked
-- music, films, TV and audiobooks play **inside SoundStorm**
-- video a browser cannot decode is **transcoded by Jellyfin on the fly** and
-  served as HLS, so HEVC, MKV and DTS play *and seek* like anything else
-- **subtitles**, embedded or sidecar, converted to WebVTT and selectable
-- ebooks are **read inside SoundStorm**, and remember where you stopped
-- no backend publishes a port; SoundStorm is the only door
-
-See [docs/roadmap.md](docs/roadmap.md) for what is not built yet.
-
-## Using it
-
-Everything below is optional. A fresh install already works and already has
-something in it to search.
-
-### Where your media goes
-
-**Drag it onto the window.** Anywhere — there is nothing to aim at.
-SoundStorm works out what each file is and files it for you: a folder keeps its
-structure, subtitles and artwork travel with their film, and anything it cannot
-place is listed with the reason rather than dumped somewhere.
-
-![Dragging files onto the window](docs/shots/15-drop.png)
-
-The app opens on your library rather than on a form, so there is nothing to
-go looking for: a search box and your media. Six
-tabs get you around — along the bottom of a phone, down the side of a
-computer: **Home**, **Music**, **Watch**
-(films and TV), **Books** (audiobooks, ebooks and documents), **Photos** and **Settings**.
-A tab with nothing in it is hidden, and each remembers where you were.
-
-**Home** is a front page: what you are part way through, then a row each of
-new music, your ♥ Favorites, what you played lately, and what arrived lately
-on every other shelf — new films, TV, audiobooks, books and photos — each with
-**See all**. Typing in the search box on Home searches everything. The
-search box says what it will search — *Search music*, *Search albums*,
-*Search your playlists* — for whichever page you are on.
-
-**Books → Read & listen** lists every book you have both as an ebook and as
-an audiobook. Tap the cover to read along: the audiobook starts and the book
-opens, with the player at the bottom of the page. **Read** or **Listen**
-does just one. You can read any book while music or an audiobook plays.
-
-New books are synced by themselves as soon as you have both the ebook and the
-audiobook (turn that off under **Settings → Read-along**); **Turn pages with
-the audio** under a book starts one yourself. Syncing: SoundStorm listens to
-the recording once (about 40 minutes for a 10-hour book on a recent PC) and
-lines it up with the text. After that, reading along turns the page by itself
-and highlights the sentence being read. Turn the page yourself to look back,
-and it picks up again a few seconds later. This is done by
-[Storyteller](https://storyteller-platform.dev/), which SoundStorm installs and
-sets up for you like its other parts.
-
-On a phone, or anything else that cannot drag, open **Settings** and choose
-**Add media**. The same card has **Check for new files**, for anything copied
-into the folders some other way.
-
-![The screen a new install opens on](docs/shots/1-library.png)
-
-**Or put the files in the folders yourself**, which is the better route for a
-whole drive copied over the network. SoundStorm makes a `library/` folder next
-to the compose file:
-
-```
-library/
-  music/       Talk Talk/Laughing Stock/01 Myrrhman.flac
-  movies/      Arrival (2016)/Arrival (2016).mkv
-  tv/          Severance (2022)/Season 01/Severance - S01E01.mkv
-  audiobooks/  Ursula K. Le Guin/A Wizard of Earthsea/book.m4b
-  ebooks/      Ursula K. Le Guin/A Wizard of Earthsea/A Wizard of Earthsea.epub
-  documents/   Manuals/Dishwasher.pdf, Taxes/2024/statement.pdf
-  pictures/    2024 Holiday/IMG_4031.heic
-```
-
-Nothing to import, no library to configure.
-
-**When it genuinely cannot tell, it asks.** An mp3 is a song or a chapter of an
-audiobook and nothing in the file says which, so it asks — once for the whole
-folder, not once per chapter. A PDF is the same: a book or a document (a paper,
-a manual, a statement). One dropped from a folder called `Papers` or `Manuals`
-goes to Documents, one from `Books` or a Calibre library goes to Ebooks, and
-only a loose one with nothing to go on gets asked about. Documents keep the
-folders you drop them in — `Taxes/2024` is how you find a statement.
-
-![Asking which library a folder of mp3s belongs in](docs/shots/17-ask.png)
-
-A song you already have is not added twice, even under another name — iTunes
-libraries often hold `03 Heathens.m4a` and `03 Heathens 1.m4a`, the same track
-bought twice. SoundStorm compares the recording itself, so a clean and an
-explicit version, or a remaster, are both kept; only an identical recording in
-the same folder is skipped, and the drop panel says which file it matched.
-Copying a file into the folder yourself is never checked, so that is the way
-to keep one anyway.
-
-Anything you drop on the window is searchable within a few seconds — SoundStorm
-tells whichever server owns that shelf to look, rather than leaving the file
-sitting there until its next sweep.
-
-An upload has to keep moving: one that has sent next to nothing for a minute is
-dropped rather than tying the server up, which a slow connection never trips
-and a stalled one always does. Each person can have up to four uploading at
-once; the app sends one file at a time, so that only matters with several tabs
-or devices going together.
-
-Files you copy into the folders yourself are found on the next sweep instead:
-every minute for music, every two for ebooks, and as the watchers notice for
-films and audiobooks. Until then the app says "indexing…" rather than
-pretending the file is not there.
-
-It arrives with one of each already in place — *The Richest Man in Babylon* to
-read, *As a Man Thinketh* to listen to, and the Aria from the Open Goldberg
-Variations — so you can tell it works before finding anything of your own. No
-film: one would outweigh all three combined, and Blender's open movies are a
-good first download instead. All public domain or CC, bundled in the binary
-rather than downloaded, so the first run needs no network and nobody's bandwidth
-but yours. Delete them whenever you like: they are ordinary files, they stay
-deleted, and nothing puts them back.
-
-`library/ebooks` is a plain folder of `.epub` and `.pdf` files. It can also be
-an existing Calibre library — SoundStorm reads Calibre's `metadata.opf`
-sidecars, so a library you already curate keeps its series, tags and corrected
-authors, with no SQLite driver and no Calibre-Web container.
-
-### Carrying on where you left off
-
-The home screen opens with a **Continue** row: the films, episodes, books and
-audiobooks you are part way through, newest first, each with a bar showing how
-far in you are. Tap one to carry on from where you stopped. It is yours alone;
-everybody in the house has their own. An audiobook you started in
-Audiobookshelf's phone app is there too, because it is the same record of
-where you are. A film counts as finished once you reach the credits.
-
-### Listening to music
-
-Open the **Music** tab and choose **Songs**, **Albums**, **Artists** or
-**Playlists**. Artists and
-albums are your folders — `Artist/Album/` — rather than whatever each file's
-tags claim, so a guest appearance does not create a new artist and an album
-does not split in two because its tracks disagree about the year. Albums can be
-ordered A to Z, recently added, by artist, recently played, most played or at
-random. An album page has **Play** and **Shuffle** and its track list, and an
-artist page has their albums and plays everything they made.
-
-Playing a song opens **Now Playing**: the cover, big, with the lyrics being
-sung underneath it, and shuffle, repeat (all or one) and a seek bar. **Tap the
-lyrics** and they fill the screen, a line at a time as they are sung; **tap
-the small cover** to go back. The button in the top corner shows **Up next**.
-Drag Now Playing down, or tap the arrow, to get back to your library while
-the music carries on. Hold down on any song, or right-click it, for **Play
-next** and **Add to queue**.
-
-While something plays, a small player floats at the bottom of the screen, with
-the cover blurred behind it and the song's progress along its edge. On a
-computer it has previous, play, next, a seek bar and volume. On a phone it has
-play and next: **swipe it up** for Now Playing, **swipe it down** to stop.
-A song or album with no cover of its own shows the SoundStorm cloud.
-
-- **Lock screen and headphones.** The song, artist and cover show on your
-  phone's lock screen and in the notification shade. Play, pause and skip
-  work from there, from Bluetooth headphones and from a car stereo.
-- **No gaps between songs.** The next song downloads while this one plays, so
-  a live album or a mix flows straight on. That matters most on a phone
-  away from your router.
-- **Crossfade and data saver.** Under **Settings → Playback on this
-  device**: blend songs into each other over 3 to 12 seconds (an album
-  playing in order still flows gaplessly), and stream at 96 to 256 kbps, or
-  lower only on mobile data, to save data. Downloads keep the original.
-  iPhones do not let a web page set the volume, so they cannot crossfade.
-- **Sleep timer.** The moon in Now Playing stops the music in 15 minutes to
-  an hour, or at the end of the song, fading out rather than cutting off.
-- **Even volume.** Songs carrying ReplayGain tags (most ripped and bought
-  music does) play at the same loudness, whole albums keeping their own
-  shape. Everything plays a little below full so quiet songs can be turned
-  up, so you may want your volume a notch higher. iPhones do not let a web
-  page set the volume, so there it has no effect.
-
-### Mixes, lyrics and downloads
-
-Music opens on **Mixes**: your most played, recently played, Rediscover
-(favorites you haven't played lately), shuffle everything, recently added,
-and a mix for each genre and decade in your library. Every artist page has an
-**Artist mix**. What you listen to is remembered for you alone.
-
-Now Playing shows the words by itself whenever a song has them — a `.lrc` file
-beside it, or lyrics in its tags — lit up line by line as they are sung, with
-breathing dots through the instrumental breaks. In the full-screen lyrics, tap
-a line to jump there.
-
-For songs without any, the owner can turn on **Find missing lyrics online** in
-Settings. SoundStorm then asks [LRCLIB](https://lrclib.net), a free lyrics
-library, the first time each such song plays, sending only its artist, title
-and album. It is off until you turn it on, lyrics in your own files always come
-first, and what it finds is kept by SoundStorm rather than written into your
-music folders. To fill a whole library at once, [LRCGET](https://github.com/tranxuanthang/lrcget)
-writes `.lrc` files beside your songs, and SoundStorm shows those.
-
-**Download** an album or playlist, or a song from its menu, to keep it on the
-device. Downloaded songs play without a connection, and on the
-`….soundstorm.dev` address SoundStorm even opens with no connection at all,
-showing what is downloaded. Signing out removes the downloads from that
-device.
-
-### Looking at pictures
-
-Pick **Pictures** for your photos, newest first, and tap one to open it full
-screen. On a phone, **swipe left and right** to go through them, **swipe down**
-to close, **pinch** or **double-tap** to zoom (and drag to look around), and
-tap once to hide the bar and caption. On a computer, use the arrows or arrow
-keys, the mouse wheel to zoom, and Escape. iPhone HEIC and
-raw photos are shown as ordinary pictures, and **Download original** gives you
-the untouched file. A video clip plays in the video player.
-
-### Favorites and playlists
-
-On a phone, **hold down** on anything and a menu pops up beside it. On a
-computer, **right-click** it, or use the **⋯** that appears when you point at
-it. Use the menu to add something to your **favorites**, whatever it is: a
-song, a film, a book or a photo. The **♥ Favorites** row on Home shows them, and **See all** lists every one.
-
-For songs, the same menu offers **Add to playlist**. Pick a playlist or type
-a name to start a new one. **Music → Playlists** lists them. Open one to play
-or shuffle it, play from any song, **drag songs by their handle** to reorder
-them, remove one (with **Undo**), tap the name to rename it, or delete the
-playlist. A playlist plays one song after another, with back and
-forward buttons in the player.
-
-Favorites and playlists are yours; everybody in the house has their own.
-
-### When the drive fills up
-
-If the drive your library is on gets low (under 25 GB), a line above your
-library says how much is left. It turns red under 5 GB, when a film will no
-longer fit. SoundStorm always keeps the last 1 GB free, so a full library
-never stops the rest of the computer from working.
-
-### Deleting things
-
-If you set SoundStorm up (the owner account), there is a **Select** button
-above your library. Tap the things you want gone, then **Delete**. It first
-says exactly what that removes, for example "Delete 3 items? 41 files, 2.3 GB",
-and asks you to press Delete again.
-
-Nothing is deleted straight away. The files go into a hidden bin inside your
-library folder (`library/.trash`) for 30 days, and **Undo** appears for a few
-seconds after a delete. After 30 days the bin empties itself. To get something
-back later than that Undo, look in `library/.trash`: each delete is a folder
-holding the files exactly where they were.
-
-A film takes its whole folder, subtitles and poster included, and an audiobook
-its whole book folder. A song goes on its own, unless it was the last one in its
-album folder, in which case the album's cover goes with it. Only the owner can
-delete, because everyone else shares the same shelves.
-
-### Using it from your phone, TV or another computer
-
-It already works — nothing to enable. Use the server computer's address, on the
-same port:
-
-```
-http://192.168.1.50:8099        <- your number will differ
-```
-
-Within a minute of starting, SoundStorm also gets itself a secure address like
-`https://k3x9m2p7qa.home.soundstorm.dev:8099` — see [HTTPS](#https) — and the
-installer prints that one when it is ready, because it is the better one to
-type on a phone. Either works. To find the plain address again:
-
-| | |
-| --- | --- |
-| Windows | `ipconfig` — the IPv4 Address of your main adapter |
-| macOS | `ipconfig getifaddr en0` |
-| Linux | `hostname -I` |
-
-**Settings → Use on your phone or TV** shows the address to type, with a Copy
-button, and the away-from-home one too once [remote access](#from-outside-the-house)
-is on.
-
-Same account, same library, same everything. Type it once per device and then
-**add it to the home screen** — nobody types their media server address twice.
-
-SoundStorm is a progressive web app, so that gives you a real app rather than a
-bookmark: its own icon, its own window, and no address bar eating the top of
-the screen. **iPhone:** Share → Add to Home Screen. **Android:** Chrome's menu
-→ Install app.
-
-> **On Android, install it from the secure address**, the
-> `https://….home.soundstorm.dev` one. Chrome only offers "Install app" on a
-> page with a certificate it trusts, which that address has and a plain
-> `http://192.168…` address cannot. **iPhone adds it to the home screen from
-> either**, because Safari's Add to Home Screen does not depend on that.
->
-> If the secure address does not load on your network, your router is
-> refusing names that point at home addresses (some do, as a security
-> measure); SoundStorm then simply stays on the plain address. Away from home,
-> [remote access or Tailscale](#from-outside-the-house)
-> gives the same real certificate.
-
-Two things worth doing:
-
-- **Give the server a fixed address** in your router (a DHCP reservation), or
-  that number will change one day and every bookmark breaks.
-- **If nothing loads at all**, check the phone is on the same Wi-Fi and not a
-  *guest* network, which keeps devices apart on purpose. On Windows, run
-  **Update SoundStorm** from the Start menu while on your home network: it
-  checks the network is marked Private, adds a firewall rule for SoundStorm's
-  port, and undoes a Cancel on Windows' firewall prompt. A laptop that moved
-  to another network picks up its new address, and its new router, the next
-  time it starts SoundStorm.
-
-> **On macOS and Linux** the installer offers `http://<hostname>.local:8099`
-> instead, which survives the address changing. That is not offered on Windows:
-> Windows does not reliably advertise its name over mDNS, so the name resolves
-> on the server itself and nowhere else — which is a worse thing to be handed
-> than a number.
-
-#### From outside the house
-
-The secure `….home.soundstorm.dev` address points at your server's *home
-network* address, so it only works on your own Wi-Fi — on purpose. There are two
-ways to reach SoundStorm from everywhere else.
-
-##### Remote access — the simple one
-
-Turn it on under **Settings → Reach it from anywhere**, or install with
-`-Remote` (Windows) / `--remote` (Linux, macOS). SoundStorm gives your server a
-second address of its own — `….net.soundstorm.dev` — pointing at your home's
-public address, with the same real certificate the home one has. Same login, no
-app for anyone to install, no account: send someone the link and they are at
-your login screen. The link ends in the port, usually `:8099`
-(`https://….net.soundstorm.dev:8099`) — without it, a phone knocks on your
-router instead, and the router's answer looks like a site impersonating
-SoundStorm. The account panel always shows it with the port.
-
-Getting the traffic in is the part a home network makes awkward, and SoundStorm
-does as much of it as it can:
-
-- **It opens the port on your router for you** where the router allows it,
-  trying PCP, then NAT-PMP, then UPnP — most consumer routers speak one of them.
-  There is nothing to configure: SoundStorm finds the router itself, including
-  on an install run with Docker Compose alone, and on a laptop that has moved
-  to another house.
-- **Where none of them work**, the account panel says exactly what to do (forward
-  one port, the one SoundStorm runs on, to this computer) and shows whether it
-  has become reachable yet, re-checking as it comes up.
-- **Where forwarding cannot work**, it says that instead. Some internet
-  providers share one address between many homes (carrier-grade NAT), and some
-  homes have a second router in front of their own. SoundStorm asks your router
-  for its internet address to tell which, explains what is going on, and points
-  you at [Tailscale](#tailscale--when-there-is-no-port-to-forward-or-you-would-rather-not),
-  which works on any connection.
-- **Over IPv6 there is nothing to forward at all** where your ISP provides it,
-  since IPv6 has no NAT. SoundStorm publishes both, and a visitor connects on
-  whichever their own network has.
-
-It is **off by default and plainly warned**, because it does exactly what it
-says: once it is on, anyone who knows the address reaches your login screen. The
-setup code that guards the very first sign-up means finding the address is not
-enough to claim an unclaimed server — but the login itself is now facing the
-world, so turn it on deliberately. Guessing passwords there is slow by design,
-and cannot lock you out of a device you already use (see
-[Giving other people a login](#giving-other-people-a-login)). The same switch,
-or `-NoRemote` / `--no-remote`, turns it off again.
-
-##### Tailscale — when there is no port to forward, or you would rather not
-
-Some connections have no forwardable port at all (carrier-grade NAT is the usual
-reason), and some people would simply rather not put a server on the internet.
-Run SoundStorm on a [Tailscale](https://tailscale.com) tailnet instead — nothing
-is exposed, and there is no port forwarding at all. SoundStorm tells you when
-this is the only way: if your router reports that your internet provider shares
-one address between many homes, the **Reach it from anywhere** panel says so
-instead of asking you to forward a port.
-
-You need a free Tailscale account, and the Tailscale app on each phone or
-computer that should connect.
-
-**Windows:** open **Set up Tailscale** from the Start menu. A window explains
-the steps, opens Tailscale's page for the auth key, and takes the key when you
-paste it. Or from PowerShell:
-
-```powershell
-& "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Tailscale
-```
-
-**Linux / macOS:**
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --tailscale --auth-key tskey-...
-```
-
-It asks for a Tailscale auth key, starts a Tailscale container beside
-SoundStorm, and prints the address it lands on — something like
-`https://soundstorm.your-tailnet.ts.net`. It works from anywhere your devices
-are signed into Tailscale, including behind the kind of internet connection
-where forwarding a port is impossible anyway, and has a real certificate like
-the home address does.
-
-Three things it cannot do for you, and there is no way around any of them:
-
-1. **A Tailscale account.** Free for personal use — unlimited devices, up to
-   six people — but somebody has to sign up.
-2. **An auth key**, generated in their admin console under Settings → Keys.
-3. **The Tailscale app on every device** that should reach SoundStorm,
-   signed into the same account. A phone without it sees nothing.
-
-SoundStorm works exactly the same with none of this. `--no-tailscale` turns
-it off again, and nothing else changes.
-
-### Keeping the library on another drive
-
-The library lives beside SoundStorm by default. To keep it somewhere else — an
-external drive with room for a photo collection, say — run the installer again
-with one more word:
-
-**Windows:**
-
-```powershell
-& "$env:USERPROFILE\SoundStorm\soundstorm.ps1" -Library "E:\Media"
-```
-
-**Linux / macOS:**
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --library /mnt/media
-```
-
-Every shelf moves together, and so does the desktop "SoundStorm media"
-shortcut. Anything already in the old library stays exactly where it is — the
-installer tells you where, and moving it is yours to do: close SoundStorm,
-move the folders across, open it again. It is never done for you, because a
-script moving tens of gigabytes is exactly the kind of thing that should not
-be able to fail halfway.
-
-Two things worth knowing about external drives:
-
-- **Keep it connected.** On Windows, SoundStorm will not start without the
-  drive, which is the safe answer. On Linux, mount it at boot (an `/etc/fstab`
-  entry) — an unmounted drive leaves an empty folder behind, and an empty
-  library looks to the media servers like everything was deleted.
-- **Keep the whole library on one drive.** Uploads land in the library and
-  are moved into place, which is quickest when it all shares a drive.
-  (Splitting shelves across drives works too, just a little slower.)
-
-### Updating
-
-**Windows:** Start menu → **Update SoundStorm**.
-
-**Everywhere:** run the installer again — the same command you installed with.
-It pulls the newer images, restarts, and leaves your library, your accounts and
-your settings alone.
-
-<details>
-<summary>By hand</summary>
-
-```sh
-cd soundstorm
-docker compose pull && docker compose up -d
-```
-
-</details>
-
-### Backing it up
-
-One file holds your accounts, everybody's favorites and playlists, and the
-passwords SoundStorm invented for Navidrome, Jellyfin and Audiobookshelf.
-**Those passwords exist nowhere else.** Lose that file and the media servers
-keep running with accounts nobody can sign in to — and reinstalling does not
-help, because they are already set up.
-
-From the install folder:
-
-**Linux / macOS:**
-
-```sh
-(umask 077; docker compose run --rm -T soundstorm backup - > soundstorm-backup.json)
-```
-
-**Windows** (PowerShell):
-
-```powershell
-docker compose run --rm -v "${PWD}:/backup" soundstorm backup /backup/soundstorm-backup.json
-```
-
-Keep the result somewhere that is not this machine. It is worth as much as the
-server: anyone holding it holds every backend password. On Linux the form above
-matters: it lets your shell write the file, so it is yours and private, where
-writing it from inside the container would leave it owned by the container's
-user and readable only by root.
-
-If `soundstorm-backup.json` comes out as a few lines of text beginning "Backed
-up to" rather than a file starting with `{`, your SoundStorm is older than this
-form — [update it](#updating) and run the command again. Restoring would refuse
-that file, but it is better to find out now than on the day you need it.
-
-To put it back — on a new machine, or after a `docker compose down -v`:
-
-**Linux / macOS:**
-
-```sh
-docker compose run --rm -T soundstorm restore - < soundstorm-backup.json
-docker compose up -d
-```
-
-**Windows** (PowerShell):
-
-```powershell
-docker compose run --rm -v "${PWD}:/backup" soundstorm restore /backup/soundstorm-backup.json
-docker compose up -d
-```
-
-Restoring refuses anything that is not a SoundStorm backup, and keeps whatever
-it replaced as `state.json.bak`, so restoring the wrong file is undoable too.
-Every ordinary write already leaves a `.bak` beside the state, which covers a
-bad write but not a deleted volume — that is what this is for.
-
-**Uninstalling saves one automatically** into the install folder before it
-removes anything, and leaves it behind when it cleans up. That copy is yours to
-move off the machine, and like the `.env` file beside it — which holds the
-first sign-up's setup code and any Tailscale key — other people's accounts on
-the same computer cannot read it, wherever the install folder lives.
-
-### Forgotten your password
-
-Signup closes for good once the first account exists, so there is no “register again” to fall back on. From the install folder:
-
-```sh
-docker compose down
-docker compose run --rm soundstorm reset-password
-docker compose up -d
-```
-
-It prints a new password for the account and you change it under **Settings**
-once you are in. With more than one account, add the name:
-`reset-password gabe`.
-
-Stopping first is not optional — a running SoundStorm keeps the state in
-memory and writes its own copy back, which would quietly undo the reset.
-Nothing else is touched: your media, your libraries and everyone else's
-accounts all survive, and devices already signed in stay signed in.
-
-### Moving to another computer
-
-SoundStorm packs itself into one folder - your accounts, favorites,
-playlists, listening and reading positions, the media servers' own data, and
-your media - to carry to a new computer on a USB drive or over the network.
-It works between Windows, Mac and Linux, in any direction.
-
-**Windows:** Start menu → **Move SoundStorm to another computer**, choose a
-drive, and say whether to bring the media.
-
-**Linux / macOS:**
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --export /media/usb
-```
-
-(`--no-library` leaves the media out, for when you are moving it yourself.)
-SoundStorm stops for as long as its data takes to copy, then starts again.
-
-On the new computer, open the `SoundStorm-move` folder and double-click
-**Install SoundStorm here.cmd** (Windows), or run `sh install-here.sh` inside
-it (Mac, Linux). It installs SoundStorm with everything in place; sign in as
-before. Then uninstall it on the old computer.
-
-A Mac or Linux library can hold file names Windows refuses (a colon, say, or
-two names differing only in capitals). Moving to Windows, the move lists
-those in `windows-name-problems.txt` so they can be renamed first. Tailscale
-is set up again on the new computer; everything else comes across.
-
-### Removing it
-
-**Windows:** Settings → Apps → **SoundStorm** → Uninstall, like any other
-program.
-
-**Linux / macOS:**
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh -s -- --uninstall
-```
-
-Either one stops the servers and deletes their data — accounts, and the
-databases Jellyfin and Navidrome built. **Your media is never touched.** The
-`library` folder is left exactly where it was, and the uninstaller tells you
-where, so you can delete it yourself if you want to.
-
-Docker is left installed, since other things may be using it.
-
-### Other things
-
-```sh
-cd soundstorm
-docker compose logs -f        # what is it doing
-docker compose down           # stop it; nothing is lost
-docker compose up -d          # start it again
-```
-
-### Giving other people a login
-
-The first account is the owner. From **Settings → People** the owner adds
-everyone else: a name and a password, and that is the whole ceremony. There is
-no open registration and no invite link, deliberately — a server that might be
-reachable from outside a house should not let a stranger create an account.
-
-Changing your password under **Settings** asks for the current one and signs you
-out on every other device. When the owner resets somebody's password, that
-person is signed out everywhere too.
-
-Repeated wrong passwords make the sign-in screen wait before accepting another
-try: a second after the fifth wrong guess from one place, doubling to at most
-five minutes, and a short wait on any name that keeps being guessed at from
-anywhere. **A device you have signed in on before is never held up by somebody
-else's guessing** — a stranger trying passwords for your name, or failing over
-and over from behind the same router, cannot keep you out of your own server
-from a phone or laptop you already use. Only a device that has never signed in
-waits while that is going on, and changing your password makes every device
-new again.
-
-Everybody keeps their own **place in every book**, both for reading and for
-listening. The audiobook side of that is real per-person state on the backend,
-not a note in a file: SoundStorm quietly gives each person their own
-Audiobookshelf account, and removing them takes it away again along with their
-sessions and bookmarks.
-
-**Each person sees only the shelves you tick.** Music, Films, TV, Audiobooks,
-Ebooks — untick Films for a child account and the tab disappears, the folder
-stops being listed, search stops returning films, and the film itself returns
-404 if anybody goes looking for the URL. The last one is the part that matters:
-hiding results is not a permission.
-
-![Ticking which libraries each person can see](docs/shots/14-libraries.png)
-
-What this is not: per-title or age-rating filtering. The unit is a whole
-library, so "no films for the seven-year-old" is answerable and "only these
-films" is not.
-
-### HTTPS
-
-**On by default, and there is nothing to do.** Every install asks SoundStorm's
-name service for an address of its own — something like
-`k3x9m2p7qa.home.soundstorm.dev`, pointing at your server on your home network
-— and gets a certificate for it from Let's Encrypt, the same authority behind
-most of the web. Every browser and phone already trusts it: no warning, no
-certificate to install anywhere, and no account.
-
-Open the plain address (`http://localhost:8099`, or the server's own address)
-and SoundStorm moves you to the secure one by itself, once it has checked your
-device can reach it. The first time, that is a new address to your browser, so
-sign in once more there.
-
-What the name service does and does not see: it knows your server's *home
-network* address (`192.168…`, useless to anybody outside your house), and it
-publishes one record every couple of months to prove the name is yours. Your
-media, your searches and your password never go near it. If it is ever down,
-SoundStorm carries on with the certificate it has, and falls back to its own if
-it has to.
-
-**Staying on the plain address.** Two ways it happens:
-
-- **Your router refuses the name.** Some routers block any public name that
-  points at a home address, as protection against a kind of attack. SoundStorm
-  notices it cannot reach the secure address and stays where it is; nothing
-  breaks.
-- **You would rather it did not.** Run the installer again with `-NoHttps`
-  (Windows) or `--no-https` (Linux, macOS) for plain http only, and with
-  `-Https` / `--https` to come back.
-
-**No outside service at all**, if that matters to you: put
-`SOUNDSTORM_TLS=self-signed` in the `.env` file beside `docker-compose.yml`
-and run `docker compose up -d`. SoundStorm then makes its own certificate,
-which every device warns about until you install
-`https://<server>:8099/ca.crt` on it — and again after a reinstall, which
-makes a new one, or after moving the server to a different network. That
-certificate is only allowed to vouch for your own server — local names like
-`.lan` and `.local` and your home network's addresses, never a public site or
-an office intranet — so a device that trusts it trusts nothing else because of
-it.
-
-**If the server's address changes**, the secure name has to follow it. The
-installer records the machine's LAN address in the `.env` file as
-`SOUNDSTORM_TLS_HOSTS` — the server is in a container and cannot work that out
-for itself — and the name points wherever that says. Giving the server a fixed
-address in your router avoids the question; otherwise update the line, or add
-a name your router hands out:
-
-```sh
-SOUNDSTORM_TLS_HOSTS=192.168.1.50,media.lan
-```
-
-then `docker compose up -d`. Hostnames you connect to are also picked up
-automatically; only bare IP addresses have to be listed, because browsers send
-no name when you type one.
-
-Already have a real certificate? `SOUNDSTORM_TLS=file` with
-`SOUNDSTORM_TLS_CERT` and `SOUNDSTORM_TLS_KEY`. Behind a reverse proxy that
-terminates TLS for you? Leave TLS off and set `SOUNDSTORM_TRUST_PROXY=true` so
-the session cookie is marked Secure.
-
-**Still true:** SoundStorm has not been audited, and putting any self-hosted
-server directly on the open internet is a decision worth making deliberately.
-That is exactly why [remote access](#from-outside-the-house) is off until you
-turn it on and is plainly warned when you do. If you would rather expose nothing
-at all, a VPN such as [Tailscale](https://tailscale.com) is the safe answer.
-
-### Windows, in more detail
-
-Windows is a first-class target — this project is developed and tested on it.
-Docker Desktop runs the same Linux images there that it runs everywhere else,
-and the setup file handles the parts people get stuck on:
-
-| | |
-| --- | --- |
-| Docker not installed | installs it with `winget`, no website visit |
-| Docker installed but not running | starts it and waits for it |
-| Port 8099 already taken | quietly uses the next free one |
-| Remembering the address | desktop and Start Menu shortcuts |
-| Turning the PC on | starts by itself |
-
-What is *not* supported is running the whole stack natively without Docker.
-SoundStorm's own binary does run natively on Windows, and on its own it serves
-your ebooks; but films, music and audiobooks *are* Jellyfin, Navidrome and
-Audiobookshelf, and running those without containers would mean SoundStorm
-installing and supervising three third-party servers as Windows processes. That
-is a different project, and the one thing SoundStorm is careful not to become.
+## Getting started
+
+**1. Create your account.** The first screen asks for a username and password;
+that account is the owner. If it asks for a **setup code**, it's shown at the end
+of the setup window and saved in the `.env` file in your SoundStorm folder. The
+code makes sure only the person who installed SoundStorm can claim it.
+
+**2. Add your media.** Either way works:
+
+- **Drag files or whole folders onto the SoundStorm window.** SoundStorm works
+  out what each file is and files it on the right shelf. If it can't tell (an
+  MP3 could be a song or an audiobook chapter), it asks once. On a phone, use
+  **Settings → Add media**.
+- **Or copy files into the library folders** (the desktop has a shortcut to
+  them). This is best for a big collection:
+
+  ```
+  library/
+    music/        Artist/Album/01 Song.flac
+    movies/       Arrival (2016)/Arrival (2016).mkv
+    tv/           Severance/Season 01/Severance - S01E01.mkv
+    audiobooks/   Author/Book Title/book.m4b
+    ebooks/       Author/Book Title/book.epub    (a Calibre library works too)
+    documents/    Manuals/Dishwasher.pdf
+    pictures/     2024 Holiday/IMG_4031.heic
+  ```
+
+New files show up within a minute. A song, a book and an audiobook come
+included, so you can try everything straight away. Delete them whenever you
+like.
+
+**3. Put it on your phone.** Open **Settings → Use on your phone or TV** on the
+computer. It shows the address to type on your phone (your phone must be on the
+same Wi-Fi). Then add it to your home screen:
+- **iPhone:** Share → **Add to Home Screen**.
+- **Android:** Chrome menu → **Install app**. Use the secure address, the one
+  ending in `.home.soundstorm.dev`.
+
+**4. Add your family.** **Settings → People**: give each person a name and a
+password, and tick which shelves they may see.
+
+### Coming from Plex or Plexamp?
+
+Your playlists can come with you. On **Music → Playlists**, tap **Import
+playlist** → **From Plex or Plexamp**, sign in on Plex's own page, and pick the
+playlists you want. Each song is matched to your SoundStorm library, and any
+that aren't in it are listed afterwards. SoundStorm never sees your Plex
+password and doesn't keep the Plex sign-in once you're done. (Your Plex server
+must be switched on, and reachable from the SoundStorm computer.)
+
+### Using it away from home
+
+At home it works straight away. To listen from anywhere:
+
+- **Remote access** (Settings → *Reach it from anywhere*) gives your server its own
+  secure web address. SoundStorm opens the port on your router itself where
+  the router allows it, and tells you exactly what to do where it doesn't.
+- **[Tailscale](https://tailscale.com)** works on any internet connection, puts
+  nothing on the internet, and needs the free Tailscale app on each device. On
+  Windows, use **Set up Tailscale** in the Start menu.
+
+Details are in the [user guide](docs/guide.md#away-from-home).
+
+## Keeping it running
+
+| | Windows | Mac and Linux |
+| --- | --- | --- |
+| **Update** | Start menu → **Update SoundStorm** | Run the install command again |
+| **Start / stop** | The desktop icon starts it; it also starts with Windows | `docker compose up -d` / `docker compose down` in the install folder |
+| **Move to a new computer** | Start menu → **Move SoundStorm to another computer** | `install.sh` with `--export` ([guide](docs/guide.md#moving-to-another-computer)) |
+| **Uninstall** | Settings → Apps → SoundStorm → Uninstall | `install.sh` with `--uninstall` |
+
+Updating keeps your library, accounts and settings. **Uninstalling never deletes
+your media**: the `library` folder is left where it is.
+
+**Back it up.** One small file holds every account and the passwords
+SoundStorm made for the media servers inside it. See
+[Backing up](docs/guide.md#backing-it-up). The uninstaller saves one for you
+automatically.
+
+**Forgot your password?** See [Getting back in](docs/guide.md#forgotten-your-password).
+
+## Troubleshooting
+
+**Nothing happens when I double-click the setup file.** Do the **Unblock** step
+(right-click → Properties → Unblock), then double-click again.
+
+**Setup says my computer can't run it (virtualization).** Docker needs
+virtualization switched on in your computer's BIOS/UEFI settings, usually called
+*Intel VT-x*, *AMD-V* or *SVM*. Turn it on, restart, and run the setup again.
+
+**My phone can't open SoundStorm.**
+- Make sure the phone is on the same Wi-Fi as the computer, and not a *guest*
+  network.
+- On Windows, run **Update SoundStorm** from the Start menu while on your home
+  network: it fixes the network and firewall settings.
+- Give the computer a fixed address in your router (a "DHCP reservation"), so
+  the address never changes.
+
+**The secure `.home.soundstorm.dev` address doesn't load.** Some routers block
+it on purpose. SoundStorm then stays on the plain address, and everything still
+works.
+
+**A new file doesn't show up.** Give it a minute, or use **Settings → Check for
+new files**. If someone else can't see it, check which shelves they're allowed
+under **Settings → People**.
+
+**Something else?** The Windows setup window has **Show log file**; send that
+file along with a description when you
+[open an issue](https://github.com/GabrielHollberg/soundstorm/issues).
+
+## Privacy: what leaves your house
+
+Your media, searches and passwords stay on your computer. SoundStorm contacts
+the internet only for:
+
+- **Its secure address.** A small name service gives your server its
+  `….soundstorm.dev` name and certificate. It only knows your server's *home
+  network* address.
+- **Updates**, when you run them.
+- **Things you switch on**, all off by default: finding missing lyrics online
+  ([LRCLIB](https://lrclib.net)), artist bios and similar artists
+  ([MusicBrainz](https://musicbrainz.org), [ListenBrainz](https://listenbrainz.org),
+  Wikipedia), remote access, scrobbling, and importing from Plex.
+
+## Built on
+
+SoundStorm is the app on top. The heavy lifting is done by excellent open-source
+servers, which SoundStorm installs, sets up and keeps out of your way:
+
+| | | |
+| --- | --- | --- |
+| Music | [Navidrome](https://www.navidrome.org) | GPL-3.0 |
+| Films and TV | [Jellyfin](https://jellyfin.org) | GPL-2.0 |
+| Audiobooks | [Audiobookshelf](https://www.audiobookshelf.org) | GPL-3.0 |
+| Photos | [Immich](https://immich.app) | AGPL-3.0 |
+| Read along | [Storyteller](https://storyteller-platform.dev) | MIT |
+| Moods and "sounds like" | [AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI) | AGPL-3.0 |
+| Ebook reader | [foliate-js](https://github.com/johnfactotum/foliate-js) | MIT |
+| Video player | [hls.js](https://github.com/video-dev/hls.js) | Apache-2.0 |
+
+Each runs unmodified in its own container, under its own license.
 
 ## For developers
 
-```sh
-git clone https://github.com/GabrielHollberg/soundstorm && cd soundstorm
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-```
+How it fits together, how to build it and how to add a backend:
+[docs/developers.md](docs/developers.md).
 
-The compose split is deliberate: `docker-compose.yml` names a published image
-and nothing else, so it works on its own for somebody who never cloned
-anything. `docker-compose.dev.yml` adds `build: .` on top.
+## License
 
-```sh
-go test ./...
-pwsh scripts/make-sample-media.ps1     # a synthetic library, no downloads
-pwsh scripts/fetch-test-library.ps1    # ~750MB of real public-domain media
-```
-
-On Windows, Smart App Control refuses to run freshly built test binaries, so
-`go test` fails on a different handful of packages each time. Run the suite in
-a container instead — no Windows binary is executed, and it is what CI does:
-
-```sh
-docker run --rm -v "//c/dev/atrium:/src" -w /src golang:1.24-alpine go test ./...
-```
-
-## How it works
-
-```
-                            browser
-                               │  one origin, one cookie
-                       ┌───────▼───────┐
-                       │    soundstorm     │  auth · search · player · byte proxy
-                       └───────┬───────┘
-      ┌──────────────┬─────────┴─────────┬──────────────┐
-      ▼              ▼                   ▼              ▼
- Navidrome     Jellyfin        Audiobookshelf   library/ebooks
-   :4533         :8096              :80          (a folder)
-              films + TV
-        — none of the three publishes a port —
-```
-
-Jellyfin appears twice: films and series are separate Jellyfin libraries, with
-different scrapers and different structure, so they are two SoundStorm sources
-sharing one token. Searching a show name finds the show; searching an episode
-title finds the episode.
-
-Ebooks have no backend at all. An EPUB carries its own title, author and cover
-in a documented format, and needs no transcoding, so SoundStorm reads the folder
-directly. That is the line: **SoundStorm can own a media type when it is
-self-describing and needs no transcoding.** Video never will be.
-
-Three rules hold it together.
-
-**A dead backend must never take the search down.** Every backend gets its own
-deadline and its own error slot. If Jellyfin is restarting you still get your
-music, and the response says which source failed and why.
-
-**Normalization happens at the edge.** Each adapter is the only code that knows
-its backend's vocabulary. Everything past it speaks `media.Item`.
-
-**Nothing upstream ever reaches the browser.** Results carry no upstream URLs.
-SoundStorm fetches media server-side and pipes it through, which is what lets the
-backends stay off any published port — and therefore what makes "one login"
-true rather than decorative.
-
-That last rule reverses an earlier design decision, deliberately. See the
-package comment in `internal/stream` for the cost/benefit.
-
-## Layout
-
-```
-cmd/soundstorm/          main, env config, graceful shutdown
-internal/media/      Item, Query, Kind — the shared vocabulary
-internal/library/    the folder layout: creates it, counts it
-internal/source/     the Source interface, Target, Registry
-internal/source/*/   one package per backend (subsonic, jellyfin,
-                     audiobookshelf, localbooks, opds)
-internal/epub/       EPUB metadata and resource reading
-internal/pdf/        PDF metadata, without parsing PDF structure
-internal/provision/  first-boot credential provisioning  ← the load-bearing part
-internal/state/      the little that must survive a restart
-internal/auth/       single-account login, PBKDF2, sessions
-internal/federate/   parallel fan-out, per-source deadlines, merge, rank
-internal/stream/     media byte proxy with Range support
-internal/httpapi/    handlers
-internal/webui/      the embedded UI
-```
-
-## Endpoints
-
-| Method | Path | Auth | Purpose |
-| --- | --- | --- | --- |
-| GET | `/` | — | the UI |
-| GET | `/healthz` | — | liveness |
-| GET | `/api/session` | — | does an account exist; am I signed in |
-| POST | `/api/signup` | — | create the one account (first boot only) |
-| POST | `/api/login` / `/api/logout` | — | |
-| GET | `/api/setup` | session | per-backend provisioning progress |
-| GET | `/api/library` | session | the folder layout and what is in it |
-| GET | `/api/playback/{source}/{id...}` | session | how to play an item, and its subtitles |
-| GET | `/api/hls/{source}/{path...}` | session | transcoded playlist and segments |
-| GET | `/api/subtitle/{source}/{track...}` | session | one subtitle track, as WebVTT |
-| GET | `/api/search?q=&kind=&limit=` | session | federated search |
-| GET | `/api/stream/{source}/{id...}` | session | media bytes |
-| GET | `/api/art/{source}/{id...}` | session | artwork |
-| GET | `/api/book/manifest?source=&id=` | session | what is inside a book |
-| GET | `/api/book/resource?source=&id=&path=` | session | one file from inside a book |
-| GET/PUT | `/api/book/progress?source=&id=` | session | reading position |
-
-The trailing `...` is load-bearing: an OPDS acquisition reference is a path with
-slashes in it, and that is the id the adapter needs back.
-
-`kind` is one of `music`, `video` (films), `tv`, `audiobook`, `ebook`, and may
-repeat or be comma-separated. Filtering skips non-matching backends entirely.
-
-A search always returns 200. Check `degraded` and the `sources` array.
-
-## Adding a backend
-
-Two halves, because a backend needs both:
-
-1. **Search.** Implement `source.Source` in `internal/source/<name>/`, plus
-   `source.Streamer` and `source.ArtProvider` if it serves bytes.
-2. **Provisioning.** Add a function in `internal/provision/` that walks the
-   backend's first-run flow and returns credentials, then a case in the switch
-   in `provision.go` and a target in `targetsFromEnv`.
-
-The second half is the one people skip, and it is the one that matters — a
-backend a human has to configure by hand defeats the point of the project.
-
-## Conventions
-
-- **Zero third-party Go dependencies.** Standard library only, including
-  password hashing (`crypto/pbkdf2`, stdlib since Go 1.24). There is no
-  `go.sum` and the container build downloads nothing.
-- **A ~17MB starter library** is embedded in the binary (`internal/starter`) and
-  unpacked once, on first run, into whichever library folders are empty. One
-  ebook, one audiobook, one song; no video, because one film would outweigh all
-  three. Public domain or CC throughout, which is a constraint rather than a
-  preference — it ships inside a published binary. Set
-  `SOUNDSTORM_STARTER_LIBRARY=false` to skip it, and see
-  `scripts/fetch-starter-media.sh` for where each file comes from.
-- **Two vendored browser libraries**, both under
-  `internal/webui/assets/vendor/`: foliate-js (MIT) renders EPUB, and hls.js
-  (Apache-2.0) plays transcoded video where the browser has no native HLS. Both
-  are prebuilt, pinned by content, embedded in the binary and fetched at no
-  point during a build, so the properties the zero-dependency rule protects all
-  survive. hls.js is 620KB, so it is loaded lazily — only when a video actually
-  needs a transcoded stream, never for music, books or direct-play films.
-- **No config file.** Everything comes from environment variables set by
-  compose, plus state SoundStorm provisions itself. A config file is one more thing
-  for a human to edit, and the goal is that a human edits nothing.
-- **Fail loudly at startup, degrade gracefully at runtime.**
-- `gofmt` clean, `go vet` clean, tests pass.
-
-## Notes
-
-- **Module path** is `github.com/GabrielHollberg/soundstorm`. If the repo lives
-  elsewhere, fix `go.mod` and run
-  `grep -rl GabrielHollberg/soundstorm . | xargs sed -i 's|GabrielHollberg/soundstorm|<you>/soundstorm|g'`.
-- **No `go.sum`** and that is correct, not an oversight.
-- **Serve over TLS or a private network.** Subsonic stream URLs carry
-  credentials in the query string — that is the protocol, and although those
-  URLs never leave SoundStorm, the session cookie still crosses the wire.
+SoundStorm is released under the [MIT License](LICENSE).
