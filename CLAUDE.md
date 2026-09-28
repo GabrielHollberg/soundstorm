@@ -470,6 +470,12 @@ judged on in its first minute:
   with no lyrics over it, the owner's choice among the ways offered. The
   lyrics box stays in place, invisible, under the other looks, so nothing
   moves. A computer treats Lyrics as the cover beside the lyrics, as before.
+  **And a tap on a touch screen moves to the next look**, in the sheet's
+  order and round again, while a hold still brings up the buttons - not on
+  the title (the owner had asked for a tap there to do nothing), Up next,
+  the sheet or a menu, and not at the end of a hold or swipe. So a lyric
+  line is no longer tapped to jump there on a touch screen; the timeline in
+  the hold does that.
   What follows is how it was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into

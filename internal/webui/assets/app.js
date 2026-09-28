@@ -6321,6 +6321,9 @@ function renderLyrics() {
     if (audio.lyrics.synced) {
       el.type = 'button';
       el.addEventListener('click', () => {
+        // On a touch screen a tap is for the next look (below), so a line
+        // is not a place to jump to there; the timeline in the hold is.
+        if (matchMedia('(pointer: coarse)').matches) return;
         $('audio-player').currentTime = line.start / 1000;
         syncLyrics(true);
       });
@@ -7115,8 +7118,26 @@ $('np-cover').addEventListener('click', (event) => {
     event.stopPropagation();
     return;
   }
-  // A tap no longer changes the look - the Looks button is the only way,
-  // at the owner's asking; a tap by the title was changing it by accident.
+});
+// On a touch screen a tap anywhere on Now Playing moves to the next look, in
+// the Looks sheet's order and round again - lyrics, the covers, then every
+// visualizer - while a hold still brings up the buttons. Not on the title
+// (the owner asked for a tap there to do nothing), nor on anything that
+// answers a tap of its own: Up next, the Looks sheet, a menu. The end of a
+// hold or a swipe is not a tap.
+$('now-playing').addEventListener('click', (event) => {
+  if (!matchMedia('(pointer: coarse)').matches || !audio.item) return;
+  if (performance.now() - npHold.at < 700) return;
+  if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
+  if (event.target.closest('.np-head, #np-queue, #np-next-block, #np-looks, #item-menu, input, a, .np-sleep-menu')) return;
+  if (audio.npMode === 'queue' || audio.item.kind !== 'music') return;
+  const at = COVER_STYLES.indexOf(coverStyle());
+  const next = COVER_STYLES[(at + 1) % COVER_STYLES.length];
+  state.prefs = state.prefs || {};
+  state.prefs.coverStyle = next;
+  applyCoverStyle();
+  showToast(COVER_STYLE_NAMES[next], '', null, 1400);
+  savePrefs({ coverStyle: next });
 });
 // It spins only while the music plays, and stops where it is on pause.
 for (const type of ['play', 'pause', 'ended']) {
