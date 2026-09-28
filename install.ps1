@@ -702,7 +702,7 @@ function Callout([string]$Title, [string[]]$Lines, [ConsoleColor]$Color = 'Yello
 # breaks something (it does not). Shown once per run, whichever comes first of
 # installing Docker (which opens itself when it finishes) or starting it.
 $script:dockerGuideShown = $false
-function Show-DockerGuide {
+function Show-DockerGuide([switch]$FirstRun) {
     if ($script:dockerGuideShown) { return }
     $script:dockerGuideShown = $true
     Callout 'Docker Desktop may open a window' @(
@@ -716,10 +716,82 @@ function Show-DockerGuide {
         '',
         'No Skip button? Choose "Continue without signing in" instead.',
         '',
+        '*Setup waits until you do: nothing happens until you click Skip.',
+        '',
         'Then come back to THIS window. You can minimize or close the Docker',
         'window - Docker keeps running in the background, and this setup',
         'carries on by itself as soon as Docker is ready.'
     ) 'Cyan'
+    # Read, not just shown. A box in the setup window is easy to walk away
+    # from, and the setup then sits waiting on a Docker window nobody is
+    # there to click - so before Docker's first start, the steps are put in
+    # a window that only closes with "I understand". Never on the desktop
+    # icon's path (-Launch), which runs minimized at sign-in.
+    if ($FirstRun -and -not $Launch) { Confirm-DockerGuide }
+}
+
+# Test-DockerFirstRun is whether Docker Desktop has yet to show its first-run
+# window: it records the accepted terms (LicenseTermsVersion) in its settings
+# file once somebody clicks Accept. Missing file, or no record, is a first run.
+function Test-DockerFirstRun {
+    $store = Join-Path $env:APPDATA 'Docker\settings-store.json'
+    if (-not (Test-Path $store)) { return $true }
+    try {
+        return -not ((Get-Content -Raw -LiteralPath $store) -match '"LicenseTermsVersion"')
+    } catch {
+        return $true
+    }
+}
+
+# Confirm-DockerGuide shows what Docker is about to ask and waits for
+# "I understand". The window has no close button, so the only way on is to
+# have read it; the console fallback asks for Enter.
+function Confirm-DockerGuide {
+    $text = "SoundStorm runs inside a free program called Docker, which is installed and started next. The first time Docker starts, it opens a window of its own and asks three things:`r`n`r`n" +
+        "    1.  Subscription Service Agreement  ->  click Accept`r`n" +
+        "    2.  Sign in / create an account  ->  click Skip`r`n" +
+        "    3.  Questions about you or your work  ->  click Skip`r`n`r`n" +
+        "You do NOT need a Docker account. If there is no Skip button, choose ""Continue without signing in"".`r`n`r`n" +
+        "Setup cannot finish until you do this. Stay at the computer until Docker's window appears, click through it, then come back to this setup - it carries on by itself."
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing -ErrorAction Stop
+    } catch {
+        try {
+            [void](Read-Host '    Docker will open a window: Accept, then Skip, Skip. Press Enter once you have read this')
+        } catch { }
+        return
+    }
+    Note "A window has opened: read it, then click I understand."
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'SoundStorm - Docker will open a window'
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.ControlBox = $false
+    $form.StartPosition = 'CenterScreen'
+    $form.TopMost = $true
+    $form.AutoScaleMode = 'Dpi'
+    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $form.ClientSize = New-Object System.Drawing.Size(560, 360)
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = $text
+    $label.Location = New-Object System.Drawing.Point(20, 16)
+    $label.Size = New-Object System.Drawing.Size(520, 280)
+    $form.Controls.Add($label)
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'I understand'
+    $ok.Location = New-Object System.Drawing.Point(384, 308)
+    $ok.Size = New-Object System.Drawing.Size(156, 36)
+    $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $form.Controls.Add($ok)
+    $form.AcceptButton = $ok
+    try {
+        # Alt+F4 still closes a window without a close button; that is not
+        # "I understand", so it asks again.
+        while ($form.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { }
+    } finally {
+        $form.Dispose()
+    }
 }
 
 # Stop says why it stopped and what to do about it. An installer that reports
@@ -841,6 +913,7 @@ function Invoke-Docker {
             # ever.
             $pending = New-Object System.Collections.Generic.List[string]
             $total = 0
+            $done = 0
             & docker @Arguments 2>&1 | ForEach-Object {
                 Update-Gui
                 $line = "$_"
@@ -849,7 +922,17 @@ function Invoke-Docker {
                     if ($Matches[2] -eq 'Pulling') {
                         if (-not $pending.Contains($image)) { $pending.Add($image); $total++ }
                     } else {
-                        [void]$pending.Remove($image)
+                        $wasPending = $pending.Remove($image)
+                        # Counted up, "3 of 12", as people expect a download
+                        # to count - not down from 12 to 0, as the heartbeat
+                        # used to.
+                        if ($Matches[2] -eq 'Pulled' -and $wasPending) {
+                            $done++
+                            Write-Host "  Downloaded $done of ${total}: $(($image -split '/')[-1] -replace ':.*$', '')"
+                            $kept.Add($line)
+                            $lastBeat = Get-Date
+                            return
+                        }
                     }
                 }
                 if (Test-DockerChurn $line) {
@@ -860,7 +943,7 @@ function Invoke-Docker {
                         if ($pending.Count -gt 0) {
                             # "jellyfin", not "jellyfin/jellyfin:latest".
                             $names = @($pending | ForEach-Object { ($_ -split '/')[-1] -replace ':.*$', '' })
-                            Note "still downloading $($pending.Count) of ${total}: $($names -join ', ')"
+                            Note "downloaded $done of ${total}, still coming: $($names -join ', ')"
                         } else {
                             Note "still downloading..."
                         }
@@ -1523,7 +1606,7 @@ function Install-Docker {
     Note "This is a big download and takes a few minutes."
     # Docker opens itself the moment its installer finishes, so this is the
     # last chance to say what it is going to ask.
-    Show-DockerGuide
+    Show-DockerGuide -FirstRun
 
     # Written before the install as well as after it. Docker Desktop launches
     # itself the moment its installer finishes, which is too early for anything
@@ -1669,7 +1752,7 @@ function Start-Docker {
 "@
     }
 
-    Show-DockerGuide
+    Show-DockerGuide -FirstRun:(Test-DockerFirstRun)
     Note "Starting Docker Desktop. This takes a minute or two."
     Start-Process -FilePath $exe | Out-Null
 

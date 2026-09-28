@@ -2132,6 +2132,18 @@ into a scratch folder. It relaunched, hid its console, showed the window,
 reached the "already installed in another folder" refusal and displayed it,
 and wrote nothing.
 
+**Docker's first-run window is acknowledged, not just described.** The
+Callout box saying what to click was there, and people still walked away
+expecting everything to happen by itself, leaving the setup waiting on a
+Docker window nobody clicked. So before Docker's first start - installing it,
+or starting one whose settings file has no `LicenseTermsVersion` yet (written
+when somebody clicks Accept) - `Confirm-DockerGuide` shows the three steps in
+a window with no close button and one button, **I understand**; Alt+F4 shows
+it again. Never on `-Launch`. Downloads also count up now ("Downloaded 3 of
+12: jellyfin" as each image finishes, "downloaded 3 of 12, still coming: ..."
+in the heartbeat), where the heartbeat used to count down what was left, at
+the owner's asking - people expect 1 of 12 to 12 of 12.
+
 **No console stays open, from the double-click on.** The setup file hands
 straight to PowerShell started minimized and hidden, and closes - it does not
 even download: the hidden PowerShell saves the installer to a file and starts
