@@ -1932,6 +1932,7 @@ function playAudio(item, fromQueue) {
 
   audio.item = item;
   audio.tracks = [];
+  audio.chapters = [];
   audio.urlMap = null;
   audio.index = 0;
   audio.resumable = false;
@@ -2029,6 +2030,14 @@ async function loadPlayback(item) {
     audio.duration = (last.startSeconds || 0) + (last.durationSeconds || 0);
     renderTracks();
   }
+
+  // The table of contents: the book's own chapters (marks inside one file as
+  // well as one file each), else its files when there are several.
+  audio.chapters = Array.isArray(info.chapters) && info.chapters.length > 1 ? info.chapters
+    : audio.tracks.length > 1 ? audio.tracks.map((t) => ({ title: t.title, startSeconds: t.startSeconds || 0 })) : [];
+  renderDockButtons();
+  updateMediaSession();
+  renderNowPlaying();
 
   // The key being present is the capability: this source will remember a
   // position, whether or not one has been recorded yet.
@@ -2284,6 +2293,7 @@ function stopAudio() {
   // position just recorded would be overwritten with the start of the file.
   audio.item = null;
   audio.tracks = [];
+  audio.chapters = [];
   audio.index = 0;
   audio.resumable = false;
   audio.started = false;
@@ -3234,6 +3244,10 @@ const ICONS = {
   chevron: '<path d="M9 6l6 6-6 6"/>',
   back: '<path d="M15 6l-6 6 6 6"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  // Thirty seconds back and on, for an audiobook: a turning arrow round the
+  // number.
+  back30: '<path d="M5 13a7 7 0 1 0 2-5M4 4v4.5h4.5"/><text x="12.5" y="16" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui, sans-serif">30</text>',
+  fwd30: '<path d="M19 13a7 7 0 1 1-2-5M20 4v4.5h-4.5"/><text x="11.5" y="16" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none" font-family="system-ui, sans-serif">30</text>',
   forward: '<path d="M9 6l6 6-6 6"/>',
   home: '<path d="M4 11l8-7 8 7M6 9.5V20h4.5v-6h3v6H18V9.5"/>',
   note: '<path d="M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/>',
@@ -4231,9 +4245,12 @@ function updateMediaSession() {
   } catch {
     // An old browser with half of the API: the player still works.
   }
-  const hasNext = (audio.queue && audio.queue.index + 1 < audio.queue.items.length)
-    || audio.index + 1 < audio.tracks.length;
-  const hasPrev = (audio.queue && audio.queue.index > 0) || audio.index > 0;
+  // An audiobook gets the lock screen's seek buttons, not next and previous:
+  // there is no next song, and a chapter is too far to jump by accident.
+  const book = item.kind !== 'music';
+  const hasNext = !book && ((audio.queue && audio.queue.index + 1 < audio.queue.items.length)
+    || audio.index + 1 < audio.tracks.length);
+  const hasPrev = !book && ((audio.queue && audio.queue.index > 0) || audio.index > 0);
   setMediaAction('nexttrack', hasNext ? mediaNext : null);
   setMediaAction('previoustrack', hasPrev ? mediaPrevious : null);
 }
@@ -5074,8 +5091,9 @@ function neighborTrack(by) {
     const item = q.items[at];
     return item ? { item } : null;
   }
-  const at = audio.index + by;
-  return at >= 0 && at < audio.tracks.length ? { item: audio.item } : null;
+  // An audiobook has nothing to swipe to: its chapters are in its table of
+  // contents, and a swipe that jumped a whole chapter was reported as weird.
+  return null;
 }
 
 // A swipe changes song outright: back means the song before, not the start
@@ -5260,7 +5278,7 @@ const npSwipe = (() => {
   let dx = 0;
   panel.addEventListener('touchstart', (event) => {
     const t = event.touches[0];
-    armed = event.touches.length === 1 && !npSwipe.busy && !event.target.closest('input') && !event.target.closest('#np-looks');
+    armed = event.touches.length === 1 && !npSwipe.busy && !event.target.closest('input') && !event.target.closest('#np-looks, #np-chapters');
     // Up next, and lyrics scrolled down, scroll up and down themselves: a
     // drag that way there is theirs, but a sideways one still changes song.
     scrollsY = Boolean(event.target.closest('#np-queue')
@@ -5354,14 +5372,37 @@ setIcon($('audio-close'), 'close');
 $('dock-volume-icon').replaceChildren(icon('volume'));
 
 // The card's own previous and next do what Now Playing's do.
-$('dock-prev').addEventListener('click', () => mediaPrevious());
+$('dock-prev').addEventListener('click', () => $('np-prev').click());
+
+// Previous and next for music; thirty seconds back and on for an audiobook,
+// on Now Playing and the mini-player alike.
+function renderSkipButtons(music) {
+  if (music === audio.skipMusic) return;
+  audio.skipMusic = music;
+  for (const [id, song, book, songLabel, bookLabel] of [
+    ['np-prev', 'prev', 'back30', 'Previous', 'Back 30 seconds'],
+    ['np-next', 'skip', 'fwd30', 'Next', 'Forward 30 seconds'],
+    ['dock-prev', 'prev', 'back30', 'Previous', 'Back 30 seconds'],
+    ['dock-next', 'skip', 'fwd30', 'Next', 'Forward 30 seconds'],
+  ]) {
+    // A song's arrows are solid; the thirty-second ones are drawn in line.
+    setIcon($(id), music ? song : book, music);
+    $(id).setAttribute('aria-label', music ? songLabel : bookLabel);
+  }
+}
 $('dock-next').addEventListener('click', () => $('np-next').click());
 
 function renderDockButtons() {
   const q = audio.queue;
-  const more = q
+  const book = Boolean(audio.item && audio.item.kind !== 'music');
+  // An audiobook's are thirty seconds back and on, always there - and on a
+  // phone the card shows its forward one (dock-book), where a song's next
+  // gives way to the swipe.
+  renderSkipButtons(!book);
+  document.body.classList.toggle('dock-book', book);
+  const more = book || (q
     ? q.index + 1 < q.items.length || audio.repeat !== 'off'
-    : audio.index + 1 < audio.tracks.length;
+    : audio.index + 1 < audio.tracks.length);
   $('dock-next').disabled = !more;
 }
 
@@ -5557,6 +5598,13 @@ function renderNowPlaying() {
   const item = audio.item;
   show($('np-speed-wrap'), item.kind === 'audiobook');
   show($('np-looks-btn'), item.kind === 'music');
+  // An audiobook keeps the plain player it had before the looks: its buttons
+  // and timeline showing, its cover, no visualizer. Everything that hides
+  // until a hold is for music (np-music).
+  const music = item.kind === 'music';
+  $('now-playing').classList.toggle('np-music', music);
+  show($('np-chapters-btn'), !music && (audio.chapters || []).length > 1);
+  renderSkipButtons(music);
   renderSpeed();
   const art = artPath(item);
   for (const img of [$('np-cover'), $('np-thumb')]) {
@@ -5586,7 +5634,8 @@ function renderNowPlaying() {
   $('now-playing').classList.toggle('playing', !$('audio-player').paused);
   const q = audio.queue;
   $('np-prev').disabled = false;
-  $('np-next').disabled = !q || (q.index + 1 >= q.items.length && audio.repeat === 'off');
+  // An audiobook's is thirty seconds on, always there.
+  $('np-next').disabled = item.kind === 'music' && (!q || (q.index + 1 >= q.items.length && audio.repeat === 'off'));
 
   const list = $('np-queue');
   // Mid-drag the rows are the drag's; they are drawn afresh when it ends.
@@ -5766,14 +5815,81 @@ document.addEventListener('click', (event) => {
   if (event.target.closest && (event.target.closest('#np-looks') || event.target.closest('#np-looks-btn'))) return;
   closeLooks();
 });
+// The Chapters sheet: an audiobook's table of contents, the chapter being
+// listened to marked, a tap going there. Audiobookshelf's chapter list names
+// the marks inside one file as well as one file per chapter, so a single m4b
+// is navigable too - it never was before.
+function chapterAt(seconds) {
+  const list = audio.chapters || [];
+  let at = 0;
+  for (let i = 0; i < list.length; i++) if (list[i].startSeconds <= seconds + 0.5) at = i;
+  return at;
+}
+function openChapters() {
+  const list = $('np-chapters-list');
+  const current = chapterAt(elapsed());
+  list.replaceChildren(...(audio.chapters || []).map((c, i) => {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `np-chapter${i === current ? ' on' : ''}`;
+    const name = document.createElement('span');
+    name.className = 'np-chapter-name';
+    name.textContent = c.title || `Chapter ${i + 1}`;
+    const time = document.createElement('span');
+    time.className = 'np-chapter-time';
+    time.textContent = formatDuration(c.startSeconds) || '0:00';
+    b.append(name, time);
+    b.addEventListener('click', (event) => {
+      event.stopPropagation();
+      savePosition();
+      seekTo(c.startSeconds, audio.item);
+      closeChapters();
+    });
+    li.append(b);
+    return li;
+  }));
+  show($('np-chapters'), true);
+  const on = list.querySelector('.on');
+  if (on) on.scrollIntoView({ block: 'center' });
+}
+function closeChapters() {
+  show($('np-chapters'), false);
+}
+$('np-chapters-btn').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if ($('np-chapters').classList.contains('hidden')) openChapters();
+  else closeChapters();
+});
+document.addEventListener('click', (event) => {
+  if ($('np-chapters').classList.contains('hidden')) return;
+  if (event.target.closest && (event.target.closest('#np-chapters') || event.target.closest('#np-chapters-btn'))) return;
+  closeChapters();
+});
 $('np-exit').addEventListener('click', stopAudio);
 $('np-play').addEventListener('click', () => {
   const player = $('audio-player');
   if (player.paused) player.play().catch(() => {});
   else player.pause();
 });
-$('np-prev').addEventListener('click', () => mediaPrevious());
+// Thirty seconds either way in an audiobook, across its files.
+function bookSkip(by) {
+  const item = audio.item;
+  if (!item) return;
+  const to = Math.max(0, Math.min(elapsed() + by, (audio.duration || Infinity) - 1));
+  if (audio.tracks.length > 1 && trackContaining(to) !== audio.index) {
+    savePosition();
+    seekTo(to, item);
+  } else {
+    $('audio-player').currentTime = to - (audio.tracks.length > 1 ? audio.tracks[audio.index].startSeconds || 0 : 0);
+  }
+}
+$('np-prev').addEventListener('click', () => {
+  if (audio.item && audio.item.kind !== 'music') bookSkip(-30);
+  else mediaPrevious();
+});
 $('np-next').addEventListener('click', () => {
+  if (audio.item && audio.item.kind !== 'music') { bookSkip(30); return; }
   const q = audio.queue;
   if (q && q.index + 1 >= q.items.length && audio.repeat !== 'off') playQueueAt(0);
   else mediaNext();
@@ -7104,6 +7220,8 @@ const EX_COVER_VIZ = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
 const VIZ_STYLES = FULL_STYLES;
 function coverStyle() {
   const p = state.prefs || {};
+  // An audiobook is always its plain cover: the looks are for music.
+  if (audio.item && audio.item.kind !== 'music') return 'square';
   if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
   return p.coverSpin ? 'spin' : 'lyrics';
 }
@@ -10917,7 +11035,7 @@ function renderSleepMenu(item, opts) {
 // the title or the lyrics opens the menu too. Not on what already answers a
 // touch - play, the header's buttons, the timeline, Up next (a hold there
 // moves a song), a menu.
-const NP_HOLD_SKIP = 'input, a, #np-queue, .np-bar button, .np-controls button, #np-speed-wrap, #item-menu, #np-looks';
+const NP_HOLD_SKIP = 'input, a, #np-queue, .np-bar button, .np-controls button, #np-speed-wrap, #item-menu, #np-looks, #np-chapters';
 (() => {
   const panel = $('now-playing');
   $('np-cover').draggable = false;
@@ -11205,7 +11323,7 @@ function showHoldIcons(pointerId, x0, y0) {
   // each where it always is, chosen the same way as the rest.
   const extra = $('np-hold-extra');
   const coarse = matchMedia('(pointer: coarse)').matches;
-  extra.replaceChildren(...(coarse ? holdButtonList() : []).flatMap((it) => {
+  extra.replaceChildren(...(coarse && item.kind === 'music' ? holdButtonList() : []).flatMap((it) => {
     const el = $(it.id);
     const b = el && el.getBoundingClientRect();
     if (!b || !b.width || el.closest('.hidden')) return [];

@@ -2451,7 +2451,8 @@ html:has(#subtabs:not(.hidden)) body { touch-action: pan-y pinch-zoom; }
    or the mini-player - so previous and next give their room to the rest.
    A mouse cannot swipe, so a computer keeps them. */
 @media (pointer: coarse) {
-  #np-prev, #np-next, #dock-next { display: none !important; }
+  .now-playing.np-music #np-prev, .now-playing.np-music #np-next,
+  body:not(.dock-book) #dock-next { display: none !important; }
   .dock { touch-action: none; }
 }
 .np-cover-wrap { position: relative; }
@@ -3096,15 +3097,14 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
    their places so the hold can show them there. The speed menu, inside its
    hidden button's wrapper, still shows when opened. */
 @media (pointer: coarse) {
-  .now-playing .np-bar .np-icon,
-  .now-playing .np-bar .np-speed,
-  .now-playing .np-controls .np-icon { visibility: hidden; }
+  .now-playing.np-music .np-bar .np-icon,
+  .now-playing.np-music .np-controls .np-icon { visibility: hidden; }
   .now-playing #np-speed-menu { visibility: visible; }
   /* No "Now Playing" words, and the timeline only while holding (sliding
      onto it then seeks). The sleep timer's countdown still shows. */
-  .now-playing .np-label-text { display: none; }
-  .now-playing .np-progress { visibility: hidden; }
-  .now-playing.hold-icons .np-progress { visibility: visible; }
+  .now-playing.np-music .np-label-text { display: none; }
+  .now-playing.np-music .np-progress { visibility: hidden; }
+  .now-playing.np-music.hold-icons .np-progress { visibility: visible; }
 }
 .np-hold-icon {
   position: absolute;
@@ -3353,3 +3353,17 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 @media (min-width: 900px) {
   .np-looks { left: auto; right: 24px; bottom: 24px; width: 420px; border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.08); }
 }
+
+/* An audiobook's table of contents, in the Looks sheet's frame. */
+.np-chapters-btn { margin-right: 6px; }
+.np-chapter-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.np-chapter {
+  display: flex; align-items: baseline; gap: 12px; width: 100%;
+  padding: 11px 8px; border: 0; border-radius: 10px; background: none;
+  color: inherit; font: inherit; font-size: 15px; text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.np-chapter-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-chapter-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.np-chapter.on { background: rgba(90, 150, 255, 0.16); color: var(--accent); }
+@media (hover: hover) { .np-chapter:hover { background: rgba(255, 255, 255, 0.08); } }

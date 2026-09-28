@@ -476,6 +476,27 @@ judged on in its first minute:
   the sheet or a menu, and not at the end of a hold or swipe. So a lyric
   line is no longer tapped to jump there on a touch screen; the timeline in
   the hold does that.
+
+  **An audiobook went back to the plain player**, at the owner's asking -
+  the looks were built for music and the screen is shared. `np-music` on
+  Now Playing is what every hide-until-held rule keys on, so a book keeps
+  its "Now Playing" label, its close, stop, play and speed buttons and its
+  timeline showing; `coverStyle()` answers `square` for a book whatever the
+  account chose, so no visualizer or record; the Looks button is hidden and
+  a tap changes nothing. **Skipping was weird in a book** - there is no next
+  song, and swiping or next jumped a whole chapter - so a book's previous
+  and next are thirty seconds back and on (`bookSkip`, across files; the
+  mini-player's too, and on a phone its forward shows, `dock-book`), the
+  swipe finds no neighbours, and the lock screen gets seek buttons instead
+  of next and previous. **And a book has a table of contents at last:** a
+  Chapters pill beside the speed opens a sheet of the book's chapters with
+  where each starts, the current one marked, a tap going there. They come
+  from Audiobookshelf's own chapter list (`source.ChapterLister`, sent as
+  `chapters` in `/api/playback`), which names the marks inside a single
+  m4b as well as one file per chapter - so a single-file book, which never
+  had any navigation, has it now; without a chapter list the files stand in.
+  Checked with a stand-in book in the preview (no Audiobookshelf there):
+  Chapter Two landed at 1:00, +30 at 1:32, -30 back at 1:03.
   What follows is how it was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into

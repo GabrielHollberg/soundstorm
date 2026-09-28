@@ -678,6 +678,9 @@
       <header class="np-bar">
         <button id="np-close" class="np-icon" type="button" aria-label="Close Now Playing"></button>
         <span class="np-label"><span class="np-label-text">Now Playing</span><span id="np-sleep-left" class="np-sleep-left hidden"></span></span>
+        <!-- Audiobooks only: the book's table of contents. -->
+        <button id="np-chapters-btn" class="np-speed np-chapters-btn hidden" type="button"
+                aria-haspopup="dialog" aria-controls="np-chapters">Chapters</button>
         <!-- Audiobooks only: how fast it plays. Remembered on the account. -->
         <div class="np-sleep-wrap np-speed-wrap hidden" id="np-speed-wrap">
           <button id="np-speed" class="np-speed" type="button" aria-label="Playback speed"
@@ -743,6 +746,10 @@
     <div id="np-looks" class="np-looks hidden" role="dialog" aria-label="Cover looks">
       <p class="np-looks-title">Cover looks</p>
       <div id="np-looks-body" class="np-looks-body"></div>
+    </div>
+    <div id="np-chapters" class="np-looks np-chapters hidden" role="dialog" aria-label="Chapters">
+      <p class="np-looks-title">Chapters</p>
+      <ol id="np-chapters-list" class="np-chapter-list"></ol>
     </div>
   </section>
 

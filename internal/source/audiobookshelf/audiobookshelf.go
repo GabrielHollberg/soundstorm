@@ -374,6 +374,28 @@ func (s *Source) Tracks(ctx context.Context, itemID string) ([]source.Track, err
 	return tracks, nil
 }
 
+// Chapters is the book's own chapter list, from Audiobookshelf: each chapter's
+// title and where it starts on the whole book's timeline - the same timeline
+// Tracks and listening position use.
+func (s *Source) Chapters(ctx context.Context, itemID string) ([]source.Chapter, error) {
+	if itemID == "" {
+		return nil, fmt.Errorf("audiobookshelf %q: empty item id", s.id)
+	}
+	item, err := s.fetchItem(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]source.Chapter, 0, len(item.Media.Chapters))
+	for i, c := range item.Media.Chapters {
+		title := strings.TrimSpace(decodeEntities(c.Title))
+		if title == "" {
+			title = fmt.Sprintf("Chapter %d", i+1)
+		}
+		out = append(out, source.Chapter{Title: title, StartSeconds: c.Start})
+	}
+	return out, nil
+}
+
 // trackTitles names each file, best source first.
 //
 // Audiobookshelf's chapter list is preferred when there is exactly one chapter

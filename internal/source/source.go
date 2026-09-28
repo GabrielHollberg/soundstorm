@@ -234,6 +234,19 @@ type TrackLister interface {
 	Tracks(ctx context.Context, itemID string) ([]Track, error)
 }
 
+// Chapter is one named place in an audiobook, on the whole book's timeline.
+type Chapter struct {
+	Title        string  `json:"title"`
+	StartSeconds float64 `json:"startSeconds"`
+}
+
+// ChapterLister is an optional interface for an audiobook source that knows a
+// book's chapters - marks inside one file as readily as one file per chapter,
+// which is what a table of contents needs and a file list cannot give.
+type ChapterLister interface {
+	Chapters(ctx context.Context, itemID string) ([]Chapter, error)
+}
+
 // SubtitleProvider serves a subtitle track as WebVTT.
 //
 // WebVTT because that is the only thing a browser will accept in a track

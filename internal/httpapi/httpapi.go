@@ -1654,6 +1654,18 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The book's chapters, for its table of contents: marks inside one file as
+	// well as one file per chapter. Only when there is more than one.
+	if lister, ok := src.(source.ChapterLister); ok {
+		chapters, err := lister.Chapters(r.Context(), itemID)
+		if err != nil {
+			s.log.Warn("chapter list failed",
+				"source", sourceID, "item", itemID, "err", err)
+		} else if len(chapters) > 1 {
+			answer["chapters"] = chapters
+		}
+	}
+
 	// Where they left off. The key being present is what tells a client this
 	// item is worth saving a position for at all - a four minute song is not,
 	// and a source with no backend to write it to could not anyway.
