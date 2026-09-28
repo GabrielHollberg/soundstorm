@@ -12621,7 +12621,7 @@ const viz = {
     const size = flowing ? Math.min(w, h) * (EX_COVER_VIZ.includes(coverStyle()) ? 0.85 : 0.55) : w / 1.8;
     const R0 = size * 0.3;
     const pal = this.palette;
-    const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
+    const rgba = vizColor;
     // A clock that runs with the music and idles slowly without it.
     this.clock = (this.clock || 0) + dt * (0.25 + 0.75 * lv) * (0.5 + 0.5 * e + 0.6 * loudness);
     const ck = this.clock;
@@ -12715,7 +12715,7 @@ const viz = {
     });
     // A bright core that flashes on the kick.
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, R0 * (0.9 + 0.5 * kick));
-    core.addColorStop(0, `rgba(255, 255, 255, ${0.1 + 0.1 * bright + 0.4 * kick})`);
+    core.addColorStop(0, vizColor(VIZ_WHITE, 0.1 + 0.1 * bright + 0.4 * kick));
     core.addColorStop(1, 'rgba(255, 255, 255, 0)');
     g.fillStyle = core;
     g.fillRect(0, 0, w, h);
@@ -12739,12 +12739,12 @@ const viz = {
     if (dropEnv > 0 && lv > 0.05) {
       const p = 1 - dropEnv;
       g.lineWidth = (2 + 6 * dropEnv) * dpr;
-      g.strokeStyle = `rgba(255, 255, 255, ${dropEnv * 0.7 * lv})`;
+      g.strokeStyle = vizColor(VIZ_WHITE, dropEnv * 0.7 * lv);
       g.beginPath();
       g.arc(cx, cy, R0 * (1.2 + p * 2.6), 0, TAU);
       g.stroke();
       const flash = g.createRadialGradient(cx, cy, 0, cx, cy, R0 * 3);
-      flash.addColorStop(0, `rgba(255, 255, 255, ${dropEnv * dropEnv * 0.45})`);
+      flash.addColorStop(0, vizColor(VIZ_WHITE, dropEnv * dropEnv * 0.45));
       flash.addColorStop(1, 'rgba(255, 255, 255, 0)');
       g.fillStyle = flash;
       g.fillRect(0, 0, w, h);
@@ -12775,19 +12775,29 @@ const viz = {
       d.r += d.v * dt;
       d.a += (d.spin / d.r) * dt * (0.6 + 1.4 * lv) * (1 + kick);
       const rr = R0 * d.r;
-      const x = cx + Math.cos(d.a) * rr;
-      const y = cy + Math.sin(d.a) * rr * 0.92;
-      // A streak from where it was, so the trails are smooth lines rather
-      // than a string of dots one frame apart.
-      f.strokeStyle = rgba(pal[d.c], (0.55 + 0.4 * lv) * (0.45 + 0.55 * bright));
-      f.lineWidth = d.size * dpr * (1 + kick * 0.6);
-      f.lineCap = 'round';
-      f.beginPath();
-      f.moveTo(d.x === undefined ? x : d.x, d.y === undefined ? y : d.y);
-      f.lineTo(x, y);
-      f.stroke();
-      d.x = x;
-      d.y = y;
+      d.px = d.x === undefined ? cx + Math.cos(d.a) * rr : d.x;
+      d.py = d.y === undefined ? cy + Math.sin(d.a) * rr * 0.92 : d.y;
+      d.x = cx + Math.cos(d.a) * rr;
+      d.y = cy + Math.sin(d.a) * rr * 0.92;
+    }
+    // A streak from where each was, so the trails are smooth lines rather
+    // than a string of dots one frame apart - drawn in six batches (three
+    // colours, two weights), not a stroke per particle, which with a colour
+    // each was the other half of the garbage that made a phone skip.
+    const streak = (0.55 + 0.4 * lv) * (0.45 + 0.55 * bright);
+    f.lineCap = 'round';
+    for (let c = 0; c < 3; c++) {
+      for (let big = 0; big < 2; big++) {
+        f.beginPath();
+        for (const d of this.dots) {
+          if (d.c !== c || (d.size >= 1.7) !== (big === 1)) continue;
+          f.moveTo(d.px, d.py);
+          f.lineTo(d.x, d.y);
+        }
+        f.strokeStyle = rgba(pal[c], streak);
+        f.lineWidth = (big ? 2.2 : 1.2) * dpr * (1 + kick * 0.6);
+        f.stroke();
+      }
     }
     f.globalCompositeOperation = 'source-over';
 
@@ -12807,6 +12817,27 @@ $('audio-player').addEventListener('seeked', () => {
   viz.loudAvg = undefined;
   viz.beatNovelty = 0;
 });
+
+// vizColor: a colour string for the visualizers without making a new one on
+// every call. They ask for thousands a second - a colour and a see-through
+// amount per particle, per frame - and building each as a fresh string was
+// garbage enough for a phone to stop and collect it every few seconds, seen
+// as the animation skipping. The amount is rounded to one of 64 steps, which
+// the eye cannot tell apart, and each colour keeps its 65 strings. Keyed by
+// the colour's values, so any [r, g, b] works, the palette's or a literal.
+const vizColors = new Map();
+function vizColor(c, a) {
+  const key = (c[0] << 16) | (c[1] << 8) | c[2];
+  let row = vizColors.get(key);
+  if (!row) {
+    if (vizColors.size > 256) vizColors.clear();
+    row = new Array(65);
+    vizColors.set(key, row);
+  }
+  const i = a <= 0 ? 0 : a >= 1 ? 64 : Math.round(a * 64);
+  return row[i] || (row[i] = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${i / 64})`);
+}
+const VIZ_WHITE = [255, 255, 255];
 
 // Flow's scene, full screen: particles swirling through a moving current round
 // the middle of the screen, trailing light; faster and more turbulent as it
@@ -12944,51 +12975,77 @@ const FULL_SCENES = {
       g.fillRect(0, 0, w, h);
     }
     g.globalCompositeOperation = 'lighter';
-    // Rain, slanted with a wind that drifts.
-    const fall = h * (0.28 + 0.5 * loud * lv + 0.15 * kick) * dt;
+    // Rain, slanted with a wind that drifts. Its speed eases towards what
+    // the music asks rather than jumping on every kick - reported as the
+    // animation skipping every few seconds - and it is drawn in six batches
+    // (three colours, two weights), not a stroke and a new colour string per
+    // drop: 420 of those a frame was garbage enough for a phone to stop and
+    // collect it every few seconds, which is the other half of the skip.
+    const target = 0.28 + 0.5 * loud * lv + 0.15 * kick;
+    st.fallRate = st.fallRate === undefined ? target : st.fallRate + (target - st.fallRate) * Math.min(1, dt * 2.5);
+    const fall = h * st.fallRate * dt;
     const wind = Math.sin(ck * 0.3) * 0.15 + 0.12;
+    const alpha = (0.35 + 0.35 * lv) * (0.5 + 0.5 * bright);
+    const minLen = h * 0.015;
     g.lineCap = 'round';
+    for (let c = 0; c < 3; c++) {
+      for (let heavy = 0; heavy < 2; heavy++) {
+        g.beginPath();
+        for (const d of st.drops) {
+          if (d.c !== c || (d.s >= 1) !== (heavy === 1)) continue;
+          const step = fall * d.s;
+          g.moveTo(d.x, d.y);
+          g.lineTo(d.x + step * wind * 2.2, d.y + Math.max(step * 2.2, minLen));
+        }
+        g.strokeStyle = rgba(pal[c], alpha);
+        g.lineWidth = (heavy ? 1.8 : 1.3) * dpr;
+        g.stroke();
+      }
+    }
     for (const d of st.drops) {
       const step = fall * d.s;
-      g.strokeStyle = rgba(pal[d.c], (0.35 + 0.35 * lv) * (0.5 + 0.5 * bright));
-      g.lineWidth = (0.8 + d.s * 0.8) * dpr;
-      g.beginPath();
-      g.moveTo(d.x, d.y);
-      g.lineTo(d.x + step * wind * 2.2, d.y + Math.max(step * 2.2, h * 0.015));
-      g.stroke();
       d.y += step;
       d.x += step * wind;
       if (d.y > h) {
-        if (Math.random() < 0.3) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c });
+        if (Math.random() < 0.3 && st.splash.length < 80) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c });
         d.y = -h * 0.05 * Math.random();
         d.x = -w * 0.35 + Math.random() * w * 1.35;
       }
     }
-    st.splash = st.splash.filter((sp) => {
+    // Splashes and bolts are aged in place, the finished ones dropped from the
+    // same array, rather than a new array filtered out every frame.
+    g.lineWidth = dpr;
+    let keep = 0;
+    for (const sp of st.splash) {
       sp.life -= dt * 2.5;
-      if (sp.life <= 0) return false;
+      if (sp.life <= 0) continue;
+      st.splash[keep++] = sp;
       g.strokeStyle = rgba(pal[sp.c], sp.life * 0.5 * bright);
-      g.lineWidth = dpr;
       g.beginPath();
       g.ellipse(sp.x, sp.y, (1 - sp.life) * 14 * dpr + 2, (1 - sp.life) * 4 * dpr + 1, 0, 0, Math.PI * 2);
       g.stroke();
-      return true;
-    });
+    }
+    st.splash.length = keep;
     // The bolts: a wide soft glow and a thin bright core.
-    st.bolts = st.bolts.filter((bo) => {
+    keep = 0;
+    for (const bo of st.bolts) {
       bo.life -= dt * 2.6;
-      if (bo.life <= 0) return false;
-      for (const [width, alpha] of [[10, 0.25], [2.2, 1]]) {
-        g.strokeStyle = `rgba(235, 240, 255, ${alpha * bo.life})`;
-        g.lineWidth = width * dpr;
-        for (const path of [bo.pts, ...bo.branches]) {
-          g.beginPath();
-          path.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-          g.stroke();
+      if (bo.life <= 0) continue;
+      st.bolts[keep++] = bo;
+      for (let layer = 0; layer < 2; layer++) {
+        g.strokeStyle = `rgba(235, 240, 255, ${(layer ? 1 : 0.25) * bo.life})`;
+        g.lineWidth = (layer ? 2.2 : 10) * dpr;
+        g.beginPath();
+        for (const path of bo.all || (bo.all = [bo.pts, ...bo.branches])) {
+          for (let i = 0; i < path.length; i++) {
+            if (i) g.lineTo(path[i][0], path[i][1]);
+            else g.moveTo(path[i][0], path[i][1]);
+          }
         }
+        g.stroke();
       }
-      return true;
-    });
+    }
+    st.bolts.length = keep;
     g.globalCompositeOperation = 'source-over';
   },
 
@@ -13008,7 +13065,7 @@ const FULL_SCENES = {
       st.near = ridge(12, 4.1);
     }
     for (const s of st.stars) {
-      g.fillStyle = `rgba(255, 255, 255, ${(0.25 + 0.5 * s.b * (0.5 + 0.5 * Math.sin(ck * 2 + s.x * 40))) * bright})`;
+      g.fillStyle = vizColor(VIZ_WHITE, (0.25 + 0.5 * s.b * (0.5 + 0.5 * Math.sin(ck * 2 + s.x * 40))) * bright);
       g.fillRect(s.x * w, s.y * h, 1.5 * dpr, 1.5 * dpr);
     }
     // The sun, striped across its lower half.
@@ -13091,7 +13148,7 @@ const FULL_SCENES = {
       st.ripples = [];
     }
     for (const s of st.bg) {
-      g.fillStyle = `rgba(255, 255, 255, ${0.15 + 0.35 * s.b})`;
+      g.fillStyle = vizColor(VIZ_WHITE, 0.15 + 0.35 * s.b);
       g.fillRect(s.x * w, s.y * h, dpr, dpr);
     }
     st.turn += dt * (0.12 + 0.5 * loud * lv);
@@ -13134,7 +13191,7 @@ const FULL_SCENES = {
     g.clearRect(0, 0, w, h);
     if (!st.stars) st.stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random() * 0.8, b: Math.random(), t: Math.random() * 6 }));
     for (const s of st.stars) {
-      g.fillStyle = `rgba(255, 255, 255, ${(0.2 + 0.5 * s.b * (0.5 + 0.5 * Math.sin(ck * 1.5 + s.t))) * bright})`;
+      g.fillStyle = vizColor(VIZ_WHITE, (0.2 + 0.5 * s.b * (0.5 + 0.5 * Math.sin(ck * 1.5 + s.t))) * bright);
       g.fillRect(s.x * w, s.y * h, 1.4 * dpr, 1.4 * dpr);
     }
     g.globalCompositeOperation = 'lighter';
@@ -13273,7 +13330,7 @@ const VIZ_SCENES = {
         g.fillStyle = rgba(c, 0.16 * bright);
         g.fillRect(x, base + size * 0.02, bw * 0.72, bh * 0.35);
         // The peak cap.
-        g.fillStyle = `rgba(255, 255, 255, ${0.5 + 0.4 * bright})`;
+        g.fillStyle = vizColor(VIZ_WHITE, 0.5 + 0.4 * bright);
         g.fillRect(x, base - st.peak[i] * size * 0.62 - size * 0.02, bw * 0.72, size * 0.01);
       }
     }
@@ -13295,7 +13352,7 @@ const VIZ_SCENES = {
     const focal = size * 0.32;
     // A flash in the middle on the kick.
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, size * (0.35 + 0.3 * kick));
-    core.addColorStop(0, `rgba(255, 255, 255, ${0.08 + 0.45 * kick})`);
+    core.addColorStop(0, vizColor(VIZ_WHITE, 0.08 + 0.45 * kick));
     core.addColorStop(1, 'rgba(255, 255, 255, 0)');
     g.fillStyle = core;
     g.fillRect(0, 0, w, h);
@@ -13356,13 +13413,19 @@ const VIZ_SCENES = {
         const env = Math.sin(Math.PI * u);
         return cy + amp * env * (Math.sin(k * u * Math.PI * 2 + ck * sp * 2 + ph + r) + ripple * Math.sin(u * 40 + ck * 9 + r));
       };
-      const top = [];
-      const bottom = [];
+      // The edges' heights go into buffers kept from frame to frame: arrays
+      // of points built fresh each frame were garbage enough to make a phone
+      // stop and collect it.
+      if (!st.top) { st.top = new Float32Array(steps + 1); st.bottom = new Float32Array(steps + 1); }
+      const top = st.top;
+      const bottom = st.bottom;
+      const lift = 0.9 + 0.3 * Math.sin(ck + r);
       for (let p = 0; p <= steps; p++) {
         const u = p / steps;
-        top.push([x0 + (x1 - x0) * u, wave(u, 0)]);
-        bottom.push([x0 + (x1 - x0) * u, wave(u, 0.9 + 0.3 * Math.sin(ck + r))]);
+        top[p] = wave(u, 0);
+        bottom[p] = wave(u, lift);
       }
+      const xAt = (p) => x0 + (x1 - x0) * (p / steps);
       const c = pal[r % 3];
       const grad = g.createLinearGradient(x0, 0, x1, 0);
       grad.addColorStop(0, rgba(c, 0));
@@ -13370,15 +13433,17 @@ const VIZ_SCENES = {
       grad.addColorStop(1, rgba(c, 0));
       g.fillStyle = grad;
       g.beginPath();
-      top.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-      for (let i = bottom.length - 1; i >= 0; i--) g.lineTo(bottom[i][0], bottom[i][1]);
+      g.moveTo(xAt(0), top[0]);
+      for (let p = 1; p <= steps; p++) g.lineTo(xAt(p), top[p]);
+      for (let p = steps; p >= 0; p--) g.lineTo(xAt(p), bottom[p]);
       g.closePath();
       g.fill();
       // A bright edge along the top.
       g.strokeStyle = rgba(c, 0.55 * (0.4 + 0.6 * bright));
       g.lineWidth = 1.5 * m.dpr;
       g.beginPath();
-      top.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.moveTo(xAt(0), top[0]);
+      for (let p = 1; p <= steps; p++) g.lineTo(xAt(p), top[p]);
       g.stroke();
     }
     g.globalCompositeOperation = 'source-over';
@@ -13432,7 +13497,7 @@ const VIZ_SCENES = {
     }
     // A star in the middle.
     const core = g.createRadialGradient(0, 0, 0, 0, 0, R * (0.25 + 0.2 * kick));
-    core.addColorStop(0, `rgba(255, 255, 255, ${0.25 + 0.5 * kick})`);
+    core.addColorStop(0, vizColor(VIZ_WHITE, 0.25 + 0.5 * kick));
     core.addColorStop(1, 'rgba(255, 255, 255, 0)');
     g.fillStyle = core;
     g.beginPath();

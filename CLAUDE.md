@@ -799,6 +799,20 @@ judged on in its first minute:
   `soundstorm-viz-lead`); the visualizer reads the clock plus it, and the
   sheet stays open so it can be judged against the music. Checked: 0.3s
   sooner moved the strikes to 37.19, 37.61 and 37.93s.
+  **Smooth means no garbage.** Reported as Storm skipping every few
+  seconds: frames were steady at 17ms on a computer, but the heap dropped by
+  over a megabyte four times a second - a new colour string and a stroke per
+  raindrop, 420 a frame - and on a phone that is a collection pause every
+  few seconds. `vizColor` now hands out colour strings from a cache (the
+  alpha rounded to one of 64 steps, which the eye cannot tell), Storm's rain
+  and the Orb's particles are drawn in six batches (three colours, two
+  weights), Waves keeps its edges in buffers instead of 900 small arrays a
+  frame, and splashes and bolts age in place. Measured as heap drops over
+  15s with the CPU slowed 4x: Storm 57 to 6, Flow 62 to 1, Warp 44 to 6,
+  Waves 42 to 9, Aurora 34 to 7, Orb 47 to about 19 (its gradients; drawing
+  its rays from three shared gradients measured worse, and was reverted).
+  Storm's rain speed also eases towards what the music asks rather than
+  jumping on every kick, the other half of the skip.
   **The Looks sheet** lost its Done button (cut off on a phone): a choice
   closes it, names only (three to a row fit), no scrolling on an iPhone 13,
   and Now Playing's swipe and hold stand down inside it - a scroll in it
@@ -924,9 +938,12 @@ everything.
 **Home opens with one-tap music**, above everything else, for an account
 with music (`homeQuickPlay`), asked for as "shuffle all music, right when you
 get on": **Shuffle all** across the top - a radio station (`mode:
-"shuffle"`), every song equally likely bar what was just played, endless and
-never repeating until the library has been through, where the Shuffle
-everything mix stops at a hundred - then Your favorites (shuffled, only with
+"shuffle"`) and a true random shuffle, as the owner asked: each batch drawn
+with equal odds from the songs not played yet this session, with none of the
+other stations' leaning away from recent plays or spacing of artists and
+albums; endless, and never repeating until the library has been through
+(the app sends the last 1,500 queued), where the Shuffle everything mix stops
+at a hundred - then Your favorites (shuffled, only with
 some), Library radio and Newly added. On a phone the three sit in one row,
 the icon over the name.
 

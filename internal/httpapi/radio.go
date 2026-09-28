@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -289,12 +290,21 @@ func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListe
 
 	switch p.Mode {
 	case "shuffle":
-		// Home's Shuffle all: every song as likely as every other (bar what
-		// was just played), endless like any station, so it goes through
-		// the whole library without repeating rather than a mix's hundred.
-		return weighted("Shuffle all", "Every song, in no particular order", func(media.Item) float64 {
-			return 1
-		})
+		// Home's Shuffle all: a true random shuffle, as the owner asked - each
+		// batch is drawn with equal odds from the songs not yet played this
+		// session, with no leaning away from what was heard lately and no
+		// spacing of artists or albums, which the other stations do. Endless
+		// like any station, so it goes through the whole library before a
+		// song comes round again, rather than stopping at a mix's hundred.
+		shuffled := slices.Clone(songs)
+		rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+		if len(shuffled) > size {
+			shuffled = shuffled[:size]
+		}
+		if len(shuffled) == 0 {
+			return station{}, fmt.Errorf("nothing in the library to shuffle")
+		}
+		return station{Title: "Shuffle all", Subtitle: "Every song, in random order", Songs: shuffled}, nil
 
 	case "library":
 		return weighted("Library radio", "Everything, leaning toward what you love", func(it media.Item) float64 {
