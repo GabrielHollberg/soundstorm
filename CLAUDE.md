@@ -687,27 +687,32 @@ judged on in its first minute:
   rain over the whole screen (spawned left of it for the wind) and slower,
   lightning at most every eight seconds, on a standout moment in a loud part,
   and only a third of those - once in sixteen loud seconds when measured.
-  **Lightning is for booms: runs of big bass hits right in a row.** It went
-  through three readings in a row, each the owner's correction of the last:
-  bass drops, then every measure after a drop, and then what was actually
-  meant - "when there are multiple loud beats in the background right in a
-  row", the "boom boom boom" at 0:37 in Imagine Dragons' Thunder, the owner's
-  own example (found in the real library and analysed in place, never
-  copied or changed). `hearSong` keeps the sub-bass under 100 Hz through a
-  two-pole filter at 12ms frames; a hit is that level jumping 10dB or more
-  over the lowest of the 150ms before it, within 60ms, to at least the song's
-  middling hit level - a hit out of a lull, not merely a loud one - and a run
-  is three or more, each under 0.45s after the last. Worked out on the file:
-  at 8dB the ordinary drumming at 0:36 qualified and the booms were one run
-  of six; at 10dB the runs are exactly 37.48, 37.91 and 38.22s, then the
-  same at 1:21 and 1:23, and nothing in the verses. Each boom is a lightning
-  moment timed to the hit, not the beat grid (`booms`, `nextBoom`, the first
-  of a run marked): Storm strikes (twice on a run's first), and the Orb's
-  shock ring, Flow's big wave, Galaxy's ripple, Warp's surge and a Fireworks
-  burst (the finale on a run's first) go with it. Played in the preview
-  with the real file served from disk: strikes at 37.50, 37.93 and 38.25s,
-  none else between 0:34 and 0:40. Saved analyses are version 4, carrying the
-  booms; older downloads are heard again. The drop and measure code is gone.
+  **Lightning is on the first beat of each bar in the song's loud parts** -
+  its loudest 30% by the half-second loudness - the first of a loud stretch
+  a double strike (Storm) or the finale (Fireworks); the Orb's ring, Flow's
+  wave, Galaxy's ripple and Warp's surge go with it. It got there through
+  four readings of the owner's asks: bass drops, every measure after a drop,
+  then runs of booms - the "boom boom boom" at 0:37 in Thunder. Booms were a
+  sub-bass (under 100 Hz) jump of 10dB out of a lull, three or more under
+  0.45s apart; tuned on that file they found 0:37 exactly, but the owner
+  reported the other strikes off the beat and the same booms at 2:17
+  missed, and the hit list showed why: 10-20dB jumps every quarter second
+  through the whole song, the booms no different by any measure tried. So
+  it went back to the beat grid, which is what an eye checks lightning
+  against. Those booms are syncopated, off the grid, so no beat rule strikes
+  on them.
+
+  **And the grid was wrong for fast songs, twice over.** The tempo search
+  tried whole-frame lags (23ms): Thunder's 170 bpm falls between two, the
+  error adds up over every beat, and 112 won. Lags now go in tenths of a
+  frame, 70-180 bpm. Separately, two calls to `keepTime` for one song (the
+  song starting and the look applying) raced: the second read the tempo
+  lookup as "not known" while it was in flight and started hearing the song
+  with no tempo to lean on, and the hearing is cached per song, so the
+  later call's tempo never counted. In-flight lookups are now shared
+  (`soundAsking`). With both, Thunder's beats sit at 0.714s (84, felt at
+  half of 170) - strong bass hits land on the beat or the half beat, 50 of
+  71 - and saved analyses are version 5, so downloads are heard again.
   **Timing is set by eye, per device.** Then reported from a phone's own
   speaker as the strikes landing late, the first around the last boom. The
   code was on time against the player's clock - the same analysis from the

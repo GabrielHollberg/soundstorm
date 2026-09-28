@@ -5688,7 +5688,7 @@ function closeLooks() {
 // vizLead: how far ahead of the player's clock the visuals run on this device,
 // in seconds - positive shows each moment sooner. Reported on a phone's own
 // speaker as the lightning landing late, while in Chrome on a computer it
-// struck on every boom: the gap between the clock a page reads and the sound
+// struck on every beat: the gap between the clock a page reads and the sound
 // is the device's, and nothing a page can ask reports it. So it is set by eye,
 // in the Looks sheet, and kept per device.
 const VIZ_LEAD_KEY = 'soundstorm-viz-lead';
@@ -5721,10 +5721,6 @@ function looksTiming() {
       const next = Math.round((vizLead() + by) * 10) / 10;
       localStorage.setItem(VIZ_LEAD_KEY, String(Math.max(-0.5, Math.min(1, next))));
       value.textContent = vizLeadLabel(vizLead());
-      // Carry on from the next boom after the new moment.
-      const t = ($('audio-player').currentTime || 0) + vizLead();
-      viz.bigAt = undefined;
-      viz.nextBoom = viz.heard && viz.heard.booms ? viz.heard.booms.filter((bm) => bm.t < t - 0.05).length : 0;
     });
     return b;
   };
@@ -11880,19 +11876,30 @@ function renderCoverDeco() {
 // audio processing, which stops it when an iPhone locks - but its pace, lined
 // up with where the song has got to. A song not yet analysed moves slowly.
 const soundOf = {};
+// The lookups still on their way, so a second keepTime for the same song waits
+// for the answer rather than reading "not known" meanwhile - it used to, and
+// started hearing the song with no tempo to lean on, which for Thunder (170)
+// found 112.
+const soundAsking = new Map();
 async function keepTime(item) {
   const key = selectionKey(item);
   if (!(key in soundOf)) {
-    soundOf[key] = null;
-    // A downloaded song kept its tempo and energy with what was heard in it,
-    // so offline needs no answer from the server.
-    const kept = await loadHeard(item);
-    if (kept && kept.sound) {
-      soundOf[key] = kept.sound;
-    } else if (item.kind === 'music') {
-      const { ok, body } = await api(`/api/music/sound?id=${encodeURIComponent(item.id)}`);
-      soundOf[key] = ok && body && body.known ? body : null;
+    if (!soundAsking.has(key)) {
+      soundAsking.set(key, (async () => {
+        let found = null;
+        // A downloaded song kept its tempo and energy with what was heard in
+        // it, so offline needs no answer from the server.
+        const kept = await loadHeard(item);
+        if (kept && kept.sound) {
+          found = kept.sound;
+        } else if (item.kind === 'music') {
+          const { ok, body } = await api(`/api/music/sound?id=${encodeURIComponent(item.id)}`);
+          found = ok && body && body.known ? body : null;
+        }
+        soundOf[key] = found;
+      })().catch(() => { soundOf[key] = null; }).finally(() => soundAsking.delete(key)));
     }
+    await soundAsking.get(key);
   }
   if (audio.item !== item) return;
   const sound = soundOf[key];
@@ -11909,7 +11916,7 @@ async function keepTime(item) {
   // The song's own beats and loudness, worked out on the device; until they
   // arrive the tempo alone keeps time.
   listenTo(item, sound && sound.tempo > 0 ? 60 / viz.beat : 0).then((heard) => {
-    if (heard && audio.item === item) { viz.heard = { key, ...heard }; viz.nextBoom = 0; viz.bigAt = undefined; }
+    if (heard && audio.item === item) { viz.heard = { key, ...heard }; viz.bigAt = undefined; }
   }).catch(() => {});
 }
 
@@ -11963,7 +11970,7 @@ async function saveHeard(item, heard, sound) {
   if (!window.caches) return;
   try {
     const kept = {
-      v: 4, fps: heard.fps, down: heard.down, booms: (heard.booms || []).map((bm) => [+bm.t.toFixed(3), bm.first ? 1 : 0]),
+      v: 5, fps: heard.fps, down: heard.down,
       loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
       beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
       sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
@@ -11979,9 +11986,9 @@ async function loadHeard(item) {
     const resp = await caches.match(heardURL(item), { cacheName: OFFLINE_CACHE });
     if (!resp) return null;
     const k = await resp.json();
-    if (k.v !== 4) return null; // from before the booms were found: heard again
+    if (k.v !== 5) return null; // from before the tempo was found in tenths of a frame: heard again
     const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
-    return { fps: k.fps, down: k.down, booms: (k.booms || []).map(([bt, first]) => ({ t: bt, first: Boolean(first) })), loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+    return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
   } catch {
     return null;
   }
@@ -12071,31 +12078,14 @@ async function hearSong(item, tempo) {
   const kLow = 1 - Math.exp((-2 * Math.PI * 150) / SR);
   const kHigh = 1 - Math.exp((-2 * Math.PI * 2500) / SR);
   let lp = 0, hpState = 0;
-  // And the sub-bass under 100 Hz, through a proper two-pole filter, at twice
-  // the frame rate: where the big booms are, timed closely enough to strike
-  // lightning on.
-  const w0 = (2 * Math.PI * 100) / SR;
-  const al = Math.sin(w0) / (2 * 0.707);
-  const cw = Math.cos(w0);
-  const qa0 = 1 + al, qb0 = (1 - cw) / 2 / qa0, qb1 = (1 - cw) / qa0, qa1 = (-2 * cw) / qa0, qa2 = (1 - al) / qa0;
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  const subHop = HOP / 2;
-  const sub = new Float32Array(frames * 2);
   for (let f = 0; f < frames; f++) {
-    let sx = 0, sl = 0, sh = 0, ss = 0;
+    let sx = 0, sl = 0, sh = 0;
     for (let i = f * HOP, end = i + HOP; i < end; i++) {
       const x = right ? (left[i] + right[i]) * 0.5 : left[i];
       lp += kLow * (x - lp);
       hpState += kHigh * (x - hpState);
       const hp = x - hpState;
       sx += x * x; sl += lp * lp; sh += hp * hp;
-      const y = qb0 * x + qb1 * x1 + qb0 * x2 - qa1 * y1 - qa2 * y2;
-      x2 = x1; x1 = x; y2 = y1; y1 = y;
-      ss += y * y;
-      if ((i - f * HOP + 1) % subHop === 0) {
-        sub[f * 2 + ((i - f * HOP + 1) / subHop) - 1] = 10 * Math.log10(ss / subHop + 1e-10);
-        ss = 0;
-      }
     }
     loud[f] = 10 * Math.log10(sx / HOP + 1e-10);
     low[f] = 10 * Math.log10(sl / HOP + 1e-10);
@@ -12149,13 +12139,18 @@ async function hearSong(item, tempo) {
   sd = Math.sqrt(sd / frames) || 1;
   const on = new Float32Array(frames);
   for (let f = 0; f < frames; f++) on[f] = (onset[f] - mean) / sd;
+  // Lags are tried in tenths of a frame: at 23ms frames a whole-frame lag
+  // is too coarse for a fast song - Thunder's 170 bpm falls between two, the
+  // error adds up over every beat of the song, and a wrong tempo (112) won.
   const prior = tempo > 0 ? tempo : 120;
-  let bestLag = Math.round((60 / prior) * fps);
+  let bestLag = (60 / prior) * fps;
   let best = -Infinity;
-  for (let lag = Math.round((60 / 170) * fps); lag <= Math.round((60 / 70) * fps); lag++) {
+  for (let lag = (60 / 180) * fps; lag <= (60 / 70) * fps; lag += 0.1) {
     let sum = 0;
-    for (let f = lag; f < frames; f++) sum += on[f] * on[f - lag];
-    sum /= frames - lag;
+    const whole = Math.floor(lag);
+    const part = lag - whole;
+    for (let f = whole + 1; f < frames; f++) sum += on[f] * (on[f - whole] * (1 - part) + on[f - whole - 1] * part);
+    sum /= frames - whole - 1;
     const octaves = Math.log2((60 * fps) / lag / prior);
     const weighted = sum * Math.exp(-0.5 * (octaves / (tempo > 0 ? 0.25 : 0.9)) ** 2);
     if (weighted > best) { best = weighted; bestLag = lag; }
@@ -12192,50 +12187,7 @@ async function hearSong(item, tempo) {
   beatFrames.forEach((f, k) => { hit[k % 4] += lowOnN[f] + lowOnN[Math.min(frames - 1, f + 1)]; });
   const down = hit.indexOf(Math.max(...hit));
 
-  // The booms: runs of big hits in the deep bass, one after another faster
-  // than the beat - the "boom boom boom" at 0:37 in Imagine Dragons'
-  // Thunder, which is what lightning is for. A hit is the sub-bass jumping
-  // 10dB or more over the lowest of the 150ms before it, within 60ms, to at
-  // least the song's middling hit level: a hit out of a lull, not merely a
-  // loud one. A run is three or more, each under 0.45s after the last. Worked
-  // out on the real file: with a jump of 8dB the ordinary drumming at 0:36
-  // counted and the booms were one run among six; at 10dB the runs are
-  // exactly 37.48, 37.91 and 38.22s, and the same again at 1:21 and 1:23.
-  const sfps = SR / subHop;
-  const hits = [];
-  const subAhead = Math.round(0.06 * sfps);
-  const subBack = Math.round(0.15 * sfps);
-  for (let f = subBack; f < sub.length - subAhead; f++) {
-    if (sub[f] - sub[f - 1] <= 1.5) continue;
-    let peak = -200, floor = 200;
-    for (let k = 0; k < subAhead; k++) peak = Math.max(peak, sub[f + k]);
-    for (let k = 1; k <= subBack; k++) floor = Math.min(floor, sub[f - k]);
-    const jump = peak - floor;
-    if (jump < 6) continue;
-    const last = hits[hits.length - 1];
-    if (last && f - last.f < 0.18 * sfps) {
-      if (jump > last.jump) hits[hits.length - 1] = { f, jump, peak };
-    } else {
-      hits.push({ f, jump, peak });
-    }
-  }
-  const booms = [];
-  if (hits.length > 8) {
-    const peaks = hits.map((h) => h.peak).sort((x, y) => x - y);
-    const middling = peaks[Math.floor(peaks.length / 2)];
-    const solid = hits.filter((h) => h.jump >= 10 && h.peak >= middling);
-    let run = [];
-    const close = () => {
-      if (run.length >= 3) run.forEach((h, k) => booms.push({ t: h.f / sfps, first: k === 0 }));
-      run = [];
-    };
-    for (const h of solid) {
-      if (run.length && (h.f - run[run.length - 1].f) / sfps > 0.45) close();
-      run.push(h);
-    }
-    close();
-  }
-  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down, booms };
+  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down };
 }
 
 // coverPalette picks up to three colours from a cover's 16x16 pixels: the
@@ -12393,22 +12345,25 @@ const viz = {
       snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
       novelty = Math.max(this.beatNovelty || 0, surge);
     }
-    // The lightning moments: each boom in a run of booms, as it lands (drop),
-    // the first of a run marked (firstDrop), and a glow fading after the last
-    // one (dropEnv).
+    // The lightning moments: the first beat of every bar in the song's loud
+    // parts - its loudest 30% (drop), the first of a loud stretch marked
+    // (firstDrop), and a glow fading after each (dropEnv). Runs of bass hits
+    // were tried first and could not be told from the drumming around them:
+    // on Thunder the same detector missed the booms at 2:17 and struck off
+    // the beat at 1:21. The beat grid is what the eye checks against.
     let drop = false;
     let firstDrop = false;
-    if (heard && heard.booms && heard.booms.length) {
-      let i = this.nextBoom || 0;
-      while (i < heard.booms.length && heard.booms[i].t <= t) {
-        if (playing && t - heard.booms[i].t < 0.15) {
-          drop = true;
-          firstDrop = firstDrop || heard.booms[i].first;
-          this.bigAt = heard.booms[i].t;
-        }
-        i++;
+    if (heard && playing && downbeat && beatNo !== this.strikeBeat) {
+      if (heard.loudTop === undefined) {
+        const sorted = Array.from(heard.loud).sort((x, y) => x - y);
+        heard.loudTop = sorted[Math.floor(sorted.length * 0.7)];
       }
-      this.nextBoom = i;
+      if (loudness >= heard.loudTop) {
+        drop = true;
+        firstDrop = this.bigAt === undefined || t - this.bigAt > beat * 4 * 1.5 || t < this.bigAt;
+        this.bigAt = t;
+      }
+      this.strikeBeat = beatNo;
     }
     const sinceBig = t - (this.bigAt === undefined ? -99 : this.bigAt);
     const dropEnv = sinceBig >= 0 && sinceBig < 0.9 ? 1 - sinceBig / 0.9 : 0;
@@ -12606,9 +12561,8 @@ $('audio-player').addEventListener('play', () => {
 });
 // A jump in the song starts the "what stands out" comparison afresh.
 $('audio-player').addEventListener('seeked', () => {
-  const t = ($('audio-player').currentTime || 0) + vizLead();
   viz.bigAt = undefined;
-  viz.nextBoom = viz.heard && viz.heard.booms ? viz.heard.booms.filter((bm) => bm.t < t - 0.05).length : 0;
+  viz.strikeBeat = undefined;
   viz.kickPeaks = [];
   viz.snarePeaks = [];
   viz.loudAvg = undefined;
@@ -13272,7 +13226,7 @@ const VIZ_SCENES = {
       burst(cx - size * 0.45, cy, 70, 0.9, 1);
       burst(cx + size * 0.45, cy, 70, 0.9, 2);
     } else if (m.drop) {
-      // Each boom after it: one great burst.
+      // Each loud bar after it: one great burst.
       burst(cx + (Math.random() - 0.5) * size * 0.5, cy - size * 0.15, 110, 1.2, Math.floor(Math.random() * 3));
     } else if (newBeat) {
       const a = Math.random() * Math.PI * 2;
