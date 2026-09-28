@@ -76,16 +76,16 @@ const maxProgressBody = 8 << 10
 // Server wires everything to HTTP handlers.
 type Server struct {
 	// moodCache keeps mood scores for the sound analysis they came from.
-	moodCache        moodCache
-	setupCode        string
-	collections      *collections.Store
-	plays            allowance
-	positions        allowance
+	moodCache   moodCache
+	setupCode   string
+	collections *collections.Store
+	plays       allowance
+	positions   allowance
 	// plex holds each person's Plex sign-in while they import; plexPins
 	// limits how often they may start one. plexOverride is for tests.
-	plex         plexSessions
-	plexPins     allowance
-	plexOverride *plex.Client
+	plex             plexSessions
+	plexPins         allowance
+	plexOverride     *plex.Client
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache
 	reg              *source.Registry
