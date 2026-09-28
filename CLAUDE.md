@@ -687,6 +687,22 @@ judged on in its first minute:
   rain over the whole screen (spawned left of it for the wind) and slower,
   lightning at most every eight seconds, on a standout moment in a loud part,
   and only a third of those - once in sixteen loud seconds when measured.
+  **Lightning is for bass drops, and so are the other big flashes.** Asked
+  for as "lightning type stuff should be reserved for deep bass beat drops".
+  The analysis now finds the drops (`drops` in `hearSong`): the low band's
+  energy over half a second, 0 to 1 within the song, and a drop wherever its
+  level over the next second is loud (over 0.62) and well above the four
+  seconds before (a rise over 0.33) - the strongest of each cluster, at least
+  eight seconds apart, moved onto the beat it lands on. Nothing before four
+  seconds in, so a song that starts loud has no drop. Storm strikes (twice,
+  with a flash) only on a drop; the Orb's white shock ring and flash, Flow's
+  big white wave, Galaxy's ripple, Warp's tunnel surge and a Fireworks finale
+  are drop-only too, while beats and bars keep their smaller coloured
+  reactions. A song without a drop has no lightning at all. Saved analyses
+  went to version 2 to carry the drops, so older downloads are heard again by
+  the background pass; a seek clears the last drop, so jumping back replays
+  it. On the click track: one drop found, at 40.24s (the beat is 40.23s), no
+  strike in fourteen seconds of steady loud beats, a double strike at 40.3s.
   **The Looks sheet** lost its Done button (cut off on a phone): a choice
   closes it, names only (three to a row fit), no scrolling on an iPhone 13,
   and Now Playing's swipe and hold stand down inside it - a scroll in it

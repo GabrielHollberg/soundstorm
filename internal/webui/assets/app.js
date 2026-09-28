@@ -11914,7 +11914,7 @@ async function saveHeard(item, heard, sound) {
   if (!window.caches) return;
   try {
     const kept = {
-      v: 1, fps: heard.fps, down: heard.down,
+      v: 2, fps: heard.fps, down: heard.down, drops: Array.from(heard.drops || []),
       loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
       beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
       sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
@@ -11930,9 +11930,9 @@ async function loadHeard(item) {
     const resp = await caches.match(heardURL(item), { cacheName: OFFLINE_CACHE });
     if (!resp) return null;
     const k = await resp.json();
-    if (k.v !== 1) return null;
+    if (k.v !== 2) return null; // from before drops were found: heard again
     const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
-    return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+    return { fps: k.fps, down: k.down, drops: k.drops || [], loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
   } catch {
     return null;
   }
@@ -11950,7 +11950,7 @@ async function prepareDownloads() {
     const cache = await caches.open(OFFLINE_CACHE);
     for (const item of Object.values(state.downloads.items)) {
       if (!item || item.kind !== 'music' || !isDownloaded(item)) continue;
-      if (await cache.match(heardURL(item))) continue;
+      if (await loadHeard(item)) continue;
       while (document.hidden) await rest(3000);
       const key = selectionKey(item);
       if (!(key in soundOf) && !state.offline) {
@@ -12059,7 +12059,7 @@ async function hearSong(item, tempo) {
   const win = Math.max(1, Math.round(fps * 0.25));
   const energy = Float64Array.from(loud, (db) => 10 ** (db / 10));
   const felt = new Float32Array(frames);
-  let run = 0;
+  let run = 0; // reused below for the bass
   for (let f = 0; f < frames + win; f++) {
     if (f < frames) run += energy[f];
     if (f - 2 * win - 1 >= 0) run -= energy[f - 2 * win - 1];
@@ -12125,7 +12125,48 @@ async function hearSong(item, tempo) {
   const hit = [0, 0, 0, 0];
   beatFrames.forEach((f, k) => { hit[k % 4] += lowOnN[f] + lowOnN[Math.min(frames - 1, f + 1)]; });
   const down = hit.indexOf(Math.max(...hit));
-  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down };
+
+  // The drops: where the deep bass slams in - its level over the next second
+  // well above the four seconds before, and loud. Kept for the moments that
+  // deserve lightning. The bass level is the low band's energy over half a
+  // second, as loudness is, 0 to 1 within the song.
+  const lowEnergy = Float64Array.from(low, (db) => 10 ** (db / 10));
+  const bassDb = new Float32Array(frames);
+  run = 0;
+  for (let f = 0; f < frames + win; f++) {
+    if (f < frames) run += lowEnergy[f];
+    if (f - 2 * win - 1 >= 0) run -= lowEnergy[f - 2 * win - 1];
+    const c = f - win;
+    if (c >= 0 && c < frames) {
+      const n = Math.min(frames - 1, c + win) - Math.max(0, c - win) + 1;
+      bassDb[c] = 10 * Math.log10(run / n + 1e-10);
+    }
+  }
+  const bass = scale(bassDb, 0.05, 0.97);
+  const sum = new Float64Array(frames + 1);
+  for (let f = 0; f < frames; f++) sum[f + 1] = sum[f] + bass[f];
+  const avg = (a, b) => (sum[b] - sum[a]) / Math.max(1, b - a);
+  const after = Math.round(fps * 1);
+  const before = Math.round(fps * 4);
+  const gap = Math.round(fps * 0.3);
+  const found = [];
+  for (let f = before; f < frames - after; f += 2) {
+    const up = avg(f, f + after);
+    const rise = up - avg(f - before, f - gap);
+    if (up > 0.62 && rise > 0.33) found.push({ f, rise });
+  }
+  // The strongest rise of each cluster, at least eight seconds apart, moved
+  // onto the beat it lands on.
+  found.sort((a, b) => b.rise - a.rise);
+  const drops = [];
+  for (const c of found) {
+    let t = c.f / fps;
+    const onBeat = beats.find((b) => b >= t - 0.15 && b <= t + 0.6);
+    if (onBeat !== undefined) t = onBeat;
+    if (drops.every((d) => Math.abs(d - t) >= 8)) drops.push(t);
+  }
+  drops.sort((a, b) => a - b);
+  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down, drops };
 }
 
 // coverPalette picks up to three colours from a cover's 16x16 pixels: the
@@ -12280,6 +12321,20 @@ const viz = {
       snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
       novelty = Math.max(this.beatNovelty || 0, surge);
     }
+    // A drop: the moment one of the song's drops is reached (drop), and a
+    // glow that fades over a second and a half after it (dropEnv).
+    let drop = false;
+    let dropEnv = 0;
+    if (heard && heard.drops) {
+      for (let i = 0; i < heard.drops.length; i++) {
+        const since = t - heard.drops[i];
+        if (since >= 0 && since < 1.6) {
+          dropEnv = Math.max(dropEnv, 1 - since / 1.6);
+          if (playing && since < 0.3 && this.lastDrop !== i) { this.lastDrop = i; drop = true; }
+        }
+      }
+    }
+    if (drop) this.beatNovelty = 1;
     this.kickNow = kick; // for a look from outside: how hard this moment hits
     this.noveltyNow = novelty;
     const bar = (t / (beat * 4)) % 1;
@@ -12316,7 +12371,7 @@ const viz = {
         f.clearRect(0, 0, w, h);
       }
       scene(this.scene, {
-        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty,
+        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, dropEnv,
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
       if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
@@ -12408,13 +12463,19 @@ const viz = {
       g.closePath();
       g.stroke();
     }
-    // A shock ring on the first beat of every bar.
-    if (downbeat && lv > 0.05) {
-      g.lineWidth = (2 + 4 * (1 - phase)) * dpr;
-      g.strokeStyle = `rgba(255, 255, 255, ${(1 - phase) * 0.5 * lv})`;
+    // A white shock ring and a flash, for a drop only.
+    if (dropEnv > 0 && lv > 0.05) {
+      const p = 1 - dropEnv;
+      g.lineWidth = (2 + 6 * dropEnv) * dpr;
+      g.strokeStyle = `rgba(255, 255, 255, ${dropEnv * 0.7 * lv})`;
       g.beginPath();
-      g.arc(cx, cy, R0 * (1.2 + phase * 1.9), 0, TAU);
+      g.arc(cx, cy, R0 * (1.2 + p * 2.6), 0, TAU);
       g.stroke();
+      const flash = g.createRadialGradient(cx, cy, 0, cx, cy, R0 * 3);
+      flash.addColorStop(0, `rgba(255, 255, 255, ${dropEnv * dropEnv * 0.45})`);
+      flash.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      g.fillStyle = flash;
+      g.fillRect(0, 0, w, h);
     }
     g.globalCompositeOperation = 'source-over';
 
@@ -12467,6 +12528,7 @@ $('audio-player').addEventListener('play', () => {
 });
 // A jump in the song starts the "what stands out" comparison afresh.
 $('audio-player').addEventListener('seeked', () => {
+  viz.lastDrop = -1;
   viz.kickPeaks = [];
   viz.snarePeaks = [];
   viz.loudAvg = undefined;
@@ -12494,9 +12556,9 @@ function flowScene(st, m) {
     return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, vx: 0, vy: 0, c, life: 0.6 + Math.random() };
   };
   if (!st.p) { st.p = Array.from({ length: 520 }, () => spawn(true)); st.pulses = []; }
-  if (newBeat) {
-    st.pulses.push({ r: S * 0.05, life: 1, big: downbeat });
-    const push = S * (0.15 + 0.5 * loud) * (downbeat ? 1.8 : 1) * (0.6 + 0.6 * e);
+  if (newBeat || m.drop) {
+    st.pulses.push({ r: S * 0.05, life: 1, big: m.drop });
+    const push = S * (0.15 + 0.5 * loud) * (m.drop ? 2.4 : 1) * (0.6 + 0.6 * e);
     for (const p of st.p) {
       const dx = p.x - cx, dy = p.y - cy;
       const d = Math.hypot(dx, dy) || 1;
@@ -12580,11 +12642,9 @@ const FULL_SCENES = {
       st.splash = [];
       st.lastBolt = -1e9;
     }
-    // Lightning: rare - a big moment in a loud part, at most every eight
-    // seconds and not every time. A jagged path down, with branches.
-    st.now = (st.now || 0) + dt;
-    if (newBeat && loud > 0.5 && st.now - st.lastBolt > 8 && Math.random() < 0.35) {
-      st.lastBolt = st.now;
+    // Lightning is for a bass drop, and only that: a double strike, jagged
+    // paths down with branches, and a flash.
+    for (let strike = 0; m.drop && strike < 2; strike++) {
       const pts = [];
       let x = w * (0.2 + Math.random() * 0.6);
       let y = 0;
@@ -12603,7 +12663,7 @@ const FULL_SCENES = {
         }
       }
       pts.push([x, y]);
-      st.bolts.push({ pts, branches, life: 1 });
+      st.bolts.push({ pts, branches, life: strike ? 0.85 : 1 });
     }
     const flash = st.bolts.reduce((a, bo) => Math.max(a, bo.life), 0);
     if (flash > 0) {
@@ -12778,7 +12838,7 @@ const FULL_SCENES = {
       g.fillStyle = rgba(pal[p.c], (0.35 + 0.55 * p.b) * (1 - p.r * 0.45) * (0.45 + 0.55 * bright));
       g.fillRect(x, y, sz, sz);
     }
-    if (newBeat && downbeat) st.ripples.push({ r: R * 0.2, life: 1 });
+    if (m.drop) st.ripples.push({ r: R * 0.2, life: 1 });
     st.ripples = st.ripples.filter((rp) => {
       rp.r += dt * S * 0.7;
       rp.life -= dt * 0.9;
@@ -12958,7 +13018,7 @@ const VIZ_SCENES = {
       st.stars = Array.from({ length: 320 }, () => ({ x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: Math.random(), c: Math.floor(Math.random() * 3) }));
       st.rings = Array.from({ length: 9 }, (_, i) => i / 9);
     }
-    const speed = (0.08 + (0.35 + 1.4 * loud) * lv * (0.6 + 0.6 * e) + 1.2 * kick) * dt;
+    const speed = (0.08 + (0.35 + 1.4 * loud) * lv * (0.6 + 0.6 * e) + 1.2 * kick + 2 * m.dropEnv) * dt;
     const focal = size * 0.32;
     // A flash in the middle on the kick.
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, size * (0.35 + 0.3 * kick));
@@ -12975,7 +13035,7 @@ const VIZ_SCENES = {
       const r = focal * 0.9 / z;
       const turn = ck * 0.5 + i * 0.35;
       g.strokeStyle = rgba(pal[i % 3], Math.min(1, (1 - z) * 1.2) * (0.25 + 0.5 * bright));
-      g.lineWidth = (1 + (downbeat ? 3 * (1 - phase) : 0) + 2 * (1 - z)) * dpr;
+      g.lineWidth = (1 + 4 * m.dropEnv + 2 * (1 - z)) * dpr;
       g.beginPath();
       for (let k = 0; k <= 6; k++) {
         const a = turn + (k / 6) * Math.PI * 2;
@@ -13126,7 +13186,12 @@ const VIZ_SCENES = {
       }
       st.flashes.push({ x, y, life: 1, r: size * power * 0.6, c });
     };
-    if (newBeat) {
+    if (m.drop) {
+      // The drop: a great burst in the middle, and two more beside it.
+      burst(cx, cy - size * 0.1, 180, 1.5, 0);
+      burst(cx - size * 0.45, cy, 70, 0.9, 1);
+      burst(cx + size * 0.45, cy, 70, 0.9, 2);
+    } else if (newBeat) {
       const a = Math.random() * Math.PI * 2;
       const d = Math.random() * size * 0.45;
       const n = Math.round((24 + 60 * loud) * (downbeat ? 1.8 : 1) * (0.6 + 0.6 * e));
