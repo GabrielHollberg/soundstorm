@@ -7639,6 +7639,7 @@ function tintStatusBar(art) {
       const lift = Math.min(2.2, 235 / top);
       $('now-playing').style.setProperty('--np-glow',
         `rgb(${[rr, gg, bb].map((v) => Math.round(Math.min(255, (v / k) * lift))).join(', ')})`);
+      viz.palette = coverPalette(all);
     } catch {
       setStatusBar('#07090d');
     }
@@ -11619,10 +11620,9 @@ function coverDeco() {
   const sheen = document.createElement('div');
   sheen.className = 'np-vinyl-sheen';
   vinyl.append(disc, sheen);
-  const rings = document.createElement('div');
-  rings.className = 'np-rings';
-  for (let i = 0; i < 3; i++) rings.append(document.createElement('span'));
-  deco.append(rings, vinyl);
+  const viz = document.createElement('canvas');
+  viz.className = 'np-viz';
+  deco.append(viz, vinyl);
   document.querySelector('.np-cover-wrap').append(deco);
   return deco;
 }
@@ -11634,6 +11634,8 @@ function applyCoverStyle() {
   np.classList.toggle('spin', style === 'spin');
   np.classList.toggle('round', style === 'spin' || style === 'vinyl');
   renderCoverDeco();
+  if (style === 'pulse') viz.start();
+  else viz.stop();
 }
 
 // Lays the layer over the cover and fills it for this song.
@@ -11673,10 +11675,9 @@ function renderCoverDeco() {
 // more for a song that is more energetic than most of the library. Not the
 // beats themselves - hearing those means routing the music through the page's
 // audio processing, which stops it when an iPhone locks - but its pace, lined
-// up with where the song has got to. A song not yet analysed breathes slowly.
+// up with where the song has got to. A song not yet analysed moves slowly.
 const soundOf = {};
 async function keepTime(item) {
-  const np = $('now-playing');
   const key = selectionKey(item);
   if (!(key in soundOf)) {
     soundOf[key] = null;
@@ -11687,32 +11688,190 @@ async function keepTime(item) {
   }
   if (audio.item !== item) return;
   const sound = soundOf[key];
-  let beat = 3.2;
-  let energy = 0.35;
+  viz.beat = 1.6;
+  viz.energy = 0.3;
   if (sound && sound.tempo > 0) {
     // Very slow or fast tempos are felt at double or half.
     let bpm = sound.tempo;
     while (bpm < 70) bpm *= 2;
     while (bpm > 150) bpm /= 2;
-    beat = 60 / bpm;
-    energy = Math.max(0, Math.min(1, sound.energy || 0));
+    viz.beat = 60 / bpm;
+    viz.energy = Math.max(0, Math.min(1, sound.energy || 0));
   }
-  np.style.setProperty('--beat', `${beat.toFixed(3)}s`);
-  np.style.setProperty('--beat-amp', (1.012 + energy * 0.045).toFixed(3));
-  np.style.setProperty('--ring-alpha', (0.35 + energy * 0.5).toFixed(2));
-  alignBeat();
 }
 
-// Starts the pulse where the song is, so it does not drift off after a seek.
-function alignBeat() {
-  const np = $('now-playing');
-  if (!np.classList.contains('cover-pulse')) return;
-  const beat = parseFloat(np.style.getPropertyValue('--beat')) || 3.2;
-  const t = $('audio-player').currentTime || 0;
-  np.style.setProperty('--beat-delay', `${-(t % beat).toFixed(3)}s`);
-  np.style.setProperty('--ring-delay', `${-(t % (beat * 3)).toFixed(3)}s`);
+// coverPalette picks up to three colours from a cover's 16x16 pixels: the
+// strongest hues, brightened to glow on the dark screen. A grey cover gives
+// greys and white.
+function coverPalette(px) {
+  const bins = Array.from({ length: 12 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const sat = max ? (max - min) / max : 0;
+    let h = 0;
+    if (max !== min) {
+      if (max === r) h = ((g - b) / (max - min)) % 6;
+      else if (max === g) h = (b - r) / (max - min) + 2;
+      else h = (r - g) / (max - min) + 4;
+    }
+    const bin = bins[Math.floor(((h * 60 + 360) % 360) / 30)];
+    const w = 0.15 + sat * max;
+    bin.w += w; bin.r += px[i] * w; bin.g += px[i + 1] * w; bin.b += px[i + 2] * w;
+  }
+  const top = bins.filter((x) => x.w > 0).sort((x, y) => y.w - x.w).slice(0, 3);
+  const out = top.map((x) => {
+    const c = [x.r / x.w, x.g / x.w, x.b / x.w];
+    const lift = Math.min(3, 230 / (Math.max(...c) || 1));
+    return c.map((v) => Math.round(Math.min(255, v * lift)));
+  });
+  while (out.length < 3) out.push(out.length ? out[0].map((v) => Math.round(v + (255 - v) * 0.5)) : [255, 255, 255]);
+  return out;
 }
-for (const type of ['play', 'seeked']) $('audio-player').addEventListener(type, alignBeat);
+
+// The visualizer: a canvas behind the cover. Everything is worked out from
+// the song's position each frame (the beat's phase, which beat of the bar),
+// so it is lined up after a seek without being told. It settles to still on
+// pause and stops drawing when not on screen.
+const viz = {
+  beat: 1.6, energy: 0.3, palette: [[255, 255, 255], [200, 220, 255], [255, 210, 230]],
+  raf: 0, level: 0, sparks: [], lastBeat: -1, lastT: 0,
+  start() {
+    if (!this.raf) this.raf = requestAnimationFrame((t) => this.frame(t));
+  },
+  stop() {
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    const cover = $('np-cover');
+    cover.style.scale = '';
+    cover.style.transform = '';
+  },
+  frame(now) {
+    this.raf = 0;
+    const np = $('now-playing');
+    const deco = $('np-deco');
+    const canvas = deco && deco.querySelector('.np-viz');
+    if (!canvas || np.classList.contains('hidden') || !np.classList.contains('cover-pulse') || !deco.classList.contains('shown')) {
+      this.stop();
+      return;
+    }
+    const player = $('audio-player');
+    const playing = !player.paused;
+    const dt = Math.min(0.1, (now - (this.lastT || now)) / 1000);
+    this.lastT = now;
+    // Up quickly on play, down gently on pause.
+    this.level += ((playing ? 1 : 0) - this.level) * Math.min(1, dt * (playing ? 6 : 1.8));
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(canvas.clientWidth * dpr);
+    const h = Math.round(canvas.clientHeight * dpr);
+    if (!w || !h) { this.raf = requestAnimationFrame((t) => this.frame(t)); return; }
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    const g = canvas.getContext('2d');
+    g.clearRect(0, 0, w, h);
+
+    const t = player.currentTime || 0;
+    const beat = this.beat;
+    const e = this.energy;
+    const lv = this.level;
+    const phase = (t % beat) / beat;
+    const beatNo = Math.floor(t / beat);
+    const kick = Math.exp(-phase * 5.5) * lv;
+    const snare = (beatNo % 2 === 1 ? Math.exp(-phase * 7) : 0) * lv;
+    const downbeat = beatNo % 4 === 0;
+    const cx = w / 2, cy = h / 2;
+    const half = (canvas.clientWidth / 1.8) * dpr / 2; // the cover's half-width
+    const pal = this.palette;
+    const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
+    const drift = now / 1000;
+
+    // A glow in the cover's colours, drifting and swelling on the beat.
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const ang = drift * 0.25 + i * 2.1;
+      const x = cx + Math.cos(ang) * half * 0.35;
+      const y = cy + Math.sin(ang * 1.3) * half * 0.35;
+      const r = half * (1.15 + 0.35 * kick * (0.5 + e) + 0.08 * Math.sin(drift * 0.7 + i));
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, rgba(pal[i], 0.34 * (0.35 + 0.65 * lv)));
+      grad.addColorStop(1, rgba(pal[i], 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.fill();
+    }
+
+    // A ring of bars round the cover, bouncing like an equalizer: every bar
+    // kicks on the beat, the upper ones snap on 2 and 4, each with its own
+    // wander, all bigger for a more energetic song.
+    const bars = 72;
+    const radius = half * 0.98;
+    g.lineCap = 'round';
+    g.lineWidth = ((Math.PI * 2 * radius) / bars) * 0.5;
+    for (let i = 0; i < bars; i++) {
+      const ang = (i / bars) * Math.PI * 2 - Math.PI / 2;
+      const low = 0.5 + 0.5 * Math.cos(ang * 2);
+      const high = 1 - low;
+      const wander = 0.5 + 0.5 * Math.sin(drift * (1.6 + ((i * 7) % 11) * 0.31) + i * 1.7);
+      const amp = lv * (0.12 + 0.75 * kick * low + 0.6 * snare * high + 0.3 * wander * (0.4 + e)) * (0.55 + 0.6 * e);
+      const len = half * (0.05 + 0.42 * amp);
+      const c = pal[i % 3];
+      g.strokeStyle = rgba(c, 0.5 + 0.45 * lv);
+      g.beginPath();
+      g.moveTo(cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius);
+      g.lineTo(cx + Math.cos(ang) * (radius + len), cy + Math.sin(ang) * (radius + len));
+      g.stroke();
+    }
+
+    // A shock ring on the first beat of every bar.
+    if (downbeat && lv > 0.05) {
+      const r = half * (1.05 + phase * 0.75);
+      g.lineWidth = 3 * dpr;
+      g.strokeStyle = rgba(pal[0], (1 - phase) * 0.55 * lv);
+      g.beginPath();
+      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.stroke();
+    }
+
+    // Sparks thrown out on each beat.
+    if (playing && beatNo !== this.lastBeat) {
+      this.lastBeat = beatNo;
+      const n = Math.round(6 + e * 12);
+      for (let k = 0; k < n; k++) {
+        const ang = Math.random() * Math.PI * 2;
+        const speed = half * (0.5 + Math.random() * 0.9) * (0.7 + e * 0.6);
+        this.sparks.push({ x: cx + Math.cos(ang) * half * 1.02, y: cy + Math.sin(ang) * half * 1.02,
+          vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 1, size: (1.2 + Math.random() * 2.2) * dpr,
+          c: pal[k % 3] });
+      }
+      if (this.sparks.length > 160) this.sparks.splice(0, this.sparks.length - 160);
+    }
+    this.sparks = this.sparks.filter((p) => {
+      p.life -= dt * 1.1;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.life <= 0) return false;
+      g.fillStyle = rgba(p.c, p.life * 0.9);
+      g.beginPath();
+      g.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      g.fill();
+      return true;
+    });
+    g.globalCompositeOperation = 'source-over';
+
+    // The cover bounces on the beat and sways over each bar.
+    const cover = $('np-cover');
+    const sway = Math.sin((t / (beat * 4)) * Math.PI * 2) * lv;
+    cover.style.scale = (1 + (0.012 + 0.04 * e) * kick).toFixed(4);
+    cover.style.transform = `perspective(900px) rotateY(${(sway * 5).toFixed(2)}deg) rotateX(${(Math.cos((t / (beat * 4)) * Math.PI * 2) * 2.5 * lv).toFixed(2)}deg)`;
+
+    // On until paused and settled.
+    if (playing || this.level > 0.01 || this.sparks.length) this.raf = requestAnimationFrame((ts) => this.frame(ts));
+  },
+};
+$('audio-player').addEventListener('play', () => {
+  if ($('now-playing').classList.contains('cover-pulse')) viz.start();
+});
 window.addEventListener('resize', () => {
   if (!$('now-playing').classList.contains('hidden')) renderCoverDeco();
 });

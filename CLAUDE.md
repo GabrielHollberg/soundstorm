@@ -568,9 +568,26 @@ judged on in its first minute:
   alongside the status bar's) run at the tempo AudioMuse-AI measured
   (`GET /api/music/sound`), folded into 70-150 bpm, bigger for a song more
   energetic than most of the library (energy as a rank, as moods are), and
-  lined up with the song's position on play and seek. A song not yet heard
-  breathes slowly. Checked in the preview: each look, the saved choice, the
-  record's words, and the rings drawn in the cover's colour.
+  lined up with the song's position. A song not yet heard moves slowly.
+
+  **It is a canvas visualizer now** (`viz` in app.js), reported as "make the
+  moving one cooler": a ring of 72 bars round the cover that kick on every
+  beat and snap on 2 and 4, each with its own wander; a glow of three blobs in
+  the cover's own colours (`coverPalette`, the strongest hues of its 16x16
+  thumbnail, brightened); sparks thrown out on each beat; a shock ring on the
+  first beat of every bar; and the cover bouncing and swaying in 3D over each
+  bar. Every frame works it out from `currentTime`, so it is lined up after a
+  seek unasked; it settles to still on pause and stops drawing off screen.
+  It sits behind the cover inside the wrap, which is its own layer
+  (`isolation`), rather than lifting the cover over the title - on an iPhone
+  in Safari the cover already reaches the title, and lifting it hid the title.
+
+  **No reduced-motion exception for these looks, and that was the iPhone
+  bug.** Reported as the spinning and moving covers doing nothing on an
+  iPhone 13 while working on Android. In Playwright's WebKit with an
+  iPhone 13 profile all of them animated, and with Reduce Motion on all of
+  them stopped dead - a common iPhone setting, rarely on on Android. These
+  looks move only because somebody tapped for them, so they move regardless.
 - **Covers of one's own** (`collections/art.go`, `/api/myart`): Change cover in
   a song's or an album's menu, for the song alone or the whole album. The
   picture is cropped square and shrunk to 1000px on the device, and kept per
