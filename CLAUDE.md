@@ -453,8 +453,15 @@ judged on in its first minute:
   lyrics leaves the middle empty, the title where it would be. The cover
   itself no longer shows on a phone for a song, so the looks drawn where the
   cover is (disc, record, Orb and the other cover visualizers) have nowhere
-  to draw there; the full-screen looks still run behind the lyrics. What
-  follows is how it was:
+  to draw there; the full-screen looks still run behind the lyrics. So the
+  six cover visualizers became full screen too, centred on the screen: one
+  Visualizers group of twelve in the Looks sheet, all on `#np-stage`, the
+  six first made for the cover drawn at 0.85 of the screen's shorter side
+  (`EX_COVER_VIZ`) so they fill it, the rest at 0.55 as before. And the line
+  being sung sits at the middle of the screen, where they are centred, not
+  of the lyrics box, which starts under the title - measured on all six,
+  the line's centre within a pixel of the screen's. What follows is how it
+  was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into
   the full lyrics (a tap there never seeks), and tapping the small cover at

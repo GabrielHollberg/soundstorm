@@ -6380,12 +6380,16 @@ function syncLyrics(force) {
   if (index >= 0) fillLyric(box, lyrics, index, ms);
   const current = box.querySelector('.np-lyric.current');
   if (current) {
-    // Kept a little above the middle of the box, as the words go by. Measured
-    // against the box itself: offsetTop counts from the nearest positioned
-    // ancestor, which is not the box, and parked the line near the top.
-    const offset = current.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
-    const at = audio.npMode === 'strip' ? 0.5 : 0.42;
-    box.scrollTo({ top: offset - box.clientHeight * at + current.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
+    // The line being sung sits at the middle of the screen - where the
+    // visualizers are centred - not of the box, which starts under the
+    // title. Measured against the box itself: offsetTop counts from the
+    // nearest positioned ancestor, which is not the box, and parked the line
+    // near the top.
+    const top = box.getBoundingClientRect().top;
+    const offset = current.getBoundingClientRect().top - top + box.scrollTop;
+    const np = $('now-playing').getBoundingClientRect();
+    const middle = np.top + np.height / 2 - top;
+    box.scrollTo({ top: offset + current.clientHeight / 2 - middle, behavior: force ? 'auto' : 'smooth' });
   }
 }
 
@@ -7092,8 +7096,11 @@ async function savePrefs(change) {
 // song itself (see listenTo and viz).
 const COVER_GROUPS = [
   { name: 'Covers', styles: ['square', 'spin', 'vinyl'] },
-  { name: 'Visualizers', styles: ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'] },
-  { name: 'Full screen', styles: ['flow', 'storm', 'synthwave', 'galaxy', 'aurora', 'lava'] },
+  // Every visualizer fills the screen, centred on it (the owner's asking:
+  // the six that drew where the cover is had nowhere to draw once a phone's
+  // Now Playing became the lyrics alone).
+  { name: 'Visualizers', styles: ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks',
+    'flow', 'storm', 'synthwave', 'galaxy', 'aurora', 'lava'] },
 ];
 const COVER_STYLES = COVER_GROUPS.flatMap((g) => g.styles);
 const COVER_STYLE_NAMES = {
@@ -7101,8 +7108,9 @@ const COVER_STYLE_NAMES = {
   warp: 'Warp', waves: 'Waves', kaleido: 'Kaleidoscope', fireworks: 'Fireworks',
   flow: 'Flow', storm: 'Storm', synthwave: 'Synthwave', galaxy: 'Galaxy', aurora: 'Aurora', lava: 'Lava',
 };
-const FULL_STYLES = COVER_GROUPS[2].styles;
-const VIZ_STYLES = [...COVER_GROUPS[1].styles, ...FULL_STYLES];
+const FULL_STYLES = COVER_GROUPS[1].styles;
+const EX_COVER_VIZ = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
+const VIZ_STYLES = FULL_STYLES;
 const LAST_VIZ_KEY = 'soundstorm-last-viz';
 function coverStyle() {
   const p = state.prefs || {};
@@ -12446,9 +12454,12 @@ const viz = {
     // And how bright it all is: dim in a quiet passage, blazing when loud.
     const bright = 0.35 + 0.65 * loudness;
     const cx = w / 2, cy = h / 2;
-    // The cover's size: its canvas is 180% of it. Flow's canvas is the
-    // screen, and scales to its shorter side.
-    const size = flowing ? Math.min(w, h) * 0.55 : w / 1.8;
+    // The size everything is drawn to. The screen's canvas scales to its
+    // shorter side: the scenes made full screen from the start at 0.55 of
+    // it, and the six first drawn where the cover was (sized to it, their
+    // canvas 180% of the cover) at 0.85, so they fill the screen now rather
+    // than keeping the cover's size in its middle.
+    const size = flowing ? Math.min(w, h) * (EX_COVER_VIZ.includes(coverStyle()) ? 0.85 : 0.55) : w / 1.8;
     const R0 = size * 0.3;
     const pal = this.palette;
     const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
