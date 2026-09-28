@@ -1164,6 +1164,29 @@ once, in the file's order (Custom sort). Checked in the preview with a
 Plex-shaped file: four of five found - by path, by tags with a Windows path,
 through "(Remastered)", by a relative path - and the fifth reported.
 
+**Or straight from Plex, because an M3U is out of reach on a phone.**
+Plexamp has no export, so the file route meant a computer and a script.
+**Import playlist** now offers "From Plex or Plexamp" (`internal/plex`):
+SoundStorm asks plex.tv for a PIN, the person signs in on Plex's own page in
+a new tab (opened blank in the tap, so no popup blocker, and pointed at Plex
+once the PIN exists; Plex sends it on to `/static/plex-done.html`, "go back
+to SoundStorm"), and the app polls `/api/plex/status` until plex.tv hands
+over the account token. With it the server lists the account's servers
+(`/api/v2/resources`), finds an address one answers on - home network
+first, as plain http to its IP too (routers that refuse plex.direct names),
+Plex's relay last - and reads its audio playlists and their songs, which go
+through the M3U import's matching with the track artist and the album
+artist both tried. The token lives in memory per person for 30 minutes of
+use and is never sent to the browser or written down; nothing talks to
+plex.tv unless somebody taps. A server's addresses are plex.tv's say-so,
+so only `*.plex.direct` names and IPs that are not loopback, link-local or
+unspecified are dialed, without redirects - never the compose network's
+names. Plex lists every app signed in to an account, so the client id is
+fixed per install, an HMAC of the state's device key. Tested against a
+stand-in plex.tv and Plex server through the real routes (and the screens
+in Chrome with stand-in answers); **not yet run against a real Plex
+account**, which needs one with a server and playlists.
+
 **Favorites are for anything; playlists are songs only.** A playlist plays in
 the audio dock as a queue, advancing on `ended`, with back and forward. A
 playlist of films has no player to play it in.

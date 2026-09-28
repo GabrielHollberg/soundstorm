@@ -57,6 +57,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/lyrics"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/plex"
 	"github.com/GabrielHollberg/soundstorm/internal/provision"
 	"github.com/GabrielHollberg/soundstorm/internal/scrobble"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
@@ -80,6 +81,11 @@ type Server struct {
 	collections      *collections.Store
 	plays            allowance
 	positions        allowance
+	// plex holds each person's Plex sign-in while they import; plexPins
+	// limits how often they may start one. plexOverride is for tests.
+	plex         plexSessions
+	plexPins     allowance
+	plexOverride *plex.Client
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache
 	reg              *source.Registry
@@ -347,6 +353,11 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/playlists", s.handlePlaylists)
 	guarded.HandleFunc("POST /api/playlists", s.handleCreatePlaylist)
 	guarded.HandleFunc("POST /api/playlists/import", s.handleImportPlaylist)
+	guarded.HandleFunc("POST /api/plex/signin", s.handlePlexSignIn)
+	guarded.HandleFunc("GET /api/plex/status", s.handlePlexStatus)
+	guarded.HandleFunc("GET /api/plex/playlists", s.handlePlexPlaylists)
+	guarded.HandleFunc("POST /api/plex/import", s.handlePlexImport)
+	guarded.HandleFunc("DELETE /api/plex", s.handlePlexForget)
 	guarded.HandleFunc("GET /api/playlists/{id}", s.handlePlaylist)
 	guarded.HandleFunc("PATCH /api/playlists/{id}", s.handleRenamePlaylist)
 	guarded.HandleFunc("DELETE /api/playlists/{id}", s.handleDeletePlaylist)

@@ -36,6 +36,9 @@ type m3uEntry struct {
 	Artist   string  // from #EXTINF, when it had one
 	Title    string  // likewise
 	Seconds  float64 // likewise; 0 when unknown
+	// AltArtist is a second name to try: Plex gives a track's artist and
+	// its album's, and a library may be tagged by either.
+	AltArtist string
 }
 
 // label is how an unfound entry is reported: its artist and title if the
@@ -171,8 +174,11 @@ func (ix *songIndex) find(e m3uEntry) (media.Item, bool) {
 	if t == "" {
 		return media.Item{}, false
 	}
-	if artist != "" {
-		if hits := ix.byTags[matchKey(artist)+"|"+t]; len(hits) > 0 {
+	for _, a := range []string{artist, e.AltArtist} {
+		if a == "" {
+			continue
+		}
+		if hits := ix.byTags[matchKey(a)+"|"+t]; len(hits) > 0 {
 			if it, ok := closest(hits, e.Seconds); ok {
 				return it, true
 			}
@@ -268,6 +274,76 @@ func matchKey(s string) string {
 	return b.String()
 }
 
+// importResult is what one imported playlist came to.
+type importResult struct {
+	Name         string   `json:"name"`
+	ID           string   `json:"id,omitempty"`
+	Total        int      `json:"total"`
+	Added        int      `json:"added"`
+	Missing      []string `json:"missing"`
+	MissingCount int      `json:"missingCount"`
+	Error        string   `json:"error,omitempty"`
+}
+
+// musicIndex is every music shelf this account can see, ready to match
+// songs against, or nil when none can say where its files are.
+func (s *Server) musicIndex(r *http.Request) *songIndex {
+	var songs []source.SongFile
+	for _, src := range s.reg.All(r.Context()) {
+		lister, ok := src.(source.SongFileLister)
+		if !ok || src.Kind() != media.KindMusic {
+			continue
+		}
+		files, err := lister.SongFiles(r.Context())
+		if err != nil {
+			s.log.Warn("playlist import could not list songs", "source", src.ID(), "err", err)
+			continue
+		}
+		songs = append(songs, files...)
+	}
+	if len(songs) == 0 {
+		return nil
+	}
+	return newSongIndex(songs)
+}
+
+// importEntries finds entries on the shelf and makes a playlist of what was
+// found.
+func (s *Server) importEntries(userID, name string, entries []m3uEntry, ix *songIndex) importResult {
+	name = strings.TrimSpace(name)
+	if rs := []rune(name); len(rs) > 100 {
+		name = string(rs[:100])
+	}
+	if name == "" {
+		name = "Imported playlist"
+	}
+	res := importResult{Name: name, Total: len(entries), Missing: []string{}}
+	var found []media.Item
+	for _, e := range entries {
+		if it, ok := ix.find(e); ok {
+			found = append(found, it)
+		} else if len(res.Missing) < maxMissingReported {
+			res.Missing = append(res.Missing, e.label())
+		}
+	}
+	res.MissingCount = len(entries) - len(found)
+	if len(entries) == 0 {
+		res.Error = "It has no songs in it."
+		return res
+	}
+	if len(found) == 0 {
+		res.Error = "None of these songs are in your library."
+		return res
+	}
+	p, err := s.collections.ImportPlaylist(userID, name, found)
+	if err != nil {
+		res.Error = "Could not save it: " + err.Error()
+		return res
+	}
+	res.ID, res.Added, res.Name = p.ID, len(p.Items), p.Name
+	return res
+}
+
 // handleImportPlaylist makes a playlist from an M3U file's text.
 func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
@@ -287,62 +363,25 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "That file has no songs in it.")
 		return
 	}
-	name := strings.TrimSpace(fileName)
-	if name == "" {
-		name = strings.TrimSpace(body.Name)
+	name := fileName
+	if strings.TrimSpace(name) == "" {
+		name = body.Name
 	}
-	if rs := []rune(name); len(rs) > 100 {
-		name = string(rs[:100])
-	}
-	if name == "" {
-		name = "Imported playlist"
-	}
-
-	// Every music shelf this account can see that can say where its files are.
-	var songs []source.SongFile
-	for _, src := range s.reg.All(r.Context()) {
-		lister, ok := src.(source.SongFileLister)
-		if !ok || src.Kind() != media.KindMusic {
-			continue
-		}
-		files, err := lister.SongFiles(r.Context())
-		if err != nil {
-			s.log.Warn("playlist import could not list songs", "source", src.ID(), "err", err)
-			continue
-		}
-		songs = append(songs, files...)
-	}
-	if len(songs) == 0 {
+	ix := s.musicIndex(r)
+	if ix == nil {
 		writeError(w, http.StatusServiceUnavailable, "The music library is not available right now.")
 		return
 	}
-	ix := newSongIndex(songs)
-	var found []media.Item
-	missing := []string{}
-	for _, e := range entries {
-		if it, ok := ix.find(e); ok {
-			found = append(found, it)
-		} else {
-			if len(missing) < maxMissingReported {
-				missing = append(missing, e.label())
-			}
-		}
-	}
-	if len(found) == 0 {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-			"error": "None of these songs are in your library.", "missing": missing, "total": len(entries)})
-		return
-	}
-	p, err := s.collections.ImportPlaylist(user.ID, name, found)
-	if err != nil {
-		s.collectionsError(w, err)
+	res := s.importEntries(user.ID, name, entries, ix)
+	if res.ID == "" {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": res.Error, "missing": res.Missing, "total": res.Total})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"playlist":     playlistSummary(p),
-		"total":        len(entries),
-		"added":        len(p.Items),
-		"missing":      missing,
-		"missingCount": len(entries) - len(found),
+		"playlist":     map[string]any{"id": res.ID, "name": res.Name},
+		"total":        res.Total,
+		"added":        res.Added,
+		"missing":      res.Missing,
+		"missingCount": res.MissingCount,
 	})
 }

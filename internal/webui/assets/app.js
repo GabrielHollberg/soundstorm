@@ -11022,7 +11022,7 @@ function importPlaylistCard() {
   t.textContent = 'Import playlist';
   const sub = document.createElement('span');
   sub.className = 'sub';
-  sub.textContent = 'M3U from another player';
+  sub.textContent = 'From Plex or a file';
   meta.append(t, sub);
   card.append(art, meta);
   const file = document.createElement('input');
@@ -11035,9 +11035,38 @@ function importPlaylistCard() {
     file.value = '';
     if (files.length) importPlaylists(files);
   });
-  card.addEventListener('click', () => file.click());
+  card.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openImportMenu(card, file);
+  });
   holder.append(card, file);
   return holder;
+}
+
+// Where playlists can come from: Plex (what Plexamp plays from) or an M3U
+// file from any player.
+function openImportMenu(anchor, file) {
+  const menu = $('item-menu');
+  state.menuFor = 'import';
+  state.menuAnchor = anchor;
+  state.menuOpts = {};
+  const head = document.createElement('div');
+  head.className = 'menu-head';
+  const t = document.createElement('strong');
+  t.textContent = 'Import playlists';
+  const sub = document.createElement('span');
+  sub.textContent = 'Songs are matched to your library';
+  head.append(t, sub);
+  menu.replaceChildren(head,
+    menuItem('upload', 'From Plex or Plexamp', (event) => {
+      closeItemMenu();
+      startPlexImport(event);
+    }),
+    menuItem('playlist', 'From a file (M3U)', () => {
+      closeItemMenu();
+      file.click();
+    }));
+  placeMenu(menu, anchor);
 }
 
 // readPlaylistText decodes a playlist file: .m3u8 is UTF-8 by definition; a
@@ -11129,4 +11158,199 @@ function importReport(results) {
   close.addEventListener('click', () => box.remove());
   box.append(close);
   return box;
+}
+
+/* ------------------------------------------------------ importing from Plex */
+
+// Sign in on Plex's own page (a new tab; SoundStorm never sees the password),
+// then pick playlists. The server holds the Plex token for the import and
+// forgets it after; the page only ever sees names. See internal/plex.
+const plexImport = { timer: null, panel: null, servers: [], server: '', lists: [] };
+
+function plexPanel() {
+  let panel = plexImport.panel;
+  if (!panel || !panel.isConnected) {
+    panel = document.createElement('section');
+    panel.className = 'plex-panel';
+    panel.setAttribute('aria-live', 'polite');
+    plexImport.panel = panel;
+    const view = $('playlists-view');
+    view.insertBefore(panel, view.querySelector('.playlist-grid'));
+  }
+  return panel;
+}
+
+function plexPanelHead(title) {
+  const head = document.createElement('div');
+  head.className = 'plex-head';
+  const h = document.createElement('h2');
+  h.textContent = title;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'import-report-close';
+  close.setAttribute('aria-label', 'Cancel');
+  close.append(icon('close'));
+  close.addEventListener('click', stopPlexImport);
+  head.append(h, close);
+  return head;
+}
+
+function stopPlexImport() {
+  clearInterval(plexImport.timer);
+  plexImport.timer = null;
+  document.removeEventListener('visibilitychange', plexVisible);
+  if (plexImport.panel) plexImport.panel.remove();
+  plexImport.panel = null;
+  api('/api/plex', { method: 'DELETE' });
+}
+
+function plexVisible() {
+  if (document.visibilityState === 'visible') checkPlex();
+}
+
+async function startPlexImport() {
+  // The tab has to open in the tap itself or the browser blocks it; it is
+  // pointed at Plex once the server has a sign-in code.
+  const tab = window.open('', '_blank');
+  if (tab) tab.opener = null;
+  const { ok, body } = await api('/api/plex/signin', { method: 'POST', body: '{}' });
+  if (!ok || !body || !body.authUrl) {
+    if (tab) tab.close();
+    showToast((body && body.error) || 'Could not start the Plex sign-in.');
+    return;
+  }
+  if (tab) tab.location = body.authUrl;
+  const panel = plexPanel();
+  const p = document.createElement('p');
+  p.textContent = 'Sign in to Plex in the tab that opened, then come back here.';
+  const again = document.createElement('a');
+  again.href = body.authUrl;
+  again.target = '_blank';
+  again.rel = 'noopener noreferrer';
+  again.textContent = tab ? 'Open the Plex sign-in again' : 'Open the Plex sign-in';
+  panel.replaceChildren(plexPanelHead('Import from Plex'), p, again);
+  clearInterval(plexImport.timer);
+  plexImport.timer = setInterval(checkPlex, 2500);
+  document.addEventListener('visibilitychange', plexVisible);
+}
+
+async function checkPlex() {
+  if (!plexImport.panel || !plexImport.panel.isConnected) {
+    clearInterval(plexImport.timer);
+    return;
+  }
+  const { ok, body } = await api('/api/plex/status');
+  if (!ok || !body) return;
+  if (body.state === 'waiting') return;
+  clearInterval(plexImport.timer);
+  plexImport.timer = null;
+  document.removeEventListener('visibilitychange', plexVisible);
+  if (body.state !== 'ready') {
+    const p = document.createElement('p');
+    p.textContent = body.state === 'expired' ? 'The Plex sign-in ran out of time. Close this and try again.' : 'The Plex sign-in stopped. Close this and try again.';
+    plexPanel().replaceChildren(plexPanelHead('Import from Plex'), p);
+    return;
+  }
+  plexImport.servers = body.servers || [];
+  if (!plexImport.servers.length) {
+    const p = document.createElement('p');
+    p.textContent = 'Signed in, but this Plex account has no server with music.';
+    plexPanel().replaceChildren(plexPanelHead('Import from Plex'), p);
+    return;
+  }
+  const own = plexImport.servers.find((s) => s.owned) || plexImport.servers[0];
+  loadPlexPlaylists(own.id);
+}
+
+async function loadPlexPlaylists(serverId) {
+  plexImport.server = serverId;
+  const panel = plexPanel();
+  const wait = document.createElement('p');
+  wait.textContent = 'Finding your Plex server...';
+  panel.replaceChildren(plexPanelHead('Import from Plex'), plexServerPicker(), wait);
+  const { ok, body } = await api(`/api/plex/playlists?server=${encodeURIComponent(serverId)}`);
+  if (!plexImport.panel || plexImport.server !== serverId) return;
+  if (!ok || !body) {
+    wait.textContent = (body && body.error) || 'That Plex server did not answer.';
+    return;
+  }
+  plexImport.lists = body.playlists || [];
+  if (!plexImport.lists.length) {
+    wait.textContent = 'No music playlists on this server.';
+    return;
+  }
+  renderPlexPlaylists();
+}
+
+function plexServerPicker() {
+  const wrap = document.createElement('div');
+  if (plexImport.servers.length < 2) return wrap;
+  const select = document.createElement('select');
+  select.className = 'plex-server';
+  select.setAttribute('aria-label', 'Plex server');
+  for (const s of plexImport.servers) {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.name;
+    o.selected = s.id === plexImport.server;
+    select.append(o);
+  }
+  select.addEventListener('change', () => loadPlexPlaylists(select.value));
+  wrap.append(select);
+  return wrap;
+}
+
+function renderPlexPlaylists() {
+  const panel = plexPanel();
+  const list = document.createElement('div');
+  list.className = 'plex-lists';
+  const boxes = [];
+  for (const pl of plexImport.lists) {
+    const row = document.createElement('label');
+    row.className = 'plex-list';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = true;
+    box.soundstormList = pl;
+    boxes.push(box);
+    const name = document.createElement('span');
+    name.className = 'plex-list-name';
+    name.textContent = pl.title;
+    const count = document.createElement('span');
+    count.className = 'plex-list-count';
+    count.textContent = `${pl.count} song${pl.count === 1 ? '' : 's'}${pl.smart ? ', smart' : ''}`;
+    row.append(box, name, count);
+    list.append(row);
+  }
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'plex-go';
+  const label = () => {
+    const n = boxes.filter((b) => b.checked).length;
+    go.textContent = n ? `Import ${n} playlist${n === 1 ? '' : 's'}` : 'Choose playlists';
+    go.disabled = !n;
+  };
+  for (const b of boxes) b.addEventListener('change', label);
+  label();
+  go.addEventListener('click', async () => {
+    const chosen = boxes.filter((b) => b.checked).map((b) => ({ id: b.soundstormList.id, title: b.soundstormList.title }));
+    go.disabled = true;
+    go.textContent = `Importing ${chosen.length}...`;
+    const results = [];
+    // Fifty at a time, the most one request takes.
+    for (let i = 0; i < chosen.length; i += 50) {
+      const { ok, body } = await api('/api/plex/import', { method: 'POST',
+        body: JSON.stringify({ server: plexImport.server, playlists: chosen.slice(i, i + 50) }) });
+      if (ok && body && body.results) results.push(...body.results);
+      else for (const c of chosen.slice(i, i + 50)) results.push({ name: c.title, error: (body && body.error) || 'Could not import it.' });
+    }
+    const done = results.filter((r) => r.id).length;
+    stopPlexImport();
+    showToast(done ? `Imported ${done} of ${results.length} playlist${results.length === 1 ? '' : 's'} from Plex.` : 'Nothing was imported.');
+    showPlaylists(importReport(results));
+  });
+  const note = document.createElement('p');
+  note.className = 'muted plex-note';
+  note.textContent = 'Each becomes a playlist here. Songs not in your library are listed afterwards.';
+  panel.replaceChildren(plexPanelHead('Import from Plex'), plexServerPicker(), list, note, go);
 }

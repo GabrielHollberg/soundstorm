@@ -3169,3 +3169,29 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 .import-row ul { margin: 8px 0 0; padding-left: 20px; max-height: 240px; overflow: auto; color: var(--muted); font-size: 14px; }
 .import-report-close { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; background: none; color: var(--muted); }
 .import-report-close:hover { color: #fff; }
+
+/* Importing from Plex: a panel above the playlists while it runs. */
+.plex-panel {
+  position: relative;
+  margin: 0 0 16px;
+  padding: 12px 16px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.plex-head { display: flex; align-items: center; justify-content: space-between; }
+.plex-head h2 { margin: 0; font-size: 17px; }
+.plex-head .import-report-close { position: static; }
+.plex-panel p { margin: 10px 0; }
+.plex-panel a { color: var(--accent); }
+.plex-server { margin: 8px 0; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.06); color: inherit; color-scheme: dark; font: inherit; }
+.plex-lists { max-height: 50vh; overflow: auto; margin: 8px 0; }
+.plex-list { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); cursor: pointer; }
+.plex-list input { width: 20px; height: 20px; flex: none; }
+.plex-list-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plex-list-count { color: var(--muted); font-size: 14px; flex: none; }
+.plex-note { font-size: 14px; }
+.plex-go { width: 100%; padding: 12px; border-radius: 999px; font-weight: 700; }
+
+/* The page Plex's sign-in tab lands on. */
+body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; text-align: center; }
