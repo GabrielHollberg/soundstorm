@@ -3258,3 +3258,18 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 
 /* Change cover's note. */
 .menu-note { margin: 4px 14px 8px; color: var(--muted); font-size: 13px; }
+
+/* The hold icons over a visualizer: no dark square over the animation, a
+   small dark glow round each icon instead. */
+.np-hold-layer.viz { background: none; }
+.np-hold-layer.viz .np-hold-icon {
+  background: rgba(6, 8, 12, 0.34);
+  box-shadow: 0 0 20px 10px rgba(6, 8, 12, 0.38);
+}
+
+/* Flow, the full-screen visualizer: its canvases fill Now Playing, behind the
+   title, lyrics and controls; the cover's own canvases step aside. */
+.np-stage { position: absolute; inset: 0; pointer-events: none; display: none; }
+.now-playing.cover-flow .np-stage { display: block; }
+.np-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.now-playing.cover-flow .np-viz { display: none; }

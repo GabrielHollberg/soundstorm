@@ -6932,14 +6932,15 @@ async function savePrefs(change) {
 // a spinning disc, a record (the cover as its label, the song's name round
 // it), and moving with the music (pulsing at the song's tempo). Kept on the
 // account, so it stays the way somebody left it, on every device.
-const COVER_STYLES = ['square', 'spin', 'vinyl', 'pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
+const COVER_STYLES = ['square', 'spin', 'vinyl', 'pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks', 'flow'];
 const COVER_STYLE_NAMES = {
   square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Orb', bars: 'Spectrum',
   warp: 'Warp', waves: 'Waves', kaleido: 'Kaleidoscope', fireworks: 'Fireworks',
+  flow: 'Flow (full screen, experimental)',
 };
 // The visualizers: the cover gives way to one of these, all following the
 // song itself (see listenTo and viz).
-const VIZ_STYLES = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
+const VIZ_STYLES = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks', 'flow'];
 function coverStyle() {
   const p = state.prefs || {};
   if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
@@ -11026,6 +11027,9 @@ function showHoldIcons(pointerId, x0, y0) {
   }
   Object.assign(layer.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
   layer.classList.toggle('round', $('now-playing').classList.contains('round') && cover.offsetWidth > 0);
+  // Over a visualizer a dark square hides the animation: each icon gets a
+  // small dark glow of its own instead.
+  layer.classList.toggle('viz', $('now-playing').classList.contains('cover-viz'));
   const icons = holdIconList(item);
   box.replaceChildren(...icons.map((it) => {
     const b = document.createElement('span');
@@ -11993,9 +11997,12 @@ const viz = {
     this.raf = 0;
     const np = $('now-playing');
     const deco = $('np-deco');
-    const back = deco && deco.querySelector('.np-viz:not(.np-viz-trails)');
-    const front = deco && deco.querySelector('.np-viz-trails');
-    if (!back || np.classList.contains('hidden') || !np.classList.contains('cover-viz') || !deco.classList.contains('shown')) {
+    // Flow fills the whole of Now Playing, on its own canvases; the others
+    // draw over the cover.
+    const flowing = coverStyle() === 'flow';
+    const back = flowing ? document.querySelector('#np-stage .np-stage-back') : deco && deco.querySelector('.np-viz:not(.np-viz-trails)');
+    const front = flowing ? document.querySelector('#np-stage .np-stage-front') : deco && deco.querySelector('.np-viz-trails');
+    if (!back || np.classList.contains('hidden') || !np.classList.contains('cover-viz') || (!flowing && !deco.classList.contains('shown'))) {
       this.stop();
       return;
     }
@@ -12053,7 +12060,9 @@ const viz = {
     // And how bright it all is: dim in a quiet passage, blazing when loud.
     const bright = 0.35 + 0.65 * loudness;
     const cx = w / 2, cy = h / 2;
-    const size = w / 1.8; // the cover's size: the canvas is 180% of it
+    // The cover's size: its canvas is 180% of it. Flow's canvas is the
+    // screen, and scales to its shorter side.
+    const size = flowing ? Math.min(w, h) * 0.55 : w / 1.8;
     const R0 = size * 0.3;
     const pal = this.palette;
     const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
@@ -12225,6 +12234,90 @@ $('audio-player').addEventListener('play', () => {
   if ($('now-playing').classList.contains('cover-viz')) viz.start();
 });
 
+// Flow's scene, full screen: particles swirling through a moving current round
+// the middle of the screen, trailing light; faster and more turbulent as it
+// gets louder, a pulse out from the middle on every beat and a shock wave
+// across the screen on the first beat of each bar.
+function flowScene(st, m) {
+  const { g, f, w, h, cx, cy, dpr, pal, rgba, dt, ck, kick, snare, loud, lv, e, newBeat, downbeat, bright, playing } = m;
+  const S = Math.min(w, h);
+  g.clearRect(0, 0, w, h);
+  f.globalCompositeOperation = 'destination-out';
+  // Fast enough that old trails really go: slower left a grey haze, the
+  // last faint trace of every trail never quite reaching nothing.
+  f.fillStyle = `rgba(0, 0, 0, ${playing ? 0.1 : 0.22})`;
+  f.fillRect(0, 0, w, h);
+  const spawn = (anywhere) => {
+    const c = Math.floor(Math.random() * 3);
+    if (anywhere || Math.random() < 0.35) return { x: Math.random() * w, y: Math.random() * h, vx: 0, vy: 0, c, life: 0.4 + Math.random() };
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * S * 0.12;
+    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, vx: 0, vy: 0, c, life: 0.6 + Math.random() };
+  };
+  if (!st.p) { st.p = Array.from({ length: 520 }, () => spawn(true)); st.pulses = []; }
+  if (newBeat) {
+    st.pulses.push({ r: S * 0.05, life: 1, big: downbeat });
+    const push = S * (0.15 + 0.5 * loud) * (downbeat ? 1.8 : 1) * (0.6 + 0.6 * e);
+    for (const p of st.p) {
+      const dx = p.x - cx, dy = p.y - cy;
+      const d = Math.hypot(dx, dy) || 1;
+      const near = Math.exp(-d / (S * 0.6));
+      p.vx += (dx / d) * push * near;
+      p.vy += (dy / d) * push * near;
+    }
+  }
+  // A glow in the middle, and the pulses going out from it.
+  g.globalCompositeOperation = 'lighter';
+  const core = g.createRadialGradient(cx, cy, 0, cx, cy, S * (0.3 + 0.25 * kick));
+  core.addColorStop(0, rgba(pal[0], (0.1 + 0.3 * kick) * (0.4 + 0.6 * bright)));
+  core.addColorStop(1, rgba(pal[0], 0));
+  g.fillStyle = core;
+  g.fillRect(0, 0, w, h);
+  st.pulses = st.pulses.filter((pl) => {
+    pl.r += dt * S * (0.8 + 0.7 * loud);
+    pl.life -= dt * 0.7;
+    if (pl.life <= 0) return false;
+    g.strokeStyle = rgba(pl.big ? [255, 255, 255] : pal[1], pl.life * (pl.big ? 0.45 : 0.22) * (0.4 + 0.6 * bright));
+    g.lineWidth = (pl.big ? 4 : 2) * dpr;
+    g.beginPath();
+    g.arc(cx, cy, pl.r, 0, Math.PI * 2);
+    g.stroke();
+    return true;
+  });
+  g.globalCompositeOperation = 'source-over';
+  // The current: a swirl round the middle mixed with a field of waves that
+  // tightens as it gets louder.
+  const speed = S * (0.04 + (0.1 + 0.35 * loud) * lv * (0.6 + 0.6 * e) + 0.25 * kick);
+  // A gentle current, so trails flow in curves rather than zigzags.
+  const k = ((1.1 + 1.4 * loud) / S) * Math.PI;
+  const sw = 0.45;
+  f.globalCompositeOperation = 'lighter';
+  f.lineCap = 'round';
+  f.lineWidth = (0.9 + 1.2 * snare) * dpr;
+  for (const p of st.p) {
+    const dx = p.x - cx, dy = p.y - cy;
+    const swirl = Math.atan2(dy, dx) + Math.PI / 2;
+    const n = Math.sin(p.x * k + ck * 0.7) + Math.cos(p.y * k * 1.3 - ck * 0.5) + Math.sin((p.x + p.y) * k * 0.7 + ck * 1.1);
+    const na = n * Math.PI * 0.4;
+    const fx = Math.cos(na) * (1 - sw) + Math.cos(swirl) * sw;
+    const fy = Math.sin(na) * (1 - sw) + Math.sin(swirl) * sw;
+    p.vx *= 1 - dt * 2.2;
+    p.vy *= 1 - dt * 2.2;
+    const nx = p.x + (fx * speed + p.vx) * dt;
+    const ny = p.y + (fy * speed + p.vy) * dt;
+    f.strokeStyle = rgba(pal[p.c], (0.35 + 0.45 * lv) * (0.4 + 0.6 * bright));
+    f.beginPath();
+    f.moveTo(p.x, p.y);
+    f.lineTo(nx, ny);
+    f.stroke();
+    p.x = nx;
+    p.y = ny;
+    p.life -= dt * 0.22;
+    if (p.life <= 0 || p.x < -20 || p.y < -20 || p.x > w + 20 || p.y > h + 20) Object.assign(p, spawn(false));
+  }
+  f.globalCompositeOperation = 'source-over';
+}
+
 // The other visualizers. Each is given the moment of the music (m: the beat's
 // phase, which beat, a new beat, the kick and snare, how loud, how energetic,
 // the cover's colours) and two canvases: g, cleared for it each frame, and f,
@@ -12232,6 +12325,7 @@ $('audio-player').addEventListener('play', () => {
 // is chosen. They draw round (cx, cy), the cover's middle; size is the
 // cover's width, and the canvases are 180% of it.
 const VIZ_SCENES = {
+  flow: (st, m) => flowScene(st, m),
   // Spectrum: a mirrored equalizer across the screen, bass in the middle
   // jumping with the kick, highs at the edges snapping with the snare, peak
   // caps falling slowly, and a reflection below.

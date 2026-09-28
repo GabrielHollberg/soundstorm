@@ -627,6 +627,18 @@ judged on in its first minute:
   headless WebKit only because that cannot play audio, and it bursts on beats
   while playing.
 
+  **Flow is full screen, and experimental** (`flowScene`, `#np-stage`): the
+  only look not drawn where the cover is. Its two canvases fill Now Playing
+  behind everything (the title, lyrics and controls come later in the page,
+  so they draw on top), centred on the screen and scaled to its shorter side:
+  520 particles in a current - a swirl round the middle mixed with a field of
+  waves that tightens as it gets louder - trailing light, a pulse out from the
+  middle on each beat and a shock wave across the screen on each bar's first.
+  The current was first too tight (trails zigzagged like electricity) and the
+  trails faded too slowly (a grey haze of traces that never reached nothing).
+  **Holding on a visualizer** draws no dark square over the animation: each
+  icon gets a small dark glow of its own (`.np-hold-layer.viz`).
+
   **No reduced-motion exception for these looks, and that was the iPhone
   bug.** Reported as the spinning and moving covers doing nothing on an
   iPhone 13 while working on Android. In Playwright's WebKit with an

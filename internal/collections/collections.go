@@ -638,7 +638,7 @@ type Prefs struct {
 
 // CoverStyles are the ways Now Playing can show a cover.
 var CoverStyles = map[string]bool{"square": true, "spin": true, "vinyl": true, "pulse": true,
-	"bars": true, "warp": true, "waves": true, "kaleido": true, "fireworks": true}
+	"bars": true, "warp": true, "waves": true, "kaleido": true, "fireworks": true, "flow": true}
 
 // Limits on what a preference can hold, so a client cannot grow the file.
 const (

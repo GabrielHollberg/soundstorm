@@ -112,7 +112,8 @@ they're sung.
     to the actual song: its beats, the kick and snare, and how loud it is.
     They are **Orb** (a glowing orb and a vortex of light trails),
     **Spectrum**, **Warp**, **Waves**, **Kaleidoscope** and **Fireworks**,
-    all in the cover's colours.
+    all in the cover's colours - plus **Flow**, an experimental one that fills
+    the whole screen behind the title and controls.
 
   Hold anywhere on Now Playing (or open its menu) and choose **Cover look** to
   jump straight to one.
