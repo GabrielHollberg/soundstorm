@@ -398,7 +398,9 @@ judged on in its first minute:
   along its bottom edge - and the browser's own `<audio controls>` is gone,
   because its white pill clashed with everything. A computer gets previous,
   play, next, a seek bar and volume on the card; a phone gets play and next,
-  swipe up for Now Playing and swipe down to stop. Starting music by hand
+  swipe up for Now Playing and swipe down to stop. A tap anywhere on the card
+  opens Now Playing, not only on the cover and title as it first did - except
+  on its buttons, sliders and chapter list. Starting music by hand
   opens Now Playing; dragging it down closes it.
 
   **On a touch screen, songs change by swiping, not buttons.** Previous and

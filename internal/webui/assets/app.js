@@ -5661,8 +5661,16 @@ function syncNowPlayingTime() {
   $('np-length').textContent = formatDuration(length) || '0:00';
 }
 
-$('audio-open').addEventListener('click', openNowPlaying);
-$('audio-meta').addEventListener('click', openNowPlaying);
+// A tap anywhere on the mini-player opens Now Playing - the cover, the title,
+// the blurred card around them - except on what answers a tap of its own: the
+// buttons, the seek and volume sliders, the chapter list. It used to be the
+// cover and the title only, and the rest of the card did nothing.
+$('audio-dock').addEventListener('click', (event) => {
+  if (event.target.closest('button:not(#audio-open), input, label, #audio-tracks, a')) return;
+  // The lift that ends a hold (which opened the menu) is not a tap.
+  if (performance.now() - (state.heldAt || 0) < 700) return;
+  openNowPlaying();
+});
 $('audio-meta').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
