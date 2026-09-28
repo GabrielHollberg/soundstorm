@@ -7111,7 +7111,6 @@ const COVER_STYLE_NAMES = {
 const FULL_STYLES = COVER_GROUPS[1].styles;
 const EX_COVER_VIZ = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
 const VIZ_STYLES = FULL_STYLES;
-const LAST_VIZ_KEY = 'soundstorm-last-viz';
 function coverStyle() {
   const p = state.prefs || {};
   if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
@@ -7128,21 +7127,8 @@ $('np-cover').addEventListener('click', (event) => {
     event.stopPropagation();
     return;
   }
-  // Nor is the end of a swipe.
-  if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
-  // A tap goes round the covers and the last visualizer used, rather than
-  // all fifteen; the Looks button has every one.
-  let lastViz = 'pulse';
-  try { lastViz = localStorage.getItem(LAST_VIZ_KEY) || 'pulse'; } catch { /* the default */ }
-  if (!VIZ_STYLES.includes(lastViz)) lastViz = 'pulse';
-  const round = ['square', 'spin', 'vinyl', lastViz];
-  const at = round.indexOf(coverStyle());
-  const next = round[at < 0 ? 0 : (at + 1) % round.length];
-  state.prefs = state.prefs || {};
-  state.prefs.coverStyle = next;
-  applyCoverStyle();
-  showToast(COVER_STYLE_NAMES[next], '', null, 1400);
-  savePrefs({ coverStyle: next });
+  // A tap no longer changes the look - the Looks button is the only way,
+  // at the owner's asking; a tap by the title was changing it by accident.
 });
 // It spins only while the music plays, and stops where it is on pause.
 for (const type of ['play', 'pause', 'ended']) {
@@ -11905,9 +11891,6 @@ function applyCoverStyle() {
   np.classList.toggle('round', style === 'spin' || style === 'vinyl');
   np.classList.toggle('cover-viz', VIZ_STYLES.includes(style));
   np.classList.toggle('cover-full', FULL_STYLES.includes(style));
-  if (VIZ_STYLES.includes(style)) {
-    try { localStorage.setItem(LAST_VIZ_KEY, style); } catch { /* not kept */ }
-  }
   renderCoverDeco();
   renderLooks();
   if (VIZ_STYLES.includes(style)) viz.start();

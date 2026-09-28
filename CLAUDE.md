@@ -460,8 +460,9 @@ judged on in its first minute:
   (`EX_COVER_VIZ`) so they fill it, the rest at 0.55 as before. And the line
   being sung sits at the middle of the screen, where they are centred, not
   of the lyrics box, which starts under the title - measured on all six,
-  the line's centre within a pixel of the screen's. What follows is how it
-  was:
+  the line's centre within a pixel of the screen's. **A tap no longer
+  changes the look** - the Looks button is the only way (a tap by the title
+  was changing it by accident). What follows is how it was:
   On a phone the default is the big cover with a strip of the few lines around
   the one being sung under the centered title; tapping the strip grows it into
   the full lyrics (a tap there never seeks), and tapping the small cover at
