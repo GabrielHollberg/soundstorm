@@ -5224,6 +5224,9 @@ const npSwipe = (() => {
       cover.src = sides[by].src || artOf(near[by]);
       try { await cover.decode(); } catch { /* shown when it loads */ }
       put(cover, 0, 0);
+      // The record or visualizer over it rode the swipe too, and comes back
+      // with it; left behind, it sat off to the side for the next song.
+      put(coverDeco(), 0, 0);
       stepTrack(by);
       await frame();
       for (const b of [-1, 1]) { put(sides[b], 0, 0); sides[b].style.visibility = 'hidden'; }
