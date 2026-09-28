@@ -3080,6 +3080,11 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
   .now-playing .np-bar .np-speed,
   .now-playing .np-controls .np-icon { visibility: hidden; }
   .now-playing #np-speed-menu { visibility: visible; }
+  /* No "Now Playing" words, and the timeline only while holding (sliding
+     onto it then seeks). The sleep timer's countdown still shows. */
+  .now-playing .np-label-text { display: none; }
+  .now-playing .np-progress { visibility: hidden; }
+  .now-playing.hold-icons .np-progress { visibility: visible; }
 }
 .np-hold-icon {
   position: absolute;

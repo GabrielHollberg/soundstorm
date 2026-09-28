@@ -519,7 +519,10 @@ judged on in its first minute:
   no taps either) and appear there during a hold (`#np-hold-extra`,
   `holdButtonList`), chosen like the nine; letting go on one clicks the real
   button, past the rule that swallows the lift's click. A mouse keeps them
-  all showing. Nothing else answers the finger while they
+  all showing. Then the "Now Playing" words went and the timeline too, shown only
+  while holding: sliding onto it (a band 36px either side) moves the
+  position under the finger, the caption saying "Play from 2:09", and
+  letting go there seeks. The sleep timer's countdown still shows. Nothing else answers the finger while they
   show - the swipe stands down. Right-click still opens the full menu, and
   the mini-player's hold opens the menu (below). Before the icons, a hold
   opened that menu, which is what the rest of this entry describes:

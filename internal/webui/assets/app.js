@@ -11255,10 +11255,32 @@ function showHoldIcons(pointerId, x0, y0) {
     const cy = b.top + b.height / 2;
     return Math.hypot(x - cx, y - cy) <= b.width * 0.75;
   }) || null;
+  // The timeline is hidden on a touch screen too, and shows while holding:
+  // sliding onto it (anywhere in a band around it) moves the position under
+  // the finger, and letting go there seeks.
+  let seekTo = null;
+  const player = $('audio-player');
+  const seekAt = (x, y) => {
+    if (!coarse || !Number.isFinite(player.duration)) return null;
+    const b = $('np-seek').getBoundingClientRect();
+    if (!b.width || y < b.top - 36 || y > b.bottom + 36) return null;
+    return Math.max(0, Math.min(1, (x - b.left) / b.width));
+  };
   const onMove = (event) => {
     if (event.pointerId !== pointerId) return;
     if (!moved && Math.hypot(event.clientX - x0, event.clientY - y0) < HOLD_SLOP) return;
     moved = true;
+    seekTo = seekAt(event.clientX, event.clientY);
+    if (seekTo !== null) {
+      light(null);
+      state.seeking = true;
+      $('np-seek').value = String(Math.round(seekTo * 1000));
+      const at = formatDuration(seekTo * player.duration) || '0:00';
+      $('np-time').textContent = at;
+      caption.textContent = `Play from ${at}`;
+      return;
+    }
+    if (state.seeking) { state.seeking = false; syncNowPlayingTime(); }
     light(iconAt(event.clientX, event.clientY));
   };
   const onEnd = (event) => {
@@ -11267,6 +11289,8 @@ function showHoldIcons(pointerId, x0, y0) {
     document.removeEventListener('pointerup', onEnd);
     document.removeEventListener('pointercancel', onEnd);
     const chosen = event.type === 'pointerup' && moved && lit ? lit.soundstormHold : null;
+    if (event.type === 'pointerup' && seekTo !== null) player.currentTime = seekTo * player.duration;
+    state.seeking = false;
     light(null);
     show(layer, false);
     show(extra, false);
