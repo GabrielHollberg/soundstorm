@@ -5022,7 +5022,6 @@ function openNowPlaying() {
   // could not tell whether it fitted.
   requestAnimationFrame(() => fitNpLines());
   audio.showQueue = false;
-  audio.lyricsBig = false;
   renderLyrics();
   show($('now-playing'), true);
   document.body.classList.add('np-open');
@@ -5053,26 +5052,12 @@ function npTransition(update) {
   t.finished.catch(() => {});
 }
 
-// The strip grows into the full lyrics when tapped - a tap there never jumps
-// to a line, since the lines are too small a target to aim at. The small
-// cover at the top shrinks them back.
-$('np-lyrics').addEventListener('click', (event) => {
-  // Nothing to grow into without lyrics.
-  if (audio.npMode !== 'strip' || !(audio.lyrics && audio.lyrics.lines.length)) return;
-  event.stopPropagation();
-  event.preventDefault();
-  npTransition(() => {
-    audio.lyricsBig = true;
-    renderLyrics();
-  });
-}, true);
 document.querySelector('#now-playing .np-head').addEventListener('click', () => {
-  // On a phone the lyrics and Up next hide the big cover, and with it the
-  // buttons on it - Up next's own among them - so the small cover is the way
-  // back from either.
-  if (!['lyrics', 'queue'].includes(audio.npMode) || !matchMedia('(max-width: 760px)').matches) return;
+  // On a phone the title is the way back from Up next to the lyrics. Only
+  // from Up next: in the lyrics it used to run the same layout again as a
+  // view transition, and the title flickered as if it had been pressed.
+  if (audio.npMode !== 'queue' || !matchMedia('(max-width: 760px)').matches) return;
   npTransition(() => {
-    audio.lyricsBig = false;
     audio.showQueue = false;
     renderLyrics();
   });
