@@ -122,11 +122,13 @@ func (s *Server) handleSetAutoReadAlong(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if body.Enabled {
-		// Turned on: look now rather than in half an hour.
+		// Turned on: look now rather than in half an hour - through the
+		// loop, which recovers from a panic, rather than a goroutine of its
+		// own, which would take the server down with it.
 		s.autoMu.Lock()
 		s.autoSkip = map[string]bool{}
 		s.autoMu.Unlock()
-		go s.autoReadAlongOnce(context.Background())
+		s.kickAutoReadAlong()
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": body.Enabled})
 }

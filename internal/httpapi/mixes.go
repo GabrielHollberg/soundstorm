@@ -76,12 +76,60 @@ func (s *Server) handleRecordPlay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "only music is remembered")
 		return
 	}
+	// Plays come no faster than songs can be half heard; a flood of them is
+	// a script growing the listen log, and is dropped quietly.
+	if !s.plays.allow(user.ID, time.Now(), playBurst, playEvery) {
+		writeJSON(w, http.StatusOK, map[string]any{"recorded": false})
+		return
+	}
 	if err := s.collections.RecordPlay(user.ID, item, time.Now().UTC()); err != nil {
 		s.collectionsError(w, err)
 		return
 	}
 	go s.sendScrobbles(user.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"recorded": true})
+}
+
+// allowance lets each person make a burst of some write and then one every
+// so often: plays (skipping through a queue is quick, but never this quick
+// for long) and reading positions (each rewrites state.json, under the lock
+// every request takes).
+type allowance struct {
+	mu   sync.Mutex
+	left map[string]playBucket
+}
+
+type playBucket struct {
+	tokens float64
+	at     time.Time
+}
+
+const (
+	playBurst     = 20
+	playEvery     = 10 * time.Second
+	positionBurst = 30
+	positionEvery = 2 * time.Second
+)
+
+func (p *allowance) allow(userID string, now time.Time, burst float64, every time.Duration) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.left == nil {
+		p.left = map[string]playBucket{}
+	}
+	b, ok := p.left[userID]
+	if !ok {
+		b = playBucket{tokens: burst, at: now}
+	}
+	b.tokens = min(burst, b.tokens+now.Sub(b.at).Seconds()/every.Seconds())
+	b.at = now
+	if b.tokens < 1 {
+		p.left[userID] = b
+		return false
+	}
+	b.tokens--
+	p.left[userID] = b
+	return true
 }
 
 // mixSource finds the music shelf that can draw random songs.

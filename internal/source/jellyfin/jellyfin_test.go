@@ -166,7 +166,7 @@ func TestHLSTargetMapsOntoTheVideoNamespace(t *testing.T) {
 	s, _ := fakeJellyfin(t, map[string]any{"Id": "ms-1"})
 
 	target, err := s.HLSTarget(context.Background(), "item-1/hls1/main/3.ts",
-		url.Values{"mediaSourceId": {"ms-1"}})
+		url.Values{"mediaSourceId": {"ms-1"}, "EnableTrickplay": {"true"}})
 	if err != nil {
 		t.Fatalf("HLSTarget: %v", err)
 	}
@@ -178,6 +178,10 @@ func TestHLSTargetMapsOntoTheVideoNamespace(t *testing.T) {
 	}
 	if target.Headers["Authorization"] == "" {
 		t.Error("segments need the credential too; Jellyfin 12 ignores api_key")
+	}
+	// Trickplay tiles are named in the master playlist with our token.
+	if strings.Contains(target.URL, "EnableTrickplay") || !strings.Contains(target.URL, "enableTrickplay=false") {
+		t.Errorf("url = %q, want trickplay forced off", target.URL)
 	}
 }
 

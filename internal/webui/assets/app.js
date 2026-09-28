@@ -9,6 +9,12 @@
  */
 'use strict';
 
+// The app runs only as the page itself. A book's chapter is a same-origin
+// document in a frame, and one that loaded this script (or framed the app)
+// could drive the signed-in account's controls with a tap - so in a frame it
+// stops here. See also the reader, which takes scripts out of books.
+if (window.top !== window.self) throw new Error('SoundStorm does not run inside a frame');
+
 const $ = (id) => document.getElementById(id);
 
 // One page. Small enough that the first screenful arrives quickly, large

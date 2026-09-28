@@ -185,6 +185,16 @@ get_env() {
 }
 
 set_env() {
+	# One line per setting: a value carrying a line break would write a
+	# second setting of its own choosing - and some values come from the
+	# network (the router's UPnP answer).
+	case "$2" in
+	*"
+"* | *"$(printf '\r')"*)
+		note "Ignored a setting for $1 that was not a single line."
+		return
+		;;
+	esac
 	if [ -f .env ]; then
 		# umask 077 so the rewrite keeps .env private - mv takes the new
 		# file's permissions, and .env holds the setup code and auth key.
@@ -997,6 +1007,15 @@ fi
 # alone, best effort.
 if [ -z "$(get_env SOUNDSTORM_UPNP_URL)" ]; then
 	upnp=$(upnp_url)
+	# Anything on the network can answer SSDP, so only a plain http URL on
+	# the router's own address is kept - one word, no spaces or line breaks.
+	gw=$(get_env SOUNDSTORM_GATEWAY)
+	case "$upnp" in
+	*" "* | *"	"* | *"
+"* | *"$(printf '\r')"*) upnp= ;;
+	http://"$gw":* | http://"$gw"/*) [ -n "$gw" ] || upnp= ;;
+	*) upnp= ;;
+	esac
 	if [ -n "$upnp" ]; then
 		set_env SOUNDSTORM_UPNP_URL "$upnp"
 	fi

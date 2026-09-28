@@ -3,6 +3,7 @@ package epub
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -164,6 +165,28 @@ func TestOpenRefusesAnOversizedDirectory(t *testing.T) {
 	}
 	if _, err := Open(p); err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Errorf("Open(huge) = %v, want a directory-size refusal", err)
+	}
+}
+
+// archive/zip reads a zip64 record when the end record's directory size is
+// 0xFFFF, not only 0xFFFFFFFF; a guard that missed that measured one
+// directory while the reader parsed another. Such an archive is refused.
+func TestOpenRefusesWhatArchiveZipWouldReadAsZip64(t *testing.T) {
+	data, err := os.ReadFile(writeEPUB(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := bytes.LastIndex(data, []byte{0x50, 0x4b, 0x05, 0x06})
+	if end < 0 {
+		t.Fatal("no end record")
+	}
+	binary.LittleEndian.PutUint32(data[end+12:], 0xFFFF)
+	p := filepath.Join(t.TempDir(), "odd.epub")
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(p); err == nil || !strings.Contains(err.Error(), "zip64") {
+		t.Errorf("Open = %v, want a zip64 refusal", err)
 	}
 }
 

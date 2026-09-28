@@ -2463,6 +2463,61 @@ the real block.
 
 Nothing from the fifth pass is left open.
 
+**A sixth pass, blind again, after radio, moods, scrobbling and AudioMuse.**
+Five reviewers, one per surface, no notes. What was real:
+
+- **A book could run the app inside itself - the reader XSS a third time.**
+  Not through a book resource this time but through `/static/app.js`, which
+  is a real script and must stay loadable as one: a chapter naming it by
+  absolute address ran it under `script-src 'self'`, against the book's own
+  copy of the shell's ids, so an invisible label over a copied
+  `remote-toggle` switched remote access on at the owner's first tap. Fixed
+  where it starts: the reader takes every `<script>` out of every chapter
+  document (foliate's `data` event, before the blob exists), and app.js and
+  reader.js refuse to run in a frame. Checked in Chrome with a book carrying
+  such a script: the chapter rendered, with no script and no request.
+- **Links out of a book kept `window.opener`** (foliate calls
+  `window.open(href, '_blank')`), so the page could swap the app's tab for a
+  fake sign-in. The reader handles `external-link` itself: http(s) only,
+  `noopener`.
+- **A zip64 gap in the EPUB directory guard.** archive/zip also turns to a
+  zip64 record when the 16-bit directory size reads 0xFFFF; the guard only
+  refused 0xFFFFFFFF, so it measured one directory while the reader parsed
+  another as big as the file - and the scanner reopened it on every start.
+  Every trigger archive/zip has is refused now, and any zip64 locator.
+- **install.sh took the UPnP answer from anything on the LAN**, and a
+  LOCATION with a bare `
+` in it (the Python splits on `
+`) wrote a
+  second line into `.env` - `SOUNDSTORM_IMAGE=` of its choosing. Only a
+  one-word `http://<gateway>` URL is kept, and `set_env` refuses any value
+  with a line break. install.ps1 already did both.
+- **Any member could start a read-along sync for any two books**, ignoring
+  Not the same book; Storyteller keeps one sync per recording, so that gave
+  the whole house the wrong text for it. `POST /api/readalong` now takes
+  only a pair Read Along lists.
+- **A Storyteller book is an ebook holding an audiobook's audio**, so
+  reading one now needs audiobook access too (`AlsoNeeds`).
+- **Jellyfin's master playlist could carry our admin token** in trickplay
+  tile URLs, Jellyfin's default. `enableTrickplay=false` is forced, as the
+  Subtitle keys are stripped.
+- **Unthrottled writes**: plays (each rewrites the collections file and
+  appends to the listen log, which had no cap) and reading positions (each
+  rewrites state.json). Plays: a burst of 20, then one per 10s, dropped
+  quietly past it, and a year's log stops at 32MB. Positions: 30, then one
+  per 2s, a 429 past it, which the app keeps unsynced and retries.
+- Smaller: artist radio looked any typed name up online (now only library
+  artists, as the rest of discovery); the auto-sync switch ran a goroutine
+  outside the recovered loop; sign-in clients over IPv6 are keyed by /64;
+  the names service limits challenges per IPv4 /24 as well.
+
+Left for a decision: the backends' fixed default secrets (Storyteller's key,
+the Immich and AudioMuse Postgres passwords) - generating them means
+knowing a fresh install from an existing database, whose password cannot
+change under it; reachable only on the compose network. Images pulled by
+tag. The Public Suffix List, still the real fix for the names service's
+shared budgets.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

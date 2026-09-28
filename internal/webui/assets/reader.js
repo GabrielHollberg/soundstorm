@@ -18,6 +18,28 @@
 import './vendor/foliate-js/view.js';
 import { EPUB } from './vendor/foliate-js/epub.js';
 
+if (window.top !== window.self) throw new Error('SoundStorm does not run inside a frame');
+
+// A book is somebody's upload, and its chapters render as documents with this
+// app's origin - where a script, even one naming our own files by absolute
+// address, would run as whoever is reading. The reader needs none of a
+// book's scripts, so every chapter document loses them before it is shown.
+const DOC_TYPES = ['application/xhtml+xml', 'text/html', 'image/svg+xml'];
+function withoutScripts(book) {
+  book.transformTarget?.addEventListener('data', ({ detail }) => {
+    if (!DOC_TYPES.includes(detail.type)) return;
+    const type = detail.type;
+    detail.data = Promise.resolve(detail.data).then((data) => {
+      if (typeof data !== 'string') return data;
+      const doc = new DOMParser().parseFromString(data, type);
+      const scripts = doc.querySelectorAll('script');
+      if (!scripts.length) return data;
+      for (const el of scripts) el.remove();
+      return new XMLSerializer().serializeToString(doc);
+    });
+  });
+}
+
 const $ = (id) => document.getElementById(id);
 
 // How often a reading position is written back. A page turn emits a location;
@@ -201,6 +223,7 @@ export async function open(item, options = {}) {
     await loadManifest(item);
 
     const book = await new EPUB(makeLoader(item)).init();
+    withoutScripts(book);
 
     const view = document.createElement('foliate-view');
     host.append(view);
@@ -209,6 +232,14 @@ export async function open(item, options = {}) {
     // text never reaches this page, so swipe-to-close listens in each one.
     view.addEventListener('load', (event) => {
       if (event.detail && event.detail.doc) swipeToClose(event.detail.doc);
+    });
+
+    // A link out of the book opens in a new tab that cannot reach back into
+    // this one, and only if it is a web address.
+    view.addEventListener('external-link', (event) => {
+      event.preventDefault();
+      const href = event.detail && event.detail.a && event.detail.a.href;
+      if (/^https?:/i.test(href || '')) window.open(href, '_blank', 'noopener,noreferrer');
     });
 
     view.addEventListener('relocate', (event) => {

@@ -42,6 +42,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -77,6 +78,8 @@ type Server struct {
 	moodCache        moodCache
 	setupCode        string
 	collections      *collections.Store
+	plays            allowance
+	positions        allowance
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache
 	reg              *source.Registry
@@ -910,6 +913,13 @@ func clientOf(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
+	}
+	// One IPv6 host commonly holds a whole /64, a fresh address per request
+	// if it likes, so a /64 is one client.
+	if a, err := netip.ParseAddr(host); err == nil && a.Is6() && !a.Is4In6() {
+		if p, err := a.Prefix(64); err == nil {
+			return p.String()
+		}
 	}
 	return host
 }
@@ -1842,6 +1852,11 @@ func (s *Server) openBook(r *http.Request) (source.OpenBook, error) {
 	if !ok {
 		return nil, fmt.Errorf("source %s cannot be read in place", strconv.Quote(sourceID))
 	}
+	// A read-along book holds an audiobook's audio, so it needs that shelf
+	// as well as the ebook one.
+	if also, ok := src.(interface{ AlsoNeeds() media.Kind }); ok && !source.AccessFrom(r.Context()).Permits(also.AlsoNeeds()) {
+		return nil, fmt.Errorf("unknown source %s", strconv.Quote(sourceID))
+	}
 	return opener.OpenBook(r.Context(), itemID)
 }
 
@@ -1975,6 +1990,12 @@ func (s *Server) handlePutProgress(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body.Location) > maxLocationLength {
 		writeError(w, http.StatusBadRequest, "location is too long")
+		return
+	}
+	// The app saves every half minute and on closing; a stream of saves is a
+	// script, and each one would rewrite the state file.
+	if !s.positions.allow(user.ID, time.Now(), positionBurst, positionEvery) {
+		writeError(w, http.StatusTooManyRequests, "saving too often; try again shortly")
 		return
 	}
 

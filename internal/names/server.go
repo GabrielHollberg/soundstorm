@@ -83,6 +83,7 @@ var (
 	addressRate         = rate{20, time.Hour}      // per install
 	challengeRate       = rate{10, 24 * time.Hour} // per install
 	challengeNetRate    = rate{20, 24 * time.Hour} // per client network
+	challengeWideRate   = rate{40, 24 * time.Hour} // per IPv4 /24 (or IPv6 /48)
 	globalChallengeRate = rate{300, 24 * time.Hour}
 	publicRate          = rate{20, time.Hour} // per install; each triggers an outbound probe
 	clearRate           = rate{30, time.Hour} // per install; each costs registrar calls
@@ -381,6 +382,13 @@ func (s *Server) handleSetChallenge(w http.ResponseWriter, r *http.Request, id s
 		writeError(w, http.StatusTooManyRequests, "too many certificate requests from this network today")
 		return
 	}
+	// Neighboring addresses are one hosting provider as often as not, and a
+	// handful of them could otherwise spend the whole day's budget that every
+	// install's renewal shares.
+	if !s.limits.allow("challenge-wide:"+s.clientWide(r), challengeWideRate) {
+		writeError(w, http.StatusTooManyRequests, "too many certificate requests from this network today")
+		return
+	}
 	if !s.limits.allow("challenge:*", globalChallengeRate) {
 		s.Log.Warn("global challenge limit reached")
 		writeError(w, http.StatusTooManyRequests, "the service is issuing too many certificates today; try again tomorrow")
@@ -475,6 +483,25 @@ func (s *Server) clientNet(r *http.Request) string {
 		if p, err := addr.Prefix(64); err == nil {
 			return p.String()
 		}
+	}
+	return addr.String()
+}
+
+// clientWide is the caller's wider network, an IPv4 /24 or an IPv6 /48, for
+// the limits that addresses next to each other should share.
+func (s *Server) clientWide(r *http.Request) string {
+	ip := s.clientIP(r)
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap()
+	bits := 24
+	if addr.Is6() {
+		bits = 48
+	}
+	if p, err := addr.Prefix(bits); err == nil {
+		return p.String()
 	}
 	return addr.String()
 }

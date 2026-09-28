@@ -68,6 +68,11 @@ func (s *Store) logListen(userID string, l Listen) error {
 	if err != nil {
 		return err
 	}
+	// A year of anybody's real listening is a few megabytes; past this the
+	// log stops growing rather than filling the disk the accounts are on.
+	if fi, err := os.Stat(p); err == nil && fi.Size() >= maxListenLog {
+		return nil
+	}
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -78,6 +83,10 @@ func (s *Store) logListen(userID string, l Listen) error {
 	}
 	return f.Close()
 }
+
+// maxListenLog is the most one person's year of listens may hold on disk:
+// about 150,000 plays, four hundred a day.
+const maxListenLog = 32 << 20
 
 // maxListenLine bounds one line; a line past it is damage, and skipped.
 const maxListenLine = 64 << 10

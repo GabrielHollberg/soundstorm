@@ -640,10 +640,28 @@ func (s *Source) HLSTarget(ctx context.Context, path string, query url.Values) (
 	// Subtitle* key removes that without touching anything real playback
 	// sends.
 	query = withoutSubtitleKeys(query)
+	// Trickplay (seek-preview tiles) is the same leak by another door: with
+	// it on, which is Jellyfin's default, a master playlist for an item that
+	// has tiles names them with ApiKey=<our token>. SoundStorm shows no
+	// tiles, so it is always off.
+	query = withTrickplayOff(query)
 	return source.Target{
 		URL:     s.http.URL("/videos/"+clean, query),
 		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
 	}, nil
+}
+
+// withTrickplayOff returns a copy of query asking for no trickplay, whatever
+// the client sent (Jellyfin reads parameter names case-blind).
+func withTrickplayOff(query url.Values) url.Values {
+	out := url.Values{}
+	for k, v := range query {
+		if !strings.EqualFold(k, "enableTrickplay") {
+			out[k] = v
+		}
+	}
+	out.Set("enableTrickplay", "false")
+	return out
 }
 
 // withoutSubtitleKeys returns query with every subtitle-delivery parameter

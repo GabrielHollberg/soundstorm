@@ -722,7 +722,10 @@ func (s *Server) similarInLibrary(ctx context.Context, pool []media.Item, p radi
 		key := nameKey(artist)
 		name := display[key]
 		if name == "" {
-			name = artist
+			// Only artists in the library are ever looked up: a station's
+			// seed is the client's text, and nothing else of the kind goes
+			// out of the house.
+			return nil
 		}
 		info, known := s.discover.Cached(name)
 		if !known && key == seed {

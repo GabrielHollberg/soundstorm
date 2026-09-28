@@ -77,8 +77,12 @@ func New(cfg Config) (*Source, error) {
 	return &Source{cfg: cfg, http: c}, nil
 }
 
-func (s *Source) ID() string                                                { return s.cfg.ID }
-func (s *Source) Kind() media.Kind                                          { return media.KindEbook }
+func (s *Source) ID() string       { return s.cfg.ID }
+func (s *Source) Kind() media.Kind { return media.KindEbook }
+
+// AlsoNeeds is the other shelf a synced book is made of: it carries its own
+// copy of the recording, so reading it takes audiobook access too.
+func (s *Source) AlsoNeeds() media.Kind                                     { return media.KindAudiobook }
 func (s *Source) Search(context.Context, media.Query) ([]media.Item, error) { return nil, nil }
 
 // Health asks for the settings, which needs the token to be good.

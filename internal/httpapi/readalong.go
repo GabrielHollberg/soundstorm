@@ -72,6 +72,25 @@ func (s *Server) handleStartReadAlong(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "read-along is not set up on this server")
 		return
 	}
+	// Only a pair Read Along lists: a match it found, or one the owner made,
+	// and never one the owner said is not the same book. Storyteller keeps
+	// one sync per recording, so any other pairing would give everybody the
+	// wrong text for that audiobook, and costs the better part of an hour's
+	// work besides.
+	listed := false
+	ctx, cancel := context.WithTimeout(r.Context(), pairsDeadline)
+	for _, p := range s.listPairs(ctx) {
+		if p.Ebook.SourceID == body.Ebook.SourceID && p.Ebook.ID == body.Ebook.ID &&
+			p.Audiobook.SourceID == body.Audiobook.SourceID && p.Audiobook.ID == body.Audiobook.ID {
+			listed = true
+			break
+		}
+	}
+	cancel()
+	if !listed {
+		writeError(w, http.StatusNotFound, "these are not a Read Along pair")
+		return
+	}
 	ebookPath, err := s.ebookFile(r.Context(), body.Ebook)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())

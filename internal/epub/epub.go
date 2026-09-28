@@ -420,13 +420,19 @@ func checkDirectorySpan(filePath string) error {
 		records := binary.LittleEndian.Uint16(buf[i+10:])
 		dirSize := int64(binary.LittleEndian.Uint32(buf[i+12:]))
 		dirOffset := int64(binary.LittleEndian.Uint32(buf[i+16:]))
-		if records == 0xFFFF || dirSize == 0xFFFFFFFF || dirOffset == 0xFFFFFFFF {
+		// archive/zip turns to a zip64 record - whose sizes this check does
+		// not read - on any of these, including a directory size of 0xFFFF
+		// (it compares that field against the 16-bit sentinel). Every one of
+		// its triggers is refused, and so is a zip64 locator whatever the end
+		// record says, so nothing parsed can differ from what is measured.
+		endPos := size - tail + int64(i)
+		if records == 0xFFFF || dirSize == 0xFFFF || dirSize == 0xFFFFFFFF || dirOffset == 0xFFFFFFFF ||
+			(i >= 20 && binary.LittleEndian.Uint32(buf[i-20:]) == 0x07064b50) {
 			return fmt.Errorf("not an epub: zip64 archives are far larger than any book")
 		}
 		// archive/zip reads the directory from dirOffset, or from the end record
 		// minus the directory's size when the archive has data prepended. Bound
 		// the larger of the two spans it could parse.
-		endPos := size - tail + int64(i)
 		start := dirOffset
 		if alt := endPos - dirSize; alt >= 0 && alt < start {
 			start = alt
