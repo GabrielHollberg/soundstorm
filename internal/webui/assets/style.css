@@ -3237,9 +3237,11 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
   mix-blend-mode: screen;
 }
 
-/* Moving with the music: a canvas behind the cover (see the visualizer in
-   app.js) draws bars, a glow in the cover's colours and sparks on the beat;
-   the cover's own bounce and sway are set from the same clock. */
+/* The visualizer (see viz in app.js) takes the cover's place: two canvases,
+   larger than the cover, over its own hidden image - which stays, since the
+   swipe and the hold icons work on it. */
+.now-playing.cover-pulse #np-cover { opacity: 0; }
+.now-playing.cover-pulse .np-thumb { border-radius: 50%; }
 .now-playing.cover-pulse .np-viz {
   display: block; position: absolute;
   left: -40%; top: -40%; width: 180%; height: 180%;

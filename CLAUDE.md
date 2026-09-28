@@ -570,17 +570,23 @@ judged on in its first minute:
   energetic than most of the library (energy as a rank, as moods are), and
   lined up with the song's position. A song not yet heard moves slowly.
 
-  **It is a canvas visualizer now** (`viz` in app.js), reported as "make the
-  moving one cooler": a ring of 72 bars round the cover that kick on every
-  beat and snap on 2 and 4, each with its own wander; a glow of three blobs in
-  the cover's own colours (`coverPalette`, the strongest hues of its 16x16
-  thumbnail, brightened); sparks thrown out on each beat; a shock ring on the
-  first beat of every bar; and the cover bouncing and swaying in 3D over each
-  bar. Every frame works it out from `currentTime`, so it is lined up after a
-  seek unasked; it settles to still on pause and stops drawing off screen.
-  It sits behind the cover inside the wrap, which is its own layer
-  (`isolation`), rather than lifting the cover over the title - on an iPhone
-  in Safari the cover already reaches the title, and lifting it hid the title.
+  **It is a visualizer in place of the cover** (`viz` in app.js; named
+  "Visualizer" when tapped to). A first version kept the cover and put
+  bouncing bars round it; the owner found it dull and asked for something
+  wild, like Plexamp, without the art. Now the cover image is hidden (kept,
+  for the swipe and hold) and two canvases 180% its size draw: a nebula and
+  light rays in the cover's colours (`coverPalette`, the strongest hues of its
+  16x16 thumbnail, brightened); an orb of six layers whose edges are sums of
+  travelling waves, added together so they glow white where they overlap,
+  swelling on the beat and spiking on 2 and 4; a flashing core; rippling rings;
+  a shock ring on each bar's first beat; and, on a second canvas that fades
+  rather than clears, 240 particles in a vortex, thrown outward on every beat
+  and sprung back, drawn as streaks from their last position (dots one frame
+  apart looked like beads). Everything comes from `currentTime` each frame, so
+  it is lined up after a seek unasked; it settles to still on pause and stops
+  drawing off screen. 59fps in Chrome on the preview; draws in WebKit's
+  iPhone 13 profile. It sits behind the (hidden) cover inside the wrap, which
+  is its own layer (`isolation`), so the title always draws on top.
 
   **No reduced-motion exception for these looks, and that was the iPhone
   bug.** Reported as the spinning and moving covers doing nothing on an

@@ -108,8 +108,9 @@ they're sung.
   - a spinning disc
   - a **record**, with the cover as its label and the song, artist and album
     printed round it
-  - **moving with the music**: the cover pulses at the song's tempo, with rings
-    in its colours going out on the beat, livelier for more energetic songs.
+  - **visualizer**: the cover gives way to a glowing orb in its colours that
+    morphs and pulses with the song, with a vortex of light trails thrown out
+    on every beat, livelier for more energetic songs.
 
   Your choice is remembered on every device.
 - **Hold anywhere** to show every option as icons over the cover: info, sleep

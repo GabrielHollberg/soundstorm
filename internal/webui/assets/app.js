@@ -6930,7 +6930,7 @@ async function savePrefs(change) {
 // it), and moving with the music (pulsing at the song's tempo). Kept on the
 // account, so it stays the way somebody left it, on every device.
 const COVER_STYLES = ['square', 'spin', 'vinyl', 'pulse'];
-const COVER_STYLE_NAMES = { square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Moving with the music' };
+const COVER_STYLE_NAMES = { square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Visualizer' };
 function coverStyle() {
   const p = state.prefs || {};
   if (COVER_STYLES.includes(p.coverStyle)) return p.coverStyle;
@@ -11620,9 +11620,13 @@ function coverDeco() {
   const sheen = document.createElement('div');
   sheen.className = 'np-vinyl-sheen';
   vinyl.append(disc, sheen);
+  // Two canvases: one redrawn whole each frame (the orb), one fading slowly
+  // so the particles leave trails.
   const viz = document.createElement('canvas');
   viz.className = 'np-viz';
-  deco.append(viz, vinyl);
+  const trails = document.createElement('canvas');
+  trails.className = 'np-viz np-viz-trails';
+  deco.append(viz, trails, vinyl);
   document.querySelector('.np-cover-wrap').append(deco);
   return deco;
 }
@@ -11729,29 +11733,44 @@ function coverPalette(px) {
   return out;
 }
 
-// The visualizer: a canvas behind the cover. Everything is worked out from
-// the song's position each frame (the beat's phase, which beat of the bar),
-// so it is lined up after a seek without being told. It settles to still on
-// pause and stops drawing when not on screen.
+// The visualizer, in place of the cover: a glowing orb in the cover's colours
+// that morphs and swells with the music, light rays and shock rings, and a
+// vortex of particles thrown outward on every beat, leaving trails. It keeps
+// the song's tempo and energy (keepTime), working everything out from the
+// song's position each frame, so a seek needs no telling. It settles to still
+// on pause and stops drawing when not on screen.
+const TAU = Math.PI * 2;
+// Each layer of the orb has its own set of waves, fixed so it looks the same
+// every time: harmonic, how fast it travels, and where it starts.
+const ORB_LAYERS = Array.from({ length: 6 }, (_, l) => ({
+  spin: (l % 2 ? -1 : 1) * (0.05 + l * 0.025),
+  waves: [2, 3, 5, 7].map((k, j) => ({ k: k + (l % 3), speed: (0.4 + ((l * 3 + j * 5) % 7) * 0.13) * (j % 2 ? -1 : 1), ph: l * 1.3 + j * 2.1 })),
+}));
 const viz = {
   beat: 1.6, energy: 0.3, palette: [[255, 255, 255], [200, 220, 255], [255, 210, 230]],
-  raf: 0, level: 0, sparks: [], lastBeat: -1, lastT: 0,
+  raf: 0, level: 0, lastBeat: -1, lastT: 0, dots: [],
   start() {
     if (!this.raf) this.raf = requestAnimationFrame((t) => this.frame(t));
   },
   stop() {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    const cover = $('np-cover');
-    cover.style.scale = '';
-    cover.style.transform = '';
+  },
+  // fit sizes a canvas to how it is shown, at up to twice the pixels.
+  fit(canvas) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(canvas.clientWidth * dpr);
+    const h = Math.round(canvas.clientHeight * dpr);
+    if (w && h && (canvas.width !== w || canvas.height !== h)) { canvas.width = w; canvas.height = h; }
+    return dpr;
   },
   frame(now) {
     this.raf = 0;
     const np = $('now-playing');
     const deco = $('np-deco');
-    const canvas = deco && deco.querySelector('.np-viz');
-    if (!canvas || np.classList.contains('hidden') || !np.classList.contains('cover-pulse') || !deco.classList.contains('shown')) {
+    const back = deco && deco.querySelector('.np-viz:not(.np-viz-trails)');
+    const front = deco && deco.querySelector('.np-viz-trails');
+    if (!back || np.classList.contains('hidden') || !np.classList.contains('cover-pulse') || !deco.classList.contains('shown')) {
       this.stop();
       return;
     }
@@ -11759,16 +11778,11 @@ const viz = {
     const playing = !player.paused;
     const dt = Math.min(0.1, (now - (this.lastT || now)) / 1000);
     this.lastT = now;
-    // Up quickly on play, down gently on pause.
-    this.level += ((playing ? 1 : 0) - this.level) * Math.min(1, dt * (playing ? 6 : 1.8));
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = Math.round(canvas.clientWidth * dpr);
-    const h = Math.round(canvas.clientHeight * dpr);
-    if (!w || !h) { this.raf = requestAnimationFrame((t) => this.frame(t)); return; }
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    const g = canvas.getContext('2d');
-    g.clearRect(0, 0, w, h);
+    this.level += ((playing ? 1 : 0) - this.level) * Math.min(1, dt * (playing ? 5 : 1.5));
+    const dpr = this.fit(back);
+    this.fit(front);
+    const w = back.width, h = back.height;
+    if (!w || !h) { this.raf = requestAnimationFrame((ts) => this.frame(ts)); return; }
 
     const t = player.currentTime || 0;
     const beat = this.beat;
@@ -11776,97 +11790,156 @@ const viz = {
     const lv = this.level;
     const phase = (t % beat) / beat;
     const beatNo = Math.floor(t / beat);
-    const kick = Math.exp(-phase * 5.5) * lv;
-    const snare = (beatNo % 2 === 1 ? Math.exp(-phase * 7) : 0) * lv;
+    const kick = Math.exp(-phase * 5) * lv;
+    const snare = (beatNo % 2 === 1 ? Math.exp(-phase * 6) : 0) * lv;
+    const bar = (t / (beat * 4)) % 1;
     const downbeat = beatNo % 4 === 0;
+    const drive = 0.45 + 0.8 * e; // how hard everything moves
     const cx = w / 2, cy = h / 2;
-    const half = (canvas.clientWidth / 1.8) * dpr / 2; // the cover's half-width
+    const size = w / 1.8; // the cover's size: the canvas is 180% of it
+    const R0 = size * 0.3;
     const pal = this.palette;
     const rgba = (c, a) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
-    const drift = now / 1000;
+    // A clock that runs with the music and idles slowly without it.
+    this.clock = (this.clock || 0) + dt * (0.25 + 0.75 * lv) * (0.7 + 0.6 * e);
+    const ck = this.clock;
 
-    // A glow in the cover's colours, drifting and swelling on the beat.
+    // ---- the orb, redrawn whole
+    const g = back.getContext('2d');
+    g.clearRect(0, 0, w, h);
     g.globalCompositeOperation = 'lighter';
+    // A nebula behind it, in the cover's colours.
     for (let i = 0; i < 3; i++) {
-      const ang = drift * 0.25 + i * 2.1;
-      const x = cx + Math.cos(ang) * half * 0.35;
-      const y = cy + Math.sin(ang * 1.3) * half * 0.35;
-      const r = half * (1.15 + 0.35 * kick * (0.5 + e) + 0.08 * Math.sin(drift * 0.7 + i));
+      const ang = ck * 0.3 + i * 2.1;
+      const x = cx + Math.cos(ang) * R0 * 0.9;
+      const y = cy + Math.sin(ang * 1.2) * R0 * 0.9;
+      const r = R0 * (2.2 + 0.5 * kick * drive);
       const grad = g.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, rgba(pal[i], 0.34 * (0.35 + 0.65 * lv)));
+      grad.addColorStop(0, rgba(pal[i], 0.22 * (0.4 + 0.6 * lv)));
       grad.addColorStop(1, rgba(pal[i], 0));
       g.fillStyle = grad;
+      g.fillRect(0, 0, w, h);
+    }
+    // Light rays turning slowly, brighter on the beat.
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(ck * 0.12);
+    const rays = 18;
+    for (let i = 0; i < rays; i++) {
+      const a0 = (i / rays) * TAU;
+      const len = R0 * (2.4 + 0.8 * Math.sin(ck * 1.3 + i * 1.9) + 1.2 * kick * drive);
+      const grad = g.createLinearGradient(0, 0, Math.cos(a0) * len, Math.sin(a0) * len);
+      grad.addColorStop(0, rgba(pal[i % 3], 0.16 * (0.3 + kick)));
+      grad.addColorStop(1, rgba(pal[i % 3], 0));
+      g.fillStyle = grad;
       g.beginPath();
-      g.arc(x, y, r, 0, Math.PI * 2);
+      g.moveTo(0, 0);
+      g.arc(0, 0, len, a0 - 0.05, a0 + 0.05);
+      g.closePath();
       g.fill();
     }
-
-    // A ring of bars round the cover, bouncing like an equalizer: every bar
-    // kicks on the beat, the upper ones snap on 2 and 4, each with its own
-    // wander, all bigger for a more energetic song.
-    const bars = 72;
-    const radius = half * 0.98;
-    g.lineCap = 'round';
-    g.lineWidth = ((Math.PI * 2 * radius) / bars) * 0.5;
-    for (let i = 0; i < bars; i++) {
-      const ang = (i / bars) * Math.PI * 2 - Math.PI / 2;
-      const low = 0.5 + 0.5 * Math.cos(ang * 2);
-      const high = 1 - low;
-      const wander = 0.5 + 0.5 * Math.sin(drift * (1.6 + ((i * 7) % 11) * 0.31) + i * 1.7);
-      const amp = lv * (0.12 + 0.75 * kick * low + 0.6 * snare * high + 0.3 * wander * (0.4 + e)) * (0.55 + 0.6 * e);
-      const len = half * (0.05 + 0.42 * amp);
-      const c = pal[i % 3];
-      g.strokeStyle = rgba(c, 0.5 + 0.45 * lv);
+    g.restore();
+    // The orb: six layers, each a closed shape whose edge is a sum of waves
+    // travelling round it. Added together they glow white where they overlap.
+    // The beat swells them; the snare sharpens the edges into spikes.
+    const pts = 120;
+    ORB_LAYERS.forEach((layer, l) => {
+      const R = R0 * (0.72 + l * 0.085) * (1 + 0.22 * kick * drive);
+      const amp = 0.05 + 0.06 * e + 0.1 * kick * drive;
+      const spike = 0.07 * snare * drive;
       g.beginPath();
-      g.moveTo(cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius);
-      g.lineTo(cx + Math.cos(ang) * (radius + len), cy + Math.sin(ang) * (radius + len));
+      for (let p = 0; p <= pts; p++) {
+        const th = (p / pts) * TAU;
+        let r = 1;
+        for (const wv of layer.waves) r += (amp / layer.waves.length) * 2 * Math.sin(wv.k * th + wv.speed * ck * 2 + wv.ph);
+        r += spike * Math.sin(13 * th + ck * 6 + l);
+        const a = th + layer.spin * ck * 2;
+        const x = cx + Math.cos(a) * R * r;
+        const y = cy + Math.sin(a) * R * r;
+        if (p) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath();
+      const grad = g.createRadialGradient(cx, cy, R * 0.15, cx, cy, R * 1.25);
+      grad.addColorStop(0, rgba(pal[l % 3], 0.05));
+      grad.addColorStop(0.6, rgba(pal[l % 3], 0.2 + 0.1 * lv));
+      grad.addColorStop(1, rgba(pal[l % 3], 0.04));
+      g.fillStyle = grad;
+      g.fill();
+    });
+    // A bright core that flashes on the kick.
+    const core = g.createRadialGradient(cx, cy, 0, cx, cy, R0 * (0.9 + 0.5 * kick));
+    core.addColorStop(0, `rgba(255, 255, 255, ${0.18 + 0.4 * kick})`);
+    core.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    g.fillStyle = core;
+    g.fillRect(0, 0, w, h);
+    // Thin rings round it, rippling fast.
+    g.lineWidth = 1.4 * dpr;
+    for (let i = 0; i < 3; i++) {
+      const R = R0 * (1.35 + i * 0.16) * (1 + 0.12 * kick * drive);
+      g.strokeStyle = rgba(pal[(i + 1) % 3], 0.35 + 0.35 * lv);
+      g.beginPath();
+      for (let p = 0; p <= pts; p++) {
+        const th = (p / pts) * TAU;
+        const r = 1 + (0.015 + 0.05 * snare * drive) * Math.sin((9 + i * 3) * th - ck * (3 + i)) + 0.02 * Math.sin(4 * th + ck * 1.7 + i);
+        const x = cx + Math.cos(th) * R * r;
+        const y = cy + Math.sin(th) * R * r;
+        if (p) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath();
       g.stroke();
     }
-
     // A shock ring on the first beat of every bar.
     if (downbeat && lv > 0.05) {
-      const r = half * (1.05 + phase * 0.75);
-      g.lineWidth = 3 * dpr;
-      g.strokeStyle = rgba(pal[0], (1 - phase) * 0.55 * lv);
+      g.lineWidth = (2 + 4 * (1 - phase)) * dpr;
+      g.strokeStyle = `rgba(255, 255, 255, ${(1 - phase) * 0.5 * lv})`;
       g.beginPath();
-      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.arc(cx, cy, R0 * (1.2 + phase * 1.9), 0, TAU);
       g.stroke();
     }
-
-    // Sparks thrown out on each beat.
-    if (playing && beatNo !== this.lastBeat) {
-      this.lastBeat = beatNo;
-      const n = Math.round(6 + e * 12);
-      for (let k = 0; k < n; k++) {
-        const ang = Math.random() * Math.PI * 2;
-        const speed = half * (0.5 + Math.random() * 0.9) * (0.7 + e * 0.6);
-        this.sparks.push({ x: cx + Math.cos(ang) * half * 1.02, y: cy + Math.sin(ang) * half * 1.02,
-          vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 1, size: (1.2 + Math.random() * 2.2) * dpr,
-          c: pal[k % 3] });
-      }
-      if (this.sparks.length > 160) this.sparks.splice(0, this.sparks.length - 160);
-    }
-    this.sparks = this.sparks.filter((p) => {
-      p.life -= dt * 1.1;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.life <= 0) return false;
-      g.fillStyle = rgba(p.c, p.life * 0.9);
-      g.beginPath();
-      g.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      g.fill();
-      return true;
-    });
     g.globalCompositeOperation = 'source-over';
 
-    // The cover bounces on the beat and sways over each bar.
-    const cover = $('np-cover');
-    const sway = Math.sin((t / (beat * 4)) * Math.PI * 2) * lv;
-    cover.style.scale = (1 + (0.012 + 0.04 * e) * kick).toFixed(4);
-    cover.style.transform = `perspective(900px) rotateY(${(sway * 5).toFixed(2)}deg) rotateX(${(Math.cos((t / (beat * 4)) * Math.PI * 2) * 2.5 * lv).toFixed(2)}deg)`;
+    // ---- the vortex, on the canvas that fades rather than clears
+    const f = front.getContext('2d');
+    f.globalCompositeOperation = 'destination-out';
+    f.fillStyle = `rgba(0, 0, 0, ${playing ? 0.2 : 0.35})`;
+    f.fillRect(0, 0, w, h);
+    f.globalCompositeOperation = 'lighter';
+    if (!this.dots.length) {
+      for (let i = 0; i < 240; i++) {
+        const home = 1.25 + Math.random() * 1.3;
+        this.dots.push({ a: Math.random() * TAU, r: home, home, v: 0, spin: 0.25 + Math.random() * 0.6,
+          size: 0.8 + Math.random() * 1.8, c: i % 3 });
+      }
+    }
+    // Every beat throws them outward; a spring brings them back.
+    if (playing && beatNo !== this.lastBeat) {
+      this.lastBeat = beatNo;
+      const push = (0.5 + 0.9 * e) * (downbeat ? 1.6 : 1);
+      for (const d of this.dots) d.v += push * (0.4 + Math.random() * 0.8);
+    }
+    for (const d of this.dots) {
+      d.v += ((d.home - d.r) * 9 - d.v * 3.2) * dt;
+      d.r += d.v * dt;
+      d.a += (d.spin / d.r) * dt * (0.6 + 1.4 * lv) * (1 + kick);
+      const rr = R0 * d.r;
+      const x = cx + Math.cos(d.a) * rr;
+      const y = cy + Math.sin(d.a) * rr * 0.92;
+      // A streak from where it was, so the trails are smooth lines rather
+      // than a string of dots one frame apart.
+      f.strokeStyle = rgba(pal[d.c], 0.55 + 0.4 * lv);
+      f.lineWidth = d.size * dpr * (1 + kick * 0.6);
+      f.lineCap = 'round';
+      f.beginPath();
+      f.moveTo(d.x === undefined ? x : d.x, d.y === undefined ? y : d.y);
+      f.lineTo(x, y);
+      f.stroke();
+      d.x = x;
+      d.y = y;
+    }
+    f.globalCompositeOperation = 'source-over';
 
     // On until paused and settled.
-    if (playing || this.level > 0.01 || this.sparks.length) this.raf = requestAnimationFrame((ts) => this.frame(ts));
+    if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
   },
 };
 $('audio-player').addEventListener('play', () => {
