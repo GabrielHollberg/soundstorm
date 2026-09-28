@@ -921,6 +921,15 @@ a real library), Immich's own newest-first, and for the folders SoundStorm
 reads itself the file's modification time. Typing on Home searches
 everything.
 
+**Home opens with one-tap music**, above everything else, for an account
+with music (`homeQuickPlay`), asked for as "shuffle all music, right when you
+get on": **Shuffle all** across the top - a radio station (`mode:
+"shuffle"`), every song equally likely bar what was just played, endless and
+never repeating until the library has been through, where the Shuffle
+everything mix stops at a hundred - then Your favorites (shuffled, only with
+some), Library radio and Newly added. On a phone the three sit in one row,
+the icon over the name.
+
 **The pills can be put in any order**: hold one (450ms, as a card) and slide
 it; the others move aside as it passes their middles (a FLIP animation), and
 the row scrolls near its ends. Kept on the account, in the person's collections file (`prefs`,

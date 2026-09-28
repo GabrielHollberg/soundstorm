@@ -288,6 +288,14 @@ func buildStation(rng *rand.Rand, p radioParams, pool []media.Item, l radioListe
 	}
 
 	switch p.Mode {
+	case "shuffle":
+		// Home's Shuffle all: every song as likely as every other (bar what
+		// was just played), endless like any station, so it goes through
+		// the whole library without repeating rather than a mix's hundred.
+		return weighted("Shuffle all", "Every song, in no particular order", func(media.Item) float64 {
+			return 1
+		})
+
 	case "library":
 		return weighted("Library radio", "Everything, leaning toward what you love", func(it media.Item) float64 {
 			return 1 + 2*l.familiarity(it)

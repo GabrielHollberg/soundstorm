@@ -3367,3 +3367,28 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 .np-chapter-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .np-chapter.on { background: rgba(90, 150, 255, 0.16); color: var(--accent); }
 @media (hover: hover) { .np-chapter:hover { background: rgba(255, 255, 255, 0.08); } }
+
+/* Home's one-tap music: Shuffle all first and widest, then the rest, two to
+   a row on a phone. */
+.home-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 4px 20px 22px; }
+.home-quick-btn {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 14px 16px; border: 0; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07); color: inherit;
+  font: inherit; font-size: 15px; font-weight: 600; text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-quick-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-quick-btn .icon { width: 22px; height: 22px; flex: none; }
+.home-quick-btn .icon-heart { color: #ff3b5c; }
+.home-quick-btn.primary { background: var(--accent); color: #fff; }
+.home-quick-btn:active { transform: scale(0.97); }
+.home-quick-btn:disabled { opacity: 0.6; }
+@media (hover: hover) { .home-quick-btn:not(.primary):hover { background: rgba(255, 255, 255, 0.11); } }
+@media (max-width: 760px) {
+  /* Shuffle all across the top; the rest in one row under it, the icon
+     over the name so three fit. */
+  .home-quick { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .home-quick-btn.primary { grid-column: 1 / -1; justify-content: center; padding: 16px; font-size: 16px; }
+  .home-quick-btn:not(.primary) { flex-direction: column; justify-content: center; gap: 6px; padding: 12px 6px; font-size: 13px; text-align: center; }
+}

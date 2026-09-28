@@ -40,6 +40,24 @@ func TestAStationNeverRepeatsAnArtistWithinAFewSongs(t *testing.T) {
 	}
 }
 
+func TestShuffleAllDrawsFromTheWholeLibrary(t *testing.T) {
+	pool := radioPool()
+	st, err := buildStation(seeded(), radioParams{Mode: "shuffle", Size: len(pool)}, pool, radioListening{now: time.Now()}, nil, heard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Title != "Shuffle all" || len(st.Songs) == 0 {
+		t.Fatalf("got %q with %d songs", st.Title, len(st.Songs))
+	}
+	seen := map[string]bool{}
+	for _, it := range st.Songs {
+		if seen[it.ID] {
+			t.Fatalf("%s twice in one batch", it.ID)
+		}
+		seen[it.ID] = true
+	}
+}
+
 func TestDeepCutsAreUnplayedSongsByArtistsYouPlay(t *testing.T) {
 	pool := radioPool()
 	l := radioListening{plays: map[string]collections.Play{}, favs: map[string]bool{}, now: time.Now().Add(24 * time.Hour)}

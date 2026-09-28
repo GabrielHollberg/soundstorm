@@ -7482,6 +7482,11 @@ async function renderHome(seq) {
   view.replaceChildren();
   const all = [];
 
+  // One tap to music, right as the app opens: shuffle everything, and the
+  // other ways to just start something.
+  const quick = homeQuickPlay(favs);
+  if (quick) view.append(quick);
+
   // In three runs, each together: what you were just playing (under the
   // Continue row), what is new on every shelf, then your favorites. They
   // used to interleave - New music, favorites, Recently played, then the
@@ -7533,6 +7538,40 @@ async function renderHome(seq) {
       : 'Nothing new lately.';
     view.append(empty);
   }
+}
+
+// homeQuickPlay: big buttons at the top of Home that start music with one
+// tap, no browsing - Shuffle all (every song, endless, never repeating until
+// the library has been through), your favorites shuffled, Library radio
+// (everything, leaning to what you love), and what is newest. Only where the
+// account has music.
+function homeQuickPlay(favs) {
+  if (!shelfAvailable('music')) return null;
+  const hasFavs = ((favs && favs.ok && favs.body && favs.body.items) || []).some((it) => it.kind === 'music');
+  const actions = [
+    { icon: 'shuffle', label: 'Shuffle all', run: () => startRadio({ mode: 'shuffle' }) },
+    hasFavs && { icon: 'heart', label: 'Your favorites', run: () => playMix('favorites') },
+    { icon: 'radio', label: 'Library radio', run: () => startRadio({ mode: 'library' }) },
+    { icon: 'sparkle', label: 'Newly added', run: () => playMix('recently-added') },
+  ].filter(Boolean);
+  const row = document.createElement('div');
+  row.className = 'home-quick';
+  row.append(...actions.map((a, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `home-quick-btn${i === 0 ? ' primary' : ''}`;
+    b.append(icon(a.icon, a.icon === 'heart'));
+    const label = document.createElement('span');
+    label.textContent = a.label;
+    b.append(label);
+    b.addEventListener('click', async () => {
+      if (b.disabled) return;
+      b.disabled = true;
+      try { await a.run(); } finally { b.disabled = false; }
+    });
+    return b;
+  }));
+  return row;
 }
 
 function homeRow(title, cards, seeAll) {
