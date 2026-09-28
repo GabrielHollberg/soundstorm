@@ -3067,6 +3067,20 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
 .np-hold-layer.hidden { display: none; }
 @keyframes np-hold-in { from { opacity: 0; transform: scale(0.97); } }
 .np-hold-icons { position: absolute; inset: 0; }
+/* The screen's own buttons while holding, each at its usual place. */
+.np-hold-extra { position: fixed; inset: 0; z-index: 73; pointer-events: none; }
+.np-hold-extra.hidden { display: none; }
+.np-hold-extra .np-hold-icon { animation: np-hold-in 0.16s ease-out; }
+/* On a touch screen, nothing but the music until a hold: the header's
+   buttons and the play controls are invisible (and take no taps), keeping
+   their places so the hold can show them there. The speed menu, inside its
+   hidden button's wrapper, still shows when opened. */
+@media (pointer: coarse) {
+  .now-playing .np-bar .np-icon,
+  .now-playing .np-bar .np-speed,
+  .now-playing .np-controls .np-icon { visibility: hidden; }
+  .now-playing #np-speed-menu { visibility: visible; }
+}
 .np-hold-icon {
   position: absolute;
   width: 54px; height: 54px;

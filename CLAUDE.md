@@ -511,7 +511,15 @@ judged on in its first minute:
   it is on; repeat reads Repeat all, Repeat this song, Turn repeat off, in
   its cycle); an option that is on
   (shuffle, repeat, a sleep timer, downloaded) is the accent's colour, so it
-  never looks like the finger's glow; a favorite's heart is red. Nothing else answers the finger while they
+  never looks like the finger's glow; a favorite's heart is red. **On a touch
+  screen the rest of the buttons are invisible too** - close, Looks, stop,
+  play (and previous and next, and an audiobook's speed, wherever they show)
+  - at the owner's asking, so nothing sits on the screen but the music and
+  the timeline. They keep their places (`visibility: hidden`, so they take
+  no taps either) and appear there during a hold (`#np-hold-extra`,
+  `holdButtonList`), chosen like the nine; letting go on one clicks the real
+  button, past the rule that swallows the lift's click. A mouse keeps them
+  all showing. Nothing else answers the finger while they
   show - the swipe stands down. Right-click still opens the full menu, and
   the mini-player's hold opens the menu (below). Before the icons, a hold
   opened that menu, which is what the rest of this entry describes:

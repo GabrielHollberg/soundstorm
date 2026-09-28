@@ -11153,6 +11153,20 @@ function holdIconList(item) {
   return list;
 }
 
+// holdButtonList: the Now Playing buttons that a touch screen keeps
+// invisible until a hold, with what letting go on each will do.
+function holdButtonList() {
+  const paused = $('audio-player').paused;
+  return [
+    { id: 'np-close', label: 'Close Now Playing' },
+    { id: 'np-speed', label: 'Playback speed' },
+    { id: 'np-looks-btn', label: 'Cover looks' },
+    { id: 'np-exit', label: 'Stop and close' },
+    { id: 'np-prev', label: 'Previous' },
+    { id: 'np-play', label: paused ? 'Play' : 'Pause' },
+    { id: 'np-next', label: 'Next' },
+  ];
+}
 function showHoldIcons(pointerId, x0, y0) {
   const item = audio.item;
   if (!item) return;
@@ -11188,8 +11202,36 @@ function showHoldIcons(pointerId, x0, y0) {
     b.soundstormHold = it;
     return b;
   }));
+  // On a touch screen the screen's own buttons - close, looks, stop, play,
+  // and speed for an audiobook - are invisible (asked for so nothing sits on
+  // the screen but the music), and appear here while the finger is down,
+  // each where it always is, chosen the same way as the rest.
+  const extra = $('np-hold-extra');
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  extra.replaceChildren(...(coarse ? holdButtonList() : []).flatMap((it) => {
+    const el = $(it.id);
+    const b = el && el.getBoundingClientRect();
+    if (!b || !b.width || el.closest('.hidden')) return [];
+    const s = document.createElement('span');
+    s.className = 'np-hold-icon np-hold-button';
+    const svg = el.querySelector('svg');
+    if (svg) s.append(svg.cloneNode(true));
+    else s.textContent = el.textContent;
+    s.style.left = `${b.left + b.width / 2}px`;
+    s.style.top = `${b.top + b.height / 2}px`;
+    // Its own click, so the button behaves exactly as tapped - past the rule
+    // that swallows the click the lift makes.
+    s.soundstormHold = { label: it.label, run: () => {
+      const until = state.swallowClickUntil;
+      state.swallowClickUntil = 0;
+      el.click();
+      state.swallowClickUntil = until;
+    } };
+    return [s];
+  }));
   caption.textContent = '';
   show(layer, true);
+  show(extra, extra.children.length > 0);
   // The caption names the icon under the finger where the title was.
   $('now-playing').classList.add('hold-icons');
   const t = $('np-title').getBoundingClientRect();
@@ -11207,7 +11249,7 @@ function showHoldIcons(pointerId, x0, y0) {
   };
   // Found by where the finger is over each icon's own circle, with a little
   // room around it, rather than by what is on top there.
-  const iconAt = (x, y) => [...box.children].find((el) => {
+  const iconAt = (x, y) => [...box.children, ...extra.children].find((el) => {
     const b = el.getBoundingClientRect();
     const cx = b.left + b.width / 2;
     const cy = b.top + b.height / 2;
@@ -11227,6 +11269,7 @@ function showHoldIcons(pointerId, x0, y0) {
     const chosen = event.type === 'pointerup' && moved && lit ? lit.soundstormHold : null;
     light(null);
     show(layer, false);
+    show(extra, false);
     $('now-playing').classList.remove('hold-icons');
     // The lift is not a tap on whatever is under it.
     state.swallowClickUntil = performance.now() + 500;
