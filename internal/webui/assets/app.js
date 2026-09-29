@@ -5091,14 +5091,36 @@ function neighborTrack(by) {
     const item = q.items[at];
     return item ? { item } : null;
   }
-  // An audiobook has nothing to swipe to: its chapters are in its table of
-  // contents, and a swipe that jumped a whole chapter was reported as weird.
+  // An audiobook swipes left to its next chapter (the owner's asking, once a
+  // book had a chapter list to go by) - the same cover slides in. Nothing
+  // the other way: a swipe right springs back, since going back a chapter by
+  // accident loses the place.
+  if (by > 0 && nextChapterStart() !== null) return { item: audio.item };
   return null;
+}
+
+// Where the next chapter starts on the book's timeline, or null in the last
+// (or a book without chapters).
+function nextChapterStart() {
+  const list = audio.chapters || [];
+  if (!audio.item || audio.item.kind === 'music' || list.length < 2) return null;
+  const i = chapterAt(elapsed());
+  return i + 1 < list.length ? list[i + 1].startSeconds : null;
 }
 
 // A swipe changes song outright: back means the song before, not the start
 // of this one, since the previous cover is what slid in.
 function stepTrack(by) {
+  if (audio.item && audio.item.kind !== 'music') {
+    const next = by > 0 ? nextChapterStart() : null;
+    if (next !== null) {
+      goToBook(next);
+      const list = audio.chapters;
+      const title = list[chapterAt(next + 0.5)] && list[chapterAt(next + 0.5)].title;
+      if (title) showToast(title, '', null, 1600);
+    }
+    return;
+  }
   if (by > 0) {
     const q = audio.queue;
     if (q && q.index + 1 >= q.items.length && audio.repeat !== 'off') playQueueAt(0);
@@ -5410,8 +5432,10 @@ function renderDockButtons() {
 // computer the seek bar and the times.
 function renderDockProgress() {
   const player = $('audio-player');
-  const length = Number.isFinite(player.duration) ? player.duration : audio.duration || 0;
-  const at = player.currentTime || 0;
+  // An audiobook's is the chapter's, as in Now Playing.
+  const span = bookSpan();
+  const length = span ? span.end - span.start : Number.isFinite(player.duration) ? player.duration : audio.duration || 0;
+  const at = span ? Math.max(0, span.now - span.start) : player.currentTime || 0;
   $('dock-progress-fill').style.width = length ? `${Math.min(100, (at / length) * 100)}%` : '0';
   if (!state.dockSeeking) {
     $('dock-seek').value = length ? String(Math.round((at / length) * 1000)) : '0';
@@ -5428,13 +5452,18 @@ for (const event of ['play', 'loadedmetadata']) {
 $('dock-seek').addEventListener('input', () => {
   state.dockSeeking = true;
   const player = $('audio-player');
-  if (Number.isFinite(player.duration)) {
+  const span = bookSpan();
+  if (span) {
+    $('dock-time').textContent = formatDuration((Number($('dock-seek').value) / 1000) * (span.end - span.start)) || '0:00';
+  } else if (Number.isFinite(player.duration)) {
     $('dock-time').textContent = formatDuration((Number($('dock-seek').value) / 1000) * player.duration) || '0:00';
   }
 });
 $('dock-seek').addEventListener('change', () => {
   const player = $('audio-player');
-  if (Number.isFinite(player.duration)) player.currentTime = (Number($('dock-seek').value) / 1000) * player.duration;
+  const span = bookSpan();
+  if (span) goToBook(span.start + Math.min(0.999, Number($('dock-seek').value) / 1000) * (span.end - span.start));
+  else if (Number.isFinite(player.duration)) player.currentTime = (Number($('dock-seek').value) / 1000) * player.duration;
   state.dockSeeking = false;
 });
 
