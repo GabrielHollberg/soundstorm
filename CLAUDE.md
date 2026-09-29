@@ -1518,7 +1518,9 @@ Drag handles only show in Custom order. The **Playlists page** is cards,
 A to Z, like the mixes: a collage of up to four covers, name and count,
 "New playlist" first; tapping opens one, a shuffle button on the cover
 plays it shuffled (as a mix card has its play button), a hold offers Play,
-Shuffle and Delete. It was a plain list of names with Play buttons.
+Shuffle and Delete. It was a plain list of names with Play buttons. New playlist
+and Import are two small buttons above the cards: they were cards of their
+own, the size of a playlist, at the start of the grid, and got in the way.
 
 **Playlists come in from other players as M3U** - asked for as bringing
 somebody's Plexamp playlists across. Plexamp keeps them on the Plex server,

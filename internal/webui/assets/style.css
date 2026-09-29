@@ -3435,3 +3435,14 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 .np-book-text { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .np-book-text span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-book-text span:last-child { flex: none; font-variant-numeric: tabular-nums; }
+
+/* New playlist and Import: two small buttons above the playlists. */
+.playlist-actions { display: flex; gap: 8px; margin: 2px 20px 12px; }
+.playlist-action {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px 7px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: none;
+  color: inherit; font: inherit; font-size: 14px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.playlist-action .icon { width: 18px; height: 18px; }
+@media (hover: hover) { .playlist-action:hover { background: rgba(255, 255, 255, 0.07); } }

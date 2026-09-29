@@ -3611,8 +3611,9 @@ function renderSearchHint() {
 // The Playlists page: a card for each, A to Z, like every other shelf - a
 // collage of its covers, its name and how many songs. Tap to open it; the
 // shuffle button on its cover plays it shuffled straight away; a hold offers
-// play, shuffle and delete. "New playlist" comes first, then "Import
-// playlist", which takes M3U files from another player.
+// play, shuffle and delete. New and Import are two small buttons above the
+// cards - they were cards of their own at the start of the grid, the size of
+// a playlist, and got in the way (the owner's asking).
 async function showPlaylists(report) {
   const view = $('playlists-view');
   const { ok, body } = await api('/api/playlists');
@@ -3640,35 +3641,25 @@ async function showPlaylists(report) {
     if (made.ok && made.body && made.body.id) showPlaylist(made.body.id);
     else showToast((made.body && made.body.error) || 'Could not make the playlist.');
   });
-  view.append(form);
+  const actions = document.createElement('div');
+  actions.className = 'playlist-actions';
+  const make = document.createElement('button');
+  make.type = 'button';
+  make.className = 'playlist-action';
+  make.append(icon('plus'));
+  const makeLabel = document.createElement('span');
+  makeLabel.textContent = 'New playlist';
+  make.append(makeLabel);
+  make.addEventListener('click', () => {
+    show(form, form.classList.contains('hidden'));
+    if (!form.classList.contains('hidden')) input.focus();
+  });
+  actions.append(make, importPlaylistButton());
+  view.append(actions, form);
   if (report) view.append(report);
 
   const grid = document.createElement('div');
   grid.className = 'grid browse-grid mix-grid playlist-grid';
-  if (!words.length) {
-    const holder = document.createElement('div');
-    holder.className = 'item-holder';
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'item mix-card playlist-new';
-    const art = document.createElement('div');
-    art.className = 'art-wrap mix-cover playlist-new-art';
-    art.append(icon('plus'));
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    const t = document.createElement('span');
-    t.className = 'title';
-    t.textContent = 'New playlist';
-    meta.append(t);
-    card.append(art, meta);
-    card.addEventListener('click', () => {
-      show(form, true);
-      input.focus();
-    });
-    holder.append(card);
-    grid.append(holder);
-    grid.append(importPlaylistCard());
-  }
   for (const list of lists) grid.append(playlistCard(list));
   view.append(grid);
   if (!lists.length) {
@@ -11686,25 +11677,17 @@ function showHoldIcons(pointerId, x0, y0) {
 // anything that saves M3U. The server finds each song on the music shelf
 // (by where its file sat, then by artist, title and length) and says which it
 // could not; nothing is guessed. Each file becomes one playlist, in its order.
-function importPlaylistCard() {
-  const holder = document.createElement('div');
-  holder.className = 'item-holder';
+function importPlaylistButton() {
+  const holder = document.createElement('span');
+  holder.className = 'playlist-import-holder';
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = 'item mix-card playlist-new playlist-import';
-  const art = document.createElement('div');
-  art.className = 'art-wrap mix-cover playlist-new-art';
-  art.append(icon('upload'));
-  const meta = document.createElement('div');
-  meta.className = 'meta';
+  card.className = 'playlist-action';
+  card.append(icon('upload'));
   const t = document.createElement('span');
-  t.className = 'title';
-  t.textContent = 'Import playlist';
-  const sub = document.createElement('span');
-  sub.className = 'sub';
-  sub.textContent = 'From Plex or a file';
-  meta.append(t, sub);
-  card.append(art, meta);
+  t.textContent = 'Import';
+  card.append(t);
+  card.title = 'Import playlists from Plex or a file';
   const file = document.createElement('input');
   file.type = 'file';
   file.accept = '.m3u,.m3u8,audio/x-mpegurl,audio/mpegurl,application/vnd.apple.mpegurl';
