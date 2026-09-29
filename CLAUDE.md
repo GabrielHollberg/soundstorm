@@ -1152,6 +1152,23 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   buffered ahead (`playbackSettled`), never while it is still starting.
   Checked in Chrome throttled to ~40 kbps: the original was asked for at 1.8s,
   the 128 kbps copy at 7.8s, and no analysis download began meanwhile.
+- **And the fallback alone was not enough: the pipe was full.** The same
+  report showed the 128 kbps copy's first byte arriving 67 seconds after
+  play, though the server converts a whole song in about 4s and was idle,
+  and then the rest arriving in seconds. The server handed every song to the
+  network in full the moment it was asked; over the slow link those
+  megabytes queue in the connection (HTTP/2 lets a browser take several MB
+  per stream before it pushes back; the router and Docker Desktop's port
+  forwarding buffer more), and every request after them - the fallback, the
+  next song after a skip, the covers - waits behind bytes nobody plays. So
+  audio to a device that reached the server by an away-from-home name
+  (`*.net.soundstorm.dev`, `*.ts.net`) is paced (`internal/stream/pace.go`):
+  the first 1MB at once, enough to start any song, then 2.5 times its
+  bitrate (the ?kbps= asked for, else 320 kbps compressed or CD rate for
+  lossless). At home nothing is paced, nor are films (Jellyfin's HLS pieces
+  are asked for one at a time). The Android test build's own timing probe
+  had been fetching a second whole copy of each converted song, which made
+  it worse, and came out.
 - **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
   handler instead of advancing - a chapter, for an audiobook. **It never stopped with the screen off**, which is when a sleep timer
   is used: the eight-second fade was stepped by animation frames, a phone

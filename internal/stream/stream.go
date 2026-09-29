@@ -256,8 +256,16 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 	if method == http.MethodHead {
 		return
 	}
-	if _, err := io.Copy(w, resp.Body); err != nil && r.Context().Err() == nil {
-		p.log.Debug("stream copy ended early", "what", what, "err", err)
+	var copyErr error
+	if rate := paceRate(r, resp.Header.Get("Content-Type")); rate > 0 && awayFromHome(r) {
+		// Audio to a device away from home: paced, so a slow link never has
+		// megabytes queued ahead of the next request (pace.go).
+		_, copyErr = pacedCopy(r.Context(), w, resp.Body, paceBurst, rate)
+	} else {
+		_, copyErr = io.Copy(w, resp.Body)
+	}
+	if copyErr != nil && r.Context().Err() == nil {
+		p.log.Debug("stream copy ended early", "what", what, "err", copyErr)
 	}
 }
 
