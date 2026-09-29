@@ -12919,23 +12919,31 @@ const playOrb = {
       }
       this.env = Math.max(this.env * Math.exp(-dt * 7), kick);
       this.swell *= Math.exp(-dt * 5.5);
-      this.clock += dt * (0.5 + 0.9 * loud);
+      // Loudness eased over a fraction of a second, so it breathes with the
+      // song rather than flickering frame to frame.
+      this.loud = this.loud === undefined ? loud : this.loud + (loud - this.loud) * Math.min(1, dt * 4);
+      this.clock += dt * (0.3 + 1.4 * this.loud);
     }
+    const lvl = this.loud === undefined ? loud : this.loud;
     const g = canvas.getContext('2d');
     g.clearRect(0, 0, cw, ch);
     g.globalCompositeOperation = 'lighter';
-    g.globalAlpha = playing ? 1 : 0.55;
+    // Dimmer than it first was, so it sits under the main animation rather
+    // than competing with it (the owner's asking): brighter in a loud part,
+    // quiet in a soft one, and dimmer still when paused.
+    g.globalAlpha = playing ? 0.35 + 0.4 * lvl : 0.3;
     const cx = cw / 2;
     const cy = ch / 2;
     // The button is the middle 60% of the canvas; the glow spills round it.
-    const R = cw * 0.3 * (1 + 0.16 * this.swell + 0.06 * this.env);
+    // Its size follows the loudness as much as the beat.
+    const R = cw * 0.3 * (0.78 + 0.3 * lvl + 0.14 * this.swell + 0.06 * this.env);
     const pal = viz.palette;
     const ck = this.clock;
     const pts = 72;
     const TAU2 = Math.PI * 2;
     for (let l = 0; l < 4; l++) {
       const layer = ORB_LAYERS[l];
-      const amp = 0.06 + 0.08 * loud + 0.14 * this.env;
+      const amp = 0.03 + 0.14 * lvl + 0.12 * this.env;
       g.beginPath();
       for (let p = 0; p <= pts; p++) {
         const th = (p / pts) * TAU2;
@@ -12948,20 +12956,20 @@ const playOrb = {
       }
       g.closePath();
       const grad = g.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * 1.25);
-      grad.addColorStop(0, vizColor(pal[l % 3], 0.16));
-      grad.addColorStop(0.65, vizColor(pal[l % 3], 0.42 + 0.2 * this.swell));
-      grad.addColorStop(1, vizColor(pal[l % 3], 0.06));
+      grad.addColorStop(0, vizColor(pal[l % 3], 0.1));
+      grad.addColorStop(0.65, vizColor(pal[l % 3], 0.26 + 0.14 * this.swell));
+      grad.addColorStop(1, vizColor(pal[l % 3], 0.04));
       g.fillStyle = grad;
       g.fill();
     }
     // A bright heart that flashes with the beat, and a soft halo round it all.
     const core = g.createRadialGradient(cx, cy, 0, cx, cy, R * (0.75 + 0.35 * this.swell));
-    core.addColorStop(0, vizColor(VIZ_WHITE, 0.35 + 0.45 * this.swell));
+    core.addColorStop(0, vizColor(VIZ_WHITE, 0.12 + 0.2 * lvl + 0.22 * this.swell));
     core.addColorStop(1, vizColor(VIZ_WHITE, 0));
     g.fillStyle = core;
     g.fillRect(0, 0, cw, ch);
     const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, cw / 2);
-    halo.addColorStop(0, vizColor(pal[0], 0.25 + 0.3 * this.swell));
+    halo.addColorStop(0, vizColor(pal[0], 0.1 + 0.2 * lvl + 0.15 * this.swell));
     halo.addColorStop(1, vizColor(pal[0], 0));
     g.fillStyle = halo;
     g.fillRect(0, 0, cw, ch);

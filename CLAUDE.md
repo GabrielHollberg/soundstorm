@@ -592,7 +592,12 @@ judged on in its first minute:
   loudness sets how much it moves. Paused, it stops where it is and dims;
   the movement is the playing. Its own small loop, so it moves on Lyrics and
   the covers too - which is why the song is now heard for any look, not only
-  a visualizer. An audiobook keeps its plain white play button. Then the "Now Playing" words went and the timeline too, shown only
+  a visualizer. An audiobook keeps its plain white play button. Then made
+  quieter and more tied to loudness, asked for as less distracting from the
+  main animation: the loudness, eased over a fraction of a second so it
+  breathes rather than flickers, sets its size, brightness (overall alpha
+  0.35 to 0.75), how wavy its edges are and how fast it turns; the white
+  heart and halo are a third of what they were. Then the "Now Playing" words went and the timeline too, shown only
   while holding: sliding onto it (a band 36px either side) moves the
   position under the finger, the caption saying "Play from 2:09", and
   letting go there seeks. The sleep timer's countdown still shows. Nothing else answers the finger while they
