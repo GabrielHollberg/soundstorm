@@ -604,8 +604,9 @@ judged on in its first minute:
   and drifting out on the beat (the brightest with a small cross of light),
   and a small bright heart. **The full-screen animation keeps clear of
   it** (`viz.keepClearOfPlay`): after each frame a circle round the orb is
-  cut out of both stage canvases, solid to 0.8 of the button's width and
-  fading out by 1.45, so the rain, stars or waves never cross it. There is
+  cut out of both stage canvases, solid to 0.55 of the button's width and
+  fading out by 2.3 on an eased curve (a first, shorter fade read as a hole
+  cut in the animation), so the rain, stars or waves never cross it. There is
   no play mark inside the orb; it was tried and taken out again. Then the "Now Playing" words went and the timeline too, shown only
   while holding: sliding onto it (a band 36px either side) moves the
   position under the finger, the caption saying "Play from 2:09", and

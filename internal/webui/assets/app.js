@@ -12500,11 +12500,16 @@ const viz = {
     const k = back.width / c.width;
     const x = (b.left + b.width / 2 - c.left) * k;
     const y = (b.top + b.height / 2 - c.top) * k;
-    const r0 = b.width * 0.8 * k;
-    const r1 = b.width * 1.45 * k;
+    // Clear right round the orb, then a long, eased fade back to the full
+    // animation - a short one read as a hole cut in it.
+    const r0 = b.width * 0.55 * k;
+    const r1 = b.width * 2.3 * k;
     for (const ctx of [back.getContext('2d'), front.getContext('2d')]) {
       const hole = ctx.createRadialGradient(x, y, r0, x, y, r1);
       hole.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      hole.addColorStop(0.25, 'rgba(0, 0, 0, 0.88)');
+      hole.addColorStop(0.5, 'rgba(0, 0, 0, 0.55)');
+      hole.addColorStop(0.75, 'rgba(0, 0, 0, 0.2)');
       hole.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.save();
       ctx.globalCompositeOperation = 'destination-out';
