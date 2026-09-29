@@ -1196,6 +1196,33 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   **Always original** in Playback on this device is a promise: no probe,
   no fallback. **Original, lower on a slow connection** (`smart`) is the
   default.
+- **And the real cause: the picture inside the song.** Even so, a song took
+  15-40 seconds to start away from home. The phone's own report showed 39s
+  from tap to sound, with 75 seconds of music downloaded before the first
+  note. Measured in Chrome at 0.6 Mbps on a real iTunes M4A:
+  - as it is: 34s;
+  - the same song with the tags and artwork taken out of its header, the
+    audio byte for byte the same: 2.5s;
+  - a plain generated song: 1.7s.
+
+  The browser's media engine treats an embedded picture as a second stream
+  and reads about 2.3MB on before playing. An MP3 with a large picture took
+  75s; FLAC was not affected. Caching made no difference either way, and at
+  home those megabytes take a fraction of a second, which is why it never
+  showed. The files are left exactly as they are, since the pictures are
+  most songs' only cover and other players read them. Instead an original
+  stream is sent **slim** (`internal/stream/slim.go`): a header built in
+  memory, then the original's audio fetched from Navidrome by byte range.
+  For an M4A the header is its `moov` without `udta`/`meta`, the padding
+  after it dropped, and every stco/co64 offset shifted to match. For an MP3
+  it starts at the first frame, the ID3 tags skipped. Any range of the slim
+  file maps onto the original, so seeking works, and a layout is kept per
+  song for an hour. Only when `moov` comes before the audio and the saving
+  is over 16KB. Fragmented files, converted streams and anything that is
+  not audio are sent as they are. On the real song all 397 chunk offsets
+  point at the same bytes, 525KB smaller. Through the preview at 0.6 Mbps
+  the generated M4A and MP3 started in 1.1s (were 28s and 75s), their full
+  length intact, and a jump to 2:30 played in 1.7s.
 - **Loading shows.** A ring turns round the play button, in Now Playing (round
   the orb) and on the mini-player, while the song waits on the network. It
   appears on `waiting`, or on `play` before there is data. It clears on

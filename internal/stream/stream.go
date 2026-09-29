@@ -102,9 +102,10 @@ func setContentHeaders(w http.ResponseWriter, target source.Target) {
 }
 
 type Proxy struct {
-	reg *source.Registry
-	log *slog.Logger
-	hc  *http.Client
+	reg  *source.Registry
+	log  *slog.Logger
+	hc   *http.Client
+	slim slimCache
 }
 
 // New builds a Proxy.
@@ -144,7 +145,13 @@ func (p *Proxy) ServeMedia(w http.ResponseWriter, r *http.Request, sourceID, ite
 		http.Error(w, "could not build stream url", http.StatusBadGateway)
 		return
 	}
-	p.pipe(w, r, target, fmt.Sprintf("stream %s/%s", sourceID, itemID))
+	what := fmt.Sprintf("stream %s/%s", sourceID, itemID)
+	// A song is sent without the picture inside it where it can be (slim.go):
+	// that picture is what kept a phone on a slow link waiting half a minute.
+	if slimmable(r, target) && !RefusedDestination(r) && p.serveSlim(w, r, target, sourceID+"/"+itemID, what) {
+		return
+	}
+	p.pipe(w, r, target, what)
 }
 
 // ServeArt streams an item's artwork.
