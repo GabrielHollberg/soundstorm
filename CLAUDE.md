@@ -1111,7 +1111,14 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   Range support: checked, a request from byte 100,000 answered 206. Downloads
   use `streamPath`, never `playPath`, so they keep the original.
 - **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
-  handler instead of advancing - a chapter, for an audiobook.
+  handler instead of advancing - a chapter, for an audiobook. **It never stopped with the screen off**, which is when a sleep timer
+  is used: the eight-second fade was stepped by animation frames, a phone
+  with its screen off draws none, and the fade never got past its first
+  step - reported as the timer not working. It is stepped by a timer now (a
+  page playing sound keeps its timers); checked with animation frames
+  switched off entirely, the music paused on time. **Custom time** is a menu
+  page of hours and minutes, typed or stepped by 5 and 15, remembered on the
+  device; the countdown shows hours once there are any.
 - **A fade is not the listener moving the volume.** The leveling code reads
   every volumechange as the listener's choice, so the sleep timer's fade left
   their volume at zero afterwards. `audio.fading` now guards it; crossfade

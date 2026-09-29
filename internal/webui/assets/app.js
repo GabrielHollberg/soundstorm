@@ -6858,7 +6858,10 @@ function renderSleep() {
     label.textContent = 'Stops after this song';
   } else if (sleep.until) {
     const secs = Math.max(0, Math.ceil((sleep.until - Date.now()) / 1000));
-    label.textContent = `Stops in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const sec = String(secs % 60).padStart(2, '0');
+    label.textContent = h ? `Stops in ${h}:${String(m).padStart(2, '0')}:${sec}` : `Stops in ${m}:${sec}`;
   }
   show(label, on);
 }
@@ -6870,13 +6873,16 @@ function fadeOutAndPause() {
   const began = performance.now();
   sleep.fading = true;
   audio.fading = true;
-  const step = () => {
+  // Stepped by a timer, not animation frames: a phone with its screen off
+  // draws no frames, so a fade driven by them never got past its first step
+  // and the music played on - reported as the sleep timer not working, which
+  // is the one time the screen is always off. A page playing sound keeps its
+  // timers running.
+  const fade = setInterval(() => {
     const t = Math.min(1, (performance.now() - began) / SLEEP_FADE_MS);
     player.volume = start * (1 - t);
-    if (t < 1 && !player.paused) {
-      requestAnimationFrame(step);
-      return;
-    }
+    if (t < 1 && !player.paused) return;
+    clearInterval(fade);
     player.pause();
     sleep.fading = false;
     // Back to the listener's own level for next time. The fade's own
@@ -6885,8 +6891,7 @@ function fadeOutAndPause() {
     if (audio.item) applyLevel(audio.item);
     else player.volume = start;
     setTimeout(() => { audio.fading = false; }, 0);
-  };
-  requestAnimationFrame(step);
+  }, 100);
 }
 
 renderSleep();
@@ -11063,11 +11068,106 @@ function renderSleepMenu(item, opts) {
     menuItem('moon', 'In 30 minutes', choose('30', 'Stops in 30 minutes.')),
     menuItem('moon', 'In 45 minutes', choose('45', 'Stops in 45 minutes.')),
     menuItem('moon', 'In 1 hour', choose('60', 'Stops in an hour.')),
+    menuItem('moon', 'Custom time', (event) => {
+      event.stopPropagation();
+      renderSleepCustom(item, opts);
+    }),
     menuItem('moon', item.kind === 'audiobook' ? 'At the end of this chapter' : 'At the end of this song',
       choose('song', item.kind === 'audiobook' ? 'Stops after this chapter.' : 'Stops after this song.')),
   ];
   if (sleep.until || sleep.atSongEnd) rows.push(menuItem('close', 'Turn off', choose(null, 'Sleep timer off.')));
   menu.replaceChildren(back, ...rows);
+  placeMenu(menu, state.menuAnchor);
+}
+
+// A sleep timer of any length: hours and minutes, typed or stepped, and
+// Start. The minutes are remembered on this device for next time.
+const SLEEP_CUSTOM_KEY = 'soundstorm-sleep-custom';
+function renderSleepCustom(item, opts) {
+  const menu = $('item-menu');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = 'Custom time';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderSleepMenu(item, opts);
+  });
+  let total = Math.max(1, Math.min(720, Number(localStorage.getItem(SLEEP_CUSTOM_KEY)) || 90));
+  const box = document.createElement('div');
+  box.className = 'sleep-custom';
+  const field = (unit, max) => {
+    const wrap = document.createElement('label');
+    wrap.className = 'sleep-field';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.min = '0';
+    input.max = String(max);
+    input.setAttribute('aria-label', unit);
+    const name = document.createElement('span');
+    name.textContent = unit;
+    wrap.append(input, name);
+    return { wrap, input };
+  };
+  const hours = field('hours', 12);
+  const mins = field('minutes', 59);
+  const show = () => {
+    hours.input.value = String(Math.floor(total / 60));
+    mins.input.value = String(total % 60);
+  };
+  const read = () => {
+    const h = Math.max(0, Math.min(12, Math.floor(Number(hours.input.value) || 0)));
+    const m = Math.max(0, Math.min(59, Math.floor(Number(mins.input.value) || 0)));
+    total = Math.max(1, Math.min(720, h * 60 + m));
+  };
+  for (const f of [hours, mins]) {
+    f.input.addEventListener('click', (event) => event.stopPropagation());
+    f.input.addEventListener('change', () => { read(); show(); });
+  }
+  const step = (by, text) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sleep-step';
+    b.textContent = text;
+    b.addEventListener('click', (event) => {
+      event.stopPropagation();
+      read();
+      total = Math.max(5, Math.min(720, total + by));
+      show();
+    });
+    return b;
+  };
+  const steps = document.createElement('div');
+  steps.className = 'sleep-steps';
+  steps.append(step(-15, '-15'), step(-5, '-5'), step(5, '+5'), step(15, '+15'));
+  const fields = document.createElement('div');
+  fields.className = 'sleep-fields';
+  fields.append(hours.wrap, mins.wrap);
+  const start = document.createElement('button');
+  start.type = 'button';
+  start.className = 'sleep-start';
+  start.textContent = 'Start';
+  const go = (event) => {
+    if (event) event.stopPropagation();
+    read();
+    localStorage.setItem(SLEEP_CUSTOM_KEY, String(total));
+    setSleep(String(total));
+    closeItemMenu();
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    showToast(`Stops in ${[h ? `${h} hour${h === 1 ? '' : 's'}` : '', m ? `${m} minute${m === 1 ? '' : 's'}` : ''].filter(Boolean).join(' ')}.`);
+  };
+  start.addEventListener('click', go);
+  for (const f of [hours, mins]) {
+    f.input.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(event); });
+  }
+  box.append(fields, steps, start);
+  show();
+  menu.replaceChildren(back, box);
   placeMenu(menu, state.menuAnchor);
 }
 

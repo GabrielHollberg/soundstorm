@@ -3405,3 +3405,21 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
   display: block; position: absolute; left: -34%; top: -34%;
   width: 168%; height: 168%; pointer-events: none;
 }
+
+/* The sleep timer's custom time, a page of the menu. */
+.sleep-custom { display: grid; gap: 10px; padding: 8px 12px 12px; }
+.sleep-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sleep-field { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.sleep-field input {
+  width: 100%; padding: 8px 4px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; font-size: 22px;
+  font-weight: 700; text-align: center; font-variant-numeric: tabular-nums;
+}
+.sleep-field span { font-size: 12px; color: var(--muted); }
+.sleep-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.sleep-step, .sleep-start {
+  padding: 8px 0; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.08);
+  color: inherit; font: inherit; font-size: 14px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.sleep-start { background: var(--accent); color: #fff; padding: 10px 0; font-size: 15px; }
