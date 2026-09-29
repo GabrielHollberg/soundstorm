@@ -1138,6 +1138,20 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   `estimateContentLength=true`, which gives the converted stream a length and
   Range support: checked, a request from byte 100,000 answered 206. Downloads
   use `streamPath`, never `playPath`, so they keep the original.
+- **A slow link falls back by itself.** Reported from the Android app away
+  from home: songs sat at 0:00 for a minute or more. Measured through a
+  playback report in a test build: the link from the house's upload to the
+  phone ran at about 0.3 Mbps (256KB took 6.9s, 2.9s to the first byte), and
+  every iTunes M4A carries ~600KB before its first note - ~200KB of index and
+  art and ~350KB of padding - so 15-20 seconds of header alone, and the beat
+  analysis was downloading a second copy of the song at the same moment. So a
+  song that cannot play six seconds after starting is restarted at 128 kbps
+  MP3 (a quarter of the data, no header to wait for), and so is every song for
+  the rest of the session (`slowLink`, `startStream`), with a message saying
+  why. And a song is only heard for the visualizer once it has 20 seconds
+  buffered ahead (`playbackSettled`), never while it is still starting.
+  Checked in Chrome throttled to ~40 kbps: the original was asked for at 1.8s,
+  the 128 kbps copy at 7.8s, and no analysis download began meanwhile.
 - **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
   handler instead of advancing - a chapter, for an audiobook. **It never stopped with the screen off**, which is when a sleep timer
   is used: the eight-second fade was stepped by animation frames, a phone

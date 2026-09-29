@@ -112,8 +112,15 @@ const streamPath = (item) =>
 // iPhone cannot (there it streams the original). Downloads always keep the
 // original: streamPath, not playPath.
 const QUALITY_KEY = 'soundstorm.quality';
+// slowLink: set for the rest of the session once a song sat unable to start
+// at full quality (see startStream). Original quality then streams at 128
+// kbps instead: a quarter of the data, and an MP3 has none of the ~600KB of
+// header an iTunes M4A must deliver before its first note.
+let slowLink = false;
+
 function streamingKbps() {
   const choice = localStorage.getItem(QUALITY_KEY) || 'original';
+  if (slowLink && (choice === 'original' || choice === 'auto')) return 128;
   if (choice === 'auto') {
     const c = navigator.connection;
     return c && (c.type === 'cellular' || c.saveData) ? 128 : 0;
@@ -1984,12 +1991,36 @@ function playAudio(item, fromQueue) {
         if (audio.item === item) startAt(url || playPath(item), 0);
       });
     } else {
-      startAt(playPath(item), 0);
+      startStream(item);
     }
   }
   applyLevel(item);
 
   loadPlayback(item);
+}
+
+// startStream plays a song from the server, and watches that it starts.
+//
+// Reported from a phone away from home, over a slow link (measured: 0.3 Mbps
+// from the house's upload): songs sat at 0:00 for a minute or more. An iTunes
+// M4A carries ~600KB before its first note - the index, the album art and
+// padding - and at that speed that is 15-20 seconds before anything else is
+// fetched. So a song still unable to play after six seconds is started again
+// at 128 kbps, and every song after it for the rest of the session, with a
+// word to say why. Not for a song already at a lower quality, a downloaded
+// one, or a blob in memory, which never wait on the network.
+const SLOW_START_MS = 6000;
+function startStream(item) {
+  startAt(playPath(item), 0);
+  if (item.kind !== 'music' || slowLink || streamingKbps() !== 0) return;
+  const player = $('audio-player');
+  setTimeout(() => {
+    if (audio.item !== item || slowLink || player.paused) return;
+    if (player.readyState >= 2) return; // it has started, or can
+    slowLink = true;
+    showToast('Slow connection - streaming at a lower quality for now.');
+    startAt(playPath(item), 0);
+  }, SLOW_START_MS);
 }
 
 async function loadPlayback(item) {
@@ -12368,12 +12399,40 @@ async function keepTime(item) {
 const HEARD_KEEP = 6;
 const heardSongs = new Map();
 
+// playbackSettled: resolves once the song playing has music buffered well
+// ahead (or plays from memory), so hearing it - a second download of the
+// whole song - never competes with its start. On a slow link the two together
+// held songs at 0:00 for a minute. False if the song changed meanwhile.
+function playbackSettled(item) {
+  return new Promise((resolve) => {
+    const player = $('audio-player');
+    const began = Date.now();
+    const check = () => {
+      if (audio.item !== item) return resolve(false);
+      const src = player.currentSrc || '';
+      const end = player.buffered.length ? player.buffered.end(player.buffered.length - 1) : 0;
+      const ahead = end - player.currentTime;
+      const done = Number.isFinite(player.duration) && end >= player.duration - 1;
+      if (src.startsWith('blob:') || (player.readyState >= 3 && (ahead >= 20 || done)) || Date.now() - began > 120000) {
+        return resolve(true);
+      }
+      setTimeout(check, 1000);
+    };
+    check();
+  });
+}
+
 function listenTo(item, tempo) {
   const key = selectionKey(item);
   if (heardSongs.has(key)) return heardSongs.get(key);
   const job = (async () => {
     const kept = await loadHeard(item);
     if (kept) return kept;
+    // Not while the song is still getting started over the network.
+    if (!isDownloaded(item) && !(await playbackSettled(item))) {
+      heardSongs.delete(key); // heard next time it plays
+      return null;
+    }
     const heard = await hearSong(item, tempo);
     if (heard && isDownloaded(item)) saveHeard(item, heard, soundOf[key] || null);
     return heard;
