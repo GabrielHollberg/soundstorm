@@ -12486,6 +12486,37 @@ const viz = {
     if (w && h && (canvas.width !== w || canvas.height !== h)) { canvas.width = w; canvas.height = h; }
     return dpr;
   },
+  // keepClearOfPlay: the full-screen animation leaves a soft round space
+  // where music's play orb sits (the owner's asking - the two drawn over each
+  // other were a muddle): after each frame, a circle round the orb is cut out
+  // of both canvases, solid in the middle and fading at its edge.
+  keepClearOfPlay(back, front) {
+    const np = $('now-playing');
+    const btn = $('np-play');
+    if (!np.classList.contains('np-music') || !btn.offsetWidth) return;
+    const c = back.getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    if (!c.width) return;
+    const k = back.width / c.width;
+    const x = (b.left + b.width / 2 - c.left) * k;
+    const y = (b.top + b.height / 2 - c.top) * k;
+    const r0 = b.width * 0.8 * k;
+    const r1 = b.width * 1.45 * k;
+    for (const ctx of [back.getContext('2d'), front.getContext('2d')]) {
+      const hole = ctx.createRadialGradient(x, y, r0, x, y, r1);
+      hole.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      hole.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+      ctx.beginPath();
+      ctx.arc(x, y, r0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = hole;
+      ctx.fillRect(x - r1, y - r1, r1 * 2, r1 * 2);
+      ctx.restore();
+    }
+  },
   frame(now) {
     this.raf = 0;
     const np = $('now-playing');
@@ -12646,6 +12677,7 @@ const viz = {
         g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, firstDrop, dropEnv,
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
+      if (flowing) this.keepClearOfPlay(back, front);
       if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
       return;
     }
@@ -12802,6 +12834,7 @@ const viz = {
     f.globalCompositeOperation = 'source-over';
 
     // On until paused and settled.
+    if (flowing) this.keepClearOfPlay(back, front);
     if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
   },
 };
