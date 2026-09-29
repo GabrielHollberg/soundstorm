@@ -5605,6 +5605,7 @@ function renderNowPlaying() {
   $('now-playing').classList.toggle('np-music', music);
   show($('np-chapters-btn'), !music && (audio.chapters || []).length > 1);
   renderSkipButtons(music);
+  playOrb.start();
   renderSpeed();
   const art = artPath(item);
   for (const img of [$('np-cover'), $('np-thumb')]) {
@@ -12062,12 +12063,13 @@ function applyCoverStyle() {
   np.classList.toggle('cover-full', FULL_STYLES.includes(style));
   renderCoverDeco();
   renderLooks();
-  // The song's beats, bass and loudness for the visualizer - asked for here,
-  // not only while the cover is on screen as it once was: every visualizer
-  // is full screen now and a phone never shows the cover under them, so the
-  // analysis stopped being asked for at all and they fell back to a slow
-  // pulse of no song in particular.
-  if (VIZ_STYLES.includes(style) && audio.item && audio.item.kind === 'music') keepTime(audio.item);
+  // The song's beats, bass and loudness - asked for here, not only while the
+  // cover is on screen as it once was: every visualizer is full screen now
+  // and a phone never shows the cover under them, so the analysis stopped
+  // being asked for at all and they fell back to a slow pulse of no song in
+  // particular. For any look, not only the visualizers: the play button
+  // moves in time with the song on all of them (playOrb).
+  if (audio.item && audio.item.kind === 'music') keepTime(audio.item);
   if (VIZ_STYLES.includes(style)) viz.start();
   else viz.stop();
 }
@@ -12805,6 +12807,7 @@ const viz = {
 };
 $('audio-player').addEventListener('play', () => {
   if ($('now-playing').classList.contains('cover-viz')) viz.start();
+  playOrb.start();
 });
 // A jump in the song starts the "what stands out" comparison afresh.
 $('audio-player').addEventListener('seeked', () => {
@@ -12836,6 +12839,141 @@ function vizColor(c, a) {
   return row[i] || (row[i] = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${i / 64})`);
 }
 const VIZ_WHITE = [255, 255, 255];
+
+// playOrb: Now Playing's play button for music, drawn rather than an icon -
+// the owner found a play triangle boring and asked for something round-ish
+// that moves, and then that it keep time with the analysed music. Four
+// glowing layers in the cover's colours, each a closed shape whose edge is a
+// sum of travelling waves, turning against each other: on every beat it
+// swells (more on the bar's first, and on a beat the kick lands on), a kick
+// makes the edges ripple, and the song's loudness sets how much it moves.
+// Paused, it stops where it is and dims - the movement is the "playing".
+// Its own small loop, not the visualizer's, so it lives on Lyrics and the
+// covers too; it reads what was heard in the song itself (viz.heard), and
+// only the tempo until that arrives.
+const playOrb = {
+  raf: 0,
+  clock: 0,
+  env: 0,
+  swell: 0,
+  last: 0,
+  beatNo: -1,
+  canvas() {
+    let c = $('np-play').querySelector('.np-play-orb');
+    if (!c) {
+      c = document.createElement('canvas');
+      c.className = 'np-play-orb';
+      c.setAttribute('aria-hidden', 'true');
+      $('np-play').append(c);
+    }
+    return c;
+  },
+  start() {
+    if (!this.raf) this.raf = requestAnimationFrame((ts) => this.frame(ts));
+  },
+  frame(ts) {
+    this.raf = 0;
+    const np = $('now-playing');
+    if (np.classList.contains('hidden') || !np.classList.contains('np-music') || document.hidden) return;
+    const canvas = this.canvas();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cw = Math.round(canvas.clientWidth * dpr);
+    const ch = Math.round(canvas.clientHeight * dpr);
+    if (!cw || !ch) return;
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    const player = $('audio-player');
+    const playing = !player.paused;
+    const dt = Math.min(0.1, this.last ? (ts - this.last) / 1000 : 0.016);
+    this.last = ts;
+
+    // Where the song is in its rhythm: the beat, how far through it, whether
+    // it is a bar's first, and what the kick and loudness are right now.
+    const t = (player.currentTime || 0) + vizLead();
+    const heard = viz.heard && audio.item && viz.heard.key === selectionKey(audio.item) ? viz.heard : null;
+    let beatNo;
+    let phase;
+    let downbeat;
+    let kick = 0;
+    let loud = 0.6;
+    if (heard && heard.beats && heard.beats.length > 1) {
+      const bs = heard.beats;
+      let lo = 0, hi = bs.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= t) lo = mid; else hi = mid - 1; }
+      const len = (bs[Math.min(bs.length - 1, lo + 1)] - bs[lo]) || viz.beat;
+      beatNo = lo;
+      phase = Math.max(0, Math.min(1, (t - bs[lo]) / len));
+      downbeat = (lo - heard.down) % 4 === 0;
+      const fi = Math.max(0, Math.min(heard.low.length - 1, Math.floor(t * heard.fps)));
+      kick = heard.low[fi] || 0;
+      loud = heard.loud[fi] === undefined ? 0.6 : heard.loud[fi];
+    } else {
+      beatNo = Math.floor(t / viz.beat);
+      phase = (t % viz.beat) / viz.beat;
+      downbeat = beatNo % 4 === 0;
+    }
+    if (playing) {
+      // A new beat swells it; the kick is held a moment and let go softly.
+      if (beatNo !== this.beatNo) {
+        this.beatNo = beatNo;
+        this.swell = Math.max(this.swell, (downbeat ? 1 : 0.55) * (0.5 + 0.5 * loud));
+      }
+      this.env = Math.max(this.env * Math.exp(-dt * 7), kick);
+      this.swell *= Math.exp(-dt * 5.5);
+      this.clock += dt * (0.5 + 0.9 * loud);
+    }
+    const g = canvas.getContext('2d');
+    g.clearRect(0, 0, cw, ch);
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = playing ? 1 : 0.55;
+    const cx = cw / 2;
+    const cy = ch / 2;
+    // The button is the middle 60% of the canvas; the glow spills round it.
+    const R = cw * 0.3 * (1 + 0.16 * this.swell + 0.06 * this.env);
+    const pal = viz.palette;
+    const ck = this.clock;
+    const pts = 72;
+    const TAU2 = Math.PI * 2;
+    for (let l = 0; l < 4; l++) {
+      const layer = ORB_LAYERS[l];
+      const amp = 0.06 + 0.08 * loud + 0.14 * this.env;
+      g.beginPath();
+      for (let p = 0; p <= pts; p++) {
+        const th = (p / pts) * TAU2;
+        let r = 0.82 + l * 0.07;
+        for (const wv of layer.waves) r += (amp / layer.waves.length) * 2 * Math.sin(wv.k * th + wv.speed * ck * 2.4 + wv.ph);
+        const a = th + layer.spin * ck * 4;
+        const x = cx + Math.cos(a) * R * r;
+        const y = cy + Math.sin(a) * R * r;
+        if (p) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath();
+      const grad = g.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * 1.25);
+      grad.addColorStop(0, vizColor(pal[l % 3], 0.16));
+      grad.addColorStop(0.65, vizColor(pal[l % 3], 0.42 + 0.2 * this.swell));
+      grad.addColorStop(1, vizColor(pal[l % 3], 0.06));
+      g.fillStyle = grad;
+      g.fill();
+    }
+    // A bright heart that flashes with the beat, and a soft halo round it all.
+    const core = g.createRadialGradient(cx, cy, 0, cx, cy, R * (0.75 + 0.35 * this.swell));
+    core.addColorStop(0, vizColor(VIZ_WHITE, 0.35 + 0.45 * this.swell));
+    core.addColorStop(1, vizColor(VIZ_WHITE, 0));
+    g.fillStyle = core;
+    g.fillRect(0, 0, cw, ch);
+    const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, cw / 2);
+    halo.addColorStop(0, vizColor(pal[0], 0.25 + 0.3 * this.swell));
+    halo.addColorStop(1, vizColor(pal[0], 0));
+    g.fillStyle = halo;
+    g.fillRect(0, 0, cw, ch);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    // Moving only while it plays; a pause leaves this last, dimmed frame.
+    if (playing) this.raf = requestAnimationFrame((next) => this.frame(next));
+    else this.last = 0;
+  },
+};
+$('audio-player').addEventListener('pause', () => playOrb.start());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) playOrb.start(); });
 
 // Flow's scene, full screen: particles swirling through a moving current round
 // the middle of the screen, trailing light; faster and more turbulent as it

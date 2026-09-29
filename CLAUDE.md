@@ -583,7 +583,16 @@ judged on in its first minute:
   button, past the rule that swallows the lift's click. A mouse keeps them
   all showing. **Except play, which came back** at the owner's asking: it shows
   all the time, a tap on it plays or pauses and never changes the look, and
-  it is no longer among the buttons a hold brings up. Then the "Now Playing" words went and the timeline too, shown only
+  it is no longer among the buttons a hold brings up. **And it is not a triangle
+  any more** (`playOrb`): a triangle read as boring, so music's play button
+  is a small living orb - four glowing wavy layers in the cover's colours
+  turning against each other, on a canvas larger than the button so its
+  glow spills round it - that keeps time with the analysed song: it swells
+  on each beat (more on a bar's first), the kick ripples its edges, the
+  loudness sets how much it moves. Paused, it stops where it is and dims;
+  the movement is the playing. Its own small loop, so it moves on Lyrics and
+  the covers too - which is why the song is now heard for any look, not only
+  a visualizer. An audiobook keeps its plain white play button. Then the "Now Playing" words went and the timeline too, shown only
   while holding: sliding onto it (a band 36px either side) moves the
   position under the finger, the caption saying "Play from 2:09", and
   letting go there seeks. The sleep timer's countdown still shows. Nothing else answers the finger while they

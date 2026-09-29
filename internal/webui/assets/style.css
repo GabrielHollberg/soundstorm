@@ -3393,3 +3393,15 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
   .home-quick-btn.primary { grid-column: 1 / -1; justify-content: center; padding: 16px; font-size: 16px; }
   .home-quick-btn:not(.primary) { flex-direction: column; justify-content: center; gap: 6px; padding: 12px 6px; font-size: 13px; text-align: center; }
 }
+
+/* Music's play button is a living orb (playOrb) instead of a white disc with
+   a triangle: the canvas is larger than the button so its glow spills
+   round it, and nothing else of the button shows. */
+.now-playing.np-music .np-play { position: relative; background: none; overflow: visible; }
+.now-playing.np-music .np-play .icon { display: none; }
+.now-playing.np-music .np-play:hover { background: none; }
+.np-play-orb { display: none; }
+.now-playing.np-music .np-play-orb {
+  display: block; position: absolute; left: -34%; top: -34%;
+  width: 168%; height: 168%; pointer-events: none;
+}
