@@ -5685,9 +5685,58 @@ function renderNowPlaying() {
   syncNowPlayingTime();
 }
 
+// bookSpan: for an audiobook with chapters, the chapter being listened to on
+// the whole book's timeline - its start and end, its number - and the book's
+// length. Null for music, or a book of one chapter, which keep the one
+// timeline they always had.
+function bookSpan() {
+  const item = audio.item;
+  const list = audio.chapters || [];
+  if (!item || item.kind === 'music' || list.length < 2) return null;
+  const player = $('audio-player');
+  const total = audio.duration || (audio.tracks.length > 1 ? 0 : (Number.isFinite(player.duration) ? player.duration : 0));
+  if (!total) return null;
+  const now = elapsed();
+  const i = chapterAt(now);
+  const start = list[i].startSeconds || 0;
+  const end = i + 1 < list.length ? list[i + 1].startSeconds : total;
+  if (!(end > start)) return null;
+  return { i, count: list.length, start, end, total, now };
+}
+
+// Anywhere in an audiobook, by the whole book's timeline: a file of its own
+// when it is in another, or a seek within this one.
+function goToBook(to) {
+  const item = audio.item;
+  if (!item) return;
+  if (audio.tracks.length > 1 && trackContaining(to) !== audio.index) {
+    savePosition();
+    seekTo(to, item);
+  } else {
+    $('audio-player').currentTime = to - (audio.tracks.length > 1 ? audio.tracks[audio.index].startSeconds || 0 : 0);
+  }
+}
+
 function syncNowPlayingTime() {
   if ($('now-playing').classList.contains('hidden')) return;
   const player = $('audio-player');
+  // An audiobook's timeline is its chapter's, and a thinner bar under it the
+  // whole book's, which is shown but cannot be dragged (the owner's asking:
+  // a timeline across a ten-hour book moves a chapter at the slightest touch).
+  const span = bookSpan();
+  show($('np-book'), Boolean(span));
+  if (span) {
+    const len = span.end - span.start;
+    const into = Math.max(0, Math.min(len, span.now - span.start));
+    if (!state.seeking) $('np-seek').value = String(Math.round((into / len) * 1000));
+    $('np-time').textContent = formatDuration(into) || '0:00';
+    $('np-length').textContent = formatDuration(len) || '0:00';
+    $('np-book-fill').style.width = `${Math.min(100, (span.now / span.total) * 100).toFixed(2)}%`;
+    const title = (audio.chapters[span.i] && audio.chapters[span.i].title) || `Chapter ${span.i + 1}`;
+    $('np-book-chapter').textContent = `${span.i + 1} of ${span.count} \u00B7 ${title}`;
+    $('np-book-left').textContent = `${formatDuration(Math.max(0, span.total - span.now))} left`;
+    return;
+  }
   const length = Number.isFinite(player.duration) ? player.duration : 0;
   if (!state.seeking) {
     $('np-seek').value = length ? String(Math.round((player.currentTime / length) * 1000)) : '0';
@@ -5877,13 +5926,7 @@ $('np-play').addEventListener('click', () => {
 function bookSkip(by) {
   const item = audio.item;
   if (!item) return;
-  const to = Math.max(0, Math.min(elapsed() + by, (audio.duration || Infinity) - 1));
-  if (audio.tracks.length > 1 && trackContaining(to) !== audio.index) {
-    savePosition();
-    seekTo(to, item);
-  } else {
-    $('audio-player').currentTime = to - (audio.tracks.length > 1 ? audio.tracks[audio.index].startSeconds || 0 : 0);
-  }
+  goToBook(Math.max(0, Math.min(elapsed() + by, (audio.duration || Infinity) - 1)));
 }
 $('np-prev').addEventListener('click', () => {
   if (audio.item && audio.item.kind !== 'music') bookSkip(-30);
@@ -5898,13 +5941,19 @@ $('np-next').addEventListener('click', () => {
 $('np-seek').addEventListener('input', () => {
   state.seeking = true;
   const player = $('audio-player');
-  if (Number.isFinite(player.duration)) {
+  const span = bookSpan();
+  if (span) {
+    $('np-time').textContent = formatDuration((Number($('np-seek').value) / 1000) * (span.end - span.start)) || '0:00';
+  } else if (Number.isFinite(player.duration)) {
     $('np-time').textContent = formatDuration((Number($('np-seek').value) / 1000) * player.duration) || '0:00';
   }
 });
 $('np-seek').addEventListener('change', () => {
   const player = $('audio-player');
-  if (Number.isFinite(player.duration)) player.currentTime = (Number($('np-seek').value) / 1000) * player.duration;
+  const span = bookSpan();
+  // Within the chapter, for an audiobook - never past its end into the next.
+  if (span) goToBook(span.start + Math.min(0.999, Number($('np-seek').value) / 1000) * (span.end - span.start));
+  else if (Number.isFinite(player.duration)) player.currentTime = (Number($('np-seek').value) / 1000) * player.duration;
   state.seeking = false;
 });
 for (const event of ['play', 'pause', 'loadedmetadata']) {

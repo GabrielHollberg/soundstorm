@@ -3423,3 +3423,12 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
   -webkit-tap-highlight-color: transparent;
 }
 .sleep-start { background: var(--accent); color: #fff; padding: 10px 0; font-size: 15px; }
+
+/* An audiobook's whole-book progress, under the chapter timeline: a thin bar
+   that only shows, and a line saying which chapter and how long is left. */
+.np-book { margin-top: 10px; pointer-events: none; }
+.np-book-bar { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.np-book-bar i { display: block; height: 100%; width: 0; background: rgba(255, 255, 255, 0.55); border-radius: 2px; }
+.np-book-text { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.np-book-text span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-book-text span:last-child { flex: none; font-variant-numeric: tabular-nums; }

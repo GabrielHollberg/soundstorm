@@ -731,6 +731,12 @@
           <div class="np-progress">
             <input id="np-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
             <div class="np-times"><span id="np-time">0:00</span><span id="np-length">0:00</span></div>
+            <!-- An audiobook's whole-book progress, under the chapter's own
+                 timeline: shown, never dragged. -->
+            <div id="np-book" class="np-book hidden" aria-hidden="true">
+              <div class="np-book-bar"><i id="np-book-fill"></i></div>
+              <div class="np-book-text"><span id="np-book-chapter"></span><span id="np-book-left"></span></div>
+            </div>
           </div>
           <!-- The middle of the screen: the lyrics when the song has them,
                Up next when asked for, otherwise nothing and the cover leads. -->

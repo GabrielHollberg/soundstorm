@@ -497,6 +497,14 @@ judged on in its first minute:
   had any navigation, has it now; without a chapter list the files stand in.
   Checked with a stand-in book in the preview (no Audiobookshelf there):
   Chapter Two landed at 1:00, +30 at 1:32, -30 back at 1:03.
+  **A book's timeline is its chapter's**, at the owner's asking - across a
+  ten-hour book the slightest drag moves a chapter: the draggable one runs
+  from the chapter's start to the next one's, and never seeks past it
+  (`bookSpan`, `goToBook`, across files). Under it a thin bar shows the
+  whole book's progress and cannot be dragged, with "2 of 12 - its title"
+  and the time left in the book. A book of one chapter keeps the one
+  timeline. Checked on the stand-in book: in Chapter Two the timeline read
+  0:02 of 1:00, and its middle landed at 1:30 in the book.
 
   **Hiding the cover had quietly switched off the song analysis.** The
   owner reported the animations feeling like plain tempo again, and they
