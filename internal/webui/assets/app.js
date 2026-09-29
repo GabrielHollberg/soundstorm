@@ -12500,16 +12500,17 @@ const viz = {
     const k = back.width / c.width;
     const x = (b.left + b.width / 2 - c.left) * k;
     const y = (b.top + b.height / 2 - c.top) * k;
-    // Clear right round the orb, then a long, eased fade back to the full
-    // animation - a short one read as a hole cut in it.
-    const r0 = b.width * 0.55 * k;
-    const r1 = b.width * 2.3 * k;
+    // The first size (clear space out to 1.45 of the button's width), but
+    // clear only close in and eased the whole way out - a solid circle with
+    // a short edge read as a hole cut in the animation.
+    const r0 = b.width * 0.3 * k;
+    const r1 = b.width * 1.45 * k;
     for (const ctx of [back.getContext('2d'), front.getContext('2d')]) {
       const hole = ctx.createRadialGradient(x, y, r0, x, y, r1);
       hole.addColorStop(0, 'rgba(0, 0, 0, 1)');
-      hole.addColorStop(0.25, 'rgba(0, 0, 0, 0.88)');
-      hole.addColorStop(0.5, 'rgba(0, 0, 0, 0.55)');
-      hole.addColorStop(0.75, 'rgba(0, 0, 0, 0.2)');
+      hole.addColorStop(0.3, 'rgba(0, 0, 0, 0.9)');
+      hole.addColorStop(0.55, 'rgba(0, 0, 0, 0.6)');
+      hole.addColorStop(0.8, 'rgba(0, 0, 0, 0.25)');
       hole.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.save();
       ctx.globalCompositeOperation = 'destination-out';
