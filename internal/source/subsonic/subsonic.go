@@ -371,8 +371,18 @@ func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target
 }
 
 // ArtTarget builds an authenticated upstream target for cover art.
-func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
-	return s.mediaTarget("/rest/getCoverArt.view", artID)
+//
+// At the size asked for (source.ArtSize), which Navidrome resizes and keeps:
+// an iTunes cover is ~150-200KB at full size, and a card shows it 200px wide.
+func (s *Source) ArtTarget(ctx context.Context, artID string) (source.Target, error) {
+	t, err := s.mediaTarget("/rest/getCoverArt.view", artID)
+	if err != nil {
+		return t, err
+	}
+	if px := source.ArtSize(ctx); px > 0 {
+		t.URL += "&size=" + strconv.Itoa(px)
+	}
+	return t, nil
 }
 
 func (s *Source) mediaTarget(path, id string) (source.Target, error) {

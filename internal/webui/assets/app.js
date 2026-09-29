@@ -102,6 +102,16 @@ const artPath = (item) => {
   const orig = item.artId ? `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId)}` : '';
   return withOverride(orig, songKey, item.artId ? artKeyFor(item.sourceId, item.artId) : '');
 };
+// Covers come card-sized from the server (400px) unless asked for more, so
+// opening the app does not download every album's full picture ahead of the
+// song. The few big ones - Now Playing, the lock screen - ask for a size. A
+// person's own cover (/api/myart) is theirs at its one size.
+const bigArt = (path, px = 800) => {
+  if (!path || !path.startsWith('/api/art/')) return path;
+  const at = path.indexOf('#');
+  const [base, frag] = at < 0 ? [path, ''] : [path.slice(0, at), path.slice(at)];
+  return `${base}?size=${px}${frag}`;
+};
 const streamPath = (item) =>
   `/api/stream/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`;
 
@@ -139,7 +149,7 @@ function rememberSlowLink() {
 // kbps from the first one. Costs about three seconds on a link that slow.
 let probed = false;
 async function probeLink() {
-  if (probed || !awayHost || slowLink) return;
+  if (probed || !awayHost || slowLink || localStorage.getItem(QUALITY_KEY) === 'original') return;
   probed = true;
   try {
     const t0 = performance.now();
@@ -151,8 +161,12 @@ async function probeLink() {
 }
 
 function streamingKbps() {
-  const choice = localStorage.getItem(QUALITY_KEY) || 'original';
-  if (slowLink && (choice === 'original' || choice === 'auto')) return 128;
+  // "smart", the default, is original unless the link is found slow;
+  // "original" is a promise - never lowered, whatever the connection (the
+  // owner's asking, who would rather wait than hear less).
+  const choice = localStorage.getItem(QUALITY_KEY) || 'smart';
+  if (choice === 'original' || choice === 'smart') return slowLink && choice === 'smart' ? 128 : 0;
+  if (slowLink && choice === 'auto') return 128;
   if (choice === 'auto') {
     const c = navigator.connection;
     return c && (c.type === 'cellular' || c.saveData) ? 128 : 0;
@@ -704,7 +718,7 @@ async function loadLibrary() {
 // "Use on your phone or TV": the home address, and the away-from-home one when
 // remote access is on and working. Only the owner's session carries the latter,
 // so a member sees the home address alone.
-$('quality-select').value = localStorage.getItem(QUALITY_KEY) || 'original';
+$('quality-select').value = localStorage.getItem(QUALITY_KEY) || 'smart';
 $('quality-select').addEventListener('change', (event) => {
   localStorage.setItem(QUALITY_KEY, event.target.value);
   note($('playback-note'), 'Saved. It applies from the next song.', false);
@@ -1190,6 +1204,7 @@ function renderItem(item) {
     else img.src = art;
     img.alt = '';
     img.loading = 'lazy';
+    img.fetchPriority = 'low';
     img.decoding = 'async';
     // A backend can have an artwork id but no actual file; fall back rather
     // than showing a broken image.
@@ -2046,7 +2061,7 @@ function playAudio(item, fromQueue) {
 const SLOW_START_MS = 6000;
 function startStream(item) {
   startAt(playPath(item), 0);
-  if (item.kind !== 'music' || slowLink || streamingKbps() !== 0) return;
+  if (item.kind !== 'music' || slowLink || streamingKbps() !== 0 || localStorage.getItem(QUALITY_KEY) === 'original') return;
   const player = $('audio-player');
   setTimeout(() => {
     if (audio.item !== item || slowLink || player.paused) return;
@@ -3761,6 +3776,7 @@ function playlistCover(list) {
     img.src = artUrl(c.sourceId, c.artId);
     img.alt = '';
     img.loading = 'lazy';
+    img.fetchPriority = 'low';
     img.decoding = 'async';
     wrap.append(img);
   }
@@ -3998,6 +4014,7 @@ async function showPlaylist(id) {
     const thumb = document.createElement('img');
     thumb.alt = '';
     thumb.loading = 'lazy';
+    thumb.fetchPriority = 'low';
     thumb.src = artPath(song) || NO_COVER;
     thumb.addEventListener('error', () => { thumb.src = NO_COVER; }, { once: true });
     const words = document.createElement('span');
@@ -4296,7 +4313,7 @@ const hasMediaSession = 'mediaSession' in navigator;
 const SKIP_SECONDS = 15;
 
 function mediaArtwork(item) {
-  const path = artPath(item);
+  const path = bigArt(artPath(item), 600);
   if (!path) return [];
   // Absolute, because the lock screen fetches it outside the page. Same origin
   // and cookie-authenticated like every other image here.
@@ -4548,6 +4565,7 @@ function coverArt(src, label, round) {
     img.src = src;
     img.alt = '';
     img.loading = 'lazy';
+    img.fetchPriority = 'low';
     img.decoding = 'async';
     img.addEventListener('error', () => img.replaceWith(round ? initials(label) : noCover()));
     wrap.append(img);
@@ -5257,7 +5275,7 @@ const npSwipe = (() => {
     el.style.translate = x ? `${x}px 0` : '';
     if (opacity !== undefined) el.style.opacity = opacity === 1 ? '' : String(opacity);
   };
-  const artOf = (n) => (n && artPath(n.item)) || NO_COVER;
+  const artOf = (n) => (n && bigArt(artPath(n.item))) || NO_COVER;
 
   self.start = () => {
     near = { '-1': neighborTrack(-1), 1: neighborTrack(1) };
@@ -5312,6 +5330,7 @@ const npSwipe = (() => {
       const img = sides[by];
       const url = artOf(n);
       if (img.dataset.src !== url) {
+        img.fetchPriority = 'low';
         img.src = url;
         img.dataset.src = url;
         img.decode().catch(() => {});
@@ -5727,10 +5746,15 @@ function renderNowPlaying() {
   playOrb.start();
   renderSpeed();
   const art = artPath(item);
-  for (const img of [$('np-cover'), $('np-thumb')]) {
-    img.src = art || NO_COVER;
-    img.onerror = () => { img.onerror = null; img.src = NO_COVER; };
-  }
+  // The big cover asks for a big picture; offline, or where the server
+  // cannot size it, it falls back to the card's.
+  const big = bigArt(art);
+  const cover = $('np-cover');
+  if (cover.getAttribute('src') !== (big || NO_COVER)) cover.src = big || NO_COVER;
+  cover.onerror = () => { cover.onerror = () => { cover.onerror = null; cover.src = NO_COVER; }; cover.src = art || NO_COVER; };
+  const thumb = $('np-thumb');
+  thumb.src = art || NO_COVER;
+  thumb.onerror = () => { thumb.onerror = null; thumb.src = NO_COVER; };
   setBackdrop(art);
   tintStatusBar(art);
   setNpLine($('np-title'), item.title);
@@ -5778,6 +5802,7 @@ function renderNowPlaying() {
     art.className = 'np-queue-art';
     art.alt = '';
     art.loading = 'lazy';
+    art.fetchPriority = 'low';
     art.decoding = 'async';
     art.src = artPath(song) || NO_COVER;
     art.onerror = () => { art.onerror = null; art.src = NO_COVER; };
@@ -6230,6 +6255,7 @@ function mixCover(mix) {
       img.src = artUrl(mix.sourceId, id);
       img.alt = '';
       img.loading = 'lazy';
+      img.fetchPriority = 'low';
       img.decoding = 'async';
       wrap.append(img);
     }
@@ -7167,6 +7193,30 @@ function cancelCrossfade(restore = true) {
   if (!xfade.key) return;
   finishCrossfade();
   if (restore && audio.item) applyLevel(audio.item);
+}
+
+// A song asked for but not yet sounding - starting, or waiting on the
+// network mid-song - wears a turning ring round its play button, in Now
+// Playing and on the mini-player, so a slow start reads as loading rather
+// than as nothing happening. Shown only after a moment, so a song that starts
+// at once never flickers one.
+{
+  const player = $('audio-player');
+  let timer = 0;
+  const set = (on) => {
+    clearTimeout(timer);
+    timer = 0;
+    if (on) {
+      timer = setTimeout(() => {
+        for (const id of ['np-play', 'dock-play']) $(id).classList.add('loading');
+      }, 350);
+    } else {
+      for (const id of ['np-play', 'dock-play']) $(id).classList.remove('loading');
+    }
+  };
+  player.addEventListener('waiting', () => { if (!player.paused) set(true); });
+  player.addEventListener('play', () => { if (player.readyState < 3) set(true); });
+  for (const ev of ['playing', 'pause', 'ended', 'error', 'emptied']) player.addEventListener(ev, () => set(false));
 }
 
 $('audio-player').addEventListener('timeupdate', maybeStartCrossfade);
@@ -10428,6 +10478,7 @@ function episodeRow(episode, fraction) {
     img.src = artUrl(episode.sourceId, episode.artId);
     img.alt = '';
     img.loading = 'lazy';
+    img.fetchPriority = 'low';
     img.decoding = 'async';
     thumb.append(img);
   }
@@ -12128,7 +12179,7 @@ function repaintCovers() {
     } else {
       continue;
     }
-    const m = orig.match(/^\/api\/art\/([^/]+)\/(.+)$/);
+    const m = orig.replace(/\?size=\d+$/, '').match(/^\/api\/art\/([^/]+)\/(.+)$/);
     const artKey = m ? artKeyFor(decodeURIComponent(m[1]), m[2].split('/').map(decodeURIComponent).join('/')) : '';
     const next = withOverride(orig, song, artKey) || NO_COVER;
     if (next !== src) img.src = next;

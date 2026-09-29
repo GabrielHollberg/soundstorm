@@ -722,8 +722,13 @@ func (s *Source) ArtTarget(ctx context.Context, artID string) (source.Target, er
 	if err := s.owns(ctx, artID); err != nil {
 		return source.Target{}, err
 	}
+	// At the width asked for (source.ArtSize), which Jellyfin resizes.
+	var q url.Values
+	if px := source.ArtSize(ctx); px > 0 {
+		q = url.Values{"maxWidth": {strconv.Itoa(px)}, "quality": {"90"}}
+	}
 	return source.Target{
-		URL:     s.http.URL("/Items/"+url.PathEscape(artID)+"/Images/Primary", nil),
+		URL:     s.http.URL("/Items/"+url.PathEscape(artID)+"/Images/Primary", q),
 		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},
 	}, nil
 }

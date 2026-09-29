@@ -1179,6 +1179,28 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   At home none of it runs. Checked in Chrome on a mapped `*.ts.net` name
   throttled to ~0.3 Mbps: slow on opening, the first song asked for at 128
   kbps.
+- **Why Chrome was instant and the app was not: caches and covers.** On a
+  1.1 Mbps phone link (measured), Chrome had played the songs and covers
+  before and kept them. The fresh app had nothing, and opening it asked for
+  dozens of full-size covers (~150-200KB each, iTunes art) ahead of the
+  song. So covers are now **card-sized unless asked** (`?size=`, default
+  400px; `full` for the original, see `internal/stream/shrink.go`).
+  Navidrome, Audiobookshelf and Jellyfin resize their own through
+  `source.ArtSize`, and SoundStorm resizes a book's cover with the standard
+  library. Only Now Playing's big cover and its swipe neighbours (800) and
+  the lock screen (600) ask for more (`bigArt`). Card covers load at
+  `fetchPriority = 'low'`, behind the song. Audio responses with no
+  Cache-Control of their own (Navidrome sends none) get `private, max-age`
+  a week, so the WebView keeps a played song as Chrome does. Covers get the
+  same by default, though Navidrome's own `public, immutable` wins.
+  **Always original** in Playback on this device is a promise: no probe,
+  no fallback. **Original, lower on a slow connection** (`smart`) is the
+  default.
+- **Loading shows.** A ring turns round the play button, in Now Playing (round
+  the orb) and on the mini-player, while the song waits on the network. It
+  appears on `waiting`, or on `play` before there is data. It clears on
+  playing, pause, ended, error or emptied, and shows only after 350ms, so a
+  quick start never flickers it.
 - **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
   handler instead of advancing - a chapter, for an audiobook. **It never stopped with the screen off**, which is when a sleep timer
   is used: the eight-second fade was stepped by animation frames, a phone

@@ -646,13 +646,18 @@ func isPlayableTime(seconds float64) bool {
 	return !math.IsNaN(seconds) && !math.IsInf(seconds, 0) && seconds >= 0
 }
 
-// ArtTarget builds an authenticated upstream target for a cover.
-func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
+// ArtTarget builds an authenticated upstream target for a cover, at the width
+// asked for (source.ArtSize), which Audiobookshelf resizes and keeps.
+func (s *Source) ArtTarget(ctx context.Context, artID string) (source.Target, error) {
 	if artID == "" {
 		return source.Target{}, fmt.Errorf("audiobookshelf %q: empty art id", s.id)
 	}
+	var q url.Values
+	if px := source.ArtSize(ctx); px > 0 {
+		q = url.Values{"width": {strconv.Itoa(px)}}
+	}
 	return source.Target{
-		URL:     s.http.URL("/api/items/"+url.PathEscape(artID)+"/cover", nil),
+		URL:     s.http.URL("/api/items/"+url.PathEscape(artID)+"/cover", q),
 		Headers: map[string]string{"Authorization": "Bearer " + s.cfg.Token},
 	}, nil
 }

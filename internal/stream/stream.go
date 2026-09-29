@@ -159,11 +159,27 @@ func (p *Proxy) ServeArt(w http.ResponseWriter, r *http.Request, sourceID, artID
 		http.Error(w, "source has no artwork", http.StatusNotImplemented)
 		return
 	}
+	// Card-sized unless asked otherwise (?size=N, or ?size=full): most covers
+	// are shown a couple of hundred pixels wide, and full-size ones made
+	// opening the app on a slow phone connection download megabytes of
+	// pictures ahead of the song (see artSize).
+	px := artSize(r)
+	r = r.WithContext(source.WithArtSize(r.Context(), px))
 	target, err := provider.ArtTarget(r.Context(), artID)
 	if err != nil {
 		http.Error(w, "could not build artwork url", http.StatusBadGateway)
 		return
 	}
+	// SoundStorm's own covers (a book's) are resized here.
+	if px > 0 && (target.FilePath != "" || target.Bytes != nil) {
+		if small, ok := shrinkLocal(target, px); ok {
+			target = small
+		}
+	}
+	// Kept on the device for a week unless the upstream says otherwise (the
+	// forwarded Cache-Control replaces this): without it a phone asked again
+	// for every book cover on every visit.
+	w.Header().Set("Cache-Control", "private, max-age=604800")
 	p.pipe(w, r, target, fmt.Sprintf("art %s/%s", sourceID, artID))
 }
 
@@ -251,6 +267,13 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 	// different content type than the one it declared.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	GuardActiveContent(w.Header())
+	// A song keeps on the device, as Chrome keeps one it has played: Navidrome
+	// says nothing about caching, and without a word from us the Android app's
+	// WebView fetched a song again on every play - over a slow link from the
+	// house, the difference between instant and half a minute.
+	if w.Header().Get("Cache-Control") == "" && strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "audio/") {
+		w.Header().Set("Cache-Control", "private, max-age=604800")
+	}
 
 	w.WriteHeader(resp.StatusCode)
 	if method == http.MethodHead {

@@ -3409,6 +3409,17 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
   width: 168%; height: 168%; pointer-events: none;
 }
 
+/* Loading: a ring turning round the play button while the song waits on
+   the network (the loading class, from the player's waiting and play
+   events). Round the orb for music, the disc otherwise and on the dock. */
+.np-play, .dock-play { position: relative; }
+.np-play.loading::after, .dock-play.loading::after {
+  content: ''; position: absolute; inset: -7px; border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, 0.16); border-top-color: #fff;
+  animation: spin 0.9s linear infinite; pointer-events: none;
+}
+.now-playing.np-music .np-play.loading::after { inset: -14px; }
+
 /* The sleep timer's custom time, a page of the menu. */
 .sleep-custom { display: grid; gap: 10px; padding: 8px 12px 12px; }
 .sleep-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

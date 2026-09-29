@@ -325,6 +325,21 @@ func WithUserID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, userKey{}, id)
 }
 
+type artSizeKey struct{}
+
+// WithArtSize asks an art source for a picture no wider or taller than px -
+// a cover sized for a card rather than its full resolution. A source that
+// cannot resize ignores it; 0 asks for the original.
+func WithArtSize(ctx context.Context, px int) context.Context {
+	return context.WithValue(ctx, artSizeKey{}, px)
+}
+
+// ArtSize is the size asked for with WithArtSize, or 0 for the original.
+func ArtSize(ctx context.Context) int {
+	px, _ := ctx.Value(artSizeKey{}).(int)
+	return px
+}
+
 type bitRateKey struct{}
 
 // WithMaxBitRate asks a streaming source for audio of at most kbps - a data
