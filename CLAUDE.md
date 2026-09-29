@@ -581,7 +581,9 @@ judged on in its first minute:
   no taps either) and appear there during a hold (`#np-hold-extra`,
   `holdButtonList`), chosen like the nine; letting go on one clicks the real
   button, past the rule that swallows the lift's click. A mouse keeps them
-  all showing. Then the "Now Playing" words went and the timeline too, shown only
+  all showing. **Except play, which came back** at the owner's asking: it shows
+  all the time, a tap on it plays or pauses and never changes the look, and
+  it is no longer among the buttons a hold brings up. Then the "Now Playing" words went and the timeline too, shown only
   while holding: sliding onto it (a band 36px either side) moves the
   position under the finger, the caption saying "Play from 2:09", and
   letting go there seeks. The sleep timer's countdown still shows. Nothing else answers the finger while they

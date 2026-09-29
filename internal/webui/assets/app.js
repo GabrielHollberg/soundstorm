@@ -7247,7 +7247,7 @@ $('now-playing').addEventListener('click', (event) => {
   if (!matchMedia('(pointer: coarse)').matches || !audio.item) return;
   if (performance.now() - npHold.at < 700) return;
   if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
-  if (event.target.closest('.np-head, #np-queue, #np-next-block, #np-looks, #item-menu, input, a, .np-sleep-menu')) return;
+  if (event.target.closest('.np-head, #np-queue, #np-next-block, #np-looks, #item-menu, input, a, .np-controls button, .np-bar button, .np-sleep-menu')) return;
   if (audio.npMode === 'queue' || audio.item.kind !== 'music') return;
   const at = COVER_STYLES.indexOf(coverStyle());
   const next = COVER_STYLES[(at + 1) % COVER_STYLES.length];
@@ -11310,14 +11310,12 @@ function holdIconList(item) {
 // holdButtonList: the Now Playing buttons that a touch screen keeps
 // invisible until a hold, with what letting go on each will do.
 function holdButtonList() {
-  const paused = $('audio-player').paused;
   return [
     { id: 'np-close', label: 'Close Now Playing' },
     { id: 'np-speed', label: 'Playback speed' },
     { id: 'np-looks-btn', label: 'Cover looks' },
     { id: 'np-exit', label: 'Stop and close' },
     { id: 'np-prev', label: 'Previous' },
-    { id: 'np-play', label: paused ? 'Play' : 'Pause' },
     { id: 'np-next', label: 'Next' },
   ];
 }
