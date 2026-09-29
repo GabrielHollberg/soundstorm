@@ -3741,6 +3741,81 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
 - All four need anywhere from seconds to a minute after container start, so
   provisioning retries with backoff in the background while SoundStorm serves.
 
+## The iPhone app (`ios/`)
+
+The owner wanted SoundStorm on the App Store rather than only as a home
+screen web app. Three shapes were weighed:
+
+- **A thin wrapper**: a native shell that loads the server's own web app.
+- **A wrapper whose audio is native**: the same shell, with music and
+  audiobooks played by iOS itself rather than by the page.
+- **A fully native app**: rebuild in Swift.
+
+**Chosen: the second, built in two stages.** Fully native was rejected for the
+reason every "client app" is the graveyard (see what SoundStorm does not do):
+`app.js` is the whole product across five media types, and a Swift rewrite
+means doing every feature twice from then on, with Android still on the web.
+What only native can give - CarPlay, audio iOS will not stop, the lock
+screen - is all audio, so only the audio goes native. The shell can grow
+screen by screen later if that ever looks worth it; nothing commits it to.
+
+**The APK note under Music does not transfer.** That one declined an Android
+WebView app because it would have cost lock-screen controls and background
+playback to fix a cosmetic problem, on Android's WebView, which lacks the
+Media Session API. An iPhone app's WKWebView is Safari's engine: with
+`UIBackgroundModes` audio and the `.playback` audio session (both set), the
+page's `<audio>` keeps playing locked. Whether the lock screen then shows the
+page's Media Session title and controls is **not yet checked on a real
+iPhone** - the simulator cannot say. That result decides how much of stage
+two is needed.
+
+**Stage one (done): the shell.** Plain Swift, no Capacitor: Capacitor is
+built to bundle a web app, and this one lives on each person's own server,
+while stage two is Swift anyway. What it does:
+
+- Asks for the server's address on first launch (every install is somebody's
+  own) and checks `/healthz` answers like SoundStorm before keeping it, so a
+  typo is caught at the door, not as a strange page. No scheme means https.
+- Shows the page full screen, laid out under the status bar with the same
+  `env(safe-area-inset-*)` the installed web app already uses.
+- Shows `alert`/`confirm`/`prompt` - a WKWebView shows none of them unless its
+  app does, and SoundStorm asks before removing downloads.
+- Sends links off the server, and `target="_blank"`, to Safari.
+- Sets `window.soundstormApp` before the page runs. `app.js` uses it to show
+  **Change server** beside Sign out, which posts `changeServer` to the app.
+  This is the only place the web app knows it is inside the app; keep it
+  that way until stage two needs more.
+- Allows plain http only on the local network (`NSAllowsLocalNetworking`).
+
+**What the shell does not do, and why that is expected:** no service worker.
+WKWebView only runs one for App-Bound Domains, a fixed list of at most ten
+set at build time, and every install has its own address. So opening the
+app with no connection shows the "can't reach" screen rather than the
+downloads - native downloads are stage two's, not a bug in stage one.
+
+**Stage two (next): native audio** - an `AVPlayer` behind a bridge the page
+talks to in place of `<audio>`, for Now Playing, remote commands and later
+CarPlay. `app.js`'s audio is not one element: crossfade uses a second one,
+gapless preloads into a Blob, leveling sets `volume`, audiobooks set
+`playbackRate`, and downloads play from the Cache API through `urlMap`. The
+bridge has to answer for all of those.
+
+Things that bit while building stage one:
+
+- **A centered `UIStackView` measures a multi-line label as one line**, and
+  truncates it, until `preferredMaxLayoutWidth` is set from the laid-out
+  width (`ConnectViewController.viewDidLayoutSubviews`).
+- **In the UI test, the keyboard's Previous/Next/Done bar sits over the web
+  form's submit button**, so a tap on the button lands on the bar. Pressing
+  Return submits the form instead, which is also what a person does.
+- **`simctl` cannot type or tap**, and scripting Simulator through System
+  Events waits on a macOS permission prompt nobody sees. The XCUITest in
+  `ios/SoundStormUITests` is how the app gets driven; it skips itself when no
+  server answers at `localhost:8080`.
+- **The server address is stored as a string**, not with
+  `UserDefaults.set(_:URL)`, so it can be given as a launch argument:
+  `xcrun simctl launch booted dev.soundstorm.app -serverURL http://localhost:8080`.
+
 ## Naming
 
 The product is **SoundStorm**; every identifier is **soundstorm**. Module path,
@@ -4485,6 +4560,7 @@ docker compose up --build
 docker compose logs -f soundstorm          # watch provisioning
 docker compose down -v                 # reset everything, including credentials
 pwsh scripts/make-sample-media.ps1     # synthetic library, no downloads
+open ios/SoundStorm.xcodeproj          # the iPhone app; see ios/README.md
 ```
 
 `docker compose logs -f SoundStorm` is the fastest way to see why a backend is not

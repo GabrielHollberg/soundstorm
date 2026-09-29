@@ -41,3 +41,7 @@ coverage.*
 # Working directories for scripts/fetch-starter-media.sh. It cleans up after
 # itself; this is for the run that gets interrupted.
 /.starter-*/
+
+# Xcode (ios/): per-person window layouts and build output
+xcuserdata/
+DerivedData/

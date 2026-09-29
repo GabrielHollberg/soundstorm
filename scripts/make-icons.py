@@ -139,7 +139,15 @@ def main():
     # iPhone rounds the corners itself and fills transparency with black, so
     # this one is opaque like the rest.
     icon(180, 0.66).save(icons / "apple-touch-icon.png", optimize=True)
-    print("wrote favicon.svg, cloud.svg, no-cover.svg and 4 icons")
+    # The iPhone app's icon: one 1024px image, which Xcode scales to every
+    # size. Same look as the home screen icon above, and opaque for the same
+    # reason - the App Store refuses an icon with transparency.
+    # The connect screen shows the same icon, and an app cannot load its own
+    # icon set as an image, so it gets a smaller copy of its own.
+    xcassets = ASSETS.parents[2] / "ios" / "SoundStorm" / "Assets.xcassets"
+    icon(1024, 0.66).save(xcassets / "AppIcon.appiconset" / "icon-1024.png", optimize=True)
+    icon(240, 0.66).save(xcassets / "Logo.imageset" / "logo.png", optimize=True)
+    print("wrote favicon.svg, cloud.svg, no-cover.svg and 6 icons")
 
 
 if __name__ == "__main__":

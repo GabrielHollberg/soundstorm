@@ -212,6 +212,16 @@ $('logout').addEventListener('click', async () => {
   location.reload();
 });
 
+// Inside the iPhone app (ios/), which sets window.soundstormApp, the app
+// rather than the address bar decides which server this is - so Account
+// offers the way back to its connect screen. Signing in stays per server.
+if (window.soundstormApp) {
+  show($('change-server'), true);
+  $('change-server').addEventListener('click', () => {
+    window.webkit.messageHandlers.soundstorm.postMessage({ type: 'changeServer' });
+  });
+}
+
 /* -------------------------------------------------------------- app shell */
 
 async function showApp(me) {
