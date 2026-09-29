@@ -3816,6 +3816,78 @@ Things that bit while building stage one:
   `UserDefaults.set(_:URL)`, so it can be given as a launch argument:
   `xcrun simctl launch booted dev.soundstorm.app -serverURL http://localhost:8080`.
 
+## The Android app (`android/`)
+
+The same shape as the iPhone app, and the same stage: a native shell around
+the server's own web app (Kotlin, two screens, no Compose or AppCompat), so
+`app.js` stays the one product. It does what `ios/` does - asks for the
+server's address and checks `/healthz`, shows the page edge to edge, answers
+`alert`/`confirm`/`prompt`, sends links off the server to the browser, and
+recovers from a failed load with Try again / Change server - and the web app
+cannot tell the two apps apart: the page gets the same `window.soundstormApp`
+and the same `window.webkit.messageHandlers.soundstorm.postMessage`, so "Change
+server" needed no Android code in `app.js`.
+
+**Android is where the APK note under Music applies, and this is its answer.**
+Android's WebView has no Media Session API and is stopped in the background
+unless the app holds a media-playback foreground service - the two things that
+note said a WebView app would lose. So:
+
+- `PageScript` runs before the page's own scripts (`addDocumentStartJavaScript`,
+  the server's origin only) and gives it a `navigator.mediaSession` that passes
+  what `app.js` already says - the song, playing or paused, the position, which
+  buttons work - to the app, and hands buttons back to the page's own handlers
+  (`window.__soundstormMediaAction`). The page does all the playing; nothing
+  about the audio is native yet.
+- `PlaybackService` is a foreground service of the `mediaPlayback` type with a
+  `MediaSessionCompat` and a MediaStyle notification: lock screen, notification,
+  headphones, Bluetooth and a car's controls. It goes to the foreground as soon
+  as the page says it is playing, drops back (notification kept, swipeable) on
+  pause, and goes away when the player closes.
+- The channel is `addWebMessageListener`, for the server's origin and the main
+  frame only - not `addJavascriptInterface`, which every frame of every origin
+  would see, EPUB chapters included.
+- Covers for the notification are fetched with the page's own cookie
+  (`CookieManager`), since covers are served only to someone signed in.
+- The status bar takes the page's theme colour (a MutationObserver on
+  `meta[name=theme-color]`), as the installed web app's does in Now Playing.
+- Back steps back through the page's own history, and with nothing left moves
+  the app to the background rather than closing it - closing would stop the
+  music. File pickers (Add media, Import playlist, Change cover) and a film's
+  full screen are the platform's.
+
+Plain http is allowed (`usesCleartextTraffic`), because an install is often
+reached by its LAN address and Android cannot allow a range of private
+addresses by itself. Unlike an iPhone's WKWebView, Android's WebView runs the
+service worker, so downloads should work offline in the app as in Chrome -
+not yet checked.
+
+**Checked on an emulator (Android 17 image), not yet on a phone:** the connect
+screen refused `example.com` ("isn't SoundStorm") and took the test server;
+inside the app the page had `soundstormApp`, the media session and the message
+channel; a song played; the media session was active and PLAYING with the
+song's title, artist and album; the service was in the foreground as
+`mediaPlayback`; with the screen off for 45 seconds playback carried on
+(0:40 to 1:28) and the queue moved on to the next song by itself; pause, play
+and next from `cmd media_session dispatch` (what headphones send) worked; the
+notification shade showed the controls with a seek bar; the status bar took
+Now Playing's colour; Change server returned to the connect screen, prefilled,
+and stopped the music.
+
+Things that bit:
+
+- **The emulator's default 2GB is killed as the page loads** - Android's
+  low-memory killer ended the app in the foreground ("min watermark is
+  breached"). 4GB (`-memory 4096`, `hw.ramSize`) is fine. A phone is not the
+  emulator; worth watching on a small one.
+- **Taps and typing through `adb shell input` do not reliably reach a web
+  page.** Drive it through the debug build's DevTools instead
+  (`adb forward ... webview_devtools_remote_<pid>`, Playwright
+  `connectOverCDP`), which is how the checks above ran.
+- **Change server prefilled the host alone**, as the iPhone app does, which
+  for a plain-http server is read back as https and fails. It keeps `http://`
+  now.
+
 ## Naming
 
 The product is **SoundStorm**; every identifier is **soundstorm**. Module path,
@@ -4561,6 +4633,7 @@ docker compose logs -f soundstorm          # watch provisioning
 docker compose down -v                 # reset everything, including credentials
 pwsh scripts/make-sample-media.ps1     # synthetic library, no downloads
 open ios/SoundStorm.xcodeproj          # the iPhone app; see ios/README.md
+cd android && ./gradlew installDebug     # the Android app; see android/README.md
 ```
 
 `docker compose logs -f SoundStorm` is the fastest way to see why a backend is not

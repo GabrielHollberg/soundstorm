@@ -147,7 +147,16 @@ def main():
     xcassets = ASSETS.parents[2] / "ios" / "SoundStorm" / "Assets.xcassets"
     icon(1024, 0.66).save(xcassets / "AppIcon.appiconset" / "icon-1024.png", optimize=True)
     icon(240, 0.66).save(xcassets / "Logo.imageset" / "logo.png", optimize=True)
-    print("wrote favicon.svg, cloud.svg, no-cover.svg and 6 icons")
+    # The Android app's launcher icon is adaptive: a 108dp square of which a
+    # launcher may show as little as the middle 66dp circle, so the cloud is
+    # sized to that circle (0.66 of 66/108). Opaque, the background colour
+    # being the same as the adaptive icon's own. Its connect screen shows a
+    # copy like the iPhone app's.
+    res = ASSETS.parents[2] / "android" / "app" / "src" / "main" / "res" / "drawable-nodpi"
+    res.mkdir(parents=True, exist_ok=True)
+    icon(432, 0.40).save(res / "ic_launcher_foreground.png", optimize=True)
+    icon(240, 0.66).save(res / "logo.png", optimize=True)
+    print("wrote favicon.svg, cloud.svg, no-cover.svg and 8 icons")
 
 
 if __name__ == "__main__":
