@@ -12500,11 +12500,11 @@ const viz = {
     const k = back.width / c.width;
     const x = (b.left + b.width / 2 - c.left) * k;
     const y = (b.top + b.height / 2 - c.top) * k;
-    // The first size (clear space out to 1.45 of the button's width), but
-    // clear only close in and eased the whole way out - a solid circle with
-    // a short edge read as a hole cut in the animation.
-    const r0 = b.width * 0.3 * k;
-    const r1 = b.width * 1.45 * k;
+    // Clear space out to 1.1 of the button's width, clear only close in and
+    // eased the whole way out - a solid circle with a short edge read as a
+    // hole cut in the animation.
+    const r0 = b.width * 0.22 * k;
+    const r1 = b.width * 1.1 * k;
     for (const ctx of [back.getContext('2d'), front.getContext('2d')]) {
       const hole = ctx.createRadialGradient(x, y, r0, x, y, r1);
       hole.addColorStop(0, 'rgba(0, 0, 0, 1)');
