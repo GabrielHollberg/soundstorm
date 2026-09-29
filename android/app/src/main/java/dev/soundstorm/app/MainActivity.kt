@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.text.InputType
@@ -17,6 +18,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.JsPromptResult
@@ -62,18 +64,29 @@ class MainActivity : Activity() {
     private var fullscreen: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private var safeCss = ""
+    private var safeScript: androidx.webkit.ScriptHandler? = null
     private val background = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Edge to edge, as Android now requires: the page's area sits between
-        // the bars, and the bars' own space is painted by two scrims - the
-        // status bar in the page's theme colour, the navigation bar black.
+        // Both bars hidden, everywhere (the owner's asking - the one thing
+        // the installed web app could never do, as Chrome owns its bars): a
+        // swipe in from an edge shows them for a moment, as in a game or a
+        // video. The app draws into the camera cutout too, so there is no
+        // black strip across the top; the page is kept clear of the cutout
+        // itself, and that sliver is painted in the page's theme colour.
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
+        hideBars()
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         content = FrameLayout(this)
         statusScrim = View(this).apply { setBackgroundColor(Color.BLACK) }
@@ -82,8 +95,14 @@ class MainActivity : Activity() {
         root.addView(statusScrim, FrameLayout.LayoutParams(MATCH, 0, Gravity.TOP))
         root.addView(navScrim, FrameLayout.LayoutParams(MATCH, 0, Gravity.BOTTOM))
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            // The bars' own space only (none while they are hidden). The
+            // camera cutout is not padded: the page draws up into it, and
+            // the web view tells the page where it is (env(safe-area-inset-*)),
+            // which the page already keeps its words clear of.
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            setSafeArea(cut.top, cut.right, cut.bottom, cut.left)
             content.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
             statusScrim.layoutParams = (statusScrim.layoutParams as FrameLayout.LayoutParams).apply { height = bars.top }
             navScrim.layoutParams = (navScrim.layoutParams as FrameLayout.LayoutParams).apply { height = bars.bottom }
@@ -96,6 +115,61 @@ class MainActivity : Activity() {
         intent?.getStringExtra("serverURL")?.let(ServerAddress::parse)?.let { ServerAddress.save(this, it) }
         val saved = ServerAddress.saved(this)
         if (saved != null) showWeb(saved) else showConnect(null)
+    }
+
+    /**
+     * Tells the page how much room the camera cutout needs, in CSS pixels, as
+     * the --safe-* values style.css spaces its edges by. The web view itself
+     * reports 0 for a cutout the app draws into, which would put the page's
+     * header under the camera. Set before each page's own scripts run (a
+     * document-start script, replaced when the cutout changes, as on turning
+     * the phone) and on the page already showing.
+     */
+    private fun setSafeArea(top: Int, right: Int, bottom: Int, left: Int) {
+        val d = resources.displayMetrics.density
+        val css = "t=${(top / d).toInt()};r=${(right / d).toInt()};b=${(bottom / d).toInt()};l=${(left / d).toInt()}"
+        if (css == safeCss) return
+        safeCss = css
+        applySafeArea()
+    }
+
+    private fun safeAreaScript(): String {
+        val v = safeCss.split(';').associate { it.substringBefore('=') to it.substringAfter('=') }
+        return "(() => { const s = document.documentElement.style;" +
+            " s.setProperty('--safe-top', '${v["t"] ?: 0}px'); s.setProperty('--safe-right', '${v["r"] ?: 0}px');" +
+            " s.setProperty('--safe-bottom', '${v["b"] ?: 0}px'); s.setProperty('--safe-left', '${v["l"] ?: 0}px'); })();"
+    }
+
+    private fun applySafeArea() {
+        val view = webView ?: return
+        val origin = server?.let(ServerAddress::origin) ?: return
+        if (safeCss.isEmpty()) return
+        val script = safeAreaScript()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            safeScript?.remove()
+            safeScript = WebViewCompat.addDocumentStartJavaScript(view, script, setOf(origin))
+        }
+        view.evaluateJavascript(script, null)
+    }
+
+    /** Hides the status and navigation bars; a swipe from an edge shows them briefly. */
+    private fun hideBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    // Hidden again whenever the window comes back - after a dialog, the file
+    // picker, another app, or the screen waking.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideBars()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hideBars()
     }
 
     override fun onDestroy() {
@@ -261,6 +335,8 @@ class MainActivity : Activity() {
         content.addView(view, FrameLayout.LayoutParams(MATCH, MATCH))
         webView = view
         MediaBridge.attach(view)
+        safeScript = null
+        applySafeArea()
         load()
     }
 
@@ -445,17 +521,14 @@ class MainActivity : Activity() {
             fullscreen = view
             fullscreenCallback = callback
             root.addView(view, FrameLayout.LayoutParams(MATCH, MATCH))
-            WindowInsetsControllerCompat(window, window.decorView).apply {
-                hide(WindowInsetsCompat.Type.systemBars())
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
+            hideBars()
         }
 
         override fun onHideCustomView() {
             fullscreen?.let { root.removeView(it) }
             fullscreen = null
             fullscreenCallback = null
-            WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+            hideBars()
         }
     }
 

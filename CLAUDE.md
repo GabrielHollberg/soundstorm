@@ -3856,6 +3856,27 @@ note said a WebView app would lose. So:
   music. File pickers (Add media, Import playlist, Change cover) and a film's
   full screen are the platform's.
 
+**Both system bars are hidden, everywhere** - the owner's asking, and the
+thing the installed web app never could do, since Chrome owns its bars. A
+swipe in from an edge shows them for a moment (`BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`);
+they are hidden again whenever the window regains focus. The app draws into the
+camera cutout (`LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS`), so there is no black
+strip over the camera - the one the owner disliked in the Chrome app. Android
+shows its own "Viewing full screen - swipe down to exit" card once, the first
+time.
+
+**The web view reports 0 for the cutout it draws into** (measured:
+`env(safe-area-inset-top)` read 0px on a Pixel 7 profile with a 136px cutout),
+so drawn full height the Home header would sit under the camera, and padding
+the page down instead left a band in the theme colour that never quite matched
+Now Playing's backdrop. So style.css no longer uses `env(safe-area-inset-*)`
+directly: every edge is spaced by `--safe-top/right/bottom/left`, which default
+to the env() values (a browser and the iPhone are unchanged), and the Android app
+sets them to the cutout's size in CSS pixels - as a document-start script,
+replaced when the cutout changes, and on the page already showing. Checked:
+`--safe-top` read 51px, the header ran up to the edge with the logo below the
+camera, and Now Playing's backdrop reached the top with no band.
+
 Plain http is allowed (`usesCleartextTraffic`), because an install is often
 reached by its LAN address and Android cannot allow a range of private
 addresses by itself. Unlike an iPhone's WKWebView, Android's WebView runs the
