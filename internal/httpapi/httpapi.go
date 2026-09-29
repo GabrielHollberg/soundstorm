@@ -284,6 +284,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
 	guarded.HandleFunc("GET /api/library", s.handleLibrary)
+	guarded.HandleFunc("GET /api/probe", s.handleProbe)
 	guarded.HandleFunc("POST /api/library/rescan", s.handleRescan)
 	// Two steps rather than one multipart request. The plan is what lets the
 	// UI say "14 files, 2 skipped, all going to Films" before a gigabyte

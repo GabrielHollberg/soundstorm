@@ -1169,6 +1169,16 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   are asked for one at a time). The Android test build's own timing probe
   had been fetching a second whole copy of each converted song, which made
   it worse, and came out.
+- **Then known before the first song.** With pacing the fallback took 20s,
+  not 67: starting at full quality sends the 1MB burst, which the link then
+  has to drain before the quieter copy arrives. So on an away-from-home
+  address the app times 128KB from `/api/probe` once a session as it opens
+  (incompressible bytes, `no-store`); under 1.2 Mbps songs start at 128 kbps
+  from the first one. A slow address is remembered on the device for six
+  hours (`soundstorm.slowlink`), and the six-second fallback remembers it too.
+  At home none of it runs. Checked in Chrome on a mapped `*.ts.net` name
+  throttled to ~0.3 Mbps: slow on opening, the first song asked for at 128
+  kbps.
 - **Sleep timer** in Now Playing; "end of this song" stops in the `ended`
   handler instead of advancing - a chapter, for an audiobook. **It never stopped with the screen off**, which is when a sleep timer
   is used: the eight-second fade was stepped by animation frames, a phone

@@ -117,6 +117,38 @@ const QUALITY_KEY = 'soundstorm.quality';
 // kbps instead: a quarter of the data, and an MP3 has none of the ~600KB of
 // header an iTunes M4A must deliver before its first note.
 let slowLink = false;
+// Known before the first song where possible: an away-from-home address found
+// slow is remembered on this device for six hours, and otherwise the link is
+// timed when the app opens there (probeLink). Otherwise the first song of every
+// session paid for finding out - starting at full quality sends a megabyte
+// that a slow link then has to drain before the quieter copy can arrive
+// (measured: 20 seconds at 0.3 Mbps).
+const SLOW_KEY = 'soundstorm.slowlink';
+const SLOW_FOR_MS = 6 * 3600 * 1000;
+const awayHost = /\.net\.soundstorm\.dev$|\.ts\.net$/i.test(location.hostname);
+try {
+  const kept = JSON.parse(localStorage.getItem(SLOW_KEY) || 'null');
+  if (kept && kept.host === location.host && kept.until > Date.now()) slowLink = true;
+} catch { /* nothing kept */ }
+function rememberSlowLink() {
+  slowLink = true;
+  try { localStorage.setItem(SLOW_KEY, JSON.stringify({ host: location.host, until: Date.now() + SLOW_FOR_MS })); } catch { /* not kept */ }
+}
+// probeLink times 128KB from the server, once a session, only away from home:
+// under 1.2 Mbps (about four seconds for an M4A's header) songs start at 128
+// kbps from the first one. Costs about three seconds on a link that slow.
+let probed = false;
+async function probeLink() {
+  if (probed || !awayHost || slowLink) return;
+  probed = true;
+  try {
+    const t0 = performance.now();
+    const resp = await fetch('/api/probe?b=131072', { cache: 'no-store' });
+    const got = (await resp.arrayBuffer()).byteLength;
+    const mbps = (got * 8) / ((performance.now() - t0) / 1000) / 1e6;
+    if (resp.ok && got > 0 && mbps < 1.2) rememberSlowLink();
+  } catch { /* offline: nothing to learn */ }
+}
 
 function streamingKbps() {
   const choice = localStorage.getItem(QUALITY_KEY) || 'original';
@@ -226,6 +258,8 @@ async function showApp(me) {
   show($('boot'), false);
   show($('gate'), false);
   show($('app'), true);
+  // Away from home, time the link before anything plays (see slowLink).
+  probeLink();
   // The search box is not focused on opening: on a phone that pops the
   // keyboard over the library, and it drew a highlight round the box.
   applyLibraryTabs();
@@ -2017,7 +2051,7 @@ function startStream(item) {
   setTimeout(() => {
     if (audio.item !== item || slowLink || player.paused) return;
     if (player.readyState >= 2) return; // it has started, or can
-    slowLink = true;
+    rememberSlowLink();
     showToast('Slow connection - streaming at a lower quality for now.');
     startAt(playPath(item), 0);
   }, SLOW_START_MS);
