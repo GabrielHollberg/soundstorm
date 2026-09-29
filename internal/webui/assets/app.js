@@ -1933,6 +1933,7 @@ function playAudio(item, fromQueue) {
   audio.item = item;
   audio.tracks = [];
   audio.chapters = [];
+  audio.captionChapter = -1;
   audio.urlMap = null;
   audio.index = 0;
   audio.resumable = false;
@@ -2036,6 +2037,8 @@ async function loadPlayback(item) {
   audio.chapters = Array.isArray(info.chapters) && info.chapters.length > 1 ? info.chapters
     : audio.tracks.length > 1 ? audio.tracks.map((t) => ({ title: t.title, startSeconds: t.startSeconds || 0 })) : [];
   renderDockButtons();
+  audio.captionChapter = -1;
+  updateTrackCaption();
   updateMediaSession();
   renderNowPlaying();
 
@@ -2163,11 +2166,30 @@ function selectTrack(index, offset = 0) {
 // somebody actually wants to know mid-book. The item's own subtitle is already
 // above it in the title line.
 function updateTrackCaption() {
+  // A book's chapter list, when it has one, names the place better than its
+  // files do (a single m4b is one file and many chapters).
+  if (updateChapterCaption()) return;
   const track = audio.tracks[audio.index];
   if (!track) return;
   $('audio-sub').textContent =
     `${audio.index + 1} of ${audio.tracks.length} · ${track.title}`;
 }
+
+// updateChapterCaption: the mini-player's second line (and the lock screen's
+// title) is the chapter being listened to - "3 of 12 · its title" - kept up
+// as it plays from one chapter into the next. True when a book has chapters.
+function updateChapterCaption() {
+  const list = audio.chapters || [];
+  if (!audio.item || audio.item.kind === 'music' || list.length < 2) return false;
+  const i = chapterAt(elapsed());
+  if (i === audio.captionChapter) return true;
+  audio.captionChapter = i;
+  const title = (list[i] && list[i].title) || `Chapter ${i + 1}`;
+  $('audio-sub').textContent = `${i + 1} of ${list.length} \u00B7 ${title}`;
+  updateMediaSession();
+  return true;
+}
+$('audio-player').addEventListener('timeupdate', () => updateChapterCaption());
 
 function showTrackList(visible) {
   show($('audio-tracks'), visible);
@@ -4232,7 +4254,8 @@ function mediaArtwork(item) {
 function updateMediaSession() {
   if (!hasMediaSession || !audio.item) return;
   const item = audio.item;
-  const track = audio.tracks.length > 1 ? audio.tracks[audio.index] : null;
+  const chapters = item.kind !== 'music' && (audio.chapters || []).length > 1 ? audio.chapters : null;
+  const track = chapters ? chapters[chapterAt(elapsed())] : audio.tracks.length > 1 ? audio.tracks[audio.index] : null;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       // For a chaptered audiobook the chapter is the title and the book is
@@ -5107,11 +5130,15 @@ function nextChapterStart() {
   return i + 1 < list.length ? list[i + 1].startSeconds : null;
 }
 
-// Where the chapter before this one starts, or null in the first.
+// Where a swipe right goes: the start of this chapter, if it is more than
+// five seconds in - as "previous" restarts a song - else the chapter before.
+// Null at the very start of the first.
 function prevChapterStart() {
   const list = audio.chapters || [];
   if (!audio.item || audio.item.kind === 'music' || list.length < 2) return null;
-  const i = chapterAt(elapsed());
+  const now = elapsed();
+  const i = chapterAt(now);
+  if (now - (list[i].startSeconds || 0) > 5) return list[i].startSeconds || 0;
   return i > 0 ? list[i - 1].startSeconds : null;
 }
 

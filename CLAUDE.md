@@ -510,8 +510,12 @@ judged on in its first minute:
   or the mini-player, goes to the next chapter** (`nextChapterStart`), the
   same cover sliding in and the chapter's name in a message; **a swipe right
   goes to the chapter before** (`prevChapterStart`) - it sprang back at first,
-  and the owner asked for it. In the first chapter or the last, the swipe
-  with nowhere to go springs back. Checked on the stand-in book: left on
+  and the owner asked for it. More than five seconds into a chapter it goes
+  back to that chapter's start, as "previous" restarts a song; nearer the
+  start, to the chapter before. With nowhere to go it springs back. The
+  mini-player's second line, and the lock screen's title, is the chapter -
+  "3 of 12 - its title" - from the book's chapter list, kept up as it plays
+  on (`updateChapterCaption`). Checked on the stand-in book: left on
   Now Playing 0:02 to 1:01, right stayed put, left on the mini-player to
   2:01.
 
