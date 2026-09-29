@@ -7667,10 +7667,12 @@ function homeQuickPlay(favs) {
   if (!shelfAvailable('music')) return null;
   const hasFavs = ((favs && favs.ok && favs.body && favs.body.items) || []).some((it) => it.kind === 'music');
   const actions = [
-    { icon: 'shuffle', label: 'Shuffle all', run: () => startRadio({ mode: 'shuffle' }) },
-    hasFavs && { icon: 'heart', label: 'Your favorites', run: () => playMix('favorites') },
-    { icon: 'radio', label: 'Library radio', run: () => startRadio({ mode: 'library' }) },
-    { icon: 'sparkle', label: 'Newly added', run: () => playMix('recently-added') },
+    // Named for music, since Home holds every shelf: "Shuffle all" alone read
+    // as though it might mean films and books too.
+    { icon: 'shuffle', label: 'Shuffle all music', run: () => startRadio({ mode: 'shuffle' }) },
+    hasFavs && { icon: 'heart', label: 'Favorite songs', run: () => playMix('favorites') },
+    { icon: 'radio', label: 'Music radio', run: () => startRadio({ mode: 'library' }) },
+    { icon: 'sparkle', label: 'New music', run: () => playMix('recently-added') },
   ].filter(Boolean);
   const row = document.createElement('div');
   row.className = 'home-quick';

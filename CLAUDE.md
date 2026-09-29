@@ -996,8 +996,10 @@ with equal odds from the songs not played yet this session, with none of the
 other stations' leaning away from recent plays or spacing of artists and
 albums; endless, and never repeating until the library has been through
 (the app sends the last 1,500 queued), where the Shuffle everything mix stops
-at a hundred - then Your favorites (shuffled, only with
-some), Library radio and Newly added. On a phone the three sit in one row,
+at a hundred - then Favorite songs (shuffled, only with
+some), Music radio (Library radio) and New music. Every name says music
+(Shuffle all music), since Home holds every shelf and "Shuffle all" alone
+did not say what it would play. On a phone the three sit in one row,
 the icon over the name.
 
 **The pills can be put in any order**: hold one (450ms, as a card) and slide
