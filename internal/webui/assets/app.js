@@ -11523,13 +11523,15 @@ function holdIconList(item) {
 // holdButtonList: the Now Playing buttons that a touch screen keeps
 // invisible until a hold, with what letting go on each will do.
 function holdButtonList() {
+  const book = Boolean(audio.item && audio.item.kind !== 'music');
   return [
     { id: 'np-close', label: 'Close Now Playing' },
+    { id: 'np-chapters-btn', label: 'Chapters', icon: 'queue' },
     { id: 'np-speed', label: 'Playback speed' },
     { id: 'np-looks-btn', label: 'Cover looks' },
     { id: 'np-exit', label: 'Stop and close' },
-    { id: 'np-prev', label: 'Previous' },
-    { id: 'np-next', label: 'Next' },
+    { id: 'np-prev', label: book ? 'Back 30 seconds' : 'Previous' },
+    { id: 'np-next', label: book ? 'Forward 30 seconds' : 'Next' },
   ];
 }
 function showHoldIcons(pointerId, x0, y0) {
@@ -11573,14 +11575,15 @@ function showHoldIcons(pointerId, x0, y0) {
   // each where it always is, chosen the same way as the rest.
   const extra = $('np-hold-extra');
   const coarse = matchMedia('(pointer: coarse)').matches;
-  extra.replaceChildren(...(coarse && item.kind === 'music' ? holdButtonList() : []).flatMap((it) => {
+  extra.replaceChildren(...(coarse ? holdButtonList() : []).flatMap((it) => {
     const el = $(it.id);
     const b = el && el.getBoundingClientRect();
     if (!b || !b.width || el.closest('.hidden')) return [];
     const s = document.createElement('span');
     s.className = 'np-hold-icon np-hold-button';
     const svg = el.querySelector('svg');
-    if (svg) s.append(svg.cloneNode(true));
+    if (it.icon) s.append(icon(it.icon));
+    else if (svg) s.append(svg.cloneNode(true));
     else s.textContent = el.textContent;
     s.style.left = `${b.left + b.width / 2}px`;
     s.style.top = `${b.top + b.height / 2}px`;

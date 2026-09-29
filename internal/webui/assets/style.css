@@ -3097,13 +3097,16 @@ body.np-open .toast { z-index: 76; bottom: calc(env(safe-area-inset-bottom, 0px)
    their places so the hold can show them there. The speed menu, inside its
    hidden button's wrapper, still shows when opened. */
 @media (pointer: coarse) {
-  /* Play stays: the one button worth one tap (the owner's asking). */
-  .now-playing.np-music .np-bar .np-icon,
-  .now-playing.np-music .np-controls .np-icon:not(.np-play) { visibility: hidden; }
+  /* Play stays: the one button worth one tap (the owner's asking). The
+     rest, an audiobook's too (its chapters, speed and thirty-second jumps),
+     show while a finger is held down. */
+  .now-playing .np-bar .np-icon,
+  .now-playing .np-bar .np-speed,
+  .now-playing .np-controls .np-icon:not(.np-play) { visibility: hidden; }
   .now-playing #np-speed-menu { visibility: visible; }
   /* No "Now Playing" words, and the timeline only while holding (sliding
      onto it then seeks). The sleep timer's countdown still shows. */
-  .now-playing.np-music .np-label-text { display: none; }
+  .now-playing .np-label-text { display: none; }
   .now-playing.np-music .np-progress { visibility: hidden; }
   .now-playing.np-music.hold-icons .np-progress { visibility: visible; }
 }

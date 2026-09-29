@@ -515,7 +515,12 @@ judged on in its first minute:
   start, to the chapter before. With nowhere to go it springs back. The
   mini-player's second line, and the lock screen's title, is the chapter -
   "3 of 12 - its title" - from the book's chapter list, kept up as it plays
-  on (`updateChapterCaption`). Checked on the stand-in book: left on
+  on (`updateChapterCaption`). **Then the book screen went the music
+  screen's way too**, at the owner's asking: no "Now Playing" words, and on
+  a touch screen its buttons - close, Chapters (a list icon in the hold),
+  speed, stop, the thirty-second jumps - invisible until a hold brings them
+  up in their places; play stays, and so do the chapter timeline and the
+  book's progress, which are what a book is watched for. Checked on the stand-in book: left on
   Now Playing 0:02 to 1:01, right stayed put, left on the mini-player to
   2:01.
 
