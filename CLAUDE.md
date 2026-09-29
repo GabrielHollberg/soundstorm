@@ -597,7 +597,12 @@ judged on in its first minute:
   main animation: the loudness, eased over a fraction of a second so it
   breathes rather than flickers, sets its size, brightness (overall alpha
   0.35 to 0.75), how wavy its edges are and how fast it turns; the white
-  heart and halo are a third of what they were. Then the "Now Playing" words went and the timeline too, shown only
+  heart and halo are a third of what they were. **Then less cloudy, more
+  magical:** the filled layers read as haze, so each is now a line - a wide
+  faint stroke under a fine bright one, like neon, a breath of colour inside
+  - with sixteen sparkles circling it, each twinkling on its own, flaring
+  and drifting out on the beat (the brightest with a small cross of light),
+  and a small bright heart. Then the "Now Playing" words went and the timeline too, shown only
   while holding: sliding onto it (a band 36px either side) moves the
   position under the finger, the caption saying "Play from 2:09", and
   letting go there seeks. The sleep timer's countdown still shows. Nothing else answers the finger while they

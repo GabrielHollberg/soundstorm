@@ -12941,13 +12941,17 @@ const playOrb = {
     const ck = this.clock;
     const pts = 72;
     const TAU2 = Math.PI * 2;
+    // Crisp glowing lines rather than filled haze (filled layers read as
+    // cloudy; the owner asked for something more magical): each wavy layer
+    // drawn twice, a wide faint stroke for its glow and a fine bright one
+    // over it, like neon, with only a breath of colour inside.
     for (let l = 0; l < 4; l++) {
       const layer = ORB_LAYERS[l];
       const amp = 0.03 + 0.14 * lvl + 0.12 * this.env;
       g.beginPath();
       for (let p = 0; p <= pts; p++) {
         const th = (p / pts) * TAU2;
-        let r = 0.82 + l * 0.07;
+        let r = 0.8 + l * 0.08;
         for (const wv of layer.waves) r += (amp / layer.waves.length) * 2 * Math.sin(wv.k * th + wv.speed * ck * 2.4 + wv.ph);
         const a = th + layer.spin * ck * 4;
         const x = cx + Math.cos(a) * R * r;
@@ -12955,23 +12959,47 @@ const playOrb = {
         if (p) g.lineTo(x, y); else g.moveTo(x, y);
       }
       g.closePath();
-      const grad = g.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * 1.25);
-      grad.addColorStop(0, vizColor(pal[l % 3], 0.1));
-      grad.addColorStop(0.65, vizColor(pal[l % 3], 0.26 + 0.14 * this.swell));
-      grad.addColorStop(1, vizColor(pal[l % 3], 0.04));
-      g.fillStyle = grad;
+      const c = pal[l % 3];
+      g.fillStyle = vizColor(c, 0.04 + 0.04 * this.swell);
       g.fill();
+      g.strokeStyle = vizColor(c, 0.12 + 0.12 * this.swell);
+      g.lineWidth = 5 * dpr;
+      g.stroke();
+      g.strokeStyle = vizColor(c, 0.6 + 0.35 * this.swell);
+      g.lineWidth = 1.2 * dpr;
+      g.stroke();
     }
-    // A bright heart that flashes with the beat, and a soft halo round it all.
-    const core = g.createRadialGradient(cx, cy, 0, cx, cy, R * (0.75 + 0.35 * this.swell));
-    core.addColorStop(0, vizColor(VIZ_WHITE, 0.12 + 0.2 * lvl + 0.22 * this.swell));
+    // Sparkles circling it: each twinkles on its own, the ring turns with the
+    // music, and a beat makes them all flare and drift outward a little.
+    if (!this.sparks) {
+      this.sparks = Array.from({ length: 16 }, (_, i) => ({
+        a: (i / 16) * TAU2 + Math.random() * 0.4, r: 1.05 + Math.random() * 0.45,
+        tw: Math.random() * TAU2, sp: 0.6 + Math.random() * 0.9, c: i % 3,
+      }));
+    }
+    for (const sk of this.sparks) {
+      const a = sk.a + ck * 0.5 * sk.sp;
+      const rr = R * (sk.r + 0.18 * this.swell);
+      const x = cx + Math.cos(a) * rr;
+      const y = cy + Math.sin(a) * rr;
+      const twinkle = Math.max(0, Math.sin(ck * 3.2 * sk.sp + sk.tw));
+      const bright = twinkle * twinkle * (0.5 + 0.5 * lvl) + 0.5 * this.swell;
+      if (bright < 0.04) continue;
+      const size = (0.8 + 1.4 * bright) * dpr;
+      g.fillStyle = vizColor(VIZ_WHITE, Math.min(1, bright));
+      g.fillRect(x - size / 2, y - size / 2, size, size);
+      // A soft cross of light on the brightest ones.
+      if (bright > 0.45) {
+        g.fillStyle = vizColor(pal[sk.c], Math.min(1, bright) * 0.5);
+        g.fillRect(x - size * 2.5, y - size * 0.2, size * 5, size * 0.4);
+        g.fillRect(x - size * 0.2, y - size * 2.5, size * 0.4, size * 5);
+      }
+    }
+    // A small bright heart that flashes with the beat.
+    const core = g.createRadialGradient(cx, cy, 0, cx, cy, R * (0.35 + 0.2 * this.swell));
+    core.addColorStop(0, vizColor(VIZ_WHITE, 0.25 + 0.2 * lvl + 0.35 * this.swell));
     core.addColorStop(1, vizColor(VIZ_WHITE, 0));
     g.fillStyle = core;
-    g.fillRect(0, 0, cw, ch);
-    const halo = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, cw / 2);
-    halo.addColorStop(0, vizColor(pal[0], 0.1 + 0.2 * lvl + 0.15 * this.swell));
-    halo.addColorStop(1, vizColor(pal[0], 0));
-    g.fillStyle = halo;
     g.fillRect(0, 0, cw, ch);
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
