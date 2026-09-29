@@ -5091,11 +5091,10 @@ function neighborTrack(by) {
     const item = q.items[at];
     return item ? { item } : null;
   }
-  // An audiobook swipes left to its next chapter (the owner's asking, once a
-  // book had a chapter list to go by) - the same cover slides in. Nothing
-  // the other way: a swipe right springs back, since going back a chapter by
-  // accident loses the place.
-  if (by > 0 && nextChapterStart() !== null) return { item: audio.item };
+  // An audiobook swipes to its chapters (the owner's asking, once a book had
+  // a chapter list to go by): left to the next, right to the one before -
+  // the same cover slides in.
+  if ((by > 0 ? nextChapterStart() : prevChapterStart()) !== null) return { item: audio.item };
   return null;
 }
 
@@ -5108,11 +5107,19 @@ function nextChapterStart() {
   return i + 1 < list.length ? list[i + 1].startSeconds : null;
 }
 
+// Where the chapter before this one starts, or null in the first.
+function prevChapterStart() {
+  const list = audio.chapters || [];
+  if (!audio.item || audio.item.kind === 'music' || list.length < 2) return null;
+  const i = chapterAt(elapsed());
+  return i > 0 ? list[i - 1].startSeconds : null;
+}
+
 // A swipe changes song outright: back means the song before, not the start
 // of this one, since the previous cover is what slid in.
 function stepTrack(by) {
   if (audio.item && audio.item.kind !== 'music') {
-    const next = by > 0 ? nextChapterStart() : null;
+    const next = by > 0 ? nextChapterStart() : prevChapterStart();
     if (next !== null) {
       goToBook(next);
       const list = audio.chapters;

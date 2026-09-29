@@ -508,9 +508,10 @@ judged on in its first minute:
   **The mini-player follows the chapter too** - the line along its edge,
   and a computer's seek bar and times - and **a swipe left, on Now Playing
   or the mini-player, goes to the next chapter** (`nextChapterStart`), the
-  same cover sliding in and the chapter's name in a message. A swipe right
-  springs back: going back a chapter by accident loses the place, and the
-  table of contents is there for that. Checked on the stand-in book: left on
+  same cover sliding in and the chapter's name in a message; **a swipe right
+  goes to the chapter before** (`prevChapterStart`) - it sprang back at first,
+  and the owner asked for it. In the first chapter or the last, the swipe
+  with nowhere to go springs back. Checked on the stand-in book: left on
   Now Playing 0:02 to 1:01, right stayed put, left on the mini-player to
   2:01.
 
