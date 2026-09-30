@@ -3651,3 +3651,6 @@ html.tv #video-overlay::after {
 }
 html.tv #video-overlay.tv-bare::after { opacity: 0; }
 html.tv #video-caption { color: #fff; font-weight: 600; }
+/* Nothing behind a film scrolls on a TV: the page under it did as the
+   arrows moved, its scrollbar showing at the side. */
+html.tv:has(#video-overlay:not(.hidden)) body { overflow: hidden; }

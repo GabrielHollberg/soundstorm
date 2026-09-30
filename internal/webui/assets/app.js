@@ -14683,8 +14683,9 @@ function tvRemote() {
       // up and down still reach its buttons.
       if (across && shown('reader-overlay') && !shown('item-menu')) return;
       // Left and right belong to a text box's cursor and a slider's thumb.
-      if (across && ((typing(t) && !locked(t)) || (t.matches && t.matches('input[type="range"]')))) return;
-      if (t.tagName === 'SELECT') return;
+      // (Not a picker: on a TV the arrows leave it, and OK opens its list -
+      // with the arrows kept, a film's audio picker could not be left.)
+      if (across && ((typing(t) && !locked(t) && t.tagName !== 'SELECT') || (t.matches && t.matches('input[type="range"]')))) return;
       event.preventDefault();
       move(DIRS[event.key]);
       return;

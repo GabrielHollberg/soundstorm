@@ -24,6 +24,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.window.OnBackInvokedDispatcher
+import android.webkit.CookieManager
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.ValueCallback
@@ -69,6 +70,8 @@ class MainActivity : Activity() {
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var safeCss = ""
     private var safeScript: androidx.webkit.ScriptHandler? = null
+    /** Set once the saved home name failed and its away twin was tried. */
+    private var triedAway = false
     private val background = Executors.newSingleThreadExecutor()
 
     /** On a TV (Google TV, Android TV, Fire TV): the page lays itself out for
@@ -188,6 +191,15 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         hideBars()
+    }
+
+    // The sign-in is a cookie, which the web view writes to storage in its own
+    // time; Android often ends a backgrounded app before it has, and the next
+    // open asked for the password again (the owner's report). Written the
+    // moment the app is left.
+    override fun onPause() {
+        CookieManager.getInstance().flush()
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -467,7 +479,15 @@ class MainActivity : Activity() {
             if (request.isForMainFrame && isOwnSecureName(url)) {
                 val target = ServerAddress.parse(url.toString())
                 if (target != null) {
-                    ServerAddress.save(this@MainActivity, target)
+                    // Kept as the address from now on - unless the saved one
+                    // is the away name, which works everywhere: then the home
+                    // name is only visited while home. Saving it made a phone
+                    // that had come home unable to reach the server once out
+                    // again (a home name points at a home address).
+                    val saved = ServerAddress.saved(this@MainActivity)
+                    if (saved?.host?.lowercase()?.endsWith(".net.soundstorm.dev") != true) {
+                        ServerAddress.save(this@MainActivity, target)
+                    }
                     content.post { showWeb(target) }
                     return true
                 }
@@ -487,7 +507,25 @@ class MainActivity : Activity() {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (request.isForMainFrame) showFailure(error.description?.toString() ?: "")
+            if (!request.isForMainFrame) return
+            // A home name (<id>.home.soundstorm.dev) cannot be reached away
+            // from home; its away twin (<id>.net...) can, when remote access
+            // is on. Tried once, without being saved.
+            val s = server
+            val host = s?.host?.lowercase()
+            if (s != null && host != null && host.endsWith(".home.soundstorm.dev") && !triedAway) {
+                triedAway = true
+                val away = s.buildUpon().encodedAuthority(
+                    host.removeSuffix(".home.soundstorm.dev") + ".net.soundstorm.dev" + if (s.port != -1) ":${s.port}" else ""
+                ).build()
+                content.post { showWeb(away) }
+                return
+            }
+            showFailure(error.description?.toString() ?: "")
+        }
+
+        override fun onPageFinished(view: WebView, url: String?) {
+            CookieManager.getInstance().flush()
         }
 
         override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
