@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		5530000000000000000000A1 /* SoundStormTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundStormTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5530000000000000000000A2 /* InfoTV.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = InfoTV.plist; sourceTree = "<group>"; };
 		5520000000000000000000A1 /* SoundStormUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoundStormUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5510000000000000000000A1 /* SoundStorm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundStorm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5510000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		5530000000000000000000B1 /* SoundStormTV */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SoundStormTV; sourceTree = "<group>"; };
+		5540000000000000000000B1 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
 		5520000000000000000000B1 /* SoundStormUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SoundStormUITests; sourceTree = "<group>"; };
 		5510000000000000000000B1 /* SoundStorm */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SoundStorm; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -28,6 +32,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5530000000000000000000C1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5520000000000000000000C1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -49,7 +60,10 @@
 			isa = PBXGroup;
 			children = (
 				5510000000000000000000A2 /* Info.plist */,
+				5530000000000000000000A2 /* InfoTV.plist */,
+				5540000000000000000000B1 /* Shared */,
 				5510000000000000000000B1 /* SoundStorm */,
+				5530000000000000000000B1 /* SoundStormTV */,
 				5520000000000000000000B1 /* SoundStormUITests */,
 				5510000000000000000000D2 /* Products */,
 			);
@@ -60,6 +74,7 @@
 			children = (
 				5510000000000000000000A1 /* SoundStorm.app */,
 				5520000000000000000000A1 /* SoundStormUITests.xctest */,
+				5530000000000000000000A1 /* SoundStormTV.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -81,6 +96,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				5510000000000000000000B1 /* SoundStorm */,
+				5540000000000000000000B1 /* Shared */,
 			);
 			name = SoundStorm;
 			productName = SoundStorm;
@@ -108,6 +124,27 @@
 			productReference = 5520000000000000000000A1 /* SoundStormUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		5530000000000000000000E1 /* SoundStormTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5530000000000000000000F2 /* Build configuration list for PBXNativeTarget "SoundStormTV" */;
+			buildPhases = (
+				5530000000000000000000C2 /* Sources */,
+				5530000000000000000000C1 /* Frameworks */,
+				5530000000000000000000C3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5530000000000000000000B1 /* SoundStormTV */,
+				5540000000000000000000B1 /* Shared */,
+			);
+			name = SoundStormTV;
+			productName = SoundStormTV;
+			productReference = 5530000000000000000000A1 /* SoundStormTV.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -119,6 +156,9 @@
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					5510000000000000000000E1 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					5530000000000000000000E1 = {
 						CreatedOnToolsVersion = 26.5;
 					};
 					5520000000000000000000E1 = {
@@ -143,11 +183,19 @@
 			targets = (
 				5510000000000000000000E1 /* SoundStorm */,
 				5520000000000000000000E1 /* SoundStormUITests */,
+				5530000000000000000000E1 /* SoundStormTV */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		5530000000000000000000C3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5520000000000000000000C3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -165,6 +213,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		5530000000000000000000C2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5520000000000000000000C2 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -330,6 +385,66 @@
 			};
 			name = Release;
 		};
+		5530000000000000000000F5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LZA2K5LLDS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = InfoTV.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SoundStorm;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.soundstorm.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 18.0;
+			};
+			name = Debug;
+		};
+		5530000000000000000000F6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LZA2K5LLDS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = InfoTV.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SoundStorm;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.soundstorm.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 18.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -356,6 +471,15 @@
 			buildConfigurations = (
 				5520000000000000000000F5 /* Debug */,
 				5520000000000000000000F6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5530000000000000000000F2 /* Build configuration list for PBXNativeTarget "SoundStormTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5530000000000000000000F5 /* Debug */,
+				5530000000000000000000F6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -143,7 +143,7 @@ def banner(width, height):
         except OSError:
             continue
     if font is None:
-        raise SystemExit("no bold italic font found for the TV banner")
+        return None  # main() leaves the banner as it is
     text = "SoundStorm"
     tb = d.textbbox((0, 0), text, font=font)
     tw, th = tb[2] - tb[0], tb[3] - tb[1]
@@ -167,6 +167,104 @@ def banner(width, height):
     d.polygon([pt(x, y) for x, y in BOLT], fill=INK)
     d.text((x0 + cw + gap - tb[0], (h - th) / 2 - tb[1]), text, font=font, fill=INK)
     return img.resize((width, height), Image.LANCZOS).convert("RGB")
+
+
+def cloud_mask(w, h, cloud_height):
+    """The cloud as a mask, centered on a w x h canvas, cloud_height of it tall.
+    A mask rather than drawn in colour, because the flat bottom is cut by
+    clearing what hangs below the bar, and an Apple TV icon's front layer has
+    no background to clear it with."""
+    scale = 4
+    W, H = w * scale, h * scale
+    m = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(m)
+    left, top, right, bottom = BOX
+    k = cloud_height * H / (bottom - top)
+    ox = (W - (right - left) * k) / 2 - left * k
+    oy = (H - (bottom - top) * k) / 2 - top * k
+
+    def pt(x, y):
+        return (ox + x * k, oy + y * k)
+
+    for cx, cy, r in (BIG, SMALL):
+        x, y = pt(cx, cy)
+        d.ellipse((x - r * k, y - r * k, x + r * k, y + r * k), fill=255)
+    bx, by, bx2, by2, r = BAR
+    d.rounded_rectangle((*pt(bx, by), *pt(bx2, by2)), radius=r * k, fill=255)
+    d.rectangle((0, pt(0, by2)[1], W, H), fill=0)
+    d.polygon([pt(x, y) for x, y in BOLT], fill=255)
+    return m.resize((w, h), Image.LANCZOS)
+
+
+def tv_layer(w, h, front):
+    """An Apple TV icon layer: the dark back, or the white cloud on nothing.
+    tvOS lifts the front over the back as the icon takes the focus."""
+    if not front:
+        return Image.new("RGB", (w, h), PAPER[:3])
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    img.paste(Image.new("RGBA", (w, h), INK), (0, 0), cloud_mask(w, h, 0.5))
+    return img
+
+
+def tv_shelf(w, h):
+    """The Apple TV's Top Shelf picture: the cloud on the dark, flat."""
+    img = Image.new("RGB", (w, h), PAPER[:3])
+    img.paste(Image.new("RGB", (w, h), INK[:3]), (0, 0), cloud_mask(w, h, 0.4))
+    return img
+
+
+def write_tv_icons(xcassets):
+    """The Apple TV app's brand assets: a two-layer icon at 400x240 (and @2x)
+    for the home screen, 1280x768 for the App Store, and the Top Shelf, with
+    the Contents.json files Xcode needs to find them."""
+    import json
+    brand = xcassets / "App Icon & Top Shelf Image.brandassets"
+    info = {"info": {"author": "xcode", "version": 1}}
+
+    def write(path, obj):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "Contents.json").write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+    stacks = [("App Icon.imagestack", [(400, 240, "1x"), (800, 480, "2x")]),
+              ("App Icon - App Store.imagestack", [(1280, 768, "1x")])]
+    for name, sizes in stacks:
+        write(brand / name, {"layers": [{"filename": "Front.imagestacklayer"},
+                                        {"filename": "Back.imagestacklayer"}], **info})
+        for layer, front in (("Front", True), ("Back", False)):
+            content = brand / name / f"{layer}.imagestacklayer" / "Content.imageset"
+            write(content.parent, info)
+            content.mkdir(parents=True, exist_ok=True)
+            images = []
+            for w, h, sc in sizes:
+                fname = f"{layer.lower()}-{w}x{h}.png"
+                tv_layer(w, h, front).save(content / fname, optimize=True)
+                images.append({"filename": fname, "idiom": "tv", "scale": sc})
+            write(content, {"images": images, **info})
+    for name, sizes in (("Top Shelf Image.imageset", [(1920, 720, "1x"), (3840, 1440, "2x")]),
+                        ("Top Shelf Image Wide.imageset", [(2320, 720, "1x"), (4640, 1440, "2x")])):
+        (brand / name).mkdir(parents=True, exist_ok=True)
+        images = []
+        for w, h, sc in sizes:
+            fname = f"shelf-{w}x{h}.png"
+            tv_shelf(w, h).save(brand / name / fname, optimize=True)
+            images.append({"filename": fname, "idiom": "tv", "scale": sc})
+        write(brand / name, {"images": images, **info})
+    write(brand, {"assets": [
+        {"filename": "App Icon - App Store.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": "1280x768"},
+        {"filename": "App Icon.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": "400x240"},
+        {"filename": "Top Shelf Image Wide.imageset", "idiom": "tv", "role": "top-shelf-image-wide", "size": "2320x720"},
+        {"filename": "Top Shelf Image.imageset", "idiom": "tv", "role": "top-shelf-image", "size": "1920x720"},
+    ], **info})
+    # The connect and sign-in screens' logo: the white cloud on nothing,
+    # over the app's own dark.
+    logo = xcassets / "Logo.imageset"
+    logo.mkdir(parents=True, exist_ok=True)
+    images = []
+    for side, sc in ((200, "1x"), (400, "2x")):
+        tv_layer(side, side, True).save(logo / f"logo-{side}.png", optimize=True)
+        images.append({"filename": f"logo-{side}.png", "idiom": "tv", "scale": sc})
+    write(logo, {"images": images, **info})
+    write(xcassets, info)
 
 
 def main():
@@ -202,8 +300,15 @@ def main():
     # The TV banner: 320x180dp, drawn for xhdpi, the density of a 1080p TV.
     tv = ASSETS.parents[2] / "android" / "app" / "src" / "main" / "res" / "drawable-xhdpi"
     tv.mkdir(parents=True, exist_ok=True)
-    banner(640, 360).save(tv / "tv_banner.png", optimize=True)
-    print("wrote favicon.svg, cloud.svg, no-cover.svg, 8 icons and the TV banner")
+    # Only where its font is (Windows): drawn in another, it would change every
+    # time the script ran on the other machine.
+    android_banner = banner(640, 360)
+    if android_banner is not None:
+        android_banner.save(tv / "tv_banner.png", optimize=True)
+    else:
+        print("no Segoe UI Bold Italic here: left the Android TV banner as it is")
+    write_tv_icons(ASSETS.parents[2] / "ios" / "SoundStormTV" / "Assets.xcassets")
+    print("wrote favicon.svg, cloud.svg, no-cover.svg, 8 icons, the TV banner and the Apple TV icons")
 
 
 if __name__ == "__main__":

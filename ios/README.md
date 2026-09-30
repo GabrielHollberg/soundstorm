@@ -31,6 +31,19 @@ Play a song, lock the phone, and wait a minute:
 Stage two (native audio) is shaped by these answers. The simulator cannot
 answer them.
 
+## Apple TV
+
+The **SoundStormTV** scheme builds the Apple TV app (same project, same
+bundle id for Universal Purchase). Run it on the Apple TV simulator from
+Xcode, or on a real Apple TV paired with Xcode (Settings → Remotes and
+Devices → Remote App and Devices on the TV). In a debug build,
+`-autoplay YES` as a launch argument plays the first recently played song,
+for a simulator with no remote:
+
+```sh
+xcrun simctl launch booted dev.soundstorm.app -serverURL https://yourname.home.soundstorm.dev:8099 -autoplay YES
+```
+
 ## TestFlight
 
 The app record exists in App Store Connect (bundle `dev.soundstorm.app`,

@@ -4169,6 +4169,65 @@ Things that bit while building stage one:
   `UserDefaults.set(_:URL)`, so it can be given as a launch argument:
   `xcrun simctl launch booted dev.soundstorm.app -serverURL http://localhost:8080`.
 
+## The Apple TV app (`ios/SoundStormTV`)
+
+A second target in `ios/SoundStorm.xcodeproj`, native SwiftUI, since tvOS
+has no web view (see "TV apps" for why and what it builds to). Same bundle id
+as the iPhone app, `dev.soundstorm.app`, on purpose: Apple's Universal
+Purchase makes the two one App Store listing. `ios/Shared/` holds what both
+use (`ServerAddress`).
+
+**Step one (2026-09-30): sign in and music.** Connect and sign in (the
+setup-code first account is left to a browser: easier than typing a code on a
+TV), a side bar of Home, Music, Search and Settings, albums and playlists, and
+Now Playing. What it talks to is the page's own /api:
+
+- **The session is the server's cookie**, in the shared cookie store.
+  URLSession sends it; **AVPlayer does not read that store**, so every stream
+  gets the cookies explicitly (`AVURLAssetHTTPCookiesKey`, `API.cookies`), or
+  the server refuses it. Covers go through URLSession (AsyncImage), which does
+  send them. No Origin header is sent, which is all the server checks on a POST.
+- **Music is AVQueuePlayer with the next song loaded** behind the one playing
+  (gapless, like the page's preload). The system's Now Playing and remote
+  commands are fed from `Player`. A song counts (`POST /api/history`, which is
+  also the scrobble) at half its length or four minutes, as the page counts it.
+- **Now Playing follows the TV rules**: no play, previous or next buttons; OK
+  plays and pauses; left and right change song; down lights the timeline,
+  where left and right move ten seconds; up lights the arrow that puts it
+  away; the timeline and arrow fade after four seconds, and faded, OK and
+  left and right still act. It is one focusable view that takes the presses
+  itself (`onMoveCommand`), so the focus engine cannot wander. It opens on
+  play; the side bar's first entry while something plays reopens it.
+
+Checked on the tvOS simulator against a stand-in server (the Mac has no
+Navidrome) that, like the real one, refuses a stream or cover without the
+session cookie: the cookie went with every song and cover request, songs came
+by byte ranges, song 2 loaded while song 1 played and took over at its end,
+and song 1 was recorded at 13 of its 24 seconds with no Origin header.
+**Not yet checked: the remote's presses** - the simulator run had no remote,
+so the Now Playing rules above are written but untested.
+
+Things that bit:
+
+- **A closure MediaPlayer calls on its own queue must be `@Sendable`.** With
+  the target's default of main-actor isolation, the artwork closure given to
+  `MPMediaItemArtwork` inherited it, and Swift's isolation check stopped the
+  app the first time Now Playing asked for the cover. Any AVFoundation or
+  MediaPlayer callback not on the main queue needs the same.
+- **AVPlayer decides the format from Content-Type.** Go's `ServeFile` called
+  an .m4a `audio/mp4a-latm`, and AVPlayer answered -11828 (format not
+  recognized) while downloading it happily. The real server passes on
+  Navidrome's `audio/mp4`, which works; a stand-in must send the same.
+- **The Android TV banner's font is Windows-only** (Segoe UI Bold Italic), so
+  `make-icons.py` leaves that banner alone where the font is missing rather
+  than redraw it in another and change it on every run on the Mac. The Apple
+  TV icons (a layered cloud, 400x240 and 1280x768, and the Top Shelf) are
+  drawn by the same script.
+
+Next steps, in order: films and TV (AVPlayerViewController on
+`/api/playback`'s direct or HLS URL, with the cookie), then photos and books,
+then the visualizers (natively, the largest part).
+
 ## The Android app (`android/`)
 
 The same shape as the iPhone app, and the same stage: a native shell around
