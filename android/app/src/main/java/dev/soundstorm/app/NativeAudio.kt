@@ -1,0 +1,241 @@
+package dev.soundstorm.app
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebView
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import org.json.JSONObject
+import java.lang.ref.WeakReference
+
+/**
+ * The page's audio element, played natively (AudioService).
+ *
+ * PageScript gives the page's `<audio id="audio-player">` a stand-in: setting
+ * its src to a song on the server, play(), pause(), seeking, volume and speed
+ * arrive here as "audio" messages, and what the player does goes back as
+ * events the stand-in turns into the element's own (playing, pause, ended,
+ * timeupdate...). The page cannot tell. A song kept on the device (a blob:
+ * address, from the downloads) is not the server's and plays in the page as
+ * before.
+ *
+ * The next song is handed over ahead ("queue"), so the player moves into it
+ * itself - gapless, and never stopping between songs, which is what kept the
+ * music going with the screen off. The page is told the song ended, sets the
+ * next one as it always does, and finds it already playing.
+ */
+@OptIn(UnstableApi::class)
+object NativeAudio {
+    private val main = Handler(Looper.getMainLooper())
+    private var player: ExoPlayer? = null
+    private var webView = WeakReference<WebView>(null)
+    /** Messages that arrived before the service had its player. */
+    private val waiting = mutableListOf<JSONObject>()
+    private var app: Context? = null
+    private var seeking = false
+
+    fun attachView(view: WebView) {
+        webView = WeakReference(view)
+    }
+
+    fun detachView(view: WebView) {
+        if (webView.get() === view) webView = WeakReference(null)
+    }
+
+    fun attach(p: ExoPlayer) {
+        player = p
+        p.addListener(listener)
+        val pending = waiting.toList()
+        waiting.clear()
+        pending.forEach { run(it) }
+    }
+
+    fun detach() {
+        player?.removeListener(listener)
+        player = null
+        main.removeCallbacks(tick)
+    }
+
+    /** Whether the player holds a song (the page's audio is native now). */
+    val active: Boolean get() = (player?.mediaItemCount ?: 0) > 0
+
+    /** An "audio" message from the page. */
+    fun handle(context: Context, message: JSONObject) {
+        app = context.applicationContext
+        if (player == null) {
+            // The service makes the player when it starts; until then, kept.
+            if (message.optString("cmd") == "stop") {
+                waiting.clear()
+                return
+            }
+            waiting.add(message)
+            context.startService(Intent(context, AudioService::class.java))
+            return
+        }
+        run(message)
+    }
+
+    private fun run(m: JSONObject) {
+        val p = player ?: return
+        when (m.optString("cmd")) {
+            "load" -> {
+                val url = m.optString("url")
+                if (url.isEmpty()) return
+                val index = p.currentMediaItemIndex
+                val current = p.currentMediaItem?.localConfiguration?.uri?.toString()
+                if (current == url && p.playbackState != Player.STATE_IDLE) {
+                    // Already this song: the player moved into it by itself.
+                    report()
+                    return
+                }
+                // The one queued next, reached early (a skip): move to it.
+                val next = if (index + 1 < p.mediaItemCount) p.getMediaItemAt(index + 1) else null
+                if (next?.localConfiguration?.uri?.toString() == url) {
+                    p.seekToDefaultPosition(index + 1)
+                    p.removeMediaItems(0, index + 1)
+                } else {
+                    p.setMediaItem(item(url, null))
+                    p.prepare()
+                }
+                report()
+            }
+            "queue" -> {
+                val url = m.optString("url")
+                if (url.isEmpty() || p.mediaItemCount == 0) return
+                val index = p.currentMediaItemIndex
+                // Only ever the one song after this one.
+                if (index + 1 < p.mediaItemCount) p.removeMediaItems(index + 1, p.mediaItemCount)
+                p.addMediaItem(item(url, null))
+            }
+            "unqueue" -> {
+                val index = p.currentMediaItemIndex
+                if (index + 1 < p.mediaItemCount) p.removeMediaItems(index + 1, p.mediaItemCount)
+            }
+            "play" -> {
+                if (p.playbackState == Player.STATE_IDLE) p.prepare()
+                p.play()
+            }
+            "pause" -> p.pause()
+            "seek" -> {
+                seeking = true
+                p.seekTo((m.optDouble("s", 0.0) * 1000).toLong().coerceAtLeast(0))
+            }
+            "volume" -> p.volume = m.optDouble("v", 1.0).toFloat().coerceIn(0f, 1f)
+            "rate" -> p.playbackParameters = PlaybackParameters(m.optDouble("r", 1.0).toFloat().coerceIn(0.25f, 4f))
+            "stop" -> {
+                p.stop()
+                p.clearMediaItems()
+                report()
+            }
+        }
+    }
+
+    /** What the page says is playing, for the lock screen and notification. */
+    fun metadata(now: MediaBridge.NowPlaying) {
+        main.post {
+            val p = player ?: return@post
+            val current = p.currentMediaItem ?: return@post
+            val meta = meta(now)
+            if (current.mediaMetadata == meta) return@post
+            p.replaceMediaItem(p.currentMediaItemIndex, current.buildUpon().setMediaMetadata(meta).build())
+        }
+    }
+
+    /** Next or previous from the lock screen, a notification or a car. */
+    fun skip(next: Boolean) {
+        val actions = MediaBridge.current?.actions.orEmpty()
+        when {
+            next && "nexttrack" in actions -> MediaBridge.dispatch("nexttrack")
+            next && "seekforward" in actions -> MediaBridge.dispatch("seekforward")
+            !next && "previoustrack" in actions -> MediaBridge.dispatch("previoustrack")
+            !next && "seekbackward" in actions -> MediaBridge.dispatch("seekbackward")
+            !next -> player?.seekTo(0)
+        }
+    }
+
+    private fun item(url: String, now: MediaBridge.NowPlaying?): MediaItem =
+        MediaItem.Builder().setUri(url).setMediaId(url)
+            .apply { if (now != null) setMediaMetadata(meta(now)) }
+            .build()
+
+    private fun meta(now: MediaBridge.NowPlaying): MediaMetadata =
+        MediaMetadata.Builder()
+            .setTitle(now.title.ifEmpty { null })
+            .setArtist(now.artist.ifEmpty { null })
+            .setAlbumTitle(now.album.ifEmpty { null })
+            .setArtworkUri(now.artwork?.let(Uri::parse))
+            .build()
+
+    private val listener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            report()
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                // Into the queued song by itself: the page hears the last one
+                // end, and sets this one, which it finds already playing.
+                player?.let { p -> if (p.currentMediaItemIndex > 0) p.removeMediaItems(0, p.currentMediaItemIndex) }
+                send(JSONObject().put("ev", "ended").put("next", mediaItem?.localConfiguration?.uri?.toString()))
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            send(state().put("error", 4))
+        }
+    }
+
+    private val tick = object : Runnable {
+        override fun run() {
+            report()
+        }
+    }
+
+    private fun state(): JSONObject {
+        val p = player
+        val o = JSONObject().put("ev", "state")
+        if (p == null || p.mediaItemCount == 0) return o.put("state", "idle").put("playing", false).put("pwr", false)
+        val duration = p.duration
+        return o.put("state", when (p.playbackState) {
+            Player.STATE_BUFFERING -> "buffering"
+            Player.STATE_READY -> "ready"
+            Player.STATE_ENDED -> "ended"
+            else -> "idle"
+        })
+            .put("playing", p.isPlaying)
+            .put("pwr", p.playWhenReady)
+            .put("url", p.currentMediaItem?.localConfiguration?.uri?.toString())
+            .put("position", p.currentPosition / 1000.0)
+            .put("duration", if (duration > 0) duration / 1000.0 else JSONObject.NULL)
+            .put("buffered", p.bufferedPosition / 1000.0)
+            .put("rate", p.playbackParameters.speed.toDouble())
+            .put("volume", p.volume.toDouble())
+            .put("seeked", seeking && p.playbackState != Player.STATE_BUFFERING)
+    }
+
+    private fun report() {
+        main.removeCallbacks(tick)
+        val s = state()
+        if (s.optBoolean("seeked")) seeking = false
+        send(s)
+        // While playing, the position every half second: the page runs its
+        // own clock between, from the moment each report was made.
+        if (player?.isPlaying == true) main.postDelayed(tick, 500)
+    }
+
+    private fun send(event: JSONObject) {
+        main.post {
+            val view = webView.get() ?: return@post
+            view.evaluateJavascript("window.__soundstormAudio && window.__soundstormAudio($event)", null)
+        }
+    }
+}

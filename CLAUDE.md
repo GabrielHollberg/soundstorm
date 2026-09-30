@@ -1180,6 +1180,30 @@ and the uncaught refusal took the app down. A pause now keeps the
 foreground for twenty seconds before letting go (`detach`), and the
 foreground call is guarded.
 
+**Then the Android app's songs went native** (0.9, the owner's call after
+the alarm and screen-off bugs, which both came from a page doing the
+playing). Songs from the server are played by Media3's ExoPlayer in a media
+session service (`AudioService`), which Android treats as a music player:
+it keeps the foreground, pauses for an alarm or a call and plays on after,
+pauses when headphones come out, and gives the lock screen, notification
+and cars their controls. The page still decides everything. PageScript gives
+the page's `<audio id="audio-player">` a stand-in on the element itself,
+installed the moment it is parsed: setting src to a song on the server,
+play, pause, seeking, volume and speed become "audio" messages
+(`NativeAudio`), and the player's state comes back every half second and on
+every change as the element's own events (playing, pause, waiting, seeked,
+timeupdate from the page's own clock between reports, ended). The looks,
+lyrics and timeline keep reading currentTime. Songs carry the web view's
+cookies (`ResolvingDataSource`), covers too (the bitmap loader). **The next
+song is handed over ahead** (`queueNext`, from `preloadNext`, 30 seconds
+before the end), so the player moves into it by itself - gapless, never
+stopping between songs; it tells the page the song ended, the page sets the
+next as always and finds it already playing. Next and previous from the
+lock screen go to the page, which holds the queue (a ForwardingPlayer).
+Downloads are blob: addresses the native player cannot read, so they still
+play in the page, and so does crossfade's second element: crossfade is off
+in the app. Not yet tried on a real phone.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

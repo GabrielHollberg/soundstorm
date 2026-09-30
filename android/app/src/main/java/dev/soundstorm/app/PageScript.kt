@@ -25,7 +25,10 @@ object PageScript {
 (() => {
   if (window.soundstormApp || typeof SoundStormNative === 'undefined') return;
   const post = (message) => SoundStormNative.postMessage(JSON.stringify(message));
-  window.soundstormApp = { version: 1, platform: 'android' };
+  window.soundstormApp = { version: 1, platform: 'android', nativeAudio: true };
+  // The page's next song, handed to the native player ahead, so it moves
+  // into it without stopping (NativeAudio "queue").
+  window.soundstormApp.queueNext = (url) => post({ type: 'audio', cmd: url ? 'queue' : 'unqueue', url: url || '' });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };
@@ -90,6 +93,204 @@ object PageScript {
       const handler = handlers[action];
       if (handler) handler(Object.assign({ action }, details || {}));
     };
+  }
+
+  // The page's audio element, played by Android's own media player
+  // (NativeAudio, AudioService): a song on the server is handed over and
+  // played natively, and what the player does comes back as the element's
+  // own events, so the page cannot tell. A song kept on the device (blob:)
+  // plays in the page as before.
+  const nativeAudio = (el) => {
+    const proto = HTMLMediaElement.prototype;
+    const getter = (name) => Object.getOwnPropertyDescriptor(proto, name).get;
+    const setter = (name) => Object.getOwnPropertyDescriptor(proto, name).set;
+    const def = (name, desc) => Object.defineProperty(el, name, Object.assign({ configurable: true }, desc));
+    let native = false;
+    let src = '';
+    let pwr = false;
+    let volume = 1;
+    let rate = 1;
+    let defaultRate = 1;
+    let seekPending = false;
+    const st = { state: 'idle', playing: false, position: 0, at: performance.now(), duration: NaN, buffered: 0, ended: false, error: null, url: '' };
+    const fire = (type) => el.dispatchEvent(new Event(type));
+    const send = (cmd, extra) => post(Object.assign({ type: 'audio', cmd: cmd }, extra || {}));
+    const time = () => {
+      let t = st.position;
+      if (st.playing) t += ((performance.now() - st.at) / 1000) * rate;
+      return Number.isFinite(st.duration) ? Math.min(t, st.duration) : t;
+    };
+    const ranges = (end) => ({ length: end > 0 ? 1 : 0, start: () => 0, end: () => end });
+    let ticker = 0;
+    const tick = (on) => {
+      clearInterval(ticker);
+      ticker = on ? setInterval(() => fire('timeupdate'), 250) : 0;
+    };
+    const serverSong = (v) => {
+      try {
+        const u = new URL(v, location.href);
+        return (u.protocol === 'http:' || u.protocol === 'https:') && u.origin === location.origin ? u.href : '';
+      } catch (e) { return ''; }
+    };
+    const toWeb = () => {
+      if (!native) return;
+      native = false;
+      src = '';
+      pwr = false;
+      st.url = '';
+      tick(false);
+      send('stop');
+    };
+    def('src', {
+      get() { return native ? src : getter('src').call(el); },
+      set(v) {
+        const url = serverSong(String(v));
+        if (!url) { toWeb(); setter('src').call(el, v); return; }
+        // Off the page's own player first, if it had a song.
+        if (!native && getter('src').call(el)) { proto.pause.call(el); proto.removeAttribute.call(el, 'src'); proto.load.call(el); }
+        native = true;
+        src = url;
+        st.ended = false;
+        st.error = null;
+        // The player may already be in it (moved in by itself): then the
+        // length is known and nothing is loaded again.
+        const already = st.url === url && st.state !== 'idle';
+        if (!already) { st.duration = NaN; st.position = 0; st.at = performance.now(); st.playing = false; st.url = url; }
+        send('load', { url: url });
+        fire('emptied');
+        fire('loadstart');
+        if (already && Number.isFinite(st.duration)) { fire('durationchange'); fire('loadedmetadata'); fire('canplay'); }
+      },
+    });
+    def('currentSrc', { get() { return native ? src : getter('currentSrc').call(el); } });
+    def('currentTime', {
+      get() { return native ? time() : getter('currentTime').call(el); },
+      set(v) {
+        if (!native) { setter('currentTime').call(el, v); return; }
+        const s = Math.max(0, Number(v) || 0);
+        st.position = s;
+        st.at = performance.now();
+        seekPending = true;
+        send('seek', { s: s });
+        fire('seeking');
+        fire('timeupdate');
+      },
+    });
+    def('duration', { get() { return native ? st.duration : getter('duration').call(el); } });
+    def('paused', { get() { return native ? !pwr : getter('paused').call(el); } });
+    def('ended', { get() { return native ? st.ended : getter('ended').call(el); } });
+    def('readyState', { get() { return native ? (st.state === 'ready' || st.playing ? 4 : (Number.isFinite(st.duration) ? 1 : 0)) : getter('readyState').call(el); } });
+    def('networkState', { get() { return native ? 2 : getter('networkState').call(el); } });
+    def('buffered', { get() { return native ? ranges(st.buffered) : getter('buffered').call(el); } });
+    def('seekable', { get() { return native ? ranges(Number.isFinite(st.duration) ? st.duration : 0) : getter('seekable').call(el); } });
+    def('error', { get() { return native ? (st.error ? { code: st.error } : null) : getter('error').call(el); } });
+    def('volume', {
+      get() { return native ? volume : getter('volume').call(el); },
+      set(v) {
+        volume = Math.min(1, Math.max(0, Number(v)));
+        setter('volume').call(el, volume);
+        if (native) { send('volume', { v: volume }); fire('volumechange'); }
+      },
+    });
+    def('playbackRate', {
+      get() { return native ? rate : getter('playbackRate').call(el); },
+      set(v) {
+        rate = Number(v) || 1;
+        setter('playbackRate').call(el, rate);
+        if (native) { send('rate', { r: rate }); fire('ratechange'); }
+      },
+    });
+    def('defaultPlaybackRate', {
+      get() { return native ? defaultRate : getter('defaultPlaybackRate').call(el); },
+      set(v) { defaultRate = Number(v) || 1; setter('defaultPlaybackRate').call(el, defaultRate); },
+    });
+    def('play', { value() {
+      if (!native) return proto.play.call(el);
+      send('rate', { r: rate });
+      send('volume', { v: volume });
+      send('play');
+      if (!pwr) { pwr = true; st.ended = false; fire('play'); }
+      if (st.playing) fire('playing');
+      return Promise.resolve();
+    } });
+    def('pause', { value() {
+      if (!native) return proto.pause.call(el);
+      send('pause');
+      if (pwr) {
+        pwr = false;
+        st.position = time();
+        st.at = performance.now();
+        st.playing = false;
+        tick(false);
+        setTimeout(() => fire('pause'), 0);
+      }
+    } });
+    def('load', { value() {
+      if (!native) return proto.load.call(el);
+      if (src) send('load', { url: src });
+    } });
+    def('removeAttribute', { value(name) {
+      if (String(name).toLowerCase() === 'src' && native) toWeb();
+      return proto.removeAttribute.call(el, name);
+    } });
+
+    // What the native player did.
+    window.__soundstormAudio = (m) => {
+      if (!native) return;
+      if (m.ev === 'ended') {
+        // It moved into the queued song by itself: the page hears this one
+        // end, and sets the next, which it will find already playing.
+        st.url = m.next || '';
+        st.ended = true;
+        st.duration = NaN;
+        pwr = false;
+        tick(false);
+        fire('pause');
+        fire('ended');
+        return;
+      }
+      // A report about the song before the one the page just set: ignored.
+      if (m.url && m.url !== st.url) return;
+      const wasPlaying = st.playing;
+      const hadDuration = Number.isFinite(st.duration);
+      st.state = m.state;
+      st.playing = !!m.playing;
+      if (typeof m.position === 'number') { st.position = m.position; st.at = performance.now(); }
+      if (typeof m.duration === 'number') st.duration = m.duration;
+      if (typeof m.buffered === 'number') st.buffered = m.buffered;
+      if (m.error) { st.error = m.error; fire('error'); return; }
+      if (!hadDuration && Number.isFinite(st.duration)) { fire('durationchange'); fire('loadedmetadata'); fire('canplay'); }
+      // Played or paused from outside the page: the lock screen, a
+      // notification, headphones, an alarm taking the sound.
+      if (!!m.pwr !== pwr && m.state !== 'ended') {
+        pwr = !!m.pwr;
+        fire(pwr ? 'play' : 'pause');
+      }
+      if (st.playing && !wasPlaying) { fire('playing'); tick(true); }
+      if (!st.playing && wasPlaying) tick(false);
+      if (pwr && m.state === 'buffering') fire('waiting');
+      if (seekPending && m.seeked) { seekPending = false; fire('seeked'); fire('timeupdate'); }
+      if (m.state === 'ended' && !st.ended) {
+        st.ended = true;
+        pwr = false;
+        tick(false);
+        fire('pause');
+        fire('ended');
+      }
+    };
+  };
+  // In place the moment the element is parsed - before the page's own
+  // script, later in the page, first touches it.
+  const found = () => {
+    const el = document.getElementById('audio-player');
+    if (!el || el.__native) return !!el;
+    el.__native = true;
+    nativeAudio(el);
+    return true;
+  };
+  if (!found()) {
+    const watch = new MutationObserver(() => { if (found()) watch.disconnect(); });
+    watch.observe(document, { childList: true, subtree: true });
   }
 
   // Paused by something other than the page - an alarm, a call - rather than

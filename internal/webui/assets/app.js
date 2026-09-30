@@ -110,6 +110,10 @@ const TV = (() => {
   return sessionStorage.getItem('soundstorm.tv') === '1';
 })();
 
+// The Android app plays songs from the server with Android's own media
+// player (PageScript's stand-in for the audio element): see NativeAudio.
+const NATIVE_AUDIO = Boolean(window.soundstormApp && window.soundstormApp.nativeAudio);
+
 // A touch screen - not a TV, whose web view reports a coarse pointer too.
 const touchScreen = () => !TV && matchMedia('(pointer: coarse)').matches;
 
@@ -2070,6 +2074,8 @@ function playAudio(item, fromQueue) {
   if (item.kind !== 'audiobook') {
     const handoff = takeCrossfade(item);
     const preloaded = handoff ? null : takePreloaded(item);
+    // A new song clears what the native player had queued after the last.
+    audio.nativeQueued = '';
     if (!handoff && !preloaded) stopPreloading();
     if (handoff) {
       startAt(handoff.url, handoff.at);
@@ -6246,6 +6252,18 @@ function takePreloaded(item) {
 
 async function preloadNext() {
   const next = upcomingItem();
+  // Where songs play natively (the Android app), the native player is handed
+  // the next song instead, and moves into it by itself: gapless, and without
+  // ever stopping between songs, which is what kept music going with the
+  // screen off. A downloaded song plays in the page, so is not handed over.
+  if (NATIVE_AUDIO) {
+    const url = next && next.kind === 'music' && !isDownloaded(next) ? new URL(playPath(next), location.href).href : '';
+    if (audio.nativeQueued !== url) {
+      audio.nativeQueued = url;
+      window.soundstormApp.queueNext(url);
+    }
+    return;
+  }
   if (!next || next.kind !== 'music' || isDownloaded(next)) return;
   // On a link already found slow a whole song cannot arrive in thirty
   // seconds; trying would only spend somebody's mobile data.
@@ -7216,6 +7234,9 @@ const canSetVolume = (() => {
   return probe.volume === 0.5;
 })();
 function crossfadeSeconds() {
+  // Not where songs play natively (the Android app): the fade-in is a second
+  // audio element in the page, beside a native player it cannot blend with.
+  if (NATIVE_AUDIO) return 0;
   return canSetVolume ? Number(localStorage.getItem(FADE_KEY) || 0) : 0;
 }
 

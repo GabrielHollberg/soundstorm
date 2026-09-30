@@ -40,6 +40,19 @@
             </intent-filter>
         </activity>
 
+        <!-- Songs from the server, played by Android's own media player
+             (AudioService, NativeAudio). Exported, as a media session
+             service is, so the lock screen, Bluetooth and cars can control
+             it. -->
+        <service
+            android:name=".AudioService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".PlaybackService"
             android:exported="false"

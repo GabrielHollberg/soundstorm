@@ -90,6 +90,12 @@ object MediaBridge {
             at = android.os.SystemClock.elapsedRealtime(),
         )
         current = now
+        // Played natively (NativeAudio): the native player's own session is
+        // the lock screen and notification; it only takes the page's words.
+        if (NativeAudio.active) {
+            NativeAudio.metadata(now)
+            return
+        }
         main.post {
             val playing = now.state == "playing"
             val showing = listener != null

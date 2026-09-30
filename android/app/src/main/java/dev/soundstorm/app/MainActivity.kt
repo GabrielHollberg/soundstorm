@@ -369,6 +369,7 @@ class MainActivity : Activity() {
         content.addView(view, FrameLayout.LayoutParams(MATCH, MATCH))
         webView = view
         MediaBridge.attach(view)
+        NativeAudio.attachView(view)
         safeScript = null
         applySafeArea()
         load()
@@ -383,6 +384,8 @@ class MainActivity : Activity() {
     private fun tearDownWeb() {
         webView?.let {
             MediaBridge.detach(it)
+            NativeAudio.detachView(it)
+            NativeAudio.handle(applicationContext, org.json.JSONObject().put("cmd", "stop"))
             it.stopLoading()
             it.destroy()
         }
@@ -397,6 +400,12 @@ class MainActivity : Activity() {
             // Posted, so the web view is not torn down inside its own callback.
             "changeServer" -> content.post { showConnect(server) }
             "media" -> MediaBridge.update(applicationContext, message)
+            "audio" -> {
+                // Songs from the server now play natively: whatever the page
+                // was playing the old way (a download) is let go.
+                if (message.optString("cmd") == "load") PlaybackService.stop(this)
+                NativeAudio.handle(applicationContext, message)
+            }
             "interrupted" -> MediaBridge.interruption(true)
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
