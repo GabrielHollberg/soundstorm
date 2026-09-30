@@ -13327,25 +13327,36 @@ const viz = {
       snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
       novelty = Math.max(this.beatNovelty || 0, surge);
     }
-    // The lightning moments: the first beat of every bar in the song's loud
-    // parts - its loudest 30% (drop), the first of a loud stretch marked
-    // (firstDrop), and a glow fading after each (dropEnv). Runs of bass hits
-    // were tried first and could not be told from the drumming around them:
-    // on Thunder the same detector missed the booms at 2:17 and struck off
-    // the beat at 1:21. The beat grid is what the eye checks against.
+    // The lightning moments: every sharp high reaching 80% on the fixed
+    // scale (a snare's crack, a cymbal), however many there are - the owner's
+    // choice, after a limit of one every two seconds was offered and turned
+    // down. A hit is counted once as it rises past the mark, not on every
+    // frame it stays over it. The first after six quiet seconds is marked
+    // (firstDrop: Storm's double strike, Fireworks' finale), and a glow fades
+    // after each (dropEnv). Before, it was the first beat of each bar in the
+    // song's loudest 30%, and before that runs of bass booms. Every frame
+    // since the last is looked at, so a hit one frame long is not missed when
+    // frames are skipped (a TV draws at 30 a second).
     let drop = false;
     let firstDrop = false;
-    if (heard && playing && downbeat && beatNo !== this.strikeBeat) {
-      if (heard.loudTop === undefined) {
-        const sorted = Array.from(heard.loud).sort((x, y) => x - y);
-        heard.loudTop = sorted[Math.floor(sorted.length * 0.7)];
+    if (heard) {
+      const fi = Math.max(0, Math.min(heard.high.length - 1, Math.floor(t * heard.fps)));
+      if (this.bigAt !== undefined && t < this.bigAt) this.bigAt = undefined; // a seek back
+      const jumped = this.strikeFrame === undefined || fi < this.strikeFrame || fi - this.strikeFrame > 10;
+      let rose = false;
+      let over = jumped ? heard.high[fi] >= STRIKE_AT : this.sharpOver;
+      for (let k = jumped ? fi : this.strikeFrame + 1; k <= fi; k++) {
+        const now = heard.high[k] >= STRIKE_AT;
+        if (now && !over) rose = true;
+        over = now;
       }
-      if (loudness >= heard.loudTop) {
+      this.sharpOver = over;
+      this.strikeFrame = fi;
+      if (playing && rose) {
         drop = true;
-        firstDrop = this.bigAt === undefined || t - this.bigAt > beat * 4 * 1.5 || t < this.bigAt;
+        firstDrop = this.bigAt === undefined || t - this.bigAt > 6;
         this.bigAt = t;
       }
-      this.strikeBeat = beatNo;
     }
     const sinceBig = t - (this.bigAt === undefined ? -99 : this.bigAt);
     const dropEnv = sinceBig >= 0 && sinceBig < 0.9 ? 1 - sinceBig / 0.9 : 0;
@@ -13560,7 +13571,7 @@ $('audio-player').addEventListener('play', () => {
 // A jump in the song starts the "what stands out" comparison afresh.
 $('audio-player').addEventListener('seeked', () => {
   viz.bigAt = undefined;
-  viz.strikeBeat = undefined;
+  viz.strikeFrame = undefined;
   viz.kickPeaks = [];
   viz.snarePeaks = [];
   viz.loudAvg = undefined;
@@ -13587,6 +13598,8 @@ function vizColor(c, a) {
   return row[i] || (row[i] = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${i / 64})`);
 }
 const VIZ_WHITE = [255, 255, 255];
+// Lightning: a sharp high rising past this.
+const STRIKE_AT = 0.8;
 
 // playOrb: Now Playing's play button for music, drawn rather than an icon -
 // the owner found a play triangle boring and asked for something round-ish
@@ -13866,8 +13879,9 @@ const FULL_SCENES = {
       st.splash = [];
       st.lastBolt = -1e9;
     }
-    // Lightning is for a bass drop, and only that: a double strike, jagged
-    // paths down with branches, and a flash.
+    // Lightning on every strong sharp high (m.drop, see viz.frame): jagged
+    // paths down with branches and a flash, a double strike for the first
+    // after a quiet spell.
     for (let strike = 0; m.drop && strike < (m.firstDrop ? 2 : 1); strike++) {
       const pts = [];
       let x = w * (0.2 + Math.random() * 0.6);
@@ -14215,12 +14229,9 @@ const FULL_SCENES = {
 // - the one reading made live rather than read ahead. Asked for by the owner
 // to see what the analysis gives the looks.
 function analysisScene(st, m) {
-  const { g, f, w, h, dpr, pal, rgba, t, phase, novelty, playing, drop, beatNo } = m;
+  const { g, f, w, h, dpr, pal, rgba, t, phase, novelty, playing } = m;
   f.clearRect(0, 0, w, h);
   g.clearRect(0, 0, w, h);
-  // The beats the looks really struck on, as they played.
-  st.struck = st.struck || new Set();
-  if (drop) st.struck.add(beatNo);
   const heard = viz.heard && audio.item && viz.heard.key === selectionKey(audio.item) ? viz.heard : null;
   const u = dpr;
   const font = (px, weight) => `${weight || 600} ${Math.round(px * u)}px system-ui, -apple-system, "Segoe UI", sans-serif`;
@@ -14254,13 +14265,6 @@ function analysisScene(st, m) {
     const sorted = Array.from(heard.loud).sort((x, y) => x - y);
     heard.loudTop = sorted[Math.floor(sorted.length * 0.7)];
   }
-  // Loudness just after a moment, as the looks' eased loudness reads it.
-  const loudAt = (tt) => {
-    const fi = Math.floor(tt * fps);
-    let v = 0;
-    for (let i = Math.max(0, fi); i <= Math.min(heard.loud.length - 1, fi + 3); i++) v = Math.max(v, heard.loud[i]);
-    return v;
-  };
   // The beat playing now, and the tempo from its length.
   let lo = 0, hi = bs.length - 1;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= t) lo = mid; else hi = mid - 1; }
@@ -14367,7 +14371,7 @@ function analysisScene(st, m) {
   // Stood out: kept as it plays, since it compares each beat with the last
   // few - what is to come has not been judged yet.
   {
-    if (!st.hist || (st.hist.length && t < st.hist[st.hist.length - 1].t - 0.5)) { st.hist = []; st.struck.clear(); }
+    if (!st.hist || (st.hist.length && t < st.hist[st.hist.length - 1].t - 0.5)) st.hist = [];
     if (playing) st.hist.push({ t, n: novelty });
     while (st.hist.length && st.hist[0].t < t - past - 0.2) st.hist.shift();
     const y0 = laneY(3), y1 = y0 + laneH;
@@ -14402,22 +14406,33 @@ function analysisScene(st, m) {
     g.lineTo(x, bottom);
     g.stroke();
     label(String(k + 1), x, gridTop + 12 * u, first ? 11 : 9, first ? 700 : 500, first ? 0.95 : 0.45, 'center');
-    // Known ahead from the loudness; and where the looks did strike.
-    if ((first && loudAt(bs[i]) >= heard.loudTop) || st.struck.has(i)) {
-      // Where Storm strikes, Fireworks has its finale and the others make
-      // their biggest move.
-      const bx = x + 8 * u, by = gridTop + 1 * u;
-      g.beginPath();
-      g.moveTo(bx + 3 * u, by);
-      g.lineTo(bx - 1 * u, by + 7 * u);
-      g.lineTo(bx + 2 * u, by + 7 * u);
-      g.lineTo(bx - 2 * u, by + 14 * u);
-      g.lineTo(bx + 5 * u, by + 5 * u);
-      g.lineTo(bx + 2 * u, by + 5 * u);
-      g.closePath();
-      g.fillStyle = 'rgba(255, 220, 90, 0.95)';
-      g.fill();
-    }
+  }
+  // The lightning: a bolt, and a line down through the sharp highs, at every
+  // sharp high rising past STRIKE_AT - the looks' own rule, so these are
+  // exactly where Storm strikes, Fireworks has its finale and the others
+  // make their biggest move.
+  const f0s = Math.max(1, Math.floor((t - past) * fps));
+  for (let fi = f0s; fi <= f1; fi++) {
+    if (!(heard.high[fi] >= STRIKE_AT && heard.high[fi - 1] < STRIKE_AT)) continue;
+    const x = fx(fi);
+    if (x < left || x > right) continue;
+    g.strokeStyle = 'rgba(255, 220, 90, 0.55)';
+    g.lineWidth = 2 * u;
+    g.beginPath();
+    g.moveTo(x, gridTop + 16 * u);
+    g.lineTo(x, laneY(2) + laneH);
+    g.stroke();
+    const bx = x - 1 * u, by = gridTop + 1 * u;
+    g.beginPath();
+    g.moveTo(bx + 3 * u, by);
+    g.lineTo(bx - 1 * u, by + 7 * u);
+    g.lineTo(bx + 2 * u, by + 7 * u);
+    g.lineTo(bx - 2 * u, by + 14 * u);
+    g.lineTo(bx + 5 * u, by + 5 * u);
+    g.lineTo(bx + 2 * u, by + 5 * u);
+    g.closePath();
+    g.fillStyle = 'rgba(255, 220, 90, 0.95)';
+    g.fill();
   }
 
   // ---- the moment playing: a line, a dot on each lane where it is now,

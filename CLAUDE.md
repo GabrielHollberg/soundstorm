@@ -1296,6 +1296,18 @@ react to changed. Hearing is at 44100 now on both sides (11025 cannot hold
 7kHz; Navidrome was already sending 44100, and the transcoding says so).
 **For the Mac:** the Apple TV's `SongAnalysis` must follow (version 6).
 
+**Lightning is every strong sharp high now**, at the owner's asking: a
+sharp high rising past 80% on the fixed scale (`STRIKE_AT`), counted once
+as it rises, however many there are - a limit of one every two seconds was
+offered and turned down. The first after six quiet seconds is still the
+double strike and Fireworks' finale. It replaced the first beat of each bar
+in the loudest 30%, which followed the grid rather than anything heard.
+Every frame since the last drawn one is checked, so a hit one frame long is
+not missed on a TV at 30 a second. Checked on the click track: 16 strikes
+for 16 sharp highs in eight seconds, each within a frame. The Analysis look
+draws a bolt and a line through the sharp highs at each, by the same rule.
+**For the Mac:** the Apple TV's `VizEngine` drops follow the old rule.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an
