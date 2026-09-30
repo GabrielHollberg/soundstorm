@@ -33,6 +33,26 @@ final class AppModel {
     var video: VideoSession?
     /// The photo viewer, when open.
     var photos: PhotoViewing?
+    /// A book being read, when open.
+    var reading: Reading?
+
+    enum Reading: Identifiable {
+        case epub(BookReader)
+        case pdf(PdfReader)
+        var id: ObjectIdentifier {
+            switch self {
+            case .epub(let r): ObjectIdentifier(r)
+            case .pdf(let r): ObjectIdentifier(r)
+            }
+        }
+    }
+
+    /// An ebook or a document. A document is always a PDF, as on the page.
+    func read(_ item: Item) {
+        guard let api else { return }
+        let pdf = item.kind == "document" || item.extra?["format"]?.lowercased() == "pdf"
+        reading = pdf ? .pdf(PdfReader(item: item, api: api)) : .epub(BookReader(item: item, api: api))
+    }
     /// The order of each tab's categories and the ones put away, from the
     /// account (set on the page).
     var pills: API.Pills?

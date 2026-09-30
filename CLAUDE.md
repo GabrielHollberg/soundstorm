@@ -4381,8 +4381,55 @@ Authors, Series, Favorites. `-tab <tab>` and `-category <value>` in a debug
 build open one. Not checked: opening a genre, author, series, person or
 place, which needs a remote.
 
-Next steps, in order: the visualizers (natively, the largest part); books need
-a native reader, as foliate-js runs only in a web view.
+**Reading (2026-09-30): a native reader, since foliate-js needs a web view
+tvOS does not have.** Ebooks and Documents are back in Books, and Favorites
+there holds all three kinds. An EPUB (`EpubBook`) is read as any reader reads
+it: `META-INF/container.xml` names the OPF, whose spine is the chapters and
+whose nav document (EPUB 3) or NCX (EPUB 2) is the contents - one
+`/api/book/resource` each, the server doing the unzipping. A chapter's XHTML
+(`EpubText`) becomes an attributed string - headings, paragraphs, italic and
+bold, pictures as attachments, whitespace collapsed as a browser does - with a
+map from every piece of text back to its place in the XHTML, in CFI terms, and
+TextKit 1 lays it into screen-sized pages (a container per page).
+XMLParser knows only XML's entities, so HTML's (`&nbsp;` and the rest) are
+made numeric first.
+
+**The place is the page's own: an EPUB CFI and how far through**
+(`/api/book/progress`), read on opening - the CFI's spine step picks the
+chapter and its path and offset the page - and written four seconds after the
+page stops turning and on closing, for the first character on the page. So
+the TV and the page open at the same spot. A PDF is drawn a page at a time by
+Core Graphics (no PDFKit on tvOS); the page's reader keeps no place for PDFs,
+so the TV's is `page=<n>`, read back only by the TV. The TV rules hold: left
+and right turn the page, down pauses or plays the music, holding OK opens
+Contents and Text size (kept between books), Back closes.
+
+Checked on the simulator against **the real server code**, not a stand-in -
+the ebook and document shelves run without Docker - with the starter
+library's EPUB and a generated three-page PDF, signed in through
+`-username`/`-password` and opened with `-autoread <id>`, `-autoturn <n>`:
+five turns saved `epubcfi(/6/4!/4/2/4/6/4/10/52/2/2/4/1:0)`, and walking that
+path through the chapter's XHTML independently (elements counted as even
+steps, text as odd) lands on "91", the first text on the TV's page; a PDF
+turned once saved `page=2` and drew page 2 of 3. Not checked: a CFI written by
+foliate being read by the TV (the parser takes its ranges and `[id]`
+assertions), and the hold menu's Contents and Text size.
+
+Things that bit:
+
+- **Saving from inside the pending save cancelled it.** `save()` cancelled the
+  pending save task first - which, called from that task, cancelled itself,
+  and URLSession sends nothing from a cancelled task. The timer calls
+  `write()`, which cancels nothing.
+- **The first page drew blank.** The page view was on screen before the first
+  chapter was laid out, and with the same chapter and page it was never drawn
+  again. A layout counter (`generation`) in its identity redraws it.
+- The server logs `/api/book/*` at debug only; `SOUNDSTORM_LOG_LEVEL=debug` to
+  see them.
+
+Next steps, in order: Read Along (the page following the audiobook, from
+Storyteller's timings as the page does), then the visualizers (natively, the
+largest part).
 
 ## The Android app (`android/`)
 

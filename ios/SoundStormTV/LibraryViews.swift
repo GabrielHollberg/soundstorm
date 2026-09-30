@@ -47,10 +47,17 @@ struct LibraryView: View {
         .task { model.pills = await api.pills() }
         #if DEBUG
         .modifier(DebugAutostation())
+        .modifier(DebugAutoread())
         #endif
         .fullScreenCover(isPresented: $model.showingNowPlaying) { NowPlayingView() }
         .fullScreenCover(item: $model.video) { VideoView(session: $0) }
         .fullScreenCover(item: $model.photos) { PhotoViewer(viewing: $0) }
+        .fullScreenCover(item: $model.reading) { reading in
+            switch reading {
+            case .epub(let r): ReaderView(reader: r)
+            case .pdf(let r): PdfView(reader: r)
+            }
+        }
         // The remote's play/pause works everywhere, not only in Now Playing.
         .onPlayPauseCommand { player.togglePlay() }
     }

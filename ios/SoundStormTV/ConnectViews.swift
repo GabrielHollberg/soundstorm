@@ -88,6 +88,17 @@ struct SignInView: View {
                 .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
+        #if DEBUG
+        // For the simulator, which cannot type: -username <u> -password <p>
+        .task {
+            if let u = UserDefaults.standard.string(forKey: "username"),
+               let p = UserDefaults.standard.string(forKey: "password") {
+                username = u
+                password = p
+                signIn()
+            }
+        }
+        #endif
     }
 
     private func signIn() {

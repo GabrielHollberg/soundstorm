@@ -362,6 +362,55 @@ final class API {
         return a.items
     }
 
+    // MARK: Reading
+
+    /// What an EPUB holds: its files, by path. The server unzips; nothing here
+    /// does.
+    func bookEntries(_ item: Item) async throws -> [String] {
+        struct Entry: Decodable { let name: String }
+        struct Answer: Decodable { let entries: [Entry] }
+        let a: Answer = try await get("api/book/manifest", query: ["source": item.sourceId, "id": item.id])
+        return a.entries.map(\.name)
+    }
+
+    /// One file from inside an EPUB.
+    func bookResource(_ item: Item, path: String) async throws -> Data {
+        var request = URLRequest(url: url("api/book/resource", query: ["source": item.sourceId, "id": item.id, "path": path]))
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "Part of the book didn't load.") }
+        return data
+    }
+
+    /// A whole file - a PDF, which has no inside to ask for.
+    func file(_ item: Item) async throws -> Data {
+        var request = URLRequest(url: streamURL(item))
+        request.timeoutInterval = 120
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "The file didn't load.") }
+        return data
+    }
+
+    /// Where this person is in a book: the page's own record, an EPUB CFI and
+    /// how far through.
+    func readPlace(_ item: Item) async -> (location: String, fraction: Double)? {
+        struct Answer: Decodable { let found: Bool; let location: String?; let fraction: Double? }
+        guard let a: Answer = try? await get("api/book/progress", query: ["source": item.sourceId, "id": item.id]),
+              a.found, let loc = a.location
+        else { return nil }
+        return (loc, a.fraction ?? 0)
+    }
+
+    func saveReadPlace(_ item: Item, location: String, fraction: Double) async {
+        struct Body: Encodable { let location: String; let fraction: Double }
+        struct Answer: Decodable {}
+        var request = URLRequest(url: url("api/book/progress", query: ["source": item.sourceId, "id": item.id]))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(Body(location: location, fraction: min(1, max(0, fraction))))
+        _ = try? await perform(request) as Answer
+    }
+
     // MARK: Audiobooks
 
     struct Chapter: Decodable, Hashable {

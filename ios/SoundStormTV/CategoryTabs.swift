@@ -2,9 +2,8 @@ import SwiftUI
 
 /// Each tab's categories, as the web page has them (TABS in app.js): in the
 /// account's own order and without the ones put away (both set on the page;
-/// the TV follows). Genres start put away, as on the page. Ebooks, documents
-/// and Read Along are left out until the TV has a reader - the Books tab is
-/// audiobooks for now.
+/// the TV follows). Genres start put away, as on the page. Read Along waits
+/// for the reader to follow an audiobook.
 enum Categories {
     static let home: [(value: String, label: String)] = [("", "Home"), ("favorites", "Favorites")]
     static let music: [(value: String, label: String)] = [
@@ -15,8 +14,8 @@ enum Categories {
         ("video", "Films"), ("tv", "TV"), ("fav-watch", "Favorites"), ("genres-watch", "Genres"),
     ]
     static let books: [(value: String, label: String)] = [
-        ("audiobook", "Audiobooks"), ("authors", "Authors"), ("series", "Series"),
-        ("fav-books", "Favorites"), ("genres-books", "Genres"),
+        ("audiobook", "Audiobooks"), ("ebook", "Ebooks"), ("authors", "Authors"), ("series", "Series"),
+        ("document", "Documents"), ("fav-books", "Favorites"), ("genres-books", "Genres"),
     ]
     static let photos: [(value: String, label: String)] = [
         ("picture", "Photos"), ("people", "People"), ("places", "Places"), ("fav-photos", "Favorites"),
@@ -142,9 +141,11 @@ struct BooksTab: View {
         CategoryTab(row: "books", all: Categories.books) { c in
             switch c {
             case "audiobook": BooksView()
+            case "ebook": PagedItems(kinds: ["ebook"])
+            case "document": PagedItems(kinds: ["document"])
             case "authors": GroupsPage(round: true) { try await api.bookGroups("authors") }
             case "series": GroupsPage(round: false) { try await api.bookGroups("series") }
-            case "fav-books": ItemsPage { try await api.favorites().filter { $0.kind == "audiobook" } }
+            case "fav-books": ItemsPage { try await api.favorites().filter { ["audiobook", "ebook", "document"].contains($0.kind) } }
             case "genres-books": GroupsPage(round: false) {
                 try await api.genres(kinds: ["audiobook", "ebook"]).scoped(["audiobook", "ebook"])
             }
@@ -411,6 +412,8 @@ struct ItemCard: View {
             model.play(list.filter { $0.kind == "music" }, from: list.filter { $0.kind == "music" }.firstIndex(of: item) ?? 0)
         case "audiobook":
             Task { await model.playBook(item) }
+        case "ebook", "document":
+            model.read(item)
         case "picture" where item.isPhoto:
             let photos = list.filter(\.isPhoto)
             model.photos = PhotoViewing(photos: photos, index: photos.firstIndex(of: item) ?? 0)
@@ -427,9 +430,8 @@ struct Nothing: View {
 }
 
 extension Item {
-    /// What the TV can open: everything but ebooks and documents, which wait
-    /// for a reader.
-    var playsHere: Bool { kind != "ebook" && kind != "document" }
+    /// What the TV can open - everything, now it has a reader.
+    var playsHere: Bool { true }
 }
 
 extension Array where Element == API.Group {
