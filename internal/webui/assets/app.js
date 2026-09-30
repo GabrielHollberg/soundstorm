@@ -14640,6 +14640,14 @@ function tvRemote() {
       }
       return;
     }
+    // Up from a film's subtitle or audio picker is back to the film. The film
+    // fills the screen, so it is never "above" anything, and the picker could
+    // not be left at all (reported from the projector).
+    if (event.key === 'ArrowUp' && shown('video-overlay') && t.closest && t.closest('#video-overlay figcaption')) {
+      event.preventDefault();
+      $('video-player').focus({ preventScroll: true });
+      return;
+    }
     // A film with the picture in focus: OK pauses and plays, left and right
     // skip ten seconds; up and down reach the close button and the pickers.
     if (t === $('video-player') && shown('video-overlay') && !shown('item-menu')) {
