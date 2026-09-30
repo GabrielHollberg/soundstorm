@@ -8,12 +8,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- The same app is the TV app (Google TV, Android TV, Fire TV): it runs
+         on a TV, and nothing in it needs a touchscreen, but neither is
+         required, so phones install it as before. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
     <!-- Plain http is allowed because an install is often reached by its LAN
          address (http://192.168.x.x:8099), and Android cannot allow a range
          of private addresses by itself. -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.SoundStorm"
@@ -28,6 +35,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- The TV's own row of apps. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 

@@ -12,7 +12,7 @@ writes internal/webui/assets/favicon.svg and icons/*.png. Needs Pillow.
 """
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 ASSETS = Path(__file__).resolve().parent.parent / "internal" / "webui" / "assets"
 
@@ -126,6 +126,49 @@ def icon(size, cloud_width):
     return img.resize((size, size), Image.LANCZOS).convert("RGB")
 
 
+def banner(width, height):
+    """The TV home screen's banner: the cloud, then the name in heavy italic as
+    the wordmark has it, on the app's dark background. Android TV shows a
+    banner, not the square icon, in its row of apps."""
+    scale = 4
+    w, h = width * scale, height * scale
+    img = Image.new("RGBA", (w, h), PAPER)
+    d = ImageDraw.Draw(img)
+    font = None
+    # Segoe UI Bold Italic where it exists (Windows), else any bold italic.
+    for name in ("segoeuiz.ttf", "C:/Windows/Fonts/segoeuiz.ttf", "DejaVuSans-BoldOblique.ttf"):
+        try:
+            font = ImageFont.truetype(name, int(h * 0.19))
+            break
+        except OSError:
+            continue
+    if font is None:
+        raise SystemExit("no bold italic font found for the TV banner")
+    text = "SoundStorm"
+    tb = d.textbbox((0, 0), text, font=font)
+    tw, th = tb[2] - tb[0], tb[3] - tb[1]
+    left, top, right, bottom = BOX
+    k = h * 0.40 / (bottom - top)  # the cloud and bolt 40% of the height
+    cw = (right - left) * k
+    gap = h * 0.08
+    x0 = (w - (cw + gap + tw)) / 2
+    ox = x0 - left * k
+    oy = (h - (bottom - top) * k) / 2 - top * k
+
+    def pt(x, y):
+        return (ox + x * k, oy + y * k)
+
+    for cx, cy, r in (BIG, SMALL):
+        x, y = pt(cx, cy)
+        d.ellipse((x - r * k, y - r * k, x + r * k, y + r * k), fill=INK)
+    bx, by, bx2, by2, r = BAR
+    d.rounded_rectangle((*pt(bx, by), *pt(bx2, by2)), radius=r * k, fill=INK)
+    d.rectangle((pt(bx, by2)[0] - 4, pt(0, by2)[1], pt(bx2, by2)[0] + 4, pt(0, bottom)[1] + 4), fill=PAPER)
+    d.polygon([pt(x, y) for x, y in BOLT], fill=INK)
+    d.text((x0 + cw + gap - tb[0], (h - th) / 2 - tb[1]), text, font=font, fill=INK)
+    return img.resize((width, height), Image.LANCZOS).convert("RGB")
+
+
 def main():
     (ASSETS / "favicon.svg").write_text(cloud_svg(), encoding="utf-8", newline="\n")
     (ASSETS / "cloud.svg").write_text(cloud_mark_svg(), encoding="utf-8", newline="\n")
@@ -156,7 +199,11 @@ def main():
     res.mkdir(parents=True, exist_ok=True)
     icon(432, 0.40).save(res / "ic_launcher_foreground.png", optimize=True)
     icon(240, 0.66).save(res / "logo.png", optimize=True)
-    print("wrote favicon.svg, cloud.svg, no-cover.svg and 8 icons")
+    # The TV banner: 320x180dp, drawn for xhdpi, the density of a 1080p TV.
+    tv = ASSETS.parents[2] / "android" / "app" / "src" / "main" / "res" / "drawable-xhdpi"
+    tv.mkdir(parents=True, exist_ok=True)
+    banner(640, 360).save(tv / "tv_banner.png", optimize=True)
+    print("wrote favicon.svg, cloud.svg, no-cover.svg, 8 icons and the TV banner")
 
 
 if __name__ == "__main__":

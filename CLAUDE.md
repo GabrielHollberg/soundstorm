@@ -1033,6 +1033,69 @@ Checked in Chrome against a real Navidrome with a generated library: two
 artists, three albums with covers and ReplayGain tags of 0, -5 and +8 dB.
 Volumes came out at exactly the computed 0.50, 0.28 and 1.00.
 
+## TV apps
+
+Asked for after the phone apps, for Google TV, Android TV, Fire TV and Apple
+TV, with "everything, TV-sized" first. This is the graveyard the top of this
+file warns about, chosen knowingly; the shape below keeps it to one page and
+one app per platform family.
+
+**Google TV, Android TV and Fire TV are the Android app** (`android/`), not a
+second app. The manifest adds `LEANBACK_LAUNCHER`, a banner
+(`drawable-xhdpi/tv_banner.png`, drawn by `scripts/make-icons.py`), and marks
+leanback and a touchscreen as not required, so phones install it as before.
+On a TV (`UiModeManager` television, or the leanback feature) the web view's
+user agent gains `SoundStormTV/1`, and the page does the rest. Checked on the
+Google TV emulator (Android 16): the app is in the TV's row of apps.
+
+**The page's TV mode** (`TV` near the top of app.js, `tvRemote` at its end,
+`html.tv` in style.css; `?tv=1` turns it on in a browser, `?tv=0` off). A TV
+has no touch and no mouse:
+- **The arrows move a focus** between whatever can be pressed, choosing the
+  nearest in that direction (the gap along the arrow plus three times the
+  offset to the side). Only the top layer is reachable: a menu over Now
+  Playing, Now Playing over the library. Into the tabs from the page lands on
+  the current tab. The first press lands on the page's first button, never
+  the search box or the tabs. Closing a menu or Now Playing puts the focus
+  back where it was, at once.
+- **OK presses on letting go**, so that held for 450ms it opens the menu a
+  hold or right-click opens instead. Timed, not counted in key repeats:
+  remotes differ in whether a held button repeats. The remote's menu button
+  does the same.
+- **A text box reached with the arrows is only highlighted** (read-only until
+  OK). Focused for real it brought up the TV's keyboard at once, which then
+  took the arrows - the first emulator run could not leave the search box.
+- **A film opens with the picture focused**: OK pauses and plays, left and
+  right skip ten seconds, up and down reach close and the pickers. Now Playing
+  opens on play. The remote's play/pause key works either way.
+- **The TV's web view reports `pointer: coarse`**, like a phone, so every
+  touch rule applied - Now Playing hid its buttons until a hold a remote
+  cannot do. `touchScreen()` (JS) and `html:not(.tv)` (CSS) keep the touch
+  behaviour off a TV.
+- Books are hidden on a TV (the owner's choice); a white ring and a slightly
+  grown cover mark the focus; margins keep clear of overscan.
+
+Checked on the emulator with real key presses: moving through Home, a held
+OK opening a card's menu with the focus in it, Back closing the menu, OK
+playing a song and opening Now Playing, the arrows among its buttons, Back
+closing it with the music going on. Films were not played on the emulator
+(the preview has no Jellyfin).
+
+**Back on Android 16 needed the new API, on phones too.** An app built for
+API 36 no longer gets `onBackPressed`: the system closed the app on Back from
+inside a menu or Now Playing. `MainActivity` registers an
+`OnBackInvokedCallback` (API 33+) that does what `onBackPressed` did.
+
+**Apple TV is a separate native app, on the Mac, after the iPhone app.**
+tvOS has no web view, so the page cannot be wrapped as on phones and on
+Android TV. The plan to start from: SwiftUI on tvOS, talking to the same
+`/api` the page uses (search, home, music, playback, streams, art), with
+AVPlayer for films (Jellyfin's HLS through `/api/hls` plays natively) and
+music. A native player also brings the system's own Now Playing and remote
+controls. Keep it to watching, listening and photos, as on Android TV.
+Before building, check whether AirPlay from the iPhone app covers what is
+wanted.
+
 ## Home, and five tabs instead of ten chips
 
 The shelves were a sideways row of ten chips, most off screen on a phone.

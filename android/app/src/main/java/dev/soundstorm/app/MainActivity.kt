@@ -3,6 +3,8 @@ package dev.soundstorm.app
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.UiModeManager
+import android.content.res.Configuration
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
@@ -21,6 +23,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.window.OnBackInvokedDispatcher
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.ValueCallback
@@ -68,6 +71,13 @@ class MainActivity : Activity() {
     private var safeScript: androidx.webkit.ScriptHandler? = null
     private val background = Executors.newSingleThreadExecutor()
 
+    /** On a TV (Google TV, Android TV, Fire TV): the page lays itself out for
+     *  the room and the remote, told by its user agent. */
+    private val isTv by lazy {
+        getSystemService(UiModeManager::class.java)?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+            packageManager.hasSystemFeature("android.software.leanback")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Both bars hidden, everywhere (the owner's asking - the one thing
@@ -109,6 +119,12 @@ class MainActivity : Activity() {
             WindowInsetsCompat.CONSUMED
         }
         setContentView(root)
+        // Back, the new way. From Android 16 an app built for it no longer
+        // gets onBackPressed: without this the system closed the app on
+        // Back, from inside a menu or Now Playing - found on the TV.
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
+        }
 
         // A server given at launch, for testing:
         // adb shell am start -n dev.soundstorm.app/.MainActivity --es serverURL http://10.0.2.2:8099
@@ -126,6 +142,8 @@ class MainActivity : Activity() {
      * the phone) and on the page already showing.
      */
     private fun setSafeArea(top: Int, right: Int, bottom: Int, left: Int) {
+        // A TV has no cutout; its margins are the page's own (html.tv).
+        if (isTv) return
         val d = resources.displayMetrics.density
         val css = "t=${(top / d).toInt()};r=${(right / d).toInt()};b=${(bottom / d).toInt()};l=${(left / d).toInt()}"
         if (css == safeCss) return
@@ -317,7 +335,7 @@ class MainActivity : Activity() {
             setSupportMultipleWindows(true)
             javaScriptCanOpenWindowsAutomatically = false
             // Chrome's own user agent, with a name the page can test for.
-            userAgentString = "$userAgentString SoundStormApp/1"
+            userAgentString = "$userAgentString SoundStormApp/1" + if (isTv) " SoundStormTV/1" else ""
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG) // chrome://inspect
 
@@ -549,8 +567,12 @@ class MainActivity : Activity() {
      * one on back. With nothing left, the app goes to the background rather
      * than closing, which would stop the music.
      */
-    @Deprecated("The platform Activity's back handling, which is all this needs.")
+    @Deprecated("The platform Activity's back handling, for Android before 13.")
     override fun onBackPressed() {
+        goBack()
+    }
+
+    private fun goBack() {
         val view = webView
         when {
             fullscreen != null -> fullscreenCallback?.onCustomViewHidden()

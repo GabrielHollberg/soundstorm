@@ -2462,8 +2462,10 @@ html:has(#subtabs:not(.hidden)) body { touch-action: pan-y pinch-zoom; }
    or the mini-player - so previous and next give their room to the rest.
    A mouse cannot swipe, so a computer keeps them. */
 @media (pointer: coarse) {
-  .now-playing.np-music #np-prev, .now-playing.np-music #np-next,
-  body:not(.dock-book) #dock-next { display: none !important; }
+  /* Not on a TV, whose web view reports a coarse pointer too but whose
+     remote cannot swipe (html.tv, app.js). */
+  html:not(.tv) .now-playing.np-music #np-prev, html:not(.tv) .now-playing.np-music #np-next,
+  html:not(.tv) body:not(.dock-book) #dock-next { display: none !important; }
   .dock { touch-action: none; }
 }
 .np-cover-wrap { position: relative; }
@@ -3111,14 +3113,15 @@ body.np-open .toast { z-index: 76; bottom: calc(var(--safe-bottom) + 24px); }
   /* Play stays: the one button worth one tap (the owner's asking). The
      rest, an audiobook's too (its chapters, speed and thirty-second jumps),
      show while a finger is held down. */
-  .now-playing .np-bar .np-icon,
-  .now-playing .np-bar .np-speed,
-  .now-playing .np-controls .np-icon:not(.np-play) { visibility: hidden; }
+  html:not(.tv) .now-playing .np-bar .np-icon,
+  html:not(.tv) .now-playing .np-bar .np-speed,
+  html:not(.tv) .now-playing .np-controls .np-icon:not(.np-play) { visibility: hidden; }
   .now-playing #np-speed-menu { visibility: visible; }
   /* No "Now Playing" words, and the timeline only while holding (sliding
-     onto it then seeks). The sleep timer's countdown still shows. */
-  .now-playing .np-label-text { display: none; }
-  .now-playing.np-music .np-progress { visibility: hidden; }
+     onto it then seeks). The sleep timer's countdown still shows. A TV has
+     no hold: it keeps them all, reached with the remote. */
+  html:not(.tv) .now-playing .np-label-text { display: none; }
+  html:not(.tv) .now-playing.np-music .np-progress { visibility: hidden; }
   .now-playing.np-music.hold-icons .np-progress { visibility: visible; }
 }
 .np-hold-icon {
@@ -3468,3 +3471,36 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 }
 .playlist-action .icon { width: 18px; height: 18px; }
 @media (hover: hover) { .playlist-action:hover { background: rgba(255, 255, 255, 0.07); } }
+
+/* ------------------------------------------------------------- television */
+
+/* The TV app (app.js, tvRemote): the remote moves a focus, so whatever has it
+   must be plain from across a room - a white ring, and a cover that grows.
+   TVs crop their edges (overscan), so the page keeps clear of them. Books
+   stay on phones and computers, at the owner's asking. */
+html.tv {
+  --safe-top: 18px;
+  --safe-bottom: 18px;
+  --safe-left: 28px;
+  --safe-right: 28px;
+}
+html.tv :focus { outline: none; }
+html.tv button:focus, html.tv a:focus, html.tv input:focus, html.tv select:focus,
+html.tv textarea:focus, html.tv [tabindex]:focus {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+html.tv .item:focus { outline: none; }
+html.tv .item .art-wrap { transition: transform 0.12s ease-out; }
+html.tv .item:focus .art-wrap {
+  outline: 4px solid #fff;
+  outline-offset: 3px;
+  transform: scale(1.05);
+}
+html.tv .item:focus .title { color: #fff; }
+html.tv [data-tab="books"], html.tv .chip[data-kind="audiobook"], html.tv .chip[data-kind="ebook"],
+html.tv .chip[data-kind="document"], html.tv #downloads-block { display: none !important; }
+/* A card scrolled to the middle is not left under the sticky header. */
+html.tv button, html.tv a, html.tv input { scroll-margin-top: calc(var(--header-h, 80px) + 24px); }
+/* The film itself in focus: no ring round the picture. */
+html.tv #video-player:focus { outline: none; }

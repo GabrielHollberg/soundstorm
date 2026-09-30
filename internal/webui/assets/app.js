@@ -95,6 +95,24 @@ function subtitleFor(item) {
 // with a trailing wildcard.
 const escapeId = (id) => String(id).split('/').map(encodeURIComponent).join('/');
 
+// The TV app (android/, on Google TV, Android TV and Fire TV) is this same
+// page, told by its user agent (SoundStormTV/). A TV has no touch and no
+// mouse: everything is the remote's arrows, OK and Back. So the arrows move a
+// focus between whatever can be pressed, OK presses it, OK held (or the
+// remote's menu button) opens the menu a hold or a right-click opens, and
+// Back is the history entry the page already keeps armed (backTarget). The
+// layout is sized for across a room (html.tv in style.css). ?tv=1 turns it
+// on in a browser, to try it at a desk; ?tv=0 turns it off.
+const TV = (() => {
+  if (/SoundStormTV\//.test(navigator.userAgent)) return true;
+  const q = new URLSearchParams(location.search).get('tv');
+  if (q !== null) sessionStorage.setItem('soundstorm.tv', q === '0' ? '' : '1');
+  return sessionStorage.getItem('soundstorm.tv') === '1';
+})();
+
+// A touch screen - not a TV, whose web view reports a coarse pointer too.
+const touchScreen = () => !TV && matchMedia('(pointer: coarse)').matches;
+
 // A person's own covers (Change cover in a song's or album's menu) win over
 // the library's: a song's own first, then its album's. See withOverride.
 const artPath = (item) => {
@@ -3636,7 +3654,7 @@ function renderPlaylistMenu(item, lists) {
 
 // On a touch screen the menu is a sheet from the bottom of the screen, where a
 // thumb is; with a mouse it opens beside the button that asked.
-state.sheetMenus = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+state.sheetMenus = Boolean(window.matchMedia && touchScreen());
 
 function placeMenu(menu, anchor) {
   // On a touch screen the page dims and the card lifts above it, so it is
@@ -6707,7 +6725,7 @@ function renderLyrics() {
       el.addEventListener('click', () => {
         // On a touch screen a tap is for the next look (below), so a line
         // is not a place to jump to there; the timeline in the hold is.
-        if (matchMedia('(pointer: coarse)').matches) return;
+        if (touchScreen()) return;
         $('audio-player').currentTime = line.start / 1000;
         syncLyrics(true);
       });
@@ -7541,7 +7559,7 @@ $('np-cover').addEventListener('click', (event) => {
 // answers a tap of its own: Up next, the Looks sheet, a menu. The end of a
 // hold or a swipe is not a tap.
 $('now-playing').addEventListener('click', (event) => {
-  if (!matchMedia('(pointer: coarse)').matches || !audio.item) return;
+  if (!touchScreen() || !audio.item) return;
   if (performance.now() - npHold.at < 700) return;
   if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
   if (event.target.closest('.np-head, #np-queue, #np-next-block, #np-looks, #item-menu, input, a, .np-controls button, .np-bar button, .np-sleep-menu')) return;
@@ -11756,7 +11774,7 @@ function showHoldIcons(pointerId, x0, y0) {
   // the screen but the music), and appear here while the finger is down,
   // each where it always is, chosen the same way as the rest.
   const extra = $('np-hold-extra');
-  const coarse = matchMedia('(pointer: coarse)').matches;
+  const coarse = touchScreen();
   extra.replaceChildren(...(coarse ? holdButtonList() : []).flatMap((it) => {
     const el = $(it.id);
     const b = el && el.getBoundingClientRect();
@@ -14283,3 +14301,232 @@ const VIZ_SCENES = {
 window.addEventListener('resize', () => {
   if (!$('now-playing').classList.contains('hidden')) renderCoverDeco();
 });
+
+/* ------------------------------------------------------------- television */
+
+if (TV) {
+  document.documentElement.classList.add('tv');
+  tvRemote();
+}
+
+function tvRemote() {
+  const FOCUSABLE = 'button, a[href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+  // The top thing open is the only place the focus may go: a menu over Now
+  // Playing, Now Playing over the library.
+  const LAYERS = ['item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
+  const layer = () => {
+    for (const id of LAYERS) if (shown(id)) return $(id);
+    return document.body;
+  };
+  const usable = (el) => {
+    if (el.disabled || el.closest('.hidden')) return false;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.pointerEvents !== 'none' && Number(cs.opacity) > 0.05;
+  };
+  // Where the focus last was in each layer, so closing a menu or Now Playing
+  // puts it back on the card it was opened from.
+  const last = new WeakMap();
+  // A text box reached with the arrows is only highlighted: focused for real,
+  // it brings up the TV's on-screen keyboard at once, and the keyboard takes
+  // the arrows. So it is read-only until OK is pressed on it.
+  const locked = (el) => el && el.dataset && el.dataset.tvLock === '1';
+  const unlock = (el) => {
+    if (!locked(el)) return;
+    delete el.dataset.tvLock;
+    el.readOnly = false;
+  };
+  const focusOn = (el, dir) => {
+    if (typing(el) && el.tagName !== 'SELECT' && !el.readOnly) {
+      el.dataset.tvLock = '1';
+      el.readOnly = true;
+      el.addEventListener('blur', () => unlock(el), { once: true });
+    }
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: dir === 'left' || dir === 'right' ? 'nearest' : 'center', inline: 'nearest', behavior: 'smooth' });
+    last.set(layer(), el);
+  };
+  const gap = (a1, a2, b1, b2) => Math.max(0, Math.max(a1, b1) - Math.min(a2, b2));
+  // The nearest thing that way: the gap along the arrow, plus three times how
+  // far off to the side it is, so a card straight below beats a nearer one
+  // two columns over.
+  const move = (dir) => {
+    const root = layer();
+    const cur = document.activeElement;
+    const all = [...root.querySelectorAll(FOCUSABLE)].filter((el) => el !== cur && usable(el));
+    if (!all.length) return;
+    if (!cur || cur === document.body || !root.contains(cur) || !usable(cur)) {
+      const back = last.get(root);
+      if (back && root.contains(back) && usable(back)) { focusOn(back, dir); return; }
+      // The page's first button - not the search box above it, nor the tabs
+      // beside it (unless there is nothing else).
+      const tabs = $('tabs');
+      const inView = all.filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.bottom > 0 && r.top < innerHeight && !typing(el) && !tabs.contains(el);
+      });
+      const first = (inView.length ? inView : all).sort((a, b) => {
+        const ra = a.getBoundingClientRect(); const rb = b.getBoundingClientRect();
+        return (ra.top - rb.top) || (ra.left - rb.left);
+      })[0];
+      focusOn(first, dir);
+      return;
+    }
+    const a = cur.getBoundingClientRect();
+    const acx = (a.left + a.right) / 2;
+    const acy = (a.top + a.bottom) / 2;
+    let best = null;
+    let bestScore = Infinity;
+    for (const el of all) {
+      if (el.contains(cur) || cur.contains(el)) continue;
+      const b = el.getBoundingClientRect();
+      const bcx = (b.left + b.right) / 2;
+      const bcy = (b.top + b.bottom) / 2;
+      let along;
+      let aside;
+      if (dir === 'right') {
+        if (bcx <= acx + 1 || b.left < a.left) continue;
+        along = Math.max(0, b.left - a.right); aside = gap(a.top, a.bottom, b.top, b.bottom);
+      } else if (dir === 'left') {
+        if (bcx >= acx - 1 || b.right > a.right) continue;
+        along = Math.max(0, a.left - b.right); aside = gap(a.top, a.bottom, b.top, b.bottom);
+      } else if (dir === 'down') {
+        if (bcy <= acy + 1 || b.top < a.top) continue;
+        along = Math.max(0, b.top - a.bottom); aside = gap(a.left, a.right, b.left, b.right);
+      } else {
+        if (bcy >= acy - 1 || b.bottom > a.bottom) continue;
+        along = Math.max(0, a.top - b.bottom); aside = gap(a.left, a.right, b.left, b.right);
+      }
+      const offCentre = dir === 'left' || dir === 'right' ? Math.abs(bcy - acy) : Math.abs(bcx - acx);
+      const score = along + aside * 3 + offCentre * 0.05;
+      if (score < bestScore) { best = el; bestScore = score; }
+    }
+    if (!best) return;
+    // Into the tabs from the page: onto the tab you are on, not whichever
+    // happens to be level with the card.
+    const tabs = $('tabs');
+    if (tabs.contains(best) && !tabs.contains(cur)) {
+      const current = tabs.querySelector('[aria-current="page"]');
+      if (current && usable(current)) best = current;
+    }
+    focusOn(best, dir);
+  };
+  // What a hold or a right-click opens, for the thing in focus.
+  const openMenuFor = (el) => {
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+    }));
+    intoMenu();
+  };
+  // Into the menu once it is drawn (some menus fill in a moment later).
+  const intoMenu = () => {
+    const started = performance.now();
+    const into = () => {
+      if (shown('item-menu')) {
+        if (!$('item-menu').contains(document.activeElement)) move('down');
+      } else if (performance.now() - started < 400) {
+        requestAnimationFrame(into);
+      }
+    };
+    requestAnimationFrame(into);
+  };
+  // When a menu or Now Playing closes, the focus goes back to where it was
+  // underneath at once - not only on the next arrow - so OK works straight
+  // away. Nothing is focused while nothing has been (a first arrow does it).
+  const restore = () => {
+    const root = layer();
+    const cur = document.activeElement;
+    if (cur && cur !== document.body && root.contains(cur) && usable(cur)) return;
+    const back = last.get(root);
+    if (back && root.contains(back) && usable(back)) { back.focus({ preventScroll: true }); return; }
+    // Opening: a film starts with the picture, where OK pauses and the
+    // arrows skip; Now Playing with play.
+    const first = root.id === 'video-overlay' ? $('video-player') : root.id === 'now-playing' ? $('np-play') : null;
+    if (first && usable(first)) first.focus({ preventScroll: true });
+  };
+  $('video-player').tabIndex = 0;
+  const watch = new MutationObserver(() => setTimeout(restore, 0));
+  for (const id of LAYERS) if ($(id)) watch.observe($(id), { attributes: true, attributeFilter: ['class'] });
+  const typing = (el) => Boolean(el && el.matches
+    && el.matches('input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]), textarea, select'));
+  const DIRS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+  let enterAt = 0;
+  let held = false;
+  let holdTimer = 0;
+  document.addEventListener('keydown', (event) => {
+    const t = event.target;
+    // The remote's own play/pause button: the film, else the music.
+    if (event.key === 'MediaPlayPause' || event.key === 'MediaPlay' || event.key === 'MediaPause') {
+      const media = shown('video-overlay') ? $('video-player') : $('audio-player');
+      if (media.src) {
+        event.preventDefault();
+        if (event.key === 'MediaPause' || (event.key === 'MediaPlayPause' && !media.paused)) media.pause();
+        else media.play().catch(() => {});
+      }
+      return;
+    }
+    // A film with the picture in focus: OK pauses and plays, left and right
+    // skip ten seconds; up and down reach the close button and the pickers.
+    if (t === $('video-player') && shown('video-overlay') && !shown('item-menu')) {
+      const v = t;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (!event.repeat) (v.paused ? v.play().catch(() => {}) : v.pause());
+        return;
+      }
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const to = v.currentTime + (event.key === 'ArrowRight' ? 10 : -10);
+        v.currentTime = Math.max(0, Number.isFinite(v.duration) ? Math.min(to, v.duration - 1) : to);
+        return;
+      }
+    }
+    // OK on a highlighted text box: now it takes typing, keyboard and all.
+    if (event.key === 'Enter' && locked(t)) {
+      event.preventDefault();
+      unlock(t);
+      t.blur();
+      t.focus();
+      return;
+    }
+    if (DIRS[event.key]) {
+      // The photo viewer and the year in music step with the arrows themselves.
+      if (event.defaultPrevented || photoShown || shown('recap-overlay')) return;
+      const across = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+      // Left and right belong to a text box's cursor and a slider's thumb.
+      if (across && ((typing(t) && !locked(t)) || (t.matches && t.matches('input[type="range"]')))) return;
+      if (t.tagName === 'SELECT') return;
+      event.preventDefault();
+      move(DIRS[event.key]);
+      return;
+    }
+    // OK presses on letting go, so that holding it can open the menu
+    // instead - timed, not counted in repeats, since remotes differ in
+    // whether a held button repeats.
+    if (event.key === 'Enter' && !typing(t) && t !== document.body) {
+      event.preventDefault();
+      if (event.repeat) return;
+      enterAt = performance.now();
+      held = false;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        if (enterAt) { held = true; openMenuFor(t); }
+      }, HOLD_MS);
+      return;
+    }
+    if (event.key === 'ContextMenu' && t !== document.body) {
+      // A card opens its own menu for this key; the focus still goes into it.
+      if (event.defaultPrevented) intoMenu();
+      else { event.preventDefault(); openMenuFor(t); }
+    }
+  });
+  document.addEventListener('keyup', (event) => {
+    if (event.key !== 'Enter') return;
+    clearTimeout(holdTimer);
+    if (!enterAt) return;
+    enterAt = 0;
+    if (!held && !typing(event.target)) event.target.click();
+  });
+}
