@@ -2210,6 +2210,11 @@ body.photo-open { overflow: hidden; }
   position: absolute;
   inset: 0;
   display: grid;
+  /* One cell the size of the screen. Without it the cell took the photo's
+     own height, so the photo's max-height: 100% had nothing fixed to be a
+     percentage of and was ignored - a tall photo overflowed a wide screen
+     (1707px on a 540px TV, reported as photos cut off). */
+  grid-template: 100% / 100%;
   place-items: center;
   overflow: hidden;
   touch-action: none;
