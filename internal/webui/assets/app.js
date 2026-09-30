@@ -13007,7 +13007,8 @@ const viz = {
   keepClearOfPlay(back, front) {
     const np = $('now-playing');
     const btn = $('np-play');
-    if (!np.classList.contains('np-music') || !btn.offsetWidth) return;
+    // No clearing while a TV has faded the buttons away (tv-idle).
+    if (!np.classList.contains('np-music') || !btn.offsetWidth || np.classList.contains('tv-idle')) return;
     const c = back.getBoundingClientRect();
     const b = btn.getBoundingClientRect();
     if (!c.width) return;
@@ -14462,7 +14463,29 @@ function tvRemote() {
     if (first && usable(first)) first.focus({ preventScroll: true });
   };
   $('video-player').tabIndex = 0;
-  const watch = new MutationObserver(() => setTimeout(restore, 0));
+  // Now Playing's buttons fade after a few seconds without the remote, the
+  // music and its animation left alone on the screen (the owner's asking);
+  // the next press brings them back and does nothing else, so nobody skips a
+  // song by pressing to see the buttons. The title stays.
+  let idleTimer = 0;
+  const idleSoon = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (shown('now-playing') && !shown('item-menu') && !shown('np-looks')) $('now-playing').classList.add('tv-idle');
+    }, 4000);
+  };
+  const wake = () => {
+    const np = $('now-playing');
+    const was = np.classList.contains('tv-idle');
+    np.classList.remove('tv-idle');
+    if (shown('now-playing')) idleSoon(); else clearTimeout(idleTimer);
+    return was;
+  };
+  const watch = new MutationObserver(() => {
+    setTimeout(restore, 0);
+    if (!shown('now-playing') || shown('item-menu') || shown('np-looks')) wake();
+    else if (!$('now-playing').classList.contains('tv-idle')) idleSoon();
+  });
   for (const id of LAYERS) if ($(id)) watch.observe($(id), { attributes: true, attributeFilter: ['class'] });
   const typing = (el) => Boolean(el && el.matches
     && el.matches('input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]), textarea, select'));
@@ -14472,6 +14495,11 @@ function tvRemote() {
   let holdTimer = 0;
   document.addEventListener('keydown', (event) => {
     const t = event.target;
+    // A press while Now Playing's buttons are faded only brings them back.
+    if (shown('now-playing') && wake() && !event.key.startsWith('Media')) {
+      event.preventDefault();
+      return;
+    }
     // The remote's own play/pause button: the film, else the music.
     if (event.key === 'MediaPlayPause' || event.key === 'MediaPlay' || event.key === 'MediaPause') {
       const media = shown('video-overlay') ? $('video-player') : $('audio-player');

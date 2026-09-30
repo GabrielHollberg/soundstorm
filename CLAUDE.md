@@ -1089,6 +1089,13 @@ has no touch and no mouse:
   words, the title centred at the top, the controls and timeline centred at
   the bottom, and it never scrolls - moving the focus inside Now Playing or a
   film does not call scrollIntoView (it slid up on reaching the timeline).
+  **The buttons fade after four seconds without the remote** (`tv-idle`),
+  leaving the music, its animation and the title; the next press only brings
+  them back (media keys still act), so nobody skips a song by pressing to see
+  them. The clear circle round the play orb is not cut while they are faded.
+  **Long titles ran off the screen**: centring shrank the title's box to the
+  text, so `fitNpLine` never saw it overflow; the box is full width on a TV
+  and the title scrolls sideways as it does on a phone.
 
 Checked on the emulator with real key presses: moving through Home, a held
 OK opening a card's menu with the focus in it, Back closing the menu, OK
