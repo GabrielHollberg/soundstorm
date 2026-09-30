@@ -88,10 +88,10 @@ type Server struct {
 	plexOverride *plex.Client
 	// artUploads limits how often somebody may upload a cover; sounds keeps
 	// the library's energy ranks for Now Playing's moving cover.
-	artUploads       allowance
+	artUploads allowance
 	// imports limits how often somebody may import playlists (a file, or
 	// from Plex): each can write thousands of songs to their collections.
-	imports allowance
+	imports          allowance
 	sounds           soundCache
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache

@@ -43,7 +43,7 @@ const (
 	// 200 playlists of 5,000 was a file of hundreds of MB, rewritten on every
 	// play while holding the lock every person's requests share (a review).
 	MaxTotalEntries = 25000
-	MaxNameLength    = 100
+	MaxNameLength   = 100
 )
 
 var (

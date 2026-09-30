@@ -53,7 +53,7 @@ import (
 const audioNoStore = "no-store"
 
 const (
-	slimProbe     = 64 << 10 // read first: ftyp and the start of moov, or an ID3 tag's header
+	slimProbe = 64 << 10 // read first: ftyp and the start of moov, or an ID3 tag's header
 	// slimMaxMoov: a song's index is a few hundred KB. A bigger one (a long
 	// audiobook's) is sent as it is, rather than held in memory: the cache is
 	// in memory, and a review found 128 headers of up to 17MB could pin 2GB.
