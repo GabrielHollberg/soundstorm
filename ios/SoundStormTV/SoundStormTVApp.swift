@@ -31,6 +31,8 @@ final class AppModel {
     var showingNowPlaying = false
     /// The film or episode playing, full screen.
     var video: VideoSession?
+    /// The photo viewer, when open.
+    var photos: PhotoViewing?
     /// This person's favorites, by item key, for Now Playing's heart.
     private(set) var favorites: Set<String> = []
 

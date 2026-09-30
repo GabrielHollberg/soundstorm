@@ -4304,9 +4304,30 @@ a remote's press, as Now Playing's arrows do.
 (AVPlayer has no per-item gain; an audio mix's volume parameter is the way),
 crossfade, and restarting a stuck song at 128 kbps on a slow link.
 
-Next steps, in order: photos, then audiobooks, then the visualizers
-(natively, the largest part); books need a native reader, as foliate-js runs
-only in a web view.
+**Photos (2026-09-30).** A Photos tab: On this day (`/api/photos/on-this-day`,
+a row per earlier year), then the camera roll newest first, the page's own
+browse of the picture shelf (`/api/search?kind=picture`), a page of 60 at a
+time as it scrolls. A clip (`extra.type` video) plays as a film; the viewer
+steps through photos only, as the page's does. The viewer is the whole
+screen at Immich's preview size (`/api/art/.../<artId>@preview`), with the
+TV rules settled for Android TV: left and right step, **down pauses or plays
+the music, which otherwise plays on**, with a message saying which (the
+remote's play key does the same), Back closes. The caption - name, date,
+place, and "3 of 40" - shows on opening and each step and fades after four
+seconds. The photos either side are fetched ahead, and only those three are
+kept.
+
+Checked on the simulator against the stand-in with eight generated photos
+and a clip, while a radio station played: the roll's second page came as the
+grid scrolled, opening the first photo fetched it and the second at preview
+size with the cookie, a step right showed the second and fetched the third,
+the clip was left out of the count, and down paused the music with "Music
+paused". A full-screen cover cannot open over another: the photo viewer does
+not open while Now Playing is up (the debug run puts Now Playing away first,
+as Back would).
+
+Next steps, in order: audiobooks, then the visualizers (natively, the largest
+part); books need a native reader, as foliate-js runs only in a web view.
 
 ## The Android app (`android/`)
 

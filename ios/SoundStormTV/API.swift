@@ -240,6 +240,36 @@ final class API {
         return a.items
     }
 
+    // MARK: Photos
+
+    /// The camera roll, a page at a time, newest first - the page's own
+    /// browse of the picture shelf.
+    func photos(offset: Int, limit: Int = 60) async throws -> (items: [Item], hasMore: Bool) {
+        struct Answer: Decodable { let items: [Item]; let hasMore: Bool? }
+        let a: Answer = try await get("api/search", query: ["q": "", "kind": "picture",
+                                                             "limit": String(limit), "offset": String(offset)])
+        return (a.items, a.hasMore ?? false)
+    }
+
+    struct PhotoDay: Decodable, Identifiable {
+        let year: Int
+        let items: [Item]
+        var id: Int { year }
+    }
+
+    /// Photos from this day in earlier years, newest year first.
+    func onThisDay() async throws -> [PhotoDay] {
+        struct Answer: Decodable { let days: [PhotoDay] }
+        let a: Answer = try await get("api/photos/on-this-day")
+        return a.days
+    }
+
+    /// A photo at screen size (Immich's preview), not the original file.
+    func previewURL(_ item: Item) -> URL? {
+        guard let artId = item.artId else { return nil }
+        return url("api/art/\(Self.part(item.sourceId))/\(Self.path(artId + "@preview"))")
+    }
+
     // MARK: Films and TV
 
     /// Films, or TV shows (series only: a search with no text lists shows,
@@ -417,7 +447,10 @@ struct Item: Decodable, Identifiable, Hashable {
     /// "S01E02", on an episode; a show has none.
     var episodeCode: String? { extra?["episode"] }
     var season: String { extra?["season"] ?? "0" }
-    var isVideo: Bool { kind == "video" || (kind == "tv" && episodeCode != nil) }
+    /// A clip from a camera roll: a film, not a photo.
+    var isClip: Bool { kind == "picture" && extra?["type"] == "video" }
+    var isPhoto: Bool { kind == "picture" && !isClip }
+    var isVideo: Bool { kind == "video" || (kind == "tv" && episodeCode != nil) || isClip }
 }
 
 struct Album: Decodable, Identifiable, Hashable {

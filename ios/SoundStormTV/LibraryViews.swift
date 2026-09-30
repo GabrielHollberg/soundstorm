@@ -11,6 +11,7 @@ struct LibraryView: View {
     private static var firstTab: String {
         #if DEBUG
         if UserDefaults.standard.string(forKey: "autovideo") != nil { return "watch" }
+        if UserDefaults.standard.bool(forKey: "autophoto") { return "photos" }
         #endif
         return "home"
     }
@@ -33,6 +34,7 @@ struct LibraryView: View {
             Tab("Home", systemImage: "house", value: "home") { HomeView() }
             Tab("Music", systemImage: "music.note", value: "music") { MusicView() }
             Tab("Watch", systemImage: "film", value: "watch") { WatchView() }
+            Tab("Photos", systemImage: "photo.on.rectangle", value: "photos") { PhotosView() }
             Tab("Search", systemImage: "magnifyingglass", value: "search") { SearchView() }
             Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
         }
@@ -43,6 +45,7 @@ struct LibraryView: View {
         #endif
         .fullScreenCover(isPresented: $model.showingNowPlaying) { NowPlayingView() }
         .fullScreenCover(item: $model.video) { VideoView(session: $0) }
+        .fullScreenCover(item: $model.photos) { PhotoViewer(viewing: $0) }
         // The remote's play/pause works everywhere, not only in Now Playing.
         .onPlayPauseCommand { player.togglePlay() }
     }
