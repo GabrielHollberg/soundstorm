@@ -4489,8 +4489,14 @@ ring on a loud downbeat and dimmed and calmed in the quiet section; Spectrum,
 Spinning disc and Record drew. Not checked: the hold menu's Look (a remote),
 and how fast an Apple TV hears a song (the debug build is unoptimized).
 
-Next, stage two: Warp, Waves, Kaleidoscope, Fireworks; stage three: Flow,
-Storm, Synthwave, Galaxy, Aurora, Lava - each ported from `VIZ_SCENES`.
+**Stage two (2026-09-30): Warp, Waves, Kaleidoscope, Fireworks**
+(`Visualizers2.swift`), ported from `VIZ_SCENES` with their counts and
+responses (Warp's stars halved to 160, as on a TV). Fireworks' sparks keep
+their last nine places for a trail, as the Orb's vortex does. Checked on the
+simulator with the click track: each drew - the tunnel and its stars, five
+ribbons, the ten-way mirror, and bursts with their glows and falling trails.
+
+Next, stage three: Flow, Storm, Synthwave, Galaxy, Aurora, Lava.
 
 ## The Android app (`android/`)
 

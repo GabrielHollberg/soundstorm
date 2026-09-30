@@ -9,10 +9,12 @@ enum Looks {
     static let covers: [(key: String, label: String)] = [
         ("lyrics", "Lyrics"), ("square", "Cover"), ("spin", "Spinning disc"), ("vinyl", "Record"),
     ]
-    /// The visualizers drawn so far; the page's others (Warp, Waves,
-    /// Kaleidoscope, Fireworks, Flow, Storm, Synthwave, Galaxy, Aurora, Lava)
-    /// are still to come.
-    static let visualizers: [(key: String, label: String)] = [("pulse", "Orb"), ("bars", "Spectrum")]
+    /// The visualizers drawn so far, in the page's order; its others (Flow,
+    /// Storm, Synthwave, Galaxy, Aurora, Lava) are still to come.
+    static let visualizers: [(key: String, label: String)] = [
+        ("pulse", "Orb"), ("bars", "Spectrum"), ("warp", "Warp"), ("waves", "Waves"),
+        ("kaleido", "Kaleidoscope"), ("fireworks", "Fireworks"),
+    ]
     static let all = Set((covers + visualizers).map(\.key))
     static let pageVisualizers: Set<String> = ["pulse", "bars", "warp", "waves", "kaleido", "fireworks",
                                                 "flow", "storm", "synthwave", "galaxy", "aurora", "lava"]
@@ -89,6 +91,10 @@ struct VisualizerView: View {
     @State private var engine = VizEngine()
     @State private var orb = OrbScene()
     @State private var bars = BarsScene()
+    @State private var warp = WarpScene()
+    @State private var waves = WavesScene()
+    @State private var kaleido = KaleidoScene()
+    @State private var fireworks = FireworksScene()
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
@@ -98,6 +104,10 @@ struct VisualizerView: View {
                                     playing: player.isPlaying, beat: listener.beat, energy: listener.energy, heard: heard)
                 switch look {
                 case "bars": bars.draw(&g, size, m, palette)
+                case "warp": warp.draw(&g, size, m, palette)
+                case "waves": waves.draw(&g, size, m, palette)
+                case "kaleido": kaleido.draw(&g, size, m, palette)
+                case "fireworks": fireworks.draw(&g, size, m, palette)
                 default: orb.draw(&g, size, m, palette)
                 }
             }
