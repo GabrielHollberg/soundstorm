@@ -12720,7 +12720,7 @@ const heardSongs = new Map();
 // What happened to each song's listening, for the Looks sheet.
 const hearState = new Map();
 // The shape and method of a hearing, as internal/beats.Version counts it.
-const HEARD_VERSION = 7;
+const HEARD_VERSION = 8;
 
 // playbackSettled: resolves once the song playing has music buffered well
 // ahead (or plays from memory), so hearing it - a second download of the
@@ -13065,6 +13065,11 @@ async function hearSong(item, tempo) {
     hatOn[f] = Math.max(0, hat[f] - lo);
   }
   const highs = fixed(hatOn, 6, 10);
+  // And heard: in full within 10dB of the song's loud highs (95th
+  // percentile), fading out over the 4dB below.
+  const loudHats = Float32Array.from(hat).sort();
+  const top = loudHats[Math.floor(loudHats.length * 0.95)];
+  for (let f = 0; f < frames; f++) highs[f] *= Math.max(0, Math.min(1, (hat[f] - (top - 14)) / 4));
 
   // The tempo: the lag at which the onsets repeat best, between 70 and 170
   // beats a minute, leaning towards the analysis's own tempo when there is one.

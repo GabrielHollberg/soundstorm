@@ -1321,6 +1321,13 @@ of some kind). Requiring the whole sound to jump as well was tried, to
 favour a snare over an "s": it dropped Thunder's snares, which sit inside a
 dense mix, and hardly touched the other. **For the Mac:** version 7.
 
+**And a hit must be heard** (version 8): lightning went off on things the
+owner could hardly hear, since a rise from near silence is as big as one in
+a chorus. A sharp high counts in full within 10dB of the song's loud highs
+(its 95th percentile above 7kHz), fading out over the 4dB below. Measured:
+all of Thunder's loud hits kept, 74 to 68 strikes a minute; Change My Mind
+48 to 34. **For the Mac:** version 8.
+
 **The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
 the timeline follows the finger - left for later, right for earlier, at the
 look's own scale of six seconds across - "Play from 1:23" shows over the

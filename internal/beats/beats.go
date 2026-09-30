@@ -21,7 +21,7 @@ import (
 
 // Version is the shape and method of a result, as the app's kept copies
 // count it: a result of another version is heard again.
-const Version = 7
+const Version = 8
 
 // Analyzer takes a song's samples one at a time and hears it at the end.
 type Analyzer struct {
@@ -166,6 +166,19 @@ func (a *Analyzer) Hear(tempo float64) (*Result, error) {
 		hatOn[f] = float32(math.Max(0, float64(a.hats[f])-lo))
 	}
 	highs := fixed(hatOn, 6, 10)
+	// And a hit must be heard: a rise is as big from near silence as in a
+	// chorus, so faint ticks struck lightning (reported: "stuff I can hardly
+	// hear"). A hit counts in full within 10dB of the song's loud highs (its
+	// 95th percentile above 7kHz), fading out over the 4dB below. Measured:
+	// Thunder's loud hits every other beat all kept, strikes 74 to 68 a
+	// minute; Change My Mind 48 to 34.
+	loudHats := append([]float32(nil), a.hats...)
+	sort.Slice(loudHats, func(i, j int) bool { return loudHats[i] < loudHats[j] })
+	top := float64(loudHats[int(math.Floor(float64(len(loudHats))*0.95))])
+	for f := range highs {
+		heardAt := math.Max(0, math.Min(1, (float64(a.hats[f])-(top-14))/4))
+		highs[f] = float32(float64(highs[f]) * heardAt)
+	}
 
 	// The tempo: the lag at which the onsets repeat best, between 70 and 180
 	// beats a minute, leaning towards the analysis's own tempo when there is
