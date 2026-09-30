@@ -93,6 +93,7 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        main.removeCallbacks(detach)
         stopWatching()
         MediaBridge.onInterruption = null
         MediaBridge.listener = null
@@ -141,28 +142,51 @@ class PlaybackService : Service() {
 
         val notification = build(now, playing)
         if (playing) {
+            main.removeCallbacks(detach)
+            startInForeground(notification)
+            return
+        }
+        // Paused by an alarm or a call: stay in the foreground, so Android
+        // does not end the app before it can play again (startWatching).
+        if (MediaBridge.interrupted) {
+            main.removeCallbacks(detach)
+            startInForeground(notification)
+            return
+        }
+        // Started straight into a pause (a button pressed as the page
+        // paused): Android still needs the foreground call first.
+        if (!foreground) startInForeground(notification)
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification)
+        // Still in the foreground for a while. Between songs the page is
+        // paused for the moment the next one takes to arrive, and leaving the
+        // foreground then meant the next song, starting with the screen off,
+        // had to come back into it from the background - which Android
+        // refuses, and the music stopped after one song (the owner's report).
+        // A real pause lets go after twenty seconds: then the notification can
+        // be swiped away and Android may stop the service, as with any paused
+        // player.
+        main.removeCallbacks(detach)
+        main.postDelayed(detach, 20_000)
+    }
+
+    private val detach = Runnable {
+        if (MediaBridge.current?.state == "playing" || MediaBridge.interrupted) return@Runnable
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        foreground = false
+        MediaBridge.current?.let { now ->
+            if (now.state != "none") getSystemService(NotificationManager::class.java).notify(NOTIFICATION, build(now, false))
+        }
+    }
+
+    // Into the foreground, as a media player. Android can refuse this from the
+    // background; refused, the notification is shown anyway rather than the
+    // service - and with it the app - falling over.
+    private fun startInForeground(notification: Notification) {
+        try {
             ServiceCompat.startForeground(this, NOTIFICATION, notification,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
             foreground = true
-        } else {
-            // Paused by an alarm or a call: stay in the foreground, so Android
-            // does not end the app before it can play again (startWatching).
-            if (MediaBridge.interrupted) {
-                ServiceCompat.startForeground(this, NOTIFICATION, notification,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
-                foreground = true
-                return
-            }
-            // Paused: the controls stay, but the notification can be swiped
-            // away and Android may stop the service, as with any paused player.
-            if (!foreground) {
-                // Started straight into a pause (a button pressed as the page
-                // paused): Android still needs the foreground call first.
-                ServiceCompat.startForeground(this, NOTIFICATION, notification,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
-            }
-            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
-            foreground = false
+        } catch (_: IllegalStateException) {
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification)
         }
     }

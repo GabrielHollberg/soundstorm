@@ -1171,6 +1171,15 @@ over, it sends the page "play". None within ten seconds - headphones pulled
 out, another music app - and the music stays paused; thirty minutes at
 most. Not yet tried against a real alarm.
 
+**With the screen off, the music stopped after one song** (Android). At a
+song's end the page is paused for the moment the next song takes to arrive;
+the service left the foreground on that pause, and the next song, starting
+with the screen off, had to come back into it from the background - which
+Android 12 and later refuse (ForegroundServiceStartNotAllowedException),
+and the uncaught refusal took the app down. A pause now keeps the
+foreground for twenty seconds before letting go (`detach`), and the
+foreground call is guarded.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an
