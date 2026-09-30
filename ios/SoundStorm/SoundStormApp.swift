@@ -15,10 +15,22 @@ struct SoundStormApp: App {
         WindowGroup {
             RootView()
                 .ignoresSafeArea()
+                .statusBarHidden(AppChrome.shared.statusBarHidden)
+                .animation(.easeInOut(duration: 0.25), value: AppChrome.shared.statusBarHidden)
                 // Light status bar text over the app's black background.
                 .preferredColorScheme(.dark)
         }
     }
+}
+
+/// What the app's frame shows around the page. The status bar is hidden
+/// while the page's Now Playing is open (the owner's asking: nothing on the
+/// screen but the music) and shown everywhere else, since an iPhone has no
+/// swipe that brings a hidden one back for a look at the time.
+@Observable
+final class AppChrome {
+    static let shared = AppChrome()
+    var statusBarHidden = false
 }
 
 struct RootView: UIViewControllerRepresentable {

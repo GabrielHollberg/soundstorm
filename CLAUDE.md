@@ -4136,6 +4136,13 @@ plain http is saved, since the secure name is strictly better than an IP.
 Messages from the page are now accepted only from where the page is, since
 anybody can get a `*.net.soundstorm.dev` name.
 
+**The status bar hides while Now Playing is open, and only then** (the
+owner's choice, 2026-09-30). Android hides both bars everywhere; an iPhone
+has no swipe that brings a hidden status bar back for a look at the time,
+so everywhere else it stays. The app watches the page's body for `np-open`
+from its document-start script rather than being told by `app.js`, so it
+needed no web change and no deploy.
+
 Things that bit while building stage one:
 
 - **A centered `UIStackView` measures a multi-line label as one line**, and

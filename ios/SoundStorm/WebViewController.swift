@@ -44,7 +44,7 @@ final class WebViewController: UIViewController {
         // can offer what only the app can do (see "Change server" in app.js).
         let content = config.userContentController
         content.addUserScript(WKUserScript(
-            source: "window.soundstormApp = { version: 1 };",
+            source: Self.pageScript,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true))
         content.add(MessageRelay(self), name: "soundstorm")
@@ -78,8 +78,31 @@ final class WebViewController: UIViewController {
     private func load() {
         failure.isHidden = true
         current = server
+        AppChrome.shared.statusBarHidden = false
         webView.load(URLRequest(url: server))
     }
+
+    /// Runs before the page's own scripts. It tells the page it is inside
+    /// the app, and tells the app when Now Playing opens and closes (app.js
+    /// marks the body np-open), so the status bar can go - watched from here
+    /// rather than sent by app.js, so it needs no change to the web app.
+    private static let pageScript = """
+        window.soundstormApp = { version: 1 };
+        (() => {
+          let open = false;
+          const report = () => {
+            const now = document.body.classList.contains('np-open');
+            if (now === open) return;
+            open = now;
+            window.webkit.messageHandlers.soundstorm.postMessage({ type: 'nowPlaying', open });
+          };
+          const watch = () => {
+            new MutationObserver(report).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            report();
+          };
+          if (document.body) watch(); else document.addEventListener('DOMContentLoaded', watch);
+        })();
+        """
 
     fileprivate func showFailure(_ error: Error) {
         let error = error as NSError
@@ -87,6 +110,7 @@ final class WebViewController: UIViewController {
         // not a failure anybody needs to see.
         if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
         if error.domain == WKError.errorDomain && error.code == 102 { return } // frame load interrupted
+        AppChrome.shared.statusBarHidden = false
         failure.show(host: server.host() ?? server.absoluteString, detail: error.localizedDescription)
     }
 
@@ -100,7 +124,10 @@ final class WebViewController: UIViewController {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
         case "changeServer":
+            AppChrome.shared.statusBarHidden = false
             onChangeServer?()
+        case "nowPlaying":
+            AppChrome.shared.statusBarHidden = body["open"] as? Bool ?? false
         default:
             break
         }
