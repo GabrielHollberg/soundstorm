@@ -1211,6 +1211,17 @@ queued next is heard while this one plays out (`hearAhead`, from
 into the next song by itself, the stand-in kept "playing" from the last one,
 so no "playing" came and its time updates stopped - which also stopped the
 song after that being queued; the stand-in starts afresh on "ended" (0.10).
+**And a song started by hand was heard minutes in, away from home.** Both
+waits were the pace (`pace.go`): hearing waited for twenty seconds in hand,
+which at 1.5 times the bitrate after an eight-second burst takes about 24s,
+and then the 96 kbps copy was paced too - a four-minute song's copy took
+over two minutes. Now the copy asks `listen=1`, which is never paced, and
+hearing starts once the song is playing; both only on a link not found slow
+(`slowLink`), which keeps the old waits. And what was heard in any song is
+kept on the device (`soundstorm-heard-v1`, the last 500, about 45KB each,
+oldest dropped; cleared with the downloads on signing out), so a song
+played before follows its beats from the first second. The Looks sheet
+says which: "Following this song's beats", or tempo only and why.
 
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from

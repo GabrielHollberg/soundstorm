@@ -7021,6 +7021,9 @@ async function clearDownloads() {
     }
     await caches.delete(OFFLINE_CACHE);
     await caches.delete(OFFLINE_SHELL);
+    // What was heard in songs says what this person played.
+    localStorage.removeItem(HEARD_ORDER_KEY);
+    await caches.delete(HEARD_CACHE);
   } catch {
     // nothing to clear
   }
@@ -12717,7 +12720,10 @@ function playbackSettled(item) {
       const end = player.buffered.length ? player.buffered.end(player.buffered.length - 1) : 0;
       const ahead = end - player.currentTime;
       const done = Number.isFinite(player.duration) && end >= player.duration - 1;
-      if (src.startsWith('blob:') || (player.readyState >= 3 && (ahead >= 20 || done)) || Date.now() - began > 120000) {
+      // Only a link found slow waits for twenty seconds in hand: on any
+      // other, a 3MB copy beside a song that is playing costs nothing.
+      const playing = player.readyState >= 3 && !player.paused;
+      if (src.startsWith('blob:') || (playing && (!slowLink || ahead >= 20 || done)) || Date.now() - began > 120000) {
         return resolve(true);
       }
       setTimeout(check, 1000);
@@ -12736,6 +12742,8 @@ async function hearAhead(item) {
     if (!(key in soundOf)) soundOf[key] = ok && body && body.known ? body : null;
   }
   if (heardSongs.has(key)) return;
+  const kept = await loadHeard(item);
+  if (kept) { heardSongs.set(key, Promise.resolve(kept)); return; }
   const sound = soundOf[key];
   let tempo = 0;
   if (sound && sound.tempo > 0) {
@@ -12747,7 +12755,10 @@ async function hearAhead(item) {
   heardSongs.set(key, job);
   while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
   // Failed: tried again the ordinary way when it plays.
-  job.then((heard) => { if (!heard && heardSongs.get(key) === job) heardSongs.delete(key); });
+  job.then((heard) => {
+    if (heard) rememberHeard(item, heard, sound);
+    else if (heardSongs.get(key) === job) heardSongs.delete(key);
+  });
 }
 
 function listenTo(item, tempo) {
@@ -12764,6 +12775,7 @@ function listenTo(item, tempo) {
     }
     const heard = await hearSong(item, tempo);
     if (heard && isDownloaded(item)) saveHeard(item, heard, soundOf[key] || null);
+    else if (heard) rememberHeard(item, heard, soundOf[key] || null);
     return heard;
   })().catch((err) => { hearState.set(key, `could not listen (${(err && err.message) || err})`); return null; });
   heardSongs.set(key, job);
@@ -12790,24 +12802,50 @@ const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 const toBytes = (floats) => Uint8Array.from(floats, (v) => Math.round(Math.max(0, Math.min(1, v)) * 255));
 const fromBytes = (bytes) => Float32Array.from(bytes, (v) => v / 255);
 
+// Songs not downloaded keep what was heard in them too, in a cache of their
+// own (the last HEARD_REMEMBER), so a song played before follows its beats
+// from the first second. The order is kept in localStorage, oldest first.
+const HEARD_CACHE = 'soundstorm-heard-v1';
+const HEARD_ORDER_KEY = 'soundstorm-heard-order';
+const HEARD_REMEMBER = 500;
+
+async function rememberHeard(item, heard, sound) {
+  if (!window.caches) return;
+  try {
+    const url = heardURL(item);
+    const cache = await caches.open(HEARD_CACHE);
+    await cache.put(url, heardResponse(heard, sound));
+    let order = [];
+    try { order = JSON.parse(localStorage.getItem(HEARD_ORDER_KEY) || '[]'); } catch { order = []; }
+    order = order.filter((u) => u !== url);
+    order.push(url);
+    while (order.length > HEARD_REMEMBER) await cache.delete(order.shift());
+    localStorage.setItem(HEARD_ORDER_KEY, JSON.stringify(order));
+  } catch { /* heard again next time */ }
+}
+
+function heardResponse(heard, sound) {
+  const kept = {
+    v: 5, fps: heard.fps, down: heard.down,
+    loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
+    beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
+    sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
+  };
+  return new Response(JSON.stringify(kept), { headers: { 'Content-Type': 'application/json' } });
+}
+
 async function saveHeard(item, heard, sound) {
   if (!window.caches) return;
   try {
-    const kept = {
-      v: 5, fps: heard.fps, down: heard.down,
-      loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
-      beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
-      sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
-    };
     const cache = await caches.open(OFFLINE_CACHE);
-    await cache.put(heardURL(item), new Response(JSON.stringify(kept), { headers: { 'Content-Type': 'application/json' } }));
+    await cache.put(heardURL(item), heardResponse(heard, sound));
   } catch { /* heard again next time */ }
 }
 
 async function loadHeard(item) {
-  if (!window.caches || !isDownloaded(item)) return null;
+  if (!window.caches) return null;
   try {
-    const resp = await caches.match(heardURL(item), { cacheName: OFFLINE_CACHE });
+    const resp = await caches.match(heardURL(item), { cacheName: isDownloaded(item) ? OFFLINE_CACHE : HEARD_CACHE });
     if (!resp) return null;
     const k = await resp.json();
     if (k.v !== 5) return null; // from before the tempo was found in tenths of a frame: heard again
@@ -12866,7 +12904,9 @@ async function songBytes(item) {
     const kept = await caches.match(streamPath(item), { cacheName: OFFLINE_CACHE, ignoreSearch: true });
     if (kept) return kept.arrayBuffer();
   }
-  const res = await fetch(`${streamPath(item)}?kbps=96`);
+  // Sent at full speed (listen=1 skips the away-from-home pace): about 3MB,
+  // there in seconds. On a link found slow it keeps the pace.
+  const res = await fetch(`${streamPath(item)}?kbps=96${slowLink ? '' : '&listen=1'}`);
   if (res.ok) return res.arrayBuffer();
   throw new Error('no audio to listen to');
 }

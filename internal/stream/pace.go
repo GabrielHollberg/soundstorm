@@ -84,6 +84,12 @@ func paceFor(r *http.Request, contentType string, kbps float64) (burst int64, ra
 	if !strings.HasPrefix(ct, "audio/") {
 		return 0, 0
 	}
+	// ?listen=1 is the app's small copy of a song to hear its beats in, not
+	// the one it plays: paced, it arrived minutes into the song. The app asks
+	// for it this way only on a link it has not found slow.
+	if r.URL.Query().Get("listen") == "1" {
+		return 0, 0
+	}
 	if kbps <= 0 {
 		if k, err := strconv.Atoi(r.URL.Query().Get("kbps")); err == nil && k > 0 {
 			kbps = float64(k)

@@ -37,6 +37,10 @@ func TestPaceRateFollowsTheBitrate(t *testing.T) {
 	if got, want := paceRate(plain, "audio/flac"), paceAhead*1411*1000/8; got != want {
 		t.Errorf("lossless: %v, want %v", got, want)
 	}
+	listen := httptest.NewRequest("GET", "/api/stream/navidrome/x?kbps=96&listen=1", nil)
+	if got := paceRate(listen, "audio/mpeg"); got != 0 {
+		t.Errorf("the copy to hear beats in is not paced, got %v", got)
+	}
 	if got := paceRate(plain, "video/mp4"); got != 0 {
 		t.Errorf("video is not paced, got %v", got)
 	}
