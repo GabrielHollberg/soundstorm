@@ -12719,6 +12719,8 @@ const HEARD_KEEP = 6;
 const heardSongs = new Map();
 // What happened to each song's listening, for the Looks sheet.
 const hearState = new Map();
+// The shape and method of a hearing, as internal/beats.Version counts it.
+const HEARD_VERSION = 6;
 
 // playbackSettled: resolves once the song playing has music buffered well
 // ahead (or plays from memory), so hearing it - a second download of the
@@ -12849,7 +12851,7 @@ async function rememberHeard(item, heard, sound) {
 
 function heardResponse(heard, sound) {
   const kept = {
-    v: 6, fps: heard.fps, down: heard.down,
+    v: HEARD_VERSION, fps: heard.fps, down: heard.down,
     loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
     beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
     sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
@@ -12879,7 +12881,7 @@ async function loadHeard(item) {
 // parseHeard reads a kept hearing, the device's or the server's (the same
 // shape: internal/beats writes what saveHeard does).
 function parseHeard(k) {
-  if (!k || k.v !== 6) return null; // from before the hits were on a fixed scale: heard again
+  if (!k || k.v !== HEARD_VERSION) return null; // from before the hits were on a fixed scale: heard again
   const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
   return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
 }
@@ -12892,7 +12894,10 @@ async function serverHeard(item) {
   if (item.kind !== 'music' || state.offline) return null;
   hearState.set(selectionKey(item), 'asking the server');
   try {
-    const { ok, body } = await api(`/api/music/beats?source=${encodeURIComponent(item.sourceId)}&id=${encodeURIComponent(item.id)}`);
+    // The version in the address: the server lets a browser keep an answer
+    // for an hour, and one kept from before a version change would be
+    // refused here without the server ever being asked again.
+    const { ok, body } = await api(`/api/music/beats?source=${encodeURIComponent(item.sourceId)}&id=${encodeURIComponent(item.id)}&v=${HEARD_VERSION}`);
     return ok ? parseHeard(body) : null;
   } catch {
     return null;
