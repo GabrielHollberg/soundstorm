@@ -3504,3 +3504,16 @@ html.tv .chip[data-kind="document"], html.tv #downloads-block { display: none !i
 html.tv button, html.tv a, html.tv input { scroll-margin-top: calc(var(--header-h, 80px) + 24px); }
 /* The film itself in focus: no ring round the picture. */
 html.tv #video-player:focus { outline: none; }
+/* Room for the ring and the grow inside rows that scroll sideways, which clip
+   whatever pokes out of them - reported from the projector as the ring cut
+   off along the top and the side. The padding is taken back with a negative
+   margin, so the rows sit where they always did. */
+html.tv .continue-row, html.tv .home-strip, html.tv .subtabs, html.tv .music-tabs, html.tv .show-seasons {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  margin-top: -14px;
+  margin-bottom: -8px;
+}
+html.tv .continue-row { padding-left: 14px; padding-right: 14px; margin-left: -14px; margin-right: -14px; }
+/* A card scrolled into a row stops short of its edge, ring and all. */
+html.tv .item { scroll-margin-inline: 24px; }
