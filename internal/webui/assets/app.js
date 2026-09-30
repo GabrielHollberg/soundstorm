@@ -12663,7 +12663,7 @@ const soundOf = {};
 // started hearing the song with no tempo to lean on, which for Thunder (170)
 // found 112.
 const soundAsking = new Map();
-async function keepTime(item) {
+async function keepTime(item, attempt = 0) {
   const key = selectionKey(item);
   if (!(key in soundOf)) {
     if (!soundAsking.has(key)) {
@@ -12699,6 +12699,10 @@ async function keepTime(item) {
   // arrive the tempo alone keeps time.
   listenTo(item, sound && sound.tempo > 0 ? 60 / viz.beat : 0).then((heard) => {
     if (heard && audio.item === item) { viz.heard = { key, ...heard }; viz.bigAt = undefined; }
+    // Not heard: asked again while the song plays, after 10, 20 and 40s.
+    if (!heard && audio.item === item && attempt < 3) {
+      setTimeout(() => { if (audio.item === item && !(viz.heard && viz.heard.key === key)) keepTime(item, attempt + 1); }, 10000 * 2 ** attempt);
+    }
   }).catch(() => {});
 }
 
@@ -12795,6 +12799,10 @@ function listenTo(item, tempo) {
   })().catch((err) => { hearState.set(key, `could not listen (${(err && err.message) || err})`); return null; });
   heardSongs.set(key, job);
   while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
+  // Nothing heard is not kept: it was kept once, and a song whose analysis
+  // failed (the server restarting, a dropped connection) stayed "not analysed
+  // yet" to its end. keepTime tries again.
+  job.then((heard) => { if (!heard && heardSongs.get(key) === job) heardSongs.delete(key); });
   return job;
 }
 
