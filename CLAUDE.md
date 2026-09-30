@@ -1308,6 +1308,19 @@ for 16 sharp highs in eight seconds, each within a frame. The Analysis look
 draws a bolt and a line through the sharp highs at each, by the same rule.
 **For the Mac:** the Apple TV's `VizEngine` drops follow the old rule.
 
+**The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
+the timeline follows the finger - left for later, right for earlier, at the
+look's own scale of six seconds across - "Play from 1:23" shows over the
+playhead, and letting go plays from there. A touch that starts on the
+timeline is the look's: Now Playing's swipe (changes song) and hold (the
+buttons) listen on the whole screen, so capture-phase listeners on the
+document stop the touch and pointer events before they arrive. A tap there
+still reaches the page as a click, so a double tap still changes the look;
+holding for the buttons works everywhere but the timeline. While dragged,
+the frame reads `viz.scrubAt` for the moment and keeps drawing when paused.
+Checked with real touch drags (CDP) at iPhone size: 3 seconds on and back,
+same song, Now Playing still open.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

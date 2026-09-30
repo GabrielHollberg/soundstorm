@@ -13257,8 +13257,9 @@ const viz = {
 
     // The song's moment as it is heard: the player's clock plus this device's
     // own timing adjustment (vizLead), for a phone whose speaker runs behind
-    // or ahead of the clock the page can read.
-    const t = (player.currentTime || 0) + vizLead();
+    // or ahead of the clock the page can read - or, while the Analysis look
+    // is dragged, the moment the finger has reached.
+    const t = (this.scrubAt !== undefined ? this.scrubAt : (player.currentTime || 0)) + vizLead();
     const e = this.energy;
     const lv = this.level;
     let beat = this.beat;
@@ -13404,7 +13405,7 @@ const viz = {
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
       if (flowing) this.keepClearOfPlay(back, front);
-      if (playing || this.level > 0.01) this.raf = requestAnimationFrame((ts) => this.frame(ts));
+      if (playing || this.level > 0.01 || this.scrubAt !== undefined) this.raf = requestAnimationFrame((ts) => this.frame(ts));
       return;
     }
     this.sceneFor = 'pulse';
@@ -14372,7 +14373,7 @@ function analysisScene(st, m) {
   // few - what is to come has not been judged yet.
   {
     if (!st.hist || (st.hist.length && t < st.hist[st.hist.length - 1].t - 0.5)) st.hist = [];
-    if (playing) st.hist.push({ t, n: novelty });
+    if (playing && viz.scrubAt === undefined) st.hist.push({ t, n: novelty });
     while (st.hist.length && st.hist[0].t < t - past - 0.2) st.hist.shift();
     const y0 = laneY(3), y1 = y0 + laneH;
     g.save();
@@ -14445,6 +14446,18 @@ function analysisScene(st, m) {
   g.fillRect(px - 10 * u, gridTop, 20 * u, bottom - gridTop);
   g.fillStyle = rgba(VIZ_WHITE, 0.95);
   g.fillRect(px - 1 * u, gridTop, 2 * u, bottom - gridTop);
+  if (viz.scrubAt !== undefined) {
+    const at = Math.max(0, viz.scrubAt);
+    const text = `Play from ${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, '0')}`;
+    g.font = font(12, 700);
+    const tw = g.measureText(text).width + 16 * u;
+    const bx = Math.max(left, Math.min(right - tw, px - tw / 2));
+    g.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    g.fillRect(bx, gridTop - 26 * u, tw, 20 * u);
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    g.fillText(text, bx + tw / 2, gridTop - 12 * u);
+  }
   const fiNow = Math.max(0, Math.min(heard.loud.length - 1, Math.floor(t * fps)));
   const nowVals = [heard.loud[fiNow], heard.low[fiNow], heard.high[fiNow], novelty];
   for (let i = 0; i < lanes.length; i++) {
@@ -14460,6 +14473,81 @@ function analysisScene(st, m) {
     g.fill();
   }
 }
+
+
+// Dragging the Analysis look moves through the song, the owner's asking:
+// the timeline follows the finger (drag left for later, right for earlier)
+// and letting go plays from there. A touch that starts on the timeline is
+// the look's alone - Now Playing's swipe (which changes song) and hold
+// (which brings up the buttons) listen on the whole screen, so they are
+// kept from it here, in the capture phase, before they hear it. A tap there
+// still reaches the page as a click, so a double tap still changes the look.
+const analysisScrub = (() => {
+  let drag = null;
+  const PAST = 2, AHEAD = 4, MARGIN = 16; // as analysisScene draws it
+  const bounds = () => {
+    const r = $('np-stage').getBoundingClientRect();
+    return { r, top: r.top + r.height * 0.2, bottom: r.top + r.height * (TV ? 0.74 : 0.75) };
+  };
+  const owns = (x, y, target) => {
+    const np = $('now-playing');
+    if (np.classList.contains('hidden') || coverStyle() !== 'analysis' || !audio.item || audio.item.kind !== 'music') return false;
+    if (audio.npMode === 'queue' || !(viz.heard && viz.heard.key === selectionKey(audio.item))) return false;
+    if (target.closest('#np-looks, #item-menu, .np-hold-layer, #np-hold-extra, .np-controls, button, input, a')) return false;
+    const b = bounds();
+    return y >= b.top && y <= b.bottom && x >= b.r.left && x <= b.r.right;
+  };
+  const player = () => $('audio-player');
+  const timeAt = (x) => {
+    const b = bounds();
+    const pps = (b.r.width - 2 * MARGIN) / (PAST + AHEAD);
+    const dur = Number.isFinite(player().duration) ? player().duration : Infinity;
+    return Math.max(0, Math.min(dur - 0.5, drag.t0 - (x - drag.x0) / pps));
+  };
+  const stop = (e) => { e.stopPropagation(); };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !owns(e.clientX, e.clientY, e.target)) return;
+    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: player().currentTime || 0, moved: false };
+    stop(e);
+  }, true);
+  document.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    stop(e);
+    if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 8) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      // Moving from the start keeps the timeline from jumping by the slop.
+      drag.x0 = e.clientX;
+    }
+    viz.scrubAt = timeAt(e.clientX);
+    viz.start();
+  }, true);
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    stop(e);
+    if (drag.moved && e.type === 'pointerup') {
+      player().currentTime = timeAt(e.clientX);
+      // The end of a drag is not a tap (for the double tap).
+      npSwipe.draggedAt = performance.now();
+    }
+    viz.scrubAt = undefined;
+    drag = null;
+  };
+  document.addEventListener('pointerup', end, true);
+  document.addEventListener('pointercancel', end, true);
+  // A touch's own events, for the swipe that listens to those: while the
+  // look has the finger, they stop here, and the page does not scroll.
+  for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+    document.addEventListener(type, (e) => {
+      const tt = e.changedTouches[0];
+      const mine = drag || (type === 'touchstart' && tt && owns(tt.clientX, tt.clientY, e.target));
+      if (!mine) return;
+      e.stopPropagation();
+      if (type === 'touchmove' && e.cancelable) e.preventDefault();
+    }, { capture: true, passive: false });
+  }
+  return { get active() { return Boolean(drag && drag.moved); } };
+})();
 
 const VIZ_SCENES = {
   flow: (st, m) => flowScene(st, m),
