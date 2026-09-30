@@ -93,7 +93,11 @@ object NativeAudio {
                 val index = p.currentMediaItemIndex
                 val current = p.currentMediaItem?.localConfiguration?.uri?.toString()
                 if (current == url && p.playbackState != Player.STATE_IDLE) {
-                    // Already this song: the player moved into it by itself.
+                    // Already this song: the player moved into it by itself -
+                    // or it played to its end and is asked for again, which
+                    // starts it over (a finished player plays nothing until it
+                    // is sent back to the start: songs would not play again).
+                    if (p.playbackState == Player.STATE_ENDED) p.seekToDefaultPosition()
                     report()
                     return
                 }
@@ -122,6 +126,9 @@ object NativeAudio {
             }
             "play" -> {
                 if (p.playbackState == Player.STATE_IDLE) p.prepare()
+                // Played to its end: play from the start, as the page's own
+                // audio element does.
+                if (p.playbackState == Player.STATE_ENDED) p.seekToDefaultPosition()
                 p.play()
             }
             "pause" -> p.pause()

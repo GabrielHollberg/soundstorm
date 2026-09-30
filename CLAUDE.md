@@ -1212,6 +1212,12 @@ queued next is heard while this one plays out (`hearAhead`, from
 into the next song by itself, the stand-in kept "playing" from the last one,
 so no "playing" came and its time updates stopped - which also stopped the
 song after that being queued; the stand-in starts afresh on "ended" (0.10).
+**A song that had played to its end would not play again** (0.11): a
+finished ExoPlayer plays nothing until it is sent back to the start, and
+the same song asked for again was taken for the one already loaded and left
+finished. Now "play" and "load" of the same song on a finished player start
+it over, and the stand-in no longer counts a finished song as "already in
+it".
 **And a song started by hand was heard minutes in, away from home.** Both
 waits were the pace (`pace.go`): hearing waited for twenty seconds in hand,
 which at 1.5 times the bitrate after an eight-second burst takes about 24s,

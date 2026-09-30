@@ -154,7 +154,7 @@ object PageScript {
         st.error = null;
         // The player may already be in it (moved in by itself): then the
         // length is known and nothing is loaded again.
-        const already = st.url === url && st.state !== 'idle';
+        const already = st.url === url && st.state !== 'idle' && st.state !== 'ended';
         if (!already) { st.duration = NaN; st.position = 0; st.at = performance.now(); st.playing = false; st.url = url; }
         send('load', { url: url });
         fire('emptied');
