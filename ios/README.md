@@ -31,6 +31,33 @@ Play a song, lock the phone, and wait a minute:
 Stage two (native audio) is shaped by these answers. The simulator cannot
 answer them.
 
+## TestFlight
+
+The app record exists in App Store Connect (bundle `dev.soundstorm.app`,
+team `LZA2K5LLDS`), so an upload is two commands on the Mac, signed in to
+Xcode:
+
+```sh
+xcodebuild archive -project ios/SoundStorm.xcodeproj -scheme SoundStorm \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath /tmp/SoundStorm.xcarchive -allowProvisioningUpdates
+xcodebuild -exportArchive -archivePath /tmp/SoundStorm.xcarchive \
+  -exportOptionsPlist ios/scripts/export-testflight.plist \
+  -exportPath /tmp/SoundStorm-export -allowProvisioningUpdates
+```
+
+The build number is raised by the upload itself (`manageAppVersionAndBuildNumber`),
+so nobody edits it by hand. Apple takes 10-30 minutes to process a build
+before it shows in the TestFlight app. Uploads are internal-testing only
+until the app goes to review.
+
+What blocked the first upload, in order, so it is quicker next time:
+"Failed to Use Accounts" (Xcode's sign-in had lapsed - sign in again under
+Xcode → Settings → Accounts), "PLA Update available" (accept the new
+Program License Agreement at developer.apple.com/account), then
+`missingApp` (no app record yet; Xcode's Organizer created it - the command
+line cannot).
+
 ## Tests
 
 `SoundStormUITests` drives the app against a throwaway server:
