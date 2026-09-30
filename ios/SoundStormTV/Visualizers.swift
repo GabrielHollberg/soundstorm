@@ -9,18 +9,18 @@ enum Looks {
     static let covers: [(key: String, label: String)] = [
         ("lyrics", "Lyrics"), ("square", "Cover"), ("spin", "Spinning disc"), ("vinyl", "Record"),
     ]
-    /// The visualizers drawn so far, in the page's order; its others (Flow,
-    /// Storm, Synthwave, Galaxy, Aurora, Lava) are still to come.
+    /// All twelve of the page's visualizers, in its order.
     static let visualizers: [(key: String, label: String)] = [
         ("pulse", "Orb"), ("bars", "Spectrum"), ("warp", "Warp"), ("waves", "Waves"),
-        ("kaleido", "Kaleidoscope"), ("fireworks", "Fireworks"),
+        ("kaleido", "Kaleidoscope"), ("fireworks", "Fireworks"), ("flow", "Flow"), ("storm", "Storm"),
+        ("synthwave", "Synthwave"), ("galaxy", "Galaxy"), ("aurora", "Aurora"), ("lava", "Lava"),
     ]
     static let all = Set((covers + visualizers).map(\.key))
     static let pageVisualizers: Set<String> = ["pulse", "bars", "warp", "waves", "kaleido", "fireworks",
                                                 "flow", "storm", "synthwave", "galaxy", "aurora", "lava"]
 
-    /// The account's look as the TV can show it: one of the page's
-    /// visualizers not drawn here yet is shown as the Orb.
+    /// The account's look as the TV can show it; one it does not know (a
+    /// newer page's) as the Orb.
     static func shown(_ key: String?) -> String {
         guard let key else { return "lyrics" }
         if all.contains(key) { return key }
@@ -95,6 +95,12 @@ struct VisualizerView: View {
     @State private var waves = WavesScene()
     @State private var kaleido = KaleidoScene()
     @State private var fireworks = FireworksScene()
+    @State private var flow = FlowScene()
+    @State private var storm = StormScene()
+    @State private var synthwave = SynthwaveScene()
+    @State private var galaxy = GalaxyScene()
+    @State private var aurora = AuroraScene()
+    @State private var lava = LavaScene()
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
@@ -108,6 +114,12 @@ struct VisualizerView: View {
                 case "waves": waves.draw(&g, size, m, palette)
                 case "kaleido": kaleido.draw(&g, size, m, palette)
                 case "fireworks": fireworks.draw(&g, size, m, palette)
+                case "flow": flow.draw(&g, size, m, palette)
+                case "storm": storm.draw(&g, size, m, palette)
+                case "synthwave": synthwave.draw(&g, size, m, palette)
+                case "galaxy": galaxy.draw(&g, size, m, palette)
+                case "aurora": aurora.draw(&g, size, m, palette)
+                case "lava": lava.draw(&g, size, m, palette)
                 default: orb.draw(&g, size, m, palette)
                 }
             }

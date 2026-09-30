@@ -4496,7 +4496,22 @@ their last nine places for a trail, as the Orb's vortex does. Checked on the
 simulator with the click track: each drew - the tunnel and its stars, five
 ribbons, the ten-way mirror, and bursts with their glows and falling trails.
 
-Next, stage three: Flow, Storm, Synthwave, Galaxy, Aurora, Lava.
+**Stage three (2026-09-30): Flow, Storm, Synthwave, Galaxy, Aurora, Lava**
+(`Visualizers3.swift`), from `flowScene` and `FULL_SCENES`, with the page's TV
+counts (Flow 260 particles, Storm 210 drops, Galaxy 450 stars). With these
+all twelve are drawn, so the Orb stands in only for a look the TV does not
+know. Many small marks with an alpha each (stars, folds) are drawn as four
+paths per colour, one per alpha level - the page batches the same way for a
+phone. Synthwave's striped sun cuts its stripes out in a layer
+(`drawLayer`, `.destinationOut`), the page's `destination-out`. **Galaxy's
+stars had to be bigger than the page's numbers**: 0.8 to 2.4 canvas pixels at
+the page's TV scale come out much larger on screen than the same number of
+points, and the first try was a faint smudge; 2.4 to 6 points reads as the
+page's. Checked on the simulator with the click track: each of the six drew,
+Storm with a double strike on a drop.
+
+Not checked, for all twelve: how smoothly an Apple TV draws them (the
+simulator runs on the Mac's GPU).
 
 ## The Android app (`android/`)
 
