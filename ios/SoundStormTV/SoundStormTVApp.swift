@@ -130,11 +130,35 @@ final class AppModel {
     }
 
     /// A book, from where this person got to, at the account's speed.
-    func playBook(_ item: Item) async {
+    func playBook(_ item: Item, show: Bool = true) async {
         guard let api, let playback = try? await api.bookPlayback(item) else { return }
         let speed = await api.bookSpeed()
         player?.play(book: item, playback, speed: speed)
-        showingNowPlaying = true
+        if show { showingNowPlaying = true }
+    }
+
+    /// The audiobook plays and the book opens over it. Synced, the page
+    /// follows the recording (Storyteller's copy of the book, whose sentences
+    /// the timeline names); not yet synced, both simply open, as on the page.
+    func readAlong(_ pair: API.Pair) async {
+        guard let api, let player else { return }
+        await playBook(pair.audiobook, show: false)
+        let synced = pair.sync?.state == "ready" ? try? await api.readAlong(pair) : nil
+        // Given up on (the page it came from went away): nothing, rather than
+        // taking the failed request for "not synced" and opening the wrong copy.
+        guard !Task.isCancelled else { return }
+        if let synced, !synced.timeline.isEmpty {
+            // Storyteller's title is its own; the shelf's reads better.
+            let b = synced.book
+            let book = Item(id: b.id, sourceId: b.sourceId, kind: "ebook", title: pair.ebook.title,
+                            subtitle: nil, creators: pair.ebook.creators, artId: pair.ebook.artId,
+                            durationSeconds: nil, extra: ["format": "epub"], progress: nil)
+            let reader = BookReader(item: book, api: api)
+            reader.follow(synced.timeline, player: player, highlight: await api.readAlongHighlight())
+            reading = .epub(reader)
+        } else {
+            read(pair.ebook)
+        }
     }
 
     /// Plays and opens Now Playing, as the web page's TV mode does.

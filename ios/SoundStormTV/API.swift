@@ -411,6 +411,55 @@ final class API {
         _ = try? await perform(request) as Answer
     }
 
+    // MARK: Read Along
+
+    /// A book somebody has both as an ebook and an audiobook.
+    struct Pair: Decodable, Identifiable, Hashable {
+        struct Sync: Decodable, Hashable { let state: String; let progress: Double? }
+        let ebook: Item
+        let audiobook: Item
+        let sync: Sync?
+        var id: String { ebook.key + "|" + audiobook.key }
+    }
+
+    func pairs() async throws -> [Pair] {
+        struct Answer: Decodable { let pairs: [Pair] }
+        let a: Answer = try await get("api/books/pairs")
+        return a.pairs
+    }
+
+    /// One sentence on the recording's whole timeline, and where it is in the
+    /// synced book ("OEBPS/Text/ch01.xhtml#s0012").
+    struct Moment: Decodable {
+        let t: Double
+        let e: Double
+        let h: String
+    }
+
+    /// Storyteller's synced copy of the book, and its sentences' times.
+    func readAlong(_ pair: Pair) async throws -> (book: Item, timeline: [Moment]) {
+        struct Answer: Decodable { let item: Item?; let timeline: [Moment]? }
+        let a: Answer = try await get("api/readalong", query: [
+            "ebookSource": pair.ebook.sourceId, "ebookId": pair.ebook.id,
+            "audiobookSource": pair.audiobook.sourceId, "audiobookId": pair.audiobook.id,
+        ])
+        guard let book = a.item else { throw Failure.status(0, "This book is still syncing.") }
+        return (book, a.timeline ?? [])
+    }
+
+    /// Whether the sentence being read is lit, the account's setting.
+    func readAlongHighlight() async -> Bool {
+        struct Prefs: Decodable { let readAlongHighlight: Bool? }
+        let p: Prefs? = try? await get("api/prefs")
+        return p?.readAlongHighlight ?? true
+    }
+
+    func setReadAlongHighlight(_ on: Bool) async {
+        struct Body: Encodable { let readAlongHighlight: Bool }
+        struct Answer: Decodable {}
+        let _: Answer? = try? await send("PATCH", "api/prefs", Body(readAlongHighlight: on))
+    }
+
     // MARK: Audiobooks
 
     struct Chapter: Decodable, Hashable {

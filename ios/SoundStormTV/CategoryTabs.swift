@@ -2,8 +2,7 @@ import SwiftUI
 
 /// Each tab's categories, as the web page has them (TABS in app.js): in the
 /// account's own order and without the ones put away (both set on the page;
-/// the TV follows). Genres start put away, as on the page. Read Along waits
-/// for the reader to follow an audiobook.
+/// the TV follows). Genres start put away, as on the page.
 enum Categories {
     static let home: [(value: String, label: String)] = [("", "Home"), ("favorites", "Favorites")]
     static let music: [(value: String, label: String)] = [
@@ -15,7 +14,7 @@ enum Categories {
     ]
     static let books: [(value: String, label: String)] = [
         ("audiobook", "Audiobooks"), ("ebook", "Ebooks"), ("authors", "Authors"), ("series", "Series"),
-        ("document", "Documents"), ("fav-books", "Favorites"), ("genres-books", "Genres"),
+        ("pairs", "Read Along"), ("document", "Documents"), ("fav-books", "Favorites"), ("genres-books", "Genres"),
     ]
     static let photos: [(value: String, label: String)] = [
         ("picture", "Photos"), ("people", "People"), ("places", "Places"), ("fav-photos", "Favorites"),
@@ -143,6 +142,7 @@ struct BooksTab: View {
             case "audiobook": BooksView()
             case "ebook": PagedItems(kinds: ["ebook"])
             case "document": PagedItems(kinds: ["document"])
+            case "pairs": PairsPage()
             case "authors": GroupsPage(round: true) { try await api.bookGroups("authors") }
             case "series": GroupsPage(round: false) { try await api.bookGroups("series") }
             case "fav-books": ItemsPage { try await api.favorites().filter { ["audiobook", "ebook", "document"].contains($0.kind) } }
@@ -459,3 +459,53 @@ struct DebugAutovideo: ViewModifier {
     }
 }
 #endif
+
+/// Read Along: books somebody has as both an ebook and an audiobook. One
+/// plays the audiobook and opens the book; synced, the page follows it.
+struct PairsPage: View {
+    @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
+    @State private var pairs: [API.Pair] = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            if loaded && pairs.isEmpty { Nothing() }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 70) {
+                ForEach(pairs) { pair in
+                    Button { Task { await model.readAlong(pair) } } label: {
+                        Cover(url: api.artURL(source: pair.ebook.sourceId, artId: pair.ebook.artId ?? pair.audiobook.artId, size: 500))
+                            .frame(width: 270, height: 270)
+                    }
+                    .buttonStyle(.borderless)
+                    .overlay(alignment: .bottom) {
+                        CardTitle(title: pair.ebook.title, subtitle: syncLine(pair)).frame(width: 270)
+                    }
+                    .padding(.bottom, 70)
+                }
+            }
+            .padding(.vertical, 40)
+        }
+        .task {
+            pairs = (try? await api.pairs()) ?? []
+            loaded = true
+            #if DEBUG
+            // For the simulator, which has no remote: -autopair YES opens the first.
+            if UserDefaults.standard.bool(forKey: "autopair"), model.reading == nil, let first = pairs.first {
+                await model.readAlong(first)
+            }
+            #endif
+        }
+    }
+
+    /// Whether the page will follow: synced, syncing, or not yet (set going
+    /// from the page's Read Along, where the sync is started).
+    private func syncLine(_ pair: API.Pair) -> String {
+        switch pair.sync?.state {
+        case "ready": "Follows the audiobook"
+        case "queued", "working": "Syncing \(Int(((pair.sync?.progress ?? 0) * 100).rounded()))%"
+        case "failed": "Sync failed"
+        default: "Not synced"
+        }
+    }
+}

@@ -87,6 +87,10 @@ struct EpubText {
         private var skip = 0          // inside <head>, <script>, <style>
         private var italic = 0, bold = 0, heading = 0, small = 0, pre = 0
         private var pendingBreak = false
+        /// ids whose element has begun but shown nothing yet: placed at its
+        /// first text, after any paragraph break, so an anchor (a read-along
+        /// sentence above all) never starts on the break before it.
+        private var pendingAnchors: [String] = []
         private var lastWasSpace = true
 
         init(base: String, size: CGFloat) {
@@ -111,7 +115,7 @@ struct EpubText {
             if ["head", "script", "style"].contains(name) { skip += 1 }
             guard skip == 0 else { return }
 
-            if let id = attributes["id"] { anchors[id] = out.length }
+            if let id = attributes["id"] { pendingAnchors.append(id) }
             if Self.blocks.contains(name) { pendingBreak = out.length > 0 }
             switch name {
             case "em", "i", "cite", "dfn": italic += 1
@@ -124,6 +128,7 @@ struct EpubText {
                 let src = attributes["src"] ?? attributes["xlink:href"] ?? attributes["href"]
                 if let src {
                     breakIfPending()
+                    placeAnchors()
                     images.append((out.length, EpubBook.join(base, src)))
                     out.append(NSAttributedString(string: "\u{FFFC}", attributes: attrs()))
                     pendingBreak = true
@@ -167,6 +172,7 @@ struct EpubText {
             if pendingBreak { breakIfPending(); if shown.hasPrefix(" ") { shown.removeFirst() } }
             guard !shown.isEmpty else { return }
             let start = out.length
+            placeAnchors()
             out.append(NSAttributedString(string: shown, attributes: attrs()))
             runs.append(Run(start: start, length: out.length - start, path: frame.path,
                             chunk: frame.elements * 2 + 1, domStart: domStart, domLength: string.utf16.count))
@@ -186,7 +192,13 @@ struct EpubText {
             lastWasSpace = true
         }
 
+        private func placeAnchors() {
+            for id in pendingAnchors { anchors[id] = out.length }
+            pendingAnchors.removeAll()
+        }
+
         func trimEnd() {
+            placeAnchors()
             while out.string.hasSuffix("\n") || out.string.hasSuffix(" ") {
                 out.deleteCharacters(in: NSRange(location: out.length - 1, length: 1))
             }

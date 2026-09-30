@@ -34,6 +34,20 @@ final class BookReader {
     private var storage = NSTextStorage()
     private var saveTask: Task<Void, Never>?
 
+    // MARK: Read Along state
+
+    /// The audiobook being followed, with every sentence's time on it.
+    private var timeline: [API.Moment] = []
+    private weak var listening: Player?
+    private var followTask: Task<Void, Never>?
+    private var sentence = -1
+    /// Turning by hand stops the following this long, as on the page.
+    private var handsOffUntil = Date.distantPast
+    /// The sentence being read, lit - unless the account has it off.
+    var highlight = true
+    private var lit: NSRange?
+    var following: Bool { !timeline.isEmpty }
+
     init(item: Item, api: API) {
         self.item = item
         self.api = api
@@ -58,6 +72,7 @@ final class BookReader {
             self.book = book
             // Where this person got to: the CFI the page saved, or failing
             // that how far through, by chapter.
+            defer { startFollowing() }
             if let place = await api.readPlace(item) {
                 if let cfi = CFI(place.location), book.chapters.indices.contains(cfi.chapter) {
                     await show(chapter: cfi.chapter) { text in text.offset(forCFIPath: cfi.steps, charOffset: cfi.offset) }
@@ -75,6 +90,12 @@ final class BookReader {
     }
 
     // MARK: Turning
+
+    /// Turned by hand: while following, the following stops for a while.
+    func turn(forward: Bool) async {
+        handsOffUntil = Date().addingTimeInterval(12)
+        if forward { await next() } else { await previous() }
+    }
 
     func next() async {
         if page + 1 < pages.count {
@@ -153,6 +174,7 @@ final class BookReader {
         while !layout.textContainers.isEmpty { layout.removeTextContainer(at: 0) }
         storage = NSTextStorage(attributedString: full)
         storage.addLayoutManager(layout)
+        lit = nil
         var ranges: [NSRange] = []
         while true {
             let container = NSTextContainer(size: Self.pageSize)
@@ -168,6 +190,84 @@ final class BookReader {
             if NSMaxRange(chars) >= storage.length || ranges.count > 2000 { break }
         }
         pages = ranges.isEmpty ? [NSRange(location: 0, length: 0)] : ranges
+        generation += 1
+    }
+
+    // MARK: Read Along
+
+    /// Follow an audiobook: the page turns to the sentence being read, four
+    /// times a second, from Storyteller's timings - what the page's reader
+    /// does. Set before open().
+    func follow(_ timeline: [API.Moment], player: Player, highlight: Bool) {
+        self.timeline = timeline
+        self.listening = player
+        self.highlight = highlight
+    }
+
+    private func startFollowing() {
+        guard following else { return }
+        followTask?.cancel()
+        followTask = Task {
+            while !Task.isCancelled {
+                await tick()
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
+    func stopFollowing() { followTask?.cancel() }
+
+    func setHighlight(_ on: Bool) {
+        highlight = on
+        if on { sentence = -1 } else { unlight() }
+        Task { await api.setReadAlongHighlight(on) }
+    }
+
+    private func tick() async {
+        guard let book, let player = listening, player.isBook, !loading else { return }
+        let i = Self.sentence(at: player.time, in: timeline)
+        guard i >= 0, i != sentence else { return }
+        sentence = i
+        let parts = timeline[i].h.split(separator: "#", maxSplits: 1).map(String.init)
+        guard let c = book.chapters.firstIndex(where: { $0.path == parts[0] }) else { return }
+        let fragment = parts.count > 1 ? parts[1] : nil
+        // Turned by hand: the reader is looking elsewhere; leave the page be.
+        guard Date() >= handsOffUntil else { return }
+        if c != chapter {
+            await show(chapter: c) { text in fragment.flatMap { text.anchors[$0] } ?? 0 }
+        }
+        guard let text, let fragment, let start = text.anchors[fragment] else { return }
+        // The sentence runs to where the next anchored element begins.
+        var end = text.anchors.values.filter { $0 > start }.min() ?? text.text.length
+        // Not the paragraph break after it, which would light the rest of its line.
+        let chars = text.text.string as NSString
+        while end > start, [10, 32].contains(chars.character(at: end - 1)) { end -= 1 }
+        page = pages.lastIndex { $0.location <= start } ?? page
+        if highlight { light(NSRange(location: start, length: max(0, end - start))) }
+    }
+
+    /// The last sentence begun by then; -1 before the first.
+    static func sentence(at t: Double, in timeline: [API.Moment]) -> Int {
+        var lo = 0, hi = timeline.count - 1, found = -1
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if timeline[mid].t <= t { found = mid; lo = mid + 1 } else { hi = mid - 1 }
+        }
+        return found
+    }
+
+    private func light(_ range: NSRange) {
+        unlight()
+        guard NSMaxRange(range) <= storage.length else { return }
+        storage.addAttribute(.backgroundColor, value: UIColor(white: 1, alpha: 0.16), range: range)
+        lit = range
+        generation += 1
+    }
+
+    private func unlight() {
+        guard let lit, NSMaxRange(lit) <= storage.length else { self.lit = nil; return }
+        storage.removeAttribute(.backgroundColor, range: lit)
+        self.lit = nil
         generation += 1
     }
 
@@ -285,18 +385,26 @@ struct ReaderView: View {
         .task { await reader.open() }
         .onMoveCommand { direction in
             switch direction {
-            case .right: Task { await reader.next() }
-            case .left: Task { await reader.previous() }
+            case .right: Task { await reader.turn(forward: true) }
+            case .left: Task { await reader.turn(forward: false) }
             case .down: toggleMusic()
             default: break
             }
         }
         .onPlayPauseCommand { toggleMusic() }
         .onExitCommand {
+            reader.stopFollowing()
             Task { await reader.save() }
             dismiss()
         }
+        .onDisappear { reader.stopFollowing() }
         .contextMenu {
+            if reader.following {
+                Button { reader.setHighlight(!reader.highlight) } label: {
+                    Label(reader.highlight ? "Stop lighting the sentence" : "Light the sentence being read",
+                          systemImage: "highlighter")
+                }
+            }
             if let book = reader.book, !book.contents.isEmpty {
                 Button { contents = true } label: { Label("Contents", systemImage: "list.bullet") }
             }

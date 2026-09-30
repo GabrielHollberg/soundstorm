@@ -4427,9 +4427,36 @@ Things that bit:
 - The server logs `/api/book/*` at debug only; `SOUNDSTORM_LOG_LEVEL=debug` to
   see them.
 
-Next steps, in order: Read Along (the page following the audiobook, from
-Storyteller's timings as the page does), then the visualizers (natively, the
-largest part).
+**Read Along (2026-09-30)** is a category in Books, from `/api/books/pairs`,
+each card saying whether the page will follow (synced, syncing, not synced -
+a sync is still started on the page). Choosing one plays the audiobook and
+opens the book over it, as the page does. Synced, it is Storyteller's copy
+that opens (`/api/readalong` gives it and the timeline: every sentence's
+start and end on the recording's whole-book clock and its place in that
+copy, "OEBPS/Text/ch01.xhtml#s0012", a full path inside the EPUB like the
+reader's own chapter paths). Four times a second the reader finds the
+sentence begun at the player's time, turns to its chapter and page, and
+lights it to the next anchor in the chapter - unless the page was turned by
+hand in the last twelve seconds, the page's own rule. Lighting is the
+account's `readAlongHighlight`, switched from the hold menu. Not synced (or no
+timeline), the shelf's ebook opens beside the audiobook with nothing
+following.
+
+Checked on the simulator against the stand-in with a synthetic synced book
+in Storyteller's shape (two chapters, a span per sentence) and a timeline
+putting chapter 2 at 30 seconds, the test audiobook resuming at 30 at 1.5x:
+the reader opened the synced copy straight at chapter 2 with its first
+sentence lit and moved the light to the fourth seven seconds later. Two
+things bit:
+
+- **An anchor sat before its paragraph break**, so the light began on the
+  break and drew a grey block at the end of the line above. Anchors are placed
+  at the element's first text now, and the lit range drops the break after it.
+- **A cancelled request was taken for "not synced".** A task given up on
+  (its page gone) failed the `/api/readalong` fetch, and the fallback opened
+  the shelf's copy over the synced one. Cancelled, it now does nothing.
+
+Next: the visualizers (natively, the largest part).
 
 ## The Android app (`android/`)
 
