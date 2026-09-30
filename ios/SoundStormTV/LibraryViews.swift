@@ -12,6 +12,7 @@ struct LibraryView: View {
         #if DEBUG
         if UserDefaults.standard.string(forKey: "autovideo") != nil { return "watch" }
         if UserDefaults.standard.bool(forKey: "autophoto") { return "photos" }
+        if UserDefaults.standard.bool(forKey: "autobook") { return "books" }
         #endif
         return "home"
     }
@@ -34,6 +35,7 @@ struct LibraryView: View {
             Tab("Home", systemImage: "house", value: "home") { HomeView() }
             Tab("Music", systemImage: "music.note", value: "music") { MusicView() }
             Tab("Watch", systemImage: "film", value: "watch") { WatchView() }
+            Tab("Audiobooks", systemImage: "headphones", value: "books") { BooksView() }
             Tab("Photos", systemImage: "photo.on.rectangle", value: "photos") { PhotosView() }
             Tab("Search", systemImage: "magnifyingglass", value: "search") { SearchView() }
             Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
@@ -110,8 +112,7 @@ struct HomeView: View {
                 recent = (try? await played) ?? []
                 favorites = ((try? await favs) ?? []).filter { $0.kind == "music" }
                 mixes = (try? await mix) ?? []
-                // Films and episodes for now; audiobooks join when they play here.
-                carryOn = ((try? await going) ?? []).filter(\.isVideo)
+                carryOn = ((try? await going) ?? []).filter { $0.isVideo || $0.kind == "audiobook" }
                 #if DEBUG
                 // For the simulator, which has no remote to press play with:
                 // xcrun simctl launch booted dev.soundstorm.app -autoplay YES
@@ -516,4 +517,44 @@ func clock(_ seconds: Double) -> String {
     let s = Int(seconds)
     return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
         : String(format: "%d:%02d", s / 60, s % 60)
+}
+
+// MARK: Audiobooks
+
+/// Every audiobook, as covers; one plays from where this person got to.
+struct BooksView: View {
+    @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
+    @State private var books: [Item] = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            if loaded && books.isEmpty {
+                Text("No audiobooks yet.").foregroundStyle(.secondary).padding(40)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+                ForEach(books, id: \.key) { book in
+                    Button { Task { await model.playBook(book) } } label: {
+                        Cover(url: api.artURL(source: book.sourceId, artId: book.artId))
+                            .frame(width: 300, height: 300)
+                    }
+                    .buttonStyle(.borderless)
+                    .overlay(alignment: .bottom) { CardTitle(title: book.title, subtitle: book.artist) }
+                    .padding(.bottom, 70)
+                }
+            }
+            .padding(.vertical, 40)
+        }
+        .task {
+            books = (try? await api.browse(kind: "audiobook")) ?? []
+            loaded = true
+            #if DEBUG
+            // For the simulator, which has no remote: -autobook YES plays the first book.
+            if UserDefaults.standard.bool(forKey: "autobook"), let first = books.first, model.player?.current == nil {
+                await model.playBook(first)
+            }
+            #endif
+        }
+    }
 }

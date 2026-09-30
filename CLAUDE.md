@@ -4326,8 +4326,37 @@ paused". A full-screen cover cannot open over another: the photo viewer does
 not open while Now Playing is up (the debug run puts Now Playing away first,
 as Back would).
 
-Next steps, in order: audiobooks, then the visualizers (natively, the largest
-part); books need a native reader, as foliate-js runs only in a web view.
+**Audiobooks (2026-09-30).** An Audiobooks tab, and books in Home's
+Continue row. `Player` plays a book as its files on the book's own clock
+(`/api/playback`'s `tracks`, each with `startSeconds`): AVQueuePlayer holds
+the file playing and the next, time is the file's start plus the time into
+it, and a seek into another file rebuilds the queue from that file. It starts
+where this person got to (`position`, the server's record, which is
+Audiobookshelf's - so the page and Audiobookshelf's own apps agree) unless
+the book was finished, and saves it every ten seconds while playing, on pause
+and on leaving, `finished` at the end of the last file - the page's cadence.
+A seek is not a forced save: a run of thirty-second skips would meet the
+server's limit on saves. The speed is the account's own (`audiobookSpeed` in
+`/api/prefs`, the page's setting, 0.75× to 3×), set as the player's
+`defaultRate` so a book's next file keeps it; music is always 1×.
+
+In Now Playing a book shows its chapter under its title, and the timeline is
+the chapter's with the whole book beneath (as on the page). Left and right
+are thirty seconds, not songs (the TV rule), and the system's remote commands
+switch from next and previous to thirty-second skips. The hold menu has
+Chapters (a list, the one playing marked), Speed, and a **sleep timer**, which
+music has too: 15 to 90 minutes, or the end of the song or chapter.
+
+Checked on the simulator against the stand-in with a book of three
+24-second files, four chapters (one starting inside a file), a saved place
+at 30 seconds and the account at 1.5×: it asked for the second file and had
+the third ready, showed "The Middle" (the chapter from 20 to 40), saved 45 and
+60 ten seconds apart (1.5× on the book's clock), crossed into the third file,
+and saved `finished` at 72. **Not checked: the hold menu's chapters, speed and
+sleep timer**, which need a remote.
+
+Next steps, in order: the visualizers (natively, the largest part); books need
+a native reader, as foliate-js runs only in a web view.
 
 ## The Android app (`android/`)
 

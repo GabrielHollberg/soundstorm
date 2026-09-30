@@ -270,6 +270,58 @@ final class API {
         return url("api/art/\(Self.part(item.sourceId))/\(Self.path(artId + "@preview"))")
     }
 
+    // MARK: Audiobooks
+
+    struct Chapter: Decodable, Hashable {
+        let title: String
+        let startSeconds: Double
+    }
+
+    /// What /api/playback says about a book: its file or files on the book's
+    /// own clock, its chapters, and where this person got to.
+    struct BookPlayback: Decodable {
+        struct Track: Decodable {
+            let title: String
+            let url: String
+            let startSeconds: Double
+        }
+        struct Position: Decodable {
+            let seconds: Double
+            let duration: Double?
+            let finished: Bool?
+        }
+        let url: String
+        let tracks: [Track]?
+        let chapters: [Chapter]?
+        let position: Position?
+    }
+
+    func bookPlayback(_ item: Item) async throws -> BookPlayback {
+        try await get("api/playback/\(Self.part(item.sourceId))/\(Self.path(item.id))")
+    }
+
+    /// Upstream, to Audiobookshelf, so its own apps carry on from here too.
+    func saveBookPosition(_ item: Item, seconds: Double, duration: Double, finished: Bool) async {
+        struct Body: Encodable { let seconds: Double; let duration: Double; let finished: Bool }
+        struct Answer: Decodable {}
+        let _: Answer? = try? await send("PUT", "api/playback/\(Self.part(item.sourceId))/\(Self.path(item.id))",
+                                         Body(seconds: seconds, duration: duration, finished: finished))
+    }
+
+    /// The account's audiobook speed, the page's own setting.
+    func bookSpeed() async -> Double {
+        struct Prefs: Decodable { let audiobookSpeed: Double? }
+        let p: Prefs? = try? await get("api/prefs")
+        let v = p?.audiobookSpeed ?? 1
+        return (0.5...3.5).contains(v) ? v : 1
+    }
+
+    func setBookSpeed(_ v: Double) async {
+        struct Body: Encodable { let audiobookSpeed: Double }
+        struct Answer: Decodable {}
+        let _: Answer? = try? await send("PATCH", "api/prefs", Body(audiobookSpeed: v))
+    }
+
     // MARK: Films and TV
 
     /// Films, or TV shows (series only: a search with no text lists shows,

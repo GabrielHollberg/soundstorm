@@ -106,6 +106,14 @@ final class AppModel {
         showingNowPlaying = true
     }
 
+    /// A book, from where this person got to, at the account's speed.
+    func playBook(_ item: Item) async {
+        guard let api, let playback = try? await api.bookPlayback(item) else { return }
+        let speed = await api.bookSpeed()
+        player?.play(book: item, playback, speed: speed)
+        showingNowPlaying = true
+    }
+
     /// Plays and opens Now Playing, as the web page's TV mode does.
     func play(_ items: [Item], from index: Int = 0) {
         player?.play(items, from: index)

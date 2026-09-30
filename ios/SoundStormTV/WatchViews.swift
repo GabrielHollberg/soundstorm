@@ -58,6 +58,8 @@ struct PosterCard: View {
         Group {
             if item.isVideo {
                 Button { model.playVideo(item) } label: { poster }
+            } else if item.kind == "audiobook" {
+                Button { Task { await model.playBook(item) } } label: { poster }
             } else {
                 NavigationLink(value: item) { poster }
             }

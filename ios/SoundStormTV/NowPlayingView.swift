@@ -24,7 +24,7 @@ struct NowPlayingView: View {
     /// The Lyrics look, instead of the cover; kept between songs and launches.
     @AppStorage("lyricsLook") private var lyricsLook = false
     @State private var lyrics: API.Lyrics?
-    private enum Sheet: Identifiable { case queue, playlists; var id: Self { self } }
+    private enum Sheet: Identifiable { case queue, playlists, chapters; var id: Self { self } }
     @State private var sheet: Sheet?
 
     private enum Spot { case none, timeline, putAway }
@@ -70,15 +70,35 @@ struct NowPlayingView: View {
                 }
                 VStack(spacing: 10) {
                     Text(song?.title ?? "").font(.title2.weight(.semibold)).lineLimit(1)
-                    Text(song?.artist ?? "").foregroundStyle(.secondary).lineLimit(1)
+                    // A book names its chapter where a song names its artist.
+                    Text(player.chapter?.title ?? song?.artist ?? "").foregroundStyle(.secondary).lineLimit(1)
+                    if let sleepAt = player.sleepAt {
+                        Text("Stops at \(sleepAt.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if player.sleepAtEnd {
+                        Text(player.isBook ? "Stops at the end of the chapter" : "Stops at the end of the song")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.top, 40)
                 .frame(maxWidth: 1400)
                 Spacer(minLength: 30)
 
-                Timeline(time: player.time, duration: player.duration, lit: spot == .timeline)
-                    .frame(width: 1100)
-                    .opacity(faded ? 0 : 1)
+                Group {
+                    if let c = player.chapter {
+                        // A book's timeline is its chapter's, with the whole
+                        // book beneath - as on the page.
+                        VStack(spacing: 14) {
+                            Timeline(time: player.time - c.start, duration: c.end - c.start, lit: spot == .timeline)
+                            Text("\(clock(player.time)) of \(clock(player.duration))" + (player.speed != 1 ? " · \(speedName(player.speed))" : ""))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Timeline(time: player.time, duration: player.duration, lit: spot == .timeline)
+                    }
+                }
+                .frame(width: 1100)
+                .opacity(faded ? 0 : 1)
             }
             .padding(.vertical, 60)
         }
@@ -106,13 +126,26 @@ struct NowPlayingView: View {
             switch which {
             case .queue: QueueSheet()
             case .playlists: if let song { PlaylistPicker(song: song) }
+            case .chapters: ChapterSheet()
             }
         }
     }
 
     @ViewBuilder
     private func menu(for song: Item?) -> some View {
-        if let song {
+        if player.isBook {
+            if !player.chapters.isEmpty {
+                Button { sheet = .chapters } label: { Label("Chapters", systemImage: "list.bullet") }
+            }
+            Menu {
+                ForEach([0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3], id: \.self) { v in
+                    Button { player.setSpeed(v) } label: {
+                        if v == player.speed { Label(speedName(v), systemImage: "checkmark") } else { Text(speedName(v)) }
+                    }
+                }
+            } label: { Label("Speed: \(speedName(player.speed))", systemImage: "gauge.with.dots.needle.50percent") }
+            sleepMenu
+        } else if let song {
             let fav = model.favorites.contains(song.key)
             Button { Task { await model.toggleFavorite(song) } } label: {
                 Label(fav ? "Remove from favorites" : "Add to favorites", systemImage: fav ? "heart.slash" : "heart")
@@ -123,7 +156,21 @@ struct NowPlayingView: View {
             }
             .disabled(lyrics?.lines.isEmpty ?? true && !lyricsLook)
             Button { sheet = .queue } label: { Label("Up next", systemImage: "list.bullet") }
+            sleepMenu
         }
+    }
+
+    /// The page's sleep timer: a time, or the end of what is playing.
+    private var sleepMenu: some View {
+        Menu {
+            ForEach([15, 30, 45, 60, 90], id: \.self) { m in
+                Button("\(m) minutes") { player.sleep(minutes: m) }
+            }
+            Button(player.isBook ? "End of chapter" : "End of song") { player.sleepAtEndOfThis() }
+            if player.sleepAt != nil || player.sleepAtEnd {
+                Button("Off", role: .destructive) { player.sleep(minutes: nil) }
+            }
+        } label: { Label("Sleep timer", systemImage: "moon.zzz") }
     }
 
     private func move(_ direction: MoveCommandDirection) {
@@ -280,6 +327,41 @@ private struct PlaylistPicker: View {
             }
             .navigationTitle("Add to playlist")
             .task { playlists = (try? await api.playlists()) ?? [] }
+        }
+    }
+}
+
+func speedName(_ v: Double) -> String {
+    v == 1 ? "1× normal" : String(format: "%g×", v)
+}
+
+/// A book's chapters, the one being heard marked; OK on one goes there.
+private struct ChapterSheet: View {
+    @Environment(Player.self) private var player
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { scroller in
+                List {
+                    ForEach(Array(player.chapters.enumerated()), id: \.offset) { i, c in
+                        Button {
+                            player.jump(toChapter: i)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "speaker.wave.2.fill").opacity(i == player.chapter?.index ? 1 : 0)
+                                Text(c.title)
+                                Spacer()
+                                Text(clock(c.startSeconds)).foregroundStyle(.secondary)
+                            }
+                        }
+                        .id(i)
+                    }
+                }
+                .onAppear { scroller.scrollTo(player.chapter?.index ?? 0, anchor: .center) }
+            }
+            .navigationTitle("Chapters")
         }
     }
 }
