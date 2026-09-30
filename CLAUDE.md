@@ -4259,15 +4259,32 @@ and eight seconds later episode 2 played over HLS on its own. `-autovideo
 <id>` in a debug build plays a film or episode at launch, for a simulator
 without a remote.
 
-**Not yet: subtitles and the audio-language choice.** The server gives
-subtitles as separate WebVTT files (`/api/subtitle`), which a browser adds as
-a `<track>` but AVPlayer cannot attach to a stream it is handed; they need an
-AVAssetResourceLoader that writes them into the HLS playlist, or a
-composition for a direct file. Another audio language is `?audio=<index>` on
-`/api/playback`, which is a picker away.
+**Subtitles and audio languages (2026-09-30) are drawn and chosen by the
+app.** The server gives subtitles as separate WebVTT files (`/api/subtitle`),
+which a browser adds as a `<track>` but AVPlayer cannot attach to a stream it
+is handed. Rather than rewrite HLS playlists through a resource loader (and
+still have no answer for a direct file), `Subtitles` reads the WebVTT into
+cues and `SubtitleOverlay` draws the one showing in the player's
+`contentOverlayView` - over the picture, under its controls - checked ten
+times a second. Subtitles and Audio are menus in the player's own transport
+bar (`transportBarCustomMenuItems`), where a swipe down finds them. As on the
+page, subtitles start off; a language chosen carries on to the next episode
+when it has one. Another audio language is `/api/playback?audio=<index>`, which
+is always Jellyfin's HLS with that stream, played on from the same moment.
+The overlay's host view must be pinned with constraints: sized from the
+overlay's bounds it was laid out at zero and the text sat mid-screen.
 
-Next steps, in order: subtitles and audio languages, then photos and books,
-then the visualizers (natively, the largest part).
+Checked on the simulator against the stand-in with a three-cue WebVTT (markup
+and an entity in it) and two audio languages: the file was fetched with the
+cookie, each cue showed at its time and not after its end, a two-line cue
+kept its break, and switching to the second language three seconds in asked
+for `?audio=2` and played on over HLS from the same moment.
+`-autosubtitle <n>` and `-autoaudio <n>` in a debug build choose them at start.
+
+Next steps, in order: music to match the page (Home's Continue and
+favorites, mixes, artists, radio, lyrics, the queue), then photos, then
+audiobooks, then the visualizers (natively, the largest part); books need a
+native reader, as foliate-js runs only in a web view.
 
 ## The Android app (`android/`)
 

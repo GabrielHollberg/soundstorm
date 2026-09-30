@@ -147,14 +147,37 @@ final class API {
     }
 
     struct Playback: Decodable {
+        struct Subtitle: Decodable, Hashable {
+            let label: String?
+            let language: String?
+            let forced: Bool?
+            let url: String
+        }
+        struct Audio: Decodable, Hashable {
+            let index: Int
+            let label: String?
+            let language: String?
+            let `default`: Bool?
+        }
         let mode: String
         let url: String
+        let subtitles: [Subtitle]?
+        let audio: [Audio]?
     }
 
     /// How a film plays: the file itself, or Jellyfin's HLS through the
-    /// server when the file is not something the TV can play as it is.
-    func playback(_ item: Item) async throws -> Playback {
-        try await get("api/playback/\(Self.part(item.sourceId))/\(Self.path(item.id))")
+    /// server when the file is not something the TV can play as it is. Another
+    /// audio language is always HLS with that stream (`audio`).
+    func playback(_ item: Item, audio: Int? = nil) async throws -> Playback {
+        try await get("api/playback/\(Self.part(item.sourceId))/\(Self.path(item.id))",
+                      query: audio.map { ["audio": String($0)] } ?? [:])
+    }
+
+    /// A subtitle track's text: WebVTT, fetched with the session like the rest.
+    func text(at path: String) async throws -> String {
+        let (data, response) = try await URLSession.shared.data(from: absolute(path))
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "Subtitles didn't load.") }
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// The server gives paths ("/api/hls/..."); the player needs them whole.

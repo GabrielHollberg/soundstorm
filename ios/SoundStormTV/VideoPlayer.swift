@@ -20,6 +20,19 @@ final class VideoSession: Identifiable {
     private(set) var stage: Stage = .loading
     let player = AVPlayer()
 
+    /// The film's subtitle and audio tracks, and which are chosen. Subtitles
+    /// start off, as on the page; a language chosen carries on to the next
+    /// episode when it has one.
+    private(set) var subtitleTracks: [API.Playback.Subtitle] = []
+    private(set) var audioTracks: [API.Playback.Audio] = []
+    private(set) var subtitleChoice: Int?
+    private(set) var audioChoice: Int?
+    /// What is on screen now, drawn over the picture by SubtitleOverlay.
+    private(set) var subtitleText = ""
+    private var subtitles: Subtitles?
+    private var subtitleLanguage: String?
+    private var subtitleObserver: Any?
+
     private let api: API
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -36,6 +49,9 @@ final class VideoSession: Identifiable {
         }
         // Saved on pause too, as the page saves it, so stopping to talk and
         // then leaving keeps the moment.
+        subtitleObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 10), queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showSubtitle() }
+        }
         rateObservation = player.observe(\.timeControlStatus) { [weak self] p, _ in
             let paused = p.timeControlStatus == .paused
             Task { @MainActor in if paused { self?.save(force: true) } }
@@ -46,21 +62,93 @@ final class VideoSession: Identifiable {
         stage = .loading
         do {
             let playback = try await api.playback(item)
-            let asset = AVURLAsset(url: api.absolute(playback.url),
-                                   options: [AVURLAssetHTTPCookiesKey: api.cookies])
-            let playerItem = AVPlayerItem(asset: asset)
-            playerItem.externalMetadata = metadata()
-            watchEnd(of: playerItem)
-            watchStatus(of: playerItem)
-            player.replaceCurrentItem(with: playerItem)
+            subtitleTracks = playback.subtitles ?? []
+            audioTracks = playback.audio ?? []
+            audioChoice = audioTracks.first(where: { $0.default == true })?.index ?? audioTracks.first?.index
+            let playerItem = load(playback)
             if let seconds = await api.watchedSeconds(item) {
                 await resume(at: seconds, in: playerItem)
             }
             player.play()
             stage = .playing
+            await carryOnSubtitles()
+            #if DEBUG
+            // For the simulator, which has no remote to open the menus with.
+            if let n = UserDefaults.standard.object(forKey: "autosubtitle") as? Int ?? Int(UserDefaults.standard.string(forKey: "autosubtitle") ?? "") {
+                await chooseSubtitle(n)
+            }
+            if let n = Int(UserDefaults.standard.string(forKey: "autoaudio") ?? "") {
+                try? await Task.sleep(for: .seconds(3))
+                await chooseAudio(n)
+            }
+            #endif
         } catch {
             stage = .failed(error.localizedDescription)
         }
+    }
+
+    private func load(_ playback: API.Playback) -> AVPlayerItem {
+        let asset = AVURLAsset(url: api.absolute(playback.url), options: [AVURLAssetHTTPCookiesKey: api.cookies])
+        let playerItem = AVPlayerItem(asset: asset)
+        playerItem.externalMetadata = metadata()
+        watchEnd(of: playerItem)
+        watchStatus(of: playerItem)
+        player.replaceCurrentItem(with: playerItem)
+        return playerItem
+    }
+
+    // MARK: Subtitles and audio
+
+    /// Off, or the track at that place in the list.
+    func chooseSubtitle(_ index: Int?) async {
+        subtitleChoice = index
+        subtitleLanguage = index.flatMap { subtitleTracks.indices.contains($0) ? subtitleTracks[$0].language ?? "" : nil }
+        subtitles = nil
+        subtitleText = ""
+        guard let index, subtitleTracks.indices.contains(index) else { return }
+        do {
+            let vtt = try await api.text(at: subtitleTracks[index].url)
+            guard subtitleChoice == index else { return } // chosen again meanwhile
+            subtitles = Subtitles(webVTT: vtt)
+            showSubtitle()
+        } catch {
+            subtitleChoice = nil
+        }
+    }
+
+    /// The next episode keeps the language chosen for the last, when it has it.
+    private func carryOnSubtitles() async {
+        guard let language = subtitleLanguage else {
+            await chooseSubtitle(nil)
+            return
+        }
+        let wanted = subtitleTracks.firstIndex { ($0.language ?? "") == language && $0.forced != true }
+            ?? subtitleTracks.firstIndex { ($0.language ?? "") == language }
+        let keep = subtitleLanguage
+        await chooseSubtitle(wanted)
+        if wanted == nil { subtitleLanguage = keep } // still wanted for a later episode
+    }
+
+    /// Another language is another stream (Jellyfin's HLS with that audio),
+    /// played on from the same moment - what the page does.
+    func chooseAudio(_ index: Int) async {
+        guard index != audioChoice else { return }
+        let at = player.currentTime()
+        let wasPlaying = player.timeControlStatus != .paused
+        do {
+            let playback = try await api.playback(item, audio: index)
+            audioChoice = index
+            _ = load(playback)
+            await player.seek(to: at)
+            if wasPlaying { player.play() }
+        } catch {
+            stage = .failed(error.localizedDescription)
+        }
+    }
+
+    private func showSubtitle() {
+        let text = subtitles?.text(at: player.currentTime().seconds) ?? ""
+        if text != subtitleText { subtitleText = text }
     }
 
     /// Not from the very start, and not into the credits - both are a fresh
@@ -178,7 +266,7 @@ struct VideoView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlayerController(player: session.player).ignoresSafeArea()
+            PlayerController(session: session).ignoresSafeArea()
             switch session.stage {
             case .loading:
                 ProgressView()
@@ -229,14 +317,85 @@ private struct UpNext: View {
     }
 }
 
+/// tvOS's player, with SoundStorm's subtitles drawn in its content overlay
+/// (over the picture, under its own controls) and Subtitles and Audio menus
+/// in its transport bar, where a swipe down finds them like any app's.
 private struct PlayerController: UIViewControllerRepresentable {
-    let player: AVPlayer
+    let session: VideoSession
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
-        controller.player = player
+        controller.player = session.player
+        if let overlay = controller.contentOverlayView {
+            let host = UIHostingController(rootView: SubtitleOverlay(session: session))
+            host.view.backgroundColor = .clear
+            host.view.isUserInteractionEnabled = false
+            // Pinned, not sized from the overlay's bounds: they are zero when
+            // the controller is made, and the subtitles sat mid-screen.
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            controller.addChild(host)
+            overlay.addSubview(host.view)
+            NSLayoutConstraint.activate([
+                host.view.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+                host.view.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+                host.view.topAnchor.constraint(equalTo: overlay.topAnchor),
+                host.view.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+            ])
+            host.didMove(toParent: controller)
+        }
         return controller
     }
 
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {}
+    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+        // Read here so SwiftUI calls this again when they change.
+        let subtitles = session.subtitleTracks
+        let chosenSubtitle = session.subtitleChoice
+        let audio = session.audioTracks
+        let chosenAudio = session.audioChoice
+        var menus: [UIMenuElement] = []
+        if !subtitles.isEmpty {
+            let off = UIAction(title: "Off", state: chosenSubtitle == nil ? .on : .off) { _ in
+                Task { await session.chooseSubtitle(nil) }
+            }
+            let tracks = subtitles.enumerated().map { i, t in
+                UIAction(title: t.label ?? "Track \(i + 1)", state: chosenSubtitle == i ? .on : .off) { _ in
+                    Task { await session.chooseSubtitle(i) }
+                }
+            }
+            menus.append(UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"),
+                                options: .singleSelection, children: [off] + tracks))
+        }
+        if audio.count > 1 {
+            let tracks = audio.map { t in
+                UIAction(title: t.label ?? t.language ?? "Track \(t.index)", state: chosenAudio == t.index ? .on : .off) { _ in
+                    Task { await session.chooseAudio(t.index) }
+                }
+            }
+            menus.append(UIMenu(title: "Audio", image: UIImage(systemName: "speaker.wave.2"),
+                                options: .singleSelection, children: tracks))
+        }
+        controller.transportBarCustomMenuItems = menus
+    }
+}
+
+/// The subtitle showing, low in the picture, white with a soft shadow.
+private struct SubtitleOverlay: View {
+    let session: VideoSession
+
+    var body: some View {
+        VStack {
+            Spacer()
+            if !session.subtitleText.isEmpty {
+                Text(session.subtitleText)
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .shadow(color: .black, radius: 3)
+                    .shadow(color: .black.opacity(0.8), radius: 12)
+                    .padding(.horizontal, 140)
+                    .padding(.bottom, 90)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
