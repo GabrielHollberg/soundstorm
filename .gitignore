@@ -41,3 +41,15 @@ coverage.*
 # Working directories for scripts/fetch-starter-media.sh. It cleans up after
 # itself; this is for the run that gets interrupted.
 /.starter-*/
+
+# Xcode (ios/): per-person window layouts and build output
+xcuserdata/
+DerivedData/
+
+# Gradle (android/): build output, its cache, and where this machine's SDK is
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml

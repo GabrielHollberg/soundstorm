@@ -2413,7 +2413,7 @@ body { overflow-x: clip; }
 #app.viewing-account #home-view { display: none; }
 
 /* Sign out, last on the Settings page. */
-.account-signout { display: flex; justify-content: center; }
+.account-signout { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
 .account-signout button { min-width: 180px; }
 /* Six tabs on a phone: a little tighter, labels still whole. */
 @media (max-width: 899px) {

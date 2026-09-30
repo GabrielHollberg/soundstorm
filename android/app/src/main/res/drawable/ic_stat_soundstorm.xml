@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The notification icon: the SoundStorm cloud and bolt in one colour, from
+     the same shapes scripts/make-icons.py draws (the logo's own pixels). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="172"
+    android:viewportHeight="172">
+    <group android:translateX="-164.5" android:translateY="-153.5">
+        <!-- Cut flat along the bottom of the bar, as the logo is. -->
+        <clip-path android:pathData="M0,0 H400 V249 H0 Z" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M190.5,220.5 a43.5,43.5 0 1,0 87,0 a43.5,43.5 0 1,0 -87,0 Z" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M259.3,212.7 a23.7,23.7 0 1,0 47.4,0 a23.7,23.7 0 1,0 -47.4,0 Z" />
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M197.5,207 H303.5 A21,21 0 0,1 303.5,249 H197.5 A21,21 0 0,1 197.5,207 Z" />
+    </group>
+    <group android:translateX="-164.5" android:translateY="-153.5">
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M243,240 L271,240 L260,261 L278,261 L238,302 L251,273 L231,273 Z" />
+    </group>
+</vector>

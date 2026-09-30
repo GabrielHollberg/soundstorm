@@ -14,6 +14,57 @@ The user's words for what they wanted: *"an all-encompassing server that can do
 movies, audiobooks, ebooks, music all together... easy for users to install and
 then create a login... and put their library into organized folders."*
 
+## How this is developed: two machines, one main
+
+Two Claude Code sessions work on this repository, one per machine. Each has
+its own memory, which the other never sees, so what both must know is here.
+
+- **The Windows PC** (`H:\dev\soundstorm`) runs the live server, and is where
+  the server, the web app (`internal/webui/assets`), the Android app
+  (`android/`) and any Android TV work happen. Only it deploys:
+  `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build soundstorm`,
+  then `curl localhost:8099/healthz`, then push.
+- **The Mac** is for the iPhone app (`ios/`) and any Apple TV work - Xcode
+  runs nowhere else. It tests against the live server at the home address or
+  its away-from-home name. It cannot deploy the server.
+- **Android builds** come from `android/` on main (`gradlew assembleDebug`),
+  with `versionCode` raised each time so a phone installs over the last. They
+  are published as GitHub pre-releases named `android-<version>`, never marked
+  Latest, since Latest is the server's installer.
+
+**main is the only long-lived branch.** The apps are folders on it. They used
+to live on `android-app` and `ios-app`, and that is how a bug shipped: the
+web changes the Android app needed (the safe-area variables, Change server)
+were made on its branch, the server serves main, and the installed app's
+title sat under the camera until they were brought over. Both branches were
+merged into main on 2026-09-30. Do not start per-app branches again; if a
+short one is needed for a risky change, merge it the same day.
+
+**Every session starts with `git pull` and ends with a commit and a push.**
+The owner switches machines by telling the session they are leaving; that
+session commits and pushes everything, and the next one pulls before touching
+anything. Never leave work uncommitted on one machine.
+
+**The shared web files are where the two collide**: `app.js`, `style.css`,
+`index.html`. Web and server changes are made on the PC by default. When the
+iPhone app needs one, the Mac may make it - pull first, keep it small, push at
+once - and must tell the owner it reaches phones only once the PC deploys.
+Web changes for the phone apps always go to main, never into an app's folder.
+
+**Working with the owner** (kept here so both machines know):
+
+- They dictate. An odd word may be mis-transcribed: restate the reading
+  before building when a request is ambiguous.
+- One real check per change, then commit. Do not run long comparison or
+  mutation runs; mention what was not verified. For phone fixes they would
+  rather deploy and test on their own phone than wait on a long simulation.
+- Replies in plain words, about what they will see.
+- Ask before experiments on the live server, before writing to their real
+  backends (Immich and the rest) for a test, and before deleting media. Their
+  media may be read for analysis, never changed or copied.
+- Never print credentials. Commits end with the Co-Authored-By line the
+  session is given; never put a model name in a commit.
+
 ## The decision that shapes everything
 
 That request sounds like "build a media server". It is not, and the difference
@@ -3871,6 +3922,174 @@ These were checked on a running stack, not inferred. Re-verify if versions move.
 - All four need anywhere from seconds to a minute after container start, so
   provisioning retries with backoff in the background while SoundStorm serves.
 
+## The iPhone app (`ios/`)
+
+The owner wanted SoundStorm on the App Store rather than only as a home
+screen web app. Three shapes were weighed:
+
+- **A thin wrapper**: a native shell that loads the server's own web app.
+- **A wrapper whose audio is native**: the same shell, with music and
+  audiobooks played by iOS itself rather than by the page.
+- **A fully native app**: rebuild in Swift.
+
+**Chosen: the second, built in two stages.** Fully native was rejected for the
+reason every "client app" is the graveyard (see what SoundStorm does not do):
+`app.js` is the whole product across five media types, and a Swift rewrite
+means doing every feature twice from then on, with Android still on the web.
+What only native can give - CarPlay, audio iOS will not stop, the lock
+screen - is all audio, so only the audio goes native. The shell can grow
+screen by screen later if that ever looks worth it; nothing commits it to.
+
+**The APK note under Music does not transfer.** That one declined an Android
+WebView app because it would have cost lock-screen controls and background
+playback to fix a cosmetic problem, on Android's WebView, which lacks the
+Media Session API. An iPhone app's WKWebView is Safari's engine: with
+`UIBackgroundModes` audio and the `.playback` audio session (both set), the
+page's `<audio>` keeps playing locked. Whether the lock screen then shows the
+page's Media Session title and controls is **not yet checked on a real
+iPhone** - the simulator cannot say. That result decides how much of stage
+two is needed.
+
+**Stage one (done): the shell.** Plain Swift, no Capacitor: Capacitor is
+built to bundle a web app, and this one lives on each person's own server,
+while stage two is Swift anyway. What it does:
+
+- Asks for the server's address on first launch (every install is somebody's
+  own) and checks `/healthz` answers like SoundStorm before keeping it, so a
+  typo is caught at the door, not as a strange page. No scheme means https.
+- Shows the page full screen, laid out under the status bar with the same
+  `env(safe-area-inset-*)` the installed web app already uses.
+- Shows `alert`/`confirm`/`prompt` - a WKWebView shows none of them unless its
+  app does, and SoundStorm asks before removing downloads.
+- Sends links off the server, and `target="_blank"`, to Safari.
+- Sets `window.soundstormApp` before the page runs. `app.js` uses it to show
+  **Change server** beside Sign out, which posts `changeServer` to the app.
+  This is the only place the web app knows it is inside the app; keep it
+  that way until stage two needs more.
+- Allows plain http only on the local network (`NSAllowsLocalNetworking`).
+
+**What the shell does not do, and why that is expected:** no service worker.
+WKWebView only runs one for App-Bound Domains, a fixed list of at most ten
+set at build time, and every install has its own address. So opening the
+app with no connection shows the "can't reach" screen rather than the
+downloads - native downloads are stage two's, not a bug in stage one.
+
+**Stage two (next): native audio** - an `AVPlayer` behind a bridge the page
+talks to in place of `<audio>`, for Now Playing, remote commands and later
+CarPlay. `app.js`'s audio is not one element: crossfade uses a second one,
+gapless preloads into a Blob, leveling sets `volume`, audiobooks set
+`playbackRate`, and downloads play from the Cache API through `urlMap`. The
+bridge has to answer for all of those.
+
+Things that bit while building stage one:
+
+- **A centered `UIStackView` measures a multi-line label as one line**, and
+  truncates it, until `preferredMaxLayoutWidth` is set from the laid-out
+  width (`ConnectViewController.viewDidLayoutSubviews`).
+- **In the UI test, the keyboard's Previous/Next/Done bar sits over the web
+  form's submit button**, so a tap on the button lands on the bar. Pressing
+  Return submits the form instead, which is also what a person does.
+- **`simctl` cannot type or tap**, and scripting Simulator through System
+  Events waits on a macOS permission prompt nobody sees. The XCUITest in
+  `ios/SoundStormUITests` is how the app gets driven; it skips itself when no
+  server answers at `localhost:8080`.
+- **The server address is stored as a string**, not with
+  `UserDefaults.set(_:URL)`, so it can be given as a launch argument:
+  `xcrun simctl launch booted dev.soundstorm.app -serverURL http://localhost:8080`.
+
+## The Android app (`android/`)
+
+The same shape as the iPhone app, and the same stage: a native shell around
+the server's own web app (Kotlin, two screens, no Compose or AppCompat), so
+`app.js` stays the one product. It does what `ios/` does - asks for the
+server's address and checks `/healthz`, shows the page edge to edge, answers
+`alert`/`confirm`/`prompt`, sends links off the server to the browser, and
+recovers from a failed load with Try again / Change server - and the web app
+cannot tell the two apps apart: the page gets the same `window.soundstormApp`
+and the same `window.webkit.messageHandlers.soundstorm.postMessage`, so "Change
+server" needed no Android code in `app.js`.
+
+**Android is where the APK note under Music applies, and this is its answer.**
+Android's WebView has no Media Session API and is stopped in the background
+unless the app holds a media-playback foreground service - the two things that
+note said a WebView app would lose. So:
+
+- `PageScript` runs before the page's own scripts (`addDocumentStartJavaScript`,
+  the server's origin only) and gives it a `navigator.mediaSession` that passes
+  what `app.js` already says - the song, playing or paused, the position, which
+  buttons work - to the app, and hands buttons back to the page's own handlers
+  (`window.__soundstormMediaAction`). The page does all the playing; nothing
+  about the audio is native yet.
+- `PlaybackService` is a foreground service of the `mediaPlayback` type with a
+  `MediaSessionCompat` and a MediaStyle notification: lock screen, notification,
+  headphones, Bluetooth and a car's controls. It goes to the foreground as soon
+  as the page says it is playing, drops back (notification kept, swipeable) on
+  pause, and goes away when the player closes.
+- The channel is `addWebMessageListener`, for the server's origin and the main
+  frame only - not `addJavascriptInterface`, which every frame of every origin
+  would see, EPUB chapters included.
+- Covers for the notification are fetched with the page's own cookie
+  (`CookieManager`), since covers are served only to someone signed in.
+- The status bar takes the page's theme colour (a MutationObserver on
+  `meta[name=theme-color]`), as the installed web app's does in Now Playing.
+- Back steps back through the page's own history, and with nothing left moves
+  the app to the background rather than closing it - closing would stop the
+  music. File pickers (Add media, Import playlist, Change cover) and a film's
+  full screen are the platform's.
+
+**Both system bars are hidden, everywhere** - the owner's asking, and the
+thing the installed web app never could do, since Chrome owns its bars. A
+swipe in from an edge shows them for a moment (`BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`);
+they are hidden again whenever the window regains focus. The app draws into the
+camera cutout (`LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS`), so there is no black
+strip over the camera - the one the owner disliked in the Chrome app. Android
+shows its own "Viewing full screen - swipe down to exit" card once, the first
+time.
+
+**The web view reports 0 for the cutout it draws into** (measured:
+`env(safe-area-inset-top)` read 0px on a Pixel 7 profile with a 136px cutout),
+so drawn full height the Home header would sit under the camera, and padding
+the page down instead left a band in the theme colour that never quite matched
+Now Playing's backdrop. So style.css no longer uses `env(safe-area-inset-*)`
+directly: every edge is spaced by `--safe-top/right/bottom/left`, which default
+to the env() values (a browser and the iPhone are unchanged), and the Android app
+sets them to the cutout's size in CSS pixels - as a document-start script,
+replaced when the cutout changes, and on the page already showing. Checked:
+`--safe-top` read 51px, the header ran up to the edge with the logo below the
+camera, and Now Playing's backdrop reached the top with no band.
+
+Plain http is allowed (`usesCleartextTraffic`), because an install is often
+reached by its LAN address and Android cannot allow a range of private
+addresses by itself. Unlike an iPhone's WKWebView, Android's WebView runs the
+service worker, so downloads should work offline in the app as in Chrome -
+not yet checked.
+
+**Checked on an emulator (Android 17 image), not yet on a phone:** the connect
+screen refused `example.com` ("isn't SoundStorm") and took the test server;
+inside the app the page had `soundstormApp`, the media session and the message
+channel; a song played; the media session was active and PLAYING with the
+song's title, artist and album; the service was in the foreground as
+`mediaPlayback`; with the screen off for 45 seconds playback carried on
+(0:40 to 1:28) and the queue moved on to the next song by itself; pause, play
+and next from `cmd media_session dispatch` (what headphones send) worked; the
+notification shade showed the controls with a seek bar; the status bar took
+Now Playing's colour; Change server returned to the connect screen, prefilled,
+and stopped the music.
+
+Things that bit:
+
+- **The emulator's default 2GB is killed as the page loads** - Android's
+  low-memory killer ended the app in the foreground ("min watermark is
+  breached"). 4GB (`-memory 4096`, `hw.ramSize`) is fine. A phone is not the
+  emulator; worth watching on a small one.
+- **Taps and typing through `adb shell input` do not reliably reach a web
+  page.** Drive it through the debug build's DevTools instead
+  (`adb forward ... webview_devtools_remote_<pid>`, Playwright
+  `connectOverCDP`), which is how the checks above ran.
+- **Change server prefilled the host alone**, as the iPhone app does, which
+  for a plain-http server is read back as https and fails. It keeps `http://`
+  now.
+
 ## Naming
 
 The product is **SoundStorm**; every identifier is **soundstorm**. Module path,
@@ -4615,6 +4834,8 @@ docker compose up --build
 docker compose logs -f soundstorm          # watch provisioning
 docker compose down -v                 # reset everything, including credentials
 pwsh scripts/make-sample-media.ps1     # synthetic library, no downloads
+open ios/SoundStorm.xcodeproj          # the iPhone app; see ios/README.md
+cd android && ./gradlew installDebug     # the Android app; see android/README.md
 ```
 
 `docker compose logs -f SoundStorm` is the fastest way to see why a backend is not
