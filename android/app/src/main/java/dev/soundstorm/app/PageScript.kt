@@ -26,7 +26,6 @@ object PageScript {
   if (window.soundstormApp || typeof SoundStormNative === 'undefined') return;
   const post = (message) => SoundStormNative.postMessage(JSON.stringify(message));
   window.soundstormApp = { version: 1, platform: 'android' };
-  window.__soundstormDiag = true; // test build: see the diag block below
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };
@@ -91,51 +90,6 @@ object PageScript {
       const handler = handlers[action];
       if (handler) handler(Object.assign({ action }, details || {}));
     };
-  }
-
-  // Test builds only: the audio player's progress, reported to the server's
-  // own request log as the path of a request it refuses, so where playback
-  // stops on a phone can be read from the server. Nothing leaves the server.
-  if (window.__soundstormDiag) {
-    const diag = (what) => {
-      const p = document.getElementById('audio-player');
-      if (!p) return;
-      const buf = p.buffered.length ? p.buffered.end(p.buffered.length - 1).toFixed(0) : 0;
-      const kind = (p.currentSrc || '').startsWith('blob:') ? 'blob' : (p.currentSrc ? 'net' : 'none');
-      const parts = [what, 'r' + p.readyState, 'n' + p.networkState, 't' + p.currentTime.toFixed(1), 'b' + buf,
-        'e' + (p.error ? p.error.code : 0), p.paused ? 'paused' : 'going', kind, 'v' + p.volume.toFixed(2)];
-      fetch('/api/__diag/' + parts.map(encodeURIComponent).join('/'), { keepalive: true }).catch(() => {});
-    };
-    const m = /Chrome\/([\d.]+)/.exec(navigator.userAgent);
-    const a = /Android ([\d.]+)/.exec(navigator.userAgent);
-    fetch('/api/__diag/start/chrome-' + (m ? m[1] : '?') + '/android-' + (a ? a[1] : '?'), { keepalive: true }).catch(() => {});
-    for (const e of ['loadstart', 'loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend', 'error', 'play', 'pause', 'ended', 'abort', 'emptied']) {
-      document.addEventListener(e, (ev) => { if (ev.target && ev.target.id === 'audio-player') diag(e); }, true);
-    }
-    const say = (parts) => fetch('/api/__diag/' + parts.map((x) => encodeURIComponent(String(x))).join('/'), { keepalive: true }).catch(() => {});
-    say(['sw', navigator.serviceWorker && navigator.serviceWorker.controller ? 'controlled' : 'none']);
-    let progress = 0;
-    let playedAt = 0;
-    document.addEventListener('progress', (ev) => {
-      if (!ev.target || ev.target.id !== 'audio-player') return;
-      progress++;
-      if (progress <= 3 || progress % 10 === 0) diag('progress' + progress + '-' + (Date.now() - playedAt) + 'ms');
-    }, true);
-    document.addEventListener('play', (ev) => {
-      if (!ev.target || ev.target.id !== 'audio-player') return;
-      playedAt = Date.now();
-      progress = 0;
-      // And how the player itself is doing, every 2s for the first 30s.
-      let n = 0;
-      const every = setInterval(() => { diag('at' + (++n * 2) + 's'); if (n >= 15) clearInterval(every); }, 2000);
-    }, true);
-    let last = 0;
-    document.addEventListener('timeupdate', (ev) => {
-      if (!ev.target || ev.target.id !== 'audio-player') return;
-      const now = Date.now();
-      if (now - last > 10000) { last = now; diag('tick'); }
-    }, true);
-    setInterval(() => diag('every15s'), 15000);
   }
 
   const themeColor = () => {
