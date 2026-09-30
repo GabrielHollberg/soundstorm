@@ -14471,13 +14471,17 @@ function tvRemote() {
   const idleSoon = () => {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (shown('now-playing') && !shown('item-menu') && !shown('np-looks')) $('now-playing').classList.add('tv-idle');
+      const np = $('now-playing');
+      if (shown('now-playing') && !shown('item-menu') && !shown('np-looks') && !np.classList.contains('tv-idle')) np.classList.add('tv-idle');
     }, 4000);
   };
   const wake = () => {
     const np = $('now-playing');
     const was = np.classList.contains('tv-idle');
-    np.classList.remove('tv-idle');
+    // Only when it is there: removing an absent class still rewrites the
+    // attribute, which the watcher below sees as a change and answers by
+    // waking again - a loop that froze the app on opening Looks.
+    if (was) np.classList.remove('tv-idle');
     if (shown('now-playing')) idleSoon(); else clearTimeout(idleTimer);
     return was;
   };

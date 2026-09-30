@@ -1096,6 +1096,12 @@ has no touch and no mouse:
   **Long titles ran off the screen**: centring shrank the title's box to the
   text, so `fitNpLine` never saw it overflow; the box is full width on a TV
   and the title scrolls sideways as it does on a phone.
+  **Opening Looks froze the app** until it was restarted. The fade's watcher
+  observes Now Playing's classes and woke the buttons by removing `tv-idle`,
+  and removing a class that is not there still rewrites the attribute - a
+  change the watcher saw and answered by waking again, for ever. A class is
+  now added or removed only when it would change; any MutationObserver that
+  writes to what it watches must do the same.
 
 Checked on the emulator with real key presses: moving through Home, a held
 OK opening a card's menu with the focus in it, Back closing the menu, OK
