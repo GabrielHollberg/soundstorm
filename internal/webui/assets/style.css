@@ -3564,3 +3564,8 @@ html.tv .now-playing .np-bar .np-icon, html.tv .now-playing .np-bar .np-speed,
 html.tv .now-playing .np-controls, html.tv .now-playing .np-progress { transition: opacity 0.6s ease; }
 html.tv .now-playing.tv-idle .np-bar .np-icon, html.tv .now-playing.tv-idle .np-bar .np-speed,
 html.tv .now-playing.tv-idle .np-controls, html.tv .now-playing.tv-idle .np-progress { opacity: 0; }
+
+/* Lyrics only on the Lyrics look, on a TV and a computer as on a phone:
+   under an animation they popped up over it (reported from the projector).
+   The box keeps its place, unseen, so nothing moves. */
+.now-playing.cover-viz .np-lyrics, .now-playing.cover-full .np-lyrics { visibility: hidden; }
