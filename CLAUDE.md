@@ -1106,8 +1106,11 @@ has no touch and no mouse:
   orb too): while the buttons are faded (they stay faded) or none of Now
   Playing's buttons has the focus - it opens with none - OK plays and
   pauses and left and right skip (previous and next song, an audiobook's
-  thirty seconds). Up or down reaches the buttons that are left; the
-  remote's own previous and next keys skip anywhere.
+  thirty seconds) - but **while the timeline shows, left and right move
+  ten seconds** through the song instead, and so they do on the timeline
+  itself; only faded do they change song. From nothing in focus, down goes
+  to the timeline and up to the top buttons. The remote's own previous and
+  next keys skip anywhere.
 
 Checked on the emulator with real key presses: moving through Home, a held
 OK opening a card's menu with the focus in it, Back closing the menu, OK

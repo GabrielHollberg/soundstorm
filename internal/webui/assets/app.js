@@ -14517,6 +14517,33 @@ function tvRemote() {
       }
       return;
     }
+    // From nothing in focus, down goes to the timeline and up to the buttons
+    // along the top - not the first button in reading order.
+    if (npFree && !faded && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      const to = event.key === 'ArrowDown' ? $('np-seek') : $('np-close');
+      if (to && usable(to)) {
+        event.preventDefault();
+        focusOn(to, 'down');
+        wake();
+        return;
+      }
+    }
+    // While the timeline shows (the buttons not faded), left and right move
+    // through the song instead - ten seconds a press - and so they do on the
+    // timeline itself (the owner's asking).
+    if (npOnly && across && audio.item && !faded && (npFree || t === $('np-seek'))) {
+      event.preventDefault();
+      const by = event.key === 'ArrowRight' ? 10 : -10;
+      if (audio.item.kind !== 'music') {
+        bookSkip(by);
+      } else {
+        const player = $('audio-player');
+        const end = Number.isFinite(player.duration) ? player.duration - 1 : Infinity;
+        player.currentTime = Math.max(0, Math.min(player.currentTime + by, end));
+      }
+      wake();
+      return;
+    }
     if ((npFree && across) || event.key === 'MediaTrackNext' || event.key === 'MediaTrackPrevious') {
       if (audio.item) {
         event.preventDefault();
