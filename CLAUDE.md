@@ -1072,7 +1072,11 @@ has no touch and no mouse:
   subtitle and audio pickers and a slim timeline (`tv-video-bar`) show along
   the foot when a key is pressed or it is paused, and fade after four
   seconds (`tv-bare`, not while paused or a picker has the focus); down
-  reaches the pickers. Checked with a generated film at TV size. Now Playing
+  reaches the pickers, up from a picker returns to the film (the film fills
+  the screen, so spatial navigation never finds it "above" anything, and the
+  picker could not be left); on a picker the arrows move on and OK opens its
+  list; the page behind a film never scrolls. Checked with a generated film
+  at TV size, and on the projector by the owner. Now Playing
   opens on play. The remote's play/pause key works either way.
 - **The TV's web view reports `pointer: coarse`**, like a phone, so every
   touch rule applied - Now Playing hid its buttons until a hold a remote
