@@ -1160,9 +1160,19 @@ Android TV. The plan to start from: SwiftUI on tvOS, talking to the same
 `/api` the page uses (search, home, music, playback, streams, art), with
 AVPlayer for films (Jellyfin's HLS through `/api/hls` plays natively) and
 music. A native player also brings the system's own Now Playing and remote
-controls. Keep it to watching, listening and photos, as on Android TV.
-Before building, check whether AirPlay from the iPhone app covers what is
-wanted.
+controls. Keep it to watching, listening, photos and books, as on Android TV.
+**The owner has decided: a real Apple TV app, not AirPlay** (2026-09-30).
+The web page's TV mode cannot be reused (no web view on tvOS); what carries
+over is every behaviour settled above for Android TV - build to it rather
+than working it out again: OK plays and pauses in Now Playing, left and
+right skip (ten seconds while the timeline shows), the buttons fade after
+four seconds and the next press only brings them back, no play, previous or
+next buttons, the playing song's cover first in the side bar in place of a
+mini player, lyrics only on the Lyrics look, down over a photo or a book
+pauses the music, photos and books keep the music playing. tvOS's own focus
+engine and AVPlayer give the highlight and the remote's media keys; the
+visualizers would be redrawn natively (Metal or SpriteKit), the largest
+part.
 
 ## Home, and five tabs instead of ten chips
 
