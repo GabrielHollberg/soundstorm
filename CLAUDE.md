@@ -4281,10 +4281,32 @@ kept its break, and switching to the second language three seconds in asked
 for `?audio=2` and played on over HLS from the same moment.
 `-autosubtitle <n>` and `-autoaudio <n>` in a debug build choose them at start.
 
-Next steps, in order: music to match the page (Home's Continue and
-favorites, mixes, artists, radio, lyrics, the queue), then photos, then
-audiobooks, then the visualizers (natively, the largest part); books need a
-native reader, as foliate-js runs only in a web view.
+**Music, closer to the page (2026-09-30).** Home has the page's rows:
+Continue (films and episodes, from `/api/continue`; audiobooks join when they
+play here), Favorites, Recently played, Mixes, Albums. Music is rows rather
+than tabs, since a remote moves down more easily than across: Mixes, Radio
+and Moods (`GET /api/music/radio`), Playlists, Artists (a page of their
+albums), Albums. A station plays its first batch and, two songs from the end,
+fetches the next with everything already queued in `exclude` - the page's
+station topping itself up. **Holding OK in Now Playing opens its menu**
+(`.contextMenu`, as a held OK does on the page's TV mode): favorite, add to
+playlist, the Lyrics look (synced lines, the one sung lit and the rest dim;
+kept between songs and launches), and Up next, where OK on a song plays it.
+
+Checked on the simulator against the stand-in: Home drew Continue and
+Favorites; a station tuned with `-autostation YES` asked for its first batch,
+and when its second song began asked for more with the three queued songs
+excluded; with `-lyricsLook YES` the third line lit about seven seconds in, at
+its 6-second start. **Not checked: the hold menu and its sheets**, which need
+a remote's press, as Now Playing's arrows do.
+
+**Still to match the page in music:** a sleep timer, ReplayGain leveling
+(AVPlayer has no per-item gain; an audio mix's volume parameter is the way),
+crossfade, and restarting a stuck song at 128 kbps on a slow link.
+
+Next steps, in order: photos, then audiobooks, then the visualizers
+(natively, the largest part); books need a native reader, as foliate-js runs
+only in a web view.
 
 ## The Android app (`android/`)
 

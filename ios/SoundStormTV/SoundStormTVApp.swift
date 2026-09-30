@@ -31,6 +31,8 @@ final class AppModel {
     var showingNowPlaying = false
     /// The film or episode playing, full screen.
     var video: VideoSession?
+    /// This person's favorites, by item key, for Now Playing's heart.
+    private(set) var favorites: Set<String> = []
 
     init() {
         if let server = ServerAddress.saved {
@@ -80,6 +82,26 @@ final class AppModel {
         guard let api else { return }
         player?.pause()
         video = VideoSession(item: item, api: api)
+    }
+
+    func loadFavorites() async {
+        guard let items = try? await api?.favorites() else { return }
+        favorites = Set(items.map(\.key))
+    }
+
+    func toggleFavorite(_ item: Item) async {
+        let on = !favorites.contains(item.key)
+        do {
+            try await api?.setFavorite(item, on)
+            if on { favorites.insert(item.key) } else { favorites.remove(item.key) }
+        } catch {}
+    }
+
+    /// A radio station or a mood: its first songs, and Now Playing.
+    func tune(_ station: API.Station) async {
+        guard let api, let batch = try? await api.tune(station, exclude: [], from: nil) else { return }
+        player?.play(station: station, first: batch)
+        showingNowPlaying = true
     }
 
     /// Plays and opens Now Playing, as the web page's TV mode does.

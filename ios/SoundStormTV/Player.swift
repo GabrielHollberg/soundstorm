@@ -47,8 +47,45 @@ final class Player {
         let songs = items.filter { $0.kind == "music" }
         guard !songs.isEmpty else { return }
         let first = songs.firstIndex(of: items[min(start, items.count - 1)]) ?? 0
+        station = nil
         queue = songs
         load(at: first)
+    }
+
+    /// A radio station: its first songs now, and more before they run out.
+    func play(station: API.Station, first batch: API.Batch) {
+        guard !batch.songs.isEmpty else { return }
+        queue = batch.songs
+        self.station = station
+        stationFrom = batch.next
+        load(at: 0)
+    }
+
+    /// Any song in the queue, from Up next.
+    func jump(to i: Int) {
+        guard queue.indices.contains(i) else { return }
+        load(at: i)
+    }
+
+    private(set) var station: API.Station?
+    private var stationFrom: Int?
+    private var tuning = false
+
+    /// Two songs from the end of a station, its next batch is fetched and
+    /// added, leaving out everything already in the queue.
+    private func topUpStation() {
+        guard let station, !tuning, index + 2 >= queue.count else { return }
+        tuning = true
+        Task {
+            defer { tuning = false }
+            guard let batch = try? await api.tune(station, exclude: queue.map(\.id), from: stationFrom),
+                  self.station == station
+            else { return }
+            let known = Set(queue.map(\.key))
+            queue += batch.songs.filter { !known.contains($0.key) }
+            stationFrom = batch.next ?? stationFrom
+            enqueueNext()
+        }
     }
 
     func togglePlay() { isPlaying ? pause() : resume() }
@@ -91,6 +128,7 @@ final class Player {
     func skip(by seconds: Double) { seek(to: time + seconds) }
 
     func stop() {
+        station = nil
         player.removeAllItems()
         playing = nil
         upNext = nil
@@ -124,7 +162,8 @@ final class Player {
 
     /// The song after this one, loading while this one plays.
     private func enqueueNext() {
-        guard index + 1 < queue.count, let playing else { return }
+        topUpStation()
+        guard index + 1 < queue.count, let playing, upNext == nil else { return }
         let next = playerItem(queue[index + 1])
         player.insert(next, after: playing)
         upNext = next

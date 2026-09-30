@@ -37,6 +37,10 @@ struct LibraryView: View {
             Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .task { await model.loadFavorites() }
+        #if DEBUG
+        .modifier(DebugAutostation())
+        #endif
         .fullScreenCover(isPresented: $model.showingNowPlaying) { NowPlayingView() }
         .fullScreenCover(item: $model.video) { VideoView(session: $0) }
         // The remote's play/pause works everywhere, not only in Now Playing.
@@ -46,41 +50,65 @@ struct LibraryView: View {
 
 // MARK: Home
 
+/// The web page's Home, TV-sized: what to carry on watching, favorites, what
+/// was played lately, the mixes, and albums.
 struct HomeView: View {
     @Environment(API.self) private var api
     @Environment(AppModel.self) private var model
+    @State private var carryOn: [Item] = []
+    @State private var favorites: [Item] = []
     @State private var recent: [Item] = []
+    @State private var mixes: [API.Mix] = []
     @State private var albums: [Album] = []
     @State private var failed: String?
 
     var body: some View {
         NavigationStack {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 50) {
-                if let failed { Text(failed).foregroundStyle(.secondary) }
-                if !recent.isEmpty {
-                    Row(title: "Recently played") {
-                        ForEach(Array(recent.enumerated()), id: \.element.key) { i, song in
-                            SongCard(song: song, list: recent, index: i)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 50) {
+                    if let failed { Text(failed).foregroundStyle(.secondary) }
+                    if !carryOn.isEmpty {
+                        Row(title: "Continue") { ForEach(carryOn, id: \.key) { PosterCard(item: $0) } }
+                    }
+                    if !favorites.isEmpty {
+                        Row(title: "Favorites") {
+                            ForEach(Array(favorites.enumerated()), id: \.element.key) { i, song in
+                                SongCard(song: song, list: favorites, index: i)
+                            }
                         }
                     }
-                }
-                if !albums.isEmpty {
-                    Row(title: "Albums") {
-                        ForEach(albums) { AlbumCard(album: $0) }
+                    if !recent.isEmpty {
+                        Row(title: "Recently played") {
+                            ForEach(Array(recent.enumerated()), id: \.element.key) { i, song in
+                                SongCard(song: song, list: recent, index: i)
+                            }
+                        }
+                    }
+                    if !mixes.isEmpty {
+                        Row(title: "Mixes") { ForEach(mixes) { MixCard(mix: $0) } }
+                    }
+                    if !albums.isEmpty {
+                        Row(title: "Albums") { ForEach(albums) { AlbumCard(album: $0) } }
                     }
                 }
+                .padding(.vertical, 40)
             }
-            .padding(.vertical, 40)
-        }
-        .navigationDestination(for: Album.self) { AlbumView(album: $0) }
+            .navigationDestination(for: Album.self) { AlbumView(album: $0) }
+            .navigationDestination(for: Item.self) { ShowView(series: $0) }
         }
         .task {
             do {
                 async let home = api.home()
                 async let played = api.recentlyPlayed()
+                async let favs = api.favorites()
+                async let mix = api.mixes()
+                async let going = api.continueWatching()
                 albums = try await home.albums
                 recent = (try? await played) ?? []
+                favorites = ((try? await favs) ?? []).filter { $0.kind == "music" }
+                mixes = (try? await mix) ?? []
+                // Films and episodes for now; audiobooks join when they play here.
+                carryOn = ((try? await going) ?? []).filter(\.isVideo)
                 #if DEBUG
                 // For the simulator, which has no remote to press play with:
                 // xcrun simctl launch booted dev.soundstorm.app -autoplay YES
@@ -97,19 +125,34 @@ struct HomeView: View {
 
 // MARK: Music
 
+/// Mixes, radio, playlists, artists and albums - the web page's music tabs
+/// as rows, since a remote moves down a page more easily than across tabs.
 struct MusicView: View {
     @Environment(API.self) private var api
-    @State private var albums: [Album] = []
+    @State private var mixes: [API.Mix] = []
+    @State private var radio: API.Radio?
     @State private var playlists: [Playlist] = []
+    @State private var artists: [API.Artist] = []
+    @State private var albums: [Album] = []
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 50) {
+                    if !mixes.isEmpty {
+                        Row(title: "Mixes") { ForEach(mixes) { MixCard(mix: $0) } }
+                    }
+                    if let radio, !radio.stations.isEmpty {
+                        Row(title: "Radio") { ForEach(radio.stations) { StationCard(station: $0) } }
+                    }
+                    if let moods = radio?.moods, !moods.isEmpty {
+                        Row(title: "Moods") { ForEach(moods) { StationCard(station: $0) } }
+                    }
                     if !playlists.isEmpty {
-                        Row(title: "Playlists") {
-                            ForEach(playlists) { PlaylistCard(playlist: $0) }
-                        }
+                        Row(title: "Playlists") { ForEach(playlists) { PlaylistCard(playlist: $0) } }
+                    }
+                    if !artists.isEmpty {
+                        Row(title: "Artists") { ForEach(artists) { ArtistCard(artist: $0) } }
                     }
                     Text("Albums").font(.title3).padding(.leading, 20)
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
@@ -120,13 +163,39 @@ struct MusicView: View {
             }
             .navigationDestination(for: Album.self) { AlbumView(album: $0) }
             .navigationDestination(for: Playlist.self) { PlaylistView(playlist: $0) }
+            .navigationDestination(for: API.Artist.self) { ArtistView(artist: $0) }
         }
         .task {
-            async let a = api.albums(order: "name")
+            async let m = api.mixes()
+            async let r = api.radio()
             async let p = api.playlists()
-            albums = (try? await a) ?? []
+            async let ar = api.artists()
+            async let al = api.albums(order: "name")
+            mixes = (try? await m) ?? []
+            radio = try? await r
             playlists = (try? await p) ?? []
+            artists = (try? await ar) ?? []
+            albums = (try? await al) ?? []
         }
+    }
+}
+
+struct ArtistView: View {
+    let artist: API.Artist
+    @Environment(API.self) private var api
+    @State private var albums: [Album] = []
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 40) {
+                Text(artist.name).font(.title2).padding(.leading, 20)
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+                    ForEach(albums) { AlbumCard(album: $0) }
+                }
+            }
+            .padding(60)
+        }
+        .task { albums = (try? await api.albums(of: artist)) ?? [] }
     }
 }
 
@@ -303,6 +372,96 @@ struct AlbumCard: View {
             .offset(y: 70)
         }
         .padding(.bottom, 70)
+    }
+}
+
+/// Up to four covers, as the page's collages are.
+struct Collage: View {
+    let source: String
+    let covers: [String]
+    @Environment(API.self) private var api
+
+    var body: some View {
+        let urls = covers.prefix(4).compactMap { api.artURL(source: source, artId: $0, size: 300) }
+        Group {
+            if urls.count < 4 {
+                Cover(url: urls.first)
+            } else {
+                Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                    GridRow { cell(urls[0]); cell(urls[1]) }
+                    GridRow { cell(urls[2]); cell(urls[3]) }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private func cell(_ url: URL) -> some View {
+        AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.06) }
+            .frame(width: 150, height: 150).clipped()
+    }
+}
+
+struct MixCard: View {
+    let mix: API.Mix
+    @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            Task { if let songs = try? await api.mix(mix.id), !songs.isEmpty { model.play(songs) } }
+        } label: {
+            Collage(source: mix.sourceId, covers: mix.covers ?? []).frame(width: 300, height: 300)
+        }
+        .buttonStyle(.borderless)
+        .overlay(alignment: .bottom) { CardTitle(title: mix.title, subtitle: mix.subtitle) }
+        .padding(.bottom, 70)
+    }
+}
+
+struct StationCard: View {
+    let station: API.Station
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button { Task { await model.tune(station) } } label: {
+            Collage(source: station.sourceId, covers: station.covers ?? []).frame(width: 300, height: 300)
+        }
+        .buttonStyle(.borderless)
+        .overlay(alignment: .bottom) { CardTitle(title: station.title, subtitle: station.subtitle) }
+        .padding(.bottom, 70)
+    }
+}
+
+struct ArtistCard: View {
+    let artist: API.Artist
+    @Environment(API.self) private var api
+
+    var body: some View {
+        NavigationLink(value: artist) {
+            Cover(url: api.artURL(source: artist.sourceId, artId: artist.artId))
+                .frame(width: 260, height: 260)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.borderless)
+        .overlay(alignment: .bottom) { CardTitle(title: artist.name, subtitle: nil) }
+        .padding(.bottom, 70)
+    }
+}
+
+struct CardTitle: View {
+    let title: String
+    let subtitle: String?
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(title).lineLimit(1)
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(width: 300)
+        .offset(y: 70)
     }
 }
 

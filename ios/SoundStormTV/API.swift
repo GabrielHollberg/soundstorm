@@ -123,6 +123,123 @@ final class API {
         _ = try? await send("POST", "api/history", Body(source: item.sourceId, id: item.id)) as Answer
     }
 
+    // MARK: More music
+
+    struct Mix: Decodable, Identifiable, Hashable {
+        let id: String
+        let title: String
+        let subtitle: String?
+        let covers: [String]?
+        let sourceId: String
+    }
+
+    func mixes() async throws -> [Mix] {
+        struct Answer: Decodable { let mixes: [Mix] }
+        let a: Answer = try await get("api/music/mixes")
+        return a.mixes
+    }
+
+    func mix(_ id: String) async throws -> [Item] {
+        struct Answer: Decodable { let songs: [Item] }
+        let a: Answer = try await get("api/music/mixes/\(Self.part(id))")
+        return a.songs
+    }
+
+    /// A radio station, or a mood: what to ask POST /api/music/radio for.
+    struct Station: Decodable, Identifiable, Hashable {
+        let mode: String
+        let seed: String?
+        let title: String
+        let subtitle: String?
+        let covers: [String]?
+        let sourceId: String
+        var id: String { mode + "/" + (seed ?? "") }
+    }
+
+    struct Radio: Decodable {
+        let stations: [Station]
+        let moods: [Station]?
+    }
+
+    func radio() async throws -> Radio { try await get("api/music/radio") }
+
+    struct Batch: Decodable {
+        let title: String?
+        let songs: [Item]
+        let next: Int?
+    }
+
+    /// A station's next songs, leaving out what has played already.
+    func tune(_ station: Station, exclude: [String], from: Int?) async throws -> Batch {
+        struct Body: Encodable {
+            let mode: String
+            let seed: String?
+            let exclude: [String]
+            let from: Int?
+            let size: Int
+        }
+        return try await send("POST", "api/music/radio",
+                              Body(mode: station.mode, seed: station.seed, exclude: exclude, from: from, size: 40))
+    }
+
+    struct Artist: Decodable, Identifiable, Hashable {
+        let id: String
+        let sourceId: String
+        let name: String
+        let albumCount: Int?
+        let artId: String?
+    }
+
+    func artists() async throws -> [Artist] {
+        struct Answer: Decodable { let artists: [Artist] }
+        let a: Answer = try await get("api/music/artists")
+        return a.artists
+    }
+
+    func albums(of artist: Artist) async throws -> [Album] {
+        struct Answer: Decodable { let albums: [Album] }
+        let a: Answer = try await get("api/music/artists/\(Self.part(artist.sourceId))/\(Self.path(artist.id))")
+        return a.albums
+    }
+
+    func favorites() async throws -> [Item] {
+        struct Answer: Decodable { let items: [Item] }
+        let a: Answer = try await get("api/favorites")
+        return a.items
+    }
+
+    func setFavorite(_ item: Item, _ on: Bool) async throws {
+        struct Answer: Decodable {}
+        var request = URLRequest(url: url("api/favorites", query: ["source": item.sourceId, "id": item.id]))
+        request.httpMethod = on ? "PUT" : "DELETE"
+        let _: Answer = try await perform(request)
+    }
+
+    func addToPlaylist(_ playlist: Playlist, _ item: Item) async throws {
+        struct Body: Encodable { let source: String; let id: String }
+        struct Answer: Decodable {}
+        let _: Answer = try await send("POST", "api/playlists/\(Self.part(playlist.id))/items",
+                                       Body(source: item.sourceId, id: item.id))
+    }
+
+    struct Lyrics: Decodable {
+        struct Line: Decodable { let start: Int; let text: String }
+        let synced: Bool
+        let lines: [Line]
+    }
+
+    func lyrics(_ item: Item) async -> Lyrics? {
+        try? await get("api/music/lyrics/\(Self.part(item.sourceId))/\(Self.path(item.id))")
+    }
+
+    /// Part-watched films and episodes (and books, which come later), with
+    /// how far through each is.
+    func continueWatching() async throws -> [Item] {
+        struct Answer: Decodable { let items: [Item] }
+        let a: Answer = try await get("api/continue")
+        return a.items
+    }
+
     // MARK: Films and TV
 
     /// Films, or TV shows (series only: a search with no text lists shows,
@@ -290,6 +407,8 @@ struct Item: Decodable, Identifiable, Hashable {
     let artId: String?
     let durationSeconds: Double?
     let extra: [String: String]?
+    /// How far through, in the Continue row.
+    let progress: Double?
 
     /// The same song from two lists is the same song.
     var key: String { sourceId + "/" + id }
