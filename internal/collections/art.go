@@ -28,8 +28,12 @@ const (
 // ErrBadArt is an upload that is not a picture SoundStorm will show.
 var ErrBadArt = errors.New("that is not a JPEG, PNG or WebP picture")
 
-// artKey is what a key may look like: which kind, a source, and an id.
-var artKey = regexp.MustCompile(`^(song|art):[A-Za-z0-9_-]{1,64}/[^\x00-\x1f]{1,300}$`)
+// artKey is what a key may look like: which kind, a source, and an id - or
+// one of this person's playlists, whose picture replaces its collage.
+var artKey = regexp.MustCompile(`^(?:(song|art):[A-Za-z0-9_-]{1,64}/[^\x00-\x1f]{1,300}|playlist:[0-9a-f]{1,64})$`)
+
+// PlaylistArtKey is the key a playlist's own picture is kept under.
+func PlaylistArtKey(id string) string { return "playlist:" + id }
 
 // artFile is what a stored file's name may look like.
 var artFile = regexp.MustCompile(`^[0-9a-f]{64}\.(jpg|png|webp)$`)

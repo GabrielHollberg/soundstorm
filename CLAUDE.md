@@ -564,6 +564,15 @@ judged on in its first minute:
   **Then removed, at the owner's request.** The app opens and stays like any
   installed app, status and navigation bars showing; nothing asks for full
   screen any more. The manifest stays `standalone`.
+- **The camera cutout, in the Android app.** The app draws into the cutout,
+  and its web view reports no safe area for it, so it sets `--safe-top` and
+  its siblings on the page itself. `style.css` defines those from
+  `env(safe-area-inset-*)` and uses them everywhere, never `env()` directly.
+  That change was first made only on the `android-app` branch, whose web
+  files the server never serves, so the installed app's title sat under the
+  camera until it was brought to main. So was the Change server button. The
+  rule: web changes for the phone apps go to main; the app branches carry
+  only the apps.
 - **The status bar takes Now Playing's color.** An installed app's status
   bar is the page's theme color, which a page may change while it runs, so
   in Now Playing it is the top of the cover averaged and put through the
@@ -1622,6 +1631,13 @@ plays it shuffled (as a mix card has its play button), a hold offers Play,
 Shuffle and Delete. It was a plain list of names with Play buttons. New playlist
 and Import are two small buttons above the cards: they were cards of their
 own, the size of a playlist, at the start of the grid, and got in the way.
+
+**A playlist can have a picture of its own**, in place of the collage of its
+songs: Change picture in its hold menu, or holding the cover on its page. It
+is kept like a song's own cover (`collections/art.go`), under the key
+`playlist:<id>`. That key is accepted only for a playlist of the person's own,
+and deleting the playlist deletes the picture. Use the song covers puts the
+collage back.
 
 **Playlists come in from other players as M3U** - asked for as bringing
 somebody's Plexamp playlists across. Plexamp keeps them on the Plex server,

@@ -65,3 +65,54 @@ func TestOwnCoversArePerPerson(t *testing.T) {
 		t.Errorf("a picture nothing uses is still served: %d", resp.StatusCode)
 	}
 }
+
+// A playlist can have a picture of its own, in place of its collage: only the
+// person's own playlist, and it goes when the playlist does.
+func TestAPlaylistHasAPictureOfItsOwn(t *testing.T) {
+	h := newHarness(t, stub{id: "navidrome", kind: media.KindMusic})
+	h.signUp(t)
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{2}, 64)...)
+	put := func(c *harness, key string) (*http.Response, []byte) {
+		req, _ := http.NewRequest(http.MethodPut, c.srv.URL+"/api/myart?key="+key, bytes.NewReader(png))
+		resp, err := c.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var buf bytes.Buffer
+		buf.ReadFrom(resp.Body)
+		return resp, buf.Bytes()
+	}
+	_, made := h.do(t, http.MethodPost, "/api/playlists", `{"name":"Road trip"}`)
+	var list struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(made, &list)
+	if list.ID == "" {
+		t.Fatalf("no playlist: %s", made)
+	}
+	if resp, _ := put(h, "playlist:0123456789abcdef"); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a picture for a playlist that does not exist was accepted: %d", resp.StatusCode)
+	}
+	h.addMember(t, "sam", samPassword)
+	sam := h.asUser(t, "sam", samPassword)
+	if resp, _ := put(sam, "playlist:"+list.ID); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("somebody else's playlist took a picture: %d", resp.StatusCode)
+	}
+	resp, body := put(h, "playlist:"+list.ID)
+	var got struct {
+		Art map[string]string `json:"art"`
+	}
+	json.Unmarshal(body, &got)
+	url := got.Art["playlist:"+list.ID]
+	if resp.StatusCode != http.StatusOK || url == "" {
+		t.Fatalf("set = %d %s", resp.StatusCode, body)
+	}
+	h.do(t, http.MethodDelete, "/api/playlists/"+list.ID, "")
+	if _, body := h.do(t, http.MethodGet, "/api/myart", ""); strings.Contains(string(body), list.ID) {
+		t.Errorf("a deleted playlist kept its picture: %s", body)
+	}
+	if resp, _ := h.do(t, http.MethodGet, url, ""); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("a deleted playlist's picture is still served: %d", resp.StatusCode)
+	}
+}

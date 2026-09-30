@@ -410,7 +410,16 @@ func (s *Store) DeletePlaylist(userID, id string) error {
 		}
 	}
 	c.Playlists = kept
-	return s.save(userID, c)
+	// Its picture, if it had one, goes with it.
+	_, hadArt := c.Art[PlaylistArtKey(id)]
+	delete(c.Art, PlaylistArtKey(id))
+	if err := s.save(userID, c); err != nil {
+		return err
+	}
+	if hadArt {
+		s.sweepArt(userID, c)
+	}
+	return nil
 }
 
 // AddToPlaylist appends a song. The same song twice is allowed - a playlist

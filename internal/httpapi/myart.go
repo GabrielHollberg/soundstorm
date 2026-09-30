@@ -37,13 +37,20 @@ func (s *Server) handleMyArt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"art": out})
 }
 
-// artKeysFor checks the ?key= values name shelves this account can see.
-func (s *Server) artKeysFor(r *http.Request) ([]string, bool) {
+// artKeysFor checks the ?key= values name shelves this account can see, or
+// playlists of its own.
+func (s *Server) artKeysFor(r *http.Request, userID string) ([]string, bool) {
 	keys := r.URL.Query()["key"]
 	if len(keys) == 0 {
 		return nil, false
 	}
 	for _, k := range keys {
+		if id, ok := strings.CutPrefix(k, "playlist:"); ok {
+			if _, err := s.collections.Playlist(userID, id); err != nil {
+				return nil, false
+			}
+			continue
+		}
 		_, rest, ok := strings.Cut(k, ":")
 		src, _, ok2 := strings.Cut(rest, "/")
 		if !ok || !ok2 {
@@ -63,7 +70,7 @@ func (s *Server) handleSetMyArt(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	keys, ok := s.artKeysFor(r)
+	keys, ok := s.artKeysFor(r, user.ID)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "say which covers to replace")
 		return

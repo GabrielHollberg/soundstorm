@@ -265,6 +265,16 @@ $('logout').addEventListener('click', async () => {
   location.reload();
 });
 
+// Inside the phone apps (ios/, android/), which set window.soundstormApp, the
+// app rather than the address bar decides which server this is - so Account
+// offers the way back to its connect screen. Signing in stays per server.
+if (window.soundstormApp) {
+  show($('change-server'), true);
+  $('change-server').addEventListener('click', () => {
+    window.webkit.messageHandlers.soundstorm.postMessage({ type: 'changeServer' });
+  });
+}
+
 /* -------------------------------------------------------------- app shell */
 
 async function showApp(me) {
@@ -3696,6 +3706,7 @@ function renderSearchHint() {
 // a playlist, and got in the way (the owner's asking).
 async function showPlaylists(report) {
   const view = $('playlists-view');
+  delete view.dataset.open;
   const { ok, body } = await api('/api/playlists');
   const all = (ok && body && body.playlists) || [];
   // Typing narrows the playlists by name, as it narrows every other page.
@@ -3766,9 +3777,22 @@ async function playPlaylist(id, shuffle) {
   playQueue(shuffle ? shuffled(songs) : songs, 0);
 }
 
+// A playlist's own picture (Change picture in its menu), kept like a song's
+// own cover (collections/art.go), in place of the collage of its songs.
+const playlistArt = (id) => (state.myArt && state.myArt[`playlist:${id}`]) || '';
+
 function playlistCover(list) {
   const wrap = document.createElement('div');
   wrap.className = 'art-wrap mix-cover';
+  const mine = playlistArt(list.id);
+  if (mine) {
+    const img = document.createElement('img');
+    img.src = mine;
+    img.alt = '';
+    img.decoding = 'async';
+    wrap.append(img);
+    return wrap;
+  }
   const art = (list.covers || []).slice(0, 4);
   if (art.length >= 4) wrap.classList.add('collage');
   for (const c of art.length >= 4 ? art : art.slice(0, 1)) {
@@ -3881,6 +3905,12 @@ function openPlaylistMenu(list, anchor) {
       menuItem('shuffle', 'Shuffle', () => { closeItemMenu(); playPlaylist(list.id, true); }),
     );
   }
+  if (!state.offline) {
+    entries.push(menuItem('image', 'Change picture', (event) => {
+      event.stopPropagation();
+      renderPlaylistPictureMenu(list, () => openPlaylistMenu(list, anchor));
+    }, { chevron: true }));
+  }
   entries.push(menuItem('trash', 'Delete playlist', (event) => {
     // Two taps, not a browser dialog: the first asks, the second deletes.
     event.stopPropagation();
@@ -3906,6 +3936,7 @@ const PLAYLIST_SORTS = [
 
 async function showPlaylist(id) {
   const view = $('playlists-view');
+  view.dataset.open = id;
   startLoading(view);
   const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}`);
   if (!ok || !body) {
@@ -3927,8 +3958,18 @@ async function showPlaylist(id) {
   const head = document.createElement('div');
   head.className = 'album-head';
   const first = songs[0] || {};
-  const cover = coverArt(first.artId ? artUrl(first.sourceId, first.artId) : '', body.name);
+  const cover = coverArt(playlistArt(id) || (first.artId ? artUrl(first.sourceId, first.artId) : ''), body.name);
   cover.classList.add('album-cover');
+  // Holding the cover (or right-clicking it) changes the playlist's picture.
+  if (!state.offline) {
+    const list = { id, name: body.name, count: songs.length };
+    attachHoldMenu(cover, () => {
+      state.menuFor = list;
+      state.menuAnchor = cover;
+      state.menuOpts = {};
+      renderPlaylistPictureMenu(list, null);
+    });
+  }
   const text = document.createElement('div');
   text.className = 'album-text';
   const kind = document.createElement('span');
@@ -12318,6 +12359,78 @@ function renderCoverMenu(target, backTo) {
   }
   menu.replaceChildren(back, note, ...rows);
   placeMenu(menu, state.menuAnchor);
+}
+
+// A playlist's picture: choose one, or go back to the collage of its songs.
+// backTo is the playlist's menu, or null when the page's cover opened this.
+function renderPlaylistPictureMenu(list, backTo) {
+  const menu = $('item-menu');
+  const rows = [];
+  if (backTo) {
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'menu-back';
+    back.append(icon('back'));
+    const label = document.createElement('span');
+    label.textContent = 'Change picture';
+    back.append(label);
+    back.addEventListener('click', (event) => {
+      event.stopPropagation();
+      backTo();
+    });
+    rows.push(back);
+  } else {
+    const head = document.createElement('div');
+    head.className = 'menu-head';
+    const t = document.createElement('strong');
+    t.textContent = list.name;
+    const sub = document.createElement('span');
+    sub.textContent = 'Playlist picture';
+    head.append(t, sub);
+    rows.push(head);
+  }
+  const note = document.createElement('p');
+  note.className = 'menu-note';
+  note.textContent = 'Pick a picture for this playlist. Only you will see it.';
+  rows.push(note);
+  const key = `key=${encodeURIComponent(`playlist:${list.id}`)}`;
+  rows.push(menuItem('image', 'Choose a picture', async () => {
+    const blob = await pickCoverImage();
+    if (!blob) return;
+    closeItemMenu();
+    let res;
+    try {
+      res = await fetch(`/api/myart?${key}`, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+    } catch {
+      showToast('Could not save the picture.');
+      return;
+    }
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body) { showToast((body && body.error) || 'Could not save the picture.'); return; }
+    state.myArt = body.art || {};
+    refreshPlaylistView();
+    showToast('Playlist picture changed. Only you see it.');
+  }));
+  if (playlistArt(list.id)) {
+    rows.push(menuItem('close', 'Use the song covers', async () => {
+      closeItemMenu();
+      const { ok, body } = await api(`/api/myart?${key}`, { method: 'DELETE' });
+      if (!ok) { showToast('Could not change the picture.'); return; }
+      state.myArt = (body && body.art) || {};
+      refreshPlaylistView();
+      showToast('The song covers are back.');
+    }));
+  }
+  menu.replaceChildren(...rows);
+  placeMenu(menu, state.menuAnchor);
+}
+
+// Draws the playlists page again - the grid, or the playlist open on it.
+function refreshPlaylistView() {
+  const view = $('playlists-view');
+  if (view.classList.contains('hidden')) return;
+  if (view.dataset.open) showPlaylist(view.dataset.open);
+  else showPlaylists();
 }
 
 /* ---------------------------------------------------- the cover's looks */
