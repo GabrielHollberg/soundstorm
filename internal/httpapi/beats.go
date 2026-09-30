@@ -39,9 +39,9 @@ import (
 )
 
 const (
-	beatsFirstPass   = 3 * time.Minute  // after starting, leave the backends to settle
-	beatsAfterScan   = 2 * time.Minute  // after a music scan, once Navidrome has indexed it
-	beatsEvery       = 6 * time.Hour    // and a look for anything missed
+	beatsFirstPass   = 3 * time.Minute // after starting, leave the backends to settle
+	beatsAfterScan   = 2 * time.Minute // after a music scan, once Navidrome has indexed it
+	beatsEvery       = 6 * time.Hour   // and a look for anything missed
 	beatsRest        = 300 * time.Millisecond
 	beatsSongTimeout = 3 * time.Minute  // fetch, decode and hear one song
 	beatsMaxLength   = 30 * time.Minute // longer is a DJ mix or a whole album: not heard
