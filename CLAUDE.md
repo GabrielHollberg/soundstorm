@@ -1082,6 +1082,13 @@ has no touch and no mouse:
   elsewhere) and at 30 frames a second; the play orb at 1. The 540-pixel
   screen had the column 634 tall, the timeline off the bottom: on a TV the
   lyrics box shrinks (24vh) and the gaps tighten.
+  Smoother, and still wanted smoother: the drawing is JavaScript on the TV's
+  own processor, phone-class or less on a projector, so on a TV the looks
+  also draw half the particles, rain and stars (`VIZ_DENSITY`). With an
+  animation on screen Now Playing is laid out for a TV: no "Now Playing"
+  words, the title centred at the top, the controls and timeline centred at
+  the bottom, and it never scrolls - moving the focus inside Now Playing or a
+  film does not call scrollIntoView (it slid up on reaching the timeline).
 
 Checked on the emulator with real key presses: moving through Home, a held
 OK opening a card's menu with the focus in it, Back closing the menu, OK

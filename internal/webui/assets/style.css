@@ -3521,3 +3521,35 @@ html.tv .item { scroll-margin-inline: 24px; }
    tall, the timeline below the bottom edge. The lyrics give way. */
 html.tv .now-playing .np-side { gap: 14px; }
 html.tv .now-playing .np-lyrics { max-height: 24vh; padding: 8vh 0; }
+
+/* Now Playing on a TV. No "Now Playing" words, and it never scrolls: all of
+   it fits. With an animation filling the screen (a visualizer or a full-screen
+   look) there is no cover to sit beside, so the title is centred at the top
+   and the controls and timeline centred at the bottom, the animation between
+   them - the owner's asking. The cover stays in the page, unseen, as it does
+   for these looks everywhere. */
+html.tv .now-playing .np-label-text { display: none; }
+html.tv .now-playing .np-inner { overflow: hidden; }
+html.tv .now-playing.cover-viz .np-main, html.tv .now-playing.cover-full .np-main {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: none;
+  padding: 0;
+}
+html.tv .now-playing.cover-viz .np-cover-wrap, html.tv .now-playing.cover-full .np-cover-wrap {
+  position: absolute; visibility: hidden; pointer-events: none;
+}
+html.tv .now-playing.cover-viz .np-side, html.tv .now-playing.cover-full .np-side {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+html.tv .now-playing.cover-viz .np-head, html.tv .now-playing.cover-full .np-head { order: 0; justify-content: center; }
+html.tv .now-playing.cover-viz .np-lyrics, html.tv .now-playing.cover-full .np-lyrics { order: 1; flex: 1; max-height: none; }
+html.tv .now-playing.cover-viz .np-controls, html.tv .now-playing.cover-full .np-controls {
+  order: 2; width: 380px; justify-content: space-between;
+}
+html.tv .now-playing.cover-viz .np-progress, html.tv .now-playing.cover-full .np-progress {
+  order: 3; width: min(720px, 100%);
+}

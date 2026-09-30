@@ -12975,6 +12975,10 @@ const ORB_LAYERS = Array.from({ length: 6 }, (_, l) => ({
   spin: (l % 2 ? -1 : 1) * (0.05 + l * 0.025),
   waves: [2, 3, 5, 7].map((k, j) => ({ k: k + (l % 3), speed: (0.4 + ((l * 3 + j * 5) % 7) * 0.13) * (j % 2 ? -1 : 1), ph: l * 1.3 + j * 2.1 })),
 }));
+// How many particles, rain drops and stars the looks draw: half on a TV,
+// whose processor does this drawing - a projector's is phone-class or less,
+// and it has a 1080p screen to fill.
+const VIZ_DENSITY = TV ? 0.5 : 1;
 const viz = {
   beat: 1.6, energy: 0.3, palette: [[255, 255, 255], [200, 220, 255], [255, 210, 230]],
   raf: 0, level: 0, lastBeat: -1, lastT: 0, dots: [],
@@ -13311,7 +13315,7 @@ const viz = {
     f.fillRect(0, 0, w, h);
     f.globalCompositeOperation = 'lighter';
     if (!this.dots.length) {
-      for (let i = 0; i < 240; i++) {
+      for (let i = 0; i < Math.round(240 * VIZ_DENSITY); i++) {
         const home = 1.25 + Math.random() * 1.3;
         this.dots.push({ a: Math.random() * TAU, r: home, home, v: 0, spin: 0.25 + Math.random() * 0.6,
           size: 0.8 + Math.random() * 1.8, c: i % 3 });
@@ -13585,7 +13589,7 @@ function flowScene(st, m) {
     const r = Math.random() * S * 0.12;
     return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, vx: 0, vy: 0, c, life: 0.6 + Math.random() };
   };
-  if (!st.p) { st.p = Array.from({ length: 520 }, () => spawn(true)); st.pulses = []; }
+  if (!st.p) { st.p = Array.from({ length: Math.round(520 * VIZ_DENSITY) }, () => spawn(true)); st.pulses = []; }
   if (newBeat || m.drop) {
     st.pulses.push({ r: S * 0.05, life: 1, big: m.drop });
     const push = S * (0.15 + 0.5 * loud) * (m.drop ? 2.4 : 1) * (0.6 + 0.6 * e);
@@ -13667,7 +13671,7 @@ const FULL_SCENES = {
     if (!st.drops) {
       // Spread wider than the screen to the left, which the wind blows
       // across, so the rain covers all of it.
-      st.drops = Array.from({ length: 420 }, () => ({ x: -w * 0.35 + Math.random() * w * 1.35, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
+      st.drops = Array.from({ length: Math.round(420 * VIZ_DENSITY) }, () => ({ x: -w * 0.35 + Math.random() * w * 1.35, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
       st.bolts = [];
       st.splash = [];
       st.lastBolt = -1e9;
@@ -13868,7 +13872,7 @@ const FULL_SCENES = {
     g.clearRect(0, 0, w, h);
     const S = Math.min(w, h);
     if (!st.pts) {
-      st.pts = Array.from({ length: 900 }, (_, i) => ({ r: Math.sqrt(Math.random()), arm: i % 3, off: (Math.random() - 0.5) * 0.6, c: i % 3, b: Math.random() }));
+      st.pts = Array.from({ length: Math.round(900 * VIZ_DENSITY) }, (_, i) => ({ r: Math.sqrt(Math.random()), arm: i % 3, off: (Math.random() - 0.5) * 0.6, c: i % 3, b: Math.random() }));
       st.bg = Array.from({ length: 120 }, () => ({ x: Math.random(), y: Math.random(), b: Math.random() }));
       st.turn = 0;
       st.ripples = [];
@@ -14071,7 +14075,7 @@ const VIZ_SCENES = {
     f.clearRect(0, 0, w, h);
     g.clearRect(0, 0, w, h);
     if (!st.stars) {
-      st.stars = Array.from({ length: 320 }, () => ({ x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: Math.random(), c: Math.floor(Math.random() * 3) }));
+      st.stars = Array.from({ length: Math.round(320 * VIZ_DENSITY) }, () => ({ x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: Math.random(), c: Math.floor(Math.random() * 3) }));
       st.rings = Array.from({ length: 9 }, (_, i) => i / 9);
     }
     const speed = (0.08 + (0.35 + 1.4 * loud) * lv * (0.6 + 0.6 * e) + 1.2 * kick + 2 * m.dropEnv) * dt;
@@ -14352,7 +14356,10 @@ function tvRemote() {
       el.addEventListener('blur', () => unlock(el), { once: true });
     }
     el.focus({ preventScroll: true });
-    el.scrollIntoView({ block: dir === 'left' || dir === 'right' ? 'nearest' : 'center', inline: 'nearest', behavior: 'smooth' });
+    // Now Playing and a film fit the screen: moving about them never scrolls
+    // (reported as Now Playing sliding up on reaching the timeline).
+    const still = el.closest('#now-playing, #video-overlay');
+    if (!still) el.scrollIntoView({ block: dir === 'left' || dir === 'right' ? 'nearest' : 'center', inline: 'nearest', behavior: 'smooth' });
     last.set(layer(), el);
   };
   const gap = (a1, a2, b1, b2) => Math.max(0, Math.max(a1, b1) - Math.min(a2, b2));
