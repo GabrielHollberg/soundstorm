@@ -2040,6 +2040,7 @@ function playAudio(item, fromQueue) {
   if (item.kind !== 'audiobook') {
     const handoff = takeCrossfade(item);
     const preloaded = handoff ? null : takePreloaded(item);
+    if (!handoff && !preloaded) stopPreloading();
     if (handoff) {
       startAt(handoff.url, handoff.at);
     } else if (preloaded) {
@@ -6168,6 +6169,21 @@ const PRELOAD_MAX_BYTES = 200e6;    // a whole live album as one FLAC is not wor
 
 audio.preloaded = null; // { key, url }
 audio.preloading = null;
+audio.preloadAbort = null;
+
+// A preload that has not finished when its song is wanted is stopped, not
+// raced. Reported as a long wait when a song ended by itself, on a phone away
+// from home: at 1.5 times a song's bitrate (the server's pace, pace.go) a
+// whole song takes minutes to arrive, the preload starts thirty seconds
+// before the end, so at the end the song was streamed a second time while the
+// preload went on fetching it - two copies of one song on a link that
+// carries one. A skip, which never had a preload running, started faster
+// than a song ending on its own.
+function stopPreloading() {
+  if (audio.preloadAbort) audio.preloadAbort.abort();
+  audio.preloadAbort = null;
+  audio.preloading = null;
+}
 
 function upcomingItem() {
   const q = audio.queue;
@@ -6190,11 +6206,16 @@ function takePreloaded(item) {
 async function preloadNext() {
   const next = upcomingItem();
   if (!next || next.kind !== 'music' || isDownloaded(next)) return;
+  // On a link already found slow a whole song cannot arrive in thirty
+  // seconds; trying would only spend somebody's mobile data.
+  if (slowLink) return;
   const key = selectionKey(next);
   if ((audio.preloaded && audio.preloaded.key === key) || audio.preloading === key) return;
   audio.preloading = key;
+  const ctl = new AbortController();
+  audio.preloadAbort = ctl;
   try {
-    const resp = await fetch(playPath(next), { credentials: 'same-origin' });
+    const resp = await fetch(playPath(next), { credentials: 'same-origin', signal: ctl.signal });
     const size = Number(resp.headers.get('Content-Length') || 0);
     if (!resp.ok || size > PRELOAD_MAX_BYTES) {
       if (resp.body) resp.body.cancel().catch(() => {});
@@ -6208,6 +6229,7 @@ async function preloadNext() {
     // Offline or refused: the next song simply streams as it always did.
   } finally {
     if (audio.preloading === key) audio.preloading = null;
+    if (audio.preloadAbort === ctl) audio.preloadAbort = null;
   }
 }
 
