@@ -657,7 +657,7 @@ type Prefs struct {
 // the lyrics, the cover as a square, a disc or a record, or a visualizer.
 var CoverStyles = map[string]bool{"lyrics": true, "square": true, "spin": true, "vinyl": true, "pulse": true,
 	"bars": true, "warp": true, "waves": true, "kaleido": true, "fireworks": true, "flow": true,
-	"storm": true, "synthwave": true, "galaxy": true, "aurora": true, "lava": true}
+	"storm": true, "synthwave": true, "galaxy": true, "aurora": true, "lava": true, "analysis": true}
 
 // Limits on what a preference can hold, so a client cannot grow the file.
 const (

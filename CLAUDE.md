@@ -1266,6 +1266,16 @@ month; anything else (the network, Navidrome) is tried again next pass.
 Navidrome caches each conversion (about 2.6MB for four minutes) in its
 100MB transcoding cache, so the first pass churns that cache once.
 
+**Analysis is a look of its own** (`analysisScene`), asked for by the
+owner to see what the analysis gives: a timeline moving past the moment
+playing (a third of the way across; two seconds heard, four to come), under
+the beat of the bar (four dots), the bar and the tempo. Its lanes are the
+beats (each bar's first bold and numbered, a bolt on the lightning moments -
+those known ahead from the loudness, and those the looks struck as it
+played), loudness with the loud-part line (the loudest 30%), the kick and
+the snare and hats as the analysis found them, and "stood out", the one
+reading judged live. A song not yet analysed says so.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

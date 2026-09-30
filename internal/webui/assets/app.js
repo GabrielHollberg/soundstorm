@@ -7579,13 +7579,14 @@ const COVER_GROUPS = [
   // the six that drew where the cover is had nowhere to draw once a phone's
   // Now Playing became the lyrics alone).
   { name: 'Visualizers', styles: ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks',
-    'flow', 'storm', 'synthwave', 'galaxy', 'aurora', 'lava'] },
+    'flow', 'storm', 'synthwave', 'galaxy', 'aurora', 'lava', 'analysis'] },
 ];
 const COVER_STYLES = COVER_GROUPS.flatMap((g) => g.styles);
 const COVER_STYLE_NAMES = {
   lyrics: 'Lyrics', square: 'Cover', spin: 'Spinning disc', vinyl: 'Record', pulse: 'Orb', bars: 'Spectrum',
   warp: 'Warp', waves: 'Waves', kaleido: 'Kaleidoscope', fireworks: 'Fireworks',
   flow: 'Flow', storm: 'Storm', synthwave: 'Synthwave', galaxy: 'Galaxy', aurora: 'Aurora', lava: 'Lava',
+  analysis: 'Analysis',
 };
 const FULL_STYLES = COVER_GROUPS[1].styles;
 const EX_COVER_VIZ = ['pulse', 'bars', 'warp', 'waves', 'kaleido', 'fireworks'];
@@ -14166,8 +14167,250 @@ const FULL_SCENES = {
   },
 };
 
+// Analysis: what the song's analysis found, laid out as a timeline moving
+// past the moment playing (the line a third of the way across) - two
+// seconds heard, four to come, all of it known ahead. Top to bottom: the
+// beat of the bar, the bar and the tempo; the beats, each bar's first
+// marked, and the lightning moments (a bar's first beat in the song's
+// loudest 30%); how loud each moment is, the loud parts lit; the kick (bass
+// hits) and the snare and hats (high hits); and what stood out as it played
+// - the one reading made live rather than read ahead. Asked for by the owner
+// to see what the analysis gives the looks.
+function analysisScene(st, m) {
+  const { g, f, w, h, dpr, pal, rgba, t, phase, novelty, playing, drop, beatNo } = m;
+  f.clearRect(0, 0, w, h);
+  g.clearRect(0, 0, w, h);
+  // The beats the looks really struck on, as they played.
+  st.struck = st.struck || new Set();
+  if (drop) st.struck.add(beatNo);
+  const heard = viz.heard && audio.item && viz.heard.key === selectionKey(audio.item) ? viz.heard : null;
+  const u = dpr;
+  const font = (px, weight) => `${weight || 600} ${Math.round(px * u)}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  const left = 16 * u;
+  const right = w - 16 * u;
+  const top = h * 0.2;
+  // Clear of the title above and the play button below.
+  const bottom = h * (TV ? 0.74 : 0.75);
+  const past = 2;
+  const ahead = 4;
+  const pps = (right - left) / (past + ahead);
+  const px = left + past * pps;
+  const X = (tt) => px + (tt - t) * pps;
+  // A veil so the words read over any cover.
+  g.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  g.fillRect(0, top - 12 * u, w, bottom - top + 24 * u);
+  g.textBaseline = 'alphabetic';
+  if (!heard) {
+    g.fillStyle = rgba(VIZ_WHITE, 0.85);
+    g.font = font(16);
+    g.textAlign = 'center';
+    g.fillText('Not analysed yet', w / 2, (top + bottom) / 2 - 10 * u);
+    g.fillStyle = rgba(VIZ_WHITE, 0.55);
+    g.font = font(12, 500);
+    g.fillText('Following the tempo only until the analysis arrives', w / 2, (top + bottom) / 2 + 14 * u);
+    return;
+  }
+  const bs = heard.beats;
+  const fps = heard.fps;
+  if (heard.loudTop === undefined) {
+    const sorted = Array.from(heard.loud).sort((x, y) => x - y);
+    heard.loudTop = sorted[Math.floor(sorted.length * 0.7)];
+  }
+  // Loudness just after a moment, as the looks' eased loudness reads it.
+  const loudAt = (tt) => {
+    const fi = Math.floor(tt * fps);
+    let v = 0;
+    for (let i = Math.max(0, fi); i <= Math.min(heard.loud.length - 1, fi + 3); i++) v = Math.max(v, heard.loud[i]);
+    return v;
+  };
+  // The beat playing now, and the tempo from its length.
+  let lo = 0, hi = bs.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= t) lo = mid; else hi = mid - 1; }
+  const nxt = Math.min(bs.length - 1, lo + 1);
+  const len = (nxt > lo ? bs[nxt] - bs[lo] : bs[lo] - bs[Math.max(0, lo - 1)]) || 0.5;
+  const inBar = (i) => (((i - heard.down) % 4) + 4) % 4;
+  const barOf = (i) => Math.floor((i - heard.down) / 4) + 1;
+  const label = (text, x, y, px2, weight, alpha, align) => {
+    g.textAlign = align || 'left';
+    g.fillStyle = rgba(VIZ_WHITE, alpha);
+    g.font = font(px2, weight);
+    g.fillText(text, x, y);
+  };
+
+  // ---- the readout: the beat of the bar, the bar, the tempo
+  const rTop = top;
+  label('BEAT', left, rTop + 12 * u, 11, 600, 0.55);
+  const nowIn = bs[lo] <= t ? inBar(lo) : -1;
+  for (let k = 0; k < 4; k++) {
+    const cxk = left + 12 * u + k * 26 * u;
+    const cyk = rTop + 34 * u;
+    const on = k === nowIn;
+    const r = (k === 0 ? 9 : 7) * u * (on ? 1 + 0.35 * Math.exp(-phase * 5) : 1);
+    g.beginPath();
+    g.arc(cxk, cyk, r, 0, Math.PI * 2);
+    g.fillStyle = on ? rgba(k === 0 ? VIZ_WHITE : pal[0], 0.95) : rgba(VIZ_WHITE, 0.14);
+    g.fill();
+    g.textAlign = 'center';
+    g.fillStyle = on ? 'rgba(0, 0, 0, 0.8)' : rgba(VIZ_WHITE, 0.5);
+    g.font = font(10, 700);
+    g.fillText(String(k + 1), cxk, cyk + 3.5 * u);
+  }
+  label('BAR', w / 2 + 10 * u, rTop + 12 * u, 11, 600, 0.55, 'center');
+  label(bs[lo] <= t && lo >= heard.down ? String(barOf(lo)) : '-', w / 2 + 10 * u, rTop + 40 * u, 22, 700, 0.95, 'center');
+  label('TEMPO', right, rTop + 12 * u, 11, 600, 0.55, 'right');
+  label(`${Math.round(60 / len)} bpm`, right, rTop + 40 * u, 22, 700, 0.95, 'right');
+
+  // ---- the lanes
+  const gridTop = rTop + 62 * u;
+  const lanesTop = gridTop + 26 * u;
+  const gap = 8 * u;
+  const lanes = ['Loudness', 'Kick  (bass hits)', 'Snare and hats  (high hits)', 'Stood out  (as it played)'];
+  const laneH = (bottom - lanesTop - gap * (lanes.length - 1)) / lanes.length;
+  const laneY = (i) => lanesTop + i * (laneH + gap);
+  for (let i = 0; i < lanes.length; i++) {
+    g.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    g.fillRect(left, laneY(i), right - left, laneH);
+  }
+  // What has been heard, a shade lighter than what is to come.
+  g.fillStyle = 'rgba(255, 255, 255, 0.05)';
+  g.fillRect(left, lanesTop, px - left, bottom - lanesTop);
+  const f0 = Math.max(0, Math.floor((t - past) * fps));
+  const f1 = Math.min(heard.loud.length - 1, Math.ceil((t + ahead) * fps));
+  const fx = (fi) => X(fi / fps);
+
+  // Loudness: the whole curve, and the loud parts - over the line - lit.
+  {
+    const y0 = laneY(0), y1 = y0 + laneH;
+    const yv = (v) => y1 - v * laneH * 0.92;
+    const curve = () => {
+      g.beginPath();
+      g.moveTo(fx(f0), y1);
+      for (let fi = f0; fi <= f1; fi++) g.lineTo(fx(fi), yv(heard.loud[fi]));
+      g.lineTo(fx(f1), y1);
+      g.closePath();
+    };
+    curve();
+    g.fillStyle = rgba(pal[0], 0.35);
+    g.fill();
+    const cut = yv(heard.loudTop);
+    g.save();
+    g.beginPath();
+    g.rect(left, y0, right - left, cut - y0);
+    g.clip();
+    curve();
+    g.fillStyle = rgba(pal[0], 0.95);
+    g.fill();
+    g.restore();
+    g.setLineDash([4 * u, 4 * u]);
+    g.strokeStyle = rgba(VIZ_WHITE, 0.45);
+    g.lineWidth = 1 * u;
+    g.beginPath();
+    g.moveTo(left, cut);
+    g.lineTo(right, cut);
+    g.stroke();
+    g.setLineDash([]);
+    label('loud part', right - 4 * u, cut - 3 * u, 10, 600, 0.6, 'right');
+  }
+  // The kick and the snare: every hit, as tall as it is sharp.
+  const hits = (arr, lane, c) => {
+    const y1 = laneY(lane) + laneH;
+    const bw = Math.max(1.5 * u, pps / fps - 1 * u);
+    g.beginPath();
+    for (let fi = f0; fi <= f1; fi++) {
+      const v = arr[fi];
+      if (v < 0.04) continue;
+      g.rect(fx(fi), y1 - v * laneH * 0.92, bw, v * laneH * 0.92);
+    }
+    g.fillStyle = rgba(c, 0.85);
+    g.fill();
+  };
+  hits(heard.low, 1, pal[1]);
+  hits(heard.high, 2, pal[2]);
+  // Stood out: kept as it plays, since it compares each beat with the last
+  // few - what is to come has not been judged yet.
+  {
+    if (!st.hist || (st.hist.length && t < st.hist[st.hist.length - 1].t - 0.5)) { st.hist = []; st.struck.clear(); }
+    if (playing) st.hist.push({ t, n: novelty });
+    while (st.hist.length && st.hist[0].t < t - past - 0.2) st.hist.shift();
+    const y0 = laneY(3), y1 = y0 + laneH;
+    g.save();
+    g.beginPath();
+    g.rect(left, y0, right - left, laneH);
+    g.clip();
+    g.beginPath();
+    g.moveTo(X(st.hist.length ? st.hist[0].t : t), y1);
+    for (const p of st.hist) g.lineTo(X(p.t), y1 - p.n * laneH * 0.92);
+    g.lineTo(X(t), y1);
+    g.closePath();
+    g.fillStyle = rgba(VIZ_WHITE, 0.55);
+    g.fill();
+    g.restore();
+    label('judged as it plays', px + 8 * u, y1 - 6 * u, 10, 500, 0.3);
+  }
+
+  // ---- the beats across everything: each bar's first bright and numbered,
+  // and the lightning moments marked with a bolt.
+  const b0 = Math.max(0, lo - Math.ceil(past / len) - 2);
+  for (let i = b0; i < bs.length; i++) {
+    const x = X(bs[i]);
+    if (x > right) break;
+    if (x < left) continue;
+    const k = inBar(i);
+    const first = k === 0 && i >= heard.down;
+    g.strokeStyle = rgba(VIZ_WHITE, first ? 0.5 : 0.16);
+    g.lineWidth = (first ? 2 : 1) * u;
+    g.beginPath();
+    g.moveTo(x, gridTop + 16 * u);
+    g.lineTo(x, bottom);
+    g.stroke();
+    label(String(k + 1), x, gridTop + 12 * u, first ? 11 : 9, first ? 700 : 500, first ? 0.95 : 0.45, 'center');
+    // Known ahead from the loudness; and where the looks did strike.
+    if ((first && loudAt(bs[i]) >= heard.loudTop) || st.struck.has(i)) {
+      // Where Storm strikes, Fireworks has its finale and the others make
+      // their biggest move.
+      const bx = x + 8 * u, by = gridTop + 1 * u;
+      g.beginPath();
+      g.moveTo(bx + 3 * u, by);
+      g.lineTo(bx - 1 * u, by + 7 * u);
+      g.lineTo(bx + 2 * u, by + 7 * u);
+      g.lineTo(bx - 2 * u, by + 14 * u);
+      g.lineTo(bx + 5 * u, by + 5 * u);
+      g.lineTo(bx + 2 * u, by + 5 * u);
+      g.closePath();
+      g.fillStyle = 'rgba(255, 220, 90, 0.95)';
+      g.fill();
+    }
+  }
+
+  // ---- the moment playing: a line, a dot on each lane where it is now,
+  // and the lanes' names and readings.
+  const glow = g.createLinearGradient(px - 10 * u, 0, px + 10 * u, 0);
+  glow.addColorStop(0, rgba(VIZ_WHITE, 0));
+  glow.addColorStop(0.5, rgba(VIZ_WHITE, 0.18));
+  glow.addColorStop(1, rgba(VIZ_WHITE, 0));
+  g.fillStyle = glow;
+  g.fillRect(px - 10 * u, gridTop, 20 * u, bottom - gridTop);
+  g.fillStyle = rgba(VIZ_WHITE, 0.95);
+  g.fillRect(px - 1 * u, gridTop, 2 * u, bottom - gridTop);
+  const fiNow = Math.max(0, Math.min(heard.loud.length - 1, Math.floor(t * fps)));
+  const nowVals = [heard.loud[fiNow], heard.low[fiNow], heard.high[fiNow], novelty];
+  for (let i = 0; i < lanes.length; i++) {
+    const y0 = laneY(i);
+    const v = Math.max(0, Math.min(1, nowVals[i] || 0));
+    label(lanes[i], left + 6 * u, y0 + 14 * u, 11, 600, 0.8);
+    g.font = font(11, 600);
+    const nameW = g.measureText(lanes[i]).width;
+    label(`${Math.round(v * 100)}%`, left + 12 * u + nameW, y0 + 14 * u, 11, 700, 0.95);
+    g.beginPath();
+    g.arc(px, y0 + laneH - v * laneH * 0.92, 4 * u, 0, Math.PI * 2);
+    g.fillStyle = rgba(VIZ_WHITE, 1);
+    g.fill();
+  }
+}
+
 const VIZ_SCENES = {
   flow: (st, m) => flowScene(st, m),
+  analysis: (st, m) => analysisScene(st, m),
   ...FULL_SCENES,
   // Spectrum: a mirrored equalizer across the screen, bass in the middle
   // jumping with the kick, highs at the edges snapping with the snare, peak
