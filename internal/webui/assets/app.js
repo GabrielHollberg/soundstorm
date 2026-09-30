@@ -297,6 +297,17 @@ if (window.soundstormApp) {
 
 async function showApp(me) {
   state.me = me || null;
+  // Downloads and kept places belong to whoever signed in on this device. If
+  // somebody else signs in - the last person was signed out elsewhere, or
+  // removed, without pressing Sign out here - theirs go first, or the next
+  // person saw them, shelves their account cannot see included (a review).
+  try {
+    const owner = localStorage.getItem('soundstorm-owner');
+    if (me && me.id && owner && owner !== me.id) await clearDownloads();
+    if (me && me.id) localStorage.setItem('soundstorm-owner', me.id);
+  } catch {
+    // no storage: nothing kept to hand on
+  }
   show($('boot'), false);
   show($('gate'), false);
   show($('app'), true);
@@ -5061,7 +5072,8 @@ async function showArtistAbout(sourceId, id, box) {
     if (body.bioUrl) {
       const more = document.createElement('a');
       more.className = 'artist-bio-link';
-      more.href = body.bioUrl;
+      // Only a Wikipedia page, whatever the answer said (a review).
+      more.href = /^https:\/\/[a-z-]+\.wikipedia\.org\//.test(body.bioUrl) ? body.bioUrl : 'https://en.wikipedia.org/';
       more.target = '_blank';
       more.rel = 'noopener noreferrer';
       more.textContent = 'More on Wikipedia';
@@ -6965,6 +6977,7 @@ async function clearDownloads() {
   state.downloads = { items: {}, groups: [] };
   try {
     localStorage.removeItem(DOWNLOADS_KEY);
+    localStorage.removeItem('soundstorm-owner');
     // Places kept for downloaded books are this person's too.
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('soundstorm-pos:') || key.startsWith('soundstorm-read:')) localStorage.removeItem(key);

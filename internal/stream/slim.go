@@ -54,11 +54,16 @@ const audioNoStore = "no-store"
 
 const (
 	slimProbe     = 64 << 10 // read first: ftyp and the start of moov, or an ID3 tag's header
-	slimMaxMoov   = 16 << 20 // a song's index is a few hundred KB
+	// slimMaxMoov: a song's index is a few hundred KB. A bigger one (a long
+	// audiobook's) is sent as it is, rather than held in memory: the cache is
+	// in memory, and a review found 128 headers of up to 17MB could pin 2GB.
+	slimMaxMoov   = 4 << 20
 	slimMaxPrefix = 1 << 20  // what sits before moov (ftyp) is tiny
 	slimMinSaving = 16 << 10 // under this, send the original as it is
 	slimKeep      = time.Hour
 	slimCacheSize = 128
+	// slimCacheBytes is the most the cached headers may hold between them.
+	slimCacheBytes = 64 << 20
 )
 
 // slimLayout describes the slim file: head, from memory, then the original
@@ -81,6 +86,39 @@ type slimCache struct {
 	mu    sync.Mutex
 	m     map[string]*slimLayout
 	order []string
+	bytes int
+	// busy is a song whose header is being worked out now: a request for it
+	// meanwhile waits for that one instead of doing the same work again.
+	busy map[string]chan struct{}
+}
+
+// claim reports whether the caller should work out key's layout (true), or
+// waits for whoever is already doing so and reports false.
+func (c *slimCache) claim(ctx context.Context, key string) bool {
+	c.mu.Lock()
+	if c.busy == nil {
+		c.busy = map[string]chan struct{}{}
+	}
+	if ch, ok := c.busy[key]; ok {
+		c.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+		}
+		return false
+	}
+	c.busy[key] = make(chan struct{})
+	c.mu.Unlock()
+	return true
+}
+
+func (c *slimCache) release(key string) {
+	c.mu.Lock()
+	if ch, ok := c.busy[key]; ok {
+		close(ch)
+		delete(c.busy, key)
+	}
+	c.mu.Unlock()
 }
 
 func (c *slimCache) get(key string) *slimLayout {
@@ -88,6 +126,7 @@ func (c *slimCache) get(key string) *slimLayout {
 	defer c.mu.Unlock()
 	l := c.m[key]
 	if l != nil && time.Since(l.made) > slimKeep {
+		c.bytes -= len(l.head)
 		delete(c.m, key)
 		return nil
 	}
@@ -100,12 +139,18 @@ func (c *slimCache) put(key string, l *slimLayout) {
 	if c.m == nil {
 		c.m = map[string]*slimLayout{}
 	}
-	if _, ok := c.m[key]; !ok {
+	if old, ok := c.m[key]; ok {
+		c.bytes -= len(old.head)
+	} else {
 		c.order = append(c.order, key)
 	}
 	c.m[key] = l
-	for len(c.order) > slimCacheSize {
-		delete(c.m, c.order[0])
+	c.bytes += len(l.head)
+	for len(c.order) > 0 && (len(c.order) > slimCacheSize || c.bytes > slimCacheBytes) {
+		if old, ok := c.m[c.order[0]]; ok {
+			c.bytes -= len(old.head)
+			delete(c.m, c.order[0])
+		}
 		c.order = c.order[1:]
 	}
 }
@@ -113,7 +158,10 @@ func (c *slimCache) put(key string, l *slimLayout) {
 func (c *slimCache) drop(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.m, key)
+	if old, ok := c.m[key]; ok {
+		c.bytes -= len(old.head)
+		delete(c.m, key)
+	}
 }
 
 // slimmable reports whether a stream request may be sent slim: an original
@@ -128,16 +176,25 @@ func slimmable(r *http.Request, target source.Target) bool {
 // slim, since a player mixing ranges of the two files would get garbage.
 func (p *Proxy) serveSlim(w http.ResponseWriter, r *http.Request, target source.Target, key, what string) bool {
 	l := p.slim.get(key)
+	if l == nil && !p.slim.claim(r.Context(), key) {
+		// Somebody else just worked it out (or gave up): look again.
+		l = p.slim.get(key)
+		if l == nil {
+			return false
+		}
+	}
 	if l == nil {
 		var err error
 		l, err = p.slimLayoutFor(r.Context(), target)
 		if err != nil {
+			p.slim.release(key)
 			if r.Context().Err() == nil {
 				p.log.Debug("slim layout", "what", what, "err", err)
 			}
 			return false // not cached: the next request looks again
 		}
 		p.slim.put(key, l)
+		p.slim.release(key)
 	}
 	if !l.ok {
 		return false
@@ -317,7 +374,10 @@ func (p *Proxy) slimMP3(ctx context.Context, target source.Target, first []byte,
 			if hdr, _, err = p.readRange(ctx, target, at, at+9); err != nil {
 				return err
 			}
-		} else if len(hdr) < 10 {
+		}
+		// Every tag's header whole, the chained ones too: a tag whose size
+		// pointed a few bytes short of the end panicked here (a review).
+		if len(hdr) < 10 {
 			return errors.New("short")
 		}
 		if string(hdr[:3]) != "ID3" {
@@ -400,7 +460,9 @@ func (p *Proxy) slimMP4(ctx context.Context, target source.Target, first []byte,
 			}
 			n = int64(binary.BigEndian.Uint64(hdr[8:]))
 		}
-		if n < 8 || off+n > l.size {
+		// n > l.size-off, not off+n > l.size: a 64-bit size near the maximum
+		// overflowed the sum negative and got past (a review).
+		if n < 8 || n > l.size-off {
 			return errors.New("bad box")
 		}
 		b := mp4Box{string(hdr[4:8]), off, off + n}

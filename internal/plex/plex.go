@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -238,6 +239,69 @@ func AllowedHost(host string) bool {
 		!addr.IsUnspecified() && !addr.IsMulticast()
 }
 
+// maxCandidates is how many of a server's addresses are ever tried.
+const maxCandidates = 8
+
+// dialGuard refuses, at the moment of connecting, what a Plex server can
+// never be: this machine, link-local, 100.64/10 (carrier-grade NAT and
+// Tailscale), and any network this container itself is on - the compose
+// network, where the media servers and their databases listen. Found by a
+// security review: the IP rule above let every private range through, the
+// compose network's included, and a member whose own Plex server listed an
+// internal address could send SoundStorm's requests there. A Plex server on
+// the home network is on none of these and is still reached.
+func dialGuard(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return err
+	}
+	if !DialAllowed(ip.Unmap(), localNetworks()) {
+		return fmt.Errorf("plex: refusing to connect to %s", ip)
+	}
+	return nil
+}
+
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// DialAllowed is the rule dialGuard applies, given the networks this machine
+// is on.
+func DialAllowed(ip netip.Addr, local []netip.Prefix) bool {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip) {
+		return false
+	}
+	for _, p := range local {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+// localNetworks are the networks on this machine's own interfaces.
+func localNetworks() []netip.Prefix {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var out []netip.Prefix
+	for _, a := range addrs {
+		n, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		p, err := netip.ParsePrefix(n.String())
+		if err == nil && !p.Addr().IsLoopback() {
+			out = append(out, p.Masked())
+		}
+	}
+	return out
+}
+
 // candidates are the addresses to try for a server, best first: on the home
 // network before across the internet, Plex's relay last. A local address is
 // also tried as plain http to its IP, since a router that refuses to resolve
@@ -260,11 +324,18 @@ func (c *Client) candidates(srv Server) []string {
 	var out []string
 	add := func(raw string) {
 		u, err := url.Parse(raw)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || !allow(u.Hostname()) || seen[raw] {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || !allow(u.Hostname()) {
 			return
 		}
-		seen[raw] = true
-		out = append(out, strings.TrimRight(raw, "/"))
+		// Only where, never what: a scheme and a host and port. A path or a
+		// query in plex.tv's answer - which the owner of a Plex server writes -
+		// would otherwise choose which endpoint every request lands on.
+		base := u.Scheme + "://" + u.Host
+		if seen[base] || len(out) >= maxCandidates {
+			return
+		}
+		seen[base] = true
+		out = append(out, base)
 	}
 	for r := 0; r <= 2; r++ {
 		for _, cn := range srv.connections {
@@ -291,6 +362,15 @@ func (c *Client) Open(ctx context.Context, srv Server) (*Conn, error) {
 	}
 	if c.HTTP != nil && c.HTTP.Transport != nil {
 		client.Transport = c.HTTP.Transport
+	} else if c.AllowHost == nil {
+		// The address checked again as it is dialed: a *.plex.direct name
+		// resolves to whatever IP is written in it, and a name can resolve
+		// differently from one moment to the next.
+		client.Transport = &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second, Control: dialGuard}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		}
 	}
 	for _, base := range c.candidates(srv) {
 		try, cancel := context.WithTimeout(ctx, 5*time.Second)

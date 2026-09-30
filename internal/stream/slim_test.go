@@ -157,3 +157,23 @@ func TestOtherFilesAreSentAsTheyAre(t *testing.T) {
 		t.Error("an MP3 with a tiny tag was slimmed")
 	}
 }
+
+// A crafted song file is refused, not a panic: an MP3 whose tag size points
+// a few bytes short of the end with another tag after it, and an MP4 box
+// with a 64-bit size near the maximum.
+func TestCraftedSongsDoNotPanic(t *testing.T) {
+	p := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	body := 40 << 10
+	tag := []byte{'I', 'D', '3', 3, 0, 0, byte(body >> 21 & 0x7f), byte(body >> 14 & 0x7f), byte(body >> 7 & 0x7f), byte(body & 0x7f)}
+	mp3 := append(tag, make([]byte, body)...)
+	mp3 = append(mp3, 'I', 'D', '3', 3, 0) // a second tag, cut short
+	if _, ok := slimGet(t, p, upstream(t, "audio/mpeg", mp3).URL, http.MethodGet, ""); ok {
+		t.Error("a cut-short MP3 tag was slimmed")
+	}
+	huge := []byte{0, 0, 0, 1, 'f', 'r', 'e', 'e', 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0}
+	mp4 := append(huge, make([]byte, 70<<10)...)
+	p2 := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, ok := slimGet(t, p2, upstream(t, "audio/mp4", mp4).URL, http.MethodGet, ""); ok {
+		t.Error("an MP4 with an impossible box size was slimmed")
+	}
+}

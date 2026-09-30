@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	_ "image/gif" // decoders for the covers books carry
@@ -11,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 )
@@ -33,7 +36,31 @@ const (
 	maxArtSize     = 2000
 	// shrinkMaxInput refuses to decode anything larger - a cover is not.
 	shrinkMaxInput = 20 << 20
+	// shrinkMaxPixels is the largest picture decoded to be shrunk; a larger
+	// one is sent as it is. A decoded picture costs up to 8 bytes a pixel
+	// (16-bit colour), so this is under 100MB, where 40 million pixels was
+	// over 300MB - from a file of a few hundred KB, since a blank picture
+	// compresses a thousandfold (a security review: a member could upload
+	// such a cover and exhaust the server's memory).
+	shrinkMaxPixels = 12_000_000
 )
+
+// At most two covers are decoded at once, and a shrunk cover is kept, so a
+// page of covers - or many requests for one - is not a decode each.
+var (
+	shrinkSlots = make(chan struct{}, 2)
+	shrunk      = struct {
+		sync.Mutex
+		m     map[string][]byte
+		order []string
+	}{m: map[string][]byte{}}
+)
+
+const shrunkKeep = 256
+
+func shrunkKey(target source.Target, size int, px int) string {
+	return fmt.Sprintf("%s|%s|%d|%d|%d", target.FilePath, target.Name, target.ModTime.UnixNano(), size, px)
+}
 
 // artSize reads ?size=: a number of pixels (clamped), "full" for the
 // original, or card-sized when absent.
@@ -67,12 +94,30 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 			return target, false
 		}
 	}
+	key := shrunkKey(target, len(data), px)
+	shrunk.Lock()
+	kept, ok := shrunk.m[key]
+	shrunk.Unlock()
+	if ok {
+		if kept == nil {
+			return target, false
+		}
+		return source.Target{Bytes: kept, ContentType: http.DetectContentType(kept), Name: target.Name, ModTime: target.ModTime}, true
+	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || (cfg.Width <= px && cfg.Height <= px) || cfg.Width*cfg.Height > 40_000_000 {
+	if err != nil || (cfg.Width <= px && cfg.Height <= px) || cfg.Width*cfg.Height > shrinkMaxPixels {
+		keepShrunk(key, nil)
+		return target, false
+	}
+	select {
+	case shrinkSlots <- struct{}{}:
+	case <-time.After(10 * time.Second):
 		return target, false
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
+	<-shrinkSlots
 	if err != nil {
+		keepShrunk(key, nil)
 		return target, false
 	}
 	small := downscale(img, px)
@@ -86,14 +131,31 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 		err = jpeg.Encode(&out, small, &jpeg.Options{Quality: 85})
 	}
 	if err != nil || out.Len() >= len(data) {
+		keepShrunk(key, nil)
 		return target, false
 	}
+	keepShrunk(key, out.Bytes())
 	return source.Target{
 		Bytes:       out.Bytes(),
 		ContentType: contentType,
 		Name:        target.Name,
 		ModTime:     target.ModTime,
 	}, true
+}
+
+// keepShrunk remembers a shrunk cover (nil: send the original), the oldest
+// forgotten past shrunkKeep. Covers are tens of KB, so this is a few MB.
+func keepShrunk(key string, b []byte) {
+	shrunk.Lock()
+	defer shrunk.Unlock()
+	if _, ok := shrunk.m[key]; !ok {
+		shrunk.order = append(shrunk.order, key)
+	}
+	shrunk.m[key] = b
+	for len(shrunk.order) > shrunkKeep {
+		delete(shrunk.m, shrunk.order[0])
+		shrunk.order = shrunk.order[1:]
+	}
 }
 
 // downscale shrinks img to fit in a px square, keeping its shape, by averaging

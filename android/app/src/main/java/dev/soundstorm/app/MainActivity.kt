@@ -129,9 +129,10 @@ class MainActivity : Activity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
         }
 
-        // A server given at launch, for testing:
-        // adb shell am start -n dev.soundstorm.app/.MainActivity --es serverURL http://10.0.2.2:8099
-        intent?.getStringExtra("serverURL")?.let(ServerAddress::parse)?.let { ServerAddress.save(this, it) }
+        // (A server address given in the launching intent, once used for
+        // testing, is gone: the activity is exported, so any app on the device
+        // could have pointed SoundStorm at its own server - found by a
+        // security review.)
         val saved = ServerAddress.saved(this)
         if (saved != null) showWeb(saved) else showConnect(null)
     }
@@ -349,7 +350,10 @@ class MainActivity : Activity() {
             // Chrome's own user agent, with a name the page can test for.
             userAgentString = "$userAgentString SoundStormApp/1" + if (isTv) " SoundStormTV/1" else ""
         }
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG) // chrome://inspect
+        // chrome://inspect only in a build marked debuggable, which the
+        // published one is not (build.gradle.kts): with it, anyone with adb
+        // access had a console inside the signed-in page.
+        WebView.setWebContentsDebuggingEnabled((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
 
         val origin = ServerAddress.origin(target)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -408,19 +412,32 @@ class MainActivity : Activity() {
         return url.scheme == s.scheme && url.host == s.host && url.port == s.port
     }
 
-    /** https on one of an install's own names, on the port in use now. */
+    /**
+     * https on one of this install's own names, on the port in use now. When
+     * the server is known by one of its names, only its twin (the same id,
+     * home and away) - any install can get a name under soundstorm.dev, and a
+     * security review found a page could send the app to another's. From a
+     * plain address (a LAN IP) the name cannot be checked, so the move is only
+     * followed, never saved (see shouldOverrideUrlLoading).
+     */
     private fun isOwnSecureName(url: Uri): Boolean {
         val s = server ?: return false
         val host = url.host?.lowercase() ?: return false
         if (url.scheme != "https" || isServer(url)) return false
         if (!host.endsWith(".home.soundstorm.dev") && !host.endsWith(".net.soundstorm.dev")) return false
-        return url.port == s.port
+        if (url.port != s.port) return false
+        val current = s.host?.lowercase() ?: return false
+        if (current.endsWith(".soundstorm.dev")) return host.substringBefore('.') == current.substringBefore('.')
+        return true
     }
 
     private fun openOutside(url: Uri) {
+        // Never a file: - Android throws on handing one to another app, which
+        // crashed the app.
+        if (url.scheme == "file" || url.scheme == "content") return
         try {
             startActivity(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
-        } catch (_: ActivityNotFoundException) {
+        } catch (_: Exception) {
         }
     }
 
@@ -481,15 +498,12 @@ class MainActivity : Activity() {
             if (request.isForMainFrame && isOwnSecureName(url)) {
                 val target = ServerAddress.parse(url.toString())
                 if (target != null) {
-                    // Kept as the address from now on - unless the saved one
-                    // is the away name, which works everywhere: then the home
-                    // name is only visited while home. Saving it made a phone
-                    // that had come home unable to reach the server once out
-                    // again (a home name points at a home address).
-                    val saved = ServerAddress.saved(this@MainActivity)
-                    if (saved?.host?.lowercase()?.endsWith(".net.soundstorm.dev") != true) {
-                        ServerAddress.save(this@MainActivity, target)
-                    }
+                    // Followed for now, never saved: the address typed stays
+                    // the one the app starts from. Saving the home name made a
+                    // phone that had come home unable to reach the server once
+                    // out again, and saving any name from a plain-http page let
+                    // someone on the same Wi-Fi pin the app to their own server
+                    // for good (a security review).
                     content.post { showWeb(target) }
                     return true
                 }

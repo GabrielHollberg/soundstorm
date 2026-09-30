@@ -24,18 +24,43 @@ if (window.top !== window.self) throw new Error('SoundStorm does not run inside 
 // app's origin - where a script, even one naming our own files by absolute
 // address, would run as whoever is reading. The reader needs none of a
 // book's scripts, so every chapter document loses them before it is shown.
-const DOC_TYPES = ['application/xhtml+xml', 'text/html', 'image/svg+xml'];
+//
+// The type is the book's own say (its manifest), so it is read loosely - any
+// case, any parameters, and anything XML - or a chapter declared text/xml or
+// "text/html;charset=utf-8" went through untouched (a security review). And
+// not only <script>: event attributes, javascript: links, frames, objects and
+// refreshes go too. The page's CSP stops most of these already; this does not
+// lean on every web view passing it on to a book's frames.
+const DROP = 'script, iframe, frame, object, embed, meta[http-equiv], base';
+function documentType(type) {
+  const base = String(type || '').split(';')[0].trim().toLowerCase();
+  if (base === 'text/html') return 'text/html';
+  if (base === 'image/svg+xml') return 'image/svg+xml';
+  if (base === 'application/xhtml+xml') return 'application/xhtml+xml';
+  if (base.endsWith('/xml') || base.endsWith('+xml')) return 'application/xml';
+  return null;
+}
 function withoutScripts(book) {
   book.transformTarget?.addEventListener('data', ({ detail }) => {
-    if (!DOC_TYPES.includes(detail.type)) return;
-    const type = detail.type;
+    const type = documentType(detail.type);
+    if (!type) return;
     detail.data = Promise.resolve(detail.data).then((data) => {
       if (typeof data !== 'string') return data;
       const doc = new DOMParser().parseFromString(data, type);
-      const scripts = doc.querySelectorAll('script');
-      if (!scripts.length) return data;
-      for (const el of scripts) el.remove();
-      return new XMLSerializer().serializeToString(doc);
+      let changed = false;
+      for (const el of doc.querySelectorAll(DROP)) { el.remove(); changed = true; }
+      for (const el of doc.querySelectorAll('*')) {
+        for (const attr of [...el.attributes]) {
+          const name = attr.name.toLowerCase();
+          const value = attr.value.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+          if (name.startsWith('on') || ((name === 'href' || name.endsWith(':href') || name === 'src' || name === 'action' || name === 'formaction')
+              && (value.startsWith('javascript:') || value.startsWith('vbscript:')))) {
+            el.removeAttribute(attr.name);
+            changed = true;
+          }
+        }
+      }
+      return changed ? new XMLSerializer().serializeToString(doc) : data;
     });
   });
 }

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
@@ -348,6 +349,10 @@ func (s *Server) importEntries(userID, name string, entries []m3uEntry, ix *song
 func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
+		return
+	}
+	if !s.imports.allow(user.ID, time.Now(), 10, 30*time.Second) {
+		writeError(w, http.StatusTooManyRequests, "Too many imports at once; wait a moment.")
 		return
 	}
 	var body struct {

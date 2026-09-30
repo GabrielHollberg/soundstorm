@@ -3293,6 +3293,72 @@ change under it; reachable only on the compose network. Images pulled by
 tag. The Public Suffix List, still the real fix for the names service's
 shared budgets.
 
+**A seventh pass, blind again (2026-09-30), after the phone and TV apps,
+picture-free streaming, and the Plex and M3U imports.** Five reviewers - the
+streaming proxy, imports and pictures, the web client, the Android app, the
+Apple apps - with no notes. What was real, and fixed:
+
+- **The Plex import reached the compose network.** A server's addresses are
+  what its owner publishes through plex.tv, and the IP rule let every
+  private range through, the compose network's included, with the path and
+  query of the address kept - a member with a Plex account could aim
+  SoundStorm's requests at internal services. Now only scheme and host:port
+  are kept, eight addresses at most, and each is checked again as it is
+  dialed (`dialGuard`: loopback, link-local, 100.64/10 and any network this
+  container is on are refused; a home-network Plex server is not).
+- **Any app on an Android phone could repoint SoundStorm** at its own server
+  through a launch extra left from testing (`serverURL`); gone.
+- **The Android app followed, and saved, any install's name** from a page:
+  someone on the same Wi-Fi as a plain-http install could pin the app to
+  their own server for good. The move to the secure name is now followed,
+  never saved, and from a soundstorm.dev address only to its own twin (same
+  id). The iPhone app has the same flaw, not yet fixed (below).
+- **The published APK was debuggable**: adb meant the cookies (run-as) and a
+  console in the signed-in page. The debug build type is now
+  `isDebuggable = false`, still signed with the debug key so it installs
+  over earlier ones; WebView debugging follows the flag. A `file:` link no
+  longer crashes the app.
+- **Two ways a member could exhaust the server's memory**: a cover image tiny
+  as a file and hundreds of MB decoded, resized on every request with no
+  limit (now 12 megapixels at most, two at a time, results kept); and
+  picture-free song headers of up to 17MB cached 128 at a time with no
+  coalescing (now 4MB, 64MB in all, one fetch per song shared). Two crafted
+  song files panicked a request (a chained ID3 tag cut short, a 64-bit MP4
+  box size overflowing); now refused.
+- **Imports and pictures could fill things**: imports are rate limited, one
+  person's playlists hold 25,000 songs in all (their file is rewritten under
+  the lock everyone shares), and their pictures 300MB.
+- **Downloads carried over to the next person** signing in on a shared device
+  when the last was signed out elsewhere; the device now remembers whose
+  they are and clears them for anybody else.
+- **The reader's script stripping** read a chapter's declared type exactly, so
+  `text/xml` or `text/html; charset=...` skipped it, and removed only
+  `<script>`. Now any case, parameters or XML type, and event attributes,
+  `javascript:` links, frames, objects and refreshes too. The CSP already
+  stopped these; this does not lean on every web view passing it on.
+- Smaller: more JavaScript content types refused; the Wikipedia link must be
+  a wikipedia.org page.
+
+Left, with reasons: cleartext to a LAN address (Android cannot allow only
+private ranges, and http is how a LAN install is first reached); the stream
+proxy following a backend's redirects (none known to be steerable, and
+refusing them risks breaking playback); covers kept in the browser cache
+for a week after sign-out (a URL is needed to see one).
+
+**For the Mac, not yet fixed (Swift, found in this pass):**
+- `WebViewController.swift` `sameInstall`/`decidePolicyFor`: from a plain-http
+  address any `https://<anything>.home.soundstorm.dev` on the same port is
+  accepted and saved (`ServerAddress.saved`), redirects included - the flaw
+  fixed on Android above. Follow, do not save; from a soundstorm.dev address
+  only its own id's twin.
+- Other schemes are opened from any frame with no user gesture, and
+  `createWebViewWith` opens any URL: only main-frame, link-activated.
+- The bridge's origin check ignores the port; match `isServer`.
+- Apple TV `API.swift` `absolute`: an absolute URL in a playback, track or
+  subtitle answer goes to another host; require the server's host.
+- `+` in query values is not encoded (URLQueryItem), so "C++" searches as
+  "C  ".
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

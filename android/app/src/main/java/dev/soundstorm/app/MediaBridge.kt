@@ -51,6 +51,9 @@ object MediaBridge {
     var onInterruption: ((Boolean) -> Unit)? = null
 
     fun interruption(on: Boolean) {
+        // Only while the service runs to watch it through: otherwise nothing
+        // would ever clear it.
+        if (on && listener == null) return
         interrupted = on
         main.post { onInterruption?.invoke(on) }
     }

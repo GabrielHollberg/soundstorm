@@ -263,6 +263,10 @@ func (s *Server) handlePlexImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.imports.allow(user.ID, time.Now(), 10, 30*time.Second) {
+		writeError(w, http.StatusTooManyRequests, "Too many imports at once; wait a moment.")
+		return
+	}
 	var body struct {
 		Server    string `json:"server"`
 		Playlists []struct {

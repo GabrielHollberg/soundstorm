@@ -22,6 +22,10 @@ const (
 	MaxArtBytes = 4 << 20 // one image; the app sends a shrunk JPEG far smaller
 	MaxArtKeys  = 5000    // covers replaced
 	MaxArtFiles = 1000    // distinct pictures
+	// MaxArtTotal is what one person's pictures may take between them, so
+	// 1,000 pictures of 4MB cannot fill the state disk the media servers'
+	// databases share (a review).
+	MaxArtTotal = 300 << 20
 	maxArtKey   = 400
 )
 
@@ -113,6 +117,9 @@ func (s *Store) SetArt(userID string, keys []string, data []byte) error {
 	}
 	dest := filepath.Join(dir, name)
 	if _, err := os.Stat(dest); err != nil {
+		if artDirBytes(dir)+int64(len(data)) > MaxArtTotal {
+			return ErrFull
+		}
 		tmp := dest + ".tmp"
 		if err := os.WriteFile(tmp, data, 0o600); err != nil {
 			return err
@@ -208,4 +215,19 @@ func (s *Store) sweepArt(userID string, c *collection) {
 			os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
+}
+
+// artDirBytes is the size of the pictures in dir.
+func artDirBytes(dir string) int64 {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	var n int64
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil {
+			n += info.Size()
+		}
+	}
+	return n
 }

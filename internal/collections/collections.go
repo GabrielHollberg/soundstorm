@@ -39,6 +39,10 @@ const (
 	MaxFavorites     = 5000
 	MaxPlaylists     = 200
 	MaxPlaylistItems = 5000
+	// MaxTotalEntries caps the songs across all of one person's playlists:
+	// 200 playlists of 5,000 was a file of hundreds of MB, rewritten on every
+	// play while holding the lock every person's requests share (a review).
+	MaxTotalEntries = 25000
 	MaxNameLength    = 100
 )
 
@@ -340,12 +344,16 @@ func (s *Store) ImportPlaylist(userID, name string, items []media.Item) (Playlis
 	if _, err := rand.Read(raw); err != nil {
 		return Playlist{}, err
 	}
+	room := MaxTotalEntries - totalEntries(c)
+	if room <= 0 {
+		return Playlist{}, ErrFull
+	}
 	now := time.Now().UTC()
 	p := &Playlist{ID: hex.EncodeToString(raw), Name: name, Items: []Entry{}, CreatedAt: now, UpdatedAt: now, Sort: "custom"}
 	seen := map[string]bool{}
 	for _, it := range items {
 		key := it.SourceID + "/" + it.ID
-		if seen[key] || len(p.Items) >= MaxPlaylistItems {
+		if seen[key] || len(p.Items) >= MaxPlaylistItems || len(p.Items) >= room {
 			continue
 		}
 		seen[key] = true
@@ -436,7 +444,7 @@ func (s *Store) AddToPlaylist(userID, id string, item media.Item) (int, error) {
 			return 0, ErrAlreadyIn
 		}
 	}
-	if len(p.Items) >= MaxPlaylistItems {
+	if len(p.Items) >= MaxPlaylistItems || totalEntries(c) >= MaxTotalEntries {
 		return 0, ErrFull
 	}
 	p.Items = append(p.Items, Entry{Item: item, AddedAt: time.Now().UTC()})
@@ -806,4 +814,13 @@ func (p Playlist) Ordered() []OrderedEntry {
 type OrderedEntry struct {
 	Entry
 	Position int
+}
+
+// totalEntries counts the songs across all of c's playlists.
+func totalEntries(c *collection) int {
+	n := 0
+	for _, p := range c.Playlists {
+		n += len(p.Items)
+	}
+	return n
 }

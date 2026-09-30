@@ -11,13 +11,20 @@ android {
         applicationId = "dev.soundstorm.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6"
+        versionCode = 7
+        versionName = "0.7"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+        }
+        // The published APK is this build type, signed with the debug key so
+        // it installs over earlier ones - but not debuggable: with it, anyone
+        // with adb access could copy the sign-in cookies (run-as) and open a
+        // console in the signed-in page (a security review).
+        debug {
+            isDebuggable = false
         }
     }
 
