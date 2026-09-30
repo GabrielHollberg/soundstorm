@@ -1328,6 +1328,19 @@ a chorus. A sharp high counts in full within 10dB of the song's loud highs
 all of Thunder's loud hits kept, 74 to 68 strikes a minute; Change My Mind
 48 to 34. **For the Mac:** version 8.
 
+**And lightning is on the beat** (`strikesAt`): asked to look afresh at
+why Thunder's hits on 2 and 4 are right for lightning and little else is.
+Every strike in its first twelve seconds, taken apart by pitch band, level
+and timing: the good ones land within a few milliseconds of a beat; nearly
+all the rest fall 100-350ms between beats (fills, the vocal's "th" and
+"s"). So a strong sharp high strikes only within 70ms of a beat found (a
+little margin over 50ms, where beat and hit sit a frame or two apart; on
+Thunder 70ms measured 35 strikes a minute against 34). Over the song: 68 strikes a minute to 34, the hits on 2 and 4 kept (72% to
+71%), strikes anywhere else 38 a minute to 4; the first twelve seconds keep
+exactly the five on 2 and 4 and two right on beat 1. A loud top as well was
+tried and changed nothing more. It reads the beats found, so no hearing
+changed. **For the Mac:** the same rule.
+
 **The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
 the timeline follows the finger - left for later, right for earlier, at the
 look's own scale of six seconds across - "Play from 1:23" shows over the

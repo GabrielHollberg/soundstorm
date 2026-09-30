@@ -13355,13 +13355,7 @@ const viz = {
       if (this.bigAt !== undefined && t < this.bigAt) this.bigAt = undefined; // a seek back
       const jumped = this.strikeFrame === undefined || fi < this.strikeFrame || fi - this.strikeFrame > 10;
       let rose = false;
-      let over = jumped ? heard.high[fi] >= STRIKE_AT : this.sharpOver;
-      for (let k = jumped ? fi : this.strikeFrame + 1; k <= fi; k++) {
-        const now = heard.high[k] >= STRIKE_AT;
-        if (now && !over) rose = true;
-        over = now;
-      }
-      this.sharpOver = over;
+      for (let k = jumped ? fi : this.strikeFrame + 1; k <= fi; k++) if (strikesAt(heard, k)) rose = true;
       this.strikeFrame = fi;
       if (playing && rose) {
         drop = true;
@@ -13609,8 +13603,25 @@ function vizColor(c, a) {
   return row[i] || (row[i] = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${i / 64})`);
 }
 const VIZ_WHITE = [255, 255, 255];
-// Lightning: a sharp high rising past this.
+// Lightning: a sharp high rising past this, landing this close to a beat.
 const STRIKE_AT = 0.8;
+const STRIKE_ON_BEAT = 0.07;
+// strikesAt says whether a sharp high rising at frame fi is lightning: past
+// STRIKE_AT, and on one of the beats found. Asked for as what makes Thunder's
+// hits on 2 and 4 right for it and little else: looked at afresh, those land
+// within a few milliseconds of a beat, and nearly every other strike fell
+// between beats (100-350ms off - fills, the vocal's "th" and "s"). Measured
+// over the song: 68 strikes a minute to 34, the hits on 2 and 4 kept (72% to
+// 71%), strikes anywhere else 38 a minute to 4. A loud top as well was tried
+// and changed nothing more.
+function strikesAt(heard, fi) {
+  if (!(heard.high[fi] >= STRIKE_AT && (fi === 0 || heard.high[fi - 1] < STRIKE_AT))) return false;
+  const at = fi / heard.fps;
+  const bs = heard.beats;
+  let lo = 0, hi = bs.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= at) lo = mid; else hi = mid - 1; }
+  return Math.abs(at - bs[lo]) <= STRIKE_ON_BEAT || (lo + 1 < bs.length && Math.abs(bs[lo + 1] - at) <= STRIKE_ON_BEAT);
+}
 
 // playOrb: Now Playing's play button for music, drawn rather than an icon -
 // the owner found a play triangle boring and asked for something round-ish
@@ -14419,12 +14430,12 @@ function analysisScene(st, m) {
     label(String(k + 1), x, gridTop + 12 * u, first ? 11 : 9, first ? 700 : 500, first ? 0.95 : 0.45, 'center');
   }
   // The lightning: a bolt, and a line down through the sharp highs, at every
-  // sharp high rising past STRIKE_AT - the looks' own rule, so these are
-  // exactly where Storm strikes, Fireworks has its finale and the others
+  // strong sharp high on a beat (strikesAt) - the looks' own rule, so these
+  // are exactly where Storm strikes, Fireworks has its finale and the others
   // make their biggest move.
   const f0s = Math.max(1, Math.floor((t - past) * fps));
   for (let fi = f0s; fi <= f1; fi++) {
-    if (!(heard.high[fi] >= STRIKE_AT && heard.high[fi - 1] < STRIKE_AT)) continue;
+    if (!strikesAt(heard, fi)) continue;
     const x = fx(fi);
     if (x < left || x > right) continue;
     g.strokeStyle = 'rgba(255, 220, 90, 0.55)';
