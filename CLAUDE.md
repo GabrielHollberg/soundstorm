@@ -1065,8 +1065,14 @@ has no touch and no mouse:
 - **A text box reached with the arrows is only highlighted** (read-only until
   OK). Focused for real it brought up the TV's keyboard at once, which then
   took the arrows - the first emulator run could not leave the search box.
-- **A film opens with the picture focused**: OK pauses and plays, left and
-  right skip ten seconds, up and down reach close and the pickers. Now Playing
+- **A film is the whole screen, with no browser controls**, whose small
+  buttons (full screen, more options) the projector's remote could not
+  reach. It opens with the picture focused: OK pauses and plays, left and
+  right skip ten seconds, Back closes (no close button). The name, the
+  subtitle and audio pickers and a slim timeline (`tv-video-bar`) show along
+  the foot when a key is pressed or it is paused, and fade after four
+  seconds (`tv-bare`, not while paused or a picker has the focus); down
+  reaches the pickers. Checked with a generated film at TV size. Now Playing
   opens on play. The remote's play/pause key works either way.
 - **The TV's web view reports `pointer: coarse`**, like a phone, so every
   touch rule applied - Now Playing hid its buttons until a hold a remote

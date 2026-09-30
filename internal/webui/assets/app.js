@@ -14465,6 +14465,58 @@ function tvRemote() {
     if (first && usable(first)) first.focus({ preventScroll: true });
   };
   $('video-player').tabIndex = 0;
+
+  // A film on a TV is the film, the whole screen: none of the browser's own
+  // controls, whose small buttons (full screen, more options) a remote could
+  // not reach - reported from the projector. The remote does the rest (OK,
+  // left and right, Back), and a slim timeline with the name shows at the
+  // foot when a key is pressed or the film is paused, fading after four
+  // seconds (tv-bare), as Now Playing's buttons do.
+  const film = $('video-player');
+  film.controls = false;
+  film.removeAttribute('controls');
+  const bar = document.createElement('div');
+  bar.id = 'tv-video-bar';
+  const track = document.createElement('div');
+  track.className = 'tvb-track';
+  const fill = document.createElement('i');
+  track.append(fill);
+  const now = document.createElement('span');
+  const end = document.createElement('span');
+  const times = document.createElement('div');
+  times.className = 'tvb-times';
+  times.append(now, end);
+  bar.append(track, times);
+  $('video-overlay').append(bar);
+  const drawBar = () => {
+    const d = film.duration;
+    const known = Number.isFinite(d) && d > 0;
+    fill.style.width = known ? `${Math.min(100, (film.currentTime / d) * 100)}%` : '0';
+    now.textContent = formatDuration(film.currentTime) || '0:00';
+    end.textContent = known ? formatDuration(d) : '';
+  };
+  for (const ev of ['timeupdate', 'durationchange', 'seeked', 'loadedmetadata']) film.addEventListener(ev, drawBar);
+  let bareTimer = 0;
+  const overlay = $('video-overlay');
+  const setBare = (on) => {
+    // Only when it changes: the overlay's class is watched (the layers).
+    if (overlay.classList.contains('tv-bare') !== on) overlay.classList.toggle('tv-bare', on);
+  };
+  const showFilmBar = () => {
+    setBare(false);
+    clearTimeout(bareTimer);
+    bareTimer = setTimeout(function hide() {
+      // Not while paused, nor while a picker has the focus.
+      if (film.paused || overlay.querySelector('figcaption').contains(document.activeElement)) {
+        bareTimer = setTimeout(hide, 4000);
+        return;
+      }
+      setBare(true);
+    }, 4000);
+  };
+  film.addEventListener('play', showFilmBar);
+  film.addEventListener('pause', showFilmBar);
+  document.addEventListener('keydown', () => { if (shown('video-overlay')) showFilmBar(); }, true);
   // Now Playing's buttons fade after a few seconds without the remote, the
   // music and its animation left alone on the screen (the owner's asking);
   // the next press brings them back and does nothing else, so nobody skips a

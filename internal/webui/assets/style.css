@@ -3611,3 +3611,43 @@ html.tv .grid { padding-top: 12px; }
 /* A side tab fills the bar edge to edge, so a ring outside it ran off the
    screen: inside it on a TV. */
 html.tv .tabs button:focus { outline-offset: -4px; border-radius: 14px; }
+
+/* A film on a TV fills the screen, with no browser controls (tvRemote): the
+   picture edge to edge, the name, the subtitle and audio pickers and a slim
+   timeline along the foot when a key is pressed or it is paused, fading after
+   four seconds (tv-bare). Back closes it, so no close button. */
+html.tv #video-overlay { padding: 0; background: #000; place-items: stretch; }
+html.tv #video-overlay figure { position: fixed; inset: 0; max-width: none; }
+html.tv #video-overlay video {
+  width: 100vw; height: 100vh; max-height: none;
+  border-radius: 0; object-fit: contain;
+}
+html.tv #video-close { display: none; }
+html.tv #video-overlay figcaption {
+  position: fixed; z-index: 2;
+  left: 48px; right: 48px; bottom: 58px;
+  margin: 0; color: #fff; font-size: 16px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+#tv-video-bar { display: none; }
+html.tv #tv-video-bar {
+  display: block;
+  position: fixed; z-index: 2;
+  left: 48px; right: 48px; bottom: 18px;
+  color: rgba(255, 255, 255, 0.85); font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+html.tv .tvb-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
+html.tv .tvb-track i { display: block; height: 100%; width: 0; background: #fff; }
+html.tv .tvb-times { display: flex; justify-content: space-between; margin-top: 6px; }
+html.tv #video-overlay figcaption, html.tv #tv-video-bar { transition: opacity 0.6s ease; }
+html.tv #video-overlay.tv-bare figcaption, html.tv #video-overlay.tv-bare #tv-video-bar { opacity: 0; }
+/* A shade behind the words and timeline while they show. */
+html.tv #video-overlay::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: 160px; z-index: 1;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7)); pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+html.tv #video-overlay.tv-bare::after { opacity: 0; }
+html.tv #video-caption { color: #fff; font-weight: 600; }
