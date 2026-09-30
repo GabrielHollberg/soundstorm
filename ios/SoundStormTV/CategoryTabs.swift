@@ -1,0 +1,459 @@
+import SwiftUI
+
+/// Each tab's categories, as the web page has them (TABS in app.js): in the
+/// account's own order and without the ones put away (both set on the page;
+/// the TV follows). Genres start put away, as on the page. Ebooks, documents
+/// and Read Along are left out until the TV has a reader - the Books tab is
+/// audiobooks for now.
+enum Categories {
+    static let home: [(value: String, label: String)] = [("", "Home"), ("favorites", "Favorites")]
+    static let music: [(value: String, label: String)] = [
+        ("mixes", "Mixes"), ("radio", "Radio"), ("playlists", "Playlists"), ("songs", "Songs"),
+        ("albums", "Albums"), ("artists", "Artists"), ("favorites", "Favorites"), ("genres", "Genres"),
+    ]
+    static let watch: [(value: String, label: String)] = [
+        ("video", "Films"), ("tv", "TV"), ("fav-watch", "Favorites"), ("genres-watch", "Genres"),
+    ]
+    static let books: [(value: String, label: String)] = [
+        ("audiobook", "Audiobooks"), ("authors", "Authors"), ("series", "Series"),
+        ("fav-books", "Favorites"), ("genres-books", "Genres"),
+    ]
+    static let photos: [(value: String, label: String)] = [
+        ("picture", "Photos"), ("people", "People"), ("places", "Places"), ("fav-photos", "Favorites"),
+    ]
+    static let hiddenAtFirst: [String: [String]] = [
+        "music": ["genres"], "watch": ["genres-watch"], "books": ["genres-books"],
+    ]
+
+    /// The row as this account has it.
+    static func arranged(_ row: String, _ all: [(value: String, label: String)], _ pills: API.Pills?) -> [(value: String, label: String)] {
+        // The page once spelled it "favourites"; a saved order may still.
+        let order = (pills?.pills?[row] ?? []).map { $0 == "favourites" ? "favorites" : $0 }
+        let hidden = pills?.hiddenPills?[row] ?? hiddenAtFirst[row] ?? []
+        let rank = { (v: String) in order.firstIndex(of: v) ?? Int.max }
+        return all.enumerated()
+            .filter { !hidden.contains($0.element.value) }
+            .sorted { (rank($0.element.value), $0.offset) < (rank($1.element.value), $1.offset) }
+            .map(\.element)
+    }
+}
+
+/// A tab: its categories along the top, and the chosen one's page beneath.
+struct CategoryTab<Content: View>: View {
+    let row: String
+    let all: [(value: String, label: String)]
+    @ViewBuilder let content: (String) -> Content
+    @Environment(AppModel.self) private var model
+    @State private var chosen: String? = {
+        #if DEBUG
+        // For the simulator, which has no remote: -category <value>
+        return UserDefaults.standard.string(forKey: "category")
+        #else
+        return nil
+        #endif
+    }()
+
+    var body: some View {
+        let shown = Categories.arranged(row, all, model.pills)
+        let current = chosen.flatMap { c in shown.contains { $0.value == c } ? c : nil } ?? shown.first?.value ?? ""
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 0) {
+                if shown.count > 1 {
+                    CategoryBar(items: shown, selection: Binding(get: { current }, set: { chosen = $0 }))
+                }
+                content(current)
+                    .id(current) // a fresh page, and a fresh load, per category
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+            .libraryDestinations()
+        }
+    }
+}
+
+extension View {
+    /// Where a card leads, in any tab.
+    func libraryDestinations() -> some View {
+        navigationDestination(for: Album.self) { AlbumView(album: $0) }
+            .navigationDestination(for: Playlist.self) { PlaylistView(playlist: $0) }
+            .navigationDestination(for: API.Artist.self) { ArtistView(artist: $0) }
+            .navigationDestination(for: Item.self) { ShowView(series: $0) }
+            .navigationDestination(for: API.Group.self) { GroupView(group: $0) }
+    }
+}
+
+// MARK: The tabs
+
+struct HomeTab: View {
+    @Environment(API.self) private var api
+
+    var body: some View {
+        CategoryTab(row: "home", all: Categories.home) { c in
+            switch c {
+            case "favorites": ItemsPage { try await api.favorites().filter(\.playsHere) }
+            default: HomeView()
+            }
+        }
+    }
+}
+
+struct MusicTab: View {
+    @Environment(API.self) private var api
+
+    var body: some View {
+        CategoryTab(row: "music", all: Categories.music) { c in
+            switch c {
+            case "mixes": MixesPage()
+            case "radio": RadioPage()
+            case "playlists": PlaylistsPage()
+            case "songs": PagedItems(kinds: ["music"])
+            case "albums": AlbumsPage()
+            case "artists": ArtistsPage()
+            case "favorites": ItemsPage { try await api.favorites().filter { $0.kind == "music" } }
+            case "genres": GroupsPage(round: false) { try await api.genres(kinds: ["music"]).scoped(["music"]) }
+            default: EmptyView()
+            }
+        }
+    }
+}
+
+struct WatchTab: View {
+    @Environment(API.self) private var api
+
+    var body: some View {
+        CategoryTab(row: "watch", all: Categories.watch) { c in
+            switch c {
+            case "video": PagedItems(kinds: ["video"])
+            case "tv": PagedItems(kinds: ["tv"])
+            case "fav-watch": ItemsPage { try await api.favorites().filter { $0.kind == "video" || $0.kind == "tv" } }
+            case "genres-watch": GroupsPage(round: false) { try await api.genres(kinds: ["video", "tv"]).scoped(["video", "tv"]) }
+            default: EmptyView()
+            }
+        }
+        #if DEBUG
+        .modifier(DebugAutovideo())
+        #endif
+    }
+}
+
+struct BooksTab: View {
+    @Environment(API.self) private var api
+
+    var body: some View {
+        CategoryTab(row: "books", all: Categories.books) { c in
+            switch c {
+            case "audiobook": BooksView()
+            case "authors": GroupsPage(round: true) { try await api.bookGroups("authors") }
+            case "series": GroupsPage(round: false) { try await api.bookGroups("series") }
+            case "fav-books": ItemsPage { try await api.favorites().filter { $0.kind == "audiobook" } }
+            case "genres-books": GroupsPage(round: false) {
+                try await api.genres(kinds: ["audiobook", "ebook"]).scoped(["audiobook", "ebook"])
+            }
+            default: EmptyView()
+            }
+        }
+    }
+}
+
+struct PhotosTab: View {
+    @Environment(API.self) private var api
+
+    var body: some View {
+        CategoryTab(row: "photos", all: Categories.photos) { c in
+            switch c {
+            case "picture": PhotosView()
+            case "people": GroupsPage(round: true) { try await api.photoGroups("people") }
+            case "places": GroupsPage(round: false) { try await api.photoGroups("places") }
+            case "fav-photos": ItemsPage { try await api.favorites().filter { $0.kind == "picture" } }
+            default: EmptyView()
+            }
+        }
+    }
+}
+
+// MARK: Pages
+
+/// A shelf a page at a time, as it scrolls - the page's own browse.
+struct PagedItems: View {
+    let kinds: [String]
+    @Environment(API.self) private var api
+    @State private var items: [Item] = []
+    @State private var hasMore = true
+    @State private var loading = false
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            if loaded && items.isEmpty { Nothing() }
+            ItemGrid(items: items) { item in
+                if item.key == items.last?.key { Task { await more() } }
+            }
+        }
+        .task { await more() }
+    }
+
+    private func more() async {
+        guard hasMore, !loading else { return }
+        loading = true
+        defer { loading = false; loaded = true }
+        guard let page = try? await api.page(kinds: kinds, offset: items.count) else { return }
+        let known = Set(items.map(\.key))
+        items += page.items.filter { !known.contains($0.key) }
+        hasMore = page.hasMore && !page.items.isEmpty
+    }
+}
+
+/// A list fetched whole: favorites, a genre, an author, a person.
+struct ItemsPage: View {
+    let load: () async throws -> [Item]
+    @State private var items: [Item] = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            if loaded && items.isEmpty { Nothing() }
+            ItemGrid(items: items)
+        }
+        .task {
+            items = ((try? await load()) ?? []).filter(\.playsHere)
+            loaded = true
+        }
+    }
+}
+
+/// Genres, authors, series, people or places: each opens what it holds.
+struct GroupsPage: View {
+    let round: Bool
+    let load: () async throws -> [API.Group]
+    @Environment(API.self) private var api
+    @State private var groups: [API.Group] = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            if loaded && groups.isEmpty { Nothing() }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 70) {
+                ForEach(groups) { g in
+                    NavigationLink(value: g) {
+                        Cover(url: g.coverSource.flatMap { api.artURL(source: $0, artId: g.coverArt) })
+                            .frame(width: 270, height: 270)
+                            .clipShape(round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 12)))
+                    }
+                    .buttonStyle(.borderless)
+                    .overlay(alignment: .bottom) {
+                        CardTitle(title: g.name.isEmpty ? "Add a name on the web" : g.name,
+                                  subtitle: g.subtitle ?? g.count.map { "\($0)" })
+                            .frame(width: 270)
+                    }
+                    .padding(.bottom, 70)
+                }
+            }
+            .padding(.vertical, 40)
+        }
+        .task {
+            groups = (try? await load()) ?? []
+            loaded = true
+        }
+    }
+}
+
+/// One genre, author, series, person or place.
+struct GroupView: View {
+    let group: API.Group
+    @Environment(API.self) private var api
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(group.name).font(.title2).padding(.leading, 60)
+            ItemsPage {
+                switch group.kind {
+                case "genres": return try await api.genre(group.id, kinds: group.scope)
+                case "authors", "series": return try await api.bookGroup(group)
+                default: return try await api.photoGroup(group)
+                }
+            }
+        }
+    }
+}
+
+struct MixesPage: View {
+    @Environment(API.self) private var api
+    @State private var mixes: [API.Mix] = []
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+                ForEach(mixes) { MixCard(mix: $0) }
+            }
+            .padding(.vertical, 40)
+        }
+        .task { mixes = (try? await api.mixes()) ?? [] }
+    }
+}
+
+struct RadioPage: View {
+    @Environment(API.self) private var api
+    @State private var radio: API.Radio?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 50) {
+                if let radio, !radio.stations.isEmpty {
+                    Row(title: "Stations") { ForEach(radio.stations) { StationCard(station: $0) } }
+                }
+                if let moods = radio?.moods, !moods.isEmpty {
+                    Row(title: "Moods") { ForEach(moods) { StationCard(station: $0) } }
+                }
+            }
+            .padding(.vertical, 40)
+        }
+        .task { radio = try? await api.radio() }
+    }
+}
+
+struct PlaylistsPage: View {
+    @Environment(API.self) private var api
+    @State private var playlists: [Playlist] = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            if loaded && playlists.isEmpty { Nothing() }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+                ForEach(playlists) { PlaylistCard(playlist: $0) }
+            }
+            .padding(.vertical, 40)
+        }
+        .task { playlists = (try? await api.playlists()) ?? []; loaded = true }
+    }
+}
+
+struct AlbumsPage: View {
+    @Environment(API.self) private var api
+    @State private var albums: [Album] = []
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+                ForEach(albums) { AlbumCard(album: $0) }
+            }
+            .padding(.vertical, 40)
+        }
+        .task { albums = (try? await api.albums(order: "name")) ?? [] }
+    }
+}
+
+struct ArtistsPage: View {
+    @Environment(API.self) private var api
+    @State private var artists: [API.Artist] = []
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 70) {
+                ForEach(artists) { ArtistCard(artist: $0) }
+            }
+            .padding(.vertical, 40)
+        }
+        .task { artists = (try? await api.artists()) ?? [] }
+    }
+}
+
+// MARK: Pieces
+
+/// Items of any kind, as cards that open the right way: a song plays with
+/// the ones around it, a book from where it was left, a film in the player,
+/// a show its episodes, a photo in the viewer.
+struct ItemGrid: View {
+    let items: [Item]
+    var onShow: (Item) -> Void = { _ in }
+
+    var body: some View {
+        // Films and shows are posters; the rest square.
+        let posters = !items.isEmpty && items.allSatisfy { $0.kind == "video" || $0.kind == "tv" }
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(posters ? 240 : 270), spacing: 40), count: 6), spacing: 70) {
+            ForEach(Array(items.enumerated()), id: \.element.key) { i, item in
+                ItemCard(item: item, list: items, index: i, poster: posters)
+                    .onAppear { onShow(item) }
+            }
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+struct ItemCard: View {
+    let item: Item
+    let list: [Item]
+    let index: Int
+    let poster: Bool
+    @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let size = poster ? CGSize(width: 240, height: 360) : CGSize(width: 270, height: 270)
+        let art = Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500))
+            .frame(width: size.width, height: size.height)
+        Group {
+            if item.kind == "tv" && !item.isVideo {
+                NavigationLink(value: item) { art }
+            } else {
+                Button(action: open) { art }
+            }
+        }
+        .buttonStyle(.borderless)
+        .overlay(alignment: .bottom) {
+            CardTitle(title: item.title, subtitle: item.kind == "picture" ? nil : item.artist).frame(width: size.width)
+        }
+        .padding(.bottom, 70)
+    }
+
+    private func open() {
+        switch item.kind {
+        case "music":
+            model.play(list.filter { $0.kind == "music" }, from: list.filter { $0.kind == "music" }.firstIndex(of: item) ?? 0)
+        case "audiobook":
+            Task { await model.playBook(item) }
+        case "picture" where item.isPhoto:
+            let photos = list.filter(\.isPhoto)
+            model.photos = PhotoViewing(photos: photos, index: photos.firstIndex(of: item) ?? 0)
+        default:
+            model.playVideo(item)
+        }
+    }
+}
+
+struct Nothing: View {
+    var body: some View {
+        Text("Nothing here yet.").foregroundStyle(.secondary).padding(40)
+    }
+}
+
+extension Item {
+    /// What the TV can open: everything but ebooks and documents, which wait
+    /// for a reader.
+    var playsHere: Bool { kind != "ebook" && kind != "document" }
+}
+
+extension Array where Element == API.Group {
+    /// Genres remember which shelves they are of, for opening one.
+    func scoped(_ kinds: [String]) -> [API.Group] { map { var g = $0; g.scope = kinds; return g } }
+}
+
+#if DEBUG
+/// For the simulator, which has no remote: -autovideo <film or episode id>.
+struct DebugAutovideo: ViewModifier {
+    @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content.task {
+            guard let id = UserDefaults.standard.string(forKey: "autovideo"), model.video == nil else { return }
+            if let film = try? await api.browse(kind: "video").first(where: { $0.id == id }) {
+                model.playVideo(film)
+            } else if let series = try? await api.browse(kind: "tv").first(where: { $0.episodeCode == nil }),
+                      let show = try? await api.show(series),
+                      let episode = show.episodes.first(where: { $0.id == id }) {
+                model.playVideo(episode)
+            }
+        }
+    }
+}
+#endif

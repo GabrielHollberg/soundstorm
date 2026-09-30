@@ -1,53 +1,5 @@
 import SwiftUI
 
-/// Films and TV shows: two rows of posters. A film plays; a show opens its
-/// episodes.
-struct WatchView: View {
-    @Environment(API.self) private var api
-    @Environment(AppModel.self) private var model
-    @State private var films: [Item] = []
-    @State private var shows: [Item] = []
-    @State private var loaded = false
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 50) {
-                    if loaded && films.isEmpty && shows.isEmpty {
-                        Text("No films or TV shows yet.").foregroundStyle(.secondary).padding(20)
-                    }
-                    if !films.isEmpty {
-                        Row(title: "Films") { ForEach(films, id: \.key) { PosterCard(item: $0) } }
-                    }
-                    if !shows.isEmpty {
-                        Row(title: "TV shows") { ForEach(shows, id: \.key) { PosterCard(item: $0) } }
-                    }
-                }
-                .padding(.vertical, 40)
-            }
-            .navigationDestination(for: Item.self) { ShowView(series: $0) }
-        }
-        .task {
-            async let f = api.browse(kind: "video")
-            async let s = api.browse(kind: "tv")
-            films = (try? await f) ?? []
-            shows = ((try? await s) ?? []).filter { $0.episodeCode == nil }
-            loaded = true
-            #if DEBUG
-            // For the simulator, which has no remote: -autovideo <film or episode id>
-            if let id = UserDefaults.standard.string(forKey: "autovideo"), model.video == nil {
-                if let film = films.first(where: { $0.id == id }) {
-                    model.playVideo(film)
-                } else if let series = shows.first, let show = try? await api.show(series),
-                          let episode = show.episodes.first(where: { $0.id == id }) {
-                    model.playVideo(episode)
-                }
-            }
-            #endif
-        }
-    }
-}
-
 /// A poster: plays a film or an episode, opens a show.
 struct PosterCard: View {
     let item: Item

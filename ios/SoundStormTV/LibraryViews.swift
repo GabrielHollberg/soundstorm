@@ -5,6 +5,7 @@ import SwiftUI
 /// library. Films, photos and books come in later steps.
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
+    @Environment(API.self) private var api
     @Environment(Player.self) private var player
     @State private var tab = Self.firstTab
 
@@ -13,6 +14,7 @@ struct LibraryView: View {
         if UserDefaults.standard.string(forKey: "autovideo") != nil { return "watch" }
         if UserDefaults.standard.bool(forKey: "autophoto") { return "photos" }
         if UserDefaults.standard.bool(forKey: "autobook") { return "books" }
+        if let tab = UserDefaults.standard.string(forKey: "tab") { return tab }
         #endif
         return "home"
     }
@@ -32,16 +34,17 @@ struct LibraryView: View {
                     Label(song.title, systemImage: player.isPlaying ? "waveform" : "pause.fill")
                 }
             }
-            Tab("Home", systemImage: "house", value: "home") { HomeView() }
-            Tab("Music", systemImage: "music.note", value: "music") { MusicView() }
-            Tab("Watch", systemImage: "film", value: "watch") { WatchView() }
-            Tab("Audiobooks", systemImage: "headphones", value: "books") { BooksView() }
-            Tab("Photos", systemImage: "photo.on.rectangle", value: "photos") { PhotosView() }
+            Tab("Home", systemImage: "house", value: "home") { HomeTab() }
+            Tab("Music", systemImage: "music.note", value: "music") { MusicTab() }
+            Tab("Watch", systemImage: "film", value: "watch") { WatchTab() }
+            Tab("Books", systemImage: "headphones", value: "books") { BooksTab() }
+            Tab("Photos", systemImage: "photo.on.rectangle", value: "photos") { PhotosTab() }
             Tab("Search", systemImage: "magnifyingglass", value: "search") { SearchView() }
             Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
         }
         .tabViewStyle(.sidebarAdaptable)
         .task { await model.loadFavorites() }
+        .task { model.pills = await api.pills() }
         #if DEBUG
         .modifier(DebugAutostation())
         #endif
@@ -68,7 +71,6 @@ struct HomeView: View {
     @State private var failed: String?
 
     var body: some View {
-        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 50) {
                     if let failed { Text(failed).foregroundStyle(.secondary) }
@@ -98,9 +100,6 @@ struct HomeView: View {
                 }
                 .padding(.vertical, 40)
             }
-            .navigationDestination(for: Album.self) { AlbumView(album: $0) }
-            .navigationDestination(for: Item.self) { ShowView(series: $0) }
-        }
         .task {
             do {
                 async let home = api.home()
@@ -128,61 +127,6 @@ struct HomeView: View {
 }
 
 // MARK: Music
-
-/// Mixes, radio, playlists, artists and albums - the web page's music tabs
-/// as rows, since a remote moves down a page more easily than across tabs.
-struct MusicView: View {
-    @Environment(API.self) private var api
-    @State private var mixes: [API.Mix] = []
-    @State private var radio: API.Radio?
-    @State private var playlists: [Playlist] = []
-    @State private var artists: [API.Artist] = []
-    @State private var albums: [Album] = []
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 50) {
-                    if !mixes.isEmpty {
-                        Row(title: "Mixes") { ForEach(mixes) { MixCard(mix: $0) } }
-                    }
-                    if let radio, !radio.stations.isEmpty {
-                        Row(title: "Radio") { ForEach(radio.stations) { StationCard(station: $0) } }
-                    }
-                    if let moods = radio?.moods, !moods.isEmpty {
-                        Row(title: "Moods") { ForEach(moods) { StationCard(station: $0) } }
-                    }
-                    if !playlists.isEmpty {
-                        Row(title: "Playlists") { ForEach(playlists) { PlaylistCard(playlist: $0) } }
-                    }
-                    if !artists.isEmpty {
-                        Row(title: "Artists") { ForEach(artists) { ArtistCard(artist: $0) } }
-                    }
-                    Text("Albums").font(.title3).padding(.leading, 20)
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
-                        ForEach(albums) { AlbumCard(album: $0) }
-                    }
-                }
-                .padding(.vertical, 40)
-            }
-            .navigationDestination(for: Album.self) { AlbumView(album: $0) }
-            .navigationDestination(for: Playlist.self) { PlaylistView(playlist: $0) }
-            .navigationDestination(for: API.Artist.self) { ArtistView(artist: $0) }
-        }
-        .task {
-            async let m = api.mixes()
-            async let r = api.radio()
-            async let p = api.playlists()
-            async let ar = api.artists()
-            async let al = api.albums(order: "name")
-            mixes = (try? await m) ?? []
-            radio = try? await r
-            playlists = (try? await p) ?? []
-            artists = (try? await ar) ?? []
-            albums = (try? await al) ?? []
-        }
-    }
-}
 
 struct ArtistView: View {
     let artist: API.Artist

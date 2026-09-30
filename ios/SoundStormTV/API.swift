@@ -270,6 +270,98 @@ final class API {
         return url("api/art/\(Self.part(item.sourceId))/\(Self.path(artId + "@preview"))")
     }
 
+    // MARK: Categories (the page's pills)
+
+    /// The account's own order of each tab's categories, and the ones put
+    /// away - set on the page (hold and slide, the + button); the TV follows.
+    struct Pills: Decodable {
+        let pills: [String: [String]]?
+        let hiddenPills: [String: [String]]?
+    }
+
+    func pills() async -> Pills? { try? await get("api/prefs") }
+
+    /// A page of a shelf, the page's own browse: an empty search of those kinds.
+    func page(kinds: [String], offset: Int, limit: Int = 60) async throws -> (items: [Item], hasMore: Bool) {
+        struct Answer: Decodable { let items: [Item]; let hasMore: Bool?; let offset: Int? }
+        let a: Answer = try await get("api/search", query: ["q": "", "kind": kinds.joined(separator: ","),
+                                                             "limit": String(limit), "offset": String(offset)])
+        return (a.items, a.hasMore ?? false)
+    }
+
+    /// A genre, an author, a series, a person or a place: a name and a cover,
+    /// and what it holds.
+    struct Group: Decodable, Identifiable, Hashable {
+        /// genres, authors, series, people, places
+        var kind = ""
+        /// A genre's shelves, for opening it.
+        var scope: [String] = []
+        var id: String
+        let name: String
+        let subtitle: String?
+        let count: Int?
+        let coverSource: String?
+        let coverArt: String?
+
+        enum Keys: String, CodingKey { case key, id, name, subtitle, count, cover, artId, sourceId, authors }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: Keys.self)
+            name = try c.decode(String.self, forKey: .name)
+            id = (try? c.decode(String.self, forKey: .key)) ?? (try? c.decode(String.self, forKey: .id)) ?? name
+            count = try? c.decode(Int.self, forKey: .count)
+            let authors = (try? c.decode([String].self, forKey: .authors))?.joined(separator: ", ")
+            subtitle = (try? c.decode(String.self, forKey: .subtitle)) ?? authors
+            if let cover = try? c.decode(Item.self, forKey: .cover) {
+                coverSource = cover.sourceId
+                coverArt = cover.artId
+            } else {
+                coverSource = try? c.decode(String.self, forKey: .sourceId)
+                coverArt = try? c.decode(String.self, forKey: .artId)
+            }
+        }
+    }
+
+    func genres(kinds: [String]) async throws -> [Group] {
+        struct Answer: Decodable { let genres: [Group] }
+        let a: Answer = try await get("api/genres", query: ["kinds": kinds.joined(separator: ",")])
+        return a.genres.map { var g = $0; g.kind = "genres"; return g }
+    }
+
+    func genre(_ name: String, kinds: [String]) async throws -> [Item] {
+        struct Answer: Decodable { let items: [Item] }
+        let a: Answer = try await get("api/genres", query: ["kinds": kinds.joined(separator: ","), "name": name])
+        return a.items
+    }
+
+    func bookGroups(_ which: String) async throws -> [Group] {
+        struct Authors: Decodable { let authors: [Group] }
+        struct Series: Decodable { let series: [Group] }
+        let groups: [Group] = which == "authors"
+            ? (try await get("api/books/authors") as Authors).authors
+            : (try await get("api/books/series") as Series).series
+        return groups.map { var g = $0; g.kind = which; return g }
+    }
+
+    /// An author's books (their series' books first, in order) or a series'.
+    func bookGroup(_ group: Group) async throws -> [Item] {
+        struct Series: Decodable { let books: [Item]? }
+        struct Answer: Decodable { let series: [Series]?; let books: [Item]? }
+        let a: Answer = try await get("api/books/\(group.kind)", query: ["key": group.id])
+        return (a.series ?? []).flatMap { $0.books ?? [] } + (a.books ?? [])
+    }
+
+    func photoGroups(_ which: String) async throws -> [Group] {
+        struct People: Decodable { let people: [Group]? ; let places: [Group]? }
+        let a: People = try await get("api/photos/\(which)")
+        return (a.people ?? a.places ?? []).map { var g = $0; g.kind = which; return g }
+    }
+
+    func photoGroup(_ group: Group) async throws -> [Item] {
+        struct Answer: Decodable { let items: [Item] }
+        let a: Answer = try await get("api/photos/\(group.kind)", query: ["id": group.id])
+        return a.items
+    }
+
     // MARK: Audiobooks
 
     struct Chapter: Decodable, Hashable {

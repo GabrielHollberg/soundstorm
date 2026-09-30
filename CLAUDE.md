@@ -4355,6 +4355,32 @@ the third ready, showed "The Middle" (the chapter from 20 to 40), saved 45 and
 and saved `finished` at 72. **Not checked: the hold menu's chapters, speed and
 sleep timer**, which need a remote.
 
+**Every tab has the page's categories (2026-09-30)**, asked for by the
+owner: a row along the top (`CategoryBar`), where moving along it changes
+the category at once, as tvOS's own top bars do. The categories are the
+page's `TABS` - Home: Home, Favorites; Music: the page's inner music row
+(mixes, radio, playlists, songs, albums, artists, favorites, genres); Watch:
+Films, TV, Favorites, Genres; Books: Audiobooks, Authors, Series, Favorites,
+Genres; Photos: Photos, People, Places, Favorites - **in the account's own
+order and without the ones put away** (`pills` and `hiddenPills` in
+`/api/prefs`, set on the page by hold-and-slide and the + button; Genres
+start put away, as `DEFAULT_HIDDEN` has it). The TV only follows that
+setting; changing it stays on the page. Each category is the page's own
+request: shelves page through `/api/search`, Favorites is `/api/favorites`
+filtered by the tab's kinds, Genres `/api/genres?kinds=` (a genre's items with
+`&name=`), Authors and Series `/api/books/authors|series` (one with `?key=`),
+People and Places `/api/photos/people|places` (one with `?id=`).
+**Ebooks, Documents and Read Along are left out** until the TV has a reader,
+and the Books tab's other categories show audiobooks only.
+
+Checked on the simulator against the stand-in with a saved music order
+(albums, mixes, songs) and Places put away: Music's row came in that order
+then the rest, without Genres; Photos had no Places, and People drew a named
+face and "Add a name on the web" for the unnamed one; Books had Audiobooks,
+Authors, Series, Favorites. `-tab <tab>` and `-category <value>` in a debug
+build open one. Not checked: opening a genre, author, series, person or
+place, which needs a remote.
+
 Next steps, in order: the visualizers (natively, the largest part); books need
 a native reader, as foliate-js runs only in a web view.
 

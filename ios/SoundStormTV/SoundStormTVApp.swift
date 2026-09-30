@@ -33,6 +33,9 @@ final class AppModel {
     var video: VideoSession?
     /// The photo viewer, when open.
     var photos: PhotoViewing?
+    /// The order of each tab's categories and the ones put away, from the
+    /// account (set on the page).
+    var pills: API.Pills?
     /// This person's favorites, by item key, for Now Playing's heart.
     private(set) var favorites: Set<String> = []
 
