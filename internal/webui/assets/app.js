@@ -6053,7 +6053,22 @@ function looksTiming() {
   const hint = document.createElement('p');
   hint.className = 'np-looks-hint';
   hint.textContent = 'If the visuals land after the beat, choose Sooner.';
-  return [row, hint];
+  // Whether the looks are following this song's own beats, and if not why:
+  // otherwise nobody can tell a song heard from one moving to its tempo.
+  const heard = document.createElement('p');
+  heard.className = 'np-looks-hint';
+  const show = () => {
+    if (!heard.isConnected && heard.dataset.shown) return;
+    heard.dataset.shown = '1';
+    const key = audio.item && selectionKey(audio.item);
+    const followed = viz.heard && key && viz.heard.key === key;
+    heard.textContent = !key ? '' : followed
+      ? `Following this song's beats (${viz.heard.beats.length} found).`
+      : `Following its tempo only: ${hearState.get(key) || 'not listened to yet'}.`;
+    setTimeout(show, 1000);
+  };
+  show();
+  return [row, hint, heard];
 }
 function renderLooks() {
   const body = $('np-looks-body');
@@ -12685,6 +12700,8 @@ async function keepTime(item) {
 // when an iPhone locks). Once per song, kept for the last few.
 const HEARD_KEEP = 6;
 const heardSongs = new Map();
+// What happened to each song's listening, for the Looks sheet.
+const hearState = new Map();
 
 // playbackSettled: resolves once the song playing has music buffered well
 // ahead (or plays from memory), so hearing it - a second download of the
@@ -12726,7 +12743,7 @@ async function hearAhead(item) {
     while (tempo < 70) tempo *= 2;
     while (tempo > 150) tempo /= 2;
   }
-  const job = hearSong(item, tempo).catch(() => null);
+  const job = hearSong(item, tempo).catch((err) => { hearState.set(key, `could not listen (${(err && err.message) || err})`); return null; });
   heardSongs.set(key, job);
   while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
   // Failed: tried again the ordinary way when it plays.
@@ -12740,6 +12757,7 @@ function listenTo(item, tempo) {
     const kept = await loadHeard(item);
     if (kept) return kept;
     // Not while the song is still getting started over the network.
+    if (!isDownloaded(item)) hearState.set(key, 'waiting for the song to buffer');
     if (!isDownloaded(item) && !(await playbackSettled(item))) {
       heardSongs.delete(key); // heard next time it plays
       return null;
@@ -12747,7 +12765,7 @@ function listenTo(item, tempo) {
     const heard = await hearSong(item, tempo);
     if (heard && isDownloaded(item)) saveHeard(item, heard, soundOf[key] || null);
     return heard;
-  })().catch(() => null);
+  })().catch((err) => { hearState.set(key, `could not listen (${(err && err.message) || err})`); return null; });
   heardSongs.set(key, job);
   while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
   return job;
@@ -12855,8 +12873,11 @@ async function songBytes(item) {
 
 async function hearSong(item, tempo) {
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Offline || item.kind !== 'music') return null;
+  const key = selectionKey(item);
+  if (!Offline || item.kind !== 'music') { hearState.set(key, 'this browser cannot listen'); return null; }
+  hearState.set(key, 'downloading a copy to listen to');
   const bytes = await songBytes(item);
+  hearState.set(key, `decoding it (${Math.round(bytes.byteLength / 1024)} KB)`);
   // 11025 a second is plenty for beats and loudness, and a quarter of the
   // memory; an older Safari refuses low rates for a context, so higher ones
   // are the fallback.
@@ -12865,7 +12886,7 @@ async function hearSong(item, tempo) {
   for (const rate of [11025, 22050, 44100]) {
     try { ctx = new Offline(1, rate, rate); SR = rate; break; } catch { /* next */ }
   }
-  if (!ctx) return null;
+  if (!ctx) { hearState.set(key, 'no audio context'); return null; }
   const HOP = 256 * Math.round(SR / 11025); // about 23ms a frame, whatever the rate
   const pcm = await new Promise((resolve, reject) => {
     const p = ctx.decodeAudioData(bytes, resolve, reject);
@@ -12875,7 +12896,8 @@ async function hearSong(item, tempo) {
   const right = pcm.numberOfChannels > 1 ? pcm.getChannelData(1) : null;
   const fps = SR / HOP;
   const frames = Math.floor(pcm.length / HOP);
-  if (frames < fps * 5) return null;
+  if (frames < fps * 5) { hearState.set(key, `too short (${pcm.duration.toFixed(1)} s decoded)`); return null; }
+  hearState.set(key, 'working out the beats');
   const loud = new Float32Array(frames);
   const low = new Float32Array(frames);
   const high = new Float32Array(frames);
