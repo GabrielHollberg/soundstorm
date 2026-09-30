@@ -1111,7 +1111,17 @@ has no touch and no mouse:
   itself; only faded do they change song. From nothing in focus, faded or
   not, down goes straight to the timeline and up to the arrow that puts Now
   Playing away to the mini player, the buttons fading back in - so the ten
-  seconds is, in practice, the timeline highlighted. The remote's own previous and
+  seconds is, in practice, the timeline highlighted. Up from the timeline is that arrow (not
+  Looks, the nearest), down from the top buttons the timeline.
+- **No mini player on a TV.** A remote reached it only by scrolling to the
+  foot of a page, and it covered the bottom of every one. Its place is the
+  side bar's first entry while something plays (`tv-np-tab`): the song's
+  cover, "Playing", OK opening Now Playing - left then up from anywhere.
+  Play and pause are the remote's own key or OK in Now Playing.
+- **Photos no longer stop the music**, on every device (a clip, being a film,
+  still does), as a book never did. On a TV, down over a photo or a book
+  pauses and resumes the music, with a message saying which; left and right
+  step photos and turn pages, their arrow buttons gone. The remote's own previous and
   next keys skip anywhere.
 
 Checked on the emulator with real key presses: moving through Home, a held

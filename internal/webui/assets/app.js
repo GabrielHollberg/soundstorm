@@ -1374,7 +1374,8 @@ let photoWaiting = false;
 const photoPreview = (item) => `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId + '@preview')}`;
 
 function showPhoto(item) {
-  stopAudio();
+  // The music plays on while photos are looked at, as it does over a book
+  // (the owner's asking); a clip is a film and stops it (playVideo).
   closeVideo();
   photoShown = item;
 
@@ -14531,6 +14532,21 @@ function tvRemote() {
         return;
       }
     }
+    // Up from the timeline is the arrow that puts Now Playing away, not
+    // whichever top button is nearest (Looks); down from the top buttons is
+    // the timeline.
+    if (npOnly && !faded && event.key === 'ArrowUp' && t === $('np-seek')) {
+      event.preventDefault();
+      focusOn($('np-close'), 'up');
+      wake();
+      return;
+    }
+    if (npOnly && !faded && event.key === 'ArrowDown' && t.closest && t.closest('#now-playing .np-bar')) {
+      event.preventDefault();
+      focusOn($('np-seek'), 'down');
+      wake();
+      return;
+    }
     // While the timeline shows (the buttons not faded), left and right move
     // through the song instead - ten seconds a press - and so they do on the
     // timeline itself (the owner's asking).
@@ -14596,6 +14612,17 @@ function tvRemote() {
       t.focus();
       return;
     }
+    // Down over a photo or a book pauses the music playing behind it, and
+    // plays it again (the owner's asking); a message says which, as nothing
+    // else on screen would.
+    if (event.key === 'ArrowDown' && (photoShown || shown('reader-overlay')) && !shown('item-menu') && audio.item
+        && !(t.closest && t.closest('.reader-bar'))) {
+      event.preventDefault();
+      const player = $('audio-player');
+      if (player.paused) { player.play().catch(() => {}); showToast('Music playing'); }
+      else { player.pause(); showToast('Music paused'); }
+      return;
+    }
     if (DIRS[event.key]) {
       // The photo viewer and the year in music step with the arrows themselves.
       if (event.defaultPrevented || photoShown || shown('recap-overlay')) return;
@@ -14630,6 +14657,35 @@ function tvRemote() {
       else { event.preventDefault(); openMenuFor(t); }
     }
   });
+  // The mini player's place, on a TV: first in the side bar, the playing
+  // song's cover, OK opening Now Playing. The mini player at the foot of the
+  // screen is hidden there (style.css) - a remote reached it only by
+  // scrolling to the end of a page, and it covered the bottom of every one
+  // (the owner's report). The side bar is one press of left from anywhere.
+  // Play and pause are the remote's own key, or OK in Now Playing.
+  const npTab = document.createElement('button');
+  npTab.type = 'button';
+  npTab.className = 'tv-np-tab hidden';
+  npTab.setAttribute('aria-label', 'Now Playing');
+  const npArt = document.createElement('img');
+  npArt.className = 'tv-np-art';
+  npArt.alt = '';
+  const npLabel = document.createElement('span');
+  npLabel.textContent = 'Playing';
+  npTab.append(npArt, npLabel);
+  npTab.addEventListener('click', () => { if (audio.item) openNowPlaying(); });
+  $('tabs').prepend(npTab);
+  const syncNpTab = () => {
+    show(npTab, Boolean(audio.item) && document.body.classList.contains('dock-open'));
+    const src = $('audio-art').getAttribute('src') || NO_COVER;
+    if (npArt.getAttribute('src') !== src) npArt.src = src;
+  };
+  // Watching the body (the dock shown or not) and the dock's cover, and
+  // writing only to the tab's own image, so nothing watched changes.
+  const npWatch = new MutationObserver(syncNpTab);
+  npWatch.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  npWatch.observe($('audio-art'), { attributes: true, attributeFilter: ['src'] });
+  syncNpTab();
   document.addEventListener('keyup', (event) => {
     if (event.key !== 'Enter') return;
     clearTimeout(holdTimer);

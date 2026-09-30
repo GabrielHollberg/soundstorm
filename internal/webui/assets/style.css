@@ -3574,3 +3574,20 @@ html.tv .now-playing.tv-idle .np-controls, html.tv .now-playing.tv-idle .np-prog
 html.tv .now-playing #np-prev, html.tv .now-playing #np-next,
 html.tv .now-playing #np-play { display: none !important; }
 html.tv .now-playing .np-controls { justify-content: center; }
+
+/* The mini player's place on a TV is the side bar's first entry, the playing
+   song's cover (tvRemote's tv-np-tab): the mini player at the foot of the
+   screen goes, and so does the room kept for it under every page. */
+html.tv #audio-dock { display: none !important; }
+html.tv body.dock-open { padding-bottom: 0; }
+html.tv .tv-np-tab.hidden { display: none; }
+html.tv .tv-np-art {
+  width: 40px; height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+html.tv .tabs .tv-np-tab { color: var(--text); }
+/* No arrow buttons over a photo or a page on a TV: left and right step and
+   turn by themselves. */
+html.tv .photo-nav, html.tv .page-turn { display: none !important; }
