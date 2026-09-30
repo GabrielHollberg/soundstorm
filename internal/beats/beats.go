@@ -21,7 +21,7 @@ import (
 
 // Version is the shape and method of a result, as the app's kept copies
 // count it: a result of another version is heard again.
-const Version = 6
+const Version = 7
 
 // Analyzer takes a song's samples one at a time and hears it at the end.
 type Analyzer struct {
@@ -149,11 +149,23 @@ func (a *Analyzer) Hear(tempo float64) (*Result, error) {
 	// full hit; in the highs above 7kHz, 9dB and 21dB (then 42 and 17 a
 	// minute against 29 and 35; the click track still 120 of 120).
 	kicks := fixed(lowOn, 4, 6)
+	// A sharp high's rise is measured from the quietest of the three frames
+	// before it, not the one frame before: a hit whose rise fell across a
+	// frame boundary read as two half jumps, so hits that sounded alike came
+	// out strong or weak by where they landed (reported on Thunder, whose
+	// every other beat is a loud hit: measured 11-18dB from the frame
+	// before, 13.5-20dB this way). 6dB starts to count and 16dB is a full
+	// hit, so lightning (80%) is 14dB: 72% of Thunder's loud hits, against
+	// 25% before.
 	hatOn := make([]float32, frames)
 	for f := 1; f < frames; f++ {
-		hatOn[f] = float32(math.Max(0, float64(a.hats[f])-float64(a.hats[f-1])))
+		lo := float64(a.hats[f-1])
+		for k := max(0, f-3); k < f-1; k++ {
+			lo = math.Min(lo, float64(a.hats[k]))
+		}
+		hatOn[f] = float32(math.Max(0, float64(a.hats[f])-lo))
 	}
-	highs := fixed(hatOn, 9, 12)
+	highs := fixed(hatOn, 6, 10)
 
 	// The tempo: the lag at which the onsets repeat best, between 70 and 180
 	// beats a minute, leaning towards the analysis's own tempo when there is

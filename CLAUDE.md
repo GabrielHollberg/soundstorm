@@ -1308,6 +1308,19 @@ for 16 sharp highs in eight seconds, each within a frame. The Analysis look
 draws a bolt and a line through the sharp highs at each, by the same rule.
 **For the Mac:** the Apple TV's `VizEngine` drops follow the old rule.
 
+**Then most of Thunder's loud hits did not strike** (version 7): its every
+other beat is a loud sharp hit, and they struck, or showed, seemingly at
+random. Measured: from the frame before, those hits rose 11-18dB, and
+lightning needed 18.6 - a quarter struck; and a hit whose rise fell across
+a frame boundary read as two half jumps, so alike hits differed. The rise
+is now from the quietest of the three frames before (13.5-20dB for the
+same hits), on a scale of 6-16dB, so lightning is 14dB: 72% of those hits.
+It is a lot of lightning - Thunder about 74 strikes a minute, Change My
+Mind about 48 (it has big high jumps on a third of its beats; percussion
+of some kind). Requiring the whole sound to jump as well was tried, to
+favour a snare over an "s": it dropped Thunder's snares, which sit inside a
+dense mix, and hardly touched the other. **For the Mac:** version 7.
+
 **The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
 the timeline follows the finger - left for later, right for earlier, at the
 look's own scale of six seconds across - "Play from 1:23" shows over the

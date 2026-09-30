@@ -12720,7 +12720,7 @@ const heardSongs = new Map();
 // What happened to each song's listening, for the Looks sheet.
 const hearState = new Map();
 // The shape and method of a hearing, as internal/beats.Version counts it.
-const HEARD_VERSION = 6;
+const HEARD_VERSION = 7;
 
 // playbackSettled: resolves once the song playing has music buffered well
 // ahead (or plays from memory), so hearing it - a second download of the
@@ -13053,13 +13053,18 @@ async function hearSong(item, tempo) {
   // Scaled within the song, for choosing each bar's first beat below.
   const lowOnN = scale(lowOn, 0.5, 0.995);
   // What the looks see is on a fixed scale (internal/beats says why): a
-  // bass jump of 4dB starts to count, 10dB is a full hit; above 7kHz, 9dB
-  // and 21dB.
+  // bass jump of 4dB starts to count, 10dB is a full hit.
   const fixed = (arr, lo, span) => Float32Array.from(arr, (v) => Math.max(0, Math.min(1, (v - lo) / span)));
   const kicks = fixed(lowOn, 4, 6);
   const hatOn = new Float32Array(frames);
-  for (let f = 1; f < frames; f++) hatOn[f] = Math.max(0, hat[f] - hat[f - 1]);
-  const highs = fixed(hatOn, 9, 12);
+  // A rise from the quietest of the three frames before (internal/beats
+  // says why): 6dB starts to count, 16dB is a full hit.
+  for (let f = 1; f < frames; f++) {
+    let lo = hat[f - 1];
+    for (let k = Math.max(0, f - 3); k < f - 1; k++) lo = Math.min(lo, hat[k]);
+    hatOn[f] = Math.max(0, hat[f] - lo);
+  }
+  const highs = fixed(hatOn, 6, 10);
 
   // The tempo: the lag at which the onsets repeat best, between 70 and 170
   // beats a minute, leaning towards the analysis's own tempo when there is one.
