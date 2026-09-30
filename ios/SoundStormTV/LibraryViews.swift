@@ -6,7 +6,14 @@ import SwiftUI
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @Environment(Player.self) private var player
-    @State private var tab = "home"
+    @State private var tab = Self.firstTab
+
+    private static var firstTab: String {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "autovideo") != nil { return "watch" }
+        #endif
+        return "home"
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -25,11 +32,13 @@ struct LibraryView: View {
             }
             Tab("Home", systemImage: "house", value: "home") { HomeView() }
             Tab("Music", systemImage: "music.note", value: "music") { MusicView() }
+            Tab("Watch", systemImage: "film", value: "watch") { WatchView() }
             Tab("Search", systemImage: "magnifyingglass", value: "search") { SearchView() }
             Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
         }
         .tabViewStyle(.sidebarAdaptable)
         .fullScreenCover(isPresented: $model.showingNowPlaying) { NowPlayingView() }
+        .fullScreenCover(item: $model.video) { VideoView(session: $0) }
         // The remote's play/pause works everywhere, not only in Now Playing.
         .onPlayPauseCommand { player.togglePlay() }
     }

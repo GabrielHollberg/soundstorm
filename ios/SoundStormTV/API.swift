@@ -123,6 +123,68 @@ final class API {
         _ = try? await send("POST", "api/history", Body(source: item.sourceId, id: item.id)) as Answer
     }
 
+    // MARK: Films and TV
+
+    /// Films, or TV shows (series only: a search with no text lists shows,
+    /// and an episode is found by opening its show).
+    func browse(kind: String, limit: Int = 200) async throws -> [Item] {
+        try await search("", kind: kind, limit: limit)
+    }
+
+    struct Show: Decodable {
+        let episodes: [Item]
+        let progress: [String: Double]?
+    }
+
+    func show(_ series: Item) async throws -> Show {
+        try await get("api/tv/show", query: ["source": series.sourceId, "id": series.id])
+    }
+
+    func nextEpisode(after episode: Item) async -> Item? {
+        struct Answer: Decodable { let found: Bool; let episode: Item? }
+        let a: Answer? = try? await get("api/tv/next", query: ["source": episode.sourceId, "id": episode.id])
+        return a?.found == true ? a?.episode : nil
+    }
+
+    struct Playback: Decodable {
+        let mode: String
+        let url: String
+    }
+
+    /// How a film plays: the file itself, or Jellyfin's HLS through the
+    /// server when the file is not something the TV can play as it is.
+    func playback(_ item: Item) async throws -> Playback {
+        try await get("api/playback/\(Self.part(item.sourceId))/\(Self.path(item.id))")
+    }
+
+    /// The server gives paths ("/api/hls/..."); the player needs them whole.
+    func absolute(_ path: String) -> URL {
+        URL(string: path, relativeTo: server)?.absoluteURL ?? server
+    }
+
+    /// Where this person stopped in a film or episode: the web page's own
+    /// record (/api/book/progress, "t=<seconds>"), so the TV and the page
+    /// carry on from the same place.
+    func watchedSeconds(_ item: Item) async -> Double? {
+        struct Answer: Decodable { let found: Bool; let location: String? }
+        guard let a: Answer = try? await get("api/book/progress", query: ["source": item.sourceId, "id": item.id]),
+              a.found, let loc = a.location, loc.hasPrefix("t=")
+        else { return nil }
+        return Double(loc.dropFirst(2))
+    }
+
+    func saveWatched(_ item: Item, seconds: Double, length: Double) async {
+        struct Body: Encodable { let location: String; let fraction: Double }
+        struct Answer: Decodable {}
+        guard seconds > 5, length > 0 else { return }
+        let body = Body(location: String(format: "t=%.1f", seconds), fraction: min(1, max(0, seconds / length)))
+        var request = URLRequest(url: url("api/book/progress", query: ["source": item.sourceId, "id": item.id]))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(body)
+        _ = try? await perform(request) as Answer
+    }
+
     // MARK: URLs
 
     /// The song's bytes, original quality; ranges work.
@@ -210,6 +272,10 @@ struct Item: Decodable, Identifiable, Hashable {
     var key: String { sourceId + "/" + id }
     var artist: String { creators?.joined(separator: ", ") ?? subtitle ?? "" }
     var album: String? { extra?["album"] }
+    /// "S01E02", on an episode; a show has none.
+    var episodeCode: String? { extra?["episode"] }
+    var season: String { extra?["season"] ?? "0" }
+    var isVideo: Bool { kind == "video" || (kind == "tv" && episodeCode != nil) }
 }
 
 struct Album: Decodable, Identifiable, Hashable {

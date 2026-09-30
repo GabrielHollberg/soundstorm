@@ -29,6 +29,8 @@ final class AppModel {
     private(set) var api: API?
     private(set) var player: Player?
     var showingNowPlaying = false
+    /// The film or episode playing, full screen.
+    var video: VideoSession?
 
     init() {
         if let server = ServerAddress.saved {
@@ -70,6 +72,14 @@ final class AppModel {
     func changeServer() {
         player?.stop()
         stage = .connect
+    }
+
+    /// A film or an episode, full screen. The music pauses for it, as a
+    /// film stops the music on the page.
+    func playVideo(_ item: Item) {
+        guard let api else { return }
+        player?.pause()
+        video = VideoSession(item: item, api: api)
     }
 
     /// Plays and opens Now Playing, as the web page's TV mode does.

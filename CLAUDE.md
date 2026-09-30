@@ -4235,8 +4235,38 @@ expires, make a new one under the same name and nothing here changes. An
 unsigned archive (`CODE_SIGNING_ALLOWED=NO`) was tried first and is no good:
 the Organizer refuses it with "No Team Found in Archive".
 
-Next steps, in order: films and TV (AVPlayerViewController on
-`/api/playback`'s direct or HLS URL, with the cookie), then photos and books,
+**Step two (2026-09-30): films and TV.** A Watch tab: films and shows as
+posters (a search of kind `video`, and of `tv`, which lists shows); a show
+opens its episodes by season from `/api/tv/show`, each marked with this
+person's progress, and one Play for what to watch now (the page's
+`nextToWatch`: the part-watched one, else the one after the last finished,
+else the first). A film plays in **AVPlayerViewController as it is**: click
+pauses, left and right move ten seconds, a swipe down shows the details, Back
+leaves - what the page's TV mode was built to imitate, so nothing is added to
+it. `/api/playback` says direct (the file) or HLS (Jellyfin's, through
+`/api/hls`), and the cookie goes with the playlist and every segment. The
+place is the page's own record, `/api/book/progress` with `t=<seconds>`, so
+the TV and the page carry on from the same moment: resumed only past ten
+seconds and before 93%, saved every 30 seconds, on pause and on leaving. The
+music pauses for a film. An episode's end counts eight seconds into the next
+(`/api/tv/next`) with Play now and Cancel.
+
+Checked on the simulator against the stand-in, extended with a 20-second film
+served as a file and as HLS, and a show of two episodes: the HLS playlist and
+its segments all carried the cookie; episode 1 played from the start (its
+saved 8 seconds is under the ten that count), was saved finished at its end,
+and eight seconds later episode 2 played over HLS on its own. `-autovideo
+<id>` in a debug build plays a film or episode at launch, for a simulator
+without a remote.
+
+**Not yet: subtitles and the audio-language choice.** The server gives
+subtitles as separate WebVTT files (`/api/subtitle`), which a browser adds as
+a `<track>` but AVPlayer cannot attach to a stream it is handed; they need an
+AVAssetResourceLoader that writes them into the HLS playlist, or a
+composition for a direct file. Another audio language is `?audio=<index>` on
+`/api/playback`, which is a picker away.
+
+Next steps, in order: subtitles and audio languages, then photos and books,
 then the visualizers (natively, the largest part).
 
 ## The Android app (`android/`)

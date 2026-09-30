@@ -6,21 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		5530000000000000000000A1 /* SoundStormTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundStormTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5530000000000000000000A2 /* InfoTV.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = InfoTV.plist; sourceTree = "<group>"; };
-		5520000000000000000000A1 /* SoundStormUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoundStormUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		5510000000000000000000A1 /* SoundStorm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundStorm.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		5510000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-/* End PBXFileReference section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		5530000000000000000000B1 /* SoundStormTV */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SoundStormTV; sourceTree = "<group>"; };
-		5540000000000000000000B1 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
-		5520000000000000000000B1 /* SoundStormUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SoundStormUITests; sourceTree = "<group>"; };
-		5510000000000000000000B1 /* SoundStorm */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SoundStorm; sourceTree = "<group>"; };
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXContainerItemProxy section */
 		5520000000000000000000D5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -31,8 +16,39 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXFileReference section */
+		5510000000000000000000A1 /* SoundStorm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundStorm.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5510000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		5520000000000000000000A1 /* SoundStormUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SoundStormUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5530000000000000000000A1 /* SoundStormTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundStormTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5530000000000000000000A2 /* InfoTV.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = InfoTV.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		5510000000000000000000B1 /* SoundStorm */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SoundStorm;
+			sourceTree = "<group>";
+		};
+		5520000000000000000000B1 /* SoundStormUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SoundStormUITests;
+			sourceTree = "<group>";
+		};
+		5530000000000000000000B1 /* SoundStormTV */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SoundStormTV;
+			sourceTree = "<group>";
+		};
+		5540000000000000000000B1 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
-		5530000000000000000000C1 /* Frameworks */ = {
+		5510000000000000000000C1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,7 +62,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		5510000000000000000000C1 /* Frameworks */ = {
+		5530000000000000000000C1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -158,12 +174,12 @@
 					5510000000000000000000E1 = {
 						CreatedOnToolsVersion = 26.5;
 					};
-					5530000000000000000000E1 = {
-						CreatedOnToolsVersion = 26.5;
-					};
 					5520000000000000000000E1 = {
 						CreatedOnToolsVersion = 26.5;
 						TestTargetID = 5510000000000000000000E1;
+					};
+					5530000000000000000000E1 = {
+						CreatedOnToolsVersion = 26.5;
 					};
 				};
 			};
@@ -189,7 +205,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		5530000000000000000000C3 /* Resources */ = {
+		5510000000000000000000C3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -203,7 +219,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		5510000000000000000000C3 /* Resources */ = {
+		5530000000000000000000C3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -213,7 +229,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		5530000000000000000000C2 /* Sources */ = {
+		5510000000000000000000C2 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -227,7 +243,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		5510000000000000000000C2 /* Sources */ = {
+		5530000000000000000000C2 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -292,8 +308,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SoundStorm;
@@ -323,8 +339,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SoundStorm;
@@ -353,8 +369,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.soundstorm.app.uitests;
@@ -371,8 +387,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LZA2K5LLDS;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.soundstorm.app.uitests;
