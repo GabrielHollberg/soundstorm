@@ -4224,6 +4224,17 @@ Things that bit:
   TV icons (a layered cloud, 400x240 and 1280x768, and the Top Shelf) are
   drawn by the same script.
 
+**Release builds are signed by hand, with a distribution profile.**
+Automatic signing archives with a development profile first, which needs a
+registered Apple TV, and the team has none (the one it is for is in another
+city, so it cannot be paired). The target's Release uses the "Apple
+Distribution" certificate and the profile named "SoundStorm tvOS App Store",
+made on developer.apple.com (tvOS App Store Connect, `dev.soundstorm.app`);
+`ios/scripts/export-testflight-tv.plist` exports with it. When the profile
+expires, make a new one under the same name and nothing here changes. An
+unsigned archive (`CODE_SIGNING_ALLOWED=NO`) was tried first and is no good:
+the Organizer refuses it with "No Team Found in Archive".
+
 Next steps, in order: films and TV (AVPlayerViewController on
 `/api/playback`'s direct or HLS URL, with the cookie), then photos and books,
 then the visualizers (natively, the largest part).
