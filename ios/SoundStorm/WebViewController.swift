@@ -9,11 +9,15 @@ final class WebViewController: UIViewController {
     var onChangeServer: (() -> Void)?
 
     private let server: URL
+    /// Where the page is now. Usually `server`, but the page moves itself to
+    /// the install's home name when it can reach it (see sameInstall).
+    private var current: URL
     private var webView: WKWebView!
     private let failure = FailureView()
 
     init(server: URL) {
         self.server = server
+        self.current = server
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -73,6 +77,7 @@ final class WebViewController: UIViewController {
 
     private func load() {
         failure.isHidden = true
+        current = server
         webView.load(URLRequest(url: server))
     }
 
@@ -86,6 +91,12 @@ final class WebViewController: UIViewController {
     }
 
     fileprivate func received(_ message: WKScriptMessage) {
+        // Only the server's own pages may ask the app for anything.
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame,
+              origin.host.lowercased() == current.host()?.lowercased(),
+              origin.protocol == current.scheme
+        else { return }
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
         case "changeServer":
@@ -95,10 +106,42 @@ final class WebViewController: UIViewController {
         }
     }
 
-    /// Same scheme, host and port as the server: everything else leaves the
-    /// app for Safari, as a link out of an installed web app does.
+    /// Same scheme, host and port as where the page is now: everything else
+    /// leaves the app for Safari, as a link out of an installed web app does.
     private func isServer(_ url: URL) -> Bool {
-        url.scheme == server.scheme && url.host() == server.host() && url.port == server.port
+        url.scheme == current.scheme && url.host()?.lowercased() == current.host()?.lowercased()
+            && url.port == current.port
+    }
+
+    /// The page moving itself to this install's secure home name, which it
+    /// does after checking it can reach it (moveToSecureName in app.js): from
+    /// the away-from-home name <id>.net.soundstorm.dev when the phone is at
+    /// home, or from a LAN address like http://192.168.0.19:8099. That is the
+    /// same server, not a link out, and was being sent to Safari.
+    ///
+    /// Only this install's names count. Anybody can get a *.net.soundstorm.dev
+    /// name for a server of their own, so from a soundstorm.dev address the id
+    /// must match. From a LAN address the id is not known, and any home name
+    /// on the same port is accepted: home names only ever point at private
+    /// addresses, and the page asking to go there is the server's own.
+    private func sameInstall(_ url: URL) -> Bool {
+        guard url.scheme == "https", url.port == current.port,
+              let host = url.host()?.lowercased(),
+              let (id, level) = Self.installName(host), level == "home"
+        else { return false }
+        if let (currentID, _) = current.host().flatMap({ Self.installName($0.lowercased()) }) {
+            return id == currentID
+        }
+        return current.scheme == "http"
+    }
+
+    /// "<id>.home.soundstorm.dev" -> (id, "home"); nil for anything else.
+    private static func installName(_ host: String) -> (String, String)? {
+        let parts = host.split(separator: ".")
+        guard parts.count == 4, parts[2] == "soundstorm", parts[3] == "dev",
+              parts[1] == "home" || parts[1] == "net"
+        else { return nil }
+        return (String(parts[0]), String(parts[1]))
     }
 }
 
@@ -106,6 +149,20 @@ extension WebViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url else { return .cancel }
         let mainFrame = action.targetFrame?.isMainFrame ?? true
+        if mainFrame && sameInstall(url) {
+            // Kept as the address only when it replaces plain http on the
+            // LAN, which it is strictly better than. The away-from-home name
+            // stays saved, or the app would be stuck on a name that only works
+            // at home; each launch starts there and the page moves again.
+            if current.scheme == "http", var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                parts.path = ""
+                parts.query = nil
+                parts.fragment = nil
+                if let secure = parts.url { ServerAddress.saved = secure }
+            }
+            current = url
+            return .allow
+        }
         if mainFrame && !isServer(url) && ["http", "https"].contains(url.scheme ?? "") {
             await UIApplication.shared.open(url)
             return .cancel

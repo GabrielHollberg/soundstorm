@@ -4122,6 +4122,20 @@ gapless preloads into a Blob, leveling sets `volume`, audiobooks set
 `playbackRate`, and downloads play from the Cache API through `urlMap`. The
 bridge has to answer for all of those.
 
+**The page moving itself was sent to Safari** (first TestFlight build,
+2026-09-30). Opened by its away-from-home name at home, the page moves to
+the install's home name (`moveToSecureName`: the server offers it to any
+page not already on it), and the app took that for a link out - the same
+bug the Android app had from a LAN address. The iPhone app follows a move to
+https on `<id>.home.soundstorm.dev`, same port, where `<id>` is the current
+name's; from a LAN address any home name is accepted, as on Android. It
+differs from Android in one way on purpose: **it keeps the net name saved**
+and only follows the move for this launch. A phone leaves the house; saved,
+the home name would stop the app working the moment it did. Only a move off
+plain http is saved, since the secure name is strictly better than an IP.
+Messages from the page are now accepted only from where the page is, since
+anybody can get a `*.net.soundstorm.dev` name.
+
 Things that bit while building stage one:
 
 - **A centered `UIStackView` measures a multi-line label as one line**, and
