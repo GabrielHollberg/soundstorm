@@ -5447,6 +5447,7 @@ const npSwipe = (() => {
   };
   let startX = 0;
   let scrollsY = false;
+  let fromTopEdge = false;
   let axis = null;   // 'y' closes, 'x' changes song
   let dx = 0;
   panel.addEventListener('touchstart', (event) => {
@@ -5463,6 +5464,12 @@ const npSwipe = (() => {
     startY = t.clientY;
     startX = t.clientX;
     startT = performance.now();
+    // A pull down from the screen's top edge is Android's - the notifications
+    // and quick settings - not a close. Reported as Now Playing closing every
+    // time somebody reached for them. Only a thin band: the title just below
+    // it is where people grab to pull Now Playing away.
+    const safeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0;
+    fromTopEdge = startY < Math.max(56, safeTop + 32);
   }, { passive: true });
   panel.addEventListener('touchmove', (event) => {
     if (!armed) return;
@@ -5488,6 +5495,9 @@ const npSwipe = (() => {
       if (Math.abs(across) > Math.abs(d)) {
         axis = 'x';
         npSwipe.start();
+      } else if (d > 0 && fromTopEdge) {
+        armed = false; // the system's pull-down, not ours
+        return;
       } else if (d > 0) {
         axis = 'y';
       } else {

@@ -564,6 +564,11 @@ judged on in its first minute:
   **Then removed, at the owner's request.** The app opens and stays like any
   installed app, status and navigation bars showing; nothing asks for full
   screen any more. The manifest stays `standalone`.
+- **A pull down from the top edge is Android's.** Now Playing closes on a
+  drag down, and reaching for the notifications closed it every time. A
+  downward drag that starts in the top 56px (or the cutout plus 32) is left
+  to the system; the title just below it still pulls Now Playing away, and a
+  sideways swipe from the edge still changes song.
 - **The camera cutout, in the Android app.** The app draws into the cutout,
   and its web view reports no safe area for it, so it sets `--safe-top` and
   its siblings on the page itself. `style.css` defines those from
