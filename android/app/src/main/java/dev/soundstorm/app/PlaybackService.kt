@@ -8,6 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -40,6 +44,9 @@ class PlaybackService : Service() {
     private var artUrl: String? = null
     private var art: Bitmap? = null
     private var foreground = false
+    private val main = Handler(Looper.getMainLooper())
+    private var watchStarted = 0L
+    private var interrupterSeen = false
 
     override fun onCreate() {
         super.onCreate()
@@ -64,6 +71,7 @@ class PlaybackService : Service() {
             isActive = true
         }
         MediaBridge.listener = { show(it) }
+        MediaBridge.onInterruption = { on -> if (on) startWatching() else stopWatching() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,6 +93,8 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        stopWatching()
+        MediaBridge.onInterruption = null
         MediaBridge.listener = null
         session.release()
         artLoader.shutdownNow()
@@ -135,6 +145,14 @@ class PlaybackService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
             foreground = true
         } else {
+            // Paused by an alarm or a call: stay in the foreground, so Android
+            // does not end the app before it can play again (startWatching).
+            if (MediaBridge.interrupted) {
+                ServiceCompat.startForeground(this, NOTIFICATION, notification,
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
+                foreground = true
+                return
+            }
             // Paused: the controls stay, but the notification can be swiped
             // away and Android may stop the service, as with any paused player.
             if (!foreground) {
@@ -222,6 +240,58 @@ class PlaybackService : Service() {
         if (bitmap.width <= side && bitmap.height <= side) return bitmap
         val k = side.toFloat() / maxOf(bitmap.width, bitmap.height)
         return Bitmap.createScaledBitmap(bitmap, (bitmap.width * k).toInt(), (bitmap.height * k).toInt(), true)
+    }
+
+    // After an interruption: every two seconds, is an alarm ringing or a call
+    // going on? Once one has been, and is over, the music plays again. If none
+    // shows within ten seconds it was something else - headphones pulled out,
+    // another music app - and the music stays paused, as it should. Given up
+    // after thirty minutes either way.
+    private fun startWatching() {
+        watchStarted = SystemClock.elapsedRealtime()
+        interrupterSeen = false
+        main.removeCallbacks(watch)
+        main.post(watch)
+    }
+
+    private fun stopWatching() {
+        main.removeCallbacks(watch)
+        if (MediaBridge.interrupted) MediaBridge.interruption(false)
+    }
+
+    private val watch = object : Runnable {
+        override fun run() {
+            val waited = SystemClock.elapsedRealtime() - watchStarted
+            val busy = interrupterActive()
+            if (busy) interrupterSeen = true
+            when {
+                interrupterSeen && !busy -> {
+                    MediaBridge.interruption(false)
+                    MediaBridge.dispatch("play")
+                    MediaBridge.current?.let { show(it) }
+                }
+                (!interrupterSeen && waited > 10_000) || waited > 30 * 60_000 -> {
+                    MediaBridge.interruption(false)
+                    MediaBridge.current?.let { show(it) }
+                }
+                else -> main.postDelayed(this, 2000)
+            }
+        }
+    }
+
+    private fun interrupterActive(): Boolean {
+        val audio = getSystemService(AudioManager::class.java) ?: return false
+        if (audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION ||
+            audio.mode == AudioManager.MODE_RINGTONE) return true
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val interrupting = setOf(
+            AudioAttributes.USAGE_ALARM,
+            AudioAttributes.USAGE_NOTIFICATION_RINGTONE,
+            AudioAttributes.USAGE_VOICE_COMMUNICATION,
+            AudioAttributes.USAGE_ASSISTANT,
+            AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
+        )
+        return audio.activePlaybackConfigurations.any { it.audioAttributes.usage in interrupting }
     }
 
     companion object {

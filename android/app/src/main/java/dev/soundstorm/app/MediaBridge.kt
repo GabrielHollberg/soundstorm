@@ -42,6 +42,19 @@ object MediaBridge {
     /** The service, while it runs, is told of every change. */
     var listener: ((NowPlaying) -> Unit)? = null
 
+    /** Something other than the page paused the music (an alarm, a call). */
+    @Volatile
+    var interrupted = false
+        private set
+
+    /** The service, while it runs, is told when that starts and ends. */
+    var onInterruption: ((Boolean) -> Unit)? = null
+
+    fun interruption(on: Boolean) {
+        interrupted = on
+        main.post { onInterruption?.invoke(on) }
+    }
+
     fun attach(view: WebView) {
         webView = WeakReference(view)
     }

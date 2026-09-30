@@ -393,6 +393,8 @@ class MainActivity : Activity() {
             // Posted, so the web view is not torn down inside its own callback.
             "changeServer" -> content.post { showConnect(server) }
             "media" -> MediaBridge.update(applicationContext, message)
+            "interrupted" -> MediaBridge.interruption(true)
+            "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
         }
     }

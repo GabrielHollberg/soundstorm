@@ -92,6 +92,24 @@ object PageScript {
     };
   }
 
+  // Paused by something other than the page - an alarm, a call - rather than
+  // by a button or the page itself: the app is told, keeps itself running and
+  // plays again once that is over (PlaybackService). Reported as music that
+  // stayed stopped after an alarm. Everything the page pauses goes through
+  // pause(), so a pause event with no pause() just before it came from
+  // outside; a song that ended is not an interruption.
+  let pausedAt = 0;
+  const pause = HTMLMediaElement.prototype.pause;
+  HTMLMediaElement.prototype.pause = function () { pausedAt = Date.now(); return pause.apply(this, arguments); };
+  document.addEventListener('pause', (ev) => {
+    const el = ev.target;
+    if (!el || el.id !== 'audio-player' || el.ended) return;
+    if (Date.now() - pausedAt > 500) post({ type: 'interrupted' });
+  }, true);
+  document.addEventListener('playing', (ev) => {
+    if (ev.target && ev.target.id === 'audio-player') post({ type: 'resumed' });
+  }, true);
+
   const themeColor = () => {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) post({ type: 'themeColor', color: meta.content || '' });

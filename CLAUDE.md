@@ -1159,6 +1159,18 @@ sign-in page. Installing on the projector went over the network with adb;
 this PC's VPN had to be off to reach it, as it is on another subnet
 (192.168.86.x, a Google Wifi router behind the main one).
 
+**Music stayed stopped after an alarm** (Android). The web view pauses on
+losing the sound to an alarm or a call and never plays again, and the
+service then dropped out of the foreground like any paused player, so the
+app could be ended - "turned off". The page tells the app when a pause did
+not come from its own pause() (PageScript patches it; an ended song is not
+one): the service stays in the foreground and every two seconds asks
+whether an alarm, a ringtone, a call or an assistant is sounding
+(AudioManager mode and active playback usages). Once one has been and is
+over, it sends the page "play". None within ten seconds - headphones pulled
+out, another music app - and the music stays paused; thirty minutes at
+most. Not yet tried against a real alarm.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an
