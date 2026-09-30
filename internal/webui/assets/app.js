@@ -14499,7 +14499,24 @@ function tvRemote() {
   let holdTimer = 0;
   document.addEventListener('keydown', (event) => {
     const t = event.target;
-    // A press while Now Playing's buttons are faded only brings them back.
+    // Now Playing has no previous and next buttons on a TV (the owner's
+    // asking): left and right skip, while the buttons are faded or play has
+    // the focus - an audiobook's thirty seconds, as those buttons do there.
+    // The remote's own previous and next keys do the same anywhere.
+    const across = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+    const npOnly = shown('now-playing') && !shown('item-menu') && !shown('np-looks');
+    const faded = $('now-playing').classList.contains('tv-idle');
+    if ((npOnly && across && (faded || t === $('np-play'))) || event.key === 'MediaTrackNext' || event.key === 'MediaTrackPrevious') {
+      if (audio.item) {
+        event.preventDefault();
+        const next = event.key === 'ArrowRight' || event.key === 'MediaTrackNext';
+        const btn = $(next ? 'np-next' : 'np-prev');
+        if (!btn.disabled) btn.click();
+        if (!faded) wake();
+        return;
+      }
+    }
+    // Any other press while Now Playing's buttons are faded only brings them back.
     if (shown('now-playing') && wake() && !event.key.startsWith('Media')) {
       event.preventDefault();
       return;
