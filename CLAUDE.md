@@ -1121,7 +1121,13 @@ has no touch and no mouse:
 - **Photos no longer stop the music**, on every device (a clip, being a film,
   still does), as a book never did. On a TV, down over a photo or a book
   pauses and resumes the music, with a message saying which; left and right
-  step photos and turn pages, their arrow buttons gone. The remote's own previous and
+  step photos and turn pages, their arrow buttons gone.
+- **Rings lost under the pinned bars and off the screen edge.** The header
+  and the pill row stay pinned and paint over what reaches into them: the
+  pill rows (styled by id, `#music-tabs`/`#subtabs`, which outranks a class
+  rule) get room above rather than being pulled up, and every grid a little
+  room above its first row. A side tab fills the bar edge to edge, so its
+  ring is drawn inside it. The remote's own previous and
   next keys skip anywhere.
 
 Checked on the emulator with real key presses: moving through Home, a held

@@ -3507,12 +3507,16 @@ html.tv #video-player:focus { outline: none; }
    whatever pokes out of them - reported from the projector as the ring cut
    off along the top and the side. The padding is taken back with a negative
    margin, so the rows sit where they always did. */
-html.tv .continue-row, html.tv .home-strip, html.tv .subtabs, html.tv .music-tabs, html.tv .show-seasons {
+html.tv .continue-row, html.tv .home-strip, html.tv .show-seasons {
   padding-top: 14px;
   padding-bottom: 14px;
   margin-top: -14px;
   margin-bottom: -8px;
 }
+/* The pill rows sit just under the pinned header, which paints over what is
+   pulled up into it - the top of a pill's ring was lost there - so they only
+   gain room, and are not pulled up. */
+html.tv #subtabs, html.tv #music-tabs { padding-top: 10px; padding-bottom: 8px; }
 html.tv .continue-row { padding-left: 14px; padding-right: 14px; margin-left: -14px; margin-right: -14px; }
 /* A card scrolled into a row stops short of its edge, ring and all. */
 html.tv .item { scroll-margin-inline: 24px; }
@@ -3591,3 +3595,11 @@ html.tv .tabs .tv-np-tab { color: var(--text); }
 /* No arrow buttons over a photo or a page on a TV: left and right step and
    turn by themselves. */
 html.tv .photo-nav, html.tv .page-turn { display: none !important; }
+
+/* The first row of a grid starts right under the pinned pills, whose band
+   painted over the top of its ring (the photos, reported from the
+   projector): a little room above it. */
+html.tv .grid { padding-top: 12px; }
+/* A side tab fills the bar edge to edge, so a ring outside it ran off the
+   screen: inside it on a TV. */
+html.tv .tabs button:focus { outline-offset: -4px; border-radius: 14px; }
