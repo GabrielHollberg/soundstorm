@@ -588,6 +588,14 @@ type SongFileLister interface {
 	SongFiles(ctx context.Context) ([]SongFile, error)
 }
 
+// Listener hands songs over for the server to hear their beats in
+// (internal/beats): as FLAC, the one format the server can read with the
+// standard library. PrepareListening sets the backend up for it first.
+type Listener interface {
+	PrepareListening(ctx context.Context) error
+	ListenTarget(ctx context.Context, itemID string) (Target, error)
+}
+
 // SongFile is one song and where its file sits on the shelf.
 type SongFile struct {
 	Item media.Item

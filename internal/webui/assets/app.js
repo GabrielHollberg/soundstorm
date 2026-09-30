@@ -12742,7 +12742,7 @@ async function hearAhead(item) {
     if (!(key in soundOf)) soundOf[key] = ok && body && body.known ? body : null;
   }
   if (heardSongs.has(key)) return;
-  const kept = await loadHeard(item);
+  const kept = await loadHeard(item) || await serverHeard(item);
   if (kept) { heardSongs.set(key, Promise.resolve(kept)); return; }
   const sound = soundOf[key];
   let tempo = 0;
@@ -12767,6 +12767,11 @@ function listenTo(item, tempo) {
   const job = (async () => {
     const kept = await loadHeard(item);
     if (kept) return kept;
+    const fromServer = await serverHeard(item);
+    if (fromServer) {
+      if (isDownloaded(item)) saveHeard(item, fromServer, fromServer.sound);
+      return fromServer;
+    }
     // Not while the song is still getting started over the network.
     if (!isDownloaded(item)) hearState.set(key, 'waiting for the song to buffer');
     if (!isDownloaded(item) && !(await playbackSettled(item))) {
@@ -12847,10 +12852,30 @@ async function loadHeard(item) {
   try {
     const resp = await caches.match(heardURL(item), { cacheName: isDownloaded(item) ? OFFLINE_CACHE : HEARD_CACHE });
     if (!resp) return null;
-    const k = await resp.json();
-    if (k.v !== 5) return null; // from before the tempo was found in tenths of a frame: heard again
-    const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
-    return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+    return parseHeard(await resp.json());
+  } catch {
+    return null;
+  }
+}
+
+// parseHeard reads a kept hearing, the device's or the server's (the same
+// shape: internal/beats writes what saveHeard does).
+function parseHeard(k) {
+  if (!k || k.v !== 5) return null; // from before the tempo was found in tenths of a frame: heard again
+  const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
+  return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
+}
+
+// serverHeard is what the server heard in the song: it hears every song
+// ahead of time (internal/beats), so this is there from the first second,
+// about 45KB, where hearing it here means downloading the song again.
+// Null when the server has not (the phone then hears it itself).
+async function serverHeard(item) {
+  if (item.kind !== 'music' || state.offline) return null;
+  hearState.set(selectionKey(item), 'asking the server');
+  try {
+    const { ok, body } = await api(`/api/music/beats?source=${encodeURIComponent(item.sourceId)}&id=${encodeURIComponent(item.id)}`);
+    return ok ? parseHeard(body) : null;
   } catch {
     return null;
   }
@@ -12882,7 +12907,7 @@ async function prepareDownloads() {
         while (tempo < 70) tempo *= 2;
         while (tempo > 150) tempo /= 2;
       }
-      const heard = await hearSong(item, tempo).catch(() => null);
+      const heard = await serverHeard(item) || await hearSong(item, tempo).catch(() => null);
       if (heard) await saveHeard(item, heard, sound);
       await rest(1200);
     }

@@ -113,6 +113,7 @@ type Server struct {
 	discover         *discover.Finder
 	scrobble         *scrobble.Client
 	scrobbling       sync.Map // account id -> a send in progress
+	beats            *beatStore
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -188,6 +189,9 @@ type Config struct {
 	// Scrobble sends plays to the ListenBrainz account a person connected.
 	// Nil disables scrobbling.
 	Scrobble *scrobble.Client
+	// BeatsDir is where what was heard in each song is kept (see beats.go).
+	// Empty turns hearing songs on the server off.
+	BeatsDir string
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -243,6 +247,7 @@ func New(cfg Config) *Server {
 		lyrics:           cfg.Lyrics,
 		discover:         cfg.Discover,
 		scrobble:         cfg.Scrobble,
+		beats:            newBeatStore(cfg.BeatsDir),
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -330,6 +335,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/mixes", s.handleMixes)
 	guarded.HandleFunc("GET /api/music/radio", s.handleRadio)
 	guarded.HandleFunc("GET /api/music/sound", s.handleSongSound)
+	guarded.HandleFunc("GET /api/music/beats", s.handleSongBeats)
 	guarded.HandleFunc("GET /api/myart", s.handleMyArt)
 	guarded.HandleFunc("PUT /api/myart", s.handleSetMyArt)
 	guarded.HandleFunc("DELETE /api/myart", s.handleRemoveMyArt)
@@ -1429,6 +1435,10 @@ func (s *Server) scheduleRescan(kind media.Kind) {
 		// A new book or recording may complete a pair.
 		if kind == media.KindAudiobook || kind == media.KindEbook {
 			s.kickAutoReadAlong()
+		}
+		// New songs are heard for their beats.
+		if kind == media.KindMusic {
+			s.kickBeats()
 		}
 	})
 }

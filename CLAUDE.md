@@ -1223,6 +1223,49 @@ oldest dropped; cleared with the downloads on signing out), so a song
 played before follows its beats from the first second. The Looks sheet
 says which: "Following this song's beats", or tempo only and why.
 
+**Then the server hears every song, once, ahead of time** (`internal/beats`,
+`GET /api/music/beats`), asked for as having it all before anything plays.
+A phone hearing each song itself meant downloading every song twice and
+the first seconds of a song hand-started with the tempo only; now the app
+asks the server first (`serverHeard`, about 11KB a song) and only hears a
+song itself when the server has not. `internal/beats` is `hearSong` step
+for step, the same number types where they change a result, including a
+quirk: the chain's end search starts at a fractional frame and so always
+ends at the last frame. `scripts/beats-parity.js` runs the real `hearSong`
+from app.js under Node on the Go test's samples: 120 beats each, 0ms apart.
+On the preview through Navidrome, the server and the phone's method on the
+same original file agreed on all 120 beats to the millisecond; the phone's
+96 kbps copy runs one frame (23ms) late - a re-encoded MP3 streamed without
+its gapless header keeps its encoder delay - so the server's is the truer.
+
+How a song reaches it: Navidrome converts it to mono FLAC and
+`internal/flac` decodes it (a decoder of our own, the standard library has
+none; checked sample for sample against ffmpeg's decoding, 16- and 24-bit,
+all stereo modes). **Navidrome's own "flac audio" will not do**: checked, a
+lossy song asked for as FLAC comes back as Opus - it will not turn lossy
+into lossless. A transcoding under a name of SoundStorm's (`sslisten`,
+`subsonic/listen.go`) is converted as asked, and Navidrome takes a new
+transcoding only with `ND_ENABLETRANSCODINGCONFIG` on (405 without), which
+compose now sets. That lets Navidrome's admin set a command Navidrome runs;
+the only admin is SoundStorm's own account, which can already delete media
+through SoundStorm, so it adds little. `PrepareListening` adds or corrects
+the transcoding, and remembers a refusal for ten minutes; refused, the
+phones hear songs themselves as before. It asks for 11025 a second and
+Navidrome sent 44100 (mono honored): the rate is read from the file, and
+both rates are paths the phone's code already has.
+
+A background pass works through the library three minutes after start,
+two minutes after a music scan, and every six hours, one song at a time
+with a rest between; a song asked for before the pass reaches it is heard
+then (one at a time, others wait ten seconds, then the phone hears it).
+Results are files under the state dir's `beats/`, a cache that can always be
+made again, never the music folders. A song heard before AudioMuse knew its
+tempo is heard again once it does (the search leans on it); a song too short,
+over 30 minutes or undecodable is kept as none and looked at again in a
+month; anything else (the network, Navidrome) is tried again next pass.
+Navidrome caches each conversion (about 2.6MB for four minutes) in its
+100MB transcoding cache, so the first pass churns that cache once.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

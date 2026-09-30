@@ -178,6 +178,11 @@ services:
       ND_LOGLEVEL: info
       # Nothing here should phone home; SoundStorm is the only client.
       ND_ENABLEEXTERNALSERVICES: "false"
+      # Lets SoundStorm add the one transcoding it uses to hear each song's
+      # beats on the server (mono FLAC, internal/beats). Navidrome refuses a
+      # new transcoding without it. Only its admin account - SoundStorm's -
+      # can change transcodings.
+      ND_ENABLETRANSCODINGCONFIG: "true"
     volumes:
       - ${SOUNDSTORM_LIBRARY_PATH:-./library}/music:/music:ro
       - navidrome-data:/data

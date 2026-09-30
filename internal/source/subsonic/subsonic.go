@@ -71,6 +71,8 @@ type Source struct {
 	// folders is the song list grouped into artist and album folders; see
 	// folders.go.
 	folders folderCache
+	// listen is the transcoding the server's hearing uses; see listen.go.
+	listen listening
 }
 
 // New builds a Subsonic source.

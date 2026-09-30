@@ -344,12 +344,16 @@ func run(log *slog.Logger) error {
 		Discover:    discoverFinder,
 		Scrobble:    scrobble.New(),
 		Collections: collectionStore,
+		// What is heard in each song, for the visualizer: a cache beside the
+		// state, never in the music folders.
+		BeatsDir: filepath.Join(stateDir, "beats"),
 	})
 
 	// Books with both an ebook and an audiobook are synced for read-along by
 	// themselves, unless the owner has turned that off.
 	go api.RunAutoReadAlong(ctx)
 	go api.RunScrobbles(ctx)
+	go api.RunBeats(ctx)
 
 	srv := &http.Server{
 		Addr:              listen,
