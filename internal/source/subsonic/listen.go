@@ -15,7 +15,8 @@ import (
 )
 
 // Songs are handed to the server's own hearing (internal/beats) through a
-// transcoding of SoundStorm's: mono, 11025 a second, as FLAC - small, and
+// transcoding of SoundStorm's: mono, 44100 a second (the sharp highs are
+// above 7kHz), as FLAC - small, and
 // the one format the server reads with the standard library. Navidrome's
 // own "flac audio" will not do: checked on 0.64, it refuses to turn a lossy
 // song into a lossless format and sends Opus instead. A format under a name
@@ -26,7 +27,7 @@ import (
 const (
 	listenFormat  = "sslisten"
 	listenName    = "SoundStorm listening"
-	listenCommand = "ffmpeg -i %s -map 0:a:0 -v 0 -ac 1 -ar 11025 -c:a flac -f flac -"
+	listenCommand = "ffmpeg -i %s -map 0:a:0 -v 0 -ac 1 -ar 44100 -c:a flac -f flac -"
 )
 
 // ErrListeningOff is Navidrome refusing to take the transcoding.

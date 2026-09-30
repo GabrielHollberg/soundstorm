@@ -40,6 +40,17 @@ const hearSong = eval(`(${app.slice(start, end).replace('async function hearSong
   let worst = 0;
   const n = Math.min(js.length, goBeats.length);
   for (let i = 0; i < n; i++) worst = Math.max(worst, Math.abs(js[i] - goBeats[i]));
-  console.log(JSON.stringify({ app: js.length, server: goBeats.length, worstDifferenceMs: +(worst * 1000).toFixed(3), down: heard.down }));
-  if (js.length !== goBeats.length || worst > 1e-6) process.exit(1);
+  // The hit lanes, frame by frame.
+  const lane = (name) => {
+    const b = fs.readFileSync(path.join(dir, `click.${name}`));
+    const go = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length));
+    const app2 = heard[name];
+    let d = go.length === app2.length ? 0 : Infinity;
+    for (let i = 0; i < Math.min(go.length, app2.length); i++) d = Math.max(d, Math.abs(go[i] - app2[i]));
+    return d;
+  };
+  const low = lane('low');
+  const high = lane('high');
+  console.log(JSON.stringify({ app: js.length, server: goBeats.length, worstDifferenceMs: +(worst * 1000).toFixed(3), down: heard.down, lowDifference: low, highDifference: high }));
+  if (js.length !== goBeats.length || worst > 1e-6 || low > 1e-5 || high > 1e-5) process.exit(1);
 })();

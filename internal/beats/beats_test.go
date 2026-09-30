@@ -129,4 +129,13 @@ func TestWritesTheClickTrackForTheAppCheck(t *testing.T) {
 	if err := os.WriteFile(dir+"/click.beats", beats, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	for name, lane := range map[string][]float32{"low": r.Low, "high": r.High} {
+		b := make([]byte, 4*len(lane))
+		for i, v := range lane {
+			binary.LittleEndian.PutUint32(b[4*i:], math.Float32bits(v))
+		}
+		if err := os.WriteFile(dir+"/click."+name, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

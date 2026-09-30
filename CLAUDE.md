@@ -1276,6 +1276,25 @@ played), loudness with the loud-part line (the loudest 30%), the kick and
 the snare and hats as the analysis found them, and "stood out", the one
 reading judged live. A song not yet analysed says so.
 
+**The hit lanes were scaled to each song, so every song was full of hits**
+(version 6). Reported as the hi-hat lane firing through Change My Mind,
+which has no hi-hats. Measured: 94 kicks and about 50 high hits a minute
+in it, against 82 and 60 in Thunder - each song's sharpest half of moments
+counted as hits, whatever the song. Now both are on a fixed scale: a bass
+jump of 4dB starts to count and 10dB is a full hit (42 a minute against
+29, the click track still exactly its 120); the highs are a new band above
+7kHz (four one-pole high-passes), 9dB to 21dB (17 against 35). They are
+named honestly in the Analysis look - Bass hits, and Sharp highs (drums,
+"s" sounds, strums): a singer's "s" lives with the hi-hats, and telling
+them apart needs source separation, the ML this project does not own. A
+steeper bass filter was tried and helped nothing (it rang on the click
+track), and the bass count may be right: that song has a bass line.
+Where the beats fall and which starts the bar are untouched - they still
+use the old bands and in-song scaling - so only the two lanes the looks
+react to changed. Hearing is at 44100 now on both sides (11025 cannot hold
+7kHz; Navidrome was already sending 44100, and the transcoding says so).
+**For the Mac:** the Apple TV's `SongAnalysis` must follow (version 6).
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

@@ -21,7 +21,7 @@ import (
 
 // Version is the shape and method of a result, as the app's kept copies
 // count it: a result of another version is heard again.
-const Version = 5
+const Version = 6
 
 // Analyzer takes a song's samples one at a time and hears it at the end.
 type Analyzer struct {
@@ -32,6 +32,13 @@ type Analyzer struct {
 	n           int
 	loud, low   []float32
 	high        []float32
+	// The sharp highs: above 7kHz through four one-pole high-passes, where
+	// hats and the crack of a snare are and a voice's body is not (though
+	// its "s" is). Heard for the looks, not for finding the beats.
+	kHat float64
+	hat  [4]float64
+	sHat float64
+	hats []float32
 }
 
 // New is an analyzer for samples at rate a second: 256 samples a frame at
@@ -48,6 +55,7 @@ func New(rate int) *Analyzer {
 		// (snare, hats): cheap, and enough to tell them apart.
 		kLow:  1 - math.Exp((-2*math.Pi*150)/float64(rate)),
 		kHigh: 1 - math.Exp((-2*math.Pi*2500)/float64(rate)),
+		kHat:  1 - math.Exp((-2*math.Pi*math.Min(7000, 0.4*float64(rate)))/float64(rate)),
 	}
 }
 
@@ -59,13 +67,20 @@ func (a *Analyzer) Add(x float64) {
 	a.sx += x * x
 	a.sl += a.lp * a.lp
 	a.sh += h * h
+	y := x
+	for p := range a.hat {
+		a.hat[p] += a.kHat * (y - a.hat[p])
+		y -= a.hat[p]
+	}
+	a.sHat += y * y
 	a.n++
 	if a.n == a.hop {
 		hop := float64(a.hop)
 		a.loud = append(a.loud, float32(10*math.Log10(a.sx/hop+1e-10)))
 		a.low = append(a.low, float32(10*math.Log10(a.sl/hop+1e-10)))
 		a.high = append(a.high, float32(10*math.Log10(a.sh/hop+1e-10)))
-		a.sx, a.sl, a.sh, a.n = 0, 0, 0, 0
+		a.hats = append(a.hats, float32(10*math.Log10(a.sHat/hop+1e-10)))
+		a.sx, a.sl, a.sh, a.sHat, a.n = 0, 0, 0, 0, 0
 	}
 }
 
@@ -73,8 +88,8 @@ func (a *Analyzer) Add(x float64) {
 type Result struct {
 	FPS   float64
 	Loud  []float32 // 0 to 1, the song's quietest to its loudest, a frame each
-	Low   []float32 // kick hits, 0 to 1
-	High  []float32 // snare and hat hits, 0 to 1
+	Low   []float32 // bass hits, 0 to 1, on a fixed scale
+	High  []float32 // sharp highs (hats, a snare's crack, "s" sounds), 0 to 1, on a fixed scale
 	Beats []float64 // seconds
 	Down  int       // which beat of four starts each bar
 }
@@ -125,8 +140,20 @@ func (a *Analyzer) Hear(tempo float64) (*Result, error) {
 		}
 	}
 	loudN := scale(felt, 0.05, 0.97)
+	// Scaled within the song, for choosing each bar's first beat below.
 	lowOnN := scale(lowOn, 0.5, 0.995)
-	highOnN := scale(highOn, 0.5, 0.995)
+	// What the looks see is on a fixed scale instead: scaled within the song,
+	// every song had as many hits as any other, a ballad as many as a drum
+	// track (measured: Change My Mind 94 kicks and 50 highs a minute, Thunder
+	// 82 and 60). A jump of 4dB in the bass starts to count and 10dB is a
+	// full hit; in the highs above 7kHz, 9dB and 21dB (then 42 and 17 a
+	// minute against 29 and 35; the click track still 120 of 120).
+	kicks := fixed(lowOn, 4, 6)
+	hatOn := make([]float32, frames)
+	for f := 1; f < frames; f++ {
+		hatOn[f] = float32(math.Max(0, float64(a.hats[f])-float64(a.hats[f-1])))
+	}
+	highs := fixed(hatOn, 9, 12)
 
 	// The tempo: the lag at which the onsets repeat best, between 70 and 180
 	// beats a minute, leaning towards the analysis's own tempo when there is
@@ -234,7 +261,7 @@ func (a *Analyzer) Hear(tempo float64) (*Result, error) {
 			down = k
 		}
 	}
-	return &Result{FPS: fps, Loud: loudN, Low: lowOnN, High: highOnN, Beats: beats, Down: down}, nil
+	return &Result{FPS: fps, Loud: loudN, Low: kicks, High: highs, Beats: beats, Down: down}, nil
 }
 
 // scale maps arr to 0-1 between its lo and hi quantiles.
@@ -250,6 +277,15 @@ func scale(arr []float32, lo, hi float64) []float32 {
 	out := make([]float32, len(arr))
 	for i, v := range arr {
 		out[i] = float32(math.Max(0, math.Min(1, (float64(v)-a)/span)))
+	}
+	return out
+}
+
+// fixed maps jumps in dB to 0-1: from lo, full at lo+span.
+func fixed(arr []float32, lo, span float64) []float32 {
+	out := make([]float32, len(arr))
+	for i, v := range arr {
+		out[i] = float32(math.Max(0, math.Min(1, (float64(v)-lo)/span)))
 	}
 	return out
 }

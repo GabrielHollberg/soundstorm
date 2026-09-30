@@ -12832,7 +12832,7 @@ async function rememberHeard(item, heard, sound) {
 
 function heardResponse(heard, sound) {
   const kept = {
-    v: 5, fps: heard.fps, down: heard.down,
+    v: 6, fps: heard.fps, down: heard.down,
     loud: toB64(toBytes(heard.loud)), low: toB64(toBytes(heard.low)), high: toB64(toBytes(heard.high)),
     beats: toB64(new Uint8Array(Float32Array.from(heard.beats).buffer)),
     sound: sound && sound.tempo > 0 ? { tempo: sound.tempo, energy: sound.energy || 0 } : null,
@@ -12862,7 +12862,7 @@ async function loadHeard(item) {
 // parseHeard reads a kept hearing, the device's or the server's (the same
 // shape: internal/beats writes what saveHeard does).
 function parseHeard(k) {
-  if (!k || k.v !== 5) return null; // from before the tempo was found in tenths of a frame: heard again
+  if (!k || k.v !== 6) return null; // from before the hits were on a fixed scale: heard again
   const beats = Float64Array.from(new Float32Array(fromB64(k.beats).buffer));
   return { fps: k.fps, down: k.down, loud: fromBytes(fromB64(k.loud)), low: fromBytes(fromB64(k.low)), high: fromBytes(fromB64(k.high)), beats, sound: k.sound };
 }
@@ -12944,12 +12944,11 @@ async function hearSong(item, tempo) {
   hearState.set(key, 'downloading a copy to listen to');
   const bytes = await songBytes(item);
   hearState.set(key, `decoding it (${Math.round(bytes.byteLength / 1024)} KB)`);
-  // 11025 a second is plenty for beats and loudness, and a quarter of the
-  // memory; an older Safari refuses low rates for a context, so higher ones
-  // are the fallback.
+  // 44100 a second, as the server hears it: the sharp highs are above 7kHz,
+  // which 11025 cannot hold. Lower rates only where a browser refuses it.
   let ctx = null;
   let SR = 0;
-  for (const rate of [11025, 22050, 44100]) {
+  for (const rate of [44100, 22050, 11025]) {
     try { ctx = new Offline(1, rate, rate); SR = rate; break; } catch { /* next */ }
   }
   if (!ctx) { hearState.set(key, 'no audio context'); return null; }
@@ -12971,16 +12970,25 @@ async function hearSong(item, tempo) {
   // hats): cheap, and enough to tell them apart.
   const kLow = 1 - Math.exp((-2 * Math.PI * 150) / SR);
   const kHigh = 1 - Math.exp((-2 * Math.PI * 2500) / SR);
+  // The sharp highs for the looks: above 7kHz through four one-pole
+  // high-passes, where hats and a snare's crack are (and a voice's "s").
+  const kHat = 1 - Math.exp((-2 * Math.PI * Math.min(7000, 0.4 * SR)) / SR);
+  const hatSt = new Float64Array(4);
+  const hat = new Float32Array(frames);
   let lp = 0, hpState = 0;
   for (let f = 0; f < frames; f++) {
-    let sx = 0, sl = 0, sh = 0;
+    let sx = 0, sl = 0, sh = 0, st = 0;
     for (let i = f * HOP, end = i + HOP; i < end; i++) {
       const x = right ? (left[i] + right[i]) * 0.5 : left[i];
       lp += kLow * (x - lp);
       hpState += kHigh * (x - hpState);
       const hp = x - hpState;
       sx += x * x; sl += lp * lp; sh += hp * hp;
+      let y = x;
+      for (let p = 0; p < 4; p++) { hatSt[p] += kHat * (y - hatSt[p]); y -= hatSt[p]; }
+      st += y * y;
     }
+    hat[f] = 10 * Math.log10(st / HOP + 1e-10);
     loud[f] = 10 * Math.log10(sx / HOP + 1e-10);
     low[f] = 10 * Math.log10(sl / HOP + 1e-10);
     high[f] = 10 * Math.log10(sh / HOP + 1e-10);
@@ -13020,8 +13028,16 @@ async function hearSong(item, tempo) {
     }
   }
   const loudN = scale(felt, 0.05, 0.97);
+  // Scaled within the song, for choosing each bar's first beat below.
   const lowOnN = scale(lowOn, 0.5, 0.995);
-  const highOnN = scale(highOn, 0.5, 0.995);
+  // What the looks see is on a fixed scale (internal/beats says why): a
+  // bass jump of 4dB starts to count, 10dB is a full hit; above 7kHz, 9dB
+  // and 21dB.
+  const fixed = (arr, lo, span) => Float32Array.from(arr, (v) => Math.max(0, Math.min(1, (v - lo) / span)));
+  const kicks = fixed(lowOn, 4, 6);
+  const hatOn = new Float32Array(frames);
+  for (let f = 1; f < frames; f++) hatOn[f] = Math.max(0, hat[f] - hat[f - 1]);
+  const highs = fixed(hatOn, 9, 12);
 
   // The tempo: the lag at which the onsets repeat best, between 70 and 170
   // beats a minute, leaning towards the analysis's own tempo when there is one.
@@ -13081,7 +13097,7 @@ async function hearSong(item, tempo) {
   beatFrames.forEach((f, k) => { hit[k % 4] += lowOnN[f] + lowOnN[Math.min(frames - 1, f + 1)]; });
   const down = hit.indexOf(Math.max(...hit));
 
-  return { fps, loud: loudN, low: lowOnN, high: highOnN, beats, down };
+  return { fps, loud: loudN, low: kicks, high: highs, beats, down };
 }
 
 // coverPalette picks up to three colours from a cover's 16x16 pixels: the
@@ -14264,7 +14280,7 @@ function analysisScene(st, m) {
   const gridTop = rTop + 62 * u;
   const lanesTop = gridTop + 26 * u;
   const gap = 8 * u;
-  const lanes = ['Loudness', 'Kick  (bass hits)', 'Snare and hats  (high hits)', 'Stood out  (as it played)'];
+  const lanes = ['Loudness', 'Bass hits', 'Sharp highs  (drums, "s" sounds, strums)', 'Stood out  (as it played)'];
   const laneH = (bottom - lanesTop - gap * (lanes.length - 1)) / lanes.length;
   const laneY = (i) => lanesTop + i * (laneH + gap);
   for (let i = 0; i < lanes.length; i++) {
