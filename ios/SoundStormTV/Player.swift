@@ -18,6 +18,13 @@ final class Player {
 
     var current: Item? { queue.indices.contains(index) ? queue[index] : nil }
 
+    /// The song's position now, read from the player - not the twice-a-second
+    /// `time`, which is too coarse to animate by.
+    var exactTime: Double {
+        let s = player.currentTime().seconds
+        return s.isFinite ? s : time
+    }
+
     private let api: API
     private let player = AVQueuePlayer()
     private var timeObserver: Any?

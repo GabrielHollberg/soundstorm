@@ -21,9 +21,8 @@ struct NowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var model
 
-    /// The Lyrics look, instead of the cover; kept between songs and launches.
-    @AppStorage("lyricsLook") private var lyricsLook = false
     @State private var lyrics: API.Lyrics?
+    @State private var palette = VizPalette()
     private enum Sheet: Identifiable { case queue, playlists, chapters; var id: Self { self } }
     @State private var sheet: Sheet?
 
@@ -36,13 +35,22 @@ struct NowPlayingView: View {
     var body: some View {
         let song = player.current
         let art = song.flatMap { api.artURL(source: $0.sourceId, artId: $0.artId, size: 1200) }
+        // A book has the plain cover, as on the page.
+        let look = player.isBook ? "square" : model.look
+        let viz = Looks.isVisualizer(look)
         ZStack {
-            // The cover, blurred and darkened, fills the screen behind.
-            Cover(url: art)
-                .scaleEffect(1.3)
-                .blur(radius: 80)
-                .overlay(Color.black.opacity(0.55))
-                .ignoresSafeArea()
+            if viz, let listener = model.listener {
+                // A visualizer fills the screen; the title sits above it.
+                VisualizerView(look: look, palette: palette, player: player, listener: listener)
+                    .ignoresSafeArea()
+            } else {
+                // The cover, blurred and darkened, fills the screen behind.
+                Cover(url: art)
+                    .scaleEffect(1.3)
+                    .blur(radius: 80)
+                    .overlay(Color.black.opacity(0.55))
+                    .ignoresSafeArea()
+            }
 
             VStack(spacing: 0) {
                 Image(systemName: "chevron.down")
@@ -52,11 +60,18 @@ struct NowPlayingView: View {
                     .overlay(Circle().stroke(.white, lineWidth: spot == .putAway ? 4 : 0))
                     .opacity(faded ? 0 : 1)
 
+                if viz { titleBlock(song) }
                 Spacer(minLength: 30)
                 Group {
-                    if lyricsLook, let lyrics, !lyrics.lines.isEmpty {
+                    if viz {
+                        Color.clear.frame(height: 560)
+                    } else if look == "lyrics", let lyrics, !lyrics.lines.isEmpty {
                         LyricsView(lyrics: lyrics, time: player.time)
                             .frame(width: 1400, height: 560)
+                    } else if look == "spin" || look == "vinyl" {
+                        TurningCover(url: art, record: look == "vinyl", player: player)
+                            .frame(width: 560, height: 560)
+                            .shadow(color: .black.opacity(0.6), radius: 40, y: 20)
                     } else {
                         Cover(url: art)
                             .frame(width: 560, height: 560)
@@ -68,21 +83,9 @@ struct NowPlayingView: View {
                         Image(systemName: "pause.fill").font(.system(size: 90)).shadow(radius: 20)
                     }
                 }
-                VStack(spacing: 10) {
-                    Text(song?.title ?? "").font(.title2.weight(.semibold)).lineLimit(1)
-                    // A book names its chapter where a song names its artist.
-                    Text(player.chapter?.title ?? song?.artist ?? "").foregroundStyle(.secondary).lineLimit(1)
-                    if let sleepAt = player.sleepAt {
-                        Text("Stops at \(sleepAt.formatted(date: .omitted, time: .shortened))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if player.sleepAtEnd {
-                        Text(player.isBook ? "Stops at the end of the chapter" : "Stops at the end of the song")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.top, 40)
-                .frame(maxWidth: 1400)
+                if !viz { titleBlock(song) }
                 Spacer(minLength: 30)
+
 
                 Group {
                     if let c = player.chapter {
@@ -120,7 +123,19 @@ struct NowPlayingView: View {
         .contextMenu { menu(for: song) }
         .task(id: song?.key) {
             lyrics = nil
-            if let song { lyrics = await api.lyrics(song) }
+            guard let song, !player.isBook else { return }
+            async let words = api.lyrics(song)
+            if let url = api.artURL(source: song.sourceId, artId: song.artId, size: 100),
+               let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) {
+                palette = VizPalette(image: image)
+            } else {
+                palette = VizPalette()
+            }
+            lyrics = await words
+        }
+        .task(id: "\(song?.key ?? "")|\(model.look)") {
+            // Heard only for a visualizer: hearing is a whole song's decoding.
+            if let song, Looks.isVisualizer(model.look), !player.isBook { model.listener?.listen(to: song) }
         }
         .sheet(item: $sheet) { which in
             switch which {
@@ -129,6 +144,25 @@ struct NowPlayingView: View {
             case .chapters: ChapterSheet()
             }
         }
+    }
+
+    /// The title, the artist or chapter, and the sleep timer.
+    private func titleBlock(_ song: Item?) -> some View {
+        VStack(spacing: 10) {
+            Text(song?.title ?? "").font(.title2.weight(.semibold)).lineLimit(1)
+            // A book names its chapter where a song names its artist.
+            Text(player.chapter?.title ?? song?.artist ?? "").foregroundStyle(.secondary).lineLimit(1)
+            if let sleepAt = player.sleepAt {
+                Text("Stops at \(sleepAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if player.sleepAtEnd {
+                Text(player.isBook ? "Stops at the end of the chapter" : "Stops at the end of the song")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .shadow(color: .black.opacity(0.8), radius: 12)
+        .padding(.top, 40)
+        .frame(maxWidth: 1400)
     }
 
     @ViewBuilder
@@ -151,12 +185,20 @@ struct NowPlayingView: View {
                 Label(fav ? "Remove from favorites" : "Add to favorites", systemImage: fav ? "heart.slash" : "heart")
             }
             Button { sheet = .playlists } label: { Label("Add to playlist", systemImage: "plus") }
-            Button { lyricsLook.toggle() } label: {
-                Label(lyricsLook ? "Show the cover" : "Show lyrics", systemImage: lyricsLook ? "photo" : "quote.bubble")
-            }
-            .disabled(lyrics?.lines.isEmpty ?? true && !lyricsLook)
+            Menu {
+                Section("Lyrics and covers") { lookButtons(Looks.covers) }
+                Section("Visualizers") { lookButtons(Looks.visualizers) }
+            } label: { Label("Look", systemImage: "sparkles") }
             Button { sheet = .queue } label: { Label("Up next", systemImage: "list.bullet") }
             sleepMenu
+        }
+    }
+
+    private func lookButtons(_ looks: [(key: String, label: String)]) -> some View {
+        ForEach(looks, id: \.key) { l in
+            Button { model.setLook(l.key) } label: {
+                if model.look == l.key { Label(l.label, systemImage: "checkmark") } else { Text(l.label) }
+            }
         }
     }
 

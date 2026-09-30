@@ -45,6 +45,7 @@ struct LibraryView: View {
         .tabViewStyle(.sidebarAdaptable)
         .task { await model.loadFavorites() }
         .task { model.pills = await api.pills() }
+        .task { await model.loadLook() }
         #if DEBUG
         .modifier(DebugAutostation())
         .modifier(DebugAutoread())

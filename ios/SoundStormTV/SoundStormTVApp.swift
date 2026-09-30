@@ -28,6 +28,10 @@ final class AppModel {
     private(set) var stage: Stage = .checking
     private(set) var api: API?
     private(set) var player: Player?
+    /// Hears songs for the visualizers.
+    private(set) var listener: SongListener?
+    /// Now Playing's look, the account's own (the page's setting).
+    private(set) var look = "lyrics"
     var showingNowPlaying = false
     /// The film or episode playing, full screen.
     var video: VideoSession?
@@ -73,6 +77,7 @@ final class AppModel {
         let api = API(server: server)
         self.api = api
         player = Player(api: api)
+        listener = SongListener(api: api)
         stage = .checking
         Task { await refreshSession() }
     }
@@ -107,6 +112,15 @@ final class AppModel {
         guard let api else { return }
         player?.pause()
         video = VideoSession(item: item, api: api)
+    }
+
+    func loadLook() async {
+        look = Looks.shown(await api?.coverStyle())
+    }
+
+    func setLook(_ key: String) {
+        look = key
+        Task { await api?.setCoverStyle(key) }
     }
 
     func loadFavorites() async {

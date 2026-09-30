@@ -411,6 +411,42 @@ final class API {
         _ = try? await perform(request) as Answer
     }
 
+    // MARK: Visualizers
+
+    struct Sound: Decodable { let known: Bool; let tempo: Double; let energy: Double? }
+
+    /// AudioMuse's tempo and energy for a song, where it has heard it.
+    func sound(_ item: Item) async -> Sound? {
+        let s: Sound? = try? await get("api/music/sound", query: ["id": item.id])
+        return s?.known == true ? s : nil
+    }
+
+    /// The song at a lower bitrate, to a file, for hearing it: what the page
+    /// hears too (stream?kbps=96).
+    func download(_ item: Item, kbps: Int) async throws -> URL {
+        var parts = URLComponents(url: streamURL(item), resolvingAgainstBaseURL: false)!
+        parts.queryItems = [URLQueryItem(name: "kbps", value: String(kbps))]
+        let (temp, response) = try await URLSession.shared.download(from: parts.url!)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, nil) }
+        // A name AVFoundation can tell the kind of.
+        let file = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".mp3")
+        try FileManager.default.moveItem(at: temp, to: file)
+        return file
+    }
+
+    /// The Now Playing look, the page's own setting.
+    func coverStyle() async -> String? {
+        struct Prefs: Decodable { let coverStyle: String? }
+        let p: Prefs? = try? await get("api/prefs")
+        return p?.coverStyle
+    }
+
+    func setCoverStyle(_ v: String) async {
+        struct Body: Encodable { let coverStyle: String }
+        struct Answer: Decodable {}
+        let _: Answer? = try? await send("PATCH", "api/prefs", Body(coverStyle: v))
+    }
+
     // MARK: Read Along
 
     /// A book somebody has both as an ebook and an audiobook.

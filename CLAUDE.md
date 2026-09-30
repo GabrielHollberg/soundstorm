@@ -4456,7 +4456,41 @@ things bit:
   (its page gone) failed the `/api/readalong` fetch, and the fallback opened
   the shelf's copy over the synced one. Cancelled, it now does nothing.
 
-Next: the visualizers (natively, the largest part).
+**Looks and visualizers, stage one (2026-09-30).** Now Playing's look is the
+account's own (`coverStyle` in `/api/prefs`, the page's setting), chosen from
+the hold menu's Look: Lyrics, Cover, Spinning disc and Record, and so far the
+Orb (`pulse`) and Spectrum (`bars`) of the page's twelve visualizers. A look
+chosen on the page that the TV does not draw yet shows as the Orb. A
+visualizer fills the screen with the title above it, as on the page's TV
+layout; a book always has the plain cover.
+
+**The song is heard on the TV, as on the page** - nothing of it is kept on
+the server. `SongAnalysis` is `hearSong` ported step for step: the song at
+96 kbps (`stream?kbps=96`) decoded by AVAssetReader to 11025 Hz mono, frames
+of 256 (about 23ms), a one-pole split at 150 Hz and 2500 Hz, onsets, loudness
+over half a second scaled 5%-97%, the tempo by autocorrelation in tenths of a
+frame with AudioMuse's tempo (`/api/music/sound`) as the prior, beats by
+Ellis's dynamic programming, and the downbeat as the beat of four where the
+bass lands hardest. The last six songs are kept. Only a visualizer asks for
+it: hearing a song is decoding the whole of it. `VizEngine` is the page's
+frame loop (`viz.frame`): beat and phase from the beats found, kick and snare
+envelopes measured against the last two bars' typical hit, surges, drops on a
+downbeat in the loudest 30%, drive and brightness. Drawn in SwiftUI's Canvas
+at 30 frames a second with the page's TV halving of particles. The page's
+fading trail canvas has no Canvas equivalent: each vortex particle keeps its
+last seven places and draws them fading by a fifth, as the page's fade does.
+
+Checked: the analysis alone, compiled on the Mac, against the page's own test
+- a generated 120 bpm click track, first beat at 0.23s, a quiet section - found
+all 120 beats, mean error 6ms (the page's check: 13ms), downbeat on the
+accented beat, loudness 0.14 quiet and 1.00 loud, in 2 seconds a minute of
+song. On the simulator with that track as the song: the Orb drew its drop
+ring on a loud downbeat and dimmed and calmed in the quiet section; Spectrum,
+Spinning disc and Record drew. Not checked: the hold menu's Look (a remote),
+and how fast an Apple TV hears a song (the debug build is unoptimized).
+
+Next, stage two: Warp, Waves, Kaleidoscope, Fireworks; stage three: Flow,
+Storm, Synthwave, Galaxy, Aurora, Lava - each ported from `VIZ_SCENES`.
 
 ## The Android app (`android/`)
 
