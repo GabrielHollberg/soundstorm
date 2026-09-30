@@ -6215,7 +6215,7 @@ async function preloadNext() {
   const ctl = new AbortController();
   audio.preloadAbort = ctl;
   try {
-    const resp = await fetch(playPath(next), { credentials: 'same-origin', signal: ctl.signal });
+    const resp = await fetch(playPath(next), { credentials: 'same-origin', signal: ctl.signal, cache: 'no-store' });
     const size = Number(resp.headers.get('Content-Length') || 0);
     if (!resp.ok || size > PRELOAD_MAX_BYTES) {
       if (resp.body) resp.body.cancel().catch(() => {});

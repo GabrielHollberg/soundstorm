@@ -42,6 +42,16 @@ import (
 // Only original-quality streams: a converted one (?kbps=) is made by the
 // backend and carries no picture already.
 
+// audioNoStore keeps songs out of the browser's HTTP cache. For a day they
+// were kept (private, a week), and a song that ended by itself then waited 20
+// seconds for the next: the app's preload was fetching the next song as the
+// player asked for it, and Chromium lets only one request at a time write a
+// URL into its cache - the other waits for it, up to a 20 second timeout. The
+// phone's requests reached the server exactly 20.0s apart. Gapless keeps the
+// next song in memory itself, and downloads in the Cache API, so nothing
+// needed the HTTP cache.
+const audioNoStore = "no-store"
+
 const (
 	slimProbe     = 64 << 10 // read first: ftyp and the start of moov, or an ID3 tag's header
 	slimMaxMoov   = 16 << 20 // a song's index is a few hundred KB
@@ -178,7 +188,7 @@ func (p *Proxy) serveSlim(w http.ResponseWriter, r *http.Request, target source.
 	if l.lastMod != "" {
 		h.Set("Last-Modified", l.lastMod)
 	}
-	h.Set("Cache-Control", "private, max-age=604800")
+	h.Set("Cache-Control", audioNoStore)
 	h.Set("X-Content-Type-Options", "nosniff")
 	GuardActiveContent(h)
 	status := http.StatusOK

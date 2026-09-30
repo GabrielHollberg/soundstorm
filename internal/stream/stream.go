@@ -274,12 +274,9 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 	// different content type than the one it declared.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	GuardActiveContent(w.Header())
-	// A song keeps on the device, as Chrome keeps one it has played: Navidrome
-	// says nothing about caching, and without a word from us the Android app's
-	// WebView fetched a song again on every play - over a slow link from the
-	// house, the difference between instant and half a minute.
-	if w.Header().Get("Cache-Control") == "" && strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "audio/") {
-		w.Header().Set("Cache-Control", "private, max-age=604800")
+	// Audio is never written to the browser's cache (audioNoStore).
+	if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "audio/") {
+		w.Header().Set("Cache-Control", audioNoStore)
 	}
 
 	w.WriteHeader(resp.StatusCode)

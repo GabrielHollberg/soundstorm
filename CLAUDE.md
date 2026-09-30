@@ -1198,10 +1198,18 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   `source.ArtSize`, and SoundStorm resizes a book's cover with the standard
   library. Only Now Playing's big cover and its swipe neighbours (800) and
   the lock screen (600) ask for more (`bigArt`). Card covers load at
-  `fetchPriority = 'low'`, behind the song. Audio responses with no
-  Cache-Control of their own (Navidrome sends none) get `private, max-age`
-  a week, so the WebView keeps a played song as Chrome does. Covers get the
-  same by default, though Navidrome's own `public, immutable` wins.
+  `fetchPriority = 'low'`, behind the song. Covers are kept a week by
+  default, though Navidrome's own `public, immutable` wins.
+
+  **Songs were kept too, for a day, and that was a mistake.** With audio
+  cacheable, a song that ended by itself waited 20 seconds for the next.
+  The preload was fetching the next song as the player asked for it, and
+  Chromium lets one request at a time write a URL to its cache; the other
+  waits, up to a 20 second timeout. The phone's two requests reached the
+  server exactly 20.0s apart. Audio is `no-store` now (`audioNoStore`), and
+  the preload fetches with `cache: 'no-store'`. Gapless keeps the next song
+  in memory, and downloads live in the Cache API, so nothing needed the HTTP
+  cache.
   **Always original** in Playback on this device is a promise: no probe,
   no fallback. **Original, lower on a slow connection** (`smart`) is the
   default.
