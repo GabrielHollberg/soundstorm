@@ -14517,14 +14517,17 @@ function tvRemote() {
       }
       return;
     }
-    // From nothing in focus, down goes to the timeline and up to the buttons
-    // along the top - not the first button in reading order.
-    if (npFree && !faded && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    // From nothing in focus - faded or not - down goes straight to the
+    // timeline and up to the arrow that puts Now Playing away to the mini
+    // player, bringing the buttons back as it goes (the owner's asking).
+    if (npFree && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
       const to = event.key === 'ArrowDown' ? $('np-seek') : $('np-close');
-      if (to && usable(to)) {
+      // Faded, it is see-through, which usable() refuses: here being on the
+      // page is enough, as it is about to fade back in.
+      if (to && !to.disabled && to.getClientRects().length) {
         event.preventDefault();
-        focusOn(to, 'down');
         wake();
+        focusOn(to, 'down');
         return;
       }
     }

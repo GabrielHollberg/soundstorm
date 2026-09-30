@@ -1108,8 +1108,10 @@ has no touch and no mouse:
   pauses and left and right skip (previous and next song, an audiobook's
   thirty seconds) - but **while the timeline shows, left and right move
   ten seconds** through the song instead, and so they do on the timeline
-  itself; only faded do they change song. From nothing in focus, down goes
-  to the timeline and up to the top buttons. The remote's own previous and
+  itself; only faded do they change song. From nothing in focus, faded or
+  not, down goes straight to the timeline and up to the arrow that puts Now
+  Playing away to the mini player, the buttons fading back in - so the ten
+  seconds is, in practice, the timeline highlighted. The remote's own previous and
   next keys skip anywhere.
 
 Checked on the emulator with real key presses: moving through Home, a held
