@@ -12985,9 +12985,12 @@ const viz = {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
   },
-  // fit sizes a canvas to how it is shown, at up to twice the pixels.
+  // fit sizes a canvas to how it is shown, at up to twice the pixels - on a
+  // TV at a little over half: a projector's chip drawing a full 1080p screen
+  // of these was reported as super laggy, and from across a room the softer
+  // picture does not show.
   fit(canvas) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = TV ? 0.6 : Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.round(canvas.clientWidth * dpr);
     const h = Math.round(canvas.clientHeight * dpr);
     if (w && h && (canvas.width !== w || canvas.height !== h)) { canvas.width = w; canvas.height = h; }
@@ -13041,6 +13044,11 @@ const viz = {
     const front = flowing ? document.querySelector('#np-stage .np-stage-front') : deco && deco.querySelector('.np-viz-trails');
     if (!back || np.classList.contains('hidden') || !np.classList.contains('cover-viz') || (!flowing && !deco.classList.contains('shown'))) {
       this.stop();
+      return;
+    }
+    // And at 30 frames a second on a TV, every other one skipped.
+    if (TV && this.lastT && now - this.lastT < 28) {
+      this.raf = requestAnimationFrame((ts) => this.frame(ts));
       return;
     }
     const player = $('audio-player');
@@ -13422,7 +13430,7 @@ const playOrb = {
     const np = $('now-playing');
     if (np.classList.contains('hidden') || !np.classList.contains('np-music') || document.hidden) return;
     const canvas = this.canvas();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = TV ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const cw = Math.round(canvas.clientWidth * dpr);
     const ch = Math.round(canvas.clientHeight * dpr);
     if (!cw || !ch) return;
@@ -14495,6 +14503,9 @@ function tvRemote() {
       // The photo viewer and the year in music step with the arrows themselves.
       if (event.defaultPrevented || photoShown || shown('recap-overlay')) return;
       const across = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+      // In a book, left and right turn the page (reader.js listens for them);
+      // up and down still reach its buttons.
+      if (across && shown('reader-overlay') && !shown('item-menu')) return;
       // Left and right belong to a text box's cursor and a slider's thumb.
       if (across && ((typing(t) && !locked(t)) || (t.matches && t.matches('input[type="range"]')))) return;
       if (t.tagName === 'SELECT') return;

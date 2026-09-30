@@ -1072,8 +1072,16 @@ has no touch and no mouse:
   touch rule applied - Now Playing hid its buttons until a hold a remote
   cannot do. `touchScreen()` (JS) and `html:not(.tv)` (CSS) keep the touch
   behaviour off a TV.
-- Books are hidden on a TV (the owner's choice); a white ring and a slightly
-  grown cover mark the focus; margins keep clear of overscan.
+- A white ring and a slightly grown cover mark the focus; rows that scroll
+  sideways get padding for them (they clip, and the ring was cut off on the
+  projector); margins keep clear of overscan. Books were hidden at first and
+  came back at the owner's asking; in a book, left and right turn the page
+  (reader.js hears them) and up and down reach its buttons.
+- **Now Playing on the projector was super laggy and did not fit.** The
+  visualizers draw at 0.6 of a CSS pixel on a TV (0.6 dpr, against up to 2
+  elsewhere) and at 30 frames a second; the play orb at 1. The 540-pixel
+  screen had the column 634 tall, the timeline off the bottom: on a TV the
+  lyrics box shrinks (24vh) and the gaps tighten.
 
 Checked on the emulator with real key presses: moving through Home, a held
 OK opening a card's menu with the focus in it, Back closing the menu, OK

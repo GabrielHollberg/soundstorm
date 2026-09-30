@@ -3477,7 +3477,7 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
 /* The TV app (app.js, tvRemote): the remote moves a focus, so whatever has it
    must be plain from across a room - a white ring, and a cover that grows.
    TVs crop their edges (overscan), so the page keeps clear of them. Books
-   stay on phones and computers, at the owner's asking. */
+   stay, at the owner's asking (hidden at first, then wanted back). */
 html.tv {
   --safe-top: 18px;
   --safe-bottom: 18px;
@@ -3498,8 +3498,7 @@ html.tv .item:focus .art-wrap {
   transform: scale(1.05);
 }
 html.tv .item:focus .title { color: #fff; }
-html.tv [data-tab="books"], html.tv .chip[data-kind="audiobook"], html.tv .chip[data-kind="ebook"],
-html.tv .chip[data-kind="document"], html.tv #downloads-block { display: none !important; }
+html.tv #downloads-block { display: none !important; }
 /* A card scrolled to the middle is not left under the sticky header. */
 html.tv button, html.tv a, html.tv input { scroll-margin-top: calc(var(--header-h, 80px) + 24px); }
 /* The film itself in focus: no ring round the picture. */
@@ -3517,3 +3516,8 @@ html.tv .continue-row, html.tv .home-strip, html.tv .subtabs, html.tv .music-tab
 html.tv .continue-row { padding-left: 14px; padding-right: 14px; margin-left: -14px; margin-right: -14px; }
 /* A card scrolled into a row stops short of its edge, ring and all. */
 html.tv .item { scroll-margin-inline: 24px; }
+
+/* Now Playing on a TV's short screen (540 CSS pixels): its column was 634
+   tall, the timeline below the bottom edge. The lyrics give way. */
+html.tv .now-playing .np-side { gap: 14px; }
+html.tv .now-playing .np-lyrics { max-height: 24vh; padding: 8vh 0; }
