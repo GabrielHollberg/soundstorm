@@ -14458,8 +14458,9 @@ function tvRemote() {
     const back = last.get(root);
     if (back && root.contains(back) && usable(back)) { back.focus({ preventScroll: true }); return; }
     // Opening: a film starts with the picture, where OK pauses and the
-    // arrows skip; Now Playing with play.
-    const first = root.id === 'video-overlay' ? $('video-player') : root.id === 'now-playing' ? $('np-play') : null;
+    // arrows skip. Now Playing starts with nothing in focus: OK plays and
+    // pauses, left and right skip.
+    const first = root.id === 'video-overlay' ? $('video-player') : null;
     if (first && usable(first)) first.focus({ preventScroll: true });
   };
   $('video-player').tabIndex = 0;
@@ -14499,14 +14500,24 @@ function tvRemote() {
   let holdTimer = 0;
   document.addEventListener('keydown', (event) => {
     const t = event.target;
-    // Now Playing has no previous and next buttons on a TV (the owner's
-    // asking): left and right skip, while the buttons are faded or play has
-    // the focus - an audiobook's thirty seconds, as those buttons do there.
-    // The remote's own previous and next keys do the same anywhere.
+    // Now Playing has no play, previous or next buttons on a TV (the owner's
+    // asking). While its buttons are faded, or none of them has the focus,
+    // OK plays and pauses and left and right skip - an audiobook's thirty
+    // seconds, as those buttons do there. The remote's own previous and next
+    // keys skip anywhere.
     const across = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
     const npOnly = shown('now-playing') && !shown('item-menu') && !shown('np-looks');
     const faded = $('now-playing').classList.contains('tv-idle');
-    if ((npOnly && across && (faded || t === $('np-play'))) || event.key === 'MediaTrackNext' || event.key === 'MediaTrackPrevious') {
+    const npFree = npOnly && (faded || !$('now-playing').contains(t));
+    if (npFree && event.key === 'Enter' && audio.item) {
+      event.preventDefault();
+      if (!event.repeat) {
+        const player = $('audio-player');
+        if (player.paused) player.play().catch(() => {}); else player.pause();
+      }
+      return;
+    }
+    if ((npFree && across) || event.key === 'MediaTrackNext' || event.key === 'MediaTrackPrevious') {
       if (audio.item) {
         event.preventDefault();
         const next = event.key === 'ArrowRight' || event.key === 'MediaTrackNext';

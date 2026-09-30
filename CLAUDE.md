@@ -1102,10 +1102,12 @@ has no touch and no mouse:
   change the watcher saw and answered by waking again, for ever. A class is
   now added or removed only when it would change; any MutationObserver that
   writes to what it watches must do the same.
-  **No previous and next buttons on a TV** (the owner's asking): left and
-  right skip - previous and next song, an audiobook's thirty seconds -
-  while the buttons are faded (they stay faded) or play has the focus; the
-  remote's own previous and next keys skip anywhere. Play sits alone.
+  **No play, previous or next buttons on a TV** (the owner's asking, the
+  orb too): while the buttons are faded (they stay faded) or none of Now
+  Playing's buttons has the focus - it opens with none - OK plays and
+  pauses and left and right skip (previous and next song, an audiobook's
+  thirty seconds). Up or down reaches the buttons that are left; the
+  remote's own previous and next keys skip anywhere.
 
 Checked on the emulator with real key presses: moving through Home, a held
 OK opening a card's menu with the focus in it, Back closing the menu, OK

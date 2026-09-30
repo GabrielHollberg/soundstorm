@@ -3569,7 +3569,8 @@ html.tv .now-playing.tv-idle .np-controls, html.tv .now-playing.tv-idle .np-prog
    under an animation they popped up over it (reported from the projector).
    The box keeps its place, unseen, so nothing moves. */
 .now-playing.cover-viz .np-lyrics, .now-playing.cover-full .np-lyrics { visibility: hidden; }
-/* No previous and next buttons in Now Playing on a TV: left and right skip
-   (tvRemote). Play sits alone in the middle. */
-html.tv .now-playing #np-prev, html.tv .now-playing #np-next { display: none !important; }
+/* No play, previous or next buttons in Now Playing on a TV: OK plays and
+   pauses, left and right skip (tvRemote). */
+html.tv .now-playing #np-prev, html.tv .now-playing #np-next,
+html.tv .now-playing #np-play { display: none !important; }
 html.tv .now-playing .np-controls { justify-content: center; }
