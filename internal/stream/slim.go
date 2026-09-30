@@ -59,6 +59,7 @@ type slimLayout struct {
 	tailStart   int64
 	size        int64
 	contentType string
+	kbps        float64 // the audio's own bitrate, for pacing; 0 if not known
 	etag        string
 	lastMod     string
 	made        time.Time
@@ -198,8 +199,11 @@ func (p *Proxy) serveSlim(w http.ResponseWriter, r *http.Request, target source.
 		body = io.MultiReader(body, io.LimitReader(tail, end-max(start, headLen)+1))
 	}
 	var err error
-	if rate := paceRate(r, l.contentType); rate > 0 && awayFromHome(r) {
-		_, err = pacedCopy(r.Context(), w, body, paceBurst, rate)
+	if burst, rate := paceFor(r, l.contentType, l.kbps); rate > 0 && awayFromHome(r) {
+		if start < headLen {
+			burst += headLen - start // the header, then eight seconds of music
+		}
+		_, err = pacedCopy(r.Context(), w, body, burst, rate)
 	} else {
 		_, err = io.Copy(w, body)
 	}
@@ -322,12 +326,34 @@ func (p *Proxy) slimMP3(ctx context.Context, target source.Target, first []byte,
 		return errors.New("no tag")
 	}
 	// A frame must start where the tag ends, or the tag's size was wrong.
-	sync, _, err := p.readRange(ctx, target, at, at+1)
-	if err != nil || len(sync) < 2 || sync[0] != 0xff || sync[1]&0xe0 != 0xe0 {
+	frame, _, err := p.readRange(ctx, target, at, at+255)
+	if err != nil || len(frame) < 4 || frame[0] != 0xff || frame[1]&0xe0 != 0xe0 {
 		return errors.New("no frame after the tag")
 	}
 	l.tailStart = at
+	l.kbps = mp3FrameKbps(frame)
 	return nil
+}
+
+// mp3FrameKbps is the bitrate a constant-bitrate MP3's first frame names, or
+// 0 when it cannot be trusted: a variable-bitrate file announces itself with
+// a Xing or Info frame whose own bitrate says nothing about the rest.
+func mp3FrameKbps(frame []byte) float64 {
+	if bytes.Contains(frame, []byte("Xing")) || bytes.Contains(frame, []byte("VBRI")) {
+		return 0
+	}
+	version := frame[1] >> 3 & 3 // 3 is MPEG-1
+	layer := frame[1] >> 1 & 3   // 1 is Layer III
+	index := frame[2] >> 4
+	if layer != 1 || index == 0 || index == 15 {
+		return 0
+	}
+	mpeg1 := [...]float64{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320}
+	mpeg2 := [...]float64{0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160}
+	if version == 3 {
+		return mpeg1[index]
+	}
+	return mpeg2[index]
 }
 
 type mp4Box struct {
@@ -436,7 +462,39 @@ func (p *Proxy) slimMP4(ctx context.Context, target source.Target, first []byte,
 	}
 	l.head = newHead
 	l.tailStart = tailStart
+	if secs := mp4Seconds(slimMoov); secs > 0 {
+		kbps := float64(l.size-tailStart) * 8 / secs / 1000
+		if kbps >= 32 && kbps <= 2000 {
+			l.kbps = kbps
+		}
+	}
 	return nil
+}
+
+// mp4Seconds is the length moov's mvhd gives, or 0.
+func mp4Seconds(moov []byte) float64 {
+	for off := 8; off+8 <= len(moov); {
+		n := int(binary.BigEndian.Uint32(moov[off:]))
+		if n < 8 || off+n > len(moov) {
+			return 0
+		}
+		if string(moov[off+4:off+8]) == "mvhd" {
+			b := moov[off : off+n]
+			var scale, dur float64
+			switch {
+			case len(b) >= 32 && b[8] == 0:
+				scale, dur = float64(binary.BigEndian.Uint32(b[20:])), float64(binary.BigEndian.Uint32(b[24:]))
+			case len(b) >= 44 && b[8] == 1:
+				scale, dur = float64(binary.BigEndian.Uint32(b[28:])), float64(binary.BigEndian.Uint64(b[32:]))
+			}
+			if scale > 0 {
+				return dur / scale
+			}
+			return 0
+		}
+		off += n
+	}
+	return 0
 }
 
 // stripMoov copies moov without its udta and meta children. A fragmented

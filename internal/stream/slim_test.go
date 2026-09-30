@@ -41,7 +41,10 @@ func testM4A() (file []byte, offsets []int64) {
 			binary.BigEndian.PutUint32(stco[8+4*i:], o)
 		}
 		trak := mp4box("trak", mp4box("mdia", mp4box("minf", mp4box("stbl", mp4box("stco", stco)))))
-		moov := mp4box("moov", mp4box("mvhd", make([]byte, 100)), trak, udta)
+		mvhd := make([]byte, 100) // version 0: timescale 1000, 10 seconds
+		binary.BigEndian.PutUint32(mvhd[12:], 1000)
+		binary.BigEndian.PutUint32(mvhd[16:], 10000)
+		moov := mp4box("moov", mp4box("mvhd", mvhd), trak, udta)
 		return bytes.Join([][]byte{ftyp, moov, free, mp4box("mdat", audio)}, nil)
 	}
 	// Build once to learn where mdat's payload starts, then point into it.
@@ -85,6 +88,10 @@ func TestAnM4AIsSentWithoutItsPicture(t *testing.T) {
 	slim := w.Body.Bytes()
 	if bytes.Contains(slim, []byte("covr")) || bytes.Contains(slim, []byte("free")) {
 		t.Error("the picture or the padding was sent")
+	}
+	// The bitrate, for pacing: the audio's bytes over mvhd's ten seconds.
+	if l := p.slim.get("navidrome/x"); l.kbps < 150 || l.kbps > 180 {
+		t.Errorf("bitrate %.0f kbps, want about 164", l.kbps)
 	}
 	if saved := len(orig) - len(slim); saved < 90<<10 {
 		t.Errorf("only %d bytes smaller", saved)
@@ -130,6 +137,9 @@ func TestAnMP3IsSentFromItsFirstFrame(t *testing.T) {
 	w, ok := slimGet(t, p, srv.URL, http.MethodGet, "")
 	if !ok || !bytes.Equal(w.Body.Bytes(), frames) {
 		t.Fatalf("served slim %v, %d bytes; want the frames alone (%d)", ok, w.Body.Len(), len(frames))
+	}
+	if l := p.slim.get("navidrome/x"); l.kbps != 128 {
+		t.Errorf("bitrate %v, want the frame's 128", l.kbps)
 	}
 }
 

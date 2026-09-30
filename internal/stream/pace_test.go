@@ -40,6 +40,11 @@ func TestPaceRateFollowsTheBitrate(t *testing.T) {
 	if got := paceRate(plain, "video/mp4"); got != 0 {
 		t.Errorf("video is not paced, got %v", got)
 	}
+	// A bitrate read from the file: eight seconds at once, then 1.5 times it -
+	// 0.38 Mbps for an iTunes song, under a 0.6 Mbps phone link.
+	if burst, rate := paceFor(plain, "audio/mp4", 256); burst != 256000 || rate != 1.5*256*1000/8 {
+		t.Errorf("known bitrate: burst %d, rate %v", burst, rate)
+	}
 }
 
 func TestPacedCopySendsTheBurstThenHoldsThePace(t *testing.T) {

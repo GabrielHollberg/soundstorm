@@ -1223,6 +1223,17 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   point at the same bytes, 525KB smaller. Through the preview at 0.6 Mbps
   the generated M4A and MP3 started in 1.1s (were 28s and 75s), their full
   length intact, and a jump to 2:30 played in 1.7s.
+- **Then skips waited on the pace.** With the picture gone, the phone's
+  report showed the first song playing in 3.4s, but skips took 13.7s and
+  30.7s. Each new song started within a second of its first byte; the wait
+  was for that byte. The pace was 2.5 times a guessed 320 kbps, about 0.8
+  Mbps, and the phone got about 0.6 Mbps. Every second played added to a
+  backlog in the network that a skip had to drain: 13s after 7s of play,
+  30s after 40s. Now the pace is 1.5 times the song's own bitrate, read
+  from the file by the slim path: mvhd length for an M4A, the first frame
+  for a constant-bitrate MP3, else a guess. It follows a burst of the header
+  plus eight seconds (`paceFor`). Measured through the preview on an away
+  name: 322KB, then about 0.33 Mbps, where it was 1.1MB then 0.77.
 - **Loading shows.** A ring turns round the play button, in Now Playing (round
   the orb) and on the mini-player, while the song waits on the network. It
   appears on `waiting`, or on `play` before there is data. It clears on

@@ -29,15 +29,28 @@ import (
 // music queued ahead of the listener, so a new request's first bytes arrive in
 // seconds. At home nothing is paced. Films are not either: Jellyfin sends
 // them as short HLS pieces the player asks for one at a time.
+//
+// **Then the pace itself was too fast for the link.** 2.5 times a guessed 320
+// kbps is 0.8 Mbps, and the phone got about 0.6: every second of a song
+// played added to a backlog in the network, and a skip waited for it to drain
+// - measured from the phone, 13s after a song had played for 7s, 30s after
+// one had played for 40s, the new song starting within a second of its first
+// byte each time. So the pace is now 1.5 times the song's *own* bitrate,
+// which the slim path reads from the file (256 kbps for an iTunes song: 0.38
+// Mbps), after a burst of eight seconds of music. The buffer ahead still
+// grows by half a second every second.
 
 const (
-	// paceBurst goes out at once: enough to start any song, an iTunes M4A's
-	// ~600KB of index, art and padding before its first note included.
+	// paceBurst goes out at once when the song's bitrate is not known: enough
+	// to start any song, an iTunes M4A's ~600KB of index, art and padding
+	// before its first note included.
 	paceBurst = 1 << 20
+	// paceStartSeconds of music go out at once when the bitrate is known.
+	paceStartSeconds = 8
 	// paceAhead is how many times faster than it plays music is sent after
-	// the burst: comfortably ahead of playback on a link that can carry it,
-	// never megabytes queued on one that cannot.
-	paceAhead = 2.5
+	// the burst: ahead of playback, and under what a slow phone link carries
+	// so nothing queues up in front of the next song.
+	paceAhead = 1.5
 )
 
 // awayFromHome reports whether a request came in by one of the names used
@@ -53,26 +66,40 @@ func awayFromHome(r *http.Request) bool {
 }
 
 // paceRate is how fast, in bytes a second, to send a piece of audio after the
-// burst: paceAhead times its bitrate. The bitrate is the one asked for
-// (?kbps=, a converted stream), else a generous guess from its type - 320 kbps
-// for compressed audio, CD quality for lossless - since an original file's
-// bitrate is not known here. Zero means not to pace at all.
+// burst: paceAhead times its bitrate. Zero means not to pace at all.
 func paceRate(r *http.Request, contentType string) float64 {
+	_, rate := paceFor(r, contentType, 0)
+	return rate
+}
+
+// paceFor is how to send a piece of audio away from home: burst bytes at once,
+// then rate bytes a second. kbps is the song's own bitrate where the caller
+// knows it (the slim path reads it from the file); else it is the one asked
+// for (?kbps=, a converted stream), and else a generous guess from the type -
+// 320 kbps for compressed audio, CD quality for lossless - with the big burst,
+// since an original whose bitrate is unknown may carry art and padding before
+// its first note. A zero rate means not to pace at all.
+func paceFor(r *http.Request, contentType string, kbps float64) (burst int64, rate float64) {
 	ct := strings.ToLower(contentType)
 	if !strings.HasPrefix(ct, "audio/") {
-		return 0
+		return 0, 0
 	}
-	kbps := 320.0
-	if k, err := strconv.Atoi(r.URL.Query().Get("kbps")); err == nil && k > 0 {
-		kbps = float64(k)
-	} else {
+	if kbps <= 0 {
+		if k, err := strconv.Atoi(r.URL.Query().Get("kbps")); err == nil && k > 0 {
+			kbps = float64(k)
+		}
+	}
+	if kbps <= 0 {
+		kbps = 320
 		for _, lossless := range []string{"flac", "wav", "aiff", "x-aiff", "alac"} {
 			if strings.Contains(ct, lossless) {
 				kbps = 1411
 			}
 		}
+		return paceBurst, paceAhead * kbps * 1000 / 8
 	}
-	return paceAhead * kbps * 1000 / 8
+	burst = max(int64(kbps*1000/8*paceStartSeconds), 64<<10)
+	return burst, paceAhead * kbps * 1000 / 8
 }
 
 // pacedCopy copies src to dst: the first burst bytes at once, then no faster

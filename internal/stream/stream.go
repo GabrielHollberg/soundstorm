@@ -287,10 +287,10 @@ func (p *Proxy) pipe(w http.ResponseWriter, r *http.Request, target source.Targe
 		return
 	}
 	var copyErr error
-	if rate := paceRate(r, resp.Header.Get("Content-Type")); rate > 0 && awayFromHome(r) {
+	if burst, rate := paceFor(r, resp.Header.Get("Content-Type"), 0); rate > 0 && awayFromHome(r) {
 		// Audio to a device away from home: paced, so a slow link never has
 		// megabytes queued ahead of the next request (pace.go).
-		_, copyErr = pacedCopy(r.Context(), w, resp.Body, paceBurst, rate)
+		_, copyErr = pacedCopy(r.Context(), w, resp.Body, burst, rate)
 	} else {
 		_, copyErr = io.Copy(w, resp.Body)
 	}
