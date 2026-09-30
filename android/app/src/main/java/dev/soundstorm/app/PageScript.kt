@@ -243,6 +243,11 @@ object PageScript {
         st.url = m.next || '';
         st.ended = true;
         st.duration = NaN;
+        // Starting afresh, so the next report's "playing" starts the clock
+        // and its time updates again (they queue the song after it).
+        st.playing = false;
+        st.position = 0;
+        st.at = performance.now();
         pwr = false;
         tick(false);
         fire('pause');

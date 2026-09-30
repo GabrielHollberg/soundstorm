@@ -6261,6 +6261,10 @@ async function preloadNext() {
     if (audio.nativeQueued !== url) {
       audio.nativeQueued = url;
       window.soundstormApp.queueNext(url);
+      // No copy of the next song reaches the page to be heard from, so it is
+      // heard now, while this one plays out: otherwise the animations would
+      // follow only the tempo for its first twenty seconds.
+      if (url) hearAhead(next);
     }
     return;
   }
@@ -12703,6 +12707,30 @@ function playbackSettled(item) {
     };
     check();
   });
+}
+
+// hearAhead hears the song coming next before it starts (the Android app,
+// where the page has no copy of it), so listenTo finds it already heard.
+async function hearAhead(item) {
+  const key = selectionKey(item);
+  if (item.kind !== 'music' || isDownloaded(item) || heardSongs.has(key)) return;
+  if (!(key in soundOf)) {
+    const { ok, body } = await api(`/api/music/sound?id=${encodeURIComponent(item.id)}`);
+    if (!(key in soundOf)) soundOf[key] = ok && body && body.known ? body : null;
+  }
+  if (heardSongs.has(key)) return;
+  const sound = soundOf[key];
+  let tempo = 0;
+  if (sound && sound.tempo > 0) {
+    tempo = sound.tempo;
+    while (tempo < 70) tempo *= 2;
+    while (tempo > 150) tempo /= 2;
+  }
+  const job = hearSong(item, tempo).catch(() => null);
+  heardSongs.set(key, job);
+  while (heardSongs.size > HEARD_KEEP) heardSongs.delete(heardSongs.keys().next().value);
+  // Failed: tried again the ordinary way when it plays.
+  job.then((heard) => { if (!heard && heardSongs.get(key) === job) heardSongs.delete(key); });
 }
 
 function listenTo(item, tempo) {

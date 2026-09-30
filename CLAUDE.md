@@ -1202,7 +1202,15 @@ next as always and finds it already playing. Next and previous from the
 lock screen go to the page, which holds the queue (a ForwardingPlayer).
 Downloads are blob: addresses the native player cannot read, so they still
 play in the page, and so does crossfade's second element: crossfade is off
-in the app. Not yet tried on a real phone.
+in the app. **The animations heard each song only twenty seconds in**:
+the gapless copy in memory was what the song was heard from at once, and
+without it a song waited to be well buffered, then fetched its 96 kbps copy
+(Navidrome's log showed each about 22s after the song began). So the song
+queued next is heard while this one plays out (`hearAhead`, from
+`preloadNext`), and `listenTo` finds it done. And after the player moved
+into the next song by itself, the stand-in kept "playing" from the last one,
+so no "playing" came and its time updates stopped - which also stopped the
+song after that being queued; the stand-in starts afresh on "ended" (0.10).
 
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
