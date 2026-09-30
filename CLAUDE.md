@@ -1081,6 +1081,19 @@ playing a song and opening Now Playing, the arrows among its buttons, Back
 closing it with the music going on. Films were not played on the emulator
 (the preview has no Jellyfin).
 
+**Set up by a home address, the app sat on the loading spinner.** Installed
+on the owner's XGIMI projector (Google TV, Android 14) and opened at
+`http://192.168.0.19:8099`, the page checked it could reach the install's
+secure name and moved there - and the app took the move for a link out of
+SoundStorm and refused it. Now a main-frame move to https on one of the
+install's own names (`*.home.soundstorm.dev`, `*.net.soundstorm.dev`), on the
+same port, is kept as the server's address and the page reopened there,
+since the page's script and messages are allowed for one origin. Checked on
+the emulator opened at the host's address: it landed on the secure name's
+sign-in page. Installing on the projector went over the network with adb;
+this PC's VPN had to be off to reach it, as it is on another subnet
+(192.168.86.x, a Google Wifi router behind the main one).
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

@@ -394,6 +394,15 @@ class MainActivity : Activity() {
         return url.scheme == s.scheme && url.host == s.host && url.port == s.port
     }
 
+    /** https on one of an install's own names, on the port in use now. */
+    private fun isOwnSecureName(url: Uri): Boolean {
+        val s = server ?: return false
+        val host = url.host?.lowercase() ?: return false
+        if (url.scheme != "https" || isServer(url)) return false
+        if (!host.endsWith(".home.soundstorm.dev") && !host.endsWith(".net.soundstorm.dev")) return false
+        return url.port == s.port
+    }
+
     private fun openOutside(url: Uri) {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE))
@@ -448,6 +457,21 @@ class MainActivity : Activity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
             val scheme = url.scheme ?: return true
+            // The page moving itself to the install's secure name - which it
+            // does, after checking it can reach it, when opened by a home
+            // address like http://192.168.0.19:8099. That is the same server,
+            // not a link out: it is kept as the address from now on, and the
+            // page reopened there (the page's script and messages are allowed
+            // for one origin). Found on a TV set up by its LAN address, which
+            // sat on the loading spinner, the move refused as a link out.
+            if (request.isForMainFrame && isOwnSecureName(url)) {
+                val target = ServerAddress.parse(url.toString())
+                if (target != null) {
+                    ServerAddress.save(this@MainActivity, target)
+                    content.post { showWeb(target) }
+                    return true
+                }
+            }
             if (request.isForMainFrame && scheme in setOf("http", "https") && !isServer(url)) {
                 // A link off the server leaves for the browser, as one out of
                 // an installed web app does.
