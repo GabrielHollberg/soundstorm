@@ -7610,18 +7610,27 @@ $('np-cover').addEventListener('click', (event) => {
     return;
   }
 });
-// On a touch screen a tap anywhere on Now Playing moves to the next look, in
-// the Looks sheet's order and round again - lyrics, the covers, then every
-// visualizer - while a hold still brings up the buttons. Not on the title
-// (the owner asked for a tap there to do nothing), nor on anything that
-// answers a tap of its own: Up next, the Looks sheet, a menu. The end of a
-// hold or a swipe is not a tap.
+// On a touch screen a double tap anywhere on Now Playing moves to the next
+// look, in the Looks sheet's order and round again - lyrics, the covers, then
+// every visualizer - while a hold still brings up the buttons. A single tap
+// did it first, and changed the look by accident (the owner's asking): two
+// taps within 350ms and 40px of each other. Not on the title (the owner
+// asked for a tap there to do nothing), nor on anything that answers a tap
+// of its own: Up next, the Looks sheet, a menu. The end of a hold or a swipe
+// is not a tap.
+let lookTap = null;
 $('now-playing').addEventListener('click', (event) => {
   if (!touchScreen() || !audio.item) return;
   if (performance.now() - npHold.at < 700) return;
   if (npSwipe.busy || performance.now() - (npSwipe.draggedAt || 0) < 400) return;
   if (event.target.closest('.np-head, #np-queue, #np-next-block, #np-looks, #item-menu, input, a, .np-controls button, .np-bar button, .np-sleep-menu')) return;
   if (audio.npMode === 'queue' || audio.item.kind !== 'music') return;
+  const now = performance.now();
+  if (!lookTap || now - lookTap.at > 350 || Math.hypot(event.clientX - lookTap.x, event.clientY - lookTap.y) > 40) {
+    lookTap = { at: now, x: event.clientX, y: event.clientY };
+    return;
+  }
+  lookTap = null;
   const at = COVER_STYLES.indexOf(coverStyle());
   const next = COVER_STYLES[(at + 1) % COVER_STYLES.length];
   state.prefs = state.prefs || {};

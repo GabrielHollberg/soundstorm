@@ -1079,6 +1079,10 @@ button.danger {
    mouse, which cannot hold anything down usefully. */
 @media (pointer: coarse) { .item-more { display: none; } }
 
+/* Now Playing is double-tapped to change the look: the browser must not
+   take the double tap as a zoom. */
+#now-playing { touch-action: manipulation; }
+
 /* Cards are held, so the browser must not take the hold for itself -
    selecting the title text, or iOS's link callout. */
 .item {
