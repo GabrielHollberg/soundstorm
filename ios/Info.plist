@@ -14,6 +14,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Only the system's own https, which is exempt: this answers App Store
+	     Connect's export question once instead of on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SoundStorm connects to your own server, which may be on your home network.</string>
 </dict>
