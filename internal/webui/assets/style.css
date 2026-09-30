@@ -3127,7 +3127,10 @@ body.np-open .toast { z-index: 76; bottom: calc(var(--safe-bottom) + 24px); }
      no hold: it keeps them all, reached with the remote. */
   html:not(.tv) .now-playing .np-label-text { display: none; }
   html:not(.tv) .now-playing.np-music .np-progress { visibility: hidden; }
-  .now-playing.np-music.hold-icons .np-progress { visibility: visible; }
+  /* As specific as the rule above, or that one wins and the timeline never
+     shows - which it did once html:not(.tv) was added to it, while a slide
+     onto the unseen timeline still seeked. */
+  html:not(.tv) .now-playing.np-music.hold-icons .np-progress { visibility: visible; }
 }
 .np-hold-icon {
   position: absolute;
