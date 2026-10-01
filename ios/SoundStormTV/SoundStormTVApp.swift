@@ -72,7 +72,7 @@ final class AppModel {
     }
 
     func use(_ server: URL) {
-        ServerAddress.saved = server
+        ServerAddress.remember(server)
         player?.stop()
         let api = API(server: server)
         self.api = api

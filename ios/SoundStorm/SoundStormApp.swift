@@ -76,7 +76,7 @@ final class RootViewController: UIViewController {
     private func showConnect(prefill: URL?) {
         let connect = ConnectViewController(prefill: prefill)
         connect.onConnected = { [weak self] url in
-            ServerAddress.saved = url
+            ServerAddress.remember(url)
             self?.showWeb(url)
         }
         show(connect)

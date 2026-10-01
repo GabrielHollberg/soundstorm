@@ -1,15 +1,76 @@
 import Foundation
 
-/// The one SoundStorm server this app talks to. Every install is someone's
-/// own, so the address is asked for on first launch rather than built in.
+/// The SoundStorm servers this app knows, and the one it talks to now. Every
+/// install is someone's own, so addresses are asked for rather than built in;
+/// somebody may use more than one (their own and their parents', say), so the
+/// app keeps a list, each with a name, the latest first.
+///
+/// Each server's sign-ins stay with it: cookies belong to an address, so
+/// moving between servers signs nobody out of either.
 enum ServerAddress {
     private static let key = "serverURL"
+    private static let listKey = "servers"
 
-    /// Kept as a plain string, so it can also be given at launch for testing:
+    /// The server in use. Kept as a plain string, so it can also be given at
+    /// launch for testing:
     /// `xcrun simctl launch booted dev.soundstorm.app -serverURL http://localhost:8080`
     static var saved: URL? {
         get { UserDefaults.standard.string(forKey: key).flatMap(parse) }
         set { UserDefaults.standard.set(newValue?.absoluteString, forKey: key) }
+    }
+
+    /// A server in the list: its address, and the name shown for it.
+    struct Server: Codable, Hashable, Identifiable {
+        var url: URL
+        var name: String
+        var id: URL { url }
+    }
+
+    /// Every server this app knows, the latest used first. An app from before
+    /// the list starts it with the server it already had.
+    static var all: [Server] {
+        get {
+            if let data = UserDefaults.standard.data(forKey: listKey),
+               let list = try? JSONDecoder().decode([Server].self, from: data) {
+                return list
+            }
+            return saved.map { [Server(url: $0, name: defaultName(for: $0))] } ?? []
+        }
+        set {
+            UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: listKey)
+        }
+    }
+
+    /// Using a server: it goes to the top of the list (added if new) and is
+    /// the one the app opens with.
+    static func remember(_ url: URL) {
+        var list = all
+        let entry = list.first(where: { $0.url == url }) ?? Server(url: url, name: defaultName(for: url))
+        list.removeAll { $0.url == url }
+        list.insert(entry, at: 0)
+        all = list
+        saved = url
+    }
+
+    /// Taken off the list. If it was the one in use, there is none now.
+    static func forget(_ url: URL) {
+        all = all.filter { $0.url != url }
+        if saved == url { saved = nil }
+    }
+
+    static func rename(_ url: URL, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        all = all.map { $0.url == url ? Server(url: $0.url, name: name.isEmpty ? defaultName(for: $0.url) : name) : $0 }
+    }
+
+    /// A first name for a server, until somebody gives it one: its address
+    /// without the parts every install shares.
+    static func defaultName(for url: URL) -> String {
+        let host = url.host() ?? url.absoluteString
+        for suffix in [".home.soundstorm.dev", ".net.soundstorm.dev"] where host.hasSuffix(suffix) {
+            return "SoundStorm " + host.dropLast(suffix.count)
+        }
+        return host
     }
 
     /// Turns what somebody typed into the server's root URL. Anything without

@@ -5753,6 +5753,27 @@ iPhone's camera opens the address in Safari, not the app, so it is allowed
 there (signing in to Safari first if need be); typing the code in the app's
 Settings avoids that.
 
+**Saved servers (2026-10-01), the first half of profiles.** The owner's
+design, after Prime Video's account-then-people: a device may know several
+servers (their own, their parents'), and later several people on each. The
+apps' connect screen is now **Your servers** - the latest used first, the one
+in use ticked, tap to switch, hold for Rename and Remove - above **add
+another**. `ServerAddress.all` (shared by the iPhone and Apple TV apps) keeps
+`{url, name}`; `remember` puts a server at the top and makes it current, an
+app from before the list starts it with the server it had, and a first name
+is the address without `.home.soundstorm.dev` (renamed in the app). Sign-ins
+stay with each server, since cookies belong to an address, so switching signs
+nobody out - the iPhone test switches away and back and is still signed in.
+Browsers need nothing: each server is its own site and its own bookmark.
+**For the PC (Android):** the same in `ServerAddress.kt` - a JSON list in the
+prefs beside the current address (the current one seeds it), the connect
+screen listing them above the address box, a long press for Rename and
+Remove. **Next: profiles** - each server's people on a device, "Who's
+listening?" every time a TV opens, optional PINs (the owner's always). The
+design, agreed with the owner: the server keeps which accounts a device may
+switch between, keyed by its device token, and swaps the session cookie on a
+switch, so one design serves browsers and every app.
+
 ## The Android app (`android/`)
 
 The same shape as the iPhone app, and the same stage: a native shell around

@@ -1,17 +1,59 @@
 import SwiftUI
 
-/// First launch: the address of somebody's own SoundStorm, checked the same
-/// way the iPhone app checks it (ServerAddress, shared).
+/// First launch, or Change server: the servers this TV knows, to pick one
+/// (held for Rename and Remove), and the address of another to add, checked
+/// the same way the iPhone app checks it (ServerAddress, shared).
 struct ConnectView: View {
     @Environment(AppModel.self) private var model
-    @State private var address = ServerAddress.saved?.host() ?? ""
+    @State private var address = ""
     @State private var checking = false
     @State private var message: String?
+    @State private var list = ServerAddress.all
+    @State private var renaming: ServerAddress.Server?
+    @State private var newName = ""
 
     var body: some View {
         VStack(spacing: 40) {
             Logo()
-            Text("Enter your server's address - the one you open in a browser.")
+            if !list.isEmpty {
+                VStack(spacing: 16) {
+                    Text("Your servers").font(.headline)
+                    ForEach(list) { server in
+                        Button {
+                            model.use(server.url)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(server.name)
+                                    if server.name != (server.url.host() ?? "") {
+                                        Text(server.url.host() ?? server.url.absoluteString)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if server.url == ServerAddress.saved {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                            .frame(width: 800)
+                        }
+                        .contextMenu {
+                            Button("Rename") {
+                                newName = server.name
+                                renaming = server
+                            }
+                            Button("Remove", role: .destructive) {
+                                ServerAddress.forget(server.url)
+                                list = ServerAddress.all
+                            }
+                        }
+                    }
+                }
+            }
+            Text(list.isEmpty
+                 ? "Enter your server's address - the one you open in a browser."
+                 : "Or add another - its address, the one you open in a browser.")
                 .font(.headline)
                 .foregroundStyle(.secondary)
             TextField("yourname.home.soundstorm.dev", text: $address)
@@ -28,6 +70,15 @@ struct ConnectView: View {
             }
         }
         .multilineTextAlignment(.center)
+        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Save") {
+                if let renaming { ServerAddress.rename(renaming.url, to: newName) }
+                list = ServerAddress.all
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
     }
 
     private func connect() {

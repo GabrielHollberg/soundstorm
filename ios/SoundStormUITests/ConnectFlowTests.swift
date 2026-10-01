@@ -33,6 +33,7 @@ final class ConnectFlowTests: XCTestCase {
     func testWrongAddressSaysWhy() {
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        focus(field)
         field.typeText("localhost:9\n")
         let why = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "Couldn't reach localhost")).firstMatch
         XCTAssertTrue(why.waitForExistence(timeout: 15), "no explanation shown for an address nothing answers at")
@@ -41,6 +42,7 @@ final class ConnectFlowTests: XCTestCase {
     func testConnectSignInAndChangeServer() {
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        focus(field)
         field.typeText(server + "\n")
 
         // The server's own page, inside the app: signed in already if an
@@ -69,9 +71,13 @@ final class ConnectFlowTests: XCTestCase {
         XCTAssertTrue(change.isHittable, "Change server is missing from Settings")
         change.tap()
 
-        let back = app.textFields.firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 5), "Change server did not return to the connect screen")
-        XCTAssertEqual(back.value as? String, "localhost", "the connect screen should start from the current server")
+        // Back at the connect screen, the server just used is in the list,
+        // and choosing it opens it again without typing.
+        let saved = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "localhost")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "the server used should be in the list")
+        saved.tap()
+        XCTAssertTrue(app.webViews.firstMatch.buttons["Settings"].waitForExistence(timeout: 15),
+                      "choosing a saved server should open it, still signed in")
     }
 
     /// Photo backup end to end: turned on from the page (its question, or
@@ -81,6 +87,7 @@ final class ConnectFlowTests: XCTestCase {
     func testPhotoBackupSendsTheCameraRoll() {
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        focus(field)
         field.typeText(server + "\n")
         let web = app.webViews.firstMatch
         let settings = web.buttons["Settings"]
@@ -120,6 +127,7 @@ final class ConnectFlowTests: XCTestCase {
     func testBackupIsAskedOfWhoeverSignsInNext() {
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        focus(field)
         field.typeText(server + "\n")
         let web = app.webViews.firstMatch
         let settings = web.buttons["Settings"]
@@ -140,6 +148,7 @@ final class ConnectFlowTests: XCTestCase {
             app.launch()
             let again = app.textFields.firstMatch
             XCTAssertTrue(again.waitForExistence(timeout: 5))
+            focus(again)
             again.typeText(server + "\n")
             XCTAssertTrue(web.secureTextFields.firstMatch.waitForExistence(timeout: 15), "the sign-in form did not come back")
         }

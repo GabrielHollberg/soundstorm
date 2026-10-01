@@ -1,12 +1,16 @@
 import UIKit
 
-/// First launch, or "Change server": asks for the address of somebody's own
-/// SoundStorm, checks it really is one, and hands it back.
+/// First launch, or "Change server": the servers this app knows, to pick one
+/// (held for Rename and Remove), and the address of another to add - checked
+/// to be a SoundStorm before it is kept.
 final class ConnectViewController: UIViewController, UITextFieldDelegate {
     var onConnected: ((URL) -> Void)?
 
+    /// The server in use, marked in the list.
     private let prefill: URL?
     private let field = UITextField()
+    private let serversTitle = UILabel()
+    private let servers = UIStackView()
     private let button = UIButton(configuration: .filled())
     private let hint = UILabel()
     private let message = UILabel()
@@ -41,14 +45,18 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         title.font = .systemFont(ofSize: 32, weight: .heavy).italic()
         title.textColor = .white
 
-        hint.text = "Enter your server's address - the one you open in a browser."
+        serversTitle.text = "Your servers"
+        serversTitle.font = .preferredFont(forTextStyle: .headline)
+        serversTitle.textColor = .white
+        servers.axis = .vertical
+        servers.spacing = 8
+
         hint.font = .preferredFont(forTextStyle: .subheadline)
         hint.textColor = .secondaryLabel
         hint.numberOfLines = 0
         hint.textAlignment = .center
 
         field.placeholder = "yourname.home.soundstorm.dev"
-        field.text = prefill.map { $0.host() ?? $0.absoluteString }
         field.keyboardType = .URL
         field.textContentType = .URL
         field.autocapitalizationType = .none
@@ -76,20 +84,23 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         message.numberOfLines = 0
         message.textAlignment = .center
 
-        let stack = UIStackView(arrangedSubviews: [logo, title, hint, field, button, message])
+        let stack = UIStackView(arrangedSubviews: [logo, title, serversTitle, servers, hint, field, button, message])
         stack.axis = .vertical
         stack.alignment = .center
         stack.spacing = 16
-        stack.setCustomSpacing(28, after: hint)
+        stack.setCustomSpacing(28, after: title)
+        stack.setCustomSpacing(28, after: servers)
+        stack.setCustomSpacing(16, after: hint)
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
-        for wide in [field, button, hint, message] {
+        for wide in [field, button, hint, message, servers] {
             wide.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         // Centered in whatever the keyboard leaves, and no wider than 420
         // points so it stays a column on an iPad.
         let space = UILayoutGuide()
         view.addLayoutGuide(space)
+        showServers()
         let fill = stack.widthAnchor.constraint(equalTo: view.layoutMarginsGuide.widthAnchor, constant: -16)
         fill.priority = .defaultHigh
         NSLayoutConstraint.activate([
@@ -114,7 +125,57 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        field.becomeFirstResponder()
+        // Straight to typing only when there is nothing to pick.
+        if ServerAddress.all.isEmpty { field.becomeFirstResponder() }
+    }
+
+    /// The list, as it is now: a button each, the one in use ticked; held,
+    /// Rename and Remove.
+    private func showServers() {
+        let list = ServerAddress.all
+        servers.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        serversTitle.isHidden = list.isEmpty
+        servers.isHidden = list.isEmpty
+        hint.text = list.isEmpty
+            ? "Enter your server's address - the one you open in a browser."
+            : "Or add another - its address, the one you open in a browser."
+        for server in list {
+            var config = UIButton.Configuration.filled()
+            config.baseBackgroundColor = Self.surface
+            config.baseForegroundColor = .white
+            config.cornerStyle = .large
+            config.title = server.name
+            // The address under the name, unless the name is the address.
+            let host = server.url.host() ?? server.url.absoluteString
+            config.subtitle = server.name == host ? nil : host
+            config.titleAlignment = .leading
+            config.image = server.url == prefill ? UIImage(systemName: "checkmark") : nil
+            config.imagePlacement = .trailing
+            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+            let row = UIButton(configuration: config)
+            row.contentHorizontalAlignment = .leading
+            row.accessibilityHint = "Hold for Rename and Remove"
+            row.addAction(UIAction { [weak self] _ in self?.onConnected?(server.url) }, for: .primaryActionTriggered)
+            row.menu = UIMenu(children: [
+                UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { [weak self] _ in self?.rename(server) },
+                UIAction(title: "Remove", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                    ServerAddress.forget(server.url)
+                    self?.showServers()
+                },
+            ])
+            servers.addArrangedSubview(row)
+        }
+    }
+
+    private func rename(_ server: ServerAddress.Server) {
+        let alert = UIAlertController(title: "Rename", message: server.url.host(), preferredStyle: .alert)
+        alert.addTextField { $0.text = server.name; $0.clearButtonMode = .whileEditing }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alert] _ in
+            ServerAddress.rename(server.url, to: alert?.textFields?.first?.text ?? "")
+            self?.showServers()
+        })
+        present(alert, animated: true)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
