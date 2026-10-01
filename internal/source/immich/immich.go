@@ -65,7 +65,7 @@ func New(cfg Config) (*Source, error) {
 	return &Source{id: cfg.ID, cfg: cfg, http: c}, nil
 }
 
-func (s *Source) ID() string       { return s.id }
+func (s *Source) ID() string { return s.id }
 
 // as is the key and library a request is made with: the person asking's own,
 // or the administrator's when nobody is (background work). An error rather
