@@ -28,7 +28,7 @@ func jellyfinTokenHeader(token string) string {
 // Jellyfin is the best-behaved of the backends here: the wizard the web UI
 // shows on first run is a plain REST API that stops accepting calls once setup
 // is complete, so driving it is both easy and safe to retry.
-func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, log *slog.Logger) (state.Backend, error) {
+func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, sec secrets, log *slog.Logger) (state.Backend, error) {
 	c.SetHeader("Authorization", jellyfinAuthHeader)
 	c.SetHeader("Accept", "application/json")
 
@@ -52,7 +52,7 @@ func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, log *slog
 	}
 	log.Info("jellyfin reachable", "version", public.Version, "wizardDone", public.StartupWizardCompleted)
 
-	password, err := generatePassword()
+	password, kept, err := sec("password")
 	if err != nil {
 		return state.Backend{}, err
 	}
@@ -61,6 +61,10 @@ func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, log *slog
 		if err := runJellyfinWizard(ctx, c, password, log); err != nil {
 			return state.Backend{}, err
 		}
+	} else if kept {
+		// The wizard finished on an earlier attempt that failed later on
+		// (signing in, the libraries): the account has the kept password.
+		log.Info("jellyfin set up by an earlier attempt; carrying on")
 	} else {
 		// The wizard already ran, so the account exists with a password we do
 		// not have. Nothing to do but say so clearly.

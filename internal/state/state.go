@@ -175,6 +175,15 @@ type data struct {
 	// by backend id.
 	Identities map[string]map[string]Identity `json:"identities,omitempty"`
 
+	// SetupSecrets are the passwords and keys a backend's first-run setup has
+	// made, by backend id then name, kept from the moment each is made until
+	// the setup finishes. Setup is several steps - make the admin account,
+	// sign in, make a key, make a library - and these used to be saved only
+	// at the end, so a failure after the account existed left an account whose
+	// password nobody held: every retry was refused as "already set up", and
+	// only resetting the backend's volume by hand recovered it.
+	SetupSecrets map[string]map[string]string `json:"setupSecrets,omitempty"`
+
 	// StarterInstalled records that the bundled sample library has had its one
 	// chance to unpack. Without it the unpack runs on every boot into any shelf
 	// with no media on it, so somebody who deleted the samples on purpose got
@@ -887,6 +896,44 @@ func (s *Store) SetBackend(id string, b Backend) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.d.Backends[id] = b
+	// Set up: what the setup was holding on to is now in b, or not needed.
+	delete(s.d.SetupSecrets, id)
+	return s.save()
+}
+
+// SetupSecret is a secret a backend's setup made earlier and has not finished
+// with, if there is one.
+func (s *Store) SetupSecret(backendID, name string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.d.SetupSecrets[backendID][name]
+	return v, ok && v != ""
+}
+
+// ClearSetupSecrets forgets what a finished setup kept (a person's backend
+// account, saved as their identity).
+func (s *Store) ClearSetupSecrets(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.d.SetupSecrets[key]; !ok {
+		return nil
+	}
+	delete(s.d.SetupSecrets, key)
+	return s.save()
+}
+
+// SetSetupSecret keeps a secret a backend's setup has just made, written to
+// disk before the backend is told it.
+func (s *Store) SetSetupSecret(backendID, name, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.SetupSecrets == nil {
+		s.d.SetupSecrets = map[string]map[string]string{}
+	}
+	if s.d.SetupSecrets[backendID] == nil {
+		s.d.SetupSecrets[backendID] = map[string]string{}
+	}
+	s.d.SetupSecrets[backendID][name] = value
 	return s.save()
 }
 

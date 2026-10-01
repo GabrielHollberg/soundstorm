@@ -33,7 +33,7 @@ var errWaitingForMusic = errors.New("waiting for the music library to be set up"
 // outside the house (the third-party lyrics lookup) or cost hours for
 // nothing SoundStorm shows (transcribing lyrics). Then it schedules a nightly
 // look for new songs and starts the first listen.
-func provisionAudioMuse(ctx context.Context, c *httpx.Client, store *state.Store, log *slog.Logger) (state.Backend, error) {
+func provisionAudioMuse(ctx context.Context, c *httpx.Client, store *state.Store, sec secrets, log *slog.Logger) (state.Backend, error) {
 	resp, err := c.Do(ctx, httpx.Request{Path: "/api/health"})
 	if err != nil {
 		return state.Backend{}, fmt.Errorf("audiomuse not reachable: %w", err)
@@ -46,36 +46,51 @@ func provisionAudioMuse(ctx context.Context, c *httpx.Client, store *state.Store
 	if err != nil {
 		return state.Backend{}, fmt.Errorf("audiomuse setup: %w", err)
 	}
-	if resp.Status == http.StatusUnauthorized {
+	token, kept, err := sec("token")
+	if err != nil {
+		return state.Backend{}, err
+	}
+	adminPassword, _, err := sec("admin")
+	if err != nil {
+		return state.Backend{}, err
+	}
+	saved := resp.Status == http.StatusUnauthorized
+	if saved && !kept {
 		return state.Backend{}, fmt.Errorf(
 			"audiomuse is already set up but SoundStorm has no stored credentials for it; " +
 				"either restore SoundStorm's state file or reset the audiomuse volumes")
 	}
-	if err := resp.Err(); err != nil {
-		return state.Backend{}, fmt.Errorf("audiomuse setup: %w", err)
+	if !saved {
+		if err := resp.Err(); err != nil {
+			return state.Backend{}, fmt.Errorf("audiomuse setup: %w", err)
+		}
+		if err := saveAudioMuseSetup(ctx, c, store, sec, token, adminPassword, log); err != nil {
+			return state.Backend{}, err
+		}
+	} else {
+		// Saved by an earlier attempt that failed after it - most often the
+		// minute's wait for it to restart: the kept token is its token.
+		log.Info("audiomuse set up by an earlier attempt; carrying on")
 	}
+	return finishAudioMuse(ctx, c, token, adminPassword, log)
+}
 
+// saveAudioMuseSetup gives AudioMuse its settings: the Navidrome account it
+// reads songs through, its own admin and API token.
+func saveAudioMuseSetup(ctx context.Context, c *httpx.Client, store *state.Store, sec secrets, token, adminPassword string, log *slog.Logger) error {
 	music, ok := store.Backend("navidrome")
 	if !ok || music.Password == "" {
-		return state.Backend{}, errWaitingForMusic
+		return errWaitingForMusic
 	}
-	listenPassword, err := generatePassword()
+	listenPassword, _, err := sec("listen")
 	if err != nil {
-		return state.Backend{}, err
+		return err
 	}
 	if err := navidromeListener(ctx, music, listenPassword); err != nil {
-		return state.Backend{}, err
+		return err
 	}
 
-	token, err := generatePassword()
-	if err != nil {
-		return state.Backend{}, err
-	}
-	adminPassword, err := generatePassword()
-	if err != nil {
-		return state.Backend{}, err
-	}
-	resp, err = c.Do(ctx, httpx.Request{Method: http.MethodPost, Path: "/api/setup", Body: map[string]any{
+	resp, err := c.Do(ctx, httpx.Request{Method: http.MethodPost, Path: "/api/setup", Body: map[string]any{
 		"navidrome_auth_mode": "password",
 		"config": map[string]string{
 			"MEDIASERVER_TYPE":   "navidrome",
@@ -95,12 +110,20 @@ func provisionAudioMuse(ctx context.Context, c *httpx.Client, store *state.Store
 		},
 	}})
 	if err != nil {
-		return state.Backend{}, fmt.Errorf("audiomuse save setup: %w", err)
+		return fmt.Errorf("audiomuse save setup: %w", err)
 	}
 	if err := resp.Err(); err != nil {
-		return state.Backend{}, fmt.Errorf("audiomuse save setup: %w", err)
+		return fmt.Errorf("audiomuse save setup: %w", err)
 	}
 	log.Info("set up audiomuse", "navidrome user", audiomuseNavidromeUser)
+	return nil
+}
+
+// finishAudioMuse waits for AudioMuse to answer to its token after saving
+// (it restarts its web server), then schedules its listening.
+func finishAudioMuse(ctx context.Context, c *httpx.Client, token, adminPassword string, log *slog.Logger) (state.Backend, error) {
+	var resp *httpx.Response
+	var err error
 
 	// Saving restarts its web server; wait until the token answers.
 	authed := map[string]string{"Authorization": "Bearer " + token}

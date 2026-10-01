@@ -17,7 +17,7 @@ import (
 //
 // ABS is the most cooperative of the four backends: /status says outright
 // whether first-run has happened, and /init does the whole thing in one call.
-func provisionAudiobookshelf(ctx context.Context, c *httpx.Client, t Target, log *slog.Logger) (state.Backend, error) {
+func provisionAudiobookshelf(ctx context.Context, c *httpx.Client, t Target, sec secrets, log *slog.Logger) (state.Backend, error) {
 	var status struct {
 		App           string `json:"app"`
 		ServerVersion string `json:"serverVersion"`
@@ -35,17 +35,22 @@ func provisionAudiobookshelf(ctx context.Context, c *httpx.Client, t Target, log
 	}
 	log.Info("audiobookshelf reachable", "version", status.ServerVersion, "initialized", status.IsInit)
 
-	if status.IsInit {
+	password, kept, err := sec("password")
+	if err != nil {
+		return state.Backend{}, err
+	}
+	if status.IsInit && !kept {
 		// Already set up, with a password we do not hold. Same situation as the
 		// other backends: a human has to decide which volume to reset.
 		return state.Backend{}, fmt.Errorf(
 			"audiobookshelf is already initialized but SoundStorm has no stored credentials for it; " +
 				"either restore SoundStorm's state file or reset the audiobookshelf volume")
 	}
-
-	password, err := generatePassword()
-	if err != nil {
-		return state.Backend{}, err
+	if status.IsInit {
+		// Made by an earlier attempt that failed after it: sign in with the
+		// kept password and finish.
+		log.Info("audiobookshelf account made by an earlier attempt; carrying on")
+		return finishAudiobookshelf(ctx, c, t, password, log)
 	}
 
 	resp, err = c.Do(ctx, httpx.Request{
@@ -65,7 +70,12 @@ func provisionAudiobookshelf(ctx context.Context, c *httpx.Client, t Target, log
 		return state.Backend{}, fmt.Errorf("audiobookshelf /init: %w", err)
 	}
 	log.Info("created audiobookshelf root account", "username", accountName)
+	return finishAudiobookshelf(ctx, c, t, password, log)
+}
 
+// finishAudiobookshelf is everything after the account: signing in and the
+// library.
+func finishAudiobookshelf(ctx context.Context, c *httpx.Client, t Target, password string, log *slog.Logger) (state.Backend, error) {
 	token, userID, err := audiobookshelfLogin(ctx, c, accountName, password)
 	if err != nil {
 		return state.Backend{}, err
@@ -223,8 +233,8 @@ func scanAudiobookshelfLibrary(ctx context.Context, c *httpx.Client, libraryID s
 // The response carries a token, so there is no second login call and no reason
 // to keep the password. The one generated here is written once and never read
 // again - nobody signs in to Audiobookshelf, because nobody can reach it.
-func createAudiobookshelfUser(ctx context.Context, c *httpx.Client, adminToken, username string) (state.Identity, error) {
-	password, err := generatePassword()
+func createAudiobookshelfUser(ctx context.Context, c *httpx.Client, sec secrets, adminToken, username string) (state.Identity, error) {
+	password, kept, err := sec("password")
 	if err != nil {
 		return state.Identity{}, err
 	}
@@ -240,6 +250,14 @@ func createAudiobookshelfUser(ctx context.Context, c *httpx.Client, adminToken, 
 			"isActive": true,
 		},
 	})
+	if (err != nil || resp.Err() != nil) && kept {
+		// Made by an earlier try whose answer never arrived (the name is now
+		// taken): the kept password signs in to it.
+		token, id, lerr := audiobookshelfLogin(ctx, c, username, password)
+		if lerr == nil {
+			return state.Identity{RemoteID: id, Username: username, Password: password, Token: token, CreatedAt: time.Now().UTC()}, nil
+		}
+	}
 	if err != nil {
 		return state.Identity{}, fmt.Errorf("create audiobookshelf user: %w", err)
 	}

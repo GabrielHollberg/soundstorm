@@ -4100,8 +4100,7 @@ data-root="..">`. Adding a page means a file and a line in `SITE`. It was
 written from this file and the code; keep it in step when a decision changes,
 as this file is.
 
-**Left from this review:** setup that fails half way through still loses the
-backend's password (the roadmap's first item); stored member tokens are not
+**Left from this review:** stored member tokens are not
 cleared when a backend is set up again; the web app's Escape is handled by
 seven listeners rather than one top-layer path; object URLs for downloaded
 songs, audiobooks and films are not revoked; dead CSS; app.js wants splitting
@@ -4124,6 +4123,29 @@ into modules; Navidrome's whole library is fetched twice per cache window.
 - iPhone: fall back to the `.net` twin when a saved `.home` name fails away
   from home, as Android does; `present(alert)` while something is presented
   never resumes the page's `confirm()`.
+
+**Setup that fails half way finishes on the next attempt (2026-10-01).**
+Each backend's first-run setup is several steps - make the admin account,
+sign in, make a key, make a library - and the password was saved only once all
+had worked, so a failure after the account existed (a timeout, the backend
+restarting, AudioMuse's minute-long restart after saving) left an account
+whose password nobody held: every retry was refused as "already set up", and
+only resetting that backend's volume by hand recovered it. Now every password,
+key and token a setup makes comes from `secrets` (`Manager.secretsFor`): kept
+in `state.json` (`SetupSecrets`, by backend id and name) before the backend is
+ever told it, and the same one on every attempt. A setup that finds its own
+account already made, with a kept secret, signs in with it and carries on -
+Navidrome checks a Subsonic ping, Jellyfin skips the finished wizard,
+Audiobookshelf, Immich and Storyteller go straight to signing in, AudioMuse to
+waiting for its kept token. Without a kept secret an initialized backend is
+refused exactly as before: carrying on is only for SoundStorm's own unfinished
+setup. `SetBackend` clears what a backend's setup kept. A person's own
+Audiobookshelf and Immich accounts do the same, under
+`<backend>/member/<user id>`, cleared once their identity is saved - a try
+whose answer was lost used to leave the name taken and the person's
+positions or photos broken for good. Tested with stand-in backends that fail
+at the step after the account (`resume_test.go`); not tried against a real
+backend failing half way.
 
 ## Tailscale, and why it is a profile rather than a service
 

@@ -79,7 +79,7 @@ func runImmichSetup(t *testing.T, f *fakeImmichSetup) (string, string, string, e
 		t.Fatal(err)
 	}
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	b, err := provisionImmich(context.Background(), c, Target{ID: "immich", MediaPath: "/pictures"}, quiet)
+	b, err := provisionImmich(context.Background(), c, Target{ID: "immich", MediaPath: "/pictures"}, fresh, quiet)
 	return b.Token, b.LibraryID, b.UserID, err
 }
 

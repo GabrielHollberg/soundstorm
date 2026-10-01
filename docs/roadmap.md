@@ -8,18 +8,7 @@ access; per-person photos with phone backup and imports. What follows is
 ordered by what would most change whether it is usable, not by what is most
 interesting to build.
 
-## 1. Setup that survives a failure half way
-
-Each backend is set up by creating its administrator account and then a few
-more steps (signing in, an API key, a library). The generated password is
-saved only once all of them succeed, so a failure after the account exists -
-a timeout, a backend restarting - leaves an account whose password nobody
-holds, and the next attempt is refused as "already set up". Recovering means
-resetting that backend's volume by hand. The fix is to save the credentials
-the moment the account exists and finish setup from them on later attempts.
-It is the most likely thing to go wrong on a fresh install on a slow machine.
-
-## 2. Scale
+## 1. Scale
 
 Measured on a real library - 4,413 songs, 1,663 ebooks, 113 audiobooks - which
 found and fixed paging repeats, made-up paths and slow first loads. Still
@@ -27,13 +16,13 @@ untested: a 100k-track library, Jellyfin's first scan of a large film library,
 and how many viewers one machine can convert video for at once (conversions are
 now capped at four play sessions per person).
 
-## 3. More ebook formats
+## 2. More ebook formats
 
 EPUB and PDF are handled. MOBI, AZW3, FB2 and CBZ are not. foliate-js ships
 readers for them that were not vendored; the Go side would need metadata for
 each.
 
-## 4. Smaller open items
+## 3. Smaller open items
 
 - **Photo albums kept as albums.** Imports file by date; the albums a Google or
   iCloud download knows about are not kept yet.
@@ -54,12 +43,14 @@ each.
 - **Per-title filtering** ("only these films"): access is per whole shelf; doing
   more means per-person Jellyfin accounts and its parental ratings.
 
-Settled since this roadmap was first written: favorites, positions and history
+Settled since this roadmap was first written: a backend's setup that fails half
+way through now finishes on the next attempt, its passwords kept from the
+moment they are made; favorites, positions and history
 are kept per person by SoundStorm itself, so per-person Navidrome and Jellyfin
 accounts are not needed; reading position is per account and last writer wins,
 which suits one person reading one book.
 
-## 5. HTTPS and remote access
+## 4. HTTPS and remote access
 
 Built and live:
 

@@ -366,32 +366,70 @@ func (m *Manager) provisionOnce(ctx context.Context, t Target, log *slog.Logger)
 	if err != nil {
 		return state.Backend{}, err
 	}
+	sec := m.secretsFor(t.ID)
 
 	switch t.Type {
 	case "navidrome":
 		m.set(t.ID, StatusProvisioning, "creating Navidrome account", "")
-		return provisionNavidrome(ctx, c, log)
+		return provisionNavidrome(ctx, c, sec, log)
 	case "jellyfin":
 		m.set(t.ID, StatusProvisioning, "running Jellyfin setup", "")
-		return provisionJellyfin(ctx, c, t, log)
+		return provisionJellyfin(ctx, c, t, sec, log)
 	case "audiobookshelf":
 		m.set(t.ID, StatusProvisioning, "creating Audiobookshelf account", "")
-		return provisionAudiobookshelf(ctx, c, t, log)
+		return provisionAudiobookshelf(ctx, c, t, sec, log)
 	case "immich":
 		m.set(t.ID, StatusProvisioning, "setting up the photo library", "")
-		return provisionImmich(ctx, c, t, log)
+		return provisionImmich(ctx, c, t, sec, log)
 	case "calibreweb":
 		m.set(t.ID, StatusProvisioning, "configuring Calibre-Web", "")
 		return provisionCalibreWeb(ctx, c, t, log)
 	case "storyteller":
 		m.set(t.ID, StatusProvisioning, "setting up read-along", "")
-		return provisionStoryteller(ctx, c, log)
+		return provisionStoryteller(ctx, c, sec, log)
 	case "audiomuse":
 		m.set(t.ID, StatusProvisioning, "setting up sound analysis", "")
-		return provisionAudioMuse(ctx, c, m.store, log)
+		return provisionAudioMuse(ctx, c, m.store, sec, log)
 	default:
 		return state.Backend{}, fmt.Errorf("unknown backend type %q", t.Type)
 	}
+}
+
+// secrets hands a backend's setup the passwords and keys it makes: the same
+// one on every attempt until the setup finishes, kept on disk before the
+// backend is ever told it. kept says it was made by an earlier attempt -
+// which is what lets a setup that finds its own account already made sign in
+// and carry on, rather than give up on an account whose password nobody held.
+type secrets func(name string) (value string, kept bool, err error)
+
+func (m *Manager) secretsFor(backendID string) secrets {
+	return func(name string) (string, bool, error) {
+		if m.store != nil {
+			if v, ok := m.store.SetupSecret(backendID, name); ok {
+				return v, true, nil
+			}
+		}
+		v, err := generatePassword()
+		if err != nil {
+			return "", false, err
+		}
+		if m.store != nil {
+			if err := m.store.SetSetupSecret(backendID, name, v); err != nil {
+				// Not told to the backend unless kept: that is the whole point.
+				return "", false, fmt.Errorf("could not save a new password before using it: %w", err)
+			}
+		}
+		return v, false, nil
+	}
+}
+
+// memberSecrets is where a person's backend account keeps its setup secrets.
+func memberSecrets(backendID, userID string) string { return backendID + "/member/" + userID }
+
+// fresh is secrets with nothing kept, for tests and the one-off paths.
+func fresh(name string) (string, bool, error) {
+	v, err := generatePassword()
+	return v, false, err
 }
 
 // register builds a backend's adapters, checks they work, and publishes them.
@@ -632,13 +670,17 @@ func (m *Manager) TokenFor(ctx context.Context, backendID, userID string) (strin
 	if err != nil {
 		return "", err
 	}
-	identity, err := createAudiobookshelfUser(ctx, c, creds.Token, backendUsername(userID))
+	// The password is kept from the moment it is made, under the person's
+	// own name, so a try that made the account and lost its answer is
+	// finished by the next rather than refused as a name taken.
+	identity, err := createAudiobookshelfUser(ctx, c, m.secretsFor(memberSecrets(backendID, userID)), creds.Token, backendUsername(userID))
 	if err != nil {
 		return "", err
 	}
 	if err := m.store.SetIdentity(userID, backendID, identity); err != nil {
 		return "", err
 	}
+	_ = m.store.ClearSetupSecrets(memberSecrets(backendID, userID))
 	m.log.Info("created a backend account",
 		"backend", backendID, "for", user.Name, "username", identity.Username)
 	return identity.Token, nil
@@ -698,13 +740,14 @@ func (m *Manager) PhotoAccountFor(ctx context.Context, backendID, userID string)
 	if err != nil {
 		return "", "", err
 	}
-	identity, err := createImmichMember(ctx, c, creds.Token, backendUsername(userID), user.Name, path.Join(mediaPath, folder))
+	identity, err := createImmichMember(ctx, c, m.secretsFor(memberSecrets(backendID, userID)), creds.Token, backendUsername(userID), user.Name, path.Join(mediaPath, folder))
 	if err != nil {
 		return "", "", err
 	}
 	if err := m.store.SetIdentity(userID, backendID, identity); err != nil {
 		return "", "", err
 	}
+	_ = m.store.ClearSetupSecrets(memberSecrets(backendID, userID))
 	m.log.Info("created a photo account", "backend", backendID, "for", user.Name, "folder", folder)
 	return identity.Token, identity.LibraryID, nil
 }

@@ -102,6 +102,19 @@ is reset rather than refused.</p>
 password or token, library ids, and when it was provisioned. Passwords are generated with
 <code>crypto/rand</code>, 192 bits. Nothing about the media itself is ever stored there - that is
 the line that keeps the state from becoming an index that goes stale.</p>
+
+<h3 id="half-way">A setup that fails half way</h3>
+<p>A first run is several steps - make the admin account, sign in, make a key, make a library -
+and a failure can come after the first: a timeout, the backend restarting, AudioMuse taking a
+minute to come back after saving its settings. The credentials used to be saved only once every
+step had worked, so such a failure left an account whose password nobody held, and every retry
+was refused as "already set up". Now every password, key and token a setup makes comes from
+<code>Manager.secretsFor</code>: written to <code>state.json</code> (<code>SetupSecrets</code>)
+<em>before</em> the backend is told it, and the same one on every attempt. A retry that finds its own
+account already made signs in with the kept secret and carries on; <code>SetBackend</code> clears
+what was kept once the backend is saved. A backend that is already set up with <em>nothing</em> kept
+is still refused - carrying on is only for SoundStorm's own unfinished setup. Each person's own
+Audiobookshelf and Immich account works the same way, under its own name.</p>
 <div class="warn">Provisioning is not idempotent across a volume reset. If a backend's volume is
 wiped but SoundStorm's state survives, or the other way round, you get a backend with an account
 whose password nobody holds. The provisioners detect it and say so precisely - "navidrome already

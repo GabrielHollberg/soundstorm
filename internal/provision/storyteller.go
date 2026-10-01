@@ -36,7 +36,7 @@ var storytellerAction = regexp.MustCompile(`name="(\$ACTION_ID_[0-9a-f]+)"`)
 // OPDS catalog off, since nothing reads it.
 //
 // Every step was checked by hand against web-v2.14.21 first.
-func provisionStoryteller(ctx context.Context, c *httpx.Client, log *slog.Logger) (state.Backend, error) {
+func provisionStoryteller(ctx context.Context, c *httpx.Client, sec secrets, log *slog.Logger) (state.Backend, error) {
 	base := c.BaseURL()
 	// Its own client: the setup steps answer with redirects that carry what
 	// is needed, and must not be followed.
@@ -58,21 +58,36 @@ func provisionStoryteller(ctx context.Context, c *httpx.Client, log *slog.Logger
 	if err != nil {
 		return state.Backend{}, fmt.Errorf("storyteller setup page: %w", err)
 	}
+	password, kept, err := sec("password")
+	if err != nil {
+		return state.Backend{}, err
+	}
 	action := storytellerAction.FindSubmatch(page.body)
-	if page.status != http.StatusOK || action == nil {
+	made := page.status != http.StatusOK || action == nil
+	if made && !kept {
 		return state.Backend{}, fmt.Errorf(
 			"storyteller already has an account but SoundStorm has no stored credentials for it; " +
 				"either restore SoundStorm's state file or reset the storyteller volume")
 	}
-
-	password, err := generatePassword()
-	if err != nil {
+	if made {
+		// Made by an earlier attempt that failed after it: sign in with the
+		// kept password and finish.
+		log.Info("storyteller account made by an earlier attempt; carrying on")
+	} else if err := createStorytellerAccount(ctx, hc, at, action[1], password); err != nil {
 		return state.Backend{}, err
+	} else {
+		log.Info("created storyteller account", "username", accountName)
 	}
+	return finishStoryteller(ctx, c, hc, at, password, log)
+}
+
+// createStorytellerAccount is the first account, through the setup page's
+// server action.
+func createStorytellerAccount(ctx context.Context, hc *http.Client, at func(string) string, actionID []byte, password string) error {
 	var form bytes.Buffer
 	mw := multipart.NewWriter(&form)
 	for k, v := range map[string]string{
-		string(action[1]): "", "email": storytellerEmail, "fullName": "SoundStorm",
+		string(actionID): "", "email": storytellerEmail, "fullName": "SoundStorm",
 		"username": accountName, "password": password,
 	} {
 		_ = mw.WriteField(k, v)
@@ -80,12 +95,17 @@ func provisionStoryteller(ctx context.Context, c *httpx.Client, log *slog.Logger
 	mw.Close()
 	created, err := fetch(ctx, hc, http.MethodPost, at("/init"), form.Bytes(), mw.FormDataContentType())
 	if err != nil {
-		return state.Backend{}, fmt.Errorf("storyteller create account: %w", err)
+		return fmt.Errorf("storyteller create account: %w", err)
 	}
 	if created.status != http.StatusSeeOther {
-		return state.Backend{}, fmt.Errorf("storyteller create account: answered %d", created.status)
+		return fmt.Errorf("storyteller create account: answered %d", created.status)
 	}
-	log.Info("created storyteller account", "username", accountName)
+	return nil
+}
+
+// finishStoryteller is everything after the account: the long-lived session
+// and the settings.
+func finishStoryteller(ctx context.Context, c *httpx.Client, hc *http.Client, at func(string) string, password string, log *slog.Logger) (state.Backend, error) {
 
 	// A session lasts thirty days; the app token route trades one for a
 	// session that outlives the install, as Storyteller's own phone app does.
@@ -125,7 +145,7 @@ func provisionStoryteller(ctx context.Context, c *httpx.Client, log *slog.Logger
 		log.Warn("storyteller gave no long-lived session; using a thirty-day one")
 	}
 
-	resp, err = c.Do(ctx, httpx.Request{
+	resp, err := c.Do(ctx, httpx.Request{
 		Method:  http.MethodPut,
 		Path:    "/api/v2/settings",
 		Headers: map[string]string{"Authorization": "Bearer " + token},
@@ -146,7 +166,7 @@ func provisionStoryteller(ctx context.Context, c *httpx.Client, log *slog.Logger
 
 	return state.Backend{
 		Type:          "storyteller",
-		BaseURL:       base.String(),
+		BaseURL:       c.BaseURL().String(),
 		Username:      accountName,
 		Password:      password,
 		Token:         token,

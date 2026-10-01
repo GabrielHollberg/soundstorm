@@ -29,7 +29,7 @@ const immichEmail = accountName + "@soundstorm.invalid"
 // Immich's own upload storage. That keeps "the folders are the interface"
 // true: a photo is a file in pictures/ whether it arrived through SoundStorm
 // or a file manager, and Immich can never move, rename or delete one.
-func provisionImmich(ctx context.Context, c *httpx.Client, t Target, log *slog.Logger) (state.Backend, error) {
+func provisionImmich(ctx context.Context, c *httpx.Client, t Target, sec secrets, log *slog.Logger) (state.Backend, error) {
 	var ping struct {
 		Res string `json:"res"`
 	}
@@ -47,34 +47,39 @@ func provisionImmich(ctx context.Context, c *httpx.Client, t Target, log *slog.L
 		return state.Backend{}, fmt.Errorf("immich /api/server/config: %w", err)
 	}
 	log.Info("immich reachable", "initialized", cfg.IsInitialized)
-	if cfg.IsInitialized {
+	password, kept, err := sec("password")
+	if err != nil {
+		return state.Backend{}, err
+	}
+	if cfg.IsInitialized && !kept {
 		return state.Backend{}, fmt.Errorf(
 			"immich already has an admin account but SoundStorm has no stored credentials for it; " +
 				"either restore SoundStorm's state file or reset the immich volumes")
 	}
-
-	password, err := generatePassword()
-	if err != nil {
-		return state.Backend{}, err
+	if cfg.IsInitialized {
+		// Made by an earlier attempt that failed after it (signing in, the
+		// key, the library): the kept password signs in and setup goes on.
+		log.Info("immich admin made by an earlier attempt; carrying on")
+	} else {
+		resp, err := c.Do(ctx, httpx.Request{
+			Method: http.MethodPost,
+			Path:   "/api/auth/admin-sign-up",
+			Body:   map[string]string{"email": immichEmail, "password": password, "name": "SoundStorm"},
+		})
+		if err != nil {
+			return state.Backend{}, fmt.Errorf("immich admin sign-up: %w", err)
+		}
+		if err := resp.Err(); err != nil {
+			return state.Backend{}, fmt.Errorf("immich admin sign-up: %w", err)
+		}
+		log.Info("created immich admin account", "email", immichEmail)
 	}
-	resp, err := c.Do(ctx, httpx.Request{
-		Method: http.MethodPost,
-		Path:   "/api/auth/admin-sign-up",
-		Body:   map[string]string{"email": immichEmail, "password": password, "name": "SoundStorm"},
-	})
-	if err != nil {
-		return state.Backend{}, fmt.Errorf("immich admin sign-up: %w", err)
-	}
-	if err := resp.Err(); err != nil {
-		return state.Backend{}, fmt.Errorf("immich admin sign-up: %w", err)
-	}
-	log.Info("created immich admin account", "email", immichEmail)
 
 	var login struct {
 		AccessToken string `json:"accessToken"`
 		UserID      string `json:"userId"`
 	}
-	resp, err = c.Do(ctx, httpx.Request{
+	resp, err := c.Do(ctx, httpx.Request{
 		Method: http.MethodPost,
 		Path:   "/api/auth/login",
 		Body:   map[string]string{"email": immichEmail, "password": password},
@@ -237,12 +242,15 @@ func enableImmichWatching(ctx context.Context, c *httpx.Client, authed map[strin
 // owned by the member, overlapping the administrator's library of the whole
 // folder; signing in as the member is the only way to mint their API key.
 // The password is generated, used once and kept, like Audiobookshelf's.
-func createImmichMember(ctx context.Context, c *httpx.Client, adminKey, username, name, folder string) (state.Identity, error) {
+func createImmichMember(ctx context.Context, c *httpx.Client, sec secrets, adminKey, username, name, folder string) (state.Identity, error) {
 	admin := map[string]string{"x-api-key": adminKey}
 	email := username + "@soundstorm.invalid"
-	password, err := generatePassword()
+	password, kept, err := sec("password")
 	if err != nil {
 		return state.Identity{}, err
+	}
+	var user struct {
+		ID string `json:"id"`
 	}
 	resp, err := c.Do(ctx, httpx.Request{
 		Method:  http.MethodPost,
@@ -250,17 +258,19 @@ func createImmichMember(ctx context.Context, c *httpx.Client, adminKey, username
 		Headers: admin,
 		Body:    map[string]any{"email": email, "password": password, "name": name},
 	})
-	if err != nil {
+	switch {
+	case err == nil && resp.Err() == nil:
+		if err := resp.JSON(&user); err != nil || user.ID == "" {
+			return state.Identity{}, fmt.Errorf("create photo account: no id in the answer")
+		}
+	case kept:
+		// Made by an earlier try that never finished (its answer lost, or a
+		// later step failed): the kept password signs in to it below, and
+		// the sign-in says whose it is.
+	case err != nil:
 		return state.Identity{}, fmt.Errorf("create photo account: %w", err)
-	}
-	if err := resp.Err(); err != nil {
-		return state.Identity{}, fmt.Errorf("create photo account: %w", err)
-	}
-	var user struct {
-		ID string `json:"id"`
-	}
-	if err := resp.JSON(&user); err != nil || user.ID == "" {
-		return state.Identity{}, fmt.Errorf("create photo account: no id in the answer")
+	default:
+		return state.Identity{}, fmt.Errorf("create photo account: %w", resp.Err())
 	}
 
 	resp, err = c.Do(ctx, httpx.Request{
@@ -276,9 +286,16 @@ func createImmichMember(ctx context.Context, c *httpx.Client, adminKey, username
 	}
 	var login struct {
 		AccessToken string `json:"accessToken"`
+		UserID      string `json:"userId"`
 	}
 	if err := resp.JSON(&login); err != nil || login.AccessToken == "" {
 		return state.Identity{}, fmt.Errorf("sign in to photo account: no token")
+	}
+	if user.ID == "" {
+		user.ID = login.UserID
+	}
+	if user.ID == "" {
+		return state.Identity{}, fmt.Errorf("sign in to photo account: no id in the answer")
 	}
 	resp, err = c.Do(ctx, httpx.Request{
 		Method:  http.MethodPost,
