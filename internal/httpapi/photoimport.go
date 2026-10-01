@@ -3,12 +3,10 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"path"
@@ -212,11 +210,9 @@ func (s *Server) finishImport(j *importJob, st, problem string) {
 
 // personTarget is a person's own folder, as an import sees it.
 type personTarget struct {
-	s     *Server
-	u     state.User
-	index map[int64][]string    // size -> files already in the folder
-	sums  map[string][32]byte   // file -> its hash, worked out when needed
-	added map[[32]byte]struct{} // what this import saved
+	s  *Server
+	u  state.User
+	ix *photoIndex
 }
 
 func (t *personTarget) IsMedia(name string) bool { return library.IsPictureFile(name) }
@@ -228,41 +224,10 @@ func (t *personTarget) folder() string {
 // Has compares against files of the same size only: hashing a whole photo
 // folder to import one zip would take as long as the import.
 func (t *personTarget) Has(size int64, sum [32]byte) bool {
-	if t.index == nil {
-		t.index, t.sums, t.added = map[int64][]string{}, map[string][32]byte{}, map[[32]byte]struct{}{}
-		_ = filepath.WalkDir(t.folder(), func(p string, d fs.DirEntry, err error) error {
-			if err == nil && d.Type().IsRegular() && library.IsPictureFile(p) {
-				if info, err := d.Info(); err == nil {
-					t.index[info.Size()] = append(t.index[info.Size()], p)
-				}
-			}
-			return nil
-		})
+	if t.ix == nil {
+		t.ix = t.s.photoIndexFor(t.u)
 	}
-	if _, ok := t.added[sum]; ok {
-		return true
-	}
-	for _, p := range t.index[size] {
-		known, ok := t.sums[p]
-		if !ok {
-			f, err := os.Open(p)
-			if err != nil {
-				continue
-			}
-			h := sha256.New()
-			_, err = io.Copy(h, f)
-			f.Close()
-			if err != nil {
-				continue
-			}
-			copy(known[:], h.Sum(nil))
-			t.sums[p] = known
-		}
-		if known == sum {
-			return true
-		}
-	}
-	return false
+	return t.ix.has(size, sum)
 }
 
 func (t *personTarget) Room(size int64) error {
@@ -288,7 +253,10 @@ func (t *personTarget) Save(rel string, r io.Reader, size int64, sum [32]byte) (
 	if err != nil {
 		return "", err
 	}
-	t.added[sum] = struct{}{}
+	if t.ix == nil {
+		t.ix = t.s.photoIndexFor(t.u)
+	}
+	t.ix.add(filepath.Join(t.s.library.Root(), filepath.FromSlash(saved)), size, sum)
 	t.s.addPhotoBytes(t.u, size)
 	return saved, nil
 }

@@ -100,6 +100,7 @@ type Server struct {
 	onThisDay        onThisDayCache
 	photoUsage       photoUsage
 	photoImports     photoImports
+	photoIndexes     photoIndexes
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -1384,7 +1385,15 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	body := &stallReader{r: r.Body, rc: http.NewResponseController(w)}
 	defer func() { _ = body.rc.SetReadDeadline(time.Time{}) }()
 
-	dest, err := s.library.Save(kind, path, body)
+	var dest string
+	if kind == media.KindPicture {
+		// A photo or video, from a card, a folder or wherever: into the
+		// person's folder by when it was taken.
+		taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
+		dest, err = s.savePhoto(user, path, body, taken)
+	} else {
+		dest, err = s.library.Save(kind, path, body)
+	}
 	if err != nil {
 		if errors.Is(err, library.ErrDiskReserve) {
 			writeError(w, http.StatusInsufficientStorage, err.Error())
@@ -1407,9 +1416,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
-	if kind == media.KindPicture && !user.IsOwner() {
-		s.addPhotoBytes(user, r.ContentLength)
-	}
+
 
 	// Ask whoever indexes that shelf to look, rather than leaving the file
 	// sitting there unsearchable until their next sweep.

@@ -291,6 +291,12 @@ func permitted(answer media.Kind, options []media.Kind, current media.Kind) bool
 	return false
 }
 
+// cameraClip is how cameras and phones name their videos: a maker's prefix
+// and a number, a date and time, or WhatsApp's VID-20190705-WA0001.
+var cameraClip = regexp.MustCompile(`(?i)^((mvi|vid|pxl|img|dsc|dscf|dscn|gopr|gh\d\d|gx\d\d|dji|mah|mov|trim|pano)[_-]?\d|\d{8}[_-]\d{6}|(vid|img)-\d{8}-wa\d)`)
+
+func looksLikeCameraClip(rel string) bool { return cameraClip.MatchString(path.Base(rel)) }
+
 // decideGroup works out one shelf for everything dropped together, or returns
 // the choices worth offering when it genuinely cannot.
 func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
@@ -306,6 +312,7 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		pdfSays    media.Kind
 		photos     int  // images that look like photos, not artwork
 		photoPath  bool // a folder name says pictures
+		clips      int  // videos named the way a camera or phone names them
 	)
 
 	for _, i := range members {
@@ -357,6 +364,9 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 			if looksLikeEpisode(rel) {
 				episodes = true
 			}
+			if looksLikeCameraClip(rel) {
+				clips++
+			}
 			continue
 		}
 		if mediaExtensions[media.KindMusic][ext] || mediaExtensions[media.KindAudiobook][ext] {
@@ -383,8 +393,14 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 	photoLed := photos > 0 && !hasAudio && !hasPDF &&
 		(!hasVideo || photoPath || (photos >= 5 && photos > 2*videoFiles))
 
+	// Videos all named as a camera or phone names them (MVI_0002.MOV,
+	// VID_20190705_100000.mp4) are clips for the photo shelf, even alone,
+	// with no folder to say so - chosen one by one from a phone, or off a
+	// card's folder. A film is never named like that.
+	cameraLed := hasVideo && !hasAudio && !hasPDF && !episodes && clips == videoFiles
+
 	switch {
-	case photoLed:
+	case photoLed || cameraLed:
 		return media.KindPicture, nil
 	case hasVideo && episodes && !audioLed:
 		return media.KindTV, nil
@@ -649,6 +665,18 @@ var ErrAlreadyThere = fmt.Errorf("already in your library")
 // rename is on one filesystem and therefore atomic, and it is a dot-directory
 // at the top level, which no backend has mounted.
 func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error) {
+	return l.SaveDecided(kind, rel, r, nil)
+}
+
+// Decide picks where a file goes, relative to its shelf, once its bytes have
+// arrived (staged is where they are): a photo's place is when it was taken,
+// which is inside it. An error refuses the file, leaving the library as it
+// was.
+type Decide func(staged string) (string, error)
+
+// SaveDecided is Save with the destination decided after the bytes arrive.
+// With decide nil it is Save.
+func (l *Library) SaveDecided(kind media.Kind, rel string, r io.Reader, decide Decide) (string, error) {
 	rel, err := cleanRelPath(rel)
 	if err != nil {
 		return "", err
@@ -691,7 +719,17 @@ func (l *Library) Save(kind media.Kind, rel string, r io.Reader) (string, error)
 	// because for a loose track the answer is inside the file. Nothing has
 	// been written outside the staging directory yet, so a refusal here still
 	// leaves the library untouched.
-	rel = shelveUnder(kind, rel, tmpName, folder)
+	if decide != nil {
+		decided, err := decide(tmpName)
+		if err != nil {
+			return "", err
+		}
+		if rel, err = cleanRelPath(decided); err != nil {
+			return "", err
+		}
+	} else {
+		rel = shelveUnder(kind, rel, tmpName, folder)
+	}
 
 	dest := filepath.Join(folder, filepath.FromSlash(rel))
 	// Sanitizing should already guarantee this. Checking the result anyway

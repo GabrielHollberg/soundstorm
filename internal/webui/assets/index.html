@@ -439,6 +439,7 @@
         <p id="my-photos-usage"></p>
         <div class="space-bar"><span id="my-photos-bar"></span></div>
         <p id="my-photos-where" class="muted"></p>
+        <p id="my-photos-folders" class="muted small-print"></p>
         <!-- In the Android app: backing up this phone's camera roll. -->
         <div id="backup-controls" class="hidden">
           <label class="remote-switch"><input id="backup-on" type="checkbox"><span>Back up this phone's photos and videos</span></label>
@@ -449,7 +450,7 @@
           </div>
           <p id="backup-status" class="muted" role="status"></p>
         </div>
-        <button id="import-open" type="button" class="ghost">Bring your photos in from Google or Apple</button>
+        <button id="import-open" type="button" class="ghost">Bring your photos in: Google, Apple, SD cards, old drives</button>
         <!-- Bringing a photo library in: the download each service gives, as
              zips, sorted into the person's own folder by the server. -->
         <div id="photo-import" class="hidden">
@@ -465,7 +466,8 @@
             <li>Tick <b>iCloud Photos</b>, choose the largest size, and send the request.</li>
             <li>Apple emails you when it is ready - usually within a week. Download every zip.</li>
           </ol>
-          <p class="muted">Then drop the zips anywhere on this window, or choose them below. Dates and places are kept, each photo goes into your folder by when it was taken, and photos you already have here are skipped. Large downloads carry on where they stopped if the connection drops; keep this page open while they send.</p>
+          <p class="muted">Photos on an SD card, a camera, an old drive or computer: drop the card or folder anywhere on this window, or use Add media - each photo and video goes into your folder by when it was taken, and ones already here are skipped.</p>
+          <p class="muted">For Google and Apple, drop the zips anywhere on this window, or choose them below. Dates and places are kept, each photo goes into your folder by when it was taken, and photos you already have here are skipped. Large downloads carry on where they stopped if the connection drops; keep this page open while they send.</p>
           <label class="button-like">Choose zip files<input id="import-files" type="file" accept=".zip,application/zip" multiple hidden></label>
           <ul id="import-list"></ul>
         </div>

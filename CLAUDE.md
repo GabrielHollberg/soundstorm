@@ -4592,8 +4592,27 @@ download (by its folder names) or a zip mostly of photos and videos goes to
 Bring your photos in; any other zip is not unpacked and a message says so;
 the rest of the same drop is filed as usual. Checked with a Takeout zip, a
 zip of notes and a photo dropped together. Not checked: a real zip over 4GB.
-Not built yet: folders from SD cards and old drives sorted the same way (they
-can be dropped now and keep their folders), albums kept as albums.
+**Cards, folders and loose photos are sorted by date too** (the owner's
+asking): every upload to the picture shelf - a dropped SD card, an old drive's
+folder, files chosen on a phone - goes into the person's folder (the owner's
+too, now) by when it was taken (`savePhoto`, `datedPhoto`, through
+`library.SaveDecided`, which places a file once its bytes have arrived): the
+date inside it, else one in its name, else the file's own date the browser
+sends (`taken`, `File.lastModified` - on a camera's card, when it was taken),
+else `Undated/`. A file already in the folder under any name is skipped as
+"already in your photos" (`photoIndex`, the folder's files by size with
+hashes worked out as needed, kept ten minutes and shared with downloads). The
+date is written beside it for Immich unless it came from inside the photo.
+**A video named as a camera names it** (MVI_, VID_, PXL_, IMG_, GOPR, DJI_, a
+date and time, WhatsApp's) is a clip for the photo shelf even alone with no
+folder to say so (`looksLikeCameraClip`) - the first test filed MVI_0002.MOV
+as a film. **Keeping folders of one's own**: Your photos says dropping sorts by
+date, and that folders are kept by copying them straight into the folder on
+the server's drive (for a member, by whoever looks after it). Checked with a
+test card: a photo with its date inside (2016/05), a Pixel photo by its name
+(2023/03), a clip by its file date (2015/08, with the date beside it), and a
+copy of a photo already brought in from Google, skipped.
+Not built yet: albums kept as albums.
 
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
 provisioned, sharing one pictures folder: a member saw nothing, backed up a

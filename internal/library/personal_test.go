@@ -56,3 +56,23 @@ func TestPersonalHasAndUsage(t *testing.T) {
 		t.Errorf("usage = %d, want 1234", n)
 	}
 }
+
+// A video named as a camera or phone names it is a clip for the photos, even
+// dropped alone; a film's name is never like that.
+func TestCameraClipsGoToPictures(t *testing.T) {
+	cases := map[string]media.Kind{
+		"MVI_0002.MOV":               media.KindPicture,
+		"VID_20190705_100000.mp4":    media.KindPicture,
+		"PXL_20230315_101500123.mp4": media.KindPicture,
+		"20180101_120000.mp4":        media.KindPicture,
+		"VID-20190705-WA0001.mp4":    media.KindPicture,
+		"Arrival (2016).mkv":         media.KindVideo,
+		"The Matrix.mp4":             media.KindVideo,
+	}
+	for name, want := range cases {
+		got, _ := decideGroup([]string{name}, []int{0})
+		if got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+}

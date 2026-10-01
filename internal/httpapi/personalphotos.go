@@ -1,7 +1,12 @@
 package httpapi
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +18,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/photoimport"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
@@ -97,37 +103,216 @@ func (s *Server) photoRoom(u state.User, size int64) error {
 	return nil
 }
 
-// personalUpload turns an upload to the picture shelf into one into the
-// person's own folder, for everyone but the owner: a member's photos are
-// theirs, so they can never land somewhere the household sees. It also
-// checks their limit.
+// personalUpload checks an upload to the picture shelf against the person's
+// folder and limit (the owner's photos have none). Where in the folder it
+// goes is decided once it has arrived: by when it was taken (datedPhoto).
 func (s *Server) personalUpload(u state.User, kind media.Kind, rel string, size int64) (string, error) {
-	if kind != media.KindPicture || u.IsOwner() {
+	if kind != media.KindPicture {
 		return rel, nil
 	}
 	if _, err := s.library.EnsurePersonalFolder(u.Name); err != nil {
 		return "", err
 	}
-	if err := s.photoRoom(u, size); err != nil {
-		return "", err
+	if !u.IsOwner() {
+		if err := s.photoRoom(u, size); err != nil {
+			return "", err
+		}
 	}
-	return library.PersonalPath(u.Name, rel)
+	return rel, nil
 }
 
-// personalPlan shows a member where their pictures will really go.
+// personalPlan shows where pictures will go: the person's own folder, sorted
+// by date once each has arrived (the drop panel shows the real place then).
 func (s *Server) personalPlan(u state.User, placements []library.Placement) {
-	if u.IsOwner() {
-		return
-	}
 	for i, p := range placements {
 		if p.Kind != media.KindPicture || p.Skipped || p.Waiting || p.Dest == "" {
 			continue
 		}
-		rel := strings.TrimPrefix(p.Dest, "pictures/")
-		if dest, err := library.PersonalPath(u.Name, rel); err == nil {
-			placements[i].Dest = "pictures/" + dest
+		placements[i].Dest = "pictures/" + library.PersonalFolder(u.Name) + "/by date/" + path.Base(p.Dest)
+	}
+}
+
+// --- what each person already has --------------------------------------------
+
+// photoIndex is the files in one person's folder by size, and the hashes of
+// those it has had to compare, so a dropped photo or a download is checked
+// against what is there without hashing the folder for every file.
+type photoIndex struct {
+	mu     sync.Mutex
+	built  time.Time
+	bySize map[int64][]string
+	sums   map[string][32]byte
+}
+
+type photoIndexes struct {
+	mu sync.Mutex
+	m  map[string]*photoIndex
+}
+
+// indexFreshness is how long a folder's list is trusted: files copied in by
+// hand in the meantime are found when it is made again.
+const indexFreshness = 10 * time.Minute
+
+func (s *Server) photoIndexFor(u state.User) *photoIndex {
+	all := &s.photoIndexes
+	all.mu.Lock()
+	if all.m == nil {
+		all.m = map[string]*photoIndex{}
+	}
+	ix, ok := all.m[u.ID]
+	if !ok {
+		ix = &photoIndex{}
+		all.m[u.ID] = ix
+	}
+	all.mu.Unlock()
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if time.Since(ix.built) > indexFreshness {
+		ix.bySize, ix.built = map[int64][]string{}, time.Now()
+		if ix.sums == nil {
+			ix.sums = map[string][32]byte{}
+		}
+		dir := filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(library.PersonalFolder(u.Name)))
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err == nil && d.Type().IsRegular() && library.IsPictureFile(p) {
+				if info, err := d.Info(); err == nil {
+					ix.bySize[info.Size()] = append(ix.bySize[info.Size()], p)
+				}
+			}
+			return nil
+		})
+	}
+	return ix
+}
+
+// has reports whether an identical file is already in the folder.
+func (ix *photoIndex) has(size int64, sum [32]byte) bool {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	for _, p := range ix.bySize[size] {
+		known, ok := ix.sums[p]
+		if !ok {
+			f, err := os.Open(p)
+			if err != nil {
+				continue
+			}
+			h := sha256.New()
+			_, err = io.Copy(h, f)
+			f.Close()
+			if err != nil {
+				continue
+			}
+			copy(known[:], h.Sum(nil))
+			ix.sums[p] = known
+		}
+		if known == sum {
+			return true
 		}
 	}
+	return false
+}
+
+// add records a file just saved.
+func (ix *photoIndex) add(p string, size int64, sum [32]byte) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if ix.bySize == nil {
+		return
+	}
+	ix.bySize[size] = append(ix.bySize[size], p)
+	ix.sums[p] = sum
+}
+
+// errPhotoDuplicate is a photo already in the person's folder under any name:
+// a skip, not a failure, as for any upload already there.
+var errPhotoDuplicate = fmt.Errorf("%w: it is already in your photos", library.ErrAlreadyThere)
+
+// datedPhoto decides where a dropped photo or video goes in its owner's
+// folder, once it has arrived: by the year and month it was taken - the date
+// inside it, else one in its name, else the date the file itself carries
+// (hint, from the device: on a camera's card that is when it was taken),
+// else Undated/ - and not at all if the same file is already there. A whole
+// SD card or folder of old photos is sorted this way, like a download.
+type photoPlace struct {
+	rel     string // relative to pictures/
+	meta    photoimport.Meta
+	exif    bool
+	size    int64
+	sum     [32]byte
+	ix      *photoIndex
+	dropped string
+}
+
+func (s *Server) datedPhoto(u state.User, staged, dropped string, hint int64) (*photoPlace, error) {
+	f, err := os.Open(staged)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	head := make([]byte, 4<<20)
+	n, _ := io.ReadFull(f, head)
+	head = head[:n]
+	h.Write(head)
+	rest, err := io.Copy(h, f)
+	if err != nil {
+		return nil, err
+	}
+	pl := &photoPlace{size: int64(n) + rest, dropped: dropped}
+	copy(pl.sum[:], h.Sum(nil))
+	pl.ix = s.photoIndexFor(u)
+	if pl.ix.has(pl.size, pl.sum) {
+		return nil, errPhotoDuplicate
+	}
+	name := path.Base(dropped)
+	switch {
+	case func() bool { t, ok := photoimport.ExifTaken(head); pl.meta.Taken = t; return ok }():
+		pl.exif = true
+	case func() bool { t, ok := photoimport.NameTaken(name); pl.meta.Taken = t; return ok }():
+	case hint > 0 && time.UnixMilli(hint).Year() > 1990:
+		pl.meta.Taken = time.UnixMilli(hint).UTC()
+	default:
+		pl.meta.Taken = time.Time{}
+	}
+	rel := "Undated/" + name
+	if !pl.meta.Taken.IsZero() {
+		rel = fmt.Sprintf("%04d/%02d/%s", pl.meta.Taken.Year(), int(pl.meta.Taken.Month()), name)
+	}
+	// Another file of the same name taken the same month keeps both.
+	if s.library.PersonalHas(u.Name, rel, 0) {
+		rel = altName(rel, int64(pl.sum[0])<<16|int64(pl.sum[1])<<8|int64(pl.sum[2]))
+	}
+	if pl.rel, err = library.PersonalPath(u.Name, rel); err != nil {
+		return nil, err
+	}
+	return pl, nil
+}
+
+// savePhoto saves an upload to the picture shelf into the person's folder by
+// date, writing the date beside it for Immich when it did not come from
+// inside the photo (the saved file is new, and Immich would date it today).
+func (s *Server) savePhoto(u state.User, dropped string, body io.Reader, hint int64) (string, error) {
+	var pl *photoPlace
+	dest, err := s.library.SaveDecided(media.KindPicture, dropped, body, func(staged string) (string, error) {
+		var err error
+		pl, err = s.datedPhoto(u, staged, dropped, hint)
+		if err != nil {
+			return "", err
+		}
+		return pl.rel, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	full := filepath.Join(s.library.Root(), filepath.FromSlash(dest))
+	pl.ix.add(full, pl.size, pl.sum)
+	if !pl.exif && !pl.meta.Taken.IsZero() {
+		_ = os.WriteFile(full+".xmp", photoimport.XMPSidecar(pl.meta), 0o666)
+	}
+	if !u.IsOwner() {
+		s.addPhotoBytes(u, pl.size)
+	}
+	return dest, nil
 }
 
 // photoUsageJSON is a person's photo space as the app shows it.

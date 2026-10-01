@@ -726,8 +726,13 @@ async function refreshMyPhotos() {
   show($('my-photos-bar').parentElement, Boolean(body.limitBytes));
   // Said plainly: a member's photos are on somebody else's server.
   $('my-photos-where').textContent = me.owner
-    ? `Photos you back up from a phone go to ${body.folder}. You see everyone's photos; each person sees only their own.`
-    : `Photos you add or back up from your phone are kept in ${body.folder} on this server. The owner of the server can see them; nobody else can.`;
+    ? `Photos you add or back up from a phone go to ${body.folder}, in folders by year and month. You see everyone's photos; each person sees only their own.`
+    : `Photos you add or back up from your phone are kept in ${body.folder} on this server, in folders by year and month. The owner of the server can see them; nobody else can.`;
+  // Dropping sorts by date; folders of one's own are kept only by putting
+  // them in the folder on the server's drive directly.
+  $('my-photos-folders').textContent = me.owner
+    ? `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, copy them straight into ${body.folder} (or anywhere in the pictures folder) on the server's drive: they appear in Photos as they are.`
+    : `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, ask whoever looks after the server to copy them straight into ${body.folder} on its drive: they appear in Photos as they are.`;
   show($('my-photos-block'), true);
 }
 
@@ -3262,6 +3267,10 @@ function summary(added, skipped, failed) {
 function uploadOne(item, onProgress) {
   return new Promise((resolve) => {
     const params = new URLSearchParams({ path: item.path, kind: item.kind });
+    // A photo or video is sorted into the person's folder by when it was
+    // taken; the file's own date (on a camera's card, when it was taken) is
+    // what the server falls back on when the photo carries none inside it.
+    if (item.kind === 'picture' && item.file && item.file.lastModified) params.set('taken', String(item.file.lastModified));
     const request = new XMLHttpRequest();
     request.open('PUT', `/api/upload?${params}`);
     request.withCredentials = true;
