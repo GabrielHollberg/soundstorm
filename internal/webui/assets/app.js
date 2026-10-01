@@ -796,6 +796,48 @@ setInterval(() => {
   }
 }, 4000);
 
+// zipHoldsPhotos looks inside a zip without unpacking it: the central
+// directory at its end lists every file. A Google Takeout or iCloud download
+// says so in its folder names; any other zip counts if most of what it holds
+// is photos and videos. Zip64 (anything over 4GB, as Takeout's are) keeps
+// the directory's place in a second record.
+async function zipHoldsPhotos(file) {
+  try {
+    const tailSize = Math.min(file.size, 128 << 10);
+    const tail = new DataView(await file.slice(file.size - tailSize).arrayBuffer());
+    let eocd = -1;
+    for (let i = tail.byteLength - 22; i >= 0; i--) {
+      if (tail.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) return false;
+    let cdSize = tail.getUint32(eocd + 12, true);
+    let cdStart = tail.getUint32(eocd + 16, true);
+    if ((cdSize === 0xffffffff || cdStart === 0xffffffff) && eocd >= 20 && tail.getUint32(eocd - 20, true) === 0x07064b50) {
+      const at = Number(tail.getBigUint64(eocd - 20 + 8, true));
+      const z64 = new DataView(await file.slice(at, at + 56).arrayBuffer());
+      if (z64.getUint32(0, true) !== 0x06064b50) return false;
+      cdSize = Number(z64.getBigUint64(40, true));
+      cdStart = Number(z64.getBigUint64(48, true));
+    }
+    // The first 4MB of the directory: thousands of names, enough to tell.
+    const cd = new DataView(await file.slice(cdStart, cdStart + Math.min(cdSize, 4 << 20)).arrayBuffer());
+    const names = [];
+    const text = new TextDecoder();
+    for (let i = 0; i + 46 <= cd.byteLength && cd.getUint32(i, true) === 0x02014b50;) {
+      const n = cd.getUint16(i + 28, true), extra = cd.getUint16(i + 30, true), comment = cd.getUint16(i + 32, true);
+      if (i + 46 + n > cd.byteLength) break;
+      names.push(text.decode(new Uint8Array(cd.buffer, cd.byteOffset + i + 46, n)));
+      i += 46 + n + extra + comment;
+    }
+    if (names.some((n) => /(^|\/)(Google Photos|iCloud Photos)\//i.test(n) || /Photo Details[^/]*\.csv$/i.test(n))) return true;
+    const files = names.filter((n) => !n.endsWith('/'));
+    const media = files.filter((n) => /\.(jpe?g|png|heic|heif|webp|gif|tiff?|avif|dng|cr2|cr3|nef|arw|raf|orf|rw2|mov|mp4|m4v|3gp)$/i.test(n));
+    return files.length > 0 && media.length / files.length >= 0.6;
+  } catch {
+    return false;
+  }
+}
+
 // Bringing a photo library in: each zip sent in 8MB pieces, carrying on from
 // where the server has it if the connection drops (or the same zip is chosen
 // again after a reload); the server then sorts it into the person's folder.
@@ -2895,13 +2937,6 @@ window.addEventListener('drop', (event) => {
   if (!draggingFiles(event) || $('app').classList.contains('hidden')) return;
   event.preventDefault();
   hideDropOverlay();
-  // Zips are a photo download from Google or Apple: brought in to the
-  // person's own folder, not filed as they are.
-  const files = [...(event.dataTransfer.files || [])];
-  if (files.length && files.every((f) => /\.zip$/i.test(f.name)) && hasPictures()) {
-    importPhotos(files);
-    return;
-  }
   intake(event.dataTransfer);
 });
 
@@ -2974,10 +3009,32 @@ async function runIntake(dataTransfer) {
   $('intake-questions').replaceChildren();
   $('intake-title').textContent = 'Reading what you dropped…';
 
-  const dropped = await collectFiles(dataTransfer);
+  let dropped = await collectFiles(dataTransfer);
   if (!dropped.length) {
     $('intake-title').textContent = 'Nothing usable was dropped.';
     return;
+  }
+  // A zip is looked inside (its table of contents, at its end - a moment
+  // even for 50GB): a photo download from Google or Apple, or a zip that is
+  // mostly photos and videos, is brought in to the person's own folder;
+  // any other zip is not unpacked, and says so. Everything else goes on as
+  // usual, in the same drop.
+  const zips = dropped.filter((d) => /\.zip$/i.test(d.file.name));
+  if (zips.length) {
+    dropped = dropped.filter((d) => !/\.zip$/i.test(d.file.name));
+    const photos = [];
+    const other = [];
+    for (const z of zips) ((await zipHoldsPhotos(z.file)) && hasPictures() ? photos : other).push(z.file);
+    if (photos.length) importPhotos(photos);
+    if (other.length) {
+      showToast(other.length === 1
+        ? `${other[0].name} is not a photo download, and SoundStorm does not unpack other zips: unzip it and drop what is inside.`
+        : `${other.length} zips are not photo downloads, and SoundStorm does not unpack other zips: unzip them and drop what is inside.`);
+    }
+    if (!dropped.length) {
+      show($('intake'), false);
+      return;
+    }
   }
 
   const paths = dropped.map((d) => d.path);

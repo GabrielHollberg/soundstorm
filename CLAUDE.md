@@ -4584,6 +4584,14 @@ under today: the iCloud zip, finished first, had it with no date while the
 Google zip knew it - hence the name and Undated steps. Uploads of a phone's
 photo or a piece of a download are exempt from the 30-second body deadline
 (`bodyDeadline`), which would have cut off a phone's video on a slow uplink.
+**A zip is looked inside wherever it arrives** (`zipHoldsPhotos`, in the
+shared intake, so a drop anywhere on any page and Add media alike): the
+browser reads the zip's own table of contents from its end - zip64 too, as
+Takeout's 50GB zips are - without unpacking anything. A Google or iCloud
+download (by its folder names) or a zip mostly of photos and videos goes to
+Bring your photos in; any other zip is not unpacked and a message says so;
+the rest of the same drop is filed as usual. Checked with a Takeout zip, a
+zip of notes and a photo dropped together. Not checked: a real zip over 4GB.
 Not built yet: folders from SD cards and old drives sorted the same way (they
 can be dropped now and keep their folders), albums kept as albums.
 
