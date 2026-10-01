@@ -31,7 +31,9 @@ setlocal
 
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "LOCAL=%~dp0install.ps1"
-if exist "%LOCAL%" (
+rem Only in a checkout of the project: Downloads, where this file is
+rem usually run from, is somewhere a web page can drop an install.ps1.
+if exist "%LOCAL%" if exist "%~dp0.git" (
     start "" /min "%PS%" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%LOCAL%" %*
     exit /b 0
 )

@@ -26,6 +26,7 @@ import (
 	"archive/zip"
 	"encoding/binary"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -34,6 +35,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // maxResourceBytes caps how much of any single zip entry we will hold in
@@ -466,8 +468,25 @@ func ReadSidecar(filePath string) ([]byte, error) {
 	return data, nil
 }
 
+// bigReads caps how many book files are held whole in memory at once. A
+// single one is capped at maxResourceBytes, but nothing capped how many: a
+// member with a book of one highly compressible 16MB entry (16KB on disk)
+// and a few hundred requests in parallel had the server allocate gigabytes
+// and be killed (a security review). Six at a time is about 100MB at worst;
+// the reads are of local files, so a short wait is all it costs.
+var bigReads = make(chan struct{}, 6)
+
+// errBusy is a read that waited too long for its turn.
+var errBusy = errors.New("too many book reads at once; try again shortly")
+
 // readEntry pulls one entry out of the zip, tolerating percent-encoded hrefs.
 func readEntry(zr *zip.ReadCloser, name string) ([]byte, error) {
+	select {
+	case bigReads <- struct{}{}:
+	case <-time.After(10 * time.Second):
+		return nil, errBusy
+	}
+	defer func() { <-bigReads }()
 	return readEntryLimit(zr, name, maxResourceBytes)
 }
 

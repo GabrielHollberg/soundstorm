@@ -45,6 +45,9 @@ final class VizEngine {
 
     /// Reads the moment. `now` is the wall clock; `t` the song's position.
     func step(now: Double, t: Double, playing: Bool, beat defaultBeat: Double, energy e: Double, heard: Heard?) -> VizFrame {
+        // A player can report no time at all (NaN) while it loads; read that
+        // as the start rather than trap converting it to a frame number.
+        let t = t.isFinite ? max(0, min(t, 1e7)) : 0
         let dt = min(0.1, now - (lastT ?? now))
         lastT = now
         // A seek: the last bars were somewhere else entirely.
@@ -55,7 +58,7 @@ final class VizEngine {
         level += ((playing ? 1 : 0) - level) * min(1, dt * (playing ? 5 : 1.5))
         let lv = level
 
-        var beat = defaultBeat
+        var beat = defaultBeat.isFinite && defaultBeat >= 0.2 ? defaultBeat : 0.5
         var phase = t.truncatingRemainder(dividingBy: beat) / beat
         var beatNo = Int(t / beat)
         var downbeat = beatNo % 4 == 0
@@ -77,7 +80,7 @@ final class VizEngine {
                 beatNo = lo
                 downbeat = ((lo - heard.down) % 4 + 4) % 4 == 0
             }
-            let fi = max(0, min(heard.loud.count - 1, Int(t * heard.fps)))
+            let fi = frame(t, heard, heard.loud.count)
             let fall = exp(-dt * 7)
             kickEnv = max(kickEnv * fall, Double(heard.low[fi]))
             snareEnv = max(snareEnv * fall, Double(heard.high[fi]))
@@ -90,7 +93,7 @@ final class VizEngine {
             // a drop after a quiet bit hits hard.
             if beatNo != peakBeat {
                 peakBeat = beatNo
-                let ahead = min(heard.low.count - 1, fi + 2)
+                let ahead = max(fi, min(heard.low.count - 1, fi + 2))
                 var kp = 0.0, sp = 0.0
                 for i in fi...ahead { kp = max(kp, Double(heard.low[i])); sp = max(sp, Double(heard.high[i])) }
                 let mean = kickPeaks.isEmpty ? 0.5 : kickPeaks.reduce(0, +) / Double(kickPeaks.count)
@@ -118,7 +121,7 @@ final class VizEngine {
             // last drawn is looked at, so a hit one frame long is not missed
             // at 30 frames a second. The first after six quiet seconds is
             // marked (Storm's double strike, Fireworks' finale).
-            let fi = max(0, min(heard.high.count - 1, Int(t * heard.fps)))
+            let fi = frame(t, heard, heard.high.count)
             if let b = bigAt, t < b { bigAt = nil } // a seek back
             let jumped = strikeFrame.map { fi < $0 || fi - $0 > 10 } ?? true
             var rose = false
@@ -165,5 +168,10 @@ final class VizEngine {
             kick: kick, snare: snare, loud: loudness, lv: lv, e: e,
             drive: (0.25 + 0.9 * loudness) * (0.6 + 0.7 * e), bright: 0.35 + 0.65 * loudness,
             ck: clock, playing: playing)
+    }
+
+    /// The analysis frame for song time `t`, kept inside a lane of `count`.
+    private func frame(_ t: Double, _ heard: Heard, _ count: Int) -> Int {
+        Int(max(0, min(Double(count - 1), (t * heard.fps).rounded(.down))))
     }
 }

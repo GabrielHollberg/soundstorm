@@ -370,6 +370,7 @@ function New-SetupWindow([string]$Heading, [string]$Subheading, [string[]]$StepN
     $open.Visible = $false
     $open.Add_Click({
         if ($script:Gui.ShowLog) {
+            Protect-SetupLog
             # Explorer with the file selected: the thing to send, found.
             Start-Process explorer.exe -ArgumentList "/select,`"$script:SetupLog`""
         } elseif ($script:Gui.OpenUrl) {
@@ -818,10 +819,12 @@ function Stop-With($text) {
 # "cd <folder>; docker compose logs" at a person who has never opened a
 # terminal.
 #
-# SoundStorm's log only: it is written never to carry a credential. The media
-# servers' logs are not held to that - a Subsonic request carries its
-# credential in the query string - and this file is one people are told to
-# send to somebody.
+# SoundStorm's log only: the media servers' logs are not held to carrying no
+# credential - a Subsonic request carries its credential in the query string -
+# and this file is one people are told to send to somebody. SoundStorm's own
+# does carry one thing: until an account exists it logs the setup code, which
+# is exactly when a failed setup sends this file. So Protect-SetupLog takes it
+# out.
 function Save-SoundStormLog {
     try {
         $logs = Invoke-Docker @('compose', '--project-directory', $Dir, 'logs', '--no-color', '--tail', '200', 'soundstorm') -Capture
@@ -830,11 +833,38 @@ function Save-SoundStormLog {
     } catch {
         # The setup log still says what the setup saw.
     }
+    Protect-SetupLog
+}
+
+# Protect-SetupLog removes the setup code from the setup log, however it was
+# written: SoundStorm's "code=" and "?setup=", and the code shown in the
+# finished window in groups of four. Whoever has the code can create the
+# owner's account on a server that has none yet.
+function Protect-SetupLog {
+    try {
+        if (-not (Test-Path $script:SetupLog)) { return }
+        $text = [IO.File]::ReadAllText($script:SetupLog)
+        $clean = $text -replace '(?i)(setup=)[^\s"&]+', '$1[removed]' -replace '(?i)(\bcode=)\S+', '$1[removed]'
+        # Get-EnvSetting is defined further down; a failure before the script
+        # reaches it must still have the rest taken out.
+        $code = $null
+        try { $code = Get-EnvSetting 'SOUNDSTORM_SETUP_CODE' } catch { }
+        if ($code) {
+            $chars = ($code -replace '[^A-Za-z0-9]', '').ToCharArray() | ForEach-Object { [regex]::Escape([string]$_) }
+            if ($chars.Count -ge 8) {
+                $clean = [regex]::Replace($clean, '(?i)' + ($chars -join '[\s-]*'), '[setup code removed]')
+            }
+        }
+        if ($clean -ne $text) { [IO.File]::WriteAllText($script:SetupLog, $clean) }
+    } catch {
+        # Leave the log as it is rather than lose it.
+    }
 }
 
 # Get-HelpAdvice is what to do when SoundStorm will not start, in words rather
 # than commands.
 function Get-HelpAdvice {
+    Protect-SetupLog
     $open = if ($script:Gui) { " - the Show log file button opens the folder it is in" } else { '' }
     return @"
   Restart the PC and run this setup again - that fixes it more often than
@@ -1325,7 +1355,7 @@ try {
 }
 "@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
-    return Invoke-Elevated 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+    return Invoke-Elevated (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
 }
 
 # Set-LanAccess checks, asks where it has to, fixes, and reports how it went:
@@ -1497,6 +1527,17 @@ function Refresh-Path {
 # Returns its exit code, or $null when the prompt was refused or never
 # appeared - which is a different failure from the command running and
 # failing, and gets a different message.
+# Get-WslPath is wsl.exe by its full path. Elevated programs are started by
+# path, never by name: a name is looked up in the folder the setup runs in
+# and on a PATH the user can change, so a planted wsl.exe would be what
+# Windows asks permission for. Sysnative, from a 32-bit PowerShell, where
+# System32 is redirected to a folder without it.
+function Get-WslPath {
+    $native = Join-Path $env:SystemRoot 'Sysnative\wsl.exe'
+    if (Test-Path $native) { return $native }
+    return (Join-Path $env:SystemRoot 'System32\wsl.exe')
+}
+
 function Invoke-Elevated([string]$File, [string[]]$Arguments) {
     if (Test-Administrator) {
         return (Invoke-Native $File $Arguments -Show).ExitCode
@@ -1549,7 +1590,7 @@ function Install-WSL {
     # --no-distribution because Docker brings its own. Without it Windows also
     # fetches Ubuntu: a gigabyte, several more minutes, and a first-run prompt
     # asking for a Linux username that nobody here will ever use again.
-    $code = Invoke-Elevated 'wsl.exe' @('--install', '--no-distribution')
+    $code = Invoke-Elevated (Get-WslPath) @('--install', '--no-distribution')
 
     if ($null -eq $code) {
         Stop-With @"
@@ -1563,7 +1604,7 @@ function Install-WSL {
     if ($code -ne 0) {
         # A Windows too old to know --no-distribution, or a WSL that is
         # present but stale and wants updating rather than installing.
-        $null = Invoke-Elevated 'wsl.exe' @('--update')
+        $null = Invoke-Elevated (Get-WslPath) @('--update')
     }
 
     Refresh-Path
@@ -2774,8 +2815,11 @@ function Write-MoveLaunchers([string]$Folder) {
         '#!/bin/sh',
         '# Installs SoundStorm on this computer from the move folder this file is in.',
         'here=$(cd "$(dirname "$0")" && pwd)',
-        'curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh -o /tmp/soundstorm-install.sh &&',
-        '	sh /tmp/soundstorm-install.sh --import "$here"'
+        '# A fresh private file, not a fixed /tmp name another user could plant first.',
+        't=$(mktemp) || exit 1',
+        'trap ''rm -f "$t"'' EXIT',
+        'curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh -o "$t" &&',
+        '	sh "$t" --import "$here"'
     ) -join "`n"
     [IO.File]::WriteAllText((Join-Path $Folder 'install-here.sh'), "$sh`n", (New-Object Text.UTF8Encoding $false))
     $q = "'"
@@ -2863,6 +2907,10 @@ function Export-Move([string]$Destination, [bool]$WithLibrary) {
             if ($r.ExitCode -ne 0) {
                 Stop-With "  Could not copy $v. SoundStorm has been started again, unchanged.`n`n  $($r.Output)"
             }
+            # Every backend's admin password, the accounts' password hashes and
+            # the certificate keys are in these: only this user, as settings.env
+            # is (a security review found them open to anybody the drive is).
+            Protect-SecretFile (Join-Path (Join-Path $dest 'volumes') "$v.tar")
         }
         # Plain line endings in everything the move writes: it may be read on
         # a Mac or Linux, where a carriage return becomes part of every value.

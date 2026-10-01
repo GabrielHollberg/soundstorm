@@ -66,9 +66,16 @@ final class PdfReader {
     private func render() {
         guard let pdfPage = document?.page(at: page) else { return }
         let box = pdfPage.getBoxRect(.cropBox)
+        // A page box is the file's to say. One of no height, or a sliver
+        // thousands of times wider than tall, made a picture with infinite or
+        // enormous width: drawn at most three pages wide, or not at all.
+        guard box.width.isFinite, box.height.isFinite, box.width >= 1, box.height >= 1 else {
+            image = nil
+            return
+        }
         let height: CGFloat = 1000
         let scale = height / box.height
-        let size = CGSize(width: box.width * scale, height: height)
+        let size = CGSize(width: min(box.width * scale, 3 * height), height: height)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in

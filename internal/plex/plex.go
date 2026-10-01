@@ -267,11 +267,16 @@ func dialGuard(_, address string, _ syscall.RawConn) error {
 
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
+// dockerDesktop is Docker Desktop's own network, where host.docker.internal
+// (192.168.65.254) passes a connection on to the computer's localhost - so
+// a Plex address there would reach whatever listens only on the host itself.
+var dockerDesktop = netip.MustParsePrefix("192.168.65.0/24")
+
 // DialAllowed is the rule dialGuard applies, given the networks this machine
 // is on.
 func DialAllowed(ip netip.Addr, local []netip.Prefix) bool {
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip) {
+		ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip) || dockerDesktop.Contains(ip) {
 		return false
 	}
 	for _, p := range local {
@@ -425,6 +430,11 @@ const maxTracks = 5000
 
 // Tracks lists a playlist's songs, in order.
 func (s *Conn) Tracks(ctx context.Context, playlistID string) ([]Track, error) {
+	// Plex's playlist ids are numbers; anything else ("..") would be a path
+	// on whatever the server's address leads to.
+	if playlistID == "" || strings.Trim(playlistID, "0123456789") != "" {
+		return nil, fmt.Errorf("plex: not a playlist id")
+	}
 	var got struct {
 		MediaContainer struct {
 			Metadata []struct {

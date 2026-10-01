@@ -13,6 +13,7 @@ func TestDialRefusesTheInsideAndAllowsTheHomeNetwork(t *testing.T) {
 	for ip, want := range map[string]bool{
 		"192.168.0.40": true, "10.0.0.5": true, "203.0.113.9": true,
 		"172.20.0.3": false, "127.0.0.1": false, "169.254.169.254": false, "100.83.119.105": false, "::1": false,
+		"192.168.65.254": false, // Docker Desktop's way to the host's localhost
 	} {
 		if got := DialAllowed(netip.MustParseAddr(ip), compose); got != want {
 			t.Errorf("%s: allowed %v, want %v", ip, got, want)

@@ -81,8 +81,11 @@ struct EpubBook {
 
     private static func entry(_ title: String, href: String?, base: String, spine: [String]) -> Contents? {
         guard let href, !href.isEmpty else { return nil }
-        let parts = href.split(separator: "#", maxSplits: 1).map(String.init)
-        let path = join(base, parts[0])
+        // Empty pieces kept: "#" alone (a link to nowhere, in a hostile book)
+        // split into nothing and crashed on parts[0].
+        let parts = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let first = parts.first, !first.isEmpty else { return nil }
+        let path = join(base, first)
         guard let i = spine.firstIndex(of: path) else { return nil }
         let name = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return Contents(title: name.isEmpty ? "Chapter \(i + 1)" : name, chapter: i, fragment: parts.count > 1 ? parts[1] : nil)
@@ -119,7 +122,13 @@ final class XML {
 
     /// Every element of that name, at any depth, in document order.
     func all(_ name: String) -> [XML] {
-        children.flatMap { ($0.name == name ? [$0] : []) + $0.all(name) }
+        // A loop, not recursion: a book's own nesting must not set our depth.
+        var found: [XML] = [], todo = Array(children.reversed())
+        while let node = todo.popLast() {
+            if node.name == name { found.append(node) }
+            todo.append(contentsOf: node.children.reversed())
+        }
+        return found
     }
 
     static func first(_ data: Data, element: String, attribute: String) -> String? {
@@ -140,6 +149,9 @@ final class XML {
 
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
                     qualifiedName: String?, attributes: [String: String] = [:]) {
+            // No real book nests this deep; one that does is hostile, and a
+            // tree that deep would overflow the stack when it is freed.
+            guard stack.count <= maxDepth else { parser.abortParsing(); return }
             let local = name.split(separator: ":").last.map(String.init) ?? name
             let node = XML(name: local, attributes: attributes)
             stack.last?.children.append(node)
@@ -157,6 +169,9 @@ final class XML {
         }
     }
 }
+
+/// How deep a book's markup may nest before it is given up on.
+let maxDepth = 256
 
 /// XMLParser knows only XML's five entities; XHTML in the wild uses HTML's
 /// (&nbsp; above all). They are turned into numbers before parsing, or the

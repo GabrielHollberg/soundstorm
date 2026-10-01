@@ -121,7 +121,8 @@ func (s *Server) handleNowPlaying(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, connected, err := s.collections.ScrobblerFor(user.ID)
-	if err != nil || !connected || s.scrobble == nil || sc.Problem != "" {
+	if err != nil || !connected || s.scrobble == nil || sc.Problem != "" ||
+		!s.nowPlaying.allow(user.ID, time.Now(), playBurst, playEvery) {
 		writeJSON(w, http.StatusOK, map[string]any{"sent": false})
 		return
 	}

@@ -720,6 +720,9 @@ func Timeline(clips []Clip, layout source.AudioLayout) ([]Moment, error) {
 		if c.File < 1 || c.File > len(files) {
 			return nil, fmt.Errorf("the synced book names an audio file the audiobook does not have")
 		}
+		if c.Piece < 1 { // pieces count from 1; 0 would index before the first
+			return nil, fmt.Errorf("the synced book names a piece of audio that cannot exist")
+		}
 		if c.Piece > maxPiece[c.File] {
 			maxPiece[c.File] = c.Piece
 		}

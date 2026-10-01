@@ -3,6 +3,7 @@ package pdf
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -170,5 +171,21 @@ func TestOpenRejectsSomethingThatIsNotAPDF(t *testing.T) {
 	}
 	if _, err := Open(path); err == nil {
 		t.Error("an HTML error page should not be accepted as a PDF")
+	}
+}
+
+// An XMP packet of nothing but empty elements cost 2.6GB to decode at 16MB.
+// It is too big to be real, so it is not decoded at all.
+func TestAnOversizedXMPPacketIsNotDecoded(t *testing.T) {
+	body := "<x:xmpmeta><rdf:RDF>" + strings.Repeat("<Description/>", 4<<20/14) + "</rdf:RDF></x:xmpmeta>"
+	path := writePDF(t, body)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if _, err := Open(path); err != nil {
+		t.Fatal(err)
+	}
+	runtime.ReadMemStats(&after)
+	if used := after.TotalAlloc - before.TotalAlloc; used > 64<<20 {
+		t.Fatalf("reading a 4MB PDF allocated %dMB", used>>20)
 	}
 }

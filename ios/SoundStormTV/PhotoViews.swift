@@ -200,8 +200,8 @@ struct PhotoViewer: View {
         for j in [i, i + 1, i - 1] where viewing.photos.indices.contains(j) {
             let p = viewing.photos[j]
             guard images[p.key] == nil, let url = api.previewURL(p),
-                  let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = UIImage(data: data)
+                  let (data, _) = try? await SafeLoad.data(from: url, limit: SafeLoad.picture),
+                  let image = SafeLoad.image(data, maxPixels: 3840)
             else { continue }
             images[p.key] = image
         }

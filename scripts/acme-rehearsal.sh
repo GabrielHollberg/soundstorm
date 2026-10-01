@@ -48,5 +48,5 @@ MSYS_NO_PATHCONV=1 docker run --rm --network "$net" \
 	-e ACME_PEBBLE_ROOT=https://soundstorm-pebble:15000/roots/0 \
 	-e CHALLTESTSRV_URL=http://soundstorm-challtestsrv:8055 \
 	-e CHALLTESTSRV_DNS=soundstorm-challtestsrv:8053 \
-	golang:1.24-alpine \
+	golang:1.27-alpine \
 	go test -count=1 -v -run Pebble ./internal/acme ./internal/servetls

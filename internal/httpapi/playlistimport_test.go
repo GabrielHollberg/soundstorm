@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
@@ -47,5 +49,15 @@ func TestImportMatchesByPathThenTags(t *testing.T) {
 		if got != want[i] {
 			t.Errorf("entry %d (%s) matched %q, want %q", i, e.label(), got, want[i])
 		}
+	}
+}
+
+// Each pass of the bracket stripping scans the whole name, so a title of
+// thousands of "()" once took minutes. Names are cut to a sane length first.
+func TestAHugeBracketedTitleIsMatchedQuickly(t *testing.T) {
+	start := time.Now()
+	matchKey("x" + strings.Repeat("()", 2<<20))
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("matchKey took %v", d)
 	}
 }

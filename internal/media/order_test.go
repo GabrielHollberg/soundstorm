@@ -126,3 +126,22 @@ func TestShelfCacheClear(t *testing.T) {
 		t.Error("Clear did not forget the cached listing")
 	}
 }
+
+// A fetch that panics must not leave the shelf pending: every later request
+// for it would wait for ever.
+func TestGetOrFetchSurvivesAPanickingFetch(t *testing.T) {
+	var c ShelfCache
+	if _, err := c.GetOrFetch("k", func() ([]Item, error) { panic("adapter bug") }); err == nil {
+		t.Fatal("a panic came back as no error")
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = c.GetOrFetch("k", func() ([]Item, error) { return nil, nil })
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the next fetch of the shelf hung")
+	}
+}

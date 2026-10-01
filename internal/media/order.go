@@ -2,6 +2,7 @@ package media
 
 import (
 	"container/list"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -126,7 +127,18 @@ func (c *ShelfCache) GetOrFetch(key string, fetch func() ([]Item, error)) ([]Ite
 	// Deliberately outside the lock: this is the network call, and holding
 	// the lock across it would serialize every shelf's fetches behind
 	// whichever one is slowest.
-	items, err := fetch()
+	// A fetch that panics is an error to everybody waiting on it: left
+	// pending, every later request for the shelf would wait for ever.
+	var items []Item
+	var err error
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("listing the shelf failed: %v", p)
+			}
+		}()
+		items, err = fetch()
+	}()
 
 	c.mu.Lock()
 	delete(c.pending, key)

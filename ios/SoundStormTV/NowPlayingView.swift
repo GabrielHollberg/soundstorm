@@ -126,7 +126,8 @@ struct NowPlayingView: View {
             guard let song, !player.isBook else { return }
             async let words = api.lyrics(song)
             if let url = api.artURL(source: song.sourceId, artId: song.artId, size: 100),
-               let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) {
+               let (data, _) = try? await SafeLoad.data(from: url, limit: SafeLoad.picture),
+               let image = SafeLoad.image(data, maxPixels: 200) {
                 palette = VizPalette(image: image)
             } else {
                 palette = VizPalette()

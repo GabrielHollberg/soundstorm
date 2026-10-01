@@ -123,6 +123,11 @@ func readEnds(path string) ([]byte, error) {
 
 var xmpPattern = regexp.MustCompile(`(?s)<x:xmpmeta.*?</x:xmpmeta>`)
 
+// maxXMP is the largest packet decoded. A real one is a few kilobytes (tens
+// with an embedded thumbnail); decoding grows each tiny element into a few
+// hundred bytes of structs, so 16MB of empty <Description/>s took 2.6GB.
+const maxXMP = 1 << 20
+
 // xmpPacket is the Dublin Core subset, as XMP nests it.
 //
 // XMP wraps every value in rdf:Alt or rdf:Seq containing rdf:li, so the text is
@@ -169,7 +174,7 @@ func (v xmpValue) first() string {
 
 func fromXMP(raw []byte) (Metadata, bool) {
 	match := xmpPattern.Find(raw)
-	if match == nil {
+	if match == nil || len(match) > maxXMP {
 		return Metadata{}, false
 	}
 

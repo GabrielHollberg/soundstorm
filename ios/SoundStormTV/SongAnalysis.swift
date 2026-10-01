@@ -33,9 +33,14 @@ struct Heard: Sendable {
             (0..<(beatBytes.count / 4)).map { Double(Float(bitPattern: UInt32(littleEndian: raw.loadUnaligned(fromByteOffset: $0 * 4, as: UInt32.self)))) }
         }
         let l = lane(loud)
-        guard !l.isEmpty else { return nil }
+        // The drawing indexes all three lanes by the same frame and divides by
+        // fps, so anything uneven or odd from the server is ignored, not drawn.
+        guard !l.isEmpty, low.count == l.count, high.count == l.count,
+              k.fps.isFinite, k.fps > 0, k.fps <= 1000,
+              beats.allSatisfy(\.isFinite)
+        else { return nil }
         let sorted = l.sorted()
-        var h = Heard(fps: k.fps, loud: l, low: lane(low), high: lane(high), beats: beats, down: k.down,
+        var h = Heard(fps: k.fps, loud: l, low: lane(low), high: lane(high), beats: beats.sorted(), down: ((k.down % 4) + 4) % 4,
                       loudTop: sorted[Int(Double(sorted.count) * 0.7)])
         h.fixedScale = true
         return h

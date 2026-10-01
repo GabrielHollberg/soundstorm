@@ -49,6 +49,8 @@ const (
 // page of covers - or many requests for one - is not a decode each.
 var (
 	shrinkSlots = make(chan struct{}, 2)
+	// shrinkReads: how many local covers are read into memory at once.
+	shrinkReads = make(chan struct{}, 4)
 	shrunk      = struct {
 		sync.Mutex
 		m     map[string][]byte
@@ -84,6 +86,16 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 	if target.Bytes != nil {
 		data = target.Bytes
 	} else {
+		// Read only with a turn: up to 20MB each, and only the decode used
+		// to wait for one, so a few hundred covers asked for at once were all
+		// read into memory first (a security review). Without a turn the
+		// cover is served as it is, which streams it from disk.
+		select {
+		case shrinkReads <- struct{}{}:
+		case <-time.After(10 * time.Second):
+			return target, false
+		}
+		defer func() { <-shrinkReads }()
 		f, err := os.Open(target.FilePath)
 		if err != nil {
 			return target, false
@@ -105,7 +117,8 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 		return source.Target{Bytes: kept, ContentType: http.DetectContentType(kept), Name: target.Name, ModTime: target.ModTime}, true
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || (cfg.Width <= px && cfg.Height <= px) || cfg.Width*cfg.Height > shrinkMaxPixels {
+	if err != nil || (cfg.Width <= px && cfg.Height <= px) || cfg.Width*cfg.Height > shrinkMaxPixels ||
+		(format == "jpeg" && jpegScans(data) > maxJPEGScans) {
 		keepShrunk(key, nil)
 		return target, false
 	}
@@ -205,4 +218,17 @@ func hasAlpha(img *image.RGBA) bool {
 		}
 	}
 	return false
+}
+
+// maxJPEGScans is the most scans a JPEG may have to be shrunk. A progressive
+// one has about ten; each scan is a walk over every block of the picture, so a
+// cover of thousands of empty scans took minutes to decode (and decoding
+// cannot be stopped part way). One with more is sent as it is.
+const maxJPEGScans = 100
+
+// jpegScans counts start-of-scan markers. A 0xFF inside the compressed data
+// is always followed by 0x00, so FF DA appears only as a marker - or inside
+// metadata, which can only overcount, and so only errs toward not shrinking.
+func jpegScans(data []byte) int {
+	return bytes.Count(data, []byte{0xFF, 0xDA})
 }

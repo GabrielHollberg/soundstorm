@@ -3775,6 +3775,151 @@ port too (a default port reads 0 in `WKSecurityOrigin`); `absolute` throws
 for any other host (a book file, film or subtitle so refused is not played);
 `+` is sent as `%2B`. The iPhone UI tests still pass, Change server included.
 
+**The whole-project review (2026-10-01).** Fixed on the Mac:
+
+- **`/static/` served the app with no CSP.** The shell's policy is set only
+  by `ServeShell`; `http.FileServer` answered `/static/` and
+  `/static/index.html` with the same page and no policy, so a script that got
+  into a book ran with the session. `webui.Assets` now refuses any folder and
+  any `index.html`, and puts a no-script policy on every file it serves
+  (`plex-done.html` stays: Plex sends people back to it). And the reader's
+  stripping missed chapters foliate-js hands over as a Blob (anything not
+  exactly XHTML, HTML, CSS or SVG): `withoutScripts` now reads a Blob as text
+  first. Not browser-tested; `webui_test.go` covers the first half.
+- **Go 1.24 and Alpine 3.20 were out of support**: now Go 1.27 (`go.mod`, both
+  Dockerfiles, CI) and Alpine 3.24. The images were not built on the Mac (no
+  Docker); the PC's next deploy is the check.
+- **Exported volumes were world-readable tars**: `install.sh` writes them under
+  umask 077 into a 700 folder, then 600; `install.ps1` runs
+  `Protect-SecretFile` on each. The .ps1 was not syntax-checked (PowerShell
+  needs a password to install on the Mac).
+- **Book and picture reads had no ceiling on how many at once**: an EPUB entry
+  (up to 16 MB) and `shrinkLocal`'s whole-file read (up to 20 MB) each took
+  memory before any slot. Six book reads and four shrink reads at a time; a
+  shrink that waits ten seconds streams the original instead, and a book read
+  answers "try again shortly".
+- **Apple TV crashes a server or a book could cause**: markup nested past 256
+  is abandoned (freeing a tree that deep overflowed the stack, and
+  `XML.all` was recursive - now a loop); `Heard.fromServer` refuses uneven
+  lanes, an fps outside (0, 1000] and non-finite beats, and normalises `down`;
+  `VizEngine` reads NaN time as 0 and clamps frames before converting
+  (`Int(.nan)` traps); book parts, PDFs, subtitles and pictures download to
+  disk and are refused past a size (`SafeLoad`), and pictures decode through
+  `CGImageSourceCreateThumbnailAtIndex` at a bounded size. Builds; not run on
+  the TV itself.
+- iPhone: a navigation with no target frame (a new window) no longer counts
+  as the main frame - `createWebViewWith` decides those. Apple TV: `;` is sent
+  as `%3B` (Go drops a query pair holding one).
+- Sign-out now clears `soundstorm-native-queue` (the phone player's queue);
+  an OPDS reference must start `opds/`, not merely contain it.
+
+**For the PC** - Android, from the same review:
+
+- `NativeAudio.kt` (around lines 91, 116, 135-142) and `AudioService.kt`
+  (47-50) load any URL, any scheme or host, that the page passes; allow only
+  the server's own origin, as the iPhone's `absolute` does.
+- The session cookie is attached by hand in `AudioService` and
+  `PlaybackService.loadArt`, and may follow a redirect to another host; turn
+  redirects off or re-check the host.
+- The `MediaSession` has no `onConnect`, so any app on the phone can control
+  playback and read what is playing; accept only the system and the app.
+- `MainActivity.kt` (539-543, 614-626): other schemes and `onCreateWindow`
+  open without a user gesture; match the iPhone (main frame, link followed).
+- No `dataExtractionRules` (Android 12+ backups and device transfer carry the
+  WebView's cookie); exclude the WebView and shared-prefs data.
+- `taskAffinity=""` is missing on the main activity (task hijacking on older
+  Android).
+
+**Left for discussion with the owner**: no limit on sign-in attempts in flight
+from one client (`throttle.reserve`); the plain `soundstorm_session` cookie
+still accepted over TLS; remote access serving plain HTTP. Smaller, in the
+installers and CI: `SoundStorm-Setup.cmd` runs whatever `install.ps1` sits
+beside it; `install-here.sh` uses a fixed `/tmp` path; `install.ps1` elevates
+by bare name; CI's permissions are broader than publishing needs. In the
+server: intake lets companion files join an existing folder; Plex's dial
+guard misses Docker Desktop's 192.168.65.0/24 and gateways; the Jellyfin HLS
+query is a denylist; Storyteller's `readClips` is not cached. Apple TV: ATS
+allows http to public addresses.
+
+**A ninth pass, blind (2026-10-01): eight reviewers, every file.** One
+each for the HTTP API; auth, state, TLS and the names service; the backend
+adapters; parsers, files and streaming; the web client; Android; the Apple
+apps; and the installers and CI - none shown these notes. Each claim below
+was checked against the code before anything changed. Fixed on the Mac:
+
+- **A 16MB PDF took 2.6GB to read its title** - an XMP packet of nothing but
+  empty `<Description/>`s, each decoded into a few hundred bytes of structs -
+  on upload and on every scan, so a small server crash-looped on it. Packets
+  over 1MB are not decoded (`maxXMP`); the test fails without it (858MB for
+  4MB).
+- **A playlist import pinned the CPU**: `matchKey` strips trailing brackets one
+  pass at a time, each over the whole name, and a title of thousands of "()"
+  took minutes. Names are cut to 300 runes first.
+- **A progressive JPEG cover of thousands of empty scans** took minutes to
+  decode, holding both decode slots. A JPEG with over 100 start-of-scan
+  markers is sent as it is, not shrunk.
+- **Jellyfin's admin token, again**: `EnableSubtitlesInManifest` writes the
+  same tokened subtitle playlist into the master that `SubtitleMethod=Hls`
+  does, and the strip only took keys starting "subtitle". Now any key
+  containing it. An allowlist was suggested and is better, but needs every
+  key Jellyfin's own playlists carry, so it waits for a live Jellyfin. From
+  reading Jellyfin's source; not seen against 12.1.0.
+- **A panicking shelf fetch left the shelf pending for ever** (`GetOrFetch`):
+  every later request for it hung. The panic is now that fetch's error.
+- **The names service's sign-ups had only a per-address limit**: 30 a day per
+  /24 (or /48) and 300 a day in all now, against filling the zone's 2,500
+  records or the limit table. The challenge budget is unchanged (below).
+- **The setup log people are told to send carried the setup code** - SoundStorm
+  logs it until an account exists, which is when a failed setup sends the
+  file. `Protect-SetupLog` takes out `code=`, `?setup=` and the code in its
+  groups of four, before the log is shown or saved. Regexes checked in
+  Python; the PowerShell itself not run (no pwsh on the Mac).
+- Installers: the move folder's `install-here.sh` downloads to `mktemp`, not a
+  fixed `/tmp` name; `SoundStorm-Setup.cmd` runs a neighbouring
+  `install.ps1` only in a checkout (beside `.git`); elevated PowerShell and
+  wsl.exe are started by full path; `install.sh` makes an existing `.env`
+  0600 on every run.
+- CI: every action pinned to a commit, `contents: read` unless a job says
+  otherwise, checkouts without persisted credentials; the ACME rehearsal on
+  Go 1.27.
+- Smaller: "playing now" to ListenBrainz is rate limited like plays; a Plex
+  playlist id must be a number, and Docker Desktop's 192.168.65.0/24 (where
+  host.docker.internal reaches the host's localhost) is refused; a read-along
+  piece 0 is refused rather than indexing before the first.
+- Web reader: a book part with no type at all (not a stylesheet) is given
+  `text/plain`; untyped, a browser sniffed it and could render it as a page
+  without the stripping. Not browser-tested.
+- **Apple TV**: a contents link of just "#" crashed every opening of the book
+  (`split` drops empty pieces; kept now); a PDF page box of no height, or
+  thousands of times wider than tall, is not drawn or drawn at most three
+  pages wide; a chapter's pictures are decoded once per picture and only the
+  first 40, at 1600px; a song over 24MB at 96 kbps is not heard on the TV; a
+  saved reading fraction and a clock past Int's range no longer trap.
+
+**For the PC, added by this pass (Android):** a POST form (or a `data:`/
+`blob:` page) can load an off-server page in the app's own window - check the
+address in `onPageStarted`; the notification cover is decoded at full size
+(`PlaybackService.kt:249`) - sample it down; set `allowContentAccess` false;
+the Gradle wrapper has no `distributionSha256Sum`; the APK is signed with the
+debug key. And the three already above (native player URLs and redirects,
+`onConnect`, gestureless launches) were found again independently.
+
+**Left for discussion, added by this pass**: the names service's daily
+challenge budget can still be spent from about eight networks, which would
+let real certificates lapse in a month - the Public Suffix List is the fix;
+every Windows update runs `main`'s newest installer with no signature; winget
+is still elevated by name (it lives in a per-user folder). Smaller: an
+Audiobookshelf track's inode is not checked against the book's files; Immich
+calls are not scoped to SoundStorm's library; httpx and the stream proxy
+follow redirects with Immich's `x-api-key`; Storyteller re-provisions instead
+of signing in again if its long-lived token was never issued; expensive GETs
+(HLS master, beats) can be started from another install's page while
+soundstorm.dev is off the PSL; one lock over every person's collections, and
+no fsync before renames; training routes are not owner-only; ACME polling
+has no overall deadline; the duplicate check's hashing grows with the square
+of an album; a malicious server can still crash the TV through full-size
+AsyncImage covers.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.
@@ -5901,7 +6046,7 @@ and never point automated fetches at an origin site that has asked you not to.
   which executes no Windows binary at all and is what CI does anyway:
 
   ```sh
-  docker run --rm -v "//c/dev/atrium:/src" -w /src golang:1.24-alpine go test ./...
+  docker run --rm -v "//c/dev/atrium:/src" -w /src golang:1.27-alpine go test ./...
   ```
 
   The doubled slash is for MSYS, which otherwise rewrites `/src` into a Windows

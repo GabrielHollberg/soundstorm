@@ -707,7 +707,10 @@ func withTrickplayOff(query url.Values) url.Values {
 func withoutSubtitleKeys(query url.Values) url.Values {
 	var out url.Values
 	for k := range query {
-		if strings.HasPrefix(strings.ToLower(k), "subtitle") {
+		// Anywhere in the name, not only at its start: EnableSubtitlesInManifest
+		// writes a subtitle playlist with our token into the master as surely
+		// as SubtitleMethod=Hls does.
+		if strings.Contains(strings.ToLower(k), "subtitle") {
 			if out == nil {
 				out = url.Values{}
 				for k2, v2 := range query {

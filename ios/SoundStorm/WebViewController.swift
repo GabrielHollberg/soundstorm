@@ -179,7 +179,9 @@ final class WebViewController: UIViewController {
 extension WebViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url else { return .cancel }
-        let mainFrame = action.targetFrame?.isMainFrame ?? true
+        // No target frame is a new window, which createWebViewWith decides
+        // (only for a link somebody tapped) - not the page itself.
+        let mainFrame = action.targetFrame?.isMainFrame ?? false
         if mainFrame && sameInstall(url) {
             // Followed for now, never saved: the address typed stays the one
             // the app starts from. Saving a name reached from a plain-http

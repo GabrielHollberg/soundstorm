@@ -30,6 +30,7 @@ func TestTargetsStayInsideTheCatalog(t *testing.T) {
 	for _, id := range []string{
 		"dl:admin/view",
 		"dl:admin/user/1",
+		"dl:admin/opds/download/12/epub",
 		"dl:opds/download/12/epub?x=y",
 		"dl:opds/download/12/epub?",
 		"dl:opds/download/12/epub#frag",
