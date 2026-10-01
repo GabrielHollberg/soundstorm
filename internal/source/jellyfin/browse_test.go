@@ -104,10 +104,32 @@ func TestAudioTracksOnlyWhenThereIsAChoice(t *testing.T) {
 		{Index: 1, Type: "Audio", Language: "eng", DisplayTitle: "English - AAC - Stereo"},
 		{Index: 2, Type: "Audio", Language: "spa", Title: "Español"},
 	}, &two)
-	if len(tracks) != 2 || !tracks[0].Default || tracks[1].Label != "Español" || tracks[1].Index != 2 {
+	if len(tracks) != 2 || !tracks[0].Default || tracks[1].Label != "Spanish - Español" || tracks[1].Index != 2 {
 		t.Errorf("tracks = %+v", tracks)
 	}
 	if one := audioTracks([]mediaStream{{Index: 1, Type: "Audio"}}, nil); one != nil {
 		t.Errorf("one track offered as a choice: %+v", one)
+	}
+}
+
+// A Blu-ray's own names for its tracks only repeat the channels, so a track
+// is labelled by what it is, and says when it will come out with fewer
+// channels than it has.
+func TestAudioLabelsSayWhatATrackIs(t *testing.T) {
+	streams := []mediaStream{
+		{Index: 1, Type: "Audio", Language: "eng", Codec: "truehd", Profile: "Dolby TrueHD + Dolby Atmos", Channels: 8, Title: "Surround 7.1"},
+		{Index: 3, Type: "Audio", Language: "fra", Codec: "dts", Profile: "DTS-HD MA", Channels: 6, Title: "Surround 5.1"},
+		{Index: 6, Type: "Audio", Language: "eng", Codec: "ac3", Channels: 2, Title: "Commentary by the director"},
+	}
+	tracks := playsAs(audioTracks(streams, nil), streams, 6)
+	want := []string{
+		"English · Dolby TrueHD Atmos 7.1 (plays as 5.1)",
+		"French · DTS-HD MA 5.1",
+		"English · Dolby Digital stereo - Commentary by the director",
+	}
+	for i, w := range want {
+		if tracks[i].Label != w {
+			t.Errorf("track %d = %q, want %q", i, tracks[i].Label, w)
+		}
 	}
 }

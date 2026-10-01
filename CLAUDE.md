@@ -173,6 +173,12 @@ far less work than re-encoding; sound a browser cannot play (TrueHD, DTS) is
 still converted, to AAC with up to 5.1 channels. Downloads take standard: an
 original Blu-ray picture would be tens of gigabytes on a device. Blu-ray
 subtitles are pictures (PGS) and are not offered.
+**The Audio picker says what a track is** (`audioLabel`): language, format and
+channels - "English · Dolby TrueHD Atmos 7.1" - with the file's own name for it
+only when that adds something (a commentary's), since a Blu-ray names its
+tracks "Surround 7.1", "Surround 5.1" and "Stereo" and the picker was a list of
+lookalikes. A track converted to fewer channels than it has says so, "(plays
+as 5.1)": the owner asked whether it was lying to them about 7.1.
 **Each play is its own conversion** (`playSessionId` from PlaybackInfo in the
 HLS query). Jellyfin names a conversion's files after the file, the device and
 the play session - not the quality or audio track - and SoundStorm is always

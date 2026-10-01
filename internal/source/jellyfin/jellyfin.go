@@ -384,6 +384,8 @@ type mediaStream struct {
 	Language             string `json:"Language"`
 	DisplayTitle         string `json:"DisplayTitle"`
 	Title                string `json:"Title"`
+	Profile              string `json:"Profile"`
+	Channels             int    `json:"Channels"`
 	IsForced             bool   `json:"IsForced"`
 	IsTextSubtitleStream bool   `json:"IsTextSubtitleStream"`
 }
@@ -590,6 +592,9 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 	if info.PlaySessionID != "" {
 		query.Set("playSessionId", info.PlaySessionID)
 	}
+	// Converted, a track with more channels than this device takes comes out
+	// with fewer, and the picker says so rather than promising 7.1.
+	audio = playsAs(audio, ms.MediaStreams, q.MaxAudioChannels)
 	return source.Playback{
 		Mode:        source.PlaybackModeHLS,
 		Path:        itemID + "/master.m3u8",
@@ -947,7 +952,7 @@ func audioTracks(streams []mediaStream, defaultIndex *int) []source.AudioTrack {
 		}
 		out = append(out, source.AudioTrack{
 			Index:    st.Index,
-			Label:    firstNonEmpty(st.Title, cleanDisplayTitle(st.DisplayTitle), st.Language, fmt.Sprintf("Audio %d", len(out)+1)),
+			Label:    audioLabel(st, len(out)+1),
 			Language: language,
 			Default:  defaultIndex != nil && *defaultIndex == st.Index,
 		})
@@ -956,6 +961,150 @@ func audioTracks(streams []mediaStream, defaultIndex *int) []source.AudioTrack {
 		return nil
 	}
 	return out
+}
+
+// audioLabel names a track by what it is - language, format, channels - and
+// adds the file's own name for it only when that says something more. A
+// Blu-ray names its tracks "Surround 7.1", "Surround 5.1" and "Stereo", so the
+// picker was a list of lookalikes, and "7.1" was what the disc called it, not
+// what anybody heard (the owner: "it's lying to me").
+func audioLabel(st mediaStream, n int) string {
+	var parts []string
+	if name := languageName(st.Language); name != "" {
+		parts = append(parts, name)
+	}
+	format := strings.TrimSpace(strings.Join(nonEmpty(audioFormat(st.Codec, st.Profile), channelName(st.Channels)), " "))
+	if format != "" {
+		parts = append(parts, format)
+	}
+	label := strings.Join(parts, " · ")
+	if t := strings.TrimSpace(st.Title); t != "" && !genericTrackTitle.MatchString(t) {
+		if label == "" {
+			return t
+		}
+		label += " - " + t
+	}
+	return firstNonEmpty(label, cleanDisplayTitle(st.DisplayTitle), fmt.Sprintf("Audio %d", n))
+}
+
+// genericTrackTitle is a track name that only repeats the channels or the
+// format ("Surround 7.1", "Stereo", "DTS-HD MA 5.1"), which the label already
+// says better.
+var genericTrackTitle = regexp.MustCompile(`(?i)^\s*((surround|stereo|mono|dolby|digital|true ?hd|atmos|dts(-hd)?|ma|hra|ac-?3|e-?ac-?3|aac|flac|pcm|lpcm|plus|\+|[0-9.]+|ch|channels?)\s*)*$`)
+
+func nonEmpty(values ...string) []string {
+	var out []string
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// audioFormat is a codec as people know it.
+func audioFormat(codec, profile string) string {
+	atmos := ""
+	if strings.Contains(strings.ToLower(profile), "atmos") {
+		atmos = " Atmos"
+	}
+	switch strings.ToLower(codec) {
+	case "truehd":
+		return "Dolby TrueHD" + atmos
+	case "eac3":
+		return "Dolby Digital Plus" + atmos
+	case "ac3":
+		return "Dolby Digital"
+	case "dts":
+		p := strings.ToLower(profile)
+		switch {
+		case strings.Contains(p, "dts:x") || strings.Contains(p, "dts-x"):
+			return "DTS:X"
+		case strings.Contains(p, "ma"):
+			return "DTS-HD MA"
+		case strings.Contains(p, "hra") || strings.Contains(p, "hd"):
+			return "DTS-HD"
+		}
+		return "DTS"
+	case "aac":
+		return "AAC"
+	case "flac":
+		return "FLAC"
+	case "mp3":
+		return "MP3"
+	case "opus":
+		return "Opus"
+	case "vorbis":
+		return "Vorbis"
+	}
+	if strings.HasPrefix(strings.ToLower(codec), "pcm") {
+		return "PCM"
+	}
+	return strings.ToUpper(codec)
+}
+
+// channelName is how many speakers a track is mixed for, as people say it.
+func channelName(n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return "mono"
+	case n == 2:
+		return "stereo"
+	case n == 6:
+		return "5.1"
+	case n == 7:
+		return "6.1"
+	case n == 8:
+		return "7.1"
+	}
+	return fmt.Sprintf("%d channels", n)
+}
+
+// playsAs adds what a track will come out as when it is converted to fewer
+// channels than it has.
+func playsAs(tracks []source.AudioTrack, streams []mediaStream, maxChannels int) []source.AudioTrack {
+	if maxChannels <= 0 {
+		return tracks
+	}
+	channels := map[int]int{}
+	for _, st := range streams {
+		channels[st.Index] = st.Channels
+	}
+	for i, t := range tracks {
+		if c := channels[t.Index]; c > maxChannels {
+			tracks[i].Label = t.Label + " (plays as " + channelName(maxChannels) + ")"
+		}
+	}
+	return tracks
+}
+
+// languageName is a language's English name from its ISO 639 code, or the
+// code itself when it is not one of these.
+func languageName(code string) string {
+	c := strings.ToLower(strings.TrimSpace(code))
+	if mapped, ok := iso639[c]; ok {
+		c = mapped
+	}
+	if name, ok := languageNames[c]; ok {
+		return name
+	}
+	if c == "" || c == "und" {
+		return ""
+	}
+	return code
+}
+
+var languageNames = map[string]string{
+	"en": "English", "es": "Spanish", "fr": "French", "de": "German", "it": "Italian",
+	"pt": "Portuguese", "ru": "Russian", "ja": "Japanese", "ko": "Korean", "zh": "Chinese",
+	"ar": "Arabic", "hi": "Hindi", "nl": "Dutch", "sv": "Swedish", "no": "Norwegian",
+	"da": "Danish", "fi": "Finnish", "pl": "Polish", "tr": "Turkish", "cs": "Czech",
+	"el": "Greek", "he": "Hebrew", "hu": "Hungarian", "th": "Thai", "uk": "Ukrainian",
+	"vi": "Vietnamese", "id": "Indonesian", "ro": "Romanian", "bg": "Bulgarian", "hr": "Croatian",
+	"sk": "Slovak", "sl": "Slovenian", "et": "Estonian", "lv": "Latvian", "lt": "Lithuanian",
+	"is": "Icelandic", "ms": "Malay", "ta": "Tamil", "te": "Telugu", "fa": "Persian",
 }
 
 func hasAudio(tracks []source.AudioTrack, index int) bool {
