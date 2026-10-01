@@ -1399,6 +1399,24 @@ alone was 43%. It is better on most songs and worse on Thunder and firefly,
 whose taps keep to the beat; the owner chose it knowing that. 60% is a sharp
 high rising about 12dB rather than 14. **For the Mac:** the same rule.
 
+**Storm's lightning is sized by how hard the hit was**, at the owner's
+asking for cooler lightning. The strike rule hands the looks `dropPower`,
+the peak of the sharp high over the four frames from where it crossed (the
+analysis is the whole song, so it can look ahead). Past 60%: under about
+70% is sheet lightning, the clouds lit from inside with no bolt; to about
+85% a thin bolt far off, ending in the sky; above that a thick close bolt
+to the ground with branches, a flash over the screen, a glow where it lands
+and a burst of spray and splashes. Each strike flickers as real lightning
+does - the same channel lit two to four times in about a third of a second
+(`stormLight`) - and a faint image of the channel lingers a second after.
+The bolt thins towards its end, branches dim faster than the main channel,
+and the glow, the clouds' light and the flash take a touch of the cover's
+colour. Dark clouds drift across the top; the rain brightens and gets a
+white streak during a flash. Clouds and glows are one soft sprite drawn
+once per colour and stretched (`stormSprite`), not gradients per frame.
+57fps in Chrome at phone and TV size. **For the Mac:** the same, from
+`dropPower`.
+
 **The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
 the timeline follows the finger - left for later, right for earlier, at the
 look's own scale of six seconds across - "Play from 1:23" shows over the

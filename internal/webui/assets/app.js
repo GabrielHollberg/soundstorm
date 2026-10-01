@@ -13473,15 +13473,24 @@ const viz = {
     // frames are skipped (a TV draws at 30 a second).
     let drop = false;
     let firstDrop = false;
+    let dropPower = 0;
     if (heard) {
       const fi = Math.max(0, Math.min(heard.high.length - 1, Math.floor(t * heard.fps)));
       if (this.bigAt !== undefined && t < this.bigAt) this.bigAt = undefined; // a seek back
       const jumped = this.strikeFrame === undefined || fi < this.strikeFrame || fi - this.strikeFrame > 10;
       let rose = false;
-      for (let k = jumped ? fi : this.strikeFrame + 1; k <= fi; k++) if (strikesAt(heard, k)) rose = true;
+      let power = 0;
+      for (let k = jumped ? fi : this.strikeFrame + 1; k <= fi; k++) {
+        if (!strikesAt(heard, k)) continue;
+        rose = true;
+        // How hard it hits: the peak of the sharp high, which can come a
+        // frame or two after it crosses the line (heard is the whole song).
+        for (let j = k; j < Math.min(heard.high.length, k + 4); j++) power = Math.max(power, heard.high[j]);
+      }
       this.strikeFrame = fi;
       if (playing && rose) {
         drop = true;
+        dropPower = power;
         firstDrop = this.bigAt === undefined || t - this.bigAt > 6;
         this.bigAt = t;
       }
@@ -13528,7 +13537,7 @@ const viz = {
         f.clearRect(0, 0, w, h);
       }
       scene(this.scene, {
-        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, firstDrop, dropEnv,
+        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, firstDrop, dropPower, dropEnv,
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
       if (flowing) this.keepClearOfPlay(back, front);
@@ -14013,13 +14022,101 @@ function flowScene(st, m) {
 // which it may fade itself for trails. st is its own state, fresh each time it
 // is chosen. They draw round (cx, cy), the cover's middle; size is the
 // cover's width, and the canvases are 180% of it.
+// Storm's lightning. A soft round sprite, drawn once per colour and stretched
+// into clouds and glows, rather than a gradient made every frame.
+function stormSprite(rgb, a0, a1) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a0})`);
+  gr.addColorStop(0.45, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a1})`);
+  gr.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+  x.fillStyle = gr;
+  x.fillRect(0, 0, 64, 64);
+  return c;
+}
+let stormDark;
+
+// One strike, sized by how hard the sound hit (s, 0 to 1): a weak one is
+// sheet lightning, only the clouds lit from inside; a middling one a thin
+// bolt far off, ending in the sky; a strong one a thick bolt close by, down
+// to the ground with branches. Real lightning flickers - the same channel
+// struck again two to four times in a third of a second - so each has a
+// list of return strokes (time, strength).
+function stormBolt(w, h, s, age) {
+  const tier = s < 0.3 ? 0 : s < 0.7 ? 1 : 2;
+  const pulses = [];
+  let at = 0;
+  const n = (tier === 2 ? 3 : 2) + (Math.random() < 0.5 ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    pulses.push(at, i ? 0.45 + Math.random() * 0.45 : 1);
+    at += 0.05 + Math.random() * 0.07;
+  }
+  const x0 = w * (0.15 + Math.random() * 0.7);
+  const bo = { tier, s, age, pulses, x: x0, life: tier ? at + 1.2 : at + 0.3, branches: [], scale: 1, landed: false };
+  if (!tier) return bo;
+  bo.scale = tier === 2 ? 1 + 0.6 * (s - 0.7) / 0.3 : 0.45 + 0.3 * (s - 0.3) / 0.4;
+  const bottom = tier === 2 ? h * (0.9 + Math.random() * 0.06) : h * (0.36 + Math.random() * 0.2);
+  const branchP = tier === 2 ? 0.1 + 0.12 * s : 0.05;
+  const main = [];
+  let x = x0;
+  let y = h * (0.05 + Math.random() * 0.06);
+  let drift = (Math.random() - 0.5) * 0.5;
+  while (y < bottom) {
+    main.push(x, y);
+    const step = h * (0.012 + Math.random() * 0.024);
+    y += step;
+    x += (drift + (Math.random() - 0.5) * 2.4) * step;
+    if (Math.random() < 0.1) drift = (Math.random() - 0.5) * 0.7;
+    if (y < bottom * 0.85 && Math.random() < branchP) stormBranch(bo.branches, x, y, h, 0.55, 0);
+  }
+  main.push(x, bottom);
+  bo.main = main;
+  bo.ex = x;
+  bo.ey = bottom;
+  return bo;
+}
+function stormBranch(out, x, y, h, wgt, depth) {
+  const pts = [x, y];
+  const slope = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 1.4);
+  const n = Math.max(3, Math.round((5 + Math.random() * 9) * wgt * 1.6));
+  for (let i = 0; i < n; i++) {
+    const step = h * (0.01 + Math.random() * 0.018);
+    y += step;
+    x += (slope + (Math.random() - 0.5) * 2) * step;
+    pts.push(x, y);
+    if (depth < 1 && Math.random() < 0.15) stormBranch(out, x, y, h, wgt * 0.6, depth + 1);
+  }
+  out.push({ pts, w: wgt });
+}
+// How lit a strike is at its age: each return stroke a sharp flash that dies
+// in a few hundredths of a second.
+function stormLight(bo) {
+  let v = 0;
+  const p = bo.pulses;
+  for (let i = 0; i < p.length; i += 2) {
+    const d = bo.age - p[i];
+    // Sheet lightning glows and fades in the clouds; a bolt is a snap.
+    if (d >= 0) v = Math.max(v, p[i + 1] * Math.exp(-d * (bo.tier ? 22 : 9)));
+  }
+  return v;
+}
+function stormPath(g, pts, from, to) {
+  g.moveTo(pts[from], pts[from + 1]);
+  for (let i = from + 2; i <= to; i += 2) g.lineTo(pts[i], pts[i + 1]);
+}
+
 // The other full-screen scenes. Like Flow they draw over the whole of Now
 // Playing, round the middle of the screen (cx, cy), with S its shorter side.
 const FULL_SCENES = {
-  // Storm: rain in the cover's colours, faster when loud; on the first beat of
-  // a bar in a loud part, a branching bolt of lightning and a flash.
+  // Storm: rain in the cover's colours, faster when loud, under dark clouds;
+  // lightning on every strong sharp high (m.drop, see viz.frame), sized by how
+  // hard it hit (m.dropPower) - sheet lightning in the clouds, a bolt far off,
+  // or a bolt close by with a flash over everything, its light on the clouds
+  // and the rain, and the rain splashing up where it lands.
   storm(st, m) {
-    const { g, f, w, h, dpr, pal, rgba, dt, ck, kick, loud, lv, newBeat, downbeat, bright } = m;
+    const { g, f, w, h, dpr, pal, rgba, dt, ck, kick, loud, lv, bright } = m;
     f.clearRect(0, 0, w, h);
     g.clearRect(0, 0, w, h);
     if (!st.drops) {
@@ -14028,49 +14125,82 @@ const FULL_SCENES = {
       st.drops = Array.from({ length: Math.round(420 * VIZ_DENSITY) }, () => ({ x: -w * 0.35 + Math.random() * w * 1.35, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
       st.bolts = [];
       st.splash = [];
-      st.lastBolt = -1e9;
+      st.sparks = [];
+      st.clouds = Array.from({ length: 11 }, (_, i) => ({ x: ((i + Math.random() * 0.7) / 11) * 1.4 - 0.2, y: Math.random() * 0.12, rx: 0.16 + Math.random() * 0.14, ry: 0.1 + Math.random() * 0.08, sp: 0.6 + Math.random() * 0.8 }));
     }
-    // Lightning on every strong sharp high (m.drop, see viz.frame): jagged
-    // paths down with branches and a flash, a double strike for the first
-    // after a quiet spell.
-    for (let strike = 0; m.drop && strike < (m.firstDrop ? 2 : 1); strike++) {
-      const pts = [];
-      let x = w * (0.2 + Math.random() * 0.6);
-      let y = 0;
-      const bottom = h * (0.55 + Math.random() * 0.3);
-      const branches = [];
-      while (y < bottom) {
-        pts.push([x, y]);
-        y += h * (0.03 + Math.random() * 0.05);
-        x += (Math.random() - 0.5) * w * 0.08;
-        if (Math.random() < 0.18) {
-          const b = [[x, y]];
-          let bx = x, by = y;
-          const dir = Math.random() < 0.5 ? -1 : 1;
-          for (let k = 0; k < 4; k++) { by += h * 0.035; bx += dir * w * (0.02 + Math.random() * 0.04); b.push([bx, by]); }
-          branches.push(b);
-        }
-      }
-      pts.push([x, y]);
-      st.bolts.push({ pts, branches, life: strike ? 0.85 : 1 });
+    // The light takes a touch of the cover's colour.
+    if (st.tintFor !== pal[0]) {
+      st.tintFor = pal[0];
+      const mix = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+      st.core = mix([238, 242, 255], pal[0], 0.1);
+      st.tint = mix([180, 198, 255], pal[0], 0.35);
+      st.glow = stormSprite(mix([200, 212, 255], pal[0], 0.3), 1, 0.35);
     }
-    const flash = st.bolts.reduce((a, bo) => Math.max(a, bo.life), 0);
-    if (flash > 0) {
-      g.fillStyle = `rgba(230, 235, 255, ${flash * flash * 0.3 * bright})`;
+    if (!stormDark) stormDark = stormSprite([7, 9, 18], 0.92, 0.6);
+    if (m.drop) {
+      const s = Math.max(0, Math.min(1, ((m.dropPower || 0.8) - 0.6) / 0.35));
+      // A double strike for the first after a quiet spell, the second a
+      // little after and a little weaker.
+      for (let k = 0; k < (m.firstDrop ? 2 : 1); k++) st.bolts.push(stormBolt(w, h, k ? Math.max(0, s - 0.25) : s, -0.14 * k));
+      if (st.bolts.length > 6) st.bolts.splice(0, st.bolts.length - 6);
+    }
+    // How lit everything is this frame.
+    let sky = 0;
+    let rainLit = 0;
+    for (const bo of st.bolts) {
+      bo.age += dt;
+      bo.I = bo.age < 0 ? 0 : stormLight(bo);
+      sky = Math.max(sky, bo.I * (bo.tier === 2 ? 1 : bo.tier ? 0.25 : 0.2));
+      rainLit = Math.max(rainLit, bo.I * (bo.tier === 2 ? 1 : bo.tier ? 0.5 : 0.3));
+    }
+    const shine = 0.5 + 0.5 * bright;
+    if (sky > 0.01) {
+      g.fillStyle = rgba(st.tint, sky * sky * 0.4 * shine);
       g.fillRect(0, 0, w, h);
     }
+    // The clouds: a dark band across the top and soft dark heaps drifting in
+    // it, then each lit from inside by the strikes near it.
+    if (st.bandFor !== h) {
+      st.bandFor = h;
+      st.band = g.createLinearGradient(0, 0, 0, h * 0.42);
+      st.band.addColorStop(0, 'rgba(6, 8, 16, 0.85)');
+      st.band.addColorStop(0.55, 'rgba(6, 8, 16, 0.4)');
+      st.band.addColorStop(1, 'rgba(6, 8, 16, 0)');
+    }
+    g.fillStyle = st.band;
+    g.fillRect(0, 0, w, h * 0.42);
+    const R = Math.max(w, h * 0.7);
+    const wind = Math.sin(ck * 0.3) * 0.15 + 0.12;
+    for (const c of st.clouds) {
+      c.x += dt * 0.006 * c.sp * (0.5 + wind * 3);
+      if (c.x > 1.3) c.x -= 1.6;
+      c.lit = 0;
+      for (const bo of st.bolts) {
+        if (!bo.I) continue;
+        const d = (c.x * w - bo.x) / (w * (bo.tier ? 0.3 : 0.5));
+        c.lit += bo.I * (bo.tier ? 1 : 1.4) * Math.exp(-d * d);
+      }
+      g.globalAlpha = 0.8;
+      g.drawImage(stormDark, c.x * w - c.rx * R, c.y * h - c.ry * R * 0.5, c.rx * R * 2, c.ry * R);
+    }
     g.globalCompositeOperation = 'lighter';
+    for (const c of st.clouds) {
+      if (c.lit < 0.01) continue;
+      g.globalAlpha = Math.min(1, c.lit) * 0.85 * shine;
+      g.drawImage(st.glow, c.x * w - c.rx * R * 0.85, c.y * h - c.ry * R * 0.45, c.rx * R * 1.7, c.ry * R * 0.9);
+    }
+    g.globalAlpha = 1;
     // Rain, slanted with a wind that drifts. Its speed eases towards what
     // the music asks rather than jumping on every kick - reported as the
     // animation skipping every few seconds - and it is drawn in six batches
     // (three colours, two weights), not a stroke and a new colour string per
     // drop: 420 of those a frame was garbage enough for a phone to stop and
     // collect it every few seconds, which is the other half of the skip.
+    // In a flash it lights up: brighter, and a white streak over every drop.
     const target = 0.28 + 0.5 * loud * lv + 0.15 * kick;
     st.fallRate = st.fallRate === undefined ? target : st.fallRate + (target - st.fallRate) * Math.min(1, dt * 2.5);
     const fall = h * st.fallRate * dt;
-    const wind = Math.sin(ck * 0.3) * 0.15 + 0.12;
-    const alpha = (0.35 + 0.35 * lv) * (0.5 + 0.5 * bright);
+    const alpha = Math.min(1, (0.35 + 0.35 * lv) * (0.5 + 0.5 * bright) * (1 + 1.5 * rainLit));
     const minLen = h * 0.015;
     g.lineCap = 'round';
     for (let c = 0; c < 3; c++) {
@@ -14087,47 +14217,128 @@ const FULL_SCENES = {
         g.stroke();
       }
     }
+    if (rainLit > 0.04) {
+      g.beginPath();
+      for (const d of st.drops) {
+        const step = fall * d.s;
+        g.moveTo(d.x, d.y);
+        g.lineTo(d.x + step * wind * 2.2, d.y + Math.max(step * 2.2, minLen));
+      }
+      g.strokeStyle = rgba(st.core, Math.min(0.7, rainLit * 0.75));
+      g.lineWidth = dpr;
+      g.stroke();
+    }
     for (const d of st.drops) {
       const step = fall * d.s;
       d.y += step;
       d.x += step * wind;
       if (d.y > h) {
-        if (Math.random() < 0.3 && st.splash.length < 80) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c });
+        if (Math.random() < 0.3 && st.splash.length < 80) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c, big: 1 });
         d.y = -h * 0.05 * Math.random();
         d.x = -w * 0.35 + Math.random() * w * 1.35;
       }
     }
-    // Splashes and bolts are aged in place, the finished ones dropped from the
-    // same array, rather than a new array filtered out every frame.
+    // Splashes, sparks and bolts are aged in place, the finished ones dropped
+    // from the same array, rather than a new array filtered out every frame.
     g.lineWidth = dpr;
     let keep = 0;
     for (const sp of st.splash) {
-      sp.life -= dt * 2.5;
+      sp.life -= dt * (sp.big > 1 ? 1.4 : 2.5);
       if (sp.life <= 0) continue;
       st.splash[keep++] = sp;
-      g.strokeStyle = rgba(pal[sp.c], sp.life * 0.5 * bright);
+      g.strokeStyle = sp.big > 1 ? rgba(st.core, sp.life * 0.6 * shine) : rgba(pal[sp.c], sp.life * 0.5 * bright);
       g.beginPath();
-      g.ellipse(sp.x, sp.y, (1 - sp.life) * 14 * dpr + 2, (1 - sp.life) * 4 * dpr + 1, 0, 0, Math.PI * 2);
+      g.ellipse(sp.x, sp.y, ((1 - sp.life) * 14 * dpr + 2) * sp.big, ((1 - sp.life) * 4 * dpr + 1) * sp.big, 0, 0, Math.PI * 2);
       g.stroke();
     }
     st.splash.length = keep;
-    // The bolts: a wide soft glow and a thin bright core.
+    keep = 0;
+    g.lineWidth = 1.4 * dpr;
+    for (const sk of st.sparks) {
+      sk.life -= dt * 1.6;
+      if (sk.life <= 0) continue;
+      st.sparks[keep++] = sk;
+      sk.vy += h * 1.6 * dt;
+      sk.x += sk.vx * dt;
+      sk.y += sk.vy * dt;
+      g.strokeStyle = rgba(st.core, sk.life * 0.8 * shine);
+      g.beginPath();
+      g.moveTo(sk.x, sk.y);
+      g.lineTo(sk.x - sk.vx * 0.03, sk.y - sk.vy * 0.03);
+      g.stroke();
+    }
+    st.sparks.length = keep;
+    // The bolts: a wide soft glow and a narrower one in the light's colour,
+    // then a white core thick at the top and thinning towards the end; the
+    // branches dim faster than the main channel; and after the flashes a
+    // faint image of the channel lingers, as it does on the eye.
     keep = 0;
     for (const bo of st.bolts) {
-      bo.life -= dt * 2.6;
-      if (bo.life <= 0) continue;
+      if (bo.age >= bo.life) continue;
       st.bolts[keep++] = bo;
+      if (!bo.tier || bo.age < 0) continue;
+      const I = bo.I;
+      const Ib = I * I;
+      const sc = bo.scale * dpr;
+      const main = bo.main;
       for (let layer = 0; layer < 2; layer++) {
-        g.strokeStyle = `rgba(235, 240, 255, ${(layer ? 1 : 0.25) * bo.life})`;
-        g.lineWidth = (layer ? 2.2 : 10) * dpr;
+        if (I < 0.01) break;
+        g.strokeStyle = rgba(st.tint, (layer ? 0.38 : 0.16) * I);
+        g.lineWidth = (layer ? 6 : 16) * sc;
         g.beginPath();
-        for (const path of bo.all || (bo.all = [bo.pts, ...bo.branches])) {
-          for (let i = 0; i < path.length; i++) {
-            if (i) g.lineTo(path[i][0], path[i][1]);
-            else g.moveTo(path[i][0], path[i][1]);
+        stormPath(g, main, 0, main.length - 2);
+        g.stroke();
+        if (Ib > 0.01) {
+          g.strokeStyle = rgba(st.tint, (layer ? 0.38 : 0.16) * Ib);
+          g.lineWidth = (layer ? 3.5 : 9) * sc;
+          g.beginPath();
+          for (const b of bo.branches) stormPath(g, b.pts, 0, b.pts.length - 2);
+          g.stroke();
+        }
+      }
+      if (I > 0.01) {
+        const n = main.length / 2;
+        g.strokeStyle = rgba(st.core, I);
+        for (let q = 0; q < 4; q++) {
+          const a = Math.floor((n - 1) * q / 4) * 2;
+          const z = Math.floor((n - 1) * (q + 1) / 4) * 2;
+          if (z <= a) continue;
+          g.lineWidth = (3.4 - 0.75 * q) * sc;
+          g.beginPath();
+          stormPath(g, main, a, z);
+          g.stroke();
+        }
+        if (Ib > 0.01) {
+          g.strokeStyle = rgba(st.core, Ib);
+          for (const b of bo.branches) {
+            g.lineWidth = 2.6 * b.w * sc;
+            g.beginPath();
+            stormPath(g, b.pts, 0, b.pts.length - 2);
+            g.stroke();
           }
         }
+      }
+      const after = 0.22 * (1 - bo.age / bo.life);
+      if (after > 0.01) {
+        g.strokeStyle = rgba(st.tint, after);
+        g.lineWidth = 1.6 * sc;
+        g.beginPath();
+        stormPath(g, main, 0, main.length - 2);
         g.stroke();
+      }
+      if (bo.tier === 2) {
+        // Where it lands: a glow on the ground, and the first stroke throws
+        // up a burst of spray and a ring of splashes.
+        if (I > 0.01) {
+          g.globalAlpha = Math.min(1, I * 0.75 * shine);
+          g.drawImage(st.glow, bo.ex - w * 0.3, bo.ey - h * 0.07, w * 0.6, h * 0.14);
+          g.globalAlpha = 1;
+        }
+        if (!bo.landed) {
+          bo.landed = true;
+          for (let k = 0; k < 26 && st.sparks.length < 90; k++) st.sparks.push({ x: bo.ex, y: bo.ey, vx: (Math.random() - 0.5) * w * 0.5, vy: -(0.15 + Math.random() * 0.45) * h, life: 0.6 + Math.random() * 0.4 });
+          for (let k = 0; k < 5 && st.splash.length < 90; k++) st.splash.push({ x: bo.ex + (Math.random() - 0.5) * w * 0.12, y: bo.ey + Math.random() * h * 0.02, life: 1, c: 0, big: 2.5 + Math.random() * 2 });
+        }
       }
     }
     st.bolts.length = keep;
