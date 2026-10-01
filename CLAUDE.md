@@ -5768,7 +5768,11 @@ Browsers need nothing: each server is its own site and its own bookmark.
 **For the PC (Android):** the same in `ServerAddress.kt` - a JSON list in the
 prefs beside the current address (the current one seeds it), the connect
 screen listing them above the address box, a long press for Rename and
-Remove. **Profiles (2026-10-01): "Who's listening?"**, the second half, designed
+Remove. *(Done in Android 0.19: `ServerAddress.all`/`remember`/`forget`/
+`rename`, the connect screen's rows; with a list the keyboard waits, and a
+server already listed is not typed into the box again. Checked on the
+emulator: two servers, the newest first and ticked, a rename kept.)*
+**Profiles (2026-10-01): "Who's listening?"**, the second half, designed
 with the owner: optional PINs, the owner always needing their PIN (or
 password, with none), and a TV asking every time it opens. A device gets a
 profile cookie of its own (`soundstorm_profiles`, a random id, not a
