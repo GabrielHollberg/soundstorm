@@ -1124,6 +1124,12 @@ has no touch and no mouse:
   Playing away to the mini player, the buttons fading back in - so the ten
   seconds is, in practice, the timeline highlighted. Up from the timeline is that arrow (not
   Looks, the nearest), down from the top buttons the timeline.
+- **An audiobook on a TV**: the title at the top of the column beside the
+  cover and the timelines at its foot, level with the cover's top and
+  bottom (they sat together in the middle). With the buttons faded, left
+  and right go by chapters - the next, or back to this one's start (the one
+  before near its start), as a swipe does; a book without a chapter list
+  keeps its thirty seconds.
 - **No mini player on a TV.** A remote reached it only by scrolling to the
   foot of a page, and it covered the bottom of every one. Its place is the
   side bar's first entry while something plays (`tv-np-tab`): the song's

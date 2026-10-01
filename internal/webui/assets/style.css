@@ -3570,6 +3570,20 @@ html.tv .now-playing.cover-viz .np-progress, html.tv .now-playing.cover-full .np
   order: 3; width: min(720px, 100%);
 }
 
+/* An audiobook on a TV, beside its cover: the title at the top of the
+   column, level with the cover's top, and the timelines at the foot, level
+   with its bottom - they sat together in the middle, the timelines too high
+   and the title too low (reported from the projector). The play buttons are
+   not shown on a TV, so their row takes no room. */
+html.tv .now-playing:not(.np-music) .np-main { align-items: stretch; }
+html.tv .now-playing:not(.np-music) .np-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+html.tv .now-playing:not(.np-music) .np-controls { display: none; }
+
 /* Long titles on a TV: centring shrank the title's box to the text, so the
    sideways scroll (fitNpLine) never saw it overflow and it ran off the
    screen. The box is the full width. */

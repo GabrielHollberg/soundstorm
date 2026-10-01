@@ -15532,6 +15532,15 @@ function tvRemote() {
       if (audio.item) {
         event.preventDefault();
         const next = event.key === 'ArrowRight' || event.key === 'MediaTrackNext';
+        // An audiobook goes by chapters here (the owner's asking): the next,
+        // or back to the start of this one - the chapter before near its
+        // start - as a swipe does. One without a chapter list keeps its
+        // thirty seconds.
+        if (audio.item.kind !== 'music' && (next ? nextChapterStart() : prevChapterStart()) !== null) {
+          stepTrack(next ? 1 : -1);
+          if (!faded) wake();
+          return;
+        }
         const btn = $(next ? 'np-next' : 'np-prev');
         if (!btn.disabled) btn.click();
         if (!faded) wake();
