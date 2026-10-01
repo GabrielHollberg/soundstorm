@@ -14041,27 +14041,20 @@ let stormDark;
 // One strike, sized by how hard the sound hit (s, 0 to 1): a weak one is
 // sheet lightning, only the clouds lit from inside; a middling one a thin
 // bolt far off, ending in the sky; a strong one a thick bolt close by, down
-// to the ground with branches. Real lightning flickers - the same channel
-// struck again two to four times in a third of a second - so each has a
-// list of return strokes (time, strength).
+// to the ground with branches. Each is one flash fading out - a flicker of
+// return strokes was tried and the owner preferred the single flash.
 function stormBolt(w, h, s, age) {
   const tier = s < 0.3 ? 0 : s < 0.7 ? 1 : 2;
-  const pulses = [];
-  let at = 0;
-  const n = (tier === 2 ? 3 : 2) + (Math.random() < 0.5 ? 1 : 0);
-  for (let i = 0; i < n; i++) {
-    pulses.push(at, i ? 0.45 + Math.random() * 0.45 : 1);
-    at += 0.05 + Math.random() * 0.07;
-  }
   const x0 = w * (0.15 + Math.random() * 0.7);
-  const bo = { tier, s, age, pulses, x: x0, life: tier ? at + 1.2 : at + 0.3, branches: [], scale: 1, landed: false };
+  const bo = { tier, s, age, x: x0, life: tier ? 1.4 : 0.6, branches: [], scale: 1, landed: false };
   if (!tier) return bo;
   bo.scale = tier === 2 ? 1 + 0.6 * (s - 0.7) / 0.3 : 0.45 + 0.3 * (s - 0.3) / 0.4;
   const bottom = tier === 2 ? h * (0.9 + Math.random() * 0.06) : h * (0.36 + Math.random() * 0.2);
   const branchP = tier === 2 ? 0.1 + 0.12 * s : 0.05;
   const main = [];
   let x = x0;
-  let y = h * (0.05 + Math.random() * 0.06);
+  // From the very top of the screen, as the owner asked.
+  let y = -h * 0.02;
   let drift = (Math.random() - 0.5) * 0.5;
   while (y < bottom) {
     main.push(x, y);
@@ -14090,17 +14083,10 @@ function stormBranch(out, x, y, h, wgt, depth) {
   }
   out.push({ pts, w: wgt });
 }
-// How lit a strike is at its age: each return stroke a sharp flash that dies
-// in a few hundredths of a second.
+// How lit a strike is at its age: one flash fading out in about 0.4s (sheet
+// lightning glows a little longer in the clouds).
 function stormLight(bo) {
-  let v = 0;
-  const p = bo.pulses;
-  for (let i = 0; i < p.length; i += 2) {
-    const d = bo.age - p[i];
-    // Sheet lightning glows and fades in the clouds; a bolt is a snap.
-    if (d >= 0) v = Math.max(v, p[i + 1] * Math.exp(-d * (bo.tier ? 22 : 9)));
-  }
-  return v;
+  return Math.max(0, 1 - bo.age * (bo.tier ? 2.6 : 1.8));
 }
 function stormPath(g, pts, from, to) {
   g.moveTo(pts[from], pts[from + 1]);

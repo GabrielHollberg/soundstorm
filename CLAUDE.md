@@ -1406,9 +1406,11 @@ analysis is the whole song, so it can look ahead). Past 60%: under about
 70% is sheet lightning, the clouds lit from inside with no bolt; to about
 85% a thin bolt far off, ending in the sky; above that a thick close bolt
 to the ground with branches, a flash over the screen, a glow where it lands
-and a burst of spray and splashes. Each strike flickers as real lightning
-does - the same channel lit two to four times in about a third of a second
-(`stormLight`) - and a faint image of the channel lingers a second after.
+and a burst of spray and splashes. Every bolt starts at the very top of the
+screen. Each strike is one flash fading over about 0.4s (`stormLight`) - a
+flicker of two to four return strokes, as real lightning does, was tried and
+the owner preferred the single flash - and a faint image of the channel
+lingers a second after.
 The bolt thins towards its end, branches dim faster than the main channel,
 and the glow, the clouds' light and the flash take a touch of the cover's
 colour. Dark clouds drift across the top; the rain brightens and gets a
