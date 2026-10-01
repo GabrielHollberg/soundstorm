@@ -591,16 +591,27 @@ func (m *Manager) Login(name, password string) (string, time.Time, state.User, e
 		return "", time.Time{}, state.User{}, ErrInvalidCredentials
 	}
 
+	token, expiry, err := m.SessionFor(user)
+	if err != nil {
+		return "", time.Time{}, state.User{}, err
+	}
+	return token, expiry, user, nil
+}
+
+// SessionFor starts a session for an account that has proved itself some
+// other way than its password: a TV a signed-in phone allowed (httpapi's
+// tvlink.go). Only ever called once that is settled.
+func (m *Manager) SessionFor(user state.User) (string, time.Time, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", time.Time{}, state.User{}, fmt.Errorf("generate session token: %w", err)
+		return "", time.Time{}, fmt.Errorf("generate session token: %w", err)
 	}
 	token := hex.EncodeToString(raw)
 	expiry := time.Now().Add(sessionTTL)
 	if err := m.store.AddSession(token, user.ID, expiry); err != nil {
-		return "", time.Time{}, state.User{}, err
+		return "", time.Time{}, err
 	}
-	return token, expiry, user, nil
+	return token, expiry, nil
 }
 
 // iterationsOr keeps a decoy hash the same cost as a real one.

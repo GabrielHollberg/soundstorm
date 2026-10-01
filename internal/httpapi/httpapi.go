@@ -83,9 +83,15 @@ type Server struct {
 	// was made up at start), which may approve a new device - see devices.go.
 	approvalCode string
 	pending      pendingSignIns
-	collections  *collections.Store
-	plays        allowance
-	positions    allowance
+	// links are TVs waiting to be signed in from a phone (tvlink.go);
+	// linkAsks limits asking for codes by address, linkLookups trying them
+	// by person.
+	links       tvLinks
+	linkAsks    allowance
+	linkLookups allowance
+	collections *collections.Store
+	plays       allowance
+	positions   allowance
 	// nowPlaying limits "playing now" to ListenBrainz: each starts a call
 	// out of the house, and nothing else held them back.
 	nowPlaying allowance
@@ -320,11 +326,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/login/pending/{id}", s.handlePendingSignIn)
 	mux.HandleFunc("POST /api/login/pending/{id}", s.handlePendingSignIn)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	// A TV signing in from a phone: asking for a code, asking how it went,
+	// and the code's QR (tvlink.go). Allowing one needs a session, below.
+	mux.HandleFunc("POST /api/link", s.handleNewLink)
+	mux.HandleFunc("GET /api/link/{id}", s.handleLinkStatus)
+	mux.HandleFunc("GET /api/link/{id}/qr.png", s.handleLinkQR)
 
 	// Everything past here needs a session, media bytes very much included.
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
+	guarded.HandleFunc("GET /api/link/code/{code}", s.handleLinkLookup)
+	guarded.HandleFunc("POST /api/link/code/{code}", s.handleLinkAnswer)
 	guarded.HandleFunc("GET /api/library", s.handleLibrary)
 	guarded.HandleFunc("GET /api/probe", s.handleProbe)
 	guarded.HandleFunc("POST /api/library/rescan", s.handleRescan)

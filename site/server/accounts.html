@@ -180,6 +180,28 @@ results is no permission when the address is guessable.</p>
 reading and video positions (kept by SoundStorm, keyed <code>userID/sourceID/itemID</code>),
 favorites, playlists and history (in <a href="collections.html">collections</a>), audiobook
 listening positions, and photos.</p>
+<h3 id="tvlink">Signing a TV in from a phone</h3>
+<p>Typing a password with a remote is the worst part of a TV app, so a TV can be signed in from
+a phone instead (<code>tvlink.go</code>). The TV asks for a code (<code>POST /api/link</code>,
+limited by address) and gets three things: a random 128-bit id that only it knows, a short code
+of six characters from an alphabet without 0, O, 1, I or L (shown <code>ABC-DEF</code>), and the
+address a phone should open, <code>/?link=ABCDEF</code> on the install's secure name when it has
+one. It shows the code and that address as a QR code (<code>GET /api/link/{id}/qr.png</code>,
+drawn by <code>internal/qr</code> - byte mode, level M, versions 1 to 10, no dependency) and
+polls <code>GET /api/link/{id}</code> every three seconds.</p>
+<p>A phone signed in opens the address (or has the code typed into Settings), looks the code up
+(<code>GET /api/link/code/{code}</code>, any case, dash or not) and is shown what is asking and
+that it will be signed in as the phone's person; allowing it
+(<code>POST /api/link/code/{code}</code>) marks the code, and the TV's next poll is handed a fresh
+session for that person (<code>auth.SessionFor</code>) and a device cookie. A code lives ten
+minutes and works once; looking codes up is limited per person.</p>
+<div class="why">The short code is what a person types, so it is not what the TV polls with: the
+id is, as a waiting sign-in's is. Guessing codes from a phone only ever signs a stranger's TV in
+as yourself. What no limit can stop is somebody being talked into allowing a stranger's code,
+which is why the phone says plainly what is asking and as whom. A TV signed in this way skips
+<a href="#approval">approval of new devices</a>: the phone that allowed it is a device the account
+already uses.</div>
+
 <h3>Per-member backend accounts</h3>
 <p>Two backends get an account per member, because what they remember is personal:</p>
 <ul>

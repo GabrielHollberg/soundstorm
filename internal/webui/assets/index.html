@@ -75,6 +75,15 @@
       <p id="gate-error" class="error hidden" role="alert"></p>
 
       <button id="gate-submit" type="submit">Continue</button>
+      <!-- On a TV: signed in from a phone instead of typing with a remote. -->
+      <button id="gate-phone" type="button" class="ghost hidden">Sign in with your phone</button>
+      <div id="gate-link" class="gate-link hidden" role="status">
+        <p>On a phone signed in to SoundStorm, scan this - or open SoundStorm on it
+          and enter the code under Settings, <strong>Sign in a TV</strong>.</p>
+        <img id="gate-link-qr" class="gate-link-qr" alt="">
+        <p id="gate-link-code" class="gate-link-code"></p>
+        <button id="gate-link-cancel" type="button" class="ghost">Use a password instead</button>
+      </div>
 
       <!-- New devices need approval: shown once the password was right. -->
       <div id="gate-wait" class="hidden" role="status">
@@ -285,6 +294,18 @@
             <button class="ghost small copy" type="button" data-copy="devices-away-url">Copy</button>
           </div>
         </div>
+      </div>
+
+      <div class="account-section card" data-cat="account" data-words="tv television sign in code link phone qr apple google">
+        <h2>Sign in a TV</h2>
+        <p class="muted">A TV showing a code to sign in with: enter it here and it is signed in as you.</p>
+        <form id="link-form" class="stack-form">
+          <label>
+            <span>The code on the TV</span>
+            <input id="link-code" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="ABC-DEF" maxlength="9" required>
+          </label>
+          <button type="submit">Continue</button>
+        </form>
       </div>
 
       <div class="account-section card" data-cat="account" data-words="password security sign in login">
@@ -933,6 +954,16 @@
   </section>
 
   <!-- A new device waiting to sign in to this account (devices.go). -->
+  <!-- A TV asking to be signed in from this phone (its code typed, or its QR scanned). -->
+  <div id="link-ask" class="backup-ask hidden" role="dialog" aria-labelledby="link-ask-title">
+    <h2 id="link-ask-title">Sign in a TV?</h2>
+    <p id="link-ask-text" class="muted"></p>
+    <div class="backup-ask-buttons">
+      <button id="link-ask-no" type="button" class="ghost">Don't allow</button>
+      <button id="link-ask-yes" type="button">Allow</button>
+    </div>
+  </div>
+
   <div id="device-ask" class="backup-ask hidden" role="dialog" aria-labelledby="device-ask-title">
     <h2 id="device-ask-title">Allow a new device?</h2>
     <p id="device-ask-text" class="muted"></p>

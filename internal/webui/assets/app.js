@@ -313,7 +313,100 @@ function showGate(hasAccount, setupCodeRequired) {
   // case: somebody opened the page by hand instead of from setup.
   $('gate-setup-code').value = setupFromAddress;
   show($('gate-setup'), !hasAccount && setupCodeRequired && !setupFromAddress);
+  // A TV may be signed in from a phone instead (tvlink.go on the server).
+  show($('gate-phone'), TV && hasAccount);
   $('gate-username').focus();
+}
+
+// Signing a TV in from a phone: the TV asks for a code and shows it, with a
+// QR code of the address that allows it; a phone signed in allows it, and
+// the TV, asking every three seconds, is signed in as that phone's person.
+// A code lasts ten minutes; one that runs out is replaced.
+let linkWait = null;
+async function startLink() {
+  clearInterval(linkWait);
+  const { ok, body } = await api('/api/link', { method: 'POST', body: '{}' });
+  if (!ok || !body || !body.id) {
+    $('gate-error').textContent = (body && body.error) || 'Could not get a code; try again.';
+    show($('gate-error'), true);
+    stopLink();
+    return;
+  }
+  $('gate-form').classList.add('linking');
+  show($('gate-link'), true);
+  show($('gate-error'), false);
+  $('gate-link-code').textContent = body.code;
+  $('gate-link-qr').src = `/api/link/${encodeURIComponent(body.id)}/qr.png`;
+  $('gate-link-cancel').focus();
+  linkWait = setInterval(async () => {
+    const r = await api(`/api/link/${encodeURIComponent(body.id)}`);
+    if (r.ok && r.body && r.body.signedIn) {
+      stopLink();
+      showApp(r.body.user);
+    } else if (r.status === 404) {
+      startLink(); // run out: a new code
+    } else if (r.status === 403) {
+      stopLink();
+      $('gate-error').textContent = (r.body && r.body.error) || 'That sign-in was not allowed.';
+      show($('gate-error'), true);
+    }
+  }, 3000);
+}
+function stopLink() {
+  clearInterval(linkWait);
+  linkWait = null;
+  $('gate-form').classList.remove('linking');
+  show($('gate-link'), false);
+}
+$('gate-phone').addEventListener('click', startLink);
+$('gate-link-cancel').addEventListener('click', () => {
+  stopLink();
+  $('gate-username').focus();
+});
+
+// On the phone: a TV's code, scanned (the QR opens /?link=CODE) or typed in
+// Settings, is looked up and shown - what is asking, and that it will be
+// signed in as this person - before it is allowed.
+const linkFromAddress = new URLSearchParams(location.search).get('link') || '';
+let linkAsking = '';
+async function askLink(code) {
+  const { ok, body } = await api(`/api/link/code/${encodeURIComponent(code)}`);
+  if (!ok) {
+    showToast((body && body.error) || 'No TV is showing that code.');
+    return false;
+  }
+  linkAsking = body.code;
+  $('link-ask-text').textContent = `${body.device} showing ${body.code} will be signed in as ${body.as}. `
+    + 'Allow it only if it is a TV in front of you, signing in now.';
+  show($('link-ask'), true);
+  $('link-ask-yes').focus();
+  return true;
+}
+async function answerLink(approve) {
+  const code = linkAsking;
+  linkAsking = '';
+  show($('link-ask'), false);
+  if (!code) return;
+  const { ok, body } = await api(`/api/link/code/${encodeURIComponent(code)}`, {
+    method: 'POST', body: JSON.stringify({ approve }),
+  });
+  if (!ok) showToast((body && body.error) || 'Could not answer the TV.');
+  else if (approve) showToast('Allowed. The TV is signing in now.');
+}
+$('link-ask-yes').addEventListener('click', () => answerLink(true));
+$('link-ask-no').addEventListener('click', () => answerLink(false));
+$('link-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (await askLink($('link-code').value)) $('link-code').value = '';
+});
+// Scanned: asked once signed in here, and the code taken out of the address.
+function askLinkFromAddress() {
+  if (!linkFromAddress) return;
+  const params = new URLSearchParams(location.search);
+  params.delete('link');
+  const rest = params.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  askLink(linkFromAddress);
 }
 
 $('gate-form').addEventListener('submit', async (event) => {
@@ -497,6 +590,7 @@ async function showApp(me) {
   if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
   maybeShowHoldTip();
+  askLinkFromAddress();
   pollSetup();
   state.setupTimer = setInterval(pollSetup, 2000);
   // Awaited before the first browse so that libraryEmpty is known by the time

@@ -355,6 +355,13 @@ household default can be changed too).
   allows it from a device already signed in to that account, or the owner
   allows it. A guessed or leaked password then gets nobody in. With nothing
   else signed in, the setup code from the server's `.env` file allows it.
+- **Sign in a TV from your phone**: on a TV's sign-in screen choose **Sign in
+  with your phone**. It shows a QR code and a code like `KXT-4PM`. Scan the QR
+  code with a phone signed in to SoundStorm, or open SoundStorm on the phone and
+  enter the code under **Settings → Sign in a TV**. The phone says which device
+  it is and that it will be signed in as you; allow it and the TV signs itself
+  in. A code lasts ten minutes and works once. Works on the Apple TV app and on
+  Google TV, Android TV and Fire TV.
 
 ## On your phone, TV or another computer
 

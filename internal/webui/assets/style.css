@@ -3784,3 +3784,22 @@ html.tv:has(#video-overlay:not(.hidden)) body { overflow: hidden; }
    remote moves the focus all the time. overflow: clip cannot be scrolled at
    all. Lists inside them (Up next, chapters, lyrics) scroll themselves. */
 .now-playing, .now-playing .np-inner, .photo-viewer, .reader, .overlay { overflow: clip !important; }
+
+/* Signing a TV in from a phone: while the code shows, the password fields
+   step aside; the code is read from across a room. */
+#gate-form.linking > :not(.wordmark):not(#gate-link) { display: none; }
+.gate-link { text-align: center; }
+.gate-link-qr {
+  display: block;
+  width: 240px;
+  height: 240px;
+  margin: 12px auto;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}
+.gate-link-code {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  margin: 4px 0 16px;
+}
