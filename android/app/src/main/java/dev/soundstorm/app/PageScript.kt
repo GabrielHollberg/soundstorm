@@ -29,6 +29,9 @@ object PageScript {
   // The page's next song, handed to the native player ahead, so it moves
   // into it without stopping (NativeAudio "queue").
   window.soundstormApp.queueNext = (url) => post({ type: 'audio', cmd: url ? 'queue' : 'unqueue', url: url || '' });
+  // The songs after it too, each with its title and cover, so the player
+  // carries on if Android ends the page in the background.
+  window.soundstormApp.queueUpcoming = (items) => post({ type: 'audio', cmd: 'upcoming', items: items || [] });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };

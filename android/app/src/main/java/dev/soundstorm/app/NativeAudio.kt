@@ -120,6 +120,31 @@ object NativeAudio {
                 if (index + 1 < p.mediaItemCount) p.removeMediaItems(index + 1, p.mediaItemCount)
                 p.addMediaItem(item(url, null))
             }
+            // The songs after this one, several of them, each with what it
+            // is: if Android ends the page while the app is in the
+            // background, the player carries on through them by itself, the
+            // lock screen still naming each (it stopped at the first song
+            // the page was not there to hand over).
+            "upcoming" -> {
+                if (p.mediaItemCount == 0) return
+                val index = p.currentMediaItemIndex
+                if (index + 1 < p.mediaItemCount) p.removeMediaItems(index + 1, p.mediaItemCount)
+                val list = m.optJSONArray("items") ?: return
+                val items = (0 until minOf(list.length(), 50)).mapNotNull { i ->
+                    val o = list.optJSONObject(i) ?: return@mapNotNull null
+                    val url = o.optString("url")
+                    if (url.isEmpty()) return@mapNotNull null
+                    MediaItem.Builder().setUri(url).setMediaId(url)
+                        .setMediaMetadata(MediaMetadata.Builder()
+                            .setTitle(o.optString("title").ifEmpty { null })
+                            .setArtist(o.optString("artist").ifEmpty { null })
+                            .setAlbumTitle(o.optString("album").ifEmpty { null })
+                            .setArtworkUri(o.optString("art").ifEmpty { null }?.let(Uri::parse))
+                            .build())
+                        .build()
+                }
+                if (items.isNotEmpty()) p.addMediaItems(items)
+            }
             "unqueue" -> {
                 val index = p.currentMediaItemIndex
                 if (index + 1 < p.mediaItemCount) p.removeMediaItems(index + 1, p.mediaItemCount)

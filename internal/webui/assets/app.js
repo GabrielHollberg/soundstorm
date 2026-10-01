@@ -2074,8 +2074,12 @@ function playAudio(item, fromQueue) {
   if (item.kind !== 'audiobook') {
     const handoff = takeCrossfade(item);
     const preloaded = handoff ? null : takePreloaded(item);
-    // A new song clears what the native player had queued after the last.
+    // A new song clears what the native player had queued after the last,
+    // and in the app the songs after it are handed over a few seconds in, not
+    // thirty seconds from its end: if Android ends the page early in a song,
+    // the player still has them.
     audio.nativeQueued = '';
+    if (NATIVE_AUDIO && item.kind === 'music') setTimeout(() => { if (audio.item === item) preloadNext(); }, 4000);
     if (!handoff && !preloaded) stopPreloading();
     if (handoff) {
       startAt(handoff.url, handoff.at);
@@ -6257,6 +6261,41 @@ function upcomingItem() {
   return null;
 }
 
+// nativeUpcoming is the songs after this one for the Android app's player,
+// in the order they will play, up to ten: each one's address, and its title,
+// artist, album and cover for the lock screen. It stops at a song the player
+// cannot take (a download, or something other than music), which the page
+// plays itself.
+function nativeUpcoming() {
+  const q = audio.queue;
+  if (!q || !q.items.length) return [];
+  const order = [];
+  if (audio.repeat === 'one') order.push(q.items[q.index]);
+  else {
+    for (let k = 1; k <= 10; k++) {
+      let i = q.index + k;
+      if (i >= q.items.length) {
+        if (audio.repeat !== 'all') break;
+        i %= q.items.length;
+      }
+      order.push(q.items[i]);
+    }
+  }
+  const out = [];
+  for (const item of order) {
+    if (!item || item.kind !== 'music' || isDownloaded(item)) break;
+    const art = (mediaArtwork(item)[0] || {}).src;
+    out.push({
+      url: new URL(playPath(item), location.href).href,
+      title: item.title || '',
+      artist: (item.creators || []).join(', ') || item.subtitle || '',
+      album: (item.extra && item.extra.album) || '',
+      art: art ? new URL(art, location.href).href : '',
+    });
+  }
+  return out;
+}
+
 function takePreloaded(item) {
   const p = audio.preloaded;
   if (!p || p.key !== selectionKey(item)) return null;
@@ -6273,10 +6312,16 @@ async function preloadNext() {
   // ever stopping between songs, which is what kept music going with the
   // screen off. A downloaded song plays in the page, so is not handed over.
   if (NATIVE_AUDIO) {
-    const url = next && next.kind === 'music' && !isDownloaded(next) ? new URL(playPath(next), location.href).href : '';
-    if (audio.nativeQueued !== url) {
-      audio.nativeQueued = url;
-      window.soundstormApp.queueNext(url);
+    const upcoming = nativeUpcoming();
+    const url = upcoming.length ? upcoming[0].url : '';
+    const sig = upcoming.map((u) => u.url).join('|');
+    if (audio.nativeQueued !== sig) {
+      audio.nativeQueued = sig;
+      // Several songs ahead, with what each is, where the app can take them
+      // (0.12): it plays on through them if Android ends the page in the
+      // background. Older apps take the next song alone.
+      if (window.soundstormApp.queueUpcoming) window.soundstormApp.queueUpcoming(upcoming);
+      else window.soundstormApp.queueNext(url);
       // No copy of the next song reaches the page to be heard from, so it is
       // heard now, while this one plays out: otherwise the animations would
       // follow only the tempo for its first twenty seconds.

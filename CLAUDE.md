@@ -1218,6 +1218,17 @@ the same song asked for again was taken for the one already loaded and left
 finished. Now "play" and "load" of the same song on a finished player start
 it over, and the stand-in no longer counts a finished song as "already in
 it".
+**Music stopped while somebody was in another app** (0.12): Android
+reclaims a background web view's memory by ending its page, and the app,
+rebuilding the page, tore the old one down - which told the native player
+to stop. A page Android ends is now dropped without touching the music, and
+made again when the app is looked at. And since a page that is gone cannot
+hand the player the next song, the page now hands over the next ten
+(`nativeUpcoming`, `queueUpcoming`), each with its title, artist, album and
+cover for the lock screen, a few seconds into every song rather than 30s
+from its end; the player carries on through them by itself. Not yet: a page
+made again does not know what is playing, so Now Playing is empty until a
+song is chosen, though the music plays on.
 **And a song started by hand was heard minutes in, away from home.** Both
 waits were the pace (`pace.go`): hearing waited for twenty seconds in hand,
 which at 1.5 times the bitrate after an eight-second burst takes about 24s,

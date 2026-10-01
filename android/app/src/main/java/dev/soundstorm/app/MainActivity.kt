@@ -191,7 +191,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         hideBars()
+        // The page Android ended while the app was in the background, made
+        // again now it is looked at.
+        if (pageLost) {
+            pageLost = false
+            server?.let { showWeb(it, keepMusic = true) }
+        }
     }
 
     // The sign-in is a cookie, which the web view writes to storage in its own
@@ -199,9 +206,13 @@ class MainActivity : Activity() {
     // open asked for the password again (the owner's report). Written the
     // moment the app is left.
     override fun onPause() {
+        resumed = false
         CookieManager.getInstance().flush()
         super.onPause()
     }
+
+    private var resumed = false
+    private var pageLost = false
 
     override fun onDestroy() {
         webView?.let {
@@ -334,8 +345,8 @@ class MainActivity : Activity() {
     // -------------------------------------------------------------------- web
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun showWeb(target: Uri) {
-        tearDownWeb()
+    private fun showWeb(target: Uri, keepMusic: Boolean = false) {
+        tearDownWeb(keepMusic)
         server = target
         content.removeAllViews()
         val view = WebView(this)
@@ -381,11 +392,13 @@ class MainActivity : Activity() {
         server?.let { webView?.loadUrl(it.toString()) }
     }
 
-    private fun tearDownWeb() {
+    private fun tearDownWeb(keepMusic: Boolean = false) {
         webView?.let {
             MediaBridge.detach(it)
             NativeAudio.detachView(it)
-            NativeAudio.handle(applicationContext, org.json.JSONObject().put("cmd", "stop"))
+            // A page Android ended is not the music ending: the native player
+            // plays on through the songs it was handed.
+            if (!keepMusic) NativeAudio.handle(applicationContext, org.json.JSONObject().put("cmd", "stop"))
             it.stopLoading()
             it.destroy()
         }
@@ -555,8 +568,16 @@ class MainActivity : Activity() {
 
         override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
             // Android reclaims a background web view's memory by killing its
-            // page. Start it afresh, as a browser does on coming back to a tab.
-            server?.let { showWeb(it) }
+            // page. Start it afresh, as a browser does on coming back to a tab -
+            // without stopping the music, which this used to do: tearing the
+            // old page down told the native player to stop, so music stopped
+            // whenever Android ended the page while somebody was in another
+            // app. In the background the page is made again on coming back.
+            if (resumed) server?.let { showWeb(it, keepMusic = true) }
+            else {
+                tearDownWeb(keepMusic = true)
+                pageLost = true
+            }
             return true
         }
     }
