@@ -14697,6 +14697,16 @@ const analysisScrub = (() => {
 })();
 
 
+// A view screen scrolled anyway - an older web view without overflow: clip
+// (style.css) - is put straight back: none of them scrolls.
+document.addEventListener('scroll', (e) => {
+  const el = e.target;
+  if (el && el.matches && el.matches('.now-playing, .now-playing .np-inner, .photo-viewer, .reader, .overlay') && (el.scrollTop || el.scrollLeft)) {
+    el.scrollTop = 0;
+    el.scrollLeft = 0;
+  }
+}, true);
+
 // Training the looks, on SoundStorm's developer's install alone (the server
 // says so in the session: SOUNDSTORM_TRAINING; see httpapi/training.go). In
 // Now Playing, either tap where a big moment - lightning - should be, or hold

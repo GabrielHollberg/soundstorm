@@ -3733,3 +3733,11 @@ html.tv:has(#video-overlay:not(.hidden)) body { overflow: hidden; }
   font-size: 14px;
   font-weight: 700;
 }
+
+/* No view screen scrolls - Now Playing, a film, a photo, a book - the
+   owner's rule, after the projector's audiobook screen was found scrolled
+   120px down, its bar off the top. overflow: hidden is not enough: a browser
+   still scrolls such a box to bring a focused element into view, and a
+   remote moves the focus all the time. overflow: clip cannot be scrolled at
+   all. Lists inside them (Up next, chapters, lyrics) scroll themselves. */
+.now-playing, .now-playing .np-inner, .photo-viewer, .reader, .overlay { overflow: clip !important; }

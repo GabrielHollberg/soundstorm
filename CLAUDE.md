@@ -1130,6 +1130,16 @@ has no touch and no mouse:
   and right go by chapters - the next, or back to this one's start (the one
   before near its start), as a swipe does; a book without a chapter list
   keeps its thirty seconds.
+- **No view screen scrolls** - Now Playing, a film, a photo, a book - the
+  owner's rule, after the projector's audiobook screen was found scrolled
+  120px down, its bar off the top. `overflow: hidden` was not enough: a
+  browser still scrolls such a box to bring a focused element into view,
+  and a remote moves the focus constantly; `.np-inner` was even
+  `overflow-y: auto`. Now `overflow: clip !important` on all of them (it
+  cannot be scrolled at all), and a scroll listener puts any back for a web
+  view without clip. Checked with 300-420px of extra content forced in and
+  the focus moved to its foot: nothing moved, on TV and phone sizes. Up
+  next, the chapters and the lyrics scroll themselves, as before.
 - **No mini player on a TV.** A remote reached it only by scrolling to the
   foot of a page, and it covered the bottom of every one. Its place is the
   side bar's first entry while something plays (`tv-np-tab`): the song's
