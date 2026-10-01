@@ -14108,38 +14108,71 @@ function stormBolt(w, h, s, age) {
   if (!tier) return bo;
   bo.scale = tier === 2 ? 1 + 0.6 * (s - 0.7) / 0.3 : 0.45 + 0.3 * (s - 0.3) / 0.4;
   const bottom = tier === 2 ? h * (0.9 + Math.random() * 0.06) : h * (0.36 + Math.random() * 0.2);
-  const branchP = tier === 2 ? 0.1 + 0.12 * s : 0.05;
-  const main = [];
-  let x = x0;
-  // From the very top of the screen, as the owner asked.
-  let y = -h * 0.02;
-  let drift = (Math.random() - 0.5) * 0.5;
-  while (y < bottom) {
-    main.push(x, y);
-    const step = h * (0.012 + Math.random() * 0.024);
-    y += step;
-    x += (drift + (Math.random() - 0.5) * 2.4) * step;
-    if (Math.random() < 0.1) drift = (Math.random() - 0.5) * 0.7;
-    if (y < bottom * 0.85 && Math.random() < branchP) stormBranch(bo.branches, x, y, h, 0.55, 0);
+  // The shape is lightning's, jagged at every scale: a few big kinks first
+  // (waypoints down the screen, each pushed sideways from the last), then
+  // each stretch between them broken by midpoint displacement - halved again
+  // and again, each middle pushed aside by a share of its own length - so a
+  // stretch is as zigzag up close as the whole bolt is from afar. It starts
+  // above the screen, hidden in the cloud.
+  const main = [x0, -h * 0.02];
+  const kinks = 4 + Math.floor(Math.random() * 3);
+  let px = x0;
+  let py = -h * 0.02;
+  for (let k = 1; k <= kinks; k++) {
+    const ny = -h * 0.02 + (bottom + h * 0.02) * (k / kinks) + (k < kinks ? (Math.random() - 0.5) * h * 0.04 : 0);
+    const nx = px + (Math.random() - 0.5) * w * 0.14;
+    stormJag(main, px, py, nx, ny, 0.42, 4);
+    px = nx;
+    py = ny;
   }
-  main.push(x, bottom);
   bo.main = main;
-  bo.ex = x;
+  bo.ex = px;
   bo.ey = bottom;
+  // Branches: few, short, angled down and forking, gathered near the top
+  // where the bolt leaves the cloud, and shorter the lower they start. A
+  // close bolt has one strong branch, nearly as bright as the bolt itself.
+  const n = main.length / 2;
+  const count = tier === 2 ? 3 + Math.floor(Math.random() * 3 + s * 2) : 1 + Math.floor(Math.random() * 2);
+  for (let b = 0; b < count; b++) {
+    const t = Math.random() * Math.random() * 0.7;
+    const at = Math.max(2, Math.floor(t * n)) * 2;
+    const strong = tier === 2 && b === 0;
+    const len = h * (strong ? 0.22 + Math.random() * 0.12 : 0.07 + Math.random() * 0.12) * (1 - t * 0.8) * (tier === 2 ? 1 : 0.6);
+    stormBranch(bo.branches, main[at], main[at + 1], len, Math.random() < 0.5 ? -1 : 1, strong ? 0.75 : 0.35 + Math.random() * 0.15, strong ? 2 : 1);
+  }
   return bo;
 }
-function stormBranch(out, x, y, h, wgt, depth) {
-  const pts = [x, y];
-  const slope = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 1.4);
-  const n = Math.max(3, Math.round((5 + Math.random() * 9) * wgt * 1.6));
-  for (let i = 0; i < n; i++) {
-    const step = h * (0.01 + Math.random() * 0.018);
-    y += step;
-    x += (slope + (Math.random() - 0.5) * 2) * step;
-    pts.push(x, y);
-    if (depth < 1 && Math.random() < 0.15) stormBranch(out, x, y, h, wgt * 0.6, depth + 1);
+// Midpoint displacement from (x1, y1) to (x2, y2), adding the points after
+// the first: the middle pushed sideways by up to rough times the length, and
+// each half done the same, depth times.
+function stormJag(out, x1, y1, x2, y2, rough, depth) {
+  if (depth === 0) {
+    out.push(x2, y2);
+    return;
   }
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const off = (Math.random() - 0.5) * len * rough;
+  const mx = (x1 + x2) / 2 - (dy / len) * off;
+  const my = (y1 + y2) / 2 + (dx / len) * off;
+  stormJag(out, x1, y1, mx, my, rough, depth - 1);
+  stormJag(out, mx, my, x2, y2, rough, depth - 1);
+}
+// A branch: out to one side at 20-55 degrees from straight down, jagged like
+// the bolt, perhaps forking once more further out, thinner and shorter.
+function stormBranch(out, x, y, len, side, wgt, forks) {
+  const ang = (20 + Math.random() * 35) * Math.PI / 180;
+  const ex = x + Math.sin(ang) * side * len;
+  const ey = y + Math.cos(ang) * len;
+  const pts = [x, y];
+  stormJag(pts, x, y, ex, ey, 0.45, 4);
   out.push({ pts, w: wgt });
+  for (let f = 0; f < forks; f++) {
+    if (Math.random() > 0.55) continue;
+    const at = Math.floor((0.2 + Math.random() * 0.4) * (pts.length / 2)) * 2;
+    stormBranch(out, pts[at], pts[at + 1], len * (0.35 + Math.random() * 0.25), Math.random() < 0.7 ? side : -side, wgt * 0.6, 0);
+  }
 }
 // How lit a strike is at its age: one flash fading out in about 0.4s (sheet
 // lightning glows a little longer in the clouds).
@@ -14461,11 +14494,19 @@ const FULL_SCENES = {
         }
         if (Ib > 0.01) {
           g.strokeStyle = rgba(st.core, Ib);
+          // Each branch thins and fades towards its tip, in three stretches.
           for (const b of bo.branches) {
-            g.lineWidth = 2.6 * b.w * sc;
-            g.beginPath();
-            stormPath(g, b.pts, 0, b.pts.length - 2);
-            g.stroke();
+            const bn = b.pts.length / 2;
+            for (let q = 0; q < 3; q++) {
+              const a = Math.floor((bn - 1) * q / 3) * 2;
+              const z = Math.floor((bn - 1) * (q + 1) / 3) * 2;
+              if (z <= a) continue;
+              g.strokeStyle = rgba(st.core, Ib * (1 - q * 0.28));
+              g.lineWidth = 2.6 * b.w * sc * (1 - q * 0.28);
+              g.beginPath();
+              stormPath(g, b.pts, a, z);
+              g.stroke();
+            }
           }
         }
       }

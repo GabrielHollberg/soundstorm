@@ -1411,6 +1411,13 @@ screen. Each strike is one flash fading over about 0.4s (`stormLight`) - a
 flicker of two to four return strokes, as real lightning does, was tried and
 the owner preferred the single flash - and a faint image of the channel
 lingers a second after.
+**The bolt's shape was rebuilt to be lightning's** (the owner asked whether it
+was the best shape; it was an even wiggle with long straight branches that
+crossed in a web): jagged at every scale - a few big kinks, then each stretch
+broken by midpoint displacement (`stormJag`), so it zigzags up close as it does
+from afar - with few branches, short, angled 20-55 degrees down, forking once
+more, gathered near the top and shorter the lower they start, and on a close
+bolt one strong branch. Each branch thins and fades to its tip.
 The bolt thins towards its end, branches dim faster than the main channel
 (one faint glow round it: the two bands it had read as a ghost of the bolt,
 none looked bare, and the owner chose between),
