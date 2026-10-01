@@ -14066,36 +14066,6 @@ function stormPuff(shape, rgb, a) {
   }
   return c;
 }
-// A raindrop on the glass between us and the storm: faintly clear inside, a
-// bright rim, darker at its foot where it bends the light, and a highlight.
-let stormGlassImg;
-function stormGlassDrop() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const x = c.getContext('2d');
-  let gr = x.createRadialGradient(32, 36, 4, 32, 32, 30);
-  gr.addColorStop(0, 'rgba(210, 220, 245, 0.05)');
-  gr.addColorStop(0.7, 'rgba(210, 220, 245, 0.12)');
-  gr.addColorStop(0.9, 'rgba(235, 240, 255, 0.45)');
-  gr.addColorStop(1, 'rgba(235, 240, 255, 0)');
-  x.fillStyle = gr;
-  x.beginPath();
-  x.arc(32, 32, 30, 0, Math.PI * 2);
-  x.fill();
-  gr = x.createLinearGradient(0, 20, 0, 62);
-  gr.addColorStop(0, 'rgba(0, 0, 10, 0)');
-  gr.addColorStop(1, 'rgba(0, 0, 10, 0.35)');
-  x.fillStyle = gr;
-  x.beginPath();
-  x.arc(32, 32, 28, 0, Math.PI * 2);
-  x.fill();
-  gr = x.createRadialGradient(24, 21, 0, 24, 21, 7);
-  gr.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-  gr.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  x.fillStyle = gr;
-  x.fillRect(0, 0, 64, 64);
-  return c;
-}
 function stormDrawPuff(g, img, c, w, h, R) {
   const pw = c.rx * R * 2;
   const ph = c.rx * R;
@@ -14210,8 +14180,6 @@ const FULL_SCENES = {
         const z = Math.random();
         return { x: -(h * 0.3 + w * 0.05) + Math.random() * span, y: Math.random() * h, z, layer: z < 0.45 ? 0 : z < 0.8 ? 1 : 2, s: 0.5 + z * 1.2, c: Math.floor(Math.random() * 3), k: Math.random(), ground: h * (0.85 + 0.12 * z + Math.random() * 0.02), off: false };
       });
-      st.glass = [];
-      st.glassT = 1;
       st.mist = Array.from({ length: 6 }, () => ({ x: Math.random() * 1.4 - 0.2, y: 0.86 + Math.random() * 0.11, rx: 0.35 + Math.random() * 0.3, ry: 0.06 + Math.random() * 0.05, sp: 0.5 + Math.random(), ph: Math.random() * 6 }));
       st.bolts = [];
       st.splash = [];
@@ -14522,40 +14490,6 @@ const FULL_SCENES = {
     }
     st.bolts.length = keep;
     g.globalCompositeOperation = 'source-over';
-    // Drops on the glass: one lands now and then (more in a downpour), sits a
-    // moment, then slides down faster and faster, leaving a faint trail.
-    if (!stormGlassImg) stormGlassImg = stormGlassDrop();
-    st.glassT -= dt * (0.4 + st.heavy);
-    if (st.glassT <= 0 && st.glass.length < 10) {
-      st.glassT = 0.6 + Math.random() * 1.2;
-      st.glass.push({ x: Math.random() * w, y: Math.random() * h * 0.85, r: Math.min(w, h) * (0.012 + Math.random() * 0.02), age: 0, hold: 1 + Math.random() * 2.5, vy: 0, y0: 0, wob: Math.random() * 6 });
-    }
-    keep = 0;
-    for (const gd of st.glass) {
-      gd.age += dt;
-      if (gd.age > gd.hold) {
-        if (!gd.vy) gd.y0 = gd.y;
-        gd.vy = Math.min(h * 0.5, gd.vy + h * 0.25 * dt);
-        gd.y += gd.vy * dt;
-        gd.x += Math.sin(gd.age * 3 + gd.wob) * gd.r * 0.3 * dt;
-      }
-      if (gd.y - gd.r > h) continue;
-      st.glass[keep++] = gd;
-      const grow = Math.min(1, gd.age * 8);
-      if (gd.vy) {
-        g.strokeStyle = rgba(st.core, Math.max(0, 0.1 * (1 - (gd.age - gd.hold) / 3)));
-        g.lineWidth = gd.r * 0.5;
-        g.beginPath();
-        g.moveTo(gd.x, gd.y0);
-        g.lineTo(gd.x, gd.y);
-        g.stroke();
-      }
-      const stretch = 1 + Math.min(0.4, gd.vy / h);
-      g.globalAlpha = Math.min(1, 0.7 + rainLit * 0.3);
-      g.drawImage(stormGlassImg, gd.x - gd.r * grow, gd.y - gd.r * grow * stretch, gd.r * grow * 2, gd.r * grow * 2 * stretch);
-    }
-    st.glass.length = keep;
-    g.globalAlpha = 1;
   },
 
   // Synthwave: a neon grid racing towards you under a striped sunset sun that
