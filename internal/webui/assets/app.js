@@ -14189,12 +14189,15 @@ const FULL_SCENES = {
       // bigger and drifting faster, drawn back to front.
       st.shapes = Array.from({ length: 5 }, stormPuffShape);
       st.clouds = [];
-      for (let row = 0; row < 4; row++) {
+      // Five rows, the first right along the top edge, so the very top of the
+      // screen is cloud too (with four, starting above it, the top showed
+      // through dark).
+      for (let row = 0; row < 5; row++) {
         const n = 9 + row * 2;
         for (let i = 0; i < n; i++) {
           st.clouds.push({
             x: ((i + Math.random() * 0.8) / n) * 1.5 - 0.25,
-            y: -0.06 + row * 0.085 + Math.random() * 0.05,
+            y: -0.02 + row * 0.07 + Math.random() * 0.04,
             rx: 0.16 + row * 0.03 + Math.random() * 0.1,
             sp: 0.5 + row * 0.35 + Math.random() * 0.3,
             shape: Math.floor(Math.random() * 5),
@@ -14247,8 +14250,8 @@ const FULL_SCENES = {
     if (st.bandFor !== h) {
       st.bandFor = h;
       st.band = g.createLinearGradient(0, 0, 0, h * 0.5);
-      st.band.addColorStop(0, 'rgba(10, 12, 20, 0.95)');
-      st.band.addColorStop(0.5, 'rgba(10, 12, 20, 0.7)');
+      st.band.addColorStop(0, 'rgba(34, 38, 52, 0.97)');
+      st.band.addColorStop(0.5, 'rgba(16, 18, 28, 0.7)');
       st.band.addColorStop(1, 'rgba(10, 12, 20, 0)');
     }
     g.fillStyle = st.band;

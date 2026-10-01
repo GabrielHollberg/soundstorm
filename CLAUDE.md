@@ -1415,7 +1415,9 @@ The bolt thins towards its end, branches dim faster than the main channel,
 and the glow, the clouds' light and the flash take a touch of the cover's
 colour. The rain brightens and gets a white streak during a flash.
 **The clouds are a deck over the whole top of the screen, there all the
-time** (the owner's asking; it was a few dark heaps): four rows of lumpy puffs
+time** (the owner's asking; it was a few dark heaps): five rows of lumpy puffs,
+the first along the top edge (with four starting above it the very top showed
+through dark), over a band the clouds' own slate at the top
 (`stormPuffShape`, blobs bumped along the top, drawn into padded canvases so no
 edge is cut square), some a shade lighter, the lower ones bigger and drifting
 faster. Each strike lights them its own way (`stormLights`): a close bolt a wide
