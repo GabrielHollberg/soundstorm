@@ -11,6 +11,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/discover"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"strings"
 )
 
 // Music discovery: an artist's bio and the artists like them, from
@@ -214,6 +215,25 @@ func (s *Server) moreLikeCards(r *http.Request, src source.Source, byCount []col
 
 // lookUpLater asks about an artist with nobody waiting on the answer.
 func (s *Server) lookUpLater(name string) {
+	// One at a time per artist, and a few in all: every page view asked
+	// again for each artist not yet known, and they piled up waiting on the
+	// one-a-second limit (a security review).
+	key := strings.ToLower(name)
+	s.lookingUpMu.Lock()
+	if s.lookingUp == nil {
+		s.lookingUp = map[string]bool{}
+	}
+	if s.lookingUp[key] || len(s.lookingUp) >= 32 {
+		s.lookingUpMu.Unlock()
+		return
+	}
+	s.lookingUp[key] = true
+	s.lookingUpMu.Unlock()
+	defer func() {
+		s.lookingUpMu.Lock()
+		delete(s.lookingUp, key)
+		s.lookingUpMu.Unlock()
+	}()
 	defer func() { _ = recover() }()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

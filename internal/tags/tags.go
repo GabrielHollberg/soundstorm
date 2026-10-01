@@ -211,7 +211,9 @@ func readFLAC(r io.ReadSeeker) (Tags, error) {
 		return Tags{}, err
 	}
 	header := make([]byte, 4)
-	for {
+	// A real file has a handful of blocks; empty ones by the million kept an
+	// upload busy for minutes (a security review).
+	for blocks := 0; blocks < 1000; blocks++ {
 		if _, err := io.ReadFull(r, header); err != nil {
 			return Tags{}, nil
 		}
@@ -236,6 +238,7 @@ func readFLAC(r io.ReadSeeker) (Tags, error) {
 			return Tags{}, nil
 		}
 	}
+	return Tags{}, nil
 }
 
 // parseVorbis reads the little-endian length-prefixed KEY=value list.
@@ -319,7 +322,7 @@ func findAtom(r io.ReadSeeker, path []string, start, end int64) ([]byte, error) 
 	}
 	offset := start
 	header := make([]byte, 8)
-	for offset < end {
+	for atoms := 0; offset < end && atoms < 10000; atoms++ {
 		if _, err := r.Seek(offset, io.SeekStart); err != nil {
 			return nil, err
 		}

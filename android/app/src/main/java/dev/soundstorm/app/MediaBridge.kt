@@ -103,8 +103,11 @@ object MediaBridge {
                 // Playing starts the service, which goes to the foreground
                 // straight away: that is what keeps the page playing with
                 // the screen off.
-                playing && !showing -> ContextCompat.startForegroundService(
-                    context, Intent(context, PlaybackService::class.java))
+                // Android 12 and later refuse a start from the background;
+                // uncaught, that took the app down.
+                playing && !showing -> runCatching {
+                    ContextCompat.startForegroundService(context, Intent(context, PlaybackService::class.java))
+                }
                 showing -> listener?.invoke(now)
             }
         }

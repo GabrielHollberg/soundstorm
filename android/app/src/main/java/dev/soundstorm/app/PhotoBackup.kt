@@ -63,6 +63,38 @@ object PhotoBackup {
 
     fun enabled(c: Context) = prefs(c).getBoolean("enabled", false)
 
+    /**
+     * Where to send: the secure address the page was on when it asked about
+     * backup, rather than the address typed - which is often a plain http
+     * one, and the page's own move to the secure name is not saved. Over
+     * plain http every photo, and the cookie, crossed the Wi-Fi readable (a
+     * security review); and the session lives with the secure name, so a
+     * plain address had no cookie to send either.
+     */
+    fun rememberServer(c: Context, origin: String?) {
+        val o = origin ?: return
+        if (!o.startsWith("https://")) return
+        prefs(c).edit().putString("server", o).apply()
+    }
+
+    /** The addresses to try, best first: the page's secure one, its away
+     *  twin (a home name is unreachable away from home), the typed one. */
+    fun servers(c: Context): List<Uri> {
+        val out = mutableListOf<Uri>()
+        prefs(c).getString("server", null)?.let { s ->
+            val u = Uri.parse(s)
+            out += u
+            val host = u.host ?: ""
+            if (host.endsWith(".home.soundstorm.dev")) {
+                out += u.buildUpon().encodedAuthority(
+                    host.removeSuffix(".home.soundstorm.dev") + ".net.soundstorm.dev" + if (u.port != -1) ":${u.port}" else ""
+                ).build()
+            }
+        }
+        ServerAddress.saved(c)?.let { s -> if (out.none { ServerAddress.origin(it) == ServerAddress.origin(s) }) out += s }
+        return out
+    }
+
     /** The settings and how it is going, for the page's Settings. */
     fun status(c: Context): JSONObject {
         val p = prefs(c)
@@ -90,6 +122,9 @@ object PhotoBackup {
         if (options.has("wifiOnly")) e.putBoolean("wifiOnly", options.optBoolean("wifiOnly"))
         if (options.has("videos")) e.putBoolean("videos", options.optBoolean("videos"))
         if (options.has("charging")) e.putBoolean("charging", options.optBoolean("charging"))
+        // Whose backup it is: sent with every photo, so the server can refuse
+        // one meant for another account when somebody else signs in here.
+        if (options.has("account")) e.putString("account", options.optString("account"))
         e.putString("problem", "")
         e.apply()
         schedule(c, now = true)
@@ -265,8 +300,13 @@ object PhotoBackup {
     }
 
     /** Which of these the server already has. */
-    fun check(server: Uri, items: List<Pair<Item, Long>>): BooleanArray {
-        val conn = open(server, "/api/photos/backup/check", "POST")
+    private fun accountQuery(c: Context, sep: String): String {
+        val a = prefs(c).getString("account", "") ?: ""
+        return if (a.isEmpty()) "" else sep + "account=" + URLEncoder.encode(a, "UTF-8")
+    }
+
+    fun check(c: Context, server: Uri, items: List<Pair<Item, Long>>): BooleanArray {
+        val conn = open(server, "/api/photos/backup/check" + accountQuery(c, "?"), "POST")
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
         val list = JSONArray()
@@ -280,7 +320,7 @@ object PhotoBackup {
 
     /** Sends one photo or video, the whole file as the body. */
     fun send(c: Context, server: Uri, item: Item, uri: Uri, size: Long, onProgress: (Long) -> Unit = {}) {
-        val q = "?name=" + URLEncoder.encode(item.name, "UTF-8") + "&taken=" + item.taken
+        val q = "?name=" + URLEncoder.encode(item.name, "UTF-8") + "&taken=" + item.taken + accountQuery(c, "&")
         val conn = open(server, "/api/photos/backup$q", "PUT")
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", if (item.video) "video/*" else "image/*")
@@ -353,7 +393,9 @@ class BackupWorker(context: Context, params: WorkerParameters) : Worker(context,
         // again for the next one.
         PhotoBackup.watchForNewPhotos(c)
         if (!PhotoBackup.enabled(c) || !PhotoBackup.hasPermission(c)) return Result.success()
-        val server = ServerAddress.saved(c) ?: return Result.success()
+        val candidates = PhotoBackup.servers(c)
+        if (candidates.isEmpty()) return Result.success()
+        var server = candidates.first()
         val started = System.currentTimeMillis()
         val roll = PhotoBackup.cameraRoll(c)
         val sent = PhotoBackup.sent(c)
@@ -371,7 +413,19 @@ class BackupWorker(context: Context, params: WorkerParameters) : Worker(context,
             for (batch in waiting.chunked(100)) {
                 if (isStopped) return Result.retry()
                 val sized = batch.map { it to PhotoBackup.length(c, PhotoBackup.original(c, it.uri)) }
-                val have = PhotoBackup.check(server, sized)
+                // The first address that answers, for the rest of this job.
+                var have: BooleanArray? = null
+                var lastError: java.io.IOException? = null
+                for (s in candidates.dropWhile { it != server }) {
+                    try {
+                        have = PhotoBackup.check(c, s, sized)
+                        server = s
+                        break
+                    } catch (e: java.io.IOException) {
+                        lastError = e
+                    }
+                }
+                if (have == null) throw lastError ?: java.io.IOException("no server")
                 val already = batch.filterIndexed { i, _ -> have[i] }.map { it.key }
                 PhotoBackup.markSent(c, already)
                 done += already.size
@@ -401,7 +455,7 @@ class BackupWorker(context: Context, params: WorkerParameters) : Worker(context,
             // a minute: the next scheduled job tries.
             val message = when (e.code) {
                 401 -> "Sign in to SoundStorm again to carry on backing up."
-                403 -> "This account does not have Pictures."
+                403 -> e.message?.takeIf { it.isNotBlank() } ?: "This account does not have Pictures."
                 507 -> e.message ?: "There is no room left for photos."
                 else -> e.message ?: "The server refused a photo."
             }

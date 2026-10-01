@@ -556,6 +556,12 @@ func RelativeTo(root, reported string) (string, error) {
 	if rel == "" {
 		return "", fmt.Errorf("%q is the shelf itself", reported)
 	}
+	// A backend's path is its word: "/media/movies/../tv/x" is not inside.
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == ".." || seg == "." {
+			return "", fmt.Errorf("%q is not inside %q", reported, root)
+		}
+	}
 	return rel, nil
 }
 

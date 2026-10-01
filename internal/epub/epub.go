@@ -269,7 +269,19 @@ func findCover(items []opfItem, byID map[string]opfItem, coverID string) string 
 
 // Open reads a book's metadata and spine. The returned Book holds the zip open;
 // Close it.
+// opening holds how many books are being opened at once. Each opening
+// parses the zip's directory and the package document - up to a few hundred
+// MB for a hostile one of a few KB - and a cover or a reader request opens
+// the book every time (a security review).
+var opening = make(chan struct{}, 4)
+
 func Open(filePath string) (*Book, error) {
+	select {
+	case opening <- struct{}{}:
+		defer func() { <-opening }()
+	case <-time.After(15 * time.Second):
+		return nil, errors.New("open epub: too many books being opened; try again shortly")
+	}
 	// Before archive/zip spends memory on the directory, check its size from the
 	// end-of-directory record - a read of at most 64KB. A book is opened on
 	// upload, on every scan and on every reader request, so a hostile one must

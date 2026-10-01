@@ -3940,6 +3940,101 @@ has no overall deadline; the duplicate check's hashing grows with the square
 of an album; a malicious server can still crash the TV through full-size
 AsyncImage covers.
 
+**A tenth pass, blind (2026-10-01): nine reviewers, every file**, one per
+surface - the HTTP API, photos and intake, auth/TLS/names, the backend
+adapters, parsers and streaming, the web client, Android, the Apple apps, the
+installers and CI - none shown these notes; each claim checked against the
+code before anything changed. No critical or high finding but one; fixed on
+the PC:
+
+- **A small zip could run the server out of memory, again at every start**
+  (high): every JSON in a photo download was decoded and kept, and a job
+  half sorted was begun again at boot. Now 256MB of JSON and two million
+  records per download at most (`JSONIndex`), a zip that would unpack to over
+  three times its size plus 2GB or holds over 500,000 files is refused
+  (`photoimport.ErrImplausible`), and a download is sorted at most twice
+  (`importJob.Tries`).
+- **Imports and uploads around the photo space**: waiting downloads count
+  against the disk and a member's space before another is taken, every piece
+  checks the disk, one piece at a time per download, half-sent ones go after
+  48 hours, a removed person's downloads go with them; a member's upload with
+  no length is refused (`photoRoom`); a corrected photo moves only to a free
+  name (`library.MoveNoClobber`); a new account whose photo folder would be
+  another's, or a removed person's kept one, is refused.
+- **Phone backup on a shared phone**: it carried on into the next person's
+  folder. Signing out (or another account appearing) turns it off, the phone
+  sends the account it was turned on for (`?account=`), and the server
+  refuses photos meant for someone else. And backup goes to the secure name
+  the page was on, never plain http on the Wi-Fi when a secure one exists
+  (`PhotoBackup.servers`).
+- **One member slowing everybody**: favorites, playlists, covers and prefs
+  writes are limited (`limited`, `listWrites`: a burst of 60, one a second),
+  as are position saves, the scrobble token check and the read-along queue;
+  removing a favorite that is not one writes nothing; a person's video
+  conversions are capped at four live play sessions (`hlsSessions`) with the
+  device always SoundStorm's; Continue looks up the newest 60 places;
+  discovery look-ups are one per artist, 32 at most; read-along "next" only
+  for a book waiting its turn; training routes are the owner's.
+- **Parsers and covers**: four books opened at once (`epub.Open`), a cover's
+  decode turn held until it is shrunk and the shrink cache keyed by the
+  picture's hash (two books' `cover.jpg` shared an entry), MP4 boxes nested
+  past eight refused and four song headers rebuilt at once, tag walks capped.
+- **Sign-in and the names service**: a known device has a hashing slot of its
+  own, and a guess that waits out its turn counts against its address; the
+  names service checks the day's and the network's sign-up caps before an
+  address's (refused sign-ups filled the table renewals count in) and lets an
+  install's key push out an anonymous one; the public DNS change gets its own
+  deadline; ACME has fifteen minutes overall.
+- **Adapters**: a Plex server shared with somebody never gets their account
+  token; the backend client does not follow a redirect to another host (its
+  own headers carry admin keys); a backend's path climbing out with `..` is
+  refused.
+- **Web client and reader**: offline mode is refused after the server said
+  signed out (`soundstorm-locked`) and downloads with no owner are cleared;
+  an offline file is never opened as a page; the reader also drops SVG
+  animation, links other than stylesheets, XSLT instructions, and any
+  reference to the server itself (an `<img>` in a book fetching `/api/...` as
+  the reader).
+- **Android 0.17**: the backup and secure-name fixes above; from a plain
+  address the app follows the page to a secure name only if that name
+  resolves to the address in use; off-server links need a tap; the window
+  catcher catches posted forms and lets go; service starts from the
+  background no longer crash; the server's host is lowercased; old Android
+  (before 9) accepts its media controllers.
+- **Installers**: the saved script and compose files get the `.env`'s
+  permissions on every run (a drive-root install let any account change
+  them); winget is elevated by its real path; a move folder carries only the
+  install's own choices and secrets.
+
+**Left, with reasons:** the debug signing key (a release key means every
+phone reinstalls once); a permanent router mapping left after a crash
+(removing the fallback costs remote access on routers that allow only
+permanent forwards); the HLS query as a denylist (an allowlist needs a live
+Jellyfin's playlists), now with sessions capped; acting as admin when a
+request carries no person (no route does); images by tag and the unsigned
+installer chain; the names service's shared budgets (the Public Suffix List);
+generated backend database passwords; firewall scope.
+
+**For the Mac, from this pass (Apple TV, Swift):**
+- `EpubBook.swift:161-165`: `XML.Builder` copies all text into every
+  ancestor (`stack.last?.text += done.text`): a nested nav/NCX of 30MB makes
+  ~250 copies. Keep text only where needed or cap it (64KB).
+- `Reader.swift:258-261` / `EpubText.swift:201-205`: anchors can end past
+  the trimmed text; clamp to `out.length`, and `end = min(end, length)` in
+  `tick`.
+- `CategoryTabs.swift:506`: `Int((progress*100).rounded())` traps on 1e300;
+  clamp a finite 0...1 first.
+- `EpubText.swift:41-58`: CFI walk is recursive over server-given steps;
+  refuse over ~512 steps and loop.
+- `SafeLoad.swift:13`, `API.swift:444`: downloads are checked for size only
+  once on disk - cancel in a delegate past the limit; `SongAnalysis` decode
+  has no cap on samples (stop at ~35 minutes).
+- `LibraryViews.swift:300,356`: `AsyncImage` decodes covers at full size;
+  use `SafeLoad.image(maxPixels:)`.
+- iPhone `WebViewController.swift:193-197`: off-server main-frame links go to
+  Safari without a tap, and main-frame `data:`/`blob:` are allowed; match
+  Android (a tap; data/blob only in subframes).
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

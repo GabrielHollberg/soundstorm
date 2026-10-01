@@ -114,7 +114,11 @@ type throttle struct {
 	inflight    map[string]int // guesses being hashed right now, per account
 	devInflight map[string]int // and per trusted device
 	slots       chan struct{}
-	now         func() time.Time
+	// trusted is one more slot only a device that has signed in before may
+	// use: strangers keeping both shared slots busy could otherwise keep the
+	// household out (a security review).
+	trusted chan struct{}
+	now     func() time.Time
 }
 
 func newThrottle() *throttle {
@@ -125,6 +129,7 @@ func newThrottle() *throttle {
 		inflight:    map[string]int{},
 		devInflight: map[string]int{},
 		slots:       make(chan struct{}, concurrentHashes),
+		trusted:     make(chan struct{}, 1),
 		now:         time.Now,
 	}
 }
@@ -231,6 +236,22 @@ func (t *throttle) acquire(ctx context.Context) (func(), error) {
 	}
 }
 
+// acquireTrusted takes a shared slot or the one kept for known devices.
+func (t *throttle) acquireTrusted(ctx context.Context) (func(), error) {
+	timer := time.NewTimer(queueWait)
+	defer timer.Stop()
+	select {
+	case t.slots <- struct{}{}:
+		return func() { <-t.slots }, nil
+	case t.trusted <- struct{}{}:
+		return func() { <-t.trusted }, nil
+	case <-timer.C:
+		return nil, &ThrottledError{RetryAfter: queueWait}
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // guarded runs check - a password comparison - behind every limit, and
 // records the outcome against client and account. account is the name being
 // signed in as, folded to lower case, whether or not it exists: counting only
@@ -255,6 +276,15 @@ func (t *throttle) guarded(ctx context.Context, client, account string, check fu
 
 	release, err := t.acquire(ctx)
 	if err != nil {
+		// A guess that waited out its turn counts against its address: it
+		// held the account's place in the queue all that time, and without
+		// a strike it could do so again and again (a security review).
+		var throttled *ThrottledError
+		if errors.As(err, &throttled) {
+			t.mu.Lock()
+			t.clients.fail(client, t.now())
+			t.mu.Unlock()
+		}
 		return err
 	}
 	defer release()
@@ -307,7 +337,7 @@ func (t *throttle) guardedTrusted(ctx context.Context, device string, check func
 	}
 	defer t.releaseDevice(device)
 
-	release, err := t.acquire(ctx)
+	release, err := t.acquireTrusted(ctx)
 	if err != nil {
 		return err
 	}

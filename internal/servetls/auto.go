@@ -429,7 +429,11 @@ func (a *autoCert) step(ctx context.Context) error {
 		return err
 	}
 	a.log.Info("asking for a certificate", "names", strings.Join(domains, ","))
-	chain, err := a.newACME(key).Obtain(ctx, domains, certKey, namesSolver{a.names, reg, publicName})
+	// An authority that never finishes an order must not hold this loop for
+	// ever - it also carries remote access being turned off.
+	obtainCtx, cancelObtain := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancelObtain()
+	chain, err := a.newACME(key).Obtain(obtainCtx, domains, certKey, namesSolver{a.names, reg, publicName})
 	if err != nil {
 		return fmt.Errorf("certificate for %s: %w", strings.Join(domains, ","), err)
 	}

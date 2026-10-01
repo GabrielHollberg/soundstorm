@@ -64,6 +64,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 	"github.com/GabrielHollberg/soundstorm/internal/stream"
 	"github.com/GabrielHollberg/soundstorm/internal/webui"
+	"path/filepath"
 )
 
 // maxCredentialBody caps a login or signup body. Credentials are short; this
@@ -92,6 +93,16 @@ type Server struct {
 	// artUploads limits how often somebody may upload a cover; sounds keeps
 	// the library's energy ranks for Now Playing's moving cover.
 	artUploads allowance
+	// writes of somebody's favorites, playlists, covers and prefs: their
+	// file is rewritten whole under the lock every person's lists share.
+	listWrites allowance
+	// other writes worth a ceiling: listening positions sent on to the
+	// audiobook server, the scrobbling token checked online, the read-along
+	// queue reordered.
+	otherWrites allowance
+	hlsSessions hlsSessions
+	lookingUpMu sync.Mutex
+	lookingUp   map[string]bool
 	// imports limits how often somebody may import playlists (a file, or
 	// from Plex): each can write thousands of songs to their collections.
 	imports          allowance
@@ -326,7 +337,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/playback/{source}/{id...}", s.handlePlayback)
 	// The same resource the other way round: GET says how to play it and where
 	// you left off, PUT says where you are now.
-	guarded.HandleFunc("PUT /api/playback/{source}/{id...}", s.handleSetPosition)
+	guarded.HandleFunc("PUT /api/playback/{source}/{id...}", s.limited(&s.otherWrites, 60, time.Second, s.handleSetPosition))
 	guarded.HandleFunc("GET /api/hls/{source}/{path...}", s.handleHLS)
 	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)
 
@@ -352,7 +363,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("PUT /api/training/song", s.handleSetTrainingSong)
 	guarded.HandleFunc("GET /api/myart", s.handleMyArt)
 	guarded.HandleFunc("PUT /api/myart", s.handleSetMyArt)
-	guarded.HandleFunc("DELETE /api/myart", s.handleRemoveMyArt)
+	guarded.HandleFunc("DELETE /api/myart", s.limited(&s.listWrites, 60, time.Second, s.handleRemoveMyArt))
 	guarded.HandleFunc("GET /api/myart/{name}", s.handleMyArtFile)
 	guarded.HandleFunc("POST /api/music/radio", s.handleRadio)
 	guarded.HandleFunc("GET /api/music/lyrics/{source}/{id}", s.handleLyrics)
@@ -377,23 +388,23 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("PUT /api/photos/import/{id}", s.handleImportChunk)
 	guarded.HandleFunc("DELETE /api/photos/import/{id}", s.handleCancelImport)
 	guarded.HandleFunc("GET /api/prefs", s.handleGetPrefs)
-	guarded.HandleFunc("PATCH /api/prefs", s.handlePatchPrefs)
+	guarded.HandleFunc("PATCH /api/prefs", s.limited(&s.listWrites, 60, time.Second, s.handlePatchPrefs))
 	guarded.HandleFunc("POST /api/readalong", s.handleStartReadAlong)
-	guarded.HandleFunc("POST /api/readalong/next", s.handleReadAlongNext)
+	guarded.HandleFunc("POST /api/readalong/next", s.limited(&s.otherWrites, 10, 10*time.Second, s.handleReadAlongNext))
 	guarded.HandleFunc("GET /api/readalong", s.handleReadAlong)
 	guarded.HandleFunc("GET /api/music/mixes/{id}", s.handleMix)
 	guarded.HandleFunc("POST /api/history", s.handleRecordPlay)
 	guarded.HandleFunc("GET /api/scrobble", s.handleScrobbleStatus)
-	guarded.HandleFunc("PUT /api/scrobble", s.handleScrobbleConnect)
+	guarded.HandleFunc("PUT /api/scrobble", s.limited(&s.otherWrites, 5, 30*time.Second, s.handleScrobbleConnect))
 	guarded.HandleFunc("DELETE /api/scrobble", s.handleScrobbleDisconnect)
 	guarded.HandleFunc("POST /api/scrobble/now", s.handleNowPlaying)
 	guarded.HandleFunc("GET /api/recap", s.handleRecap)
 	// Favorites and playlists, per person. See favorites.go.
 	guarded.HandleFunc("GET /api/favorites", s.handleFavorites)
-	guarded.HandleFunc("PUT /api/favorites", s.handleAddFavorite)
-	guarded.HandleFunc("DELETE /api/favorites", s.handleRemoveFavorite)
+	guarded.HandleFunc("PUT /api/favorites", s.limited(&s.listWrites, 60, time.Second, s.handleAddFavorite))
+	guarded.HandleFunc("DELETE /api/favorites", s.limited(&s.listWrites, 60, time.Second, s.handleRemoveFavorite))
 	guarded.HandleFunc("GET /api/playlists", s.handlePlaylists)
-	guarded.HandleFunc("POST /api/playlists", s.handleCreatePlaylist)
+	guarded.HandleFunc("POST /api/playlists", s.limited(&s.listWrites, 60, time.Second, s.handleCreatePlaylist))
 	guarded.HandleFunc("POST /api/playlists/import", s.handleImportPlaylist)
 	guarded.HandleFunc("POST /api/plex/signin", s.handlePlexSignIn)
 	guarded.HandleFunc("GET /api/plex/status", s.handlePlexStatus)
@@ -401,11 +412,11 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("POST /api/plex/import", s.handlePlexImport)
 	guarded.HandleFunc("DELETE /api/plex", s.handlePlexForget)
 	guarded.HandleFunc("GET /api/playlists/{id}", s.handlePlaylist)
-	guarded.HandleFunc("PATCH /api/playlists/{id}", s.handleRenamePlaylist)
-	guarded.HandleFunc("DELETE /api/playlists/{id}", s.handleDeletePlaylist)
-	guarded.HandleFunc("POST /api/playlists/{id}/items", s.handleAddToPlaylist)
-	guarded.HandleFunc("DELETE /api/playlists/{id}/items/{position}", s.handleRemoveFromPlaylist)
-	guarded.HandleFunc("POST /api/playlists/{id}/move", s.handleMoveInPlaylist)
+	guarded.HandleFunc("PATCH /api/playlists/{id}", s.limited(&s.listWrites, 60, time.Second, s.handleRenamePlaylist))
+	guarded.HandleFunc("DELETE /api/playlists/{id}", s.limited(&s.listWrites, 60, time.Second, s.handleDeletePlaylist))
+	guarded.HandleFunc("POST /api/playlists/{id}/items", s.limited(&s.listWrites, 60, time.Second, s.handleAddToPlaylist))
+	guarded.HandleFunc("DELETE /api/playlists/{id}/items/{position}", s.limited(&s.listWrites, 60, time.Second, s.handleRemoveFromPlaylist))
+	guarded.HandleFunc("POST /api/playlists/{id}/move", s.limited(&s.listWrites, 60, time.Second, s.handleMoveInPlaylist))
 	guarded.HandleFunc("PUT /api/book/progress", s.handlePutProgress)
 	// Account management is the one thing the owner can do and a member
 	// cannot, so it gets its own guard rather than a check inside each handler.
@@ -815,6 +826,21 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// The photo folder is made from the name with unsafe characters
+	// replaced, so two names can come to one folder ("alice" and "alice."),
+	// or to a removed person's kept folder - and share each other's photos
+	// (a security review).
+	folder := library.PersonalFolder(creds.Username)
+	for _, other := range s.store.Users() {
+		if strings.EqualFold(library.PersonalFolder(other.Name), folder) {
+			writeError(w, http.StatusConflict, "that name is too like "+other.Name+"'s; choose another")
+			return
+		}
+	}
+	if _, err := os.Stat(filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(folder))); err == nil {
+		writeError(w, http.StatusConflict, "photos of a person by that name are still kept; choose another name")
+		return
+	}
 	created, err := s.auth.CreateUser(actor, creds.Username, creds.Password, state.RoleMember)
 	if err != nil {
 		writeError(w, statusFor(err), err.Error())
@@ -856,6 +882,8 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusFor(err), err.Error())
 		return
 	}
+	// Downloads they were bringing in go too (their photo folder is kept).
+	s.forgetImports(id)
 	s.log.Info("account removed", "id", id, "by", actor.Name)
 	writeJSON(w, http.StatusOK, map[string]any{"removed": true})
 }
@@ -1904,7 +1932,20 @@ func (s *Server) handleHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target, err := provider.HLSTarget(r.Context(), r.PathValue("path"), r.URL.Query())
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	// Each play session is a conversion running on the server: a member
+	// asking with new session ids could start any number of them (a
+	// security review). Real playback is one at a time, a few when the
+	// quality or language changes.
+	if !s.hlsSessions.allow(user.ID, queryValue(query, "playSessionId"), time.Now()) {
+		http.Error(w, "too many videos playing at once", http.StatusTooManyRequests)
+		return
+	}
+	target, err := provider.HLSTarget(r.Context(), r.PathValue("path"), query)
 	if err != nil {
 		s.log.Warn("hls target", "source", sourceID, "err", err)
 		http.Error(w, "could not build playlist url", http.StatusBadGateway)

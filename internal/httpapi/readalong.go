@@ -208,6 +208,12 @@ func (s *Server) handleReadAlongNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "this book is not waiting to sync")
 		return
 	}
+	// Only one waiting its turn: moving one up re-queues the others, and a
+	// finished or running one would be made again (a security review).
+	if book.Readaloud == nil || book.Readaloud.QueuePosition == nil {
+		writeError(w, http.StatusConflict, "this book is not waiting to sync")
+		return
+	}
 	if err := st.SyncNext(r.Context(), book.UUID); err != nil {
 		s.log.Warn("read-along could not reorder its queue", "err", err)
 		writeError(w, http.StatusBadGateway, "could not move it up")

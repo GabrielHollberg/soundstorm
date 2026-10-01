@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"hash/fnv"
 )
 
 // Covers at card size.
@@ -60,8 +61,13 @@ var (
 
 const shrunkKeep = 256
 
-func shrunkKey(target source.Target, size int, px int) string {
-	return fmt.Sprintf("%s|%s|%d|%d|%d", target.FilePath, target.Name, target.ModTime.UnixNano(), size, px)
+// shrunkKey is the picture's own bytes, hashed, and the size asked for: a
+// key from its name and date matched two books' "cover.jpg" of one length
+// and time, one person seeing another book's cover (a security review).
+func shrunkKey(data []byte, px int) string {
+	h := fnv.New64a()
+	h.Write(data)
+	return fmt.Sprintf("%x|%d|%d", h.Sum64(), len(data), px)
 }
 
 // artSize reads ?size=: a number of pixels (clamped), "full" for the
@@ -106,7 +112,7 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 			return target, false
 		}
 	}
-	key := shrunkKey(target, len(data), px)
+	key := shrunkKey(data, px)
 	shrunk.Lock()
 	kept, ok := shrunk.m[key]
 	shrunk.Unlock()
@@ -127,8 +133,11 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 	case <-time.After(10 * time.Second):
 		return target, false
 	}
+	// The turn is held until the small copy is made: the decoded picture is
+	// what is big, and freeing the turn at decode let any number of them
+	// wait in memory to be shrunk (a security review).
+	defer func() { <-shrinkSlots }()
 	img, _, err := image.Decode(bytes.NewReader(data))
-	<-shrinkSlots
 	if err != nil {
 		keepShrunk(key, nil)
 		return target, false

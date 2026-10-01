@@ -96,7 +96,10 @@ func (s *Server) photoRoom(u state.User, size int64) error {
 		return nil
 	}
 	if size < 0 {
-		size = 0
+		// Unknown, the body could be any size: a member with a limit sends
+		// the size (the app and browsers always do). Without that, one
+		// upload with no length filled the disk (a security review).
+		return fmt.Errorf("%w: the size of the file was not given", errPhotoLimit)
 	}
 	if s.photoBytes(u)+size > limit {
 		return fmt.Errorf("%w: your photos have used their %d GB", errPhotoLimit, limit>>30)
@@ -404,6 +407,9 @@ func (s *Server) handleBackupCheck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, statusForUpload(err), err.Error())
 		return
 	}
+	if !s.backupAccount(w, r, u) {
+		return
+	}
 	var body struct {
 		Items []backupItem `json:"items"`
 	}
@@ -431,6 +437,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := s.uploadKind(r, string(media.KindPicture)); err != nil {
 		writeError(w, statusForUpload(err), err.Error())
+		return
+	}
+	if !s.backupAccount(w, r, u) {
 		return
 	}
 	taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
@@ -494,6 +503,19 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	s.addPhotoBytes(u, it.Size)
 	s.scheduleRescan(media.KindPicture)
 	writeJSON(w, http.StatusOK, map[string]any{"dest": saved})
+}
+
+// backupAccount refuses a phone's backup made for somebody else. The app
+// sends the account backup was turned on for: on a shared phone, with the
+// next person signed in, the cookie is theirs, and the first person's new
+// photos went into the second's folder (a security review).
+func (s *Server) backupAccount(w http.ResponseWriter, r *http.Request, u state.User) bool {
+	want := r.URL.Query().Get("account")
+	if want == "" || want == u.ID {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "this phone's backup was turned on by another account; turn it on again to back up here")
+	return false
 }
 
 // altName is rel with the moment it was taken before the extension, for a
@@ -634,12 +656,24 @@ func (s *Server) improvePhoto(u state.User, existing string, inc photoimport.Met
 	if dateBetter && datedFolder.MatchString(path.Dir(slash)) {
 		want := fmt.Sprintf("%04d/%02d/%s", merged.Taken.Year(), int(merged.Taken.Month()), path.Base(slash))
 		if want != slash {
-			if _, err := os.Stat(filepath.Join(folder, filepath.FromSlash(want))); err == nil {
-				want = altName(want, merged.Taken.Unix())
+			// Never over another photo: a name taken, then a free one beside it
+			// (a security review found the second name was not checked).
+			dest := ""
+			for i := 0; i < 20; i++ {
+				try := want
+				if i > 0 {
+					try = altName(want, merged.Taken.Unix()+int64(i-1))
+				}
+				p := filepath.Join(folder, filepath.FromSlash(try))
+				if _, err := os.Lstat(p); os.IsNotExist(err) {
+					if _, err := os.Lstat(p + ".xmp"); os.IsNotExist(err) {
+						dest = p
+						break
+					}
+				}
 			}
-			dest := filepath.Join(folder, filepath.FromSlash(want))
-			if os.MkdirAll(filepath.Dir(dest), 0o777) == nil && os.Rename(existing, dest) == nil {
-				_ = os.Rename(existing+".xmp", dest+".xmp")
+			if dest != "" && os.MkdirAll(filepath.Dir(dest), 0o777) == nil && library.MoveNoClobber(existing, dest) == nil {
+				_ = library.MoveNoClobber(existing+".xmp", dest+".xmp")
 				s.photoIndexFor(u).move(existing, dest)
 				_ = os.Remove(filepath.Dir(existing)) // the month it left, if now empty
 			}

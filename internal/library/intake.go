@@ -805,6 +805,9 @@ func placeFile(staged, dest string) error {
 // cannot make one.
 var link = os.Link
 
+// MoveNoClobber moves a file without ever replacing one already there.
+func MoveNoClobber(from, to string) error { return noClobber(from, to) }
+
 func noClobber(from, to string) error {
 	err := link(from, to)
 	if err == nil {

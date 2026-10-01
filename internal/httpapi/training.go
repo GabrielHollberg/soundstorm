@@ -68,7 +68,14 @@ func (s *Server) trainingTarget(w http.ResponseWriter, r *http.Request) (source.
 		http.NotFound(w, r)
 		return nil, media.Item{}, false
 	}
-	if _, ok := s.requireUser(w, r); !ok {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return nil, media.Item{}, false
+	}
+	// What is recorded shapes what ships to every install: the owner's
+	// alone, not anybody with an account here (a security review).
+	if !user.IsOwner() {
+		http.NotFound(w, r)
 		return nil, media.Item{}, false
 	}
 	q := r.URL.Query()

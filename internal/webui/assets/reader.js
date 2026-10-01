@@ -31,7 +31,25 @@ if (window.top !== window.self) throw new Error('SoundStorm does not run inside 
 // not only <script>: event attributes, javascript: links, frames, objects and
 // refreshes go too. The page's CSP stops most of these already; this does not
 // lean on every web view passing it on to a book's frames.
-const DROP = 'script, iframe, frame, object, embed, meta[http-equiv], base';
+// SVG animation can set an href to javascript: where no attribute shows it,
+// and a link other than a stylesheet can tell an outside party the book was
+// opened (DNS prefetch is outside the CSP) - both found by a review.
+const DROP = 'script, iframe, frame, object, embed, meta[http-equiv], base, set, animate, animateMotion, animateTransform, link:not([rel~="stylesheet" i])';
+// What a book may point at: its own files, which are relative. A reference to
+// the server itself (root-relative, or this address) would be fetched with the
+// reader's sign-in - a cover's <img> starting film conversions as whoever opens
+// the book (a security review).
+const REF_ATTRS = new Set(['src', 'href', 'xlink:href', 'poster', 'srcset', 'data', 'background', 'action', 'formaction']);
+function pointsAtServer(value) {
+  const v = value.replace(/[\s\u0000-\u001f]/g, '');
+  if (v.startsWith('/') || v.startsWith('\\')) return true;
+  try {
+    const u = new URL(v);
+    return u.host === location.host;
+  } catch {
+    return false;
+  }
+}
 function documentType(type) {
   const base = String(type || '').split(';')[0].trim().toLowerCase();
   if (base === 'text/html') return 'text/html';
@@ -64,12 +82,31 @@ function withoutScripts(book) {
       const doc = new DOMParser().parseFromString(data, type);
       let changed = false;
       for (const el of doc.querySelectorAll(DROP)) { el.remove(); changed = true; }
+      // Processing instructions other than a CSS stylesheet (XSLT).
+      for (const node of [...doc.childNodes]) {
+        if (node.nodeType === Node.PROCESSING_INSTRUCTION_NODE && !(node.target === 'xml-stylesheet' && /type\s*=\s*["']text\/css["']/i.test(node.data))) {
+          node.remove();
+          changed = true;
+        }
+      }
+      for (const el of doc.querySelectorAll('style')) {
+        if (/url\(\s*["']?(\/|https?:)/i.test(el.textContent || '')) {
+          el.textContent = el.textContent.replace(/url\(\s*["']?(\/|https?:)[^)]*\)/gi, 'none');
+          changed = true;
+        }
+      }
       for (const el of doc.querySelectorAll('*')) {
         for (const attr of [...el.attributes]) {
           const name = attr.name.toLowerCase();
           const value = attr.value.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
           if (name.startsWith('on') || ((name === 'href' || name.endsWith(':href') || name === 'src' || name === 'action' || name === 'formaction')
               && (value.startsWith('javascript:') || value.startsWith('vbscript:')))) {
+            el.removeAttribute(attr.name);
+            changed = true;
+          } else if ((REF_ATTRS.has(name) || name.endsWith(':href')) && attr.value.split(',').some((part) => pointsAtServer(part.trim().split(/\s+/)[0] || ''))) {
+            el.removeAttribute(attr.name);
+            changed = true;
+          } else if (name === 'style' && /url\(\s*["']?(\/|https?:)/i.test(attr.value)) {
             el.removeAttribute(attr.name);
             changed = true;
           }

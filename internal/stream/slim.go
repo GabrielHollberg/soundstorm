@@ -317,7 +317,16 @@ func (p *Proxy) readRange(ctx context.Context, target source.Target, from, to in
 // slimLayoutFor looks at the start of a song and works out its slim file. An
 // error means it could not tell (the backend did not answer); a layout with ok
 // false means the song is sent as it is.
+// slimBuilds is how many song headers are being read and rebuilt at once.
+var slimBuilds = make(chan struct{}, 4)
+
 func (p *Proxy) slimLayoutFor(ctx context.Context, target source.Target) (*slimLayout, error) {
+	select {
+	case slimBuilds <- struct{}{}:
+		defer func() { <-slimBuilds }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	first, resp, err := p.readRange(ctx, target, 0, slimProbe-1)
 	if resp == nil {
 		return nil, err
@@ -600,8 +609,13 @@ func stripMoov(moov []byte) ([]byte, error) {
 // or the file is not the shape this expects.
 func shiftChunkOffsets(moov []byte, from, shift int64) error {
 	found := false
-	var walk func(b []byte) error
-	walk = func(b []byte) error {
+	var walk func(b []byte, depth int) error
+	walk = func(b []byte, depth int) error {
+		// stbl sits four deep; a file nesting boxes far deeper is no song,
+		// and a walk without a floor grew a 128MB stack (a security review).
+		if depth > 8 {
+			return errors.New("boxes nested too deep")
+		}
 		for off := 0; off+8 <= len(b); {
 			n := int(binary.BigEndian.Uint32(b[off:]))
 			if n < 8 || off+n > len(b) {
@@ -610,7 +624,7 @@ func shiftChunkOffsets(moov []byte, from, shift int64) error {
 			box := b[off : off+n]
 			switch string(box[4:8]) {
 			case "trak", "mdia", "minf", "stbl":
-				if err := walk(box[8:]); err != nil {
+				if err := walk(box[8:], depth+1); err != nil {
 					return err
 				}
 			case "stco", "co64":
@@ -649,7 +663,7 @@ func shiftChunkOffsets(moov []byte, from, shift int64) error {
 		}
 		return nil
 	}
-	if err := walk(moov[8:]); err != nil {
+	if err := walk(moov[8:], 0); err != nil {
 		return err
 	}
 	if !found {

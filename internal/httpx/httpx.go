@@ -48,8 +48,22 @@ func New(baseURL string, timeout time.Duration) (*Client, error) {
 		timeout = 10 * time.Second
 	}
 	return &Client{
-		base:    u,
-		hc:      &http.Client{Timeout: timeout},
+		base: u,
+		hc: &http.Client{
+			Timeout: timeout,
+			// A backend redirecting elsewhere is not followed: the client's
+			// own headers carry admin keys (Immich's x-api-key), and Go drops
+			// only Authorization and Cookie on a redirect to another host.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+					return http.ErrUseLastResponse
+				}
+				if len(via) >= 10 {
+					return errors.New("too many redirects")
+				}
+				return nil
+			},
+		},
 		headers: map[string]string{},
 	}, nil
 }

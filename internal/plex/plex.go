@@ -214,6 +214,12 @@ func (c *Client) Servers(ctx context.Context, token string) ([]Server, error) {
 		}
 		tok := r.AccessToken
 		if tok == "" {
+			// The account's own token only to the account's own server: a
+			// shared server's owner writes its addresses, and would be handed
+			// the whole Plex account (a security review).
+			if !r.Owned {
+				continue
+			}
 			tok = token
 		}
 		out = append(out, Server{ID: r.ClientIdentifier, Name: r.Name, Owned: r.Owned, token: tok, connections: r.Connections})

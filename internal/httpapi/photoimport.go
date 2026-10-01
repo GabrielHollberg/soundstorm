@@ -52,6 +52,61 @@ type importJob struct {
 	Progress photoimport.Progress `json:"progress"`
 	Created  time.Time            `json:"created"`
 	Updated  time.Time            `json:"updated"`
+	// Tries counts sorts begun: one that took the server down with it (a
+	// crafted zip) is not begun again at every start for ever.
+	Tries int `json:"tries,omitempty"`
+
+	busy bool // a piece is being written
+}
+
+// importIdle is how long a download left half sent is kept.
+const importIdle = 48 * time.Hour
+
+// importPending is what waiting downloads still need on the disk, the zips
+// and the photos they unpack to: counted before another is taken, since each
+// is checked against the free space on its own.
+func (s *Server) importPending(userID string) (all, mine int64) {
+	for _, j := range s.photoImports.jobs {
+		if j.State != "uploading" && j.State != "queued" && j.State != "sorting" {
+			continue
+		}
+		need := j.Size - j.Received + j.Size
+		all += need
+		if j.User == userID {
+			mine += j.Size
+		}
+	}
+	return all, mine
+}
+
+// expireImports forgets downloads nobody has sent a piece of in two days,
+// and their half-sent zips.
+func (s *Server) expireImports() {
+	im := &s.photoImports
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	for id, j := range im.jobs {
+		if j.State == "uploading" && !j.busy && time.Since(j.Updated) > importIdle {
+			_ = os.Remove(filepath.Join(s.importDir(j.User), j.ID+".zip"))
+			_ = os.Remove(filepath.Join(s.importDir(j.User), j.ID+".json"))
+			delete(im.jobs, id)
+		}
+	}
+}
+
+// forgetImports removes a person's downloads, with their account.
+func (s *Server) forgetImports(userID string) {
+	s.importsInit()
+	im := &s.photoImports
+	im.mu.Lock()
+	for id, j := range im.jobs {
+		if j.User == userID {
+			im.stop[id] = true
+			delete(im.jobs, id)
+		}
+	}
+	im.mu.Unlock()
+	_ = os.RemoveAll(s.importDir(userID))
 }
 
 type photoImports struct {
@@ -117,10 +172,15 @@ func (s *Server) RunPhotoImports(ctx context.Context) {
 	for _, j := range waiting {
 		im.queue <- j.ID
 	}
+	s.expireImports()
+	tidy := time.NewTicker(time.Hour)
+	defer tidy.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-tidy.C:
+			s.expireImports()
 		case id := <-im.queue:
 			s.sortImport(id)
 		}
@@ -140,6 +200,12 @@ func (s *Server) sortImport(id string) {
 		im.mu.Unlock()
 		return
 	}
+	if j.Tries >= 2 {
+		im.mu.Unlock()
+		s.finishImport(j, "failed", "this download could not be sorted")
+		return
+	}
+	j.Tries++
 	j.State = "sorting"
 	s.saveJob(j)
 	im.mu.Unlock()
@@ -186,6 +252,10 @@ func (s *Server) sortImport(id string) {
 			return
 		}
 		s.log.Warn("photo import failed", "id", id, "err", err)
+		if errors.Is(err, photoimport.ErrImplausible) {
+			s.finishImport(j, "failed", err.Error())
+			return
+		}
 		s.finishImport(j, "failed", "the download could not be read as a zip")
 	default:
 		s.log.Info("photos imported", "by", u.Name, "added", result.Added, "duplicates", result.Duplicates, "failed", result.Failed, "source", result.Source)
@@ -375,10 +445,20 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "too many downloads waiting; let some finish first")
 		return
 	}
-	// The zip and the photos it unpacks to, both on the disk for a while.
-	if !s.library.Room(2 * body.Size) {
+	// The zip and the photos it unpacks to, both on the disk for a while -
+	// with every other download still waiting, each of which passed this
+	// same check against the same free space (a security review).
+	all, mine := s.importPending(u.ID)
+	if !s.library.Room(2*body.Size + all) {
 		writeError(w, http.StatusInsufficientStorage, "the library disk does not have room for this download and its photos")
 		return
+	}
+	// And a member's photo space: the photos will count against it anyway.
+	if !u.IsOwner() {
+		if err := s.photoRoom(u, body.Size+mine); err != nil {
+			writeError(w, http.StatusInsufficientStorage, err.Error())
+			return
+		}
 	}
 	j := &importJob{ID: newImportID(), User: u.ID, Name: name, Size: body.Size, State: "uploading", Created: time.Now().UTC()}
 	if err := os.MkdirAll(s.importDir(u.ID), 0o777); err != nil {
@@ -418,16 +498,28 @@ func (s *Server) handleImportChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
-	if err != nil || offset != j.Received {
+	if err != nil || offset != j.Received || j.busy {
 		resp := importJSON(j)
 		im.mu.Unlock()
 		writeJSON(w, http.StatusConflict, resp)
 		return
 	}
-	im.mu.Unlock()
-
 	if r.ContentLength <= 0 || r.ContentLength > importChunkMax || offset+r.ContentLength > j.Size {
+		im.mu.Unlock()
 		writeError(w, http.StatusBadRequest, "a piece is up to 32MB and within the download")
+		return
+	}
+	// One piece at a time: two at the same offset both counted, and the
+	// download never finished (a security review).
+	j.busy = true
+	im.mu.Unlock()
+	defer func() {
+		im.mu.Lock()
+		j.busy = false
+		im.mu.Unlock()
+	}()
+	if !s.library.Room(r.ContentLength) {
+		writeError(w, http.StatusInsufficientStorage, "the library disk is nearly full")
 		return
 	}
 	f, err := os.OpenFile(filepath.Join(s.importDir(u.ID), j.ID+".zip"), os.O_WRONLY, 0)

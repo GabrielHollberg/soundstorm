@@ -39,7 +39,9 @@ object ServerAddress {
         val uri = Uri.parse(text)
         val scheme = uri.scheme?.lowercase() ?: return null
         if (scheme != "https" && scheme != "http") return null
-        val host = uri.host
+        // Lowercase, as an origin is compared: a typed capital left the
+        // page's messages unrecognised.
+        val host = uri.host?.lowercase()
         if (host.isNullOrEmpty()) return null
         val authority = if (uri.port != -1) "$host:${uri.port}" else host
         return Uri.Builder().scheme(scheme).encodedAuthority(authority).path("/").build()

@@ -297,7 +297,8 @@ $('logout').addEventListener('click', async () => {
   stopAudio();
   closeVideo();
   // Downloads are the signed-in person's; a shared device keeps nothing of
-  // theirs after they sign out.
+  // theirs after they sign out - nor goes on backing up their photos.
+  if (BACKUP_APP) window.soundstormApp.backup('set', { enabled: false });
   await clearDownloads();
   await api('/api/logout', { method: 'POST' });
   if (state.setupTimer) clearInterval(state.setupTimer);
@@ -325,8 +326,13 @@ async function showApp(me) {
   // person saw them, shelves their account cannot see included (a review).
   try {
     const owner = localStorage.getItem('soundstorm-owner');
-    if (me && me.id && owner && owner !== me.id) await clearDownloads();
+    // Downloads nobody is recorded as owning are as good as somebody else's.
+    if (me && me.id && ((owner && owner !== me.id) || (!owner && hasDownloads()))) {
+      if (BACKUP_APP) window.soundstormApp.backup('set', { enabled: false });
+      await clearDownloads();
+    }
     if (me && me.id) localStorage.setItem('soundstorm-owner', me.id);
+    localStorage.removeItem('soundstorm-locked');
   } catch {
     // no storage: nothing kept to hand on
   }
@@ -746,7 +752,11 @@ window.__soundstormBackup = (status) => {
   maybeAskBackup();
 };
 function backupSet(options) {
-  if (BACKUP_APP) window.soundstormApp.backup('set', options);
+  // The account it is for goes with it: the phone sends it with every photo,
+  // and the server refuses photos meant for somebody else - on a shared
+  // phone the next person's cookie would otherwise take the first person's
+  // photos (a security review).
+  if (BACKUP_APP) window.soundstormApp.backup('set', { ...options, account: (state.me && state.me.id) || '' });
 }
 function hasPictures() {
   return Boolean(state.me && (state.me.libraries || []).includes('picture'));
@@ -3402,12 +3412,18 @@ async function moveToSecureName(name) {
     forgetSetupCodeInAddress();
     state.training = Boolean(body.training);
     if (body.signedIn) { showApp(body.user); setTimeout(adoptNativePlayback, 0); }
-    else showGate(body.hasAccount, body.setupCodeRequired);
+    else {
+      // Signed out from elsewhere (a password reset, the account removed):
+      // what is downloaded is no longer to be opened offline without a
+      // password (a security review).
+      try { if (hasDownloads()) localStorage.setItem('soundstorm-locked', '1'); } catch { /* no storage */ }
+      showGate(body.hasAccount, body.setupCodeRequired);
+    }
     return;
   }
   forgetSetupCodeInAddress();
 
-  if (offline && hasDownloads()) {
+  if (offline && hasDownloads() && !localStorage.getItem('soundstorm-locked')) {
     showOfflineApp();
     return;
   }
@@ -7502,11 +7518,20 @@ function isDownloaded(item) {
   return Boolean(item && state.downloads.items[selectionKey(item)]);
 }
 
+// A kept file's blob takes the type it was stored with; one stored as a page
+// (HTML, XML, SVG, script) would open as a same-origin document in the reader's
+// frame, outside the server's sandbox (a security review). Those are made
+// plain bytes; songs, films, pictures and PDFs keep theirs.
+async function safeBlob(resp) {
+  const blob = await resp.blob();
+  return /html|xml|svg|javascript|ecmascript/i.test(blob.type) ? new Blob([blob], { type: 'application/octet-stream' }) : blob;
+}
+
 async function offlineURL(item) {
   try {
     const cache = await caches.open(OFFLINE_CACHE);
     const resp = await cache.match(streamPath(item));
-    return resp ? URL.createObjectURL(await resp.blob()) : '';
+    return resp ? URL.createObjectURL(await safeBlob(resp)) : '';
   } catch {
     return '';
   }
@@ -7617,6 +7642,7 @@ async function clearDownloads() {
   try {
     localStorage.removeItem(DOWNLOADS_KEY);
     localStorage.removeItem('soundstorm-owner');
+    localStorage.removeItem('soundstorm.backupAsked');
     // Places kept for downloaded books are this person's too.
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('soundstorm-pos:') || key.startsWith('soundstorm-read:')) localStorage.removeItem(key);

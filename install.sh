@@ -729,7 +729,12 @@ import_settings() {
 	[ -f "$1/settings.env" ] || return 0
 	tr -d '\r' < "$1/settings.env" | grep -Ev "$MOVE_LOCAL" | while IFS= read -r line; do
 		key=${line%%=*}
-		case "$key" in SOUNDSTORM_*|TS_*) set_env "$key" "${line#*=}" ;; esac
+		# Only the install's own choices and secrets: a move folder could
+		# otherwise set the image that runs, or the services it trusts.
+		case "$key" in
+			SOUNDSTORM_SETUP_CODE|SOUNDSTORM_REMOTE_ACCESS|SOUNDSTORM_TAILSCALE_AUTHKEY|SOUNDSTORM_TAILSCALE_HOSTNAME|SOUNDSTORM_TLS|SOUNDSTORM_AUDIOMUSE_DB_PASSWORD|SOUNDSTORM_IMMICH_DB_PASSWORD|SOUNDSTORM_STORYTELLER_SECRET|SOUNDSTORM_LOG_LEVEL|TS_AUTHKEY)
+				set_env "$key" "${line#*=}" ;;
+		esac
 	done
 }
 

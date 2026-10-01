@@ -165,13 +165,17 @@ func (s *Server) PublicNameFor(id string) string { return id + "." + s.PublicLab
 func (s *Server) publicRelative(id string) string { return id + "." + s.PublicLabel }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if !s.limits.allow("register:"+s.clientNet(r), registerRate) ||
-		!s.limits.allow("register-wide:"+s.clientWide(r), registerWideRate) {
-		writeError(w, http.StatusTooManyRequests, "too many registrations from this address; try again later")
-		return
-	}
+	// Widest first: a request refused by the day's cap or its network's
+	// leaves no entry for its own address behind, so refused requests cannot
+	// fill the table that installs' renewals are counted in (a security
+	// review).
 	if !s.limits.allow("register:*", globalRegisterRate) {
 		writeError(w, http.StatusTooManyRequests, "too many registrations today; try again later")
+		return
+	}
+	if !s.limits.allow("register-wide:"+s.clientWide(r), registerWideRate) ||
+		!s.limits.allow("register:"+s.clientNet(r), registerRate) {
+		writeError(w, http.StatusTooManyRequests, "too many registrations from this address; try again later")
 		return
 	}
 	id, err := newID()
@@ -282,7 +286,11 @@ func (s *Server) handlePublic(w http.ResponseWriter, r *http.Request, id string)
 	// one reaching the service over each family - and a visitor connects on the
 	// family it has. A record that later goes dark is not a problem either: a
 	// browser handed both tries both (Happy Eyeballs) and falls back.
-	if _, err := s.DNS.Set(ctx, s.publicRelative(id), typ, addr.String()); err != nil {
+	// A fresh deadline for the DNS change: the probe has used part of the
+	// one it was given, and two registrar calls did not always fit after it.
+	dnsCtx, cancelDNS := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancelDNS()
+	if _, err := s.DNS.Set(dnsCtx, s.publicRelative(id), typ, addr.String()); err != nil {
 		s.Log.Error("set public address", "id", id, "err", err)
 		writeError(w, http.StatusBadGateway, "the DNS provider refused the change")
 		return
@@ -564,9 +572,18 @@ func (l *limits) allow(key string, r rate) bool {
 				}
 				l.nextPrune = now.Add(pruneEvery)
 			}
-			// Still full: refuse a new key rather than grow without bound. Keys
-			// already in the table - the global challenge count, an install
-			// that is already counted - carry on as before.
+			// Still full: an anonymous sign-up's entry makes room for an
+			// install's (which only a registered install can create); else a
+			// new key is refused rather than grow without bound. Keys already
+			// in the table carry on as before.
+			if len(l.buckets) >= maxBuckets && !strings.HasPrefix(key, "register") {
+				for k := range l.buckets {
+					if strings.HasPrefix(k, "register:") && k != "register:*" {
+						delete(l.buckets, k)
+						break
+					}
+				}
+			}
 			if len(l.buckets) >= maxBuckets {
 				return false
 			}

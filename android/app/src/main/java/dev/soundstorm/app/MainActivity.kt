@@ -428,7 +428,10 @@ class MainActivity : Activity() {
             "interrupted" -> MediaBridge.interruption(true)
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
-            "backup" -> backup(message.optString("cmd"), message.optJSONObject("options") ?: JSONObject())
+            "backup" -> {
+                PhotoBackup.rememberServer(applicationContext, ServerAddress.current)
+                backup(message.optString("cmd"), message.optJSONObject("options") ?: JSONObject())
+            }
         }
     }
 
@@ -565,6 +568,21 @@ class MainActivity : Activity() {
             // sat on the loading spinner, the move refused as a link out.
             if (request.isForMainFrame && isOwnSecureName(url)) {
                 val target = ServerAddress.parse(url.toString())
+                val current = server
+                if (target != null && current != null && !(current.host ?: "").endsWith(".soundstorm.dev")) {
+                    // From a plain address the name cannot be told apart from
+                    // another install's by its text, and the page that asked
+                    // came over plain http. So it is followed only if it
+                    // names the very address in use: an attacker's name would
+                    // point at their own machine (a security review).
+                    Thread {
+                        val same = runCatching {
+                            java.net.InetAddress.getAllByName(target.host).any { it.hostAddress == current.host }
+                        }.getOrDefault(false)
+                        if (same) content.post { if (server == current) showWeb(target) }
+                    }.start()
+                    return true
+                }
                 if (target != null) {
                     // Followed for now, never saved: the address typed stays
                     // the one the app starts from. Saving the home name made a
@@ -578,8 +596,9 @@ class MainActivity : Activity() {
             }
             if (request.isForMainFrame && scheme in setOf("http", "https") && !isServer(url)) {
                 // A link off the server leaves for the browser, as one out of
-                // an installed web app does.
-                openOutside(url)
+                // an installed web app does - one somebody tapped, not a page
+                // sending people away on its own.
+                if (request.hasGesture() || request.isRedirect) openOutside(url)
                 return true
             }
             if (scheme !in setOf("http", "https", "blob", "data", "about")) {
@@ -674,13 +693,29 @@ class MainActivity : Activity() {
             // Only for a link somebody tapped, and only to a web address.
             if (!isUserGesture) return false
             val catcher = WebView(this@MainActivity)
+            var done = false
+            fun finish(v: WebView, url: Uri?) {
+                if (done) return
+                done = true
+                if (url != null && url.scheme in setOf("http", "https")) openOutside(url)
+                v.stopLoading()
+                v.post { v.destroy() }
+            }
             catcher.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
-                    if (request.url.scheme in setOf("http", "https")) openOutside(request.url)
-                    v.destroy()
+                    finish(v, request.url)
                     return true
                 }
+
+                // A posted form never reaches shouldOverrideUrlLoading: it is
+                // caught as it starts, and nothing loads in the hidden view.
+                override fun onPageStarted(v: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                    if (url == null || url == "about:blank") return
+                    finish(v, Uri.parse(url))
+                }
             }
+            // A window nothing ever navigates is let go.
+            catcher.postDelayed({ if (!done) { done = true; catcher.destroy() } }, 10_000)
             (resultMsg.obj as WebView.WebViewTransport).webView = catcher
             resultMsg.sendToTarget()
             return true

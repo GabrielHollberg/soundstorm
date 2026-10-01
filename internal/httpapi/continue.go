@@ -10,6 +10,7 @@ import (
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // The Continue row: what this person is part way through, newest first, so
@@ -96,7 +97,22 @@ func (s *Server) handleContinue(w http.ResponseWriter, r *http.Request) {
 	// registry, which applies this account's access - a shelf somebody may no
 	// longer see drops out of the row with everything else.
 	prefix := user.ID + "/"
+	// The newest places only: each is a look-up at its backend, and a person
+	// can have thousands kept (a security review).
+	type kept struct {
+		key string
+		p   state.Progress
+	}
+	var places []kept
 	for key, p := range s.store.ProgressWithPrefix(prefix) {
+		places = append(places, kept{key, p})
+	}
+	sort.Slice(places, func(a, b int) bool { return places[a].p.UpdatedAt.After(places[b].p.UpdatedAt) })
+	if len(places) > 60 {
+		places = places[:60]
+	}
+	for _, kp := range places {
+		key, p := kp.key, kp.p
 		sourceID, itemID, ok := strings.Cut(strings.TrimPrefix(key, prefix), "/")
 		if !ok {
 			continue

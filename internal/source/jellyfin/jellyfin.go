@@ -682,6 +682,14 @@ func (s *Source) HLSTarget(ctx context.Context, path string, query url.Values) (
 	// has tiles names them with ApiKey=<our token>. SoundStorm shows no
 	// tiles, so it is always off.
 	query = withTrickplayOff(query)
+	// And the device is always SoundStorm's: the client's choice of device
+	// could reach another person's conversion.
+	for k := range query {
+		if strings.EqualFold(k, "deviceId") {
+			query.Del(k)
+		}
+	}
+	query.Set("deviceId", deviceID)
 	return source.Target{
 		URL:     s.http.URL("/videos/"+clean, query),
 		Headers: map[string]string{"Authorization": authHeader(s.cfg.Token)},

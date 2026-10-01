@@ -14,6 +14,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"net/url"
 )
 
 // Mixes: ready-made queues, the first thing under Music. Some come from the
@@ -460,4 +461,62 @@ func (s *Server) favoriteSongs(r *http.Request, userID string) []media.Item {
 		}
 	}
 	return songs
+}
+
+// limited puts an allowance in front of a handler: a burst, then one every
+// so often, per person; past it, 429.
+func (s *Server) limited(a *allowance, burst float64, every time.Duration, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := s.requireUser(w, r)
+		if !ok {
+			return
+		}
+		if !a.allow(user.ID, time.Now(), burst, every) {
+			writeError(w, http.StatusTooManyRequests, "too many changes at once; wait a moment")
+			return
+		}
+		h(w, r)
+	}
+}
+
+// hlsSessions counts the video conversions each person has going: a play
+// session is live while asked for in the last two minutes.
+type hlsSessions struct {
+	mu   sync.Mutex
+	seen map[string]map[string]time.Time
+}
+
+const maxHLSSessions = 4
+
+func (h *hlsSessions) allow(userID, session string, now time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.seen == nil {
+		h.seen = map[string]map[string]time.Time{}
+	}
+	mine := h.seen[userID]
+	if mine == nil {
+		mine = map[string]time.Time{}
+		h.seen[userID] = mine
+	}
+	for k, t := range mine {
+		if now.Sub(t) > 2*time.Minute {
+			delete(mine, k)
+		}
+	}
+	if _, live := mine[session]; !live && len(mine) >= maxHLSSessions {
+		return false
+	}
+	mine[session] = now
+	return true
+}
+
+// queryValue is a parameter read case-blind, as Jellyfin reads them.
+func queryValue(q url.Values, name string) string {
+	for k, v := range q {
+		if strings.EqualFold(k, name) && len(v) > 0 {
+			return v[0]
+		}
+	}
+	return ""
 }

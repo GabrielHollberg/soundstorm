@@ -78,7 +78,9 @@ object NativeAudio {
                 return
             }
             waiting.add(message)
-            context.startService(Intent(context, AudioService::class.java))
+            // Refused from the background (Android 8 and later); kept, and
+            // tried again with the next message rather than crashing.
+            runCatching { context.startService(Intent(context, AudioService::class.java)) }
             return
         }
         run(message)

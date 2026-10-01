@@ -238,6 +238,9 @@ func (s *Store) RemoveFavorite(userID, sourceID, itemID string) error {
 			kept = append(kept, e)
 		}
 	}
+	if len(kept) == len(c.Favorites) {
+		return nil // not a favorite: nothing to write
+	}
 	c.Favorites = kept
 	return s.save(userID, c)
 }
@@ -254,7 +257,11 @@ func (s *Store) Playlists(userID string) ([]Playlist, error) {
 	}
 	out := make([]Playlist, 0, len(c.Playlists))
 	for _, p := range c.Playlists {
-		out = append(out, *p)
+		cp := *p
+		// A copy of the songs too: the cached list is changed in place by a
+		// move, which raced with the copy being written out.
+		cp.Items = append([]Entry(nil), p.Items...)
+		out = append(out, cp)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
 	return out, nil

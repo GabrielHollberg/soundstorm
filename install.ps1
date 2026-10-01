@@ -1666,7 +1666,16 @@ function Install-Docker {
     } else {
         Important "Windows will ask for permission to install it - click Yes."
         try {
-            $process = Start-Process -FilePath 'winget' -ArgumentList $wingetArgs `
+            # By its real place, not its name: a name is looked up through
+            # PATH, which this user's programs can change, and this runs as
+            # administrator (a security review).
+            $winget = (Get-Command winget -ErrorAction Stop).Source
+            $apps = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
+            if (-not $winget.StartsWith($apps, [StringComparison]::OrdinalIgnoreCase) -and
+                -not $winget.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "winget is in an unexpected place: $winget"
+            }
+            $process = Start-Process -FilePath $winget -ArgumentList $wingetArgs `
                 -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop
             # Waited on here rather than with -Wait, which would freeze the
             # setup window for the minutes Docker Desktop takes to install.
@@ -2976,7 +2985,10 @@ function Import-Settings([string]$Path) {
     $file = Join-Path $Path 'settings.env'
     if (-not (Test-Path -LiteralPath $file)) { return }
     foreach ($line in Get-Content -LiteralPath $file) {
-        if ($line -match $MoveLocal -or $line -notmatch '^(SOUNDSTORM_|TS_)[A-Z0-9_]*=') { continue }
+        # Only the install's own choices and secrets: a move folder on a stick
+        # could otherwise set the image that runs, or the name service and
+        # certificate authority it trusts (a security review).
+        if ($line -match $MoveLocal -or $line -notmatch '^(SOUNDSTORM_(SETUP_CODE|REMOTE_ACCESS|TAILSCALE_AUTHKEY|TAILSCALE_HOSTNAME|TLS|AUDIOMUSE_DB_PASSWORD|IMMICH_DB_PASSWORD|STORYTELLER_SECRET|LOG_LEVEL)|TS_AUTHKEY)=') { continue }
         $key, $value = $line -split '=', 2
         Set-EnvSetting $key $value
     }
@@ -3287,6 +3299,15 @@ if (-not $setupCode) {
 # this existed has a .env with its folder's permissions, and running the
 # installer again - which is how updating works - is what fixes it.
 Protect-SecretFile (Join-Path $Dir '.env')
+# And what runs: the saved script (run at every sign-in by the startup
+# shortcut) and the compose files. A folder at a drive root, C:\SoundStorm,
+# lets every account on the PC change files in it, and a changed script or
+# compose file would run as this user, or as root in Docker (a security
+# review).
+foreach ($runs in 'soundstorm.ps1', 'docker-compose.yml', 'tailscale-serve.json') {
+    $p = Join-Path $Dir $runs
+    if (Test-Path -LiteralPath $p) { Protect-SecretFile $p }
+}
 
 # Where the library lives. Beside the install unless -Library says otherwise,
 # which is how it goes on an external drive. Compose mounts every shelf from

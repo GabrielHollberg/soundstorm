@@ -3,8 +3,10 @@ package photoimport
 import (
 	"archive/zip"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -54,6 +56,9 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 		return Progress{}, fmt.Errorf("not a zip that can be opened: %w", err)
 	}
 	defer zr.Close()
+	if err := plausible(zipPath, zr.File); err != nil {
+		return Progress{}, err
+	}
 
 	// First what the download says about its photos: Takeout's sidecars and
 	// iCloud's details, small files read before any photo.
@@ -126,6 +131,32 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 	}
 	progress(p)
 	return p, nil
+}
+
+// ErrImplausible is a zip whose shape no real download has: one that would
+// unpack to far more than its own size (a zip bomb, or entries overlapping
+// one compressed stream), or holds millions of files. Photos and videos
+// hardly compress, so a real download unpacks to about its own size.
+var ErrImplausible = errors.New("this zip unpacks to far more than its size, which no photo download does")
+
+const maxEntries = 500_000
+
+func plausible(zipPath string, files []*zip.File) error {
+	if len(files) > maxEntries {
+		return ErrImplausible
+	}
+	st, err := os.Stat(zipPath)
+	if err != nil {
+		return err
+	}
+	var total uint64
+	for _, f := range files {
+		total += f.UncompressedSize64
+		if total > uint64(st.Size())*3+(2<<30) {
+			return ErrImplausible
+		}
+	}
+	return nil
 }
 
 // skipped is what a download holds that is not a photo of the person's:

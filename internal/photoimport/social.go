@@ -22,7 +22,18 @@ import (
 type JSONIndex struct {
 	byName map[string][]uriMeta // a photo's file name -> where its uri says it is
 	byID   map[string]Meta      // a Flickr photo's number
+	kept   int                  // records kept, against maxRecords
+	read   int64                // JSON bytes decoded, against maxJSONBytes
 }
+
+// A download's records are kept in memory while it is sorted, so they are
+// bounded: a small zip of repeated records once unpacked to gigabytes (a
+// security review). A real account's records are far below these.
+const (
+	maxRecords   = 2_000_000
+	maxJSONBytes = 256 << 20
+	maxPerName   = 64 // records of one file name; a real download has a few
+)
 
 type uriMeta struct {
 	uri string
@@ -39,8 +50,14 @@ func (x *JSONIndex) Len() int { return len(x.byName) + len(x.byID) }
 
 // Add reads one JSON file.
 func (x *JSONIndex) Add(r io.Reader) {
+	if x.read >= maxJSONBytes || x.kept >= maxRecords {
+		return
+	}
+	cr := &countingReader{r: io.LimitReader(r, maxJSONBytes-x.read)}
 	var v any
-	if json.NewDecoder(io.LimitReader(r, 64<<20)).Decode(&v) != nil {
+	err := json.NewDecoder(cr).Decode(&v)
+	x.read += cr.n
+	if err != nil {
 		return
 	}
 	x.walk(v, 0)
@@ -68,7 +85,10 @@ func (x *JSONIndex) walk(v any, depth int) {
 					m.Lat, m.Lon, m.HasPlace = lat, lon, true
 				}
 				name := strings.ToLower(path.Base(uri))
-				x.byName[name] = append(x.byName[name], uriMeta{uri: strings.ToLower(strings.TrimPrefix(uri, "/")), m: m, src: src})
+				if x.kept < maxRecords && len(x.byName[name]) < maxPerName {
+					x.byName[name] = append(x.byName[name], uriMeta{uri: strings.ToLower(strings.TrimPrefix(uri, "/")), m: m, src: src})
+					x.kept++
+				}
 			}
 		}
 		if id, ok := t["id"].(string); ok && id != "" {
@@ -88,7 +108,12 @@ func (x *JSONIndex) walk(v any, depth int) {
 							}
 						}
 					}
-					x.byID[id] = m
+					if x.kept < maxRecords {
+						if _, had := x.byID[id]; !had {
+							x.kept++
+						}
+						x.byID[id] = m
+					}
 				}
 			}
 		}
@@ -96,6 +121,17 @@ func (x *JSONIndex) walk(v any, depth int) {
 			x.walk(e, depth+1)
 		}
 	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func str(v any) string {

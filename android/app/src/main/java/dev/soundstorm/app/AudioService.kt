@@ -94,7 +94,7 @@ class AudioService : MediaSessionService() {
                 // the car, watch and assistant apps - not any app on the phone,
                 // which a media session allows unless told (a security review).
                 override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
-                    if (controller.isTrusted || controller.packageName == packageName ||
+                    if (android.os.Build.VERSION.SDK_INT < 28 || controller.isTrusted || controller.packageName == packageName ||
                         controller.packageName in CONTROLLERS || session.isMediaNotificationController(controller))
                         super.onConnect(session, controller)
                     else MediaSession.ConnectionResult.reject()
