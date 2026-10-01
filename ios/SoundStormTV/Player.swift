@@ -421,10 +421,29 @@ final class Player {
 
     // MARK: A slow link
 
-    /// Set for the rest of the session once a song could not start at full
-    /// quality: songs then stream at 128 kbps, a quarter of the data, with
-    /// none of the header an iTunes M4A must deliver before its first note.
+    /// Set once a song could not start at full quality: songs then stream at
+    /// 128 kbps, a quarter of the data, with none of the header an iTunes M4A
+    /// must deliver before its first note - until the link is plainly fast
+    /// again (noteSpeed).
     private var slowLink = false
+    /// Songs in a row that came in fast while on the lower quality.
+    private var fastSongs = 0
+
+    /// While on the lower quality, how fast each finished song actually
+    /// arrived (the player's own measure of the download). Two in a row over
+    /// 3 Mbps - ten times what full quality needs - and the next song is at
+    /// full quality again: a short dip in the Wi-Fi should not cost the rest
+    /// of the evening. Measured from songs already playing, so nothing stalls
+    /// to find out, and never changed in the middle of a song.
+    private func noteSpeed(of item: AVPlayerItem) {
+        guard slowLink else { return }
+        let observed = item.accessLog()?.events.last?.observedBitrate ?? 0
+        fastSongs = observed > 3_000_000 ? fastSongs + 1 : 0
+        if fastSongs >= 2 {
+            slowLink = false
+            fastSongs = 0
+        }
+    }
 
     /// A song still unable to play six seconds after it was asked for is
     /// started again at 128 kbps, from where it is, as the page does.
@@ -464,6 +483,7 @@ final class Player {
             sleepAtEnd = false
             player.pause()
         }
+        noteSpeed(of: ended)
         if index + 1 < queue.count, let upNext {
             // AVQueuePlayer has already moved on to the preloaded next.
             playing = upNext
