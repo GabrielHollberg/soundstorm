@@ -13,6 +13,9 @@ struct VizFrame {
     var novelty = 0.0
     var drop = false, firstDrop = false
     var dropEnv = 0.0
+    /// How hard the strike hit, and how loud and bassy that moment was:
+    /// what sizes Storm's lightning.
+    var dropPower = 0.0, dropLoud = 0.0, dropBass = 0.0
     var kick = 0.0, snare = 0.0, loud = 0.6
     /// Playing, eased: 1 playing, settling to 0 on pause.
     var lv = 0.0
@@ -34,6 +37,7 @@ final class VizEngine {
     private var beatNovelty = 0.0
     private var strikeBeat = -1
     private var bigAt: Double?
+    private var strikeFrame: Int?
     private var sceneBeat = -1
     private var clock = 0.0
     private var lastT: Double?
@@ -106,10 +110,38 @@ final class VizEngine {
             novelty = max(beatNovelty, surge)
         }
 
-        // The big moments: the first beat of a bar in the song's loudest 30%
-        // (drop), the first of a loud stretch (firstDrop), and a glow after.
         var drop = false, firstDrop = false
-        if let heard, playing, downbeat, beatNo != strikeBeat {
+        var dropPower = 0.0, dropLoud = 0.0, dropBass = 0.0
+        if let heard, heard.fixedScale {
+            // Lightning: every strong sharp high near a beat (the page's
+            // strikesAt), each counted once as it rises; every frame since the
+            // last drawn is looked at, so a hit one frame long is not missed
+            // at 30 frames a second. The first after six quiet seconds is
+            // marked (Storm's double strike, Fireworks' finale).
+            let fi = max(0, min(heard.high.count - 1, Int(t * heard.fps)))
+            if let b = bigAt, t < b { bigAt = nil } // a seek back
+            let jumped = strikeFrame.map { fi < $0 || fi - $0 > 10 } ?? true
+            var rose = false
+            let from = jumped ? fi : strikeFrame! + 1
+            for k in stride(from: from, through: fi, by: 1) where heard.strikesAt(k) {
+                rose = true
+                // The peak can come a frame or two after it crosses (the
+                // analysis is the whole song, so it can look ahead).
+                for j in k..<min(heard.high.count, k + 4) {
+                    dropPower = max(dropPower, Double(heard.high[j]))
+                    dropLoud = max(dropLoud, Double(heard.loud[j]))
+                    dropBass = max(dropBass, Double(heard.low[j]))
+                }
+            }
+            strikeFrame = fi
+            if playing && rose {
+                drop = true
+                firstDrop = bigAt.map { t - $0 > 6 } ?? true
+                bigAt = t
+            }
+        } else if let heard, playing, downbeat, beatNo != strikeBeat {
+            // The TV's own (older) hearing: the first beat of a bar in the
+            // song's loudest 30%, as the page did before.
             if loudness >= Double(heard.loudTop) {
                 drop = true
                 firstDrop = bigAt.map { t - $0 > beat * 4 * 1.5 || t < $0 } ?? true
@@ -129,6 +161,7 @@ final class VizEngine {
             t: t, dt: dt, beat: beat, phase: phase, beatNo: beatNo, downbeat: downbeat,
             newBeat: anyBeat && (novelty > 0.4 || downbeat), novelty: novelty,
             drop: drop, firstDrop: firstDrop, dropEnv: dropEnv,
+            dropPower: dropPower, dropLoud: dropLoud, dropBass: dropBass,
             kick: kick, snare: snare, loud: loudness, lv: lv, e: e,
             drive: (0.25 + 0.9 * loudness) * (0.6 + 0.7 * e), bright: 0.35 + 0.65 * loudness,
             ck: clock, playing: playing)

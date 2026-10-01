@@ -1345,6 +1345,7 @@ use the old bands and in-song scaling - so only the two lanes the looks
 react to changed. Hearing is at 44100 now on both sides (11025 cannot hold
 7kHz; Navidrome was already sending 44100, and the transcoding says so).
 **For the Mac:** the Apple TV's `SongAnalysis` must follow (version 6).
+*(Done on the Mac, 2026-09-30, by asking the server: see below.)*
 
 **Lightning is every strong sharp high now**, at the owner's asking: a
 sharp high rising past 80% on the fixed scale (`STRIKE_AT`), counted once
@@ -1357,6 +1358,7 @@ not missed on a TV at 30 a second. Checked on the click track: 16 strikes
 for 16 sharp highs in eight seconds, each within a frame. The Analysis look
 draws a bolt and a line through the sharp highs at each, by the same rule.
 **For the Mac:** the Apple TV's `VizEngine` drops follow the old rule.
+*(Done on the Mac, 2026-09-30: `strikesAt` and the drop values, below.)*
 
 **Then most of Thunder's loud hits did not strike** (version 7): its every
 other beat is a loud sharp hit, and they struck, or showed, seemingly at
@@ -4967,6 +4969,24 @@ Storm with a double strike on a drop.
 
 Not checked, for all twelve: how smoothly an Apple TV draws them (the
 simulator runs on the Mac's GPU).
+
+**The Apple TV asks the server what it heard (2026-09-30)**, as the page
+does: `/api/music/beats?source&id&v=8`, the page's kept shape (three lanes as
+bytes 0-255, float32 beats, base64; `Heard.fromServer`), and hears a song
+itself only when the server has not. Its own hearing stays the older one
+(hits scaled to each song), so a `Heard` says which (`fixedScale`): the
+server's gets the page's lightning now - `strikesAt` (60% on the fixed scale,
+within 70ms of a beat or halfway between two), every frame since the last
+drawn looked at, `dropPower`/`dropLoud`/`dropBass` from the four frames from
+the crossing, the first after six quiet seconds marked - and the TV's own the
+older rule (a downbeat in the loudest 30%). Its copy for hearing asks
+`listen=1`, unpaced. Checked by running `internal/beats` itself on a click
+track with a noise crack on 2 and 4 and decoding its answer with the TV's
+Swift on the Mac: 2605 frames, 121 beats from 0.21s, downbeat right, and a
+strike on every crack. (A crack on a sparse synthetic track is "heard" even in
+its quiet part: the 95th percentile of its highs is the hiss between hits.
+Real music is not like that.) Storm on the TV is still the morning's Storm,
+not the rebuilt one, so it does not use `dropPower` yet.
 
 ## The Android app (`android/`)
 

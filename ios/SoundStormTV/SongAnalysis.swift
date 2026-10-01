@@ -14,6 +14,45 @@ struct Heard: Sendable {
     let down: Int
     /// The loudness a drop needs: the song's loudest 30%.
     let loudTop: Float
+    /// The server's hearing (version 8): the hits on a fixed scale, so the
+    /// lightning rule's 60% means what it means on the page. The TV's own
+    /// hearing is the older one, each song's hits scaled to itself, and keeps
+    /// the older rule (a downbeat in the loudest 30%).
+    var fixedScale = false
+
+    /// What the server heard (`/api/music/beats`, internal/beats), in the
+    /// shape the page keeps it: bytes 0-255 for the three lanes, float32
+    /// beats, base64. nil for any other version.
+    nonisolated static func fromServer(_ k: API.KeptHearing) -> Heard? {
+        guard k.v == API.heardVersion,
+              let loud = Data(base64Encoded: k.loud), let low = Data(base64Encoded: k.low),
+              let high = Data(base64Encoded: k.high), let beatBytes = Data(base64Encoded: k.beats)
+        else { return nil }
+        let lane = { (d: Data) in d.map { Float($0) / 255 } }
+        let beats: [Double] = beatBytes.withUnsafeBytes { raw in
+            (0..<(beatBytes.count / 4)).map { Double(Float(bitPattern: UInt32(littleEndian: raw.loadUnaligned(fromByteOffset: $0 * 4, as: UInt32.self)))) }
+        }
+        let l = lane(loud)
+        guard !l.isEmpty else { return nil }
+        let sorted = l.sorted()
+        var h = Heard(fps: k.fps, loud: l, low: lane(low), high: lane(high), beats: beats, down: k.down,
+                      loudTop: sorted[Int(Double(sorted.count) * 0.7)])
+        h.fixedScale = true
+        return h
+    }
+
+    /// Lightning: a sharp high rising past 60% on the fixed scale, within
+    /// 70ms of a beat found or of halfway between two (the page's strikesAt,
+    /// its numbers from the owner's taps).
+    func strikesAt(_ fi: Int) -> Bool {
+        guard high[fi] >= 0.6, fi == 0 || high[fi - 1] < 0.6, !beats.isEmpty else { return false }
+        let at = Double(fi) / fps
+        var lo = 0, hi = beats.count - 1
+        while lo < hi { let mid = (lo + hi + 1) >> 1; if beats[mid] <= at { lo = mid } else { hi = mid - 1 } }
+        if abs(at - beats[lo]) <= 0.07 { return true }
+        guard lo + 1 < beats.count else { return false }
+        return abs(beats[lo + 1] - at) <= 0.07 || abs((beats[lo] + beats[lo + 1]) / 2 - at) <= 0.07
+    }
 
     /// Decodes the song at 11025 a second, mono, and hears it. nil for
     /// anything shorter than five seconds or that will not decode.
@@ -216,9 +255,14 @@ final class SongListener {
                 beat = 60 / bpm
                 energy = max(0, min(1, sound.energy ?? 0))
             }
-            guard let file = try? await api.download(item, kbps: 96) else { return }
-            let result = await Task.detached(priority: .utility) { await Heard.hear(file: file, tempo: tempo) }.value
-            try? FileManager.default.removeItem(at: file)
+            // The server hears every song ahead of time; only a song it has
+            // not is heard here, from a copy of it, as the page does.
+            var result = await api.heardOnServer(item).flatMap(Heard.fromServer)
+            if result == nil {
+                guard let file = try? await api.download(item, kbps: 96) else { return }
+                result = await Task.detached(priority: .utility) { await Heard.hear(file: file, tempo: tempo) }.value
+                try? FileManager.default.removeItem(at: file)
+            }
             guard let result, working == item.key else { return }
             heard = result
             heardKey = item.key

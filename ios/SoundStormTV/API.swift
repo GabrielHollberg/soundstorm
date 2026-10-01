@@ -421,11 +421,26 @@ final class API {
         return s?.known == true ? s : nil
     }
 
+    /// The page's hearing version: an answer of any other is heard again.
+    nonisolated static let heardVersion = 8
+
+    /// What the server heard in a song (internal/beats), as the page keeps it.
+    struct KeptHearing: Decodable, Sendable {
+        let v: Int
+        let fps: Double
+        let down: Int
+        let loud, low, high, beats: String
+    }
+
+    func heardOnServer(_ item: Item) async -> KeptHearing? {
+        try? await get("api/music/beats", query: ["source": item.sourceId, "id": item.id, "v": String(Self.heardVersion)])
+    }
+
     /// The song at a lower bitrate, to a file, for hearing it: what the page
-    /// hears too (stream?kbps=96).
+    /// hears too (stream?kbps=96, listen=1 so it is never paced).
     func download(_ item: Item, kbps: Int) async throws -> URL {
         var parts = URLComponents(url: streamURL(item), resolvingAgainstBaseURL: false)!
-        parts.queryItems = [URLQueryItem(name: "kbps", value: String(kbps))]
+        parts.queryItems = [URLQueryItem(name: "kbps", value: String(kbps)), URLQueryItem(name: "listen", value: "1")]
         let (temp, response) = try await URLSession.shared.download(from: parts.url!)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, nil) }
         // A name AVFoundation can tell the kind of.
