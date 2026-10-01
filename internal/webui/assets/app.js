@@ -14418,8 +14418,7 @@ const FULL_SCENES = {
       g.stroke();
     }
     st.sparks.length = keep;
-    // The bolts: a wide soft glow and a narrower one in the light's colour,
-    // then a white core thick at the top and thinning towards the end; the
+    // The bolts: a white core thick at the top and thinning towards the end; the
     // branches dim faster than the main channel; and after the flashes a
     // faint image of the channel lingers, as it does on the eye.
     keep = 0;
@@ -14431,21 +14430,8 @@ const FULL_SCENES = {
       const Ib = I * I;
       const sc = bo.scale * dpr;
       const main = bo.main;
-      for (let layer = 0; layer < 2; layer++) {
-        if (I < 0.01) break;
-        g.strokeStyle = rgba(st.tint, (layer ? 0.38 : 0.16) * I);
-        g.lineWidth = (layer ? 6 : 16) * sc;
-        g.beginPath();
-        stormPath(g, main, 0, main.length - 2);
-        g.stroke();
-        if (Ib > 0.01) {
-          g.strokeStyle = rgba(st.tint, (layer ? 0.38 : 0.16) * Ib);
-          g.lineWidth = (layer ? 3.5 : 9) * sc;
-          g.beginPath();
-          for (const b of bo.branches) stormPath(g, b.pts, 0, b.pts.length - 2);
-          g.stroke();
-        }
-      }
+      // No glow strokes round the bolt: the soft bands either side read as a
+      // ghost of the bolt, and the owner had them taken off.
       if (I > 0.01) {
         const n = main.length / 2;
         g.strokeStyle = rgba(st.core, I);

@@ -1411,7 +1411,8 @@ screen. Each strike is one flash fading over about 0.4s (`stormLight`) - a
 flicker of two to four return strokes, as real lightning does, was tried and
 the owner preferred the single flash - and a faint image of the channel
 lingers a second after.
-The bolt thins towards its end, branches dim faster than the main channel,
+The bolt thins towards its end, branches dim faster than the main channel
+(no glow bands round it: they read as a ghost of the bolt and were taken off),
 and the glow, the clouds' light and the flash take a touch of the cover's
 colour. The rain brightens and gets a white streak during a flash.
 **The clouds are a deck over the whole top of the screen, there all the
