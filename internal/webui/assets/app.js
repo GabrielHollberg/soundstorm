@@ -3616,15 +3616,26 @@ function renderMainMenu(item, opts = {}) {
   }
   if (canDownload(item)) {
     const downloaded = isDownloaded(item);
-    entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async () => {
-      closeItemMenu();
+    const asks = !downloaded && isVideoItem(item) && !(item.extra && item.extra.type === 'video');
+    entries.push(menuItem('download', downloaded ? 'Remove download' : 'Download', async (event) => {
+      if (asks) {
+        // Redrawn in place: stopped here, or the click reaches the page from
+        // a button no longer in the menu and closes it.
+        event.stopPropagation();
+      } else {
+        closeItemMenu();
+      }
       if (downloaded) {
         await removeItemDownload(item);
         showToast(`${item.title} removed from this device.`);
       } else {
-        const big = item.kind === 'video' || item.kind === 'tv' || (item.extra && item.extra.type === 'video');
-        if (big && !window.confirm(`Download "${item.title}"? A film or episode is usually one to a few GB, `
-          + 'and one that needs converting takes a while.')) return;
+        // A film or episode asks which version to keep, and which language.
+        if (isVideoItem(item) && !(item.extra && item.extra.type === 'video')) {
+          renderDownloadMenu(item);
+          return;
+        }
+        const big = item.extra && item.extra.type === 'video';
+        if (big && !window.confirm(`Download "${item.title}"? A clip that needs converting takes a while.`)) return;
         await downloadWithToast(item.title, (progress) => downloadBook(item, progress));
       }
     }));
@@ -3660,6 +3671,60 @@ function renderMainMenu(item, opts = {}) {
 }
 
 // renderPlaylistMenu is the second page: which playlist, or a new one.
+// Downloading a film: which version to keep, then - when the file has more
+// than one - which language. The sizes are worked out from the length.
+function renderDownloadMenu(item, vq) {
+  const menu = $('item-menu');
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const backLabel = document.createElement('span');
+  backLabel.textContent = vq ? 'Which language' : 'Download';
+  back.append(backLabel);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (vq) renderDownloadMenu(item);
+    else renderMainMenu(item, state.menuOpts);
+  });
+  const list = document.createElement('div');
+  list.className = 'menu-scroll';
+  const start = (quality, audio) => {
+    closeItemMenu();
+    downloadWithToast(item.title, (progress) => downloadBook(item, progress, null, { vq: quality, audio }));
+  };
+  if (!vq) {
+    const hours = (Number(item.durationSeconds) || 0) / 3600;
+    const gb = (mbps) => {
+      const v = mbps * 3600 * hours / 8 / 1000;
+      return `${v >= 10 ? Math.round(v) : Math.max(0.1, Math.round(v * 10) / 10)} GB`;
+    };
+    // Short names, the numbers in the detail: a phone's menu cut "Standard
+    // (20 Mbps)" off.
+    const choices = [
+      ['standard', 'Standard', hours ? `20 Mbps, up to ${gb(20)}` : '20 Mbps, up to 9 GB an hour'],
+      ['saver', 'Data saver', hours ? `720p, about ${gb(4.3)}` : '720p, about 2 GB an hour'],
+      ['original', 'Original', 'the whole picture, largest'],
+    ];
+    list.append(...choices.map(([q, label, detail]) => menuItem('download', label, async (event) => {
+      event.stopPropagation();
+      // Ask which audio tracks the file has; with one, no question.
+      const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}?vq=${q}`);
+      const tracks = (ok && body && body.audio) || [];
+      if (tracks.length < 2) start(q);
+      else renderDownloadMenu(item, { q, tracks });
+    }, { detail })));
+  } else {
+    // The default track needs no asking for: a film kept as it is keeps it.
+    list.append(...vq.tracks.map((t) => menuItem('download', t.label, (event) => {
+      event.stopPropagation();
+      start(vq.q, t.default ? undefined : t.index);
+    }, { detail: t.default ? 'main' : '', className: 'menu-wrap' })));
+  }
+  menu.replaceChildren(back, list);
+  placeMenu(menu, state.menuAnchor);
+}
+
 function renderPlaylistMenu(item, lists) {
   const menu = $('item-menu');
   const note = menuNote();
@@ -9023,7 +9088,7 @@ async function keepArt(cache, item) {
 }
 
 // downloadBook keeps one audiobook, ebook or document; onProgress gets 0-1.
-async function downloadBook(item, onProgress = () => {}, shouldStop) {
+async function downloadBook(item, onProgress = () => {}, shouldStop, opts = {}) {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   const cache = await caches.open(OFFLINE_CACHE);
   const key = selectionKey(item);
@@ -9040,7 +9105,7 @@ async function downloadBook(item, onProgress = () => {}, shouldStop) {
       files.push(urls[i]);
     }
   } else if (isVideoItem(item)) {
-    const kept = await keepVideo(cache, item, onProgress, shouldStop);
+    const kept = await keepVideo(cache, item, onProgress, shouldStop, opts);
     files = kept.files;
     video = kept.video;
   } else if (item.kind === 'picture') {
@@ -9328,10 +9393,13 @@ function hlsParts(text, base) {
   return parts;
 }
 
-async function keepVideo(cache, item, onProgress, shouldStop) {
-  // A download is the standard copy: the original picture of a Blu-ray would
-  // be tens of gigabytes on the device.
-  const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}?vq=standard`);
+async function keepVideo(cache, item, onProgress, shouldStop, opts = {}) {
+  // The version chosen when downloading (renderDownloadMenu); standard when
+  // nobody chose - a whole shelf's Download all - since the original picture
+  // of a Blu-ray would be tens of gigabytes on the device.
+  const q = opts.vq || 'standard';
+  const audioQuery = opts.audio !== undefined ? `&audio=${opts.audio}` : '';
+  const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}?vq=${q}${audioQuery}`);
   if (!ok || !body) throw new Error('could not ask how to play it');
   const files = [];
   const subtitles = [];

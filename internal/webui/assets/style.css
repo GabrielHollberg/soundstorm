@@ -2834,6 +2834,10 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 .up-next-bar { height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .up-next-bar i { display: block; height: 100%; width: 0; background: var(--accent); }
 #audio-picker, #quality-picker { margin-left: 12px; }
+/* A long name in a menu row (an audio track's language, format and channels)
+   wraps rather than being cut off. */
+.menu-item.menu-wrap .menu-label { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
+.menu-item.menu-wrap { height: auto; min-height: 48px; padding-top: 8px; padding-bottom: 8px; }
 
 /* The + at the end of a row of categories, and what is put away. */
 .pill-off { display: none !important; }

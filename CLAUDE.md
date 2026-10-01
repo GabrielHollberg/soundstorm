@@ -171,8 +171,13 @@ original**; **standard** (20 Mbit); **data saver** (4 Mbit, 720p, stereo). Under
 the cap Jellyfin copies the picture untouched (its stream copy, on by default),
 far less work than re-encoding; sound a browser cannot play (TrueHD, DTS) is
 still converted, to AAC with up to 5.1 channels. Downloads take standard: an
-original Blu-ray picture would be tens of gigabytes on a device. Blu-ray
-subtitles are pictures (PGS) and are not offered.
+original Blu-ray picture would be tens of gigabytes on a device - unless
+chosen: **downloading a film asks** (`renderDownloadMenu`) Standard (20 Mbps,
+"up to N GB" from its length), Data saver (720p, about 4.3 Mbps with sound)
+or Original, then which audio track when the file has more than one (the main
+one asks nothing extra, so a film kept as it is stays as it is). Download all
+for a shelf keeps Standard. Blu-ray subtitles are pictures (PGS) and are not
+offered.
 **The player has a Quality picker too** (beside Subtitles and Audio, the
 owner's design): it starts at the device's setting, and a change plays on from
 the same moment at the same audio track and holds for the sitting - across
