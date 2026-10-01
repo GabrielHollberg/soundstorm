@@ -1425,9 +1425,21 @@ the light rolls across. A lit puff is the same shape drawn pale over the dark,
 by nearness and its own thinness, under a broad soft glow. **Lit puffs are
 painted over, not added**: four or five overlap in places, and added together
 they burned the deck white; painted, they build only to the lit colour, the
-shapes still showing. Rain starts far enough left (a share of the screen's
-height, not its width) that the strongest wind still reaches the bottom left
-corner of a tall phone. Clouds and glows are one soft sprite drawn
+shapes still showing.
+**The rain has five upgrades, all asked for at once:** depth (each drop a
+`z`: far ones thin, dim, slow, short and landing higher up, near ones thick,
+bright, fast and long; nine batches, three depths by three colours); gusts
+(every 10-25 seconds, and sometimes with a strong strike, the wind picks up
+for two to four seconds, mostly with it, now and then against); heavier with
+the music (`st.heavy`, eased: each drop has a place `k`, and in a quiet part
+only the drops under the heaviness fall - a drizzle, then a downpour, more
+drops and not only faster ones); drops on the glass (one lands now and then,
+more in a downpour, sits a moment, then slides down faster and faster with a
+faint trail, drawn over everything); and mist along the ground where the rain
+lands, thicker in a downpour and lit by the flash. A drop starts where the
+wind of the moment will carry it across the screen by the time it lands, so
+no corner goes dry, gusts included (the bottom left of a tall phone was dry
+when the margin was a share of the width). Clouds and glows are one soft sprite drawn
 once per colour and stretched (`stormSprite`), not gradients per frame.
 57fps in Chrome at phone and TV size. **For the Mac:** the same, from
 `dropPower`.

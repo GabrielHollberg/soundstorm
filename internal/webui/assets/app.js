@@ -14066,6 +14066,36 @@ function stormPuff(shape, rgb, a) {
   }
   return c;
 }
+// A raindrop on the glass between us and the storm: faintly clear inside, a
+// bright rim, darker at its foot where it bends the light, and a highlight.
+let stormGlassImg;
+function stormGlassDrop() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  let gr = x.createRadialGradient(32, 36, 4, 32, 32, 30);
+  gr.addColorStop(0, 'rgba(210, 220, 245, 0.05)');
+  gr.addColorStop(0.7, 'rgba(210, 220, 245, 0.12)');
+  gr.addColorStop(0.9, 'rgba(235, 240, 255, 0.45)');
+  gr.addColorStop(1, 'rgba(235, 240, 255, 0)');
+  x.fillStyle = gr;
+  x.beginPath();
+  x.arc(32, 32, 30, 0, Math.PI * 2);
+  x.fill();
+  gr = x.createLinearGradient(0, 20, 0, 62);
+  gr.addColorStop(0, 'rgba(0, 0, 10, 0)');
+  gr.addColorStop(1, 'rgba(0, 0, 10, 0.35)');
+  x.fillStyle = gr;
+  x.beginPath();
+  x.arc(32, 32, 28, 0, Math.PI * 2);
+  x.fill();
+  gr = x.createRadialGradient(24, 21, 0, 24, 21, 7);
+  gr.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+  gr.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  x.fillStyle = gr;
+  x.fillRect(0, 0, 64, 64);
+  return c;
+}
 function stormDrawPuff(g, img, c, w, h, R) {
   const pw = c.rx * R * 2;
   const ph = c.rx * R;
@@ -14171,9 +14201,18 @@ const FULL_SCENES = {
       // still carries rain into the bottom left corner - on a tall phone the
       // old margin of a third of the width left that corner dry. The count
       // grows with the span, so the rain is as thick as it was.
-      st.rainLeft = -(h * 0.3 + w * 0.05);
-      st.rainSpan = w * 1.1 + h * 0.34;
-      st.drops = Array.from({ length: Math.round(420 * VIZ_DENSITY * st.rainSpan / (w * 1.35)) }, () => ({ x: st.rainLeft + Math.random() * st.rainSpan, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
+      // Each drop has a depth (z): far ones thin, dim, slow and short, landing
+      // higher up the screen; near ones thick, bright, fast and long, landing
+      // at the bottom. k is its place in the heaviness: in a quiet part only
+      // the drops under it fall.
+      const span = w * 1.1 + h * 0.34;
+      st.drops = Array.from({ length: Math.round(480 * VIZ_DENSITY * span / (w * 1.35)) }, () => {
+        const z = Math.random();
+        return { x: -(h * 0.3 + w * 0.05) + Math.random() * span, y: Math.random() * h, z, layer: z < 0.45 ? 0 : z < 0.8 ? 1 : 2, s: 0.5 + z * 1.2, c: Math.floor(Math.random() * 3), k: Math.random(), ground: h * (0.85 + 0.12 * z + Math.random() * 0.02), off: false };
+      });
+      st.glass = [];
+      st.glassT = 1;
+      st.mist = Array.from({ length: 6 }, () => ({ x: Math.random() * 1.4 - 0.2, y: 0.86 + Math.random() * 0.11, rx: 0.35 + Math.random() * 0.3, ry: 0.06 + Math.random() * 0.05, sp: 0.5 + Math.random(), ph: Math.random() * 6 }));
       st.bolts = [];
       st.splash = [];
       st.sparks = [];
@@ -14210,6 +14249,7 @@ const FULL_SCENES = {
       // between flashes.
       st.dark = st.shapes.map((sh, i) => stormPuff(sh, mix(i % 2 ? [34, 38, 52] : [58, 62, 80], pal[0], 0.12), 0.75));
       st.lit = st.shapes.map((sh) => stormPuff(sh, mix([185, 195, 235], pal[0], 0.25), 0.7));
+      st.mistImg = stormSprite(mix([150, 160, 185], pal[0], 0.15), 1, 0.45);
     }
     if (m.drop) {
       const s = Math.max(0, Math.min(1, ((m.dropPower || 0.8) - 0.6) / 0.35));
@@ -14246,7 +14286,19 @@ const FULL_SCENES = {
     g.fillStyle = st.band;
     g.fillRect(0, 0, w, h * 0.5);
     const R = Math.max(w, h * 0.7);
-    const wind = Math.sin(ck * 0.3) * 0.15 + 0.12;
+    // Gusts: now and then, and sometimes with a big strike, the wind picks up
+    // for a few seconds, slanting the rain hard (mostly with the wind, now and
+    // then against it), then dies back.
+    st.gustT = (st.gustT === undefined ? 8 + Math.random() * 10 : st.gustT) - dt;
+    if (st.gustT <= 0 || (m.drop && (m.dropPower || 0) > 0.85 && !(st.gustHold > 0) && Math.random() < 0.35)) {
+      st.gustHold = 2 + Math.random() * 2;
+      st.gustAim = (0.18 + Math.random() * 0.17) * (Math.random() < 0.8 ? 1 : -0.6);
+      st.gustT = 10 + Math.random() * 15;
+    }
+    st.gustHold = Math.max(0, (st.gustHold || 0) - dt);
+    const gustTo = st.gustHold > 0 ? st.gustAim : 0;
+    st.gust = (st.gust || 0) + (gustTo - (st.gust || 0)) * Math.min(1, dt * (gustTo ? 1.8 : 0.7));
+    const wind = Math.sin(ck * 0.3) * 0.15 + 0.12 + st.gust;
     for (const c of st.clouds) {
       c.x += dt * 0.006 * c.sp * (0.5 + wind * 3);
       if (c.x > 1.35) c.x -= 1.7;
@@ -14291,54 +14343,89 @@ const FULL_SCENES = {
     // In a flash it lights up: brighter, and a white streak over every drop.
     const target = 0.28 + 0.5 * loud * lv + 0.15 * kick;
     st.fallRate = st.fallRate === undefined ? target : st.fallRate + (target - st.fallRate) * Math.min(1, dt * 2.5);
+    // Heavier with the music: a drizzle in a quiet part, a downpour in a loud
+    // one - more drops, not only faster ones - eased over a couple of seconds.
+    const heavyTo = 0.3 + 0.7 * Math.min(1, loud * lv * 1.15);
+    st.heavy = st.heavy === undefined ? heavyTo : st.heavy + (heavyTo - st.heavy) * Math.min(1, dt * 0.6);
     const fall = h * st.fallRate * dt;
     const alpha = Math.min(1, (0.35 + 0.35 * lv) * (0.5 + 0.5 * bright) * (1 + 1.5 * rainLit));
     const minLen = h * 0.015;
+    const LAYER_W = [0.8, 1.3, 2.1];
+    const LAYER_A = [0.45, 0.75, 1];
+    const LAYER_L = [0.6, 1, 1.5];
     g.lineCap = 'round';
-    for (let c = 0; c < 3; c++) {
-      for (let heavy = 0; heavy < 2; heavy++) {
+    // Nine batches, three depths by three colours, far first.
+    for (let layer = 0; layer < 3; layer++) {
+      const len = LAYER_L[layer];
+      for (let c = 0; c < 3; c++) {
         g.beginPath();
         for (const d of st.drops) {
-          if (d.c !== c || (d.s >= 1) !== (heavy === 1)) continue;
+          if (d.off || d.layer !== layer || d.c !== c) continue;
           const step = fall * d.s;
           g.moveTo(d.x, d.y);
-          g.lineTo(d.x + step * wind * 2.2, d.y + Math.max(step * 2.2, minLen));
+          g.lineTo(d.x + step * wind * 2.2 * len, d.y + Math.max(step * 2.2, minLen) * len);
         }
-        g.strokeStyle = rgba(pal[c], alpha);
-        g.lineWidth = (heavy ? 1.8 : 1.3) * dpr;
+        g.strokeStyle = rgba(pal[c], alpha * LAYER_A[layer]);
+        g.lineWidth = LAYER_W[layer] * dpr;
         g.stroke();
       }
     }
     if (rainLit > 0.04) {
       g.beginPath();
       for (const d of st.drops) {
+        if (d.off) continue;
         const step = fall * d.s;
+        const len = LAYER_L[d.layer];
         g.moveTo(d.x, d.y);
-        g.lineTo(d.x + step * wind * 2.2, d.y + Math.max(step * 2.2, minLen));
+        g.lineTo(d.x + step * wind * 2.2 * len, d.y + Math.max(step * 2.2, minLen) * len);
       }
       g.strokeStyle = rgba(st.core, Math.min(0.7, rainLit * 0.75));
       g.lineWidth = dpr;
       g.stroke();
     }
+    // A drop starts where the wind now will carry it across the screen by
+    // the time it lands, so no corner goes dry, a gust included.
+    const drift = h * wind * 1.1;
+    const from = Math.min(0, -drift) - w * 0.05;
+    const across = w * 1.1 + Math.abs(drift);
     for (const d of st.drops) {
+      if (d.off) {
+        if (d.k > st.heavy) continue;
+        d.off = false;
+        d.y = -h * 0.05 * Math.random();
+        d.x = from + Math.random() * across;
+        continue;
+      }
       const step = fall * d.s;
       d.y += step;
       d.x += step * wind;
-      if (d.y > h) {
-        if (Math.random() < 0.3 && st.splash.length < 80) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c, big: 1 });
+      if (d.y > d.ground) {
+        if (Math.random() < 0.3 && st.splash.length < 80) st.splash.push({ x: d.x, y: d.ground + Math.random() * h * 0.015, life: 1, c: d.c, big: 0.4 + 0.8 * d.z });
+        d.off = d.k > st.heavy;
         d.y = -h * 0.05 * Math.random();
-        d.x = st.rainLeft + Math.random() * st.rainSpan;
+        d.x = from + Math.random() * across;
       }
     }
+    // Mist along the ground where the rain lands, thicker in a downpour and
+    // lit by the flash.
+    g.globalAlpha = 1;
+    for (const ms of st.mist) {
+      ms.x += dt * 0.01 * ms.sp * (0.4 + wind * 3);
+      if (ms.x > 1.4) ms.x -= 1.8;
+      if (ms.x < -0.4) ms.x += 1.8;
+      g.globalAlpha = Math.min(1, (0.06 + 0.1 * st.heavy + 0.3 * rainLit) * shine * (0.8 + 0.2 * Math.sin(ck * 0.5 + ms.ph)));
+      g.drawImage(st.mistImg, ms.x * w - ms.rx * w, ms.y * h - ms.ry * h, ms.rx * w * 2, ms.ry * h * 2);
+    }
+    g.globalAlpha = 1;
     // Splashes, sparks and bolts are aged in place, the finished ones dropped
     // from the same array, rather than a new array filtered out every frame.
     g.lineWidth = dpr;
     let keep = 0;
     for (const sp of st.splash) {
-      sp.life -= dt * (sp.big > 1 ? 1.4 : 2.5);
+      sp.life -= dt * (sp.bolt ? 1.4 : 2.5);
       if (sp.life <= 0) continue;
       st.splash[keep++] = sp;
-      g.strokeStyle = sp.big > 1 ? rgba(st.core, sp.life * 0.6 * shine) : rgba(pal[sp.c], sp.life * 0.5 * bright);
+      g.strokeStyle = sp.bolt ? rgba(st.core, sp.life * 0.6 * shine) : rgba(pal[sp.c], sp.life * 0.5 * bright);
       g.beginPath();
       g.ellipse(sp.x, sp.y, ((1 - sp.life) * 14 * dpr + 2) * sp.big, ((1 - sp.life) * 4 * dpr + 1) * sp.big, 0, 0, Math.PI * 2);
       g.stroke();
@@ -14429,12 +14516,46 @@ const FULL_SCENES = {
         if (!bo.landed) {
           bo.landed = true;
           for (let k = 0; k < 26 && st.sparks.length < 90; k++) st.sparks.push({ x: bo.ex, y: bo.ey, vx: (Math.random() - 0.5) * w * 0.5, vy: -(0.15 + Math.random() * 0.45) * h, life: 0.6 + Math.random() * 0.4 });
-          for (let k = 0; k < 5 && st.splash.length < 90; k++) st.splash.push({ x: bo.ex + (Math.random() - 0.5) * w * 0.12, y: bo.ey + Math.random() * h * 0.02, life: 1, c: 0, big: 2.5 + Math.random() * 2 });
+          for (let k = 0; k < 5 && st.splash.length < 90; k++) st.splash.push({ x: bo.ex + (Math.random() - 0.5) * w * 0.12, y: bo.ey + Math.random() * h * 0.02, life: 1, c: 0, big: 2.5 + Math.random() * 2, bolt: true });
         }
       }
     }
     st.bolts.length = keep;
     g.globalCompositeOperation = 'source-over';
+    // Drops on the glass: one lands now and then (more in a downpour), sits a
+    // moment, then slides down faster and faster, leaving a faint trail.
+    if (!stormGlassImg) stormGlassImg = stormGlassDrop();
+    st.glassT -= dt * (0.4 + st.heavy);
+    if (st.glassT <= 0 && st.glass.length < 10) {
+      st.glassT = 0.6 + Math.random() * 1.2;
+      st.glass.push({ x: Math.random() * w, y: Math.random() * h * 0.85, r: Math.min(w, h) * (0.012 + Math.random() * 0.02), age: 0, hold: 1 + Math.random() * 2.5, vy: 0, y0: 0, wob: Math.random() * 6 });
+    }
+    keep = 0;
+    for (const gd of st.glass) {
+      gd.age += dt;
+      if (gd.age > gd.hold) {
+        if (!gd.vy) gd.y0 = gd.y;
+        gd.vy = Math.min(h * 0.5, gd.vy + h * 0.25 * dt);
+        gd.y += gd.vy * dt;
+        gd.x += Math.sin(gd.age * 3 + gd.wob) * gd.r * 0.3 * dt;
+      }
+      if (gd.y - gd.r > h) continue;
+      st.glass[keep++] = gd;
+      const grow = Math.min(1, gd.age * 8);
+      if (gd.vy) {
+        g.strokeStyle = rgba(st.core, Math.max(0, 0.1 * (1 - (gd.age - gd.hold) / 3)));
+        g.lineWidth = gd.r * 0.5;
+        g.beginPath();
+        g.moveTo(gd.x, gd.y0);
+        g.lineTo(gd.x, gd.y);
+        g.stroke();
+      }
+      const stretch = 1 + Math.min(0.4, gd.vy / h);
+      g.globalAlpha = Math.min(1, 0.7 + rainLit * 0.3);
+      g.drawImage(stormGlassImg, gd.x - gd.r * grow, gd.y - gd.r * grow * stretch, gd.r * grow * 2, gd.r * grow * 2 * stretch);
+    }
+    st.glass.length = keep;
+    g.globalAlpha = 1;
   },
 
   // Synthwave: a neon grid racing towards you under a striped sunset sun that
