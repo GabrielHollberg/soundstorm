@@ -152,7 +152,7 @@ final class BookReader {
     private func addImages(_ text: EpubText, to full: NSMutableAttributedString) async {
         for image in text.images.reversed() {
             guard let data = try? await api.bookResource(item, path: image.path),
-                  let picture = UIImage(data: data)
+                  let picture = SafeLoad.image(data, maxPixels: 2048)
             else { continue }
             let attachment = NSTextAttachment()
             attachment.image = picture

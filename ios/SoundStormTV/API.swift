@@ -377,7 +377,7 @@ final class API {
     func bookResource(_ item: Item, path: String) async throws -> Data {
         var request = URLRequest(url: url("api/book/resource", query: ["source": item.sourceId, "id": item.id, "path": path]))
         request.timeoutInterval = 30
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await SafeLoad.data(request, limit: SafeLoad.bookPart)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "Part of the book didn't load.") }
         return data
     }
@@ -386,7 +386,7 @@ final class API {
     func file(_ item: Item) async throws -> Data {
         var request = URLRequest(url: streamURL(item))
         request.timeoutInterval = 120
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await SafeLoad.data(request, limit: SafeLoad.wholeFile)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "The file didn't load.") }
         return data
     }
@@ -615,7 +615,7 @@ final class API {
 
     /// A subtitle track's text: WebVTT, fetched with the session like the rest.
     func text(at path: String) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(from: try absolute(path))
+        let (data, response) = try await SafeLoad.data(from: try absolute(path), limit: SafeLoad.bookPart)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "Subtitles didn't load.") }
         return String(decoding: data, as: UTF8.self)
     }
@@ -678,8 +678,10 @@ final class API {
         if !query.isEmpty {
             parts.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
             // URLComponents leaves "+", which a server reads as a space:
-            // "C++" searched as "C  ".
-            parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            // "C++" searched as "C  "; and ";", which Go refuses outright,
+            // dropping the whole value.
+            parts.percentEncodedQuery = parts.percentEncodedQuery?
+                .replacingOccurrences(of: "+", with: "%2B").replacingOccurrences(of: ";", with: "%3B")
         }
         return parts.url!
     }

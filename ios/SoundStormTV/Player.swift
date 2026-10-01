@@ -460,8 +460,8 @@ final class Player {
     private func loadArtwork(for item: Item) {
         guard let url = api.artURL(source: item.sourceId, artId: item.artId, size: 800) else { return }
         Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = UIImage(data: data), current == item
+            guard let (data, _) = try? await SafeLoad.data(from: url, limit: SafeLoad.picture),
+                  let image = SafeLoad.image(data, maxPixels: 800), current == item
             else { return }
             // Asked for on MediaPlayer's own queue, not the main one: the
             // closure must not inherit the app's main-actor default, or

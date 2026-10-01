@@ -104,6 +104,7 @@ struct EpubText {
 
         func parser(_ parser: XMLParser, didStartElement raw: String, namespaceURI: String?,
                     qualifiedName: String?, attributes: [String: String] = [:]) {
+            guard stack.count < maxDepth else { parser.abortParsing(); return }
             let name = (raw.split(separator: ":").last.map(String.init) ?? raw).lowercased()
             var path: [Int] = []
             if !stack.isEmpty {
