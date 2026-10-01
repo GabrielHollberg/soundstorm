@@ -1371,14 +1371,14 @@ It is a lot of lightning - Thunder about 74 strikes a minute, Change My
 Mind about 48 (it has big high jumps on a third of its beats; percussion
 of some kind). Requiring the whole sound to jump as well was tried, to
 favour a snare over an "s": it dropped Thunder's snares, which sit inside a
-dense mix, and hardly touched the other. **For the Mac:** version 7.
+dense mix, and hardly touched the other. **For the Mac:** version 7. *(Done: the TV takes the server's hearing.)*
 
 **And a hit must be heard** (version 8): lightning went off on things the
 owner could hardly hear, since a rise from near silence is as big as one in
 a chorus. A sharp high counts in full within 10dB of the song's loud highs
 (its 95th percentile above 7kHz), fading out over the 4dB below. Measured:
 all of Thunder's loud hits kept, 74 to 68 strikes a minute; Change My Mind
-48 to 34. **For the Mac:** version 8.
+48 to 34. **For the Mac:** version 8. *(Done: the TV takes the server's hearing.)*
 
 **And lightning is on the beat** (`strikesAt`): asked to look afresh at
 why Thunder's hits on 2 and 4 are right for lightning and little else is.
@@ -1391,7 +1391,7 @@ Thunder 70ms measured 35 strikes a minute against 34). Over the song: 68 strikes
 71%), strikes anywhere else 38 a minute to 4; the first twelve seconds keep
 exactly the five on 2 and 4 and two right on beat 1. A loud top as well was
 tried and changed nothing more. It reads the beats found, so no hearing
-changed. **For the Mac:** the same rule.
+changed. **For the Mac:** the same rule. *(Done: `Heard.strikesAt`.)*
 
 **Then 60%, on and between beats, from the owner's taps** (`soundstorm
 train-looks rules`, which scores versions of the rule against them): over
@@ -1399,7 +1399,7 @@ ten songs (2,270 taps) it matched best of those tried - overall 48% against
 40% for 80% on the beat alone, which had been set by eye; 60% on the beat
 alone was 43%. It is better on most songs and worse on Thunder and firefly,
 whose taps keep to the beat; the owner chose it knowing that. 60% is a sharp
-high rising about 12dB rather than 14. **For the Mac:** the same rule.
+high rising about 12dB rather than 14. **For the Mac:** the same rule. *(Done: `Heard.strikesAt`.)*
 
 **The size now comes from loudness and bass, not the hit** (the owner asked
 for fewer big bolts and more lit clouds and cloud bolts): measured over 300 of
@@ -1480,7 +1480,8 @@ no corner goes dry, gusts included (the bottom left of a tall phone was dry
 when the margin was a share of the width). Clouds and glows are one soft sprite drawn
 once per colour and stretched (`stormSprite`), not gradients per frame.
 57fps in Chrome at phone and TV size. **For the Mac:** the same, from
-`dropPower`.
+`dropPower`. *(Done on the Mac, 2026-09-30: `Storm.swift` is this Storm,
+sized from `dropLoud` and `dropBass` as the page now sizes it.)*
 
 **The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
 the timeline follows the finger - left for later, right for earlier, at the
@@ -4992,8 +4993,22 @@ track with a noise crack on 2 and 4 and decoding its answer with the TV's
 Swift on the Mac: 2605 frames, 121 beats from 0.21s, downbeat right, and a
 strike on every crack. (A crack on a sparse synthetic track is "heard" even in
 its quiet part: the 95th percentile of its highs is the hiss between hits.
-Real music is not like that.) Storm on the TV is still the morning's Storm,
-not the rebuilt one, so it does not use `dropPower` yet.
+Real music is not like that.)
+
+**Storm on the TV is the rebuilt one** (`Storm.swift`, the page's `storm`
+and its `stormX` helpers): the cloud deck of five rows of puffs, the dark
+band and solid cap, each strike lighting it its own way (`stormLights`), lit
+puffs painted over rather than added, lightning by midpoint displacement with
+few short forking branches, half of it spreading through the clouds
+(`stormSpider`) and drawn over them, a quarter leaning, a close bolt's glow,
+spray and splashes where it lands, the faint after-image; rain at three
+depths, heavier with the music, gusts, and mist. The soft shapes are pictures
+made once per cover colour and stretched (`GraphicsContext.draw` of a
+resolved image), as the page's sprites. Line widths are the page's canvas
+pixels times 1.5 as points. Checked on the simulator with the server's
+hearing of a click track with a crack on 2 and 4: a ground strike with spray,
+lightning spreading under the clouds, a leaning bolt, the deck lit and the
+after-images, in eight frames a quarter-second apart.
 
 ## The Android app (`android/`)
 
