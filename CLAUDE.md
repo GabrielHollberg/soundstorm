@@ -1399,6 +1399,13 @@ alone was 43%. It is better on most songs and worse on Thunder and firefly,
 whose taps keep to the beat; the owner chose it knowing that. 60% is a sharp
 high rising about 12dB rather than 14. **For the Mac:** the same rule.
 
+**The size now comes from loudness and bass, not the hit** (the owner asked
+for fewer big bolts and more lit clouds and cloud bolts): measured over 300 of
+their songs, the sharp high tops out on nearly every strike, so sizing by it
+made 79% of strikes big close bolts. Now a strike is a close bolt when the
+song is at 85% loudness or more with a bass hit (30%+) in the same moment, a
+bolt far off or across the clouds from 82% loudness, and otherwise the clouds
+lit alone (`dropLoud`, `dropBass`): 12%, 37% and 51% over those songs.
 **Storm's lightning is sized by how hard the hit was**, at the owner's
 asking for cooler lightning. The strike rule hands the looks `dropPower`,
 the peak of the sharp high over the four frames from where it crossed (the
@@ -1418,10 +1425,10 @@ broken by midpoint displacement (`stormJag`), so it zigzags up close as it does
 from afar - with few branches, short, angled 20-55 degrees down, forking once
 more, gathered near the top and shorter the lower they start, and on a close
 bolt one strong branch. Each branch thins and fades to its tip. **Not every
-bolt falls straight** (the owner's asking): a quarter crawl across the sky
+bolt falls straight** (the owner's asking): half crawl across the sky
 just under the clouds, never reaching the ground, lighting the clouds all
 along the way (four lights rolling with it) and drawn over the clouds (under
-them, a TV's wide clouds hid them); a third lean, landing well to one side,
+them, a TV's wide clouds hid them); a quarter lean, landing well to one side,
 their branches mostly leaning the same way; the rest come down near straight.
 The bolt thins towards its end, branches dim faster than the main channel
 (one faint glow round it: the two bands it had read as a ghost of the bolt,

@@ -13474,6 +13474,8 @@ const viz = {
     let drop = false;
     let firstDrop = false;
     let dropPower = 0;
+    let dropLoud = 0;
+    let dropBass = 0;
     if (heard) {
       const fi = Math.max(0, Math.min(heard.high.length - 1, Math.floor(t * heard.fps)));
       if (this.bigAt !== undefined && t < this.bigAt) this.bigAt = undefined; // a seek back
@@ -13485,7 +13487,11 @@ const viz = {
         rose = true;
         // How hard it hits: the peak of the sharp high, which can come a
         // frame or two after it crosses the line (heard is the whole song).
-        for (let j = k; j < Math.min(heard.high.length, k + 4); j++) power = Math.max(power, heard.high[j]);
+        for (let j = k; j < Math.min(heard.high.length, k + 4); j++) {
+          power = Math.max(power, heard.high[j]);
+          dropLoud = Math.max(dropLoud, heard.loud[j] || 0);
+          dropBass = Math.max(dropBass, heard.low[j] || 0);
+        }
       }
       this.strikeFrame = fi;
       if (playing && rose) {
@@ -13537,7 +13543,7 @@ const viz = {
         f.clearRect(0, 0, w, h);
       }
       scene(this.scene, {
-        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, firstDrop, dropPower, dropEnv,
+        g, f, w, h, cx, cy, size, dpr, pal, rgba, t, dt, ck, phase, beatNo, downbeat, newBeat, novelty, drop, firstDrop, dropPower, dropLoud, dropBass, dropEnv,
         kick, snare, loud: loudness, lv, e, drive, bright, playing,
       });
       if (flowing) this.keepClearOfPlay(back, front);
@@ -14108,13 +14114,13 @@ function stormBolt(w, h, s, age) {
   if (!tier) return bo;
   bo.scale = tier === 2 ? 1 + 0.6 * (s - 0.7) / 0.3 : 0.45 + 0.3 * (s - 0.3) / 0.4;
   const bottom = tier === 2 ? h * (0.9 + Math.random() * 0.06) : h * (0.36 + Math.random() * 0.2);
-  // Not every bolt falls straight down (the owner's asking): a quarter crawl
+  // Not every bolt falls straight down (the owner's asking): half crawl
   // across the sky, just under and in and out of the clouds, never reaching
-  // the ground; a third lean, landing well to one side of where they left
+  // the ground; a quarter lean, landing well to one side of where they left
   // the cloud; the rest come down more or less straight.
   const r = Math.random();
-  const crawl = r < 0.25;
-  const lean = !crawl && r < 0.58;
+  const crawl = r < 0.5;
+  const lean = !crawl && r < 0.75;
   const side = Math.random() < 0.5 ? -1 : 1;
   let sx = x0;
   let sy = -h * 0.02;
@@ -14293,7 +14299,17 @@ const FULL_SCENES = {
       st.mistImg = stormSprite(mix([150, 160, 185], pal[0], 0.15), 1, 0.45);
     }
     if (m.drop) {
-      const s = Math.max(0, Math.min(1, ((m.dropPower || 0.8) - 0.6) / 0.35));
+      // How big a strike is, from how loud the song is at that moment and
+      // whether a bass hit comes with it - the sharp high itself tops out on
+      // most strikes, so it cannot tell them apart. Measured over 300 of the
+      // owner's songs: big close bolts 12% (were 79%, at the owner's asking
+      // for fewer), bolts far off or across the clouds 37%, the clouds lit
+      // alone 51%.
+      const ld = m.dropLoud || 0;
+      const bass = m.dropBass || 0;
+      const s = ld >= 0.85 && bass >= 0.3 ? 0.7 + 0.3 * Math.min(1, bass)
+        : ld >= 0.82 ? 0.3 + 0.39 * Math.min(1, (ld - 0.82) / 0.18)
+        : 0.29 * Math.min(1, ld / 0.82);
       // A double strike for the first after a quiet spell, the second a
       // little after and a little weaker.
       for (let k = 0; k < (m.firstDrop ? 2 : 1); k++) st.bolts.push(stormBolt(w, h, k ? Math.max(0, s - 0.25) : s, -0.14 * k));
