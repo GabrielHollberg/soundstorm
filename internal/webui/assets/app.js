@@ -14108,7 +14108,14 @@ const FULL_SCENES = {
     if (!st.drops) {
       // Spread wider than the screen to the left, which the wind blows
       // across, so the rain covers all of it.
-      st.drops = Array.from({ length: Math.round(420 * VIZ_DENSITY) }, () => ({ x: -w * 0.35 + Math.random() * w * 1.35, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
+      // Drops start far enough left that the strongest wind (it blows a drop
+      // about a quarter of the screen's height sideways on the way down)
+      // still carries rain into the bottom left corner - on a tall phone the
+      // old margin of a third of the width left that corner dry. The count
+      // grows with the span, so the rain is as thick as it was.
+      st.rainLeft = -(h * 0.3 + w * 0.05);
+      st.rainSpan = w * 1.1 + h * 0.34;
+      st.drops = Array.from({ length: Math.round(420 * VIZ_DENSITY * st.rainSpan / (w * 1.35)) }, () => ({ x: st.rainLeft + Math.random() * st.rainSpan, y: Math.random() * h, s: 0.6 + Math.random() * 0.8, c: Math.floor(Math.random() * 3) }));
       st.bolts = [];
       st.splash = [];
       st.sparks = [];
@@ -14221,7 +14228,7 @@ const FULL_SCENES = {
       if (d.y > h) {
         if (Math.random() < 0.3 && st.splash.length < 80) st.splash.push({ x: d.x, y: h * (0.93 + Math.random() * 0.06), life: 1, c: d.c, big: 1 });
         d.y = -h * 0.05 * Math.random();
-        d.x = -w * 0.35 + Math.random() * w * 1.35;
+        d.x = st.rainLeft + Math.random() * st.rainSpan;
       }
     }
     // Splashes, sparks and bolts are aged in place, the finished ones dropped
