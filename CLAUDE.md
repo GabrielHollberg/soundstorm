@@ -1391,6 +1391,14 @@ exactly the five on 2 and 4 and two right on beat 1. A loud top as well was
 tried and changed nothing more. It reads the beats found, so no hearing
 changed. **For the Mac:** the same rule.
 
+**Then 60%, on and between beats, from the owner's taps** (`soundstorm
+train-looks rules`, which scores versions of the rule against them): over
+ten songs (2,270 taps) it matched best of those tried - overall 48% against
+40% for 80% on the beat alone, which had been set by eye; 60% on the beat
+alone was 43%. It is better on most songs and worse on Thunder and firefly,
+whose taps keep to the beat; the owner chose it knowing that. 60% is a sharp
+high rising about 12dB rather than 14. **For the Mac:** the same rule.
+
 **The Analysis look can be dragged** (`analysisScrub`), the owner's asking:
 the timeline follows the finger - left for later, right for earlier, at the
 look's own scale of six seconds across - "Play from 1:23" shows over the

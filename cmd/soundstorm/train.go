@@ -23,8 +23,9 @@ import (
 //
 // It reads the state file for Navidrome's credentials and never writes it.
 func trainLooks(args []string) int {
-	if len(args) > 0 {
-		fmt.Fprintln(os.Stderr, "usage: soundstorm train-looks")
+	rules := len(args) == 1 && args[0] == "rules"
+	if len(args) > 0 && !rules {
+		fmt.Fprintln(os.Stderr, "usage: soundstorm train-looks [rules]")
 		return 2
 	}
 	stateDir := env("SOUNDSTORM_STATE_DIR", "/var/lib/soundstorm")
@@ -64,7 +65,12 @@ func trainLooks(args []string) int {
 		defer cancel()
 		return training.Hear(hctx, music, r.ID, training.Prior(filepath.Join(stateDir, "beats"), r.Source, r.ID))
 	}
-	if err := training.Run(ctx, dir, recs, hear, func(s string) { fmt.Println(s) }); err != nil {
+	run := func(out func(string)) error { return training.Run(ctx, dir, recs, hear, out) }
+	if rules {
+		// Versions of today's rule against the taps, nothing fitted.
+		run = func(out func(string)) error { return training.Rules(ctx, recs, hear, out) }
+	}
+	if err := run(func(s string) { fmt.Println(s) }); err != nil {
 		fmt.Fprintln(os.Stderr, "train-looks:", err)
 		return 1
 	}

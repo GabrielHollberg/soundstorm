@@ -13461,7 +13461,7 @@ const viz = {
       snare = Math.min(1, 0.3 * this.snareEnv + 1.3 * snareNew) * lv * hitScale;
       novelty = Math.max(this.beatNovelty || 0, surge);
     }
-    // The lightning moments: every sharp high reaching 80% on the fixed
+    // The lightning moments: every sharp high reaching 60% on the fixed
     // scale (a snare's crack, a cymbal), however many there are - the owner's
     // choice, after a limit of one every two seconds was offered and turned
     // down. A hit is counted once as it rises past the mark, not on every
@@ -13726,8 +13726,11 @@ function vizColor(c, a) {
   return row[i] || (row[i] = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${i / 64})`);
 }
 const VIZ_WHITE = [255, 255, 255];
-// Lightning: a sharp high rising past this, landing this close to a beat.
-const STRIKE_AT = 0.8;
+// Lightning: a sharp high rising past this, landing this close to a beat or
+// to halfway between two. 60% and the in-between beats are from the owner's
+// taps (soundstorm train-looks rules): over ten songs it matched them best of
+// the versions tried; 80% on the beat alone had been set by eye.
+const STRIKE_AT = 0.6;
 const STRIKE_ON_BEAT = 0.07;
 // strikesAt says whether a sharp high rising at frame fi is lightning: past
 // STRIKE_AT, and on one of the beats found. Asked for as what makes Thunder's
@@ -13743,7 +13746,10 @@ function strikesAt(heard, fi) {
   const bs = heard.beats;
   let lo = 0, hi = bs.length - 1;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= at) lo = mid; else hi = mid - 1; }
-  return Math.abs(at - bs[lo]) <= STRIKE_ON_BEAT || (lo + 1 < bs.length && Math.abs(bs[lo + 1] - at) <= STRIKE_ON_BEAT);
+  if (Math.abs(at - bs[lo]) <= STRIKE_ON_BEAT) return true;
+  if (lo + 1 >= bs.length) return false;
+  // The next beat, or halfway to it (the owner's taps had both).
+  return Math.abs(bs[lo + 1] - at) <= STRIKE_ON_BEAT || Math.abs((bs[lo] + bs[lo + 1]) / 2 - at) <= STRIKE_ON_BEAT;
 }
 
 // playOrb: Now Playing's play button for music, drawn rather than an icon -

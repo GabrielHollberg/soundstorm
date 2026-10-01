@@ -191,22 +191,13 @@ func match(pred, want []float64) score {
 	return s
 }
 
+// strikeAt is today's lightning level (app.js STRIKE_AT).
+const strikeAt = 0.6
+
 // ruleStrikes is where today's rule strikes in a song (app.js strikesAt): a
-// sharp high rising past 80% on the server's fixed scale, within 70ms of a
-// beat.
-func ruleStrikes(s *Song) []float64 {
-	var out []float64
-	hi := s.H.Result.High
-	for f := 1; f < len(hi); f++ {
-		if hi[f] >= 0.8 && hi[f-1] < 0.8 {
-			at := float64(f) / s.H.FPS
-			if _, dist, _ := beatAt(s.H.Result.Beats, at); math.Abs(dist) <= onBeatWithin && s.inSpan(at) {
-				out = append(out, at)
-			}
-		}
-	}
-	return out
-}
+// sharp high rising past strikeAt on the server's fixed scale, within 70ms of
+// a beat or of halfway between two.
+func ruleStrikes(s *Song) []float64 { return ruleVariant(s, strikeAt, true) }
 
 func modelStrikes(m *Model, s *Song) []float64 {
 	var out []float64
@@ -286,4 +277,54 @@ func LoadModel(dir string) (*Model, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// ruleVariant is where a version of today's rule strikes: a sharp high rising
+// past level, within 70ms of a beat - and, with half, within 70ms of halfway
+// between two.
+func ruleVariant(s *Song, level float64, half bool) []float64 {
+	var out []float64
+	hi := s.H.Result.High
+	for f := 1; f < len(hi); f++ {
+		if float64(hi[f]) < level || float64(hi[f-1]) >= level {
+			continue
+		}
+		at := float64(f) / s.H.FPS
+		if !s.inSpan(at) {
+			continue
+		}
+		_, dist, period := beatAt(s.H.Result.Beats, at)
+		if math.Abs(dist) <= onBeatWithin || (half && math.Abs(math.Abs(dist)-period/2) <= onBeatWithin) {
+			out = append(out, at)
+		}
+	}
+	return out
+}
+
+// RuleReport scores versions of today's rule against the taps: the level a
+// sharp high must reach, and whether halfway between beats counts as well as
+// on them.
+func RuleReport(songs []*Song) string {
+	var b strings.Builder
+	b.WriteString("\nVERSIONS OF TODAY'S RULE (all tapped songs)\n")
+	for _, half := range []bool{false, true} {
+		for _, level := range []float64{0.6, 0.7, 0.8, 0.9} {
+			var all score
+			var per []string
+			for _, s := range songs {
+				if len(s.Rec.Taps) == 0 {
+					continue
+				}
+				sc := match(ruleVariant(s, level, half), s.Targets)
+				all.add(sc)
+				per = append(per, fmt.Sprintf("%.0f%%", 100*ratio(2*sc.found, 2*sc.found+sc.extra+sc.missed)))
+			}
+			where := "on beats"
+			if half {
+				where = "on and between beats"
+			}
+			fmt.Fprintf(&b, "  level %.0f%%, %-21s %s  | per song %s\n", level*100, where+":", all, strings.Join(per, " "))
+		}
+	}
+	return b.String()
 }

@@ -154,6 +154,16 @@ func Prior(beatsDir, sourceID, id string) float64 {
 // Run hears every recording and reports, writing the model to dir when one
 // was fitted. hear is how a song is heard (Hear, in the real run).
 func Run(ctx context.Context, dir string, recs []Recording, hear func(Recording) (*Heard, error), out func(string)) error {
+	return run(ctx, dir, recs, hear, out, false)
+}
+
+// Rules scores versions of today's rule against the recordings instead of
+// fitting a model.
+func Rules(ctx context.Context, recs []Recording, hear func(Recording) (*Heard, error), out func(string)) error {
+	return run(ctx, "", recs, hear, out, true)
+}
+
+func run(ctx context.Context, dir string, recs []Recording, hear func(Recording) (*Heard, error), out func(string), rules bool) error {
 	var songs []*Song
 	for _, r := range recs {
 		if len(r.Taps) == 0 && len(r.Intensity) == 0 {
@@ -177,6 +187,10 @@ func Run(ctx context.Context, dir string, recs []Recording, hear func(Recording)
 	}
 	if len(songs) == 0 {
 		return errors.New("nothing recorded yet: tap or slide along to some songs first (Looks, Training)")
+	}
+	if rules {
+		out(RuleReport(songs))
+		return nil
 	}
 	report, model := Evaluate(songs)
 	out(report)
