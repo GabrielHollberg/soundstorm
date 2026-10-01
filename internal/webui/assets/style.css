@@ -581,6 +581,16 @@ header {
 .space-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; }
 .space-bar span.full { background: #e5534b; }
 #backup-controls { margin-top: 12px; display: grid; gap: 8px; }
+#import-open { margin-top: 14px; }
+#photo-import h3 { font-size: 14px; margin: 16px 0 4px; }
+.import-steps { margin: 0 0 6px; padding-left: 20px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.import-steps b { color: var(--text); font-weight: 600; }
+.button-like { display: inline-block; margin-top: 10px; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: #000; font-weight: 600; cursor: pointer; }
+#import-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+#import-list li { background: var(--surface-2); border-radius: 8px; padding: 9px 12px; font-size: 13px; display: grid; gap: 6px; }
+#import-list .import-name { font-weight: 600; overflow-wrap: anywhere; }
+#import-list .import-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; color: var(--muted); }
+#import-list button { padding: 3px 10px; font-size: 12px; }
 #backup-options { display: grid; gap: 6px; padding-left: 4px; }
 /* The one-time question: a card over the page, at the bottom on a phone. */
 .backup-ask {

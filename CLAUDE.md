@@ -4553,6 +4553,40 @@ with the same status fields (enabled, decided, wifiOnly, videos, charging,
 permission, done, total, running, problem), so the page needs no change. iOS
 runs background uploads when it chooses, usually charging on Wi-Fi.
 
+**Bringing a photo library in** (`internal/photoimport`, `httpapi/photoimport.go`):
+Google and Apple give no way for SoundStorm to pull photos out (Google's
+Photos API stopped reading a person's library in 2025; iCloud never had
+one), but both hand out a download of everything as zips - Google Takeout,
+Apple's "Request a copy of your data" - so Your photos has **Bring your photos
+in from Google or Apple**: each service's steps with its link, then the zips
+dropped anywhere on the window (a drop of nothing but zips goes here, not to
+the shelves) or chosen. Sent in 8MB pieces to `library/.imports/<account>/`
+(`POST /api/photos/import`, `PUT /api/photos/import/{id}?offset=`), carrying
+on from where the server has it after a dropped connection or a reload (the
+same zip chosen again picks up), then sorted one download at a time, a
+restart resuming. Into the person's folder by when taken - **the download's
+own record** (Takeout's JSON sidecars, found despite Takeout's naming: edited
+copies, "(1)" copies, names cut short at 47 characters, album copies whose
+sidecar is in the year's folder; iCloud's "Photo Details.csv", whose date has
+an unquoted comma), else EXIF (found by its marker, so in a HEIC too), else a
+date in the name (IMG_20191225_090000, PXL_..., Screenshot_..., WhatsApp's),
+else the zip's date if not the day of the download, else `Undated/` - never
+today's month. **Duplicates skipped** by content (SHA-256, against same-size
+files already in the folder and within the download): Takeout copies a photo
+into every album, and the same photo is often in Google and iCloud and the
+phone's backup. **The date and place are written beside the photo** as an XMP
+sidecar (`<file>.xmp`) when they came from the download or the photo has no
+date of its own - the photo itself is never changed, and Immich reads the
+sidecar (checked: a Takeout photo at the Eiffel Tower showed 4 July 2019 in
+Paris). Counted against the photo space; at the limit it stops and says so.
+The zip is deleted once sorted. The first walkthrough caught a photo filed
+under today: the iCloud zip, finished first, had it with no date while the
+Google zip knew it - hence the name and Undated steps. Uploads of a phone's
+photo or a piece of a download are exempt from the 30-second body deadline
+(`bodyDeadline`), which would have cut off a phone's video on a slow uplink.
+Not built yet: folders from SD cards and old drives sorted the same way (they
+can be dropped now and keep their folders), albums kept as albums.
+
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
 provisioned, sharing one pictures folder: a member saw nothing, backed up a
 photo (to `Personal/alice/2025/07/`), a second send was skipped, a dragged-in

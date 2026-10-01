@@ -449,6 +449,26 @@
           </div>
           <p id="backup-status" class="muted" role="status"></p>
         </div>
+        <button id="import-open" type="button" class="ghost">Bring your photos in from Google or Apple</button>
+        <!-- Bringing a photo library in: the download each service gives, as
+             zips, sorted into the person's own folder by the server. -->
+        <div id="photo-import" class="hidden">
+          <h3>From Google Photos</h3>
+          <ol class="import-steps">
+            <li>Open <a href="https://takeout.google.com/settings/takeout/custom/photos" target="_blank" rel="noopener">Google Takeout</a> and sign in. Only Google Photos is ticked.</li>
+            <li>Choose <b>Export once</b>, <b>.zip</b>, and the largest size (<b>50 GB</b>), then <b>Create export</b>.</li>
+            <li>Google emails you when it is ready - hours, or a day or two for a big library. Download every zip it gives you.</li>
+          </ol>
+          <h3>From iCloud (iPhone)</h3>
+          <ol class="import-steps">
+            <li>Open <a href="https://privacy.apple.com/" target="_blank" rel="noopener">Apple's data and privacy page</a>, sign in, and choose <b>Request a copy of your data</b>.</li>
+            <li>Tick <b>iCloud Photos</b>, choose the largest size, and send the request.</li>
+            <li>Apple emails you when it is ready - usually within a week. Download every zip.</li>
+          </ol>
+          <p class="muted">Then drop the zips anywhere on this window, or choose them below. Dates and places are kept, each photo goes into your folder by when it was taken, and photos you already have here are skipped. Large downloads carry on where they stopped if the connection drops; keep this page open while they send.</p>
+          <label class="button-like">Choose zip files<input id="import-files" type="file" accept=".zip,application/zip" multiple hidden></label>
+          <ul id="import-list"></ul>
+        </div>
       </div>
 
       <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout change server">

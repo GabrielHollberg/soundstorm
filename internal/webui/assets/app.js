@@ -796,6 +796,146 @@ setInterval(() => {
   }
 }, 4000);
 
+// Bringing a photo library in: each zip sent in 8MB pieces, carrying on from
+// where the server has it if the connection drops (or the same zip is chosen
+// again after a reload); the server then sorts it into the person's folder.
+const IMPORT_CHUNK = 8 << 20;
+const importSending = new Map(); // job id -> {sent, size}
+
+async function importPhotos(files) {
+  openImport();
+  const usage = await api('/api/photos/usage');
+  const left = usage.ok && usage.body && usage.body.limitBytes ? usage.body.limitBytes - (usage.body.usedBytes || 0) : Infinity;
+  const total = files.reduce((n, f) => n + f.size, 0);
+  if (total > left && !window.confirm(`These downloads are ${formatBytes(total)} and you have about ${formatBytes(Math.max(0, left))} of photo space left. `
+    + 'Photos you already have do not count, but it may stop part way. Bring them in anyway?')) return;
+  for (const file of files) sendImport(file);
+}
+
+async function sendImport(file) {
+  const start = await api('/api/photos/import', { method: 'POST', body: JSON.stringify({ name: file.name, size: file.size }) });
+  if (!start.ok || !start.body) {
+    showToast((start.body && start.body.error) || `Could not start ${file.name}.`);
+    return;
+  }
+  const id = start.body.id;
+  let offset = start.body.received || 0;
+  let wait = 1000;
+  importSending.set(id, { sent: offset, size: file.size });
+  refreshImports();
+  while (offset < file.size) {
+    const piece = file.slice(offset, Math.min(file.size, offset + IMPORT_CHUNK));
+    let answer = null;
+    try {
+      const resp = await fetch(`/api/photos/import/${id}?offset=${offset}`, {
+        method: 'PUT', credentials: 'same-origin', body: piece,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+      answer = { status: resp.status, body: await resp.json().catch(() => null) };
+    } catch {
+      answer = null;
+    }
+    if (answer && (answer.status === 200 || answer.status === 409) && answer.body && typeof answer.body.received === 'number') {
+      offset = answer.body.received;
+      wait = 1000;
+      if (answer.body.state && answer.body.state !== 'uploading') break;
+    } else if (answer && answer.status >= 400 && answer.status < 500 && answer.status !== 409) {
+      showToast((answer.body && answer.body.error) || `${file.name} was refused.`);
+      break;
+    } else {
+      // The connection: try again, waiting longer each time, up to a minute.
+      await new Promise((ok) => setTimeout(ok, wait));
+      wait = Math.min(60000, wait * 2);
+    }
+    importSending.set(id, { sent: offset, size: file.size });
+    renderImportProgress(id);
+  }
+  importSending.delete(id);
+  refreshImports();
+}
+
+function openImport() {
+  show($('photo-import'), true);
+  refreshImports();
+}
+
+let importsTimer = 0;
+async function refreshImports() {
+  clearTimeout(importsTimer);
+  const { ok, body } = await api('/api/photos/import');
+  if (!ok || !body) return;
+  const list = $('import-list');
+  list.replaceChildren(...(body.imports || []).map(importRow));
+  const busy = (body.imports || []).some((j) => ['uploading', 'queued', 'sorting'].includes(j.state));
+  if (busy && !$('photo-import').classList.contains('hidden')) importsTimer = setTimeout(refreshImports, 3000);
+  if (!busy) refreshMyPhotos();
+}
+
+function importRow(j) {
+  const li = document.createElement('li');
+  li.dataset.id = j.id;
+  const name = document.createElement('span');
+  name.className = 'import-name';
+  name.textContent = j.name;
+  const row = document.createElement('div');
+  row.className = 'import-row';
+  const text = document.createElement('span');
+  text.className = 'import-text';
+  text.textContent = importText(j);
+  row.append(text);
+  {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ghost';
+    remove.textContent = ['uploading', 'queued', 'sorting'].includes(j.state) ? 'Stop' : 'Clear';
+    remove.addEventListener('click', async () => {
+      await api(`/api/photos/import/${j.id}`, { method: 'DELETE' });
+      refreshImports();
+    });
+    row.append(remove);
+  }
+  li.append(name, row);
+  return li;
+}
+
+function importText(j) {
+  const p = j.progress || {};
+  const from = p.source === 'google' ? 'Google Photos' : p.source === 'apple' ? 'iCloud' : '';
+  const counts = () => [`${(p.added || 0).toLocaleString()} added`, p.duplicates ? `${p.duplicates.toLocaleString()} already here` : '', p.failed ? `${p.failed} could not be read` : '']
+    .filter(Boolean).join(', ');
+  switch (j.state) {
+    case 'uploading': {
+      const sending = importSending.get(j.id);
+      const sent = sending ? sending.sent : j.received;
+      return sending
+        ? `Sending: ${formatBytes(sent)} of ${formatBytes(j.size)} (${Math.floor((sent / j.size) * 100)}%)`
+        : `Half sent (${formatBytes(sent)} of ${formatBytes(j.size)}). Choose this zip again to carry on.`;
+    }
+    case 'queued': return 'Sent. Waiting its turn to be sorted.';
+    case 'sorting': return `Sorting${from ? ` (${from})` : ''}: ${(p.done || 0).toLocaleString()} of ${(p.total || 0).toLocaleString()}. ${counts()}.`;
+    case 'done': return `Done${from ? ` (${from})` : ''}: ${counts()}.`;
+    case 'stopped': return p.problem ? `Stopped: ${p.problem}. ${counts()}.` : `Stopped. ${counts()}.`;
+    default: return `Could not be brought in: ${p.problem || 'unreadable'}.`;
+  }
+}
+
+function renderImportProgress(id) {
+  const li = $('import-list').querySelector(`li[data-id="${id}"] .import-text`);
+  const sending = importSending.get(id);
+  if (li && sending) li.textContent = `Sending: ${formatBytes(sending.sent)} of ${formatBytes(sending.size)} (${Math.floor((sending.sent / sending.size) * 100)}%)`;
+}
+
+$('import-open').addEventListener('click', () => {
+  const open = $('photo-import').classList.contains('hidden');
+  show($('photo-import'), open);
+  if (open) refreshImports();
+});
+$('import-files').addEventListener('change', (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (files.length) importPhotos(files);
+});
+
 // libraryPicker is the five shelves, ticked for the ones this person can see.
 function libraryPicker(person) {
   const wrap = document.createElement('div');
@@ -2755,6 +2895,13 @@ window.addEventListener('drop', (event) => {
   if (!draggingFiles(event) || $('app').classList.contains('hidden')) return;
   event.preventDefault();
   hideDropOverlay();
+  // Zips are a photo download from Google or Apple: brought in to the
+  // person's own folder, not filed as they are.
+  const files = [...(event.dataTransfer.files || [])];
+  if (files.length && files.every((f) => /\.zip$/i.test(f.name)) && hasPictures()) {
+    importPhotos(files);
+    return;
+  }
   intake(event.dataTransfer);
 });
 

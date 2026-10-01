@@ -99,6 +99,7 @@ type Server struct {
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache
 	photoUsage       photoUsage
+	photoImports     photoImports
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -369,6 +370,11 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/photos/usage", s.handlePhotoUsage)
 	guarded.HandleFunc("POST /api/photos/backup/check", s.handleBackupCheck)
 	guarded.HandleFunc("PUT /api/photos/backup", s.handleBackup)
+	// Bringing a photo library in: a Google or Apple download, in pieces.
+	guarded.HandleFunc("GET /api/photos/import", s.handleImports)
+	guarded.HandleFunc("POST /api/photos/import", s.handleStartImport)
+	guarded.HandleFunc("PUT /api/photos/import/{id}", s.handleImportChunk)
+	guarded.HandleFunc("DELETE /api/photos/import/{id}", s.handleCancelImport)
 	guarded.HandleFunc("GET /api/prefs", s.handleGetPrefs)
 	guarded.HandleFunc("PATCH /api/prefs", s.handlePatchPrefs)
 	guarded.HandleFunc("POST /api/readalong", s.handleStartReadAlong)
@@ -2257,7 +2263,12 @@ func NormalizeSetupCode(code string) string {
 // pending while a film is written out would cancel it.
 func bodyDeadline(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil && r.Body != http.NoBody && r.URL.Path != "/api/upload" {
+		// Files have rolling deadlines of their own (stallReader): an upload,
+		// a phone's photo or video, a piece of a photo download. A video on a
+		// slow uplink takes minutes, and was cut off at thirty seconds.
+		long := r.URL.Path == "/api/upload" || r.URL.Path == "/api/photos/backup" ||
+			strings.HasPrefix(r.URL.Path, "/api/photos/import/")
+		if r.Body != nil && r.Body != http.NoBody && !long {
 			rc := http.NewResponseController(w)
 			_ = rc.SetReadDeadline(time.Now().Add(bodyTimeout))
 			defer func() { _ = rc.SetReadDeadline(time.Time{}) }()

@@ -139,8 +139,14 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 		".webp": true, ".gif": true, ".tif": true, ".tiff": true, ".avif": true,
 		".dng": true, ".cr2": true, ".cr3": true, ".nef": true, ".arw": true,
 		".raf": true, ".orf": true, ".rw2": true,
-		".mov": true, ".mp4": true,
+		".mov": true, ".mp4": true, ".m4v": true, ".3gp": true,
 	},
+}
+
+// IsPictureFile reports whether a file name is a photo or a clip the picture
+// shelf keeps.
+func IsPictureFile(name string) bool {
+	return mediaExtensions[media.KindPicture][strings.ToLower(filepath.Ext(name))]
 }
 
 // readmeName is the placeholder file in every library folder.

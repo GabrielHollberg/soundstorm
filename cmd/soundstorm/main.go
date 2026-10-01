@@ -375,6 +375,7 @@ func run(log *slog.Logger) error {
 	go api.RunAutoReadAlong(ctx)
 	go api.RunScrobbles(ctx)
 	go api.RunBeats(ctx)
+	go api.RunPhotoImports(ctx)
 
 	srv := &http.Server{
 		Addr:              listen,
