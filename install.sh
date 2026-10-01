@@ -663,8 +663,11 @@ write_move_launchers() {
 #!/bin/sh
 # Installs SoundStorm on this computer from the move folder this file is in.
 here=$(cd "$(dirname "$0")" && pwd)
-curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh -o /tmp/soundstorm-install.sh &&
-	sh /tmp/soundstorm-install.sh --import "$here"
+# A fresh private file, not a fixed /tmp name another user could plant first.
+t=$(mktemp) || exit 1
+trap 'rm -f "$t"' EXIT
+curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh -o "$t" &&
+	sh "$t" --import "$here"
 EOF
 	chmod +x "$1/install-here.sh"
 	# A .cmd wants CRLF, or cmd.exe mishandles it.
@@ -926,6 +929,10 @@ else
 	PORT=$(get_env SOUNDSTORM_PORT)
 	[ -n "$PORT" ] || PORT="$FIRST_PORT"
 fi
+
+# An install from before .env was made private kept it readable by everyone,
+# and an update that rewrites no line of it never changed that.
+chmod 600 .env 2>/dev/null || true
 
 # A move brings the install's own settings - setup code, secrets, choices -
 # on top of the fresh file, before anything below reads them.
