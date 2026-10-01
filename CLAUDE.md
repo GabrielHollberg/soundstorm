@@ -1413,8 +1413,21 @@ the owner preferred the single flash - and a faint image of the channel
 lingers a second after.
 The bolt thins towards its end, branches dim faster than the main channel,
 and the glow, the clouds' light and the flash take a touch of the cover's
-colour. Dark clouds drift across the top; the rain brightens and gets a
-white streak during a flash. Clouds and glows are one soft sprite drawn
+colour. The rain brightens and gets a white streak during a flash.
+**The clouds are a deck over the whole top of the screen, there all the
+time** (the owner's asking; it was a few dark heaps): four rows of lumpy puffs
+(`stormPuffShape`, blobs bumped along the top, drawn into padded canvases so no
+edge is cut square), some a shade lighter, the lower ones bigger and drifting
+faster. Each strike lights them its own way (`stormLights`): a close bolt a wide
+patch where it leaves the clouds and one or two beside it, a far one less,
+sheet lightning one to three patches anywhere, each a moment after the last so
+the light rolls across. A lit puff is the same shape drawn pale over the dark,
+by nearness and its own thinness, under a broad soft glow. **Lit puffs are
+painted over, not added**: four or five overlap in places, and added together
+they burned the deck white; painted, they build only to the lit colour, the
+shapes still showing. Rain starts far enough left (a share of the screen's
+height, not its width) that the strongest wind still reaches the bottom left
+corner of a tall phone. Clouds and glows are one soft sprite drawn
 once per colour and stretched (`stormSprite`), not gradients per frame.
 57fps in Chrome at phone and TV size. **For the Mac:** the same, from
 `dropPower`.

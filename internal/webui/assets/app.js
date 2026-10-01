@@ -14036,7 +14036,65 @@ function stormSprite(rgb, a0, a1) {
   x.fillRect(0, 0, 64, 64);
   return c;
 }
-let stormDark;
+// A puff of cloud: several soft blobs bumped along the top, flatter
+// underneath. The same shape is drawn twice, dark for the cloud and pale for
+// it lit, so a flash lights up the cloud's own shape.
+function stormPuffShape() {
+  const blobs = [];
+  const n = 7 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < n; i++) {
+    const bx = 0.18 + Math.random() * 0.64;
+    blobs.push([bx, 0.62 - Math.sin(Math.PI * bx) * (0.12 + Math.random() * 0.2), 0.09 + Math.random() * 0.07]);
+  }
+  return blobs;
+}
+// Drawn into the middle of a canvas with 32px to spare all round, so no blob
+// is cut off square at an edge (STORM_PAD is that margin as a share).
+const STORM_PAD = 32 / 192;
+function stormPuff(shape, rgb, a) {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 160;
+  const x = c.getContext('2d');
+  for (const [bx, by, r] of shape) {
+    const gr = x.createRadialGradient(32 + bx * 192, 32 + by * 96, 0, 32 + bx * 192, 32 + by * 96, r * 192);
+    gr.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`);
+    gr.addColorStop(0.55, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a * 0.6})`);
+    gr.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+    x.fillStyle = gr;
+    x.fillRect(0, 0, 256, 160);
+  }
+  return c;
+}
+function stormDrawPuff(g, img, c, w, h, R) {
+  const pw = c.rx * R * 2;
+  const ph = c.rx * R;
+  g.drawImage(img, c.x * w - pw / 2 - pw * STORM_PAD, c.y * h - ph / 2 - ph * (32 / 96), pw * (256 / 192), ph * (160 / 96));
+}
+// Where a strike lights the clouds, so no two light them alike: a close bolt
+// a wide glow round where it leaves the clouds and a patch or two beside it;
+// a far one less; sheet lightning one to three patches anywhere in the deck,
+// each a moment after the last, so the light rolls across the sky.
+function stormLights(tier, x, w, h) {
+  const out = [];
+  const add = (lx, ly, r, k, delay) => out.push({ x: lx, y: ly, r, k, delay });
+  if (tier === 2) {
+    add(x, h * 0.08, w * (0.55 + Math.random() * 0.25), 0.8, 0);
+    for (let i = 0; i < 1 + Math.floor(Math.random() * 2); i++) add(x + (Math.random() - 0.5) * w * 0.8, h * (0.04 + Math.random() * 0.25), w * (0.25 + Math.random() * 0.2), 0.5 + Math.random() * 0.4, Math.random() * 0.08);
+  } else if (tier === 1) {
+    add(x, h * 0.07, w * (0.4 + Math.random() * 0.2), 0.8, 0);
+    if (Math.random() < 0.6) add(x + (Math.random() - 0.5) * w * 0.6, h * (0.04 + Math.random() * 0.2), w * (0.2 + Math.random() * 0.2), 0.5, Math.random() * 0.1);
+  } else {
+    let lx = w * Math.random();
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      add(lx, h * (0.04 + Math.random() * 0.26), w * (0.35 + Math.random() * 0.3), 0.6 + Math.random() * 0.4, i * (0.08 + Math.random() * 0.12));
+      lx += dir * w * (0.2 + Math.random() * 0.25);
+    }
+  }
+  return out;
+}
 
 // One strike, sized by how hard the sound hit (s, 0 to 1): a weak one is
 // sheet lightning, only the clouds lit from inside; a middling one a thin
@@ -14046,7 +14104,7 @@ let stormDark;
 function stormBolt(w, h, s, age) {
   const tier = s < 0.3 ? 0 : s < 0.7 ? 1 : 2;
   const x0 = w * (0.15 + Math.random() * 0.7);
-  const bo = { tier, s, age, x: x0, life: tier ? 1.4 : 0.6, branches: [], scale: 1, landed: false };
+  const bo = { tier, s, age, x: x0, life: tier ? 1.4 : 1.1, branches: [], scale: 1, landed: false, lights: stormLights(tier, x0, w, h) };
   if (!tier) return bo;
   bo.scale = tier === 2 ? 1 + 0.6 * (s - 0.7) / 0.3 : 0.45 + 0.3 * (s - 0.3) / 0.4;
   const bottom = tier === 2 ? h * (0.9 + Math.random() * 0.06) : h * (0.36 + Math.random() * 0.2);
@@ -14119,7 +14177,25 @@ const FULL_SCENES = {
       st.bolts = [];
       st.splash = [];
       st.sparks = [];
-      st.clouds = Array.from({ length: 11 }, (_, i) => ({ x: ((i + Math.random() * 0.7) / 11) * 1.4 - 0.2, y: Math.random() * 0.12, rx: 0.16 + Math.random() * 0.14, ry: 0.1 + Math.random() * 0.08, sp: 0.6 + Math.random() * 0.8 }));
+      // A deck of cloud over the whole top of the screen, there all the
+      // time: puffs in rows, thickest at the top, the lower (nearer) ones
+      // bigger and drifting faster, drawn back to front.
+      st.shapes = Array.from({ length: 5 }, stormPuffShape);
+      st.clouds = [];
+      for (let row = 0; row < 4; row++) {
+        const n = 9 + row * 2;
+        for (let i = 0; i < n; i++) {
+          st.clouds.push({
+            x: ((i + Math.random() * 0.8) / n) * 1.5 - 0.25,
+            y: -0.06 + row * 0.085 + Math.random() * 0.05,
+            rx: 0.16 + row * 0.03 + Math.random() * 0.1,
+            sp: 0.5 + row * 0.35 + Math.random() * 0.3,
+            shape: Math.floor(Math.random() * 5),
+            thin: 0.6 + Math.random() * 0.7, // how much light comes through
+            lit: 0,
+          });
+        }
+      }
     }
     // The light takes a touch of the cover's colour.
     if (st.tintFor !== pal[0]) {
@@ -14128,8 +14204,13 @@ const FULL_SCENES = {
       st.core = mix([238, 242, 255], pal[0], 0.1);
       st.tint = mix([180, 198, 255], pal[0], 0.35);
       st.glow = stormSprite(mix([200, 212, 255], pal[0], 0.3), 1, 0.35);
+      // The clouds a dark slate with a little of the cover in them, and their
+      // lit side pale.
+      // Some puffs a shade lighter than others, so the deck has texture
+      // between flashes.
+      st.dark = st.shapes.map((sh, i) => stormPuff(sh, mix(i % 2 ? [34, 38, 52] : [58, 62, 80], pal[0], 0.12), 0.75));
+      st.lit = st.shapes.map((sh) => stormPuff(sh, mix([185, 195, 235], pal[0], 0.25), 0.7));
     }
-    if (!stormDark) stormDark = stormSprite([7, 9, 18], 0.92, 0.6);
     if (m.drop) {
       const s = Math.max(0, Math.min(1, ((m.dropPower || 0.8) - 0.6) / 0.35));
       // A double strike for the first after a quiet spell, the second a
@@ -14151,37 +14232,55 @@ const FULL_SCENES = {
       g.fillStyle = rgba(st.tint, sky * sky * 0.4 * shine);
       g.fillRect(0, 0, w, h);
     }
-    // The clouds: a dark band across the top and soft dark heaps drifting in
-    // it, then each lit from inside by the strikes near it.
+    // The clouds: a dark band over the top of the screen with the deck of
+    // puffs in it, always there; then a broad glow round each place a strike
+    // lights, and each puff lit by its own shape, by how near it is and how
+    // thin it is.
     if (st.bandFor !== h) {
       st.bandFor = h;
-      st.band = g.createLinearGradient(0, 0, 0, h * 0.42);
-      st.band.addColorStop(0, 'rgba(6, 8, 16, 0.85)');
-      st.band.addColorStop(0.55, 'rgba(6, 8, 16, 0.4)');
-      st.band.addColorStop(1, 'rgba(6, 8, 16, 0)');
+      st.band = g.createLinearGradient(0, 0, 0, h * 0.5);
+      st.band.addColorStop(0, 'rgba(10, 12, 20, 0.95)');
+      st.band.addColorStop(0.5, 'rgba(10, 12, 20, 0.7)');
+      st.band.addColorStop(1, 'rgba(10, 12, 20, 0)');
     }
     g.fillStyle = st.band;
-    g.fillRect(0, 0, w, h * 0.42);
+    g.fillRect(0, 0, w, h * 0.5);
     const R = Math.max(w, h * 0.7);
     const wind = Math.sin(ck * 0.3) * 0.15 + 0.12;
     for (const c of st.clouds) {
       c.x += dt * 0.006 * c.sp * (0.5 + wind * 3);
-      if (c.x > 1.3) c.x -= 1.6;
+      if (c.x > 1.35) c.x -= 1.7;
       c.lit = 0;
-      for (const bo of st.bolts) {
-        if (!bo.I) continue;
-        const d = (c.x * w - bo.x) / (w * (bo.tier ? 0.3 : 0.5));
-        c.lit += bo.I * (bo.tier ? 1 : 1.4) * Math.exp(-d * d);
-      }
-      g.globalAlpha = 0.8;
-      g.drawImage(stormDark, c.x * w - c.rx * R, c.y * h - c.ry * R * 0.5, c.rx * R * 2, c.ry * R);
+      g.globalAlpha = 0.9;
+      stormDrawPuff(g, st.dark[c.shape], c, w, h, R);
     }
     g.globalCompositeOperation = 'lighter';
+    for (const bo of st.bolts) {
+      if (bo.age < 0) continue;
+      for (const l of bo.lights) {
+        const I = Math.max(0, 1 - (bo.age - l.delay) * (bo.tier ? 2.6 : 1.8)) * (bo.age >= l.delay ? 1 : 0) * l.k;
+        l.I = I;
+        if (I < 0.01) continue;
+        g.globalAlpha = Math.min(1, I * 0.18 * shine);
+        g.drawImage(st.glow, l.x - l.r * 1.3, l.y - l.r * 0.6, l.r * 2.6, l.r * 1.2);
+        for (const c of st.clouds) {
+          const dx = (c.x * w - l.x) / l.r;
+          const dy = (c.y * h - l.y) / (l.r * 0.6);
+          c.lit += I * c.thin * Math.exp(-(dx * dx + dy * dy));
+        }
+      }
+    }
+    // The lit puffs are painted over, not added: overlapping puffs (four or
+    // five deep in places) added together burned the whole deck white;
+    // painted, they build only to the lit cloud's own pale colour, its shape
+    // still showing.
+    g.globalCompositeOperation = 'source-over';
     for (const c of st.clouds) {
       if (c.lit < 0.01) continue;
-      g.globalAlpha = Math.min(1, c.lit) * 0.85 * shine;
-      g.drawImage(st.glow, c.x * w - c.rx * R * 0.85, c.y * h - c.ry * R * 0.45, c.rx * R * 1.7, c.ry * R * 0.9);
+      g.globalAlpha = Math.min(0.85, c.lit * 0.85) * shine;
+      stormDrawPuff(g, st.lit[c.shape], c, w, h, R);
     }
+    g.globalCompositeOperation = 'lighter';
     g.globalAlpha = 1;
     // Rain, slanted with a wind that drifts. Its speed eases towards what
     // the music asks rather than jumping on every kick - reported as the
