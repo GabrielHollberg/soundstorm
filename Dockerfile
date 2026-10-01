@@ -5,7 +5,7 @@
 # are ARM - a Pi, a Synology, an Apple silicon Mac - so the published image is
 # multi-arch, and without this the arm64 build would run the whole Go toolchain
 # under QEMU emulation. Go cross-compiles natively, so it does not have to.
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/soundstorm ./cmd/soundstorm
 
 # Run stage: the binary, CA certificates, and nothing else.
-FROM alpine:3.20
+FROM alpine:3.24
 # /library is created here, owned by the account the server runs as.
 #
 # Compose bind-mounts a host folder over it, so this changes nothing there -

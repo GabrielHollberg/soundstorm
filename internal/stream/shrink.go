@@ -49,6 +49,8 @@ const (
 // page of covers - or many requests for one - is not a decode each.
 var (
 	shrinkSlots = make(chan struct{}, 2)
+	// shrinkReads: how many local covers are read into memory at once.
+	shrinkReads = make(chan struct{}, 4)
 	shrunk      = struct {
 		sync.Mutex
 		m     map[string][]byte
@@ -84,6 +86,16 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 	if target.Bytes != nil {
 		data = target.Bytes
 	} else {
+		// Read only with a turn: up to 20MB each, and only the decode used
+		// to wait for one, so a few hundred covers asked for at once were all
+		// read into memory first (a security review). Without a turn the
+		// cover is served as it is, which streams it from disk.
+		select {
+		case shrinkReads <- struct{}{}:
+		case <-time.After(10 * time.Second):
+			return target, false
+		}
+		defer func() { <-shrinkReads }()
 		f, err := os.Open(target.FilePath)
 		if err != nil {
 			return target, false

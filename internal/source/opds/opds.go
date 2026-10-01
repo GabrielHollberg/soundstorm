@@ -221,7 +221,10 @@ func catalogRef(ref string) bool {
 	if err != nil || u.IsAbs() || u.Host != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return false
 	}
-	return strings.Contains("/"+strings.TrimPrefix(u.Path, "/"), "/opds/")
+	// The tree's root, not "opds" anywhere: "admin/opds/x" is not the catalog.
+	// References resolve under the base URL, so even a catalog behind a path
+	// prefix is named from opds/.
+	return strings.HasPrefix(strings.TrimPrefix(u.Path, "/"), "opds/")
 }
 
 func (s *Source) Health(ctx context.Context) error {

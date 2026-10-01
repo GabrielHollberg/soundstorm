@@ -10,20 +10,43 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 )
 
 //go:embed assets
 var assetsFS embed.FS
 
+// staticCSP goes on every /static/ response. Scripts and styles loaded by
+// the shell are not governed by it - a policy applies to the document it
+// arrives with - but anything under /static/ opened as a page itself (an
+// SVG, plex-done.html) can run no script and fetch nothing but its own style
+// and pictures.
+const staticCSP = "default-src 'none'; style-src 'self'; img-src 'self' data:"
+
 // Assets returns a handler for the static files.
+//
+// Never the app itself, and never a folder: http.FileServer answers a folder
+// with its index.html - the whole signed-in app, at /static/, without the
+// shell's Content-Security-Policy - or a listing. A security review found
+// that, and that a book chapter's script got past the reader's stripping
+// there; the app is only ever served from / (ServeShell).
 func Assets() http.Handler {
 	sub, err := fs.Sub(assetsFS, "assets")
 	if err != nil {
 		// Unreachable: the embed directive guarantees the directory exists.
 		panic(err)
 	}
-	return http.FileServer(http.FS(sub))
+	files := http.FileServer(http.FS(sub))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Path
+		if name == "" || strings.HasSuffix(name, "/") || path.Base(name) == "index.html" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Security-Policy", staticCSP)
+		files.ServeHTTP(w, r)
+	})
 }
 
 // contentSecurityPolicy is load-bearing security, not hardening theatre.

@@ -7226,6 +7226,8 @@ async function clearDownloads() {
     // What was heard in songs says what this person played.
     localStorage.removeItem(HEARD_ORDER_KEY);
     await caches.delete(HEARD_CACHE);
+    // And the queue kept for the phone's own player: their songs, in order.
+    localStorage.removeItem(NATIVE_QUEUE_KEY);
   } catch {
     // nothing to clear
   }

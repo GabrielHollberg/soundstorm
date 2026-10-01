@@ -571,7 +571,11 @@ yourself."
 	fi
 	note "about $((need / 1024 / 1024 + 1)) GB to copy, $((avail / 1024 / 1024)) GB free"
 
-	mkdir -p "$dest/volumes"
+	# The volumes hold every backend's admin password, the accounts' password
+	# hashes and the certificate keys: only this user may read them (a
+	# security review found them readable by everyone, as settings.env never was).
+	(umask 077; mkdir -p "$dest/volumes")
+	chmod 700 "$dest/volumes"
 
 	if [ -z "${NO_LIBRARY:-}" ] && [ -d "$library" ]; then
 		problems=$(windows_name_problems "$library")
@@ -598,7 +602,7 @@ yourself."
 		# can read it. Owners are kept as numbers, which is what each backend
 		# needs to read its own files on the other side.
 		docker run --rm -v "${PROJECT}_$v:/from:ro" -v "$dest/volumes:/to" "$MOVE_IMAGE" \
-			sh -c "tar -cf /to/$v.tar -C /from . && chown $me /to/$v.tar" ||
+			sh -c "umask 077; tar -cf /to/$v.tar -C /from . && chown $me /to/$v.tar && chmod 600 /to/$v.tar" ||
 			die "Could not copy $v. SoundStorm has been started again, unchanged."
 	done
 	(umask 077; grep -Ev "$MOVE_LOCAL" .env > "$dest/settings.env")

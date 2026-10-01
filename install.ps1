@@ -2863,6 +2863,10 @@ function Export-Move([string]$Destination, [bool]$WithLibrary) {
             if ($r.ExitCode -ne 0) {
                 Stop-With "  Could not copy $v. SoundStorm has been started again, unchanged.`n`n  $($r.Output)"
             }
+            # Every backend's admin password, the accounts' password hashes and
+            # the certificate keys are in these: only this user, as settings.env
+            # is (a security review found them open to anybody the drive is).
+            Protect-SecretFile (Join-Path (Join-Path $dest 'volumes') "$v.tar")
         }
         # Plain line endings in everything the move writes: it may be read on
         # a Mac or Linux, where a carriage return becomes part of every value.
