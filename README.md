@@ -74,7 +74,7 @@ but yourself, and nothing to set up by hand.
 - **Everyone has their own photos.** Each person's go in a folder of their own,
   sorted by when they were taken, and only they (and the owner) can see them.
   The owner sets how much space each person gets.
-- **Back up your phone** automatically with the Android app.
+- **Back up your phone** automatically with the Android or iPhone app.
 - **Bring your photos in from anywhere**: Google Photos, iCloud, Facebook,
   Instagram, Snapchat, Flickr, WhatsApp and Telegram downloads, cloud drives,
   SD cards and old computers. Dates and places are kept, and a photo you
@@ -83,12 +83,20 @@ but yourself, and nothing to set up by hand.
 **For the whole household**
 - Everyone gets their own login, with their own favorites, playlists, history
   and place in every book.
+- **Who's listening?** A shared TV or tablet can keep several people: pick
+  yourself instead of typing a password, with an optional PIN.
+- **Sign a TV in from your phone** by scanning a QR code or typing a short code,
+  instead of typing a password with a remote.
 - Choose which shelves each person can see, so the kids can have no films, for
   example.
 - Apps for **Android** (phones, Google TV, Android TV, Fire TV), **iPhone** and
   **Apple TV**, or install the web app on any phone with its own icon.
 - Secure (HTTPS) automatically, with nothing to set up. Reaching it from outside
-  the house is optional and off until you turn it on.
+  the house is optional and off until you turn it on. Passwords must be strong,
+  and you can make every new device wait for approval from one already signed
+  in.
+- The apps can remember **several servers** (yours and your parents', say) and
+  switch between them.
 
 <p align="center">
   <img src="docs/shots/desktop-home.png" width="780" alt="SoundStorm's home page on a computer">
@@ -181,8 +189,8 @@ Open <http://localhost:8099>. The setup code for the first account is printed in
 
 ## Getting started
 
-**1. Create your account.** The first screen asks for a username and password;
-that account is the owner. If it asks for a **setup code**, it's shown at the end
+**1. Create your account.** The first screen asks for a username and password
+(at least 12 characters, and not a common one); that account is the owner. If it asks for a **setup code**, it's shown at the end
 of the setup window and saved in the `.env` file in your SoundStorm folder. The
 code makes sure only the person who installed SoundStorm can claim it.
 
@@ -214,7 +222,7 @@ like.
 computer. It shows the address to type on your phone (your phone must be on the
 same Wi-Fi). Then either install the app (Android: the newest `android-` file on
 the [releases page](https://github.com/GabrielHollberg/soundstorm/releases)),
-which also backs up the phone's photos, or add the web app to your home screen:
+which also backs up the phone's photos (the iPhone app does too), or add the web app to your home screen:
 - **iPhone:** Share → **Add to Home Screen**.
 - **Android:** Chrome menu → **Install app**. Use the secure address, the one
   ending in `.home.soundstorm.dev`.

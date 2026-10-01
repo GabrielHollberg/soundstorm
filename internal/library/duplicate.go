@@ -114,7 +114,7 @@ func mp4Audio(f *os.File, size int64) (span, bool) {
 		case 0:
 			atomSize = size - off
 		}
-		if atomSize < hdr || off+atomSize > size {
+		if atomSize < hdr || atomSize > size-off {
 			return span{}, false
 		}
 		if kind == "mdat" {

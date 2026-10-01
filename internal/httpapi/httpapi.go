@@ -114,6 +114,8 @@ type Server struct {
 	otherWrites allowance
 	// playback reports sent from the app (diagnostics.go)
 	reports allowance
+	// "keep me on this device" (profiles): each rewrites state.json
+	keeps allowance
 	hlsSessions hlsSessions
 	lookingUpMu sync.Mutex
 	lookingUp   map[string]bool
@@ -344,7 +346,7 @@ func (s *Server) Routes() http.Handler {
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
-	guarded.HandleFunc("POST /api/profiles/keep", s.handleKeepProfile)
+	guarded.HandleFunc("POST /api/profiles/keep", s.limited(&s.keeps, 10, time.Minute, s.handleKeepProfile))
 	guarded.HandleFunc("DELETE /api/profiles/{id}", s.handleUnkeepProfile)
 	guarded.HandleFunc("PUT /api/account/pin", s.handleSetPIN)
 	guarded.HandleFunc("GET /api/link/code/{code}", s.handleLinkLookup)
@@ -807,7 +809,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	token, expiry, user, err := s.auth.SignIn(r.Context(), clientOf(r), creds.Username, creds.Password,
+	user, err := s.auth.CheckSignIn(r.Context(), clientOf(r), creds.Username, creds.Password,
 		auth.DeviceTokens(r)...)
 	if t, ok := auth.IsThrottled(err); ok {
 		s.log.Warn("sign-in throttled", "remote", r.RemoteAddr)
@@ -822,10 +824,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// The right password on a device this account has never signed in on,
 	// with approval turned on: it waits (devices.go).
 	if s.needsApproval(r, user) {
-		q := s.holdSignIn(r, user, token, expiry)
-		if q != nil {
-			q.keep = creds.Keep
-		}
+		q := s.holdSignIn(r, user, creds.Keep)
 		if q == nil {
 			writeError(w, http.StatusTooManyRequests, "too many sign-ins are waiting for approval; try again later")
 			return
@@ -836,6 +835,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"owner":   user.IsOwner(),
 			"code":    s.approvalCode != "",
 		})
+		return
+	}
+	token, expiry, err := s.auth.SessionFor(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not sign in")
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)

@@ -52,7 +52,7 @@ func (s *Server) handlePlaybackReport(w http.ResponseWriter, r *http.Request) {
 	b.Write(body.Page)
 	b.WriteString("\n\nPlayer log (newest last):\n")
 	b.WriteString(body.Log)
-	name := time.Now().UTC().Format("20060102-150405") + "-playback.txt"
+	name := time.Now().UTC().Format("20060102-150405.000") + "-" + user.ID + "-playback.txt"
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(b.String()), 0o600); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not keep the report")
 		return

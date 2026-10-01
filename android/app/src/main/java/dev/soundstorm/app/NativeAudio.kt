@@ -75,7 +75,7 @@ object NativeAudio {
     }
 
     /** Whether the player holds a song (the page's audio is native now). */
-    val active: Boolean get() = (player?.mediaItemCount ?: 0) > 0
+    val active: Boolean get() = (player?.mediaItemCount ?: 0) > 0 || waiting.isNotEmpty()
 
     /** An "audio" message from the page. */
     fun handle(context: Context, message: JSONObject) {

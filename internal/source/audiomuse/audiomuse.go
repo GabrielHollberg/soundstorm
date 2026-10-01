@@ -67,6 +67,7 @@ type Source struct {
 	features map[string]Features
 	fetched  time.Time
 	loading  chan struct{}
+	failedAt time.Time // the last read that failed, so the next waits a little
 	later    *time.Timer
 }
 
@@ -166,15 +167,35 @@ func (s *Source) Features(ctx context.Context) (map[string]Features, error) {
 		}
 		return f, nil
 	}
+	// Shortly after a failed read, not again: with AudioMuse down every radio
+	// request began a whole read of its own.
+	if s.features == nil && time.Since(s.failedAt) < time.Minute {
+		s.mu.Unlock()
+		return nil, errors.New("audiomuse: analysis could not be read")
+	}
 	done := make(chan struct{})
 	s.loading = done
 	s.mu.Unlock()
 
-	f, err := s.readAll(ctx)
+	// Read for everybody waiting, so not on this request's context (one that
+	// went away failed them all), and a panic is that read's error rather
+	// than leaving everyone after it waiting for good (a review).
+	f, err := func() (f map[string]Features, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("audiomuse: reading the analysis: %v", r)
+			}
+		}()
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		defer cancel()
+		return s.readAll(rctx)
+	}()
 
 	s.mu.Lock()
 	if err == nil {
 		s.features, s.fetched = f, time.Now()
+	} else {
+		s.failedAt = time.Now()
 	}
 	s.loading = nil
 	close(done)

@@ -146,6 +146,8 @@ Mbps. Several causes were found, one after another:</p>
   <code>/api/probe</code> once a session; under 1.2 Mbps songs start at 128 kbps MP3 from the first one,
   remembered on the device for six hours. A song that cannot play six seconds after starting is restarted
   at 128 kbps anyway.</li>
+  <li><strong>And back again.</strong> While slow, the link is timed again every fifteen minutes in the
+  background; over 3 Mbps the next song is at full quality. A playing song is never changed.</li>
   <li><strong>Covers are card-sized</strong> unless asked otherwise (400px by default), and load at low
   priority behind the song.</li>
 </ul>

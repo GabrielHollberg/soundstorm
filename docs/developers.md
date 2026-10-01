@@ -115,6 +115,7 @@ internal/beats/        hearing every song for its beats, on the server
 internal/flac/         a FLAC decoder, for the beats
 internal/training/     the developer's tool for training the visualizers
 internal/httpx/        the hardened HTTP client every adapter uses
+internal/qr/           QR codes for signing a TV in from a phone, no dependency
 internal/starter/      the starter library bundled into the binary
 android/               the Android app (phones and TVs); see android/README.md
 ios/                   the iPhone and Apple TV apps; see ios/README.md
@@ -152,10 +153,15 @@ The second half is the one people skip, and the one that matters.
 ## API
 
 The UI talks to SoundStorm's JSON API under `/api/`. The routes are listed in
-`Routes()` in `internal/httpapi/httpapi.go`. Every route but sign-up, sign-in,
-sign-out, `/api/session`, `/api/remote-reachable`, `/healthz`, `/ca.crt` and
-the static files needs a session, owner-only routes are mounted separately,
-and cross-site writes are refused. A search always answers 200: check
+`Routes()` in `internal/httpapi/httpapi.go`. Every route needs a session except
+sign-up, sign-in and sign-out, `/api/session`, `/api/remote-reachable`,
+`/healthz`, `/ca.crt` and the static files, plus the few a device uses before
+anybody is signed in on it: waiting for a new device's approval
+(`/api/login/pending/{id}`), "Who's listening?" (`GET /api/profiles`,
+`POST /api/profiles/switch`) and signing a TV in from a phone (`/api/link`).
+Owner-only routes are mounted separately, and cross-site writes are refused.
+An account held to choosing a new password gets a 403 with `"mustRenew": true`
+from every guarded route but `/api/account/password`. A search always answers 200: check
 `degraded` and `sources` for what was missing.
 
 ## Notes

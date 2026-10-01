@@ -1336,7 +1336,13 @@ func tagSegment(value, fallback string) string {
 		return fallback
 	}
 	if len(value) > maxSegment {
-		value = strings.TrimSpace(value[:maxSegment])
+		// Cut on a character, not a byte: half a character in a folder name
+		// shows garbled or is refused on some disks (a review).
+		cut := maxSegment
+		for cut > 0 && !utf8.RuneStart(value[cut]) {
+			cut--
+		}
+		value = strings.TrimSpace(value[:cut])
 	}
 	return value
 }

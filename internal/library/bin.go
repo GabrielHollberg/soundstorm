@@ -298,7 +298,14 @@ func (l *Library) Restore(id string) (entry BinEntry, restored int, blocked []st
 		for _, rel := range it.Paths {
 			from := filepath.Join(entryDir, binFilesDir, filepath.FromSlash(rel))
 			to := filepath.Join(l.root, filepath.FromSlash(rel))
-			if _, err := os.Lstat(from); err != nil {
+			// The entry's own record is a file in the library anybody at the
+			// computer can edit: a path climbing out of it is not followed.
+			if r, err := filepath.Rel(l.root, to); err != nil || r == "." || strings.HasPrefix(r, "..") {
+				blocked = append(blocked, rel)
+				continue
+			}
+			info, err := os.Lstat(from)
+			if err != nil {
 				continue
 			}
 			if _, err := os.Lstat(to); err == nil {
@@ -309,7 +316,13 @@ func (l *Library) Restore(id string) (entry BinEntry, restored int, blocked []st
 				blocked = append(blocked, rel)
 				continue
 			}
-			if err := moveTree(from, to); err != nil {
+			// A file never replaces one that arrived since it was checked
+			// (an upload landing at that moment - a review).
+			move := moveTree
+			if info.Mode().IsRegular() {
+				move = noClobber
+			}
+			if err := move(from, to); err != nil {
 				blocked = append(blocked, rel)
 				continue
 			}

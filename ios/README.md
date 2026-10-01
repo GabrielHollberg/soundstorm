@@ -4,6 +4,17 @@ A native shell around the server's own web app, with background audio. Why
 it is built this way, and what comes next, is in `CLAUDE.md` under
 "The iPhone app".
 
+Beyond showing the page, the iPhone app has:
+
+- **Several saved servers.** The connect screen is **Your servers**: the latest
+  used first, the one in use ticked, tap to switch, hold to rename or remove.
+  Each keeps its own sign-in. (`ios/Shared/ServerAddress.swift`, shared with the
+  Apple TV app.)
+- **Photo backup** (`PhotoBackup.swift`): the camera roll to the person's own
+  folder on the server, in a background `URLSession`, checking with the server
+  first so nothing is sent twice. Switched on in the page's Settings → Your
+  photos (Wi-Fi only, videos, only while charging), exactly as on Android.
+
 ## Running it on your iPhone
 
 1. Open `ios/SoundStorm.xcodeproj` in Xcode (26 or newer).
@@ -28,6 +39,9 @@ Play a song, lock the phone, and wait a minute:
   play/pause/skip buttons?
 - Do headphone buttons and Control Center work?
 
+And for photo backup, which the simulator only partly answers: turn it on,
+take a few photos, put the app away overnight - did they all arrive?
+
 Stage two (native audio) is shaped by these answers. The simulator cannot
 answer them.
 
@@ -41,8 +55,12 @@ playlists, artists, albums, Now Playing with the twelve visualizers and
 lyrics), Watch (films and shows, subtitles and audio languages, Up next),
 Books (audiobooks with chapters, ebooks and PDFs in a native reader, Read
 Along), Photos (the roll, On this day, people and places), each tab with the
-account's own categories in its order. Settings and anything that changes the
-library stay on the web.
+account's own categories in its order. Signing in can be done from a phone
+(**Sign in with your phone**: a code and a QR code), and the TV asks **Who's
+listening?** each time it opens, among the people kept on it, with their PINs.
+It waits for approval where new devices need it, asks to allow other devices'
+sign-ins, and shows the screen for choosing a new password when the account is
+held to one. Settings and anything that changes the library stay on the web.
 
 Run it on the Apple TV simulator from Xcode, or on a real Apple TV paired with
 Xcode (Settings → Remotes and Devices → Remote App and Devices on the TV).
@@ -53,6 +71,8 @@ A debug build takes launch arguments, for a simulator with no remote:
 | --- | --- |
 | `-serverURL <address>` | the server, skipping the connect screen |
 | `-username <name> -password <pw>` | signs in |
+| `-newPassword <pw>` | with `-password`, chooses a new password when the account is held to one |
+| `-profile <name> -profileSecret <pin or password>` | picks a person at "Who's listening?" |
 | `-tab <tab>`, `-category <value>` | opens a tab (`home`, `music`, `watch`, `books`, `photos`) and one of its categories |
 | `-autoplay YES` | plays the first recently played song |
 | `-autostation YES` | tunes the first radio station |

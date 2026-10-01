@@ -111,7 +111,9 @@ nor the small copy the app asks for to hear a song's beats (<code>?listen=1</cod
 arrived minutes into the song.</p>
 <div class="note">The client half lives in the app: it times 128KB from <code>/api/probe</code>
 once a session on an away-from-home address, and under 1.2 Mbps starts songs at 128 kbps MP3. A
-song that cannot play six seconds after starting is restarted at 128 kbps too. "Always original"
+song that cannot play six seconds after starting is restarted at 128 kbps too. While slow, it
+times the link again every fifteen minutes in the background, and over 3 Mbps the next song is at
+full quality and the slow note is forgotten; a playing song is never changed. "Always original"
 in the device's settings turns all of that off.</div>
 
 <h2 id="covers">Card-sized covers</h2>

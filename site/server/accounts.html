@@ -142,8 +142,10 @@ server sees it, so passwords set before the rules tightened are replaced as peop
 not enough on a device an account has never signed in on: the sign-in is held
 (<code>devices.go</code>) and answers <code>202</code> with a random id the waiting device polls,
 while every device already signed in to that account - and the owner's - is asked "Allow a new
-device?", naming the browser. Allowed, the held session is handed to the waiting device with a
-device token, so it is not asked again; refused, or ten minutes gone, the session is deleted. A
+device?", naming the browser. No session exists while it waits (one made at once would count
+towards the account's fifty and push real ones out). Allowed, a session is made and handed to the
+waiting device with a device token, so it is not asked again; refused, or ten minutes gone, the
+request is forgotten. A
 guessed or leaked password then opens nothing. "New" is the device token, not where the request
 came from: behind Docker Desktop every connection looks alike, and a request's account of its
 own address can be faked. A password change retires every device token, so after one every
@@ -201,6 +203,33 @@ as yourself. What no limit can stop is somebody being talked into allowing a str
 which is why the phone says plainly what is asking and as whom. A TV signed in this way skips
 <a href="#approval">approval of new devices</a>: the phone that allowed it is a device the account
 already uses.</div>
+
+<h3 id="profiles">Who's listening? Several people on one device</h3>
+<p>A living-room TV or a family tablet is used by several people, and signing out and in again
+with a password each time is the wrong shape for it. So a device can keep people
+(<code>profiles.go</code>, <code>auth/profiles.go</code>), after the account-then-people pattern
+of the streaming services. The device gets a profile cookie of its own
+(<code>soundstorm_profiles</code>, <code>__Host-</code> over TLS): a random id, not a sign-in. Who may be switched to on it is the
+server's record (<code>state.Kept</code>, keyed by a hash of that id), each person with a
+fingerprint of their password's salt, so a new password takes them off every device.</p>
+<ul>
+  <li><strong>Getting on a device.</strong> "Keep me on this device" when signing in (the
+  <code>keep</code> field of the login body; ticked already on a TV, and carried through
+  <a href="#approval">device approval</a>). A TV signed in from a phone keeps its person by
+  itself. Settings, On this device, keeps or takes off the person signed in.</li>
+  <li><strong>Switching.</strong> <code>GET /api/profiles</code> lists the people kept and what
+  switching to each needs; <code>POST /api/profiles/switch</code> revokes the device's current
+  session and starts the chosen person's. Both answer without a session, since a TV asks
+  "Who's listening?" every time it opens, before anybody is signed in.</li>
+  <li><strong>PINs are optional</strong>, 4 to 8 digits (<code>PUT /api/account/pin</code>, which
+  needs the account's password, checked behind the sign-in throttle). Without one, anybody at a device you are kept on can switch to
+  you. The owner always needs their PIN, or their password if they have none.</li>
+  <li><strong>Wrong PINs</strong> are counted per device and person before they are checked, so a
+  burst counts as a burst: five free, then a wait of fifteen minutes, doubling; fifteen, and that
+  person is taken off the device.</li>
+  <li><strong>Sign out takes you off the device; Switch person keeps everybody.</strong> On a
+  friend's phone, staying switchable would be staying signed in.</li>
+</ul>
 
 <h3>Per-member backend accounts</h3>
 <p>Two backends get an account per member, because what they remember is personal:</p>

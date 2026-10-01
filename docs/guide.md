@@ -142,8 +142,12 @@ its menu.
   and from a car.
 - **Gapless and crossfade.** Songs flow into each other with no gap; turn on
   crossfade under **Settings → Playback on this device**.
-- **Data saver.** Stream at a lower quality on this device, or only on mobile
-  data.
+- **Streaming quality.** Set for each device under **Settings → Playback on
+  this device**. The default plays the original, but on a slow connection away
+  from home it switches to a lighter stream by itself (and says so), and goes
+  back to full quality once the connection recovers. Or choose always the
+  original, lower only on mobile data, or a fixed lower quality (down to 96 kbps
+  data saver). Downloads always keep the original.
 - **Even volume.** Songs with ReplayGain tags play at the same loudness.
 - **Sleep timer.** Stop after 15 minutes to an hour, a time of your own, or at
   the end of the song, fading out. It works with the screen off.
@@ -238,11 +242,14 @@ see only their own; the owner sees everybody's. **Settings → Your photos** say
 how much space you've used. The owner sets each person's space under
 **Settings → People** (100 GB unless changed); the owner's own has no limit.
 
-**Phone backup.** In the Android app, **Settings → Your photos → Back up this
-phone's photos** sends new photos and videos to your folder in the background:
-on Wi-Fi only unless you untick it, videos too unless you untick that, and
-only while charging if you ask. It shows how far it has got, and photos
-already on the server are never sent twice.
+**Phone backup.** In the Android and iPhone apps, **Settings → Your photos →
+Back up this phone's photos** sends new photos and videos to your folder in the
+background: on Wi-Fi only unless you untick it, videos too unless you untick
+that, and only while charging if you ask. The app asks once, after you sign in.
+It shows how far it has got, down to the file it's sending ("Sending a video:
+240 of 600 MB"), and photos already on the server are never sent twice, even
+after reinstalling the app or on a new phone. On a shared phone, signing out
+turns backup off, so the next person's photos never go into your folder.
 
 **Bring your photos in from anywhere.** Under **Settings → Your photos**, each
 place your photos might be has its own steps: Google Photos (Takeout), iCloud,
@@ -386,8 +393,16 @@ Within a minute of starting, SoundStorm also gets a secure address like
   Music plays like any music app's, with the lock screen, Bluetooth and car
   controls, and it can back up the phone's photos. On a TV it's driven by the
   remote: the arrows move, OK plays, Back goes back.
-- **iPhone** and **Apple TV**: SoundStorm apps (in testing). The Apple TV app
-  plays music with every visualizer, films, audiobooks, photos and books.
+- **iPhone** and **Apple TV**: SoundStorm apps (in testing). The iPhone app can
+  back up the phone's photos. The Apple TV app plays music with every
+  visualizer, radio and lyrics, films and TV with subtitles and audio
+  languages, audiobooks by chapter, photos, ebooks and Read along.
+
+**More than one server.** The apps remember every server you connect to - your
+own, and a parent's, say - under **Your servers** on the connect screen
+(**Change server** in Settings gets you there). The newest is at the top, tap
+one to switch, and hold one to rename or remove it. You stay signed in to each,
+so switching back asks for nothing.
 
 **Or install the web app:**
 - **iPhone:** Share → Add to Home Screen.

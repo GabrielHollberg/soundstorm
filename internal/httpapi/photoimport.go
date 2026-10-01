@@ -275,7 +275,11 @@ func (s *Server) finishImport(j *importJob, st, problem string) {
 	}
 	delete(im.stop, j.ID)
 	_ = os.Remove(filepath.Join(s.importDir(j.User), j.ID+".zip"))
-	s.saveJob(j)
+	// Not for a download cancelled or a person removed meanwhile: saving
+	// would make its folder again, and it would come back at the next start.
+	if im.jobs[j.ID] == j {
+		s.saveJob(j)
+	}
 }
 
 // personTarget is a person's own folder, as an import sees it.
@@ -537,6 +541,11 @@ func (s *Server) handleImportChunk(w http.ResponseWriter, r *http.Request) {
 	f.Close()
 	im.mu.Lock()
 	defer im.mu.Unlock()
+	// Cancelled while this piece was being written: nothing to keep.
+	if im.jobs[j.ID] != j {
+		writeError(w, http.StatusNotFound, "that download was cancelled")
+		return
+	}
 	if err != nil || wrote != r.ContentLength {
 		// Whatever arrived is kept no further than the last whole piece: the
 		// file is cut back so the next try starts clean.

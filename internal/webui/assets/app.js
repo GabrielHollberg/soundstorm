@@ -75,6 +75,8 @@ function showProfiles(list) {
   for (const id of ['boot', 'gate', 'app', 'renew']) show($(id), false);
   show($('tabs'), false);
   show($('profiles'), true);
+  // From Settings' Switch person there is a way back.
+  show($('profiles-cancel'), Boolean(state.me));
   show($('profiles-secret'), false);
   show($('profiles-other'), true);
   const holder = $('profiles-list');
@@ -131,6 +133,10 @@ async function switchProfile(person, secret) {
       return;
     }
     showApp(body.user);
+    // Music the app's player kept going while the page was made again is
+    // taken over, as an ordinary opening does (a review: a TV with people
+    // kept on it never did).
+    setTimeout(adoptNativePlayback, 0);
     return;
   }
   const error = $('profiles-error');
@@ -146,6 +152,11 @@ $('profiles-secret').addEventListener('submit', (event) => {
   switchProfile(profilePicked, profilePicked.needs === 'pin' ? { pin: value } : { password: value });
 });
 $('profiles-secret-back').addEventListener('click', () => showProfiles(profilesShown));
+$('profiles-cancel').addEventListener('click', () => {
+  show($('profiles'), false);
+  show($('app'), true);
+  show($('tabs'), true);
+});
 $('profiles-other').addEventListener('click', async () => {
   show($('profiles'), false);
   const { body } = await api('/api/session');
@@ -203,9 +214,13 @@ $('pin-form').addEventListener('submit', async (event) => {
 // showRenew asks for a new password before anything else.
 function showRenew() {
   if (!$('renew').classList.contains('hidden')) return;
-  show($('boot'), false);
-  show($('gate'), false);
-  show($('app'), false);
+  // Everything that sits over the app goes too, or the form opened behind
+  // Now Playing with the music going on (a review).
+  if (window.soundstormReader && shown('reader-overlay')) window.soundstormReader.close();
+  if (shown('now-playing')) closeNowPlaying();
+  closeVideo();
+  if (audio.item) stopAudio();
+  for (const id of ['boot', 'gate', 'app', 'profiles', 'tabs']) show($(id), false);
   show($('renew'), true);
   $('renew-current').focus();
 }
@@ -478,8 +493,14 @@ async function startLink() {
   $('gate-link-code').textContent = body.code;
   $('gate-link-qr').src = `/api/link/${encodeURIComponent(body.id)}/qr.png`;
   $('gate-link-cancel').focus();
-  linkWait = setInterval(async () => {
+  const mine = setInterval(async () => {
+    // One poll at a time, and none for a code already replaced or cancelled
+    // (two slow polls both found it run out and started two new codes).
+    if (mine.busy) return;
+    mine.busy = true;
     const r = await api(`/api/link/${encodeURIComponent(body.id)}`);
+    mine.busy = false;
+    if (linkWait !== mine) return;
     if (r.ok && r.body && r.body.signedIn) {
       stopLink();
       showApp(r.body.user);
@@ -491,6 +512,7 @@ async function startLink() {
       show($('gate-error'), true);
     }
   }, 3000);
+  linkWait = mine;
 }
 function stopLink() {
   clearInterval(linkWait);
@@ -614,12 +636,20 @@ function waitForApproval(id, codeAllowed) {
       done(body.error);
     }
   };
+  let mine = null;
+  let busy = false;
   const ask = async () => {
+    if (busy) return;
+    busy = true;
     const r = await api(`/api/login/pending/${encodeURIComponent(id)}`);
+    busy = false;
+    // Cancelled while asking: not signed in after all.
+    if (approvalWait !== mine) return;
     settle(r.ok, r.body, r.offline ? 0 : 1);
   };
   clearInterval(approvalWait);
-  approvalWait = setInterval(ask, 3000);
+  mine = setInterval(ask, 3000);
+  approvalWait = mine;
   $('gate-wait-cancel').onclick = () => done('');
   $('gate-wait-code-use').onclick = async () => {
     const r = await api(`/api/login/pending/${encodeURIComponent(id)}`, {
@@ -654,13 +684,17 @@ async function checkDeviceRequests() {
   $('device-ask-text').textContent = `${next.device} wants to sign in to ${whose}. `
     + 'Allow it only if you, or they, are signing in on it right now.';
   show($('device-ask'), true);
+  // A remote can only reach what has the focus (a review: on a TV the
+  // question sat there unanswerable).
+  $('device-ask-yes').focus();
 }
 async function answerDevice(approve) {
   const id = deviceAsking;
   show($('device-ask'), false);
-  if (id) await api(`/api/devices/pending/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ approve }) });
+  const r = id ? await api(`/api/devices/pending/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ approve }) }) : { ok: true };
   deviceAsking = null;
-  if (approve) showToast('Allowed. That device is signed in now.');
+  if (!r.ok) showToast((r.body && r.body.error) || 'Could not answer that sign-in.');
+  else if (approve) showToast('Allowed. That device is signed in now.');
   setTimeout(checkDeviceRequests, 500);
 }
 $('device-ask-yes').addEventListener('click', () => answerDevice(true));
@@ -696,6 +730,8 @@ if (window.soundstormApp) {
 
 async function showApp(me) {
   state.me = me || null;
+  // Shown again (a switch back to the same person): one setup poll, not two.
+  if (state.setupTimer) { clearInterval(state.setupTimer); state.setupTimer = null; }
   if (me && me.mustRenew) {
     showRenew();
     return;
@@ -3294,6 +3330,9 @@ $('audio-player').addEventListener('ended', () => {
     // here rather than going on to the next song or chapter.
     if (audio.index + 1 >= audio.tracks.length) savePosition({ finished: true });
     else savePosition();
+    // Should the native player have moved on regardless, it stops.
+    if (NATIVE_AUDIO) $('audio-player').pause();
+    sleep.atSongEnd = false;
     setSleep(null);
     return;
   }
@@ -7348,6 +7387,8 @@ async function preloadNext() {
   // ever stopping between songs, which is what kept music going with the
   // screen off. A downloaded song plays in the page, so is not handed over.
   if (NATIVE_AUDIO) {
+    // "After this song": nothing handed over to play on into.
+    if (sleep.atSongEnd) return;
     const upcoming = nativeUpcoming();
     const url = upcoming.length ? upcoming[0].url : '';
     const sig = upcoming.map((u) => u.url).join('|');
@@ -8264,13 +8305,26 @@ const SLEEP_FADE_MS = 8000;
 
 function setSleep(choice) {
   clearInterval(sleep.tick);
+  const wasAtSongEnd = sleep.atSongEnd;
   sleep.until = 0;
   sleep.atSongEnd = false;
   if (choice === 'song') {
     sleep.atSongEnd = true;
+    // In the Android app the native player holds the next songs and moves
+    // into them by itself: they are taken back, or "after this song" played
+    // on into the next (a review).
+    if (NATIVE_AUDIO) {
+      audio.nativeQueued = '';
+      window.soundstormApp.queueNext('');
+    }
   } else if (Number(choice) > 0) {
     sleep.until = Date.now() + Number(choice) * 60000;
     sleep.tick = setInterval(sleepTick, 1000);
+  }
+  // Turned off before the song ended: the next songs are handed over again.
+  if (NATIVE_AUDIO && wasAtSongEnd && !sleep.atSongEnd) {
+    audio.nativeQueued = '';
+    preloadNext();
   }
   renderSleep();
 }
@@ -16857,7 +16911,9 @@ function tvRemote() {
   const FOCUSABLE = 'button, a[href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
   // The top thing open is the only place the focus may go: a menu over Now
   // Playing, Now Playing over the library.
-  const LAYERS = ['item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
+  // The questions over everything (a new device, a TV, phone backup) come
+  // first: on a TV that may be the only device that can answer them.
+  const LAYERS = ['device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
   const layer = () => {
     for (const id of LAYERS) if (shown(id)) return $(id);
     return document.body;

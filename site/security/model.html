@@ -44,6 +44,13 @@ by the server under a lock, so two first sign-ups racing cannot both become owne
   stranger guessing at the owner's name cannot keep the owner out.</li>
   <li>Sessions are random 256-bit tokens stored only as hashes; over TLS the cookie is
   <code>__Host-</code>, which another install's page cannot overwrite.</li>
+  <li>A new password must be at least 12 characters and not a common one. The owner can make
+  <strong>new devices wait for approval</strong> from a device already signed in, so a guessed or
+  leaked password alone opens nothing, and can ask everybody for a new password.</li>
+  <li>Switching person on a shared device ("Who's listening?") needs that person's PIN if they set
+  one, and the owner's always; wrong PINs are counted before they are checked, and fifteen take the
+  person off the device. A TV signed in from a phone is vouched for by that phone, with a one-time
+  code that lasts ten minutes.</li>
 </ul>
 
 <h2 id="members">What a member can reach</h2>

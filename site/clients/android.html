@@ -29,7 +29,7 @@ when a load fails, and hands file pickers and a film's full screen to the platfo
   <tr><td><code>NativeAudio.kt</code>, <code>AudioService.kt</code></td><td>Songs played natively by Media3</td></tr>
   <tr><td><code>PlaybackService.kt</code>, <code>MediaBridge.kt</code></td><td>The lock-screen player for what the page plays itself</td></tr>
   <tr><td><code>PhotoBackup.kt</code></td><td>Phone photo backup</td></tr>
-  <tr><td><code>WebCookies.kt</code>, <code>ServerAddress.kt</code></td><td>Cookies for native requests; the saved server address</td></tr>
+  <tr><td><code>WebCookies.kt</code>, <code>ServerAddress.kt</code></td><td>Cookies for native requests; the saved servers</td></tr>
 </table>
 <p>The web app cannot tell the Android and iPhone apps apart, by design. Both give the page
 <code>window.soundstormApp</code> and the same message channel
@@ -107,7 +107,13 @@ photos has the switch and options and talks to the app through
   <li><strong>WorkManager jobs</strong>, so Android decides when, and backup carries on with the app
   closed: one when a photo or video is added, one every six hours. Wi-Fi only unless turned off, and
   optionally only while charging.</li>
-  <li><strong>Newest first, one file at a time</strong>, with progress through a large video.</li>
+  <li><strong>Newest first, one file at a time, one backup at a time.</strong> A lock in the
+  worker means a second job never sends the same file beside the first, and the switch's job keeps
+  a running one rather than starting another. Settings shows the file being sent ("Sending a
+  video: 240 of 600 MB"). A job runs in the foreground with a quiet notification where Android
+  allows it, since an ordinary job is stopped at ten minutes - one long video on a slow link.</li>
+  <li><strong>One refused photo is passed over</strong> and named, rather than stopping the whole
+  backup.</li>
   <li><strong>Nothing sent twice.</strong> What was sent is remembered by its MediaStore id, and each
   batch of 100 is first checked with the server (<code>POST /api/photos/backup/check</code>), so a
   reinstall or a new phone sends nothing it already has.</li>
@@ -118,7 +124,18 @@ photos has the switch and options and talks to the app through
   disk or an ended sign-in are shown until the next job.</li>
 </ul>
 <p>After signing in on a phone with Pictures, the page asks once, "Back up this phone's photos?",
-and tells a member plainly that the owner of the server can see them. It is not offered on a TV.</p>
+and tells a member plainly that the owner of the server can see them. It is not offered on a TV.
+On a shared phone, signing out (or another account appearing) turns backup off, the phone sends
+the account it was turned on for, and the server refuses photos meant for somebody else; the next
+person is asked afresh. Backup goes to the secure name the page was on, never plain http on the
+Wi-Fi when a secure name exists.</p>
+
+<h2 id="servers">Several saved servers</h2>
+<p>Since 0.19 the connect screen lists <strong>Your servers</strong> above the address box: the
+latest used first, the one in use ticked, a tap to switch, a long press to rename or remove one
+(<code>ServerAddress.all</code>, kept as a list beside the current address). Each server keeps its
+own sign-in, since cookies belong to an address, so switching back asks for nothing. The iPhone and
+Apple TV apps have the same list.</p>
 
 <h2 id="screen">Full screen and the camera cutout</h2>
 <p>Both system bars are hidden everywhere, at the owner's asking - something the installed web app
@@ -165,6 +182,11 @@ same job.</p>
 </ul>
 <p>Plain http is still allowed, because an install is often first reached by its LAN address and
 Android cannot allow only private address ranges.</p>
+
+<p>One thing is for the developer only: on the install that has training switched on, Settings
+in the app can send a <strong>playback report</strong> - what the native player saw (volume, audio
+focus, outputs, the page's commands) - for chasing sound that cuts out mid-song (0.20). No other
+install shows it.</p>
 
 <h2 id="releases">Releases</h2>
 <p>APKs are built on the Windows development machine from <code>android/</code> on main

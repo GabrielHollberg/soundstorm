@@ -203,6 +203,13 @@ swiped like any other row. While Settings is open, the search box searches setti
 containing all the words typed, across every pill. Per-device choices (streaming quality, film
 quality, keep the screen on, audiobook loudness) live in <code>localStorage</code>; per-person ones
 (pill order, cover look, audiobook speed) live on the account.</p>
+<p>Three account cards arrived together. <strong>On this device</strong> lists who is kept on the
+device for "Who's listening?" and sets a PIN; <strong>Sign in a TV</strong> takes the code a TV
+shows (a scanned QR code opens the page at <code>/?link=</code> and asks "Sign in a TV?" instead,
+then takes the code out of the address); and while new devices need approval, any signed-in page
+is asked to allow a waiting sign-in. A 403 with <code>mustRenew</code> from any request puts up the
+screen for choosing a new password (<code>showRenew</code>). See
+<a href="../server/accounts.html">accounts</a>.</p>
 <p>The app never changes its address, so for a while Android's back gesture had nothing to go
 back to and closed the app from inside a film. Now one history entry is kept armed while anything
 back should close is open (<code>backTarget</code>, in order: menu, selection, photo, book, film,

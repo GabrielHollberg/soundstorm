@@ -74,7 +74,11 @@ services:
       SOUNDSTORM_LIBRARY_DIR: /library
       # How the same folder looks to whoever ran compose, for the UI to show.
       SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-${SOUNDSTORM_LIBRARY_PATH:-./library}}
-      SOUNDSTORM_LOG_LEVEL: info
+      SOUNDSTORM_LOG_LEVEL: ${SOUNDSTORM_LOG_LEVEL:-info}
+      SOUNDSTORM_STARTER_LIBRARY: ${SOUNDSTORM_STARTER_LIBRARY:-true}
+      # A Calibre server running elsewhere, opted into (see CLAUDE.md).
+      SOUNDSTORM_CALIBREWEB_URL: ${SOUNDSTORM_CALIBREWEB_URL:-}
+      SOUNDSTORM_CALIBREWEB_MEDIA_PATH: ${SOUNDSTORM_CALIBREWEB_MEDIA_PATH:-}
       # Training the looks: for SoundStorm's developer only, never set on an
       # ordinary install (see internal/httpapi/training.go).
       SOUNDSTORM_TRAINING: ${SOUNDSTORM_TRAINING:-false}

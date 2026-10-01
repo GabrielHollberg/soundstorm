@@ -43,8 +43,8 @@ type pendingSignIn struct {
 	UserName string
 	Device   string // what the browser said it was, for the person approving
 	At       time.Time
-	token    string // the session, handed over only once approved
-	expiry   time.Time
+	// No session until approved: one made at once counted towards the
+	// account's 50 and pushed out real ones (a review).
 	answer   int  // 0 waiting, 1 approved, -1 refused
 	keep     bool // "keep me on this device", applied once it is in
 }
@@ -55,7 +55,7 @@ type pendingSignIns struct {
 }
 
 // add holds a sign-in that has the right password but a new device.
-func (s *Server) holdSignIn(r *http.Request, user state.User, token string, expiry time.Time) *pendingSignIn {
+func (s *Server) holdSignIn(r *http.Request, user state.User, keep bool) *pendingSignIn {
 	p := &s.pending
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -72,14 +72,13 @@ func (s *Server) holdSignIn(r *http.Request, user state.User, token string, expi
 		}
 	}
 	if mine >= 5 || len(p.m) >= 200 {
-		_ = s.store.DeleteSession(token)
 		return nil
 	}
 	raw := make([]byte, 16)
 	_, _ = rand.Read(raw)
 	q := &pendingSignIn{
 		ID: hex.EncodeToString(raw), UserID: user.ID, UserName: user.Name,
-		Device: deviceLabel(r.UserAgent()), At: time.Now(), token: token, expiry: expiry,
+		Device: deviceLabel(r.UserAgent()), At: time.Now(), keep: keep,
 	}
 	p.m[q.ID] = q
 	return q
@@ -88,9 +87,6 @@ func (s *Server) holdSignIn(r *http.Request, user state.User, token string, expi
 func (s *Server) prunePendingLocked() {
 	for id, q := range s.pending.m {
 		if time.Since(q.At) > pendingFor {
-			if q.answer != 1 {
-				_ = s.store.DeleteSession(q.token)
-			}
 			delete(s.pending.m, id)
 		}
 	}
@@ -130,7 +126,6 @@ func (s *Server) handlePendingSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	case -1:
 		delete(p.m, q.ID)
-		_ = s.store.DeleteSession(q.token)
 		p.mu.Unlock()
 		writeError(w, http.StatusForbidden, "this sign-in was refused")
 		return
@@ -142,7 +137,12 @@ func (s *Server) handlePendingSignIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "that account is gone")
 		return
 	}
-	s.auth.SetCookie(w, r, q.token, q.expiry)
+	token, expiry, err := s.auth.SessionFor(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not sign in")
+		return
+	}
+	s.auth.SetCookie(w, r, token, expiry)
 	if q.keep {
 		s.keepOnDevice(w, r, user)
 	}
@@ -189,6 +189,7 @@ func (s *Server) handleAnswerPending(w http.ResponseWriter, r *http.Request) {
 	p := &s.pending
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	s.prunePendingLocked()
 	q, found := p.m[r.PathValue("id")]
 	if !found || (q.UserID != user.ID && !user.IsOwner()) {
 		writeError(w, http.StatusNotFound, "no such sign-in waiting")

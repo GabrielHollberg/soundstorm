@@ -223,6 +223,10 @@ setup-code signup gate, per-account sign-in throttle, request timeouts,
 same-origin/CSRF checks, the reader-XSS fix, and the name-constrained local CA
 are all in place, which is what makes exposing the surface defensible. The
 name service's new outbound probe is SSRF-safe by construction (above).
+Since then: passwords must be at least 12 characters and not a common one, the
+owner can make every new device wait for approval from one already signed in
+(so a guessed or leaked password alone opens nothing), and the owner can ask
+everybody for a new password.
 
 ## Open questions
 

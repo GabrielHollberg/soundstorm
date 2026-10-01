@@ -314,7 +314,12 @@ func (mt *Maintainer) step(ctx context.Context, enabled func() bool) time.Durati
 	if granted <= 0 {
 		granted = mt.lease()
 	}
-	return granted / 2
+	// Never sooner than a retry would be: a router granting a few seconds
+	// was otherwise refreshed every second or two, for ever (a review).
+	if w := granted / 2; w > retryWait(granted) {
+		return w
+	}
+	return retryWait(granted)
 }
 
 // ensure opens (or re-opens, refreshing the lease) the mapping and records it.

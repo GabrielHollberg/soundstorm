@@ -419,14 +419,27 @@ var decoySalt = make([]byte, saltLen)
 // that device's record instead, so a stranger's guessing cannot refuse the
 // people who actually use the account. Without one, every limit applies.
 func (m *Manager) SignIn(ctx context.Context, client, name, password string, devices ...string) (string, time.Time, state.User, error) {
-	var (
-		token  string
-		expiry time.Time
-		user   state.User
-	)
+	user, err := m.CheckSignIn(ctx, client, name, password, devices...)
+	if err != nil {
+		return "", time.Time{}, state.User{}, err
+	}
+	token, expiry, err := m.SessionFor(user)
+	if err != nil {
+		return "", time.Time{}, state.User{}, err
+	}
+	return token, expiry, user, nil
+}
+
+// CheckSignIn is SignIn without the session: the password checked behind the
+// throttle, and nothing started. A sign-in that must wait for approval
+// (httpapi's devices.go) starts its session only once approved - one started
+// at once counted towards the account's 50, and a guessed password tried
+// fifty times from new devices pushed every real session out (a review).
+func (m *Manager) CheckSignIn(ctx context.Context, client, name, password string, devices ...string) (state.User, error) {
+	var user state.User
 	check := func() error {
 		var err error
-		token, expiry, user, err = m.Login(name, password)
+		user, err = m.checkLogin(name, password)
 		return err
 	}
 	var err error
@@ -443,7 +456,7 @@ func (m *Manager) SignIn(ctx context.Context, client, name, password string, dev
 			user.MustChangePassword = true
 		}
 	}
-	return token, expiry, user, err
+	return user, err
 }
 
 // trustedDevice finds, among the tokens a request carried, one this account
@@ -570,11 +583,24 @@ func (m *Manager) SetDeviceCookie(w http.ResponseWriter, r *http.Request, user s
 //
 // It is not throttled; anything answering the network must use SignIn.
 func (m *Manager) Login(name, password string) (string, time.Time, state.User, error) {
+	user, err := m.checkLogin(name, password)
+	if err != nil {
+		return "", time.Time{}, state.User{}, err
+	}
+	token, expiry, err := m.SessionFor(user)
+	if err != nil {
+		return "", time.Time{}, state.User{}, err
+	}
+	return token, expiry, user, nil
+}
+
+// checkLogin is the password check alone.
+func (m *Manager) checkLogin(name, password string) (state.User, error) {
 	// Refused before the account is even looked up, so a wrong name and an
 	// over-long password are indistinguishable in cost - see
 	// MaxPasswordLength for why hashing it at all would be worth doing.
 	if len(password) > MaxPasswordLength {
-		return "", time.Time{}, state.User{}, ErrInvalidCredentials
+		return state.User{}, ErrInvalidCredentials
 	}
 
 	user, found := m.store.UserByName(name)
@@ -585,17 +611,13 @@ func (m *Manager) Login(name, password string) (string, time.Time, state.User, e
 	}
 	got, err := pbkdf2.Key(sha256.New, password, salt, iterationsOr(user.Iterations), keyLen)
 	if err != nil {
-		return "", time.Time{}, state.User{}, fmt.Errorf("derive key: %w", err)
+		return state.User{}, fmt.Errorf("derive key: %w", err)
 	}
 	if !found || subtle.ConstantTimeCompare(got, want) != 1 {
-		return "", time.Time{}, state.User{}, ErrInvalidCredentials
+		return state.User{}, ErrInvalidCredentials
 	}
 
-	token, expiry, err := m.SessionFor(user)
-	if err != nil {
-		return "", time.Time{}, state.User{}, err
-	}
-	return token, expiry, user, nil
+	return user, nil
 }
 
 // SessionFor starts a session for an account that has proved itself some

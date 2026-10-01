@@ -20,7 +20,13 @@ What is native, and what is still the page:
   camera roll to `PUT /api/photos/backup`, checking each batch with
   `POST /api/photos/backup/check` first, so a reinstall sends nothing twice.
   The page's Settings → Your photos holds the switch and its options (Wi-Fi
-  only, videos, only while charging); not on a TV.
+  only, videos, only while charging); not on a TV. One backup runs at a time,
+  in the foreground with a quiet notification where Android allows (an ordinary
+  job is stopped at ten minutes), and Settings shows the file being sent.
+  Signing out, or another account appearing, turns it off.
+- **Several saved servers** (`ServerAddress.kt`): the connect screen lists
+  **Your servers**, the latest used first; tap to switch, long-press to rename
+  or remove. Each keeps its own sign-in.
 - **TV**: the manifest adds `LEANBACK_LAUNCHER` and a banner, and marks leanback
   and a touchscreen as not required, so phones install it as before. On a TV the
   web view's user agent gains `SoundStormTV/1` and the page switches to its
@@ -80,6 +86,8 @@ still to come.
 - Does a film go full screen?
 - Turn on photo backup in Settings → Your photos: do the photos arrive in your
   folder on the server, and does a second run send nothing again?
+- Add a second server under Change server: does switching back keep you signed
+  in?
 
 ## Testing on the emulator
 
@@ -100,6 +108,10 @@ with `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>` and
 `chromium.connectOverCDP('http://localhost:9333')` - but only from a build with
 `isDebuggable = true`, which is how WebView debugging is switched on. Flip it
 locally for that and never commit or publish it.
+
+On the developer's own install (the one with training switched on), Settings →
+Playback on this device in the app has **Sound cut out? Send a report**, which
+sends what the native player saw to the server; no other install shows it.
 
 `adb shell cmd media_session dispatch pause` (or `play`, `next`, `previous`)
 presses a media button, as headphones or the lock screen would.

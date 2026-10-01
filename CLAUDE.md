@@ -4148,6 +4148,90 @@ into modules; Navidrome's whole library is fetched twice per cache window.
   from home, as Android does; `present(alert)` while something is presented
   never resumes the page's `confirm()`.
 
+**A second bug review (2026-10-01, after profiles, approval and saved
+servers)**: seven reviewers by surface and one for the docs, every finding
+checked before changing. Fixed on the PC:
+
+- **Approval of new devices could lock a person out.** The right password on
+  a new device started a session before it was held, and sessions are capped
+  at 50 an account, oldest dropped - so a leaked password tried fifty times
+  from new devices signed the real person out everywhere, and with nothing
+  left signed in nobody could approve them. The password is now checked alone
+  (`auth.CheckSignIn`; `SignIn` is that plus `SessionFor`), and a held sign-in
+  gets its session only once approved (`handlePendingSignIn`). Setting a PIN
+  checks the password behind the throttle, as changing it does; "keep me on
+  this device" is limited (it rewrites state.json).
+- Server, smaller: a playback report is named to the millisecond and person;
+  a photo download cancelled or a person removed mid-sort no longer comes back
+  after a restart; a Jellyfin library that failed to register (a 503 while it
+  loaded) is retried rather than left missing for good; AudioMuse's analysis
+  is read on its own context (a request going away failed everyone waiting),
+  a panic there is an error, and a failed read waits a minute; a Plex import's
+  connections close; a removed member's half-made backend secrets go; a
+  router granting a few seconds is not refreshed every second; a Google photo
+  with EXIF is filed by its own clock (Takeout's is UTC); a long tag is cut on
+  a character; M4A tags after a 64-bit atom are read; the duplicate check's
+  atom size cannot overflow; putting back from the bin never replaces a file
+  that arrived meanwhile, nor follows a path out of the library.
+- Compose now passes `SOUNDSTORM_STARTER_LIBRARY`, `SOUNDSTORM_LOG_LEVEL` and
+  the two `SOUNDSTORM_CALIBREWEB_*` settings, which `.env` could not reach.
+  install.ps1 writes `.env` as UTF-8 without a byte order mark (ASCII turned
+  an accented library folder into a question mark and nothing mounted), and
+  reads it as UTF-8.
+- Web: the "allow this device?" question takes the focus and is a top layer
+  for the TV remote (it could not be answered on a TV); a TV choosing who's
+  listening takes over the music the app kept playing; the new-password screen
+  closes Now Playing, the film and the book and stops the music; Switch person
+  has a Back; one setup poll after showing the app again; Allowed is said only
+  when it was; TV code and approval polls no longer overlap; read-along holds
+  one wake lock.
+- **Android 0.21**: "after this song" stopped nothing - the native player had
+  the next songs and moved into them; the page now takes them back while it is
+  set, and pauses at the end. The new-photo job was appended on every launch
+  (KEEP when opening, REPLACE when options change, appended only from inside
+  the job). The old player's notification no longer starts beside the native
+  one on a cold start. The playback log also records what the phone itself is
+  playing and where (`AudioPlaybackCallback`). The silent-audio report: the
+  timeline keeps moving only while the audio track takes data, so the silence
+  is after the player - most likely the output route or a system mute tied to
+  that one audio track, which a skip replaces; a report from 0.20/0.21 will
+  show which. Dragging the timeline within the song when it happens is a
+  cheap test (a seek also replaces the track).
+- Docs: README, docs/ and site/ brought up to date (profiles, approval, TV
+  sign-in, saved servers, iPhone backup, streaming quality).
+
+**Left from this review**: a drop mixing an epub and an m4b goes wholly to
+whichever comes first (`decideGroup`); a companion in an album whose name
+another artist shares lands in Unknown Artist (`groupFolder`); a retried
+member Immich account can get a second library; two syncs at once can give
+Storyteller two books; a missing Audiobookshelf library is taken for
+"provision again"; TV codes are limited per address (one behind Docker
+Desktop); the sixth wrong PIN is still checked; finished photo downloads are
+never forgotten; `.env` values are unquoted (a ` #` or `$` in a library path);
+a flapping remote check can reissue certificates; CI's Pebble is unpinned;
+Media3 is 1.5.1; **phone backup remembers what was sent per phone, not per
+server or account** (Android and iPhone: a second server or person shows "all
+backed up" with nothing sent).
+
+**For the Mac, from this review (Apple TV and iPhone):**
+- **Switching person sends the last person's audiobook place to the new
+  account** (`ProfilesView.go` switches before `player.stop()` saves; signing
+  in as someone else never stops the player at all): save and stop first,
+  awaited, and on `signedIn()` when the user changed; `signOut()` likewise.
+- **Radio top-ups exclude nothing**: `exclude` must be `sourceId/id` (the
+  server's `songKey`), and at most the last 1,500 - past 2,000 the server
+  refuses and the station ends (`Player.swift:92`).
+- iPhone backup: `backup.server` is never cleared after moving to a plain-http
+  server (photos go to the old one, refused); one refused photo stops backup
+  for good (pass over it, as Android 0.18); assets with no resource count in
+  the total for ever. And the per-server sent list above.
+- Sign-out and server switch keep `video`, `photos`, `reading`, `favorites`,
+  `pills`, `look`: share `switched()`'s reset. A TV open when approval is
+  turned on never notices (refresh `approveNewDevices` in the loop).
+- Smaller: remove observers and remote-command targets in `deinit`;
+  `VideoSession.start` after Back; a Back on the profiles picker from
+  Settings; lowercase the host in `ServerAddress.parse`; `PagedItems` offset.
+
 **Setup that fails half way finishes on the next attempt (2026-10-01).**
 Each backend's first-run setup is several steps - make the admin account,
 sign in, make a key, make a library - and the password was saved only once all

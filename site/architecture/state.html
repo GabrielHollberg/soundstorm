@@ -47,7 +47,8 @@ backed by the <code>soundstorm-state</code> named volume.</p>
 <ul>
   <li><strong>Backends</strong> - the generated admin credentials for each media server.</li>
   <li><strong>Users</strong> - accounts with a PBKDF2 hash (600,000 rounds), a role (owner or
-  member), which media kinds they may see, and their photo limit. An empty
+  member), which media kinds they may see, their photo limit, an optional PIN for switching to them
+  on a shared device, and whether they must choose a new password. An empty
   <code>libraries</code> list is written as <code>[]</code>, never dropped: read back as nil it
   would mean <em>every</em> library, the one way this field must never fail.</li>
   <li><strong>Identities</strong> - per-person accounts on backends that need them
@@ -57,7 +58,12 @@ backed by the <code>soundstorm-state</code> named volume.</p>
   migration hashed the keys in place, so nobody was signed out. Capped at 50 per account.</li>
   <li><strong>Progress</strong> - ebook positions (an EPUB CFI) and film and episode positions
   (<code>t=1234.5</code>), kept only for items that exist and rate limited.</li>
-  <li><strong>Decisions</strong>: the starter library has unpacked, remote access on or off,
+  <li><strong>Setup secrets</strong> - each password, key and token a backend's setup makes, kept
+  before the backend is told it, so a setup that fails half way finishes on the next attempt;
+  cleared once the backend is saved.</li>
+  <li><strong>Devices</strong> - who may be switched to on each shared device ("Who's listening?"),
+  keyed by a hash of the device's profile cookie.</li>
+  <li><strong>Decisions</strong>: the starter library has unpacked, new devices need approval, remote access on or off,
   online lyrics and discovery allowed, read-along syncing manual, wrong read-along matches
   (<code>notPairs</code>) and hand-made ones, and the key that signs device cookies.</li>
 </ul>

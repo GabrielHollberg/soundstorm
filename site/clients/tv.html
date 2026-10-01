@@ -30,6 +30,11 @@ management stay on a phone or computer.</p>
 required, so phones install the app exactly as before. When the app finds itself on a television, the
 web view's user agent gains <code>SoundStormTV/1</code> and the page does the rest. In a browser,
 <code>?tv=1</code> turns the TV mode on for testing and <code>?tv=0</code> off.</p>
+<p>The sign-in screen in TV mode leads with <strong>Sign in with your phone</strong> - a code and a
+QR code instead of typing a password with the remote (see
+<a href="../server/accounts.html#tvlink">accounts</a>) - and a TV asks <strong>Who's
+listening?</strong> every time it opens, among the people kept on it (see
+<a href="../server/accounts.html#profiles">profiles</a>).</p>
 
 <h3 id="focus">A remote instead of a finger</h3>
 <p>A TV has no touch and no mouse, only arrows, OK and Back. The TV mode (<code>tvRemote</code> in
@@ -121,7 +126,14 @@ given the cookies explicitly (<code>AVURLAssetHTTPCookiesKey</code>), or the ser
   <tr><td>Reader</td><td>A native EPUB reader (<code>EpubBook</code>, <code>EpubText</code>) laying chapters into pages with TextKit, reading and writing the same CFI as the web reader. PDFs drawn a page at a time by Core Graphics.</td></tr>
   <tr><td>Read Along</td><td>Storyteller's synced copy, with the sentence at the player's time lit and followed, as the web reader does.</td></tr>
   <tr><td>Categories</td><td>Every tab's pills, in the account's own order and without the ones put away.</td></tr>
+  <tr><td>Even volume, slow links</td><td>ReplayGain levelling by the page's formula, set as an audio mix on each item so the level changes exactly where the song does. A song not playing six seconds after it was asked for restarts at 128 kbps, and so does every song after it, until the player measures the link fast again.</td></tr>
+  <tr><td>Signing in</td><td><strong>Sign in with your phone</strong> first: a short code and a QR code a signed-in phone scans or types (see <a href="../server/accounts.html#tvlink">accounts</a>). Or a username and password, waiting for approval where new devices need it.</td></tr>
+  <tr><td>Who's listening?</td><td>The people kept on the TV, asked every time it opens, with their PINs (see <a href="../server/accounts.html#profiles">profiles</a>); Switch person in Settings.</td></tr>
+  <tr><td>Account rules</td><td>A screen for choosing a new password when the account is held to one; while new devices need approval, a signed-in TV is asked to allow other sign-ins, and Back means "Not now", never "Don't allow".</td></tr>
+  <tr><td>Servers</td><td>Several saved servers on the connect screen, shared code with the iPhone app (<code>ios/Shared</code>).</td></tr>
 </table>
+<p>Crossfade is not built on the TV: it is off by default on the page and set per device, so the TV
+would need a setting of its own just to turn it on.</p>
 
 <h3 id="apple-viz">All the visualizers, redrawn</h3>
 <p>The looks were the largest part. All twelve visualizers were ported from the page's JavaScript into

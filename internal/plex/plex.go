@@ -381,6 +381,9 @@ func (c *Client) Open(ctx context.Context, srv Server) (*Conn, error) {
 			DialContext:           (&net.Dialer{Timeout: 5 * time.Second, Control: dialGuard}).DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
+			// A transport per import: without this its idle connections to
+			// the Plex server stayed open for good (a review).
+			IdleConnTimeout: 30 * time.Second,
 		}
 	}
 	for _, base := range c.candidates(srv) {

@@ -97,13 +97,42 @@ audio is not one element:</p>
 screen shows the page's Media Session title and controls on a real iPhone. The simulator cannot say,
 and it has not yet been checked on a device.</p>
 
-<h2 id="backup">Photo backup, planned</h2>
-<p>The Android app backs up a phone's photos; the iPhone app does not yet. The server side is ready
-and the page needs no change: the iPhone app would read the photo library (full or limited access),
-check with <code>POST /api/photos/backup/check</code> which photos the server already has, upload the
-rest with a background <code>URLSession</code> to <code>PUT /api/photos/backup</code>, and answer the
-page's <code>soundstormApp.backup(...)</code> calls with the same status fields the Android app
-reports. iOS runs background uploads when it chooses, usually while charging on Wi-Fi.</p>
+<h2 id="backup">Photo backup</h2>
+<p>The iPhone app backs up the camera roll to the person's own photo folder
+(<code>ios/SoundStorm/PhotoBackup.swift</code>). It answers the page's
+<code>window.soundstormApp.backup(...)</code> messages with the same status fields the Android app
+reports, so the page has no iPhone code: the switch and its options (Wi-Fi only, videos, only while
+charging) are the same Settings card.</p>
+<ul>
+  <li><strong>What it reads:</strong> the photo library, with full or limited access, asked for when
+  backup is turned on. Newest first.</li>
+  <li><strong>Nothing twice:</strong> each batch is first checked with
+  <code>POST /api/photos/backup/check</code> by name and month (size 0, since sizing a photo kept in
+  iCloud would mean downloading it), so a reinstall or a new phone sends nothing the server has.</li>
+  <li><strong>How it sends:</strong> each original is written to a file
+  (<code>PHAssetResourceManager</code>, iCloud allowed; a Live Photo's still only) and uploaded to
+  <code>PUT /api/photos/backup</code> in a background <code>URLSession</code>, so a file already
+  going finishes with the app put away. It sends the web view's own session cookie - WKWebView keeps
+  its cookies apart from URLSession's - to the server only, never through a redirect.</li>
+  <li><strong>When:</strong> while the app is open, 30 seconds after a photo is added, and as a
+  <code>BGProcessingTask</code> iOS starts when it chooses (needing power if "only while charging").
+  Wi-Fi only means a connection that is not expensive or constrained.</li>
+  <li><strong>Where to:</strong> the page's secure address, its away-from-home twin, then the address
+  the app was opened with.</li>
+  <li><strong>On a shared phone:</strong> signing out, or another account signing in, turns backup
+  off; the page asks the next person afresh.</li>
+</ul>
+<p>Checked against a local server in the simulator: the six sample photos arrived in the right
+year and month, byte for byte. The background task and an upload finishing with the app closed
+want a real iPhone over a night.</p>
+
+<h2 id="servers">Several saved servers</h2>
+<p>A phone may know several servers - its owner's, and a parent's. The connect screen is
+<strong>Your servers</strong>: the latest used first, the one in use ticked, a tap to switch, a hold
+for Rename and Remove, and a way to add another. The list (<code>ServerAddress.all</code>, in
+<code>ios/Shared</code> and used by the Apple TV app too) keeps each address and a name; a first name
+is the address without <code>.home.soundstorm.dev</code>. Sign-ins stay with each server, since
+cookies belong to an address, so switching signs nobody out.</p>
 
 <h2 id="testing">How it is tested</h2>
 <p>An XCUITest in <code>ios/SoundStormUITests</code> drives the app through connecting and signing

@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
@@ -83,6 +84,22 @@ object PlayerLog {
             }
             override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
                 removed.filter { it.isSink }.forEach { add("output removed ${kind(it.type)} ${it.productName}") }
+            }
+        }, Handler(Looper.getMainLooper()))
+        // What the phone itself is playing, and where to: a mute or a change
+        // of route on the system's side never shows in the player's volume.
+        var lastPlaying = ""
+        am.registerAudioPlaybackCallback(object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<android.media.AudioPlaybackConfiguration>) {
+                val now = configs.joinToString(",") { cfg ->
+                    val usage = cfg.audioAttributes.usage
+                    val to = if (Build.VERSION.SDK_INT >= 33) cfg.audioDeviceInfo?.let { kind(it.type) } ?: "?" else "?"
+                    "usage$usage->$to"
+                }
+                if (now != lastPlaying) {
+                    lastPlaying = now
+                    add("phone playing [$now]")
+                }
             }
         }, Handler(Looper.getMainLooper()))
     }

@@ -1982,7 +1982,7 @@ function Wait-ForSoundStorm([string]$Url) {
 function Get-EnvSettingIn([string]$Folder, [string]$Name) {
     $envFile = Join-Path $Folder '.env'
     if (-not (Test-Path $envFile)) { return $null }
-    foreach ($line in (Get-Content $envFile)) {
+    foreach ($line in (Get-Content -Encoding UTF8 $envFile)) {
         if ($line -match "^\s*$([regex]::Escape($Name))=(.*)$") { return $Matches[1].Trim() }
     }
     return $null
@@ -2366,11 +2366,14 @@ function ConvertTo-Scheme([string]$Tls) {
 function Set-EnvSetting([string]$Name, [string]$Value) {
     $envFile = Join-Path $Dir '.env'
     $lines = @()
-    if (Test-Path $envFile) { $lines = @(Get-Content $envFile) }
+    if (Test-Path $envFile) { $lines = @(Get-Content -Encoding UTF8 $envFile) }
     $pattern = "^\s*$([regex]::Escape($Name))="
     $kept = @($lines | Where-Object { $_ -notmatch $pattern })
     $kept += "$Name=$Value"
-    $kept | Out-File -FilePath $envFile -Encoding ascii
+    # UTF-8 without a byte order mark, which compose reads: ASCII turned a
+    # library folder like D:\Musica with an accent into a question mark, and
+    # every shelf failed to mount (a review).
+    [IO.File]::WriteAllLines($envFile, [string[]]$kept, (New-Object Text.UTF8Encoding $false))
     Protect-SecretFile $envFile
 }
 
@@ -2924,8 +2927,8 @@ function Export-Move([string]$Destination, [bool]$WithLibrary) {
         # Plain line endings in everything the move writes: it may be read on
         # a Mac or Linux, where a carriage return becomes part of every value.
         $settings = Join-Path $dest 'settings.env'
-        $kept = @(Get-Content (Join-Path $Dir '.env') | Where-Object { $_ -notmatch $MoveLocal })
-        [IO.File]::WriteAllText($settings, (($kept -join "`n") + "`n"), (New-Object Text.ASCIIEncoding))
+        $kept = @(Get-Content -Encoding UTF8 (Join-Path $Dir '.env') | Where-Object { $_ -notmatch $MoveLocal })
+        [IO.File]::WriteAllText($settings, (($kept -join "`n") + "`n"), (New-Object Text.UTF8Encoding $false))
         Protect-SecretFile $settings
 
         Step "Step 3 of 4 - Copying your media"
@@ -2984,7 +2987,7 @@ function Test-MoveFolder([string]$Path) {
 function Import-Settings([string]$Path) {
     $file = Join-Path $Path 'settings.env'
     if (-not (Test-Path -LiteralPath $file)) { return }
-    foreach ($line in Get-Content -LiteralPath $file) {
+    foreach ($line in Get-Content -Encoding UTF8 -LiteralPath $file) {
         # Only the install's own choices and secrets: a move folder on a stick
         # could otherwise set the image that runs, or the name service and
         # certificate authority it trusts (a security review).
@@ -3224,7 +3227,7 @@ if ($upgrade) {
     $lines = @("SOUNDSTORM_PORT=$port")
     $lan = Get-LanAddress
     if ($lan) { $lines += "SOUNDSTORM_TLS_HOSTS=$lan" }
-    $lines | Out-File -FilePath '.env' -Encoding ascii
+    [IO.File]::WriteAllLines((Join-Path $Dir '.env'), [string[]]$lines, (New-Object Text.UTF8Encoding $false))
     Protect-SecretFile (Join-Path $Dir '.env')
 }
 

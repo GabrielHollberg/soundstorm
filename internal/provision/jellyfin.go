@@ -91,10 +91,11 @@ func provisionJellyfin(ctx context.Context, c *httpx.Client, t Target, sec secre
 			continue
 		}
 		if err := ensureJellyfinLibrary(ctx, c, token, lib.name, lib.collection, lib.path, log); err != nil {
-			// A missing library is not fatal to provisioning: the credentials
-			// are good and someone can add the folder by hand. Searches will
-			// just come back empty until then.
-			log.Warn("could not register jellyfin library", "name", lib.name, "err", err)
+			// Tried again, not let go: once the backend was saved nothing
+			// looked at its libraries again, and a 503 while Jellyfin loaded
+			// left the Films or TV shelf empty for good (a review). The retry
+			// resumes with the kept password and finds a library already made.
+			return state.Backend{}, fmt.Errorf("register jellyfin library %s: %w", lib.name, err)
 		}
 	}
 

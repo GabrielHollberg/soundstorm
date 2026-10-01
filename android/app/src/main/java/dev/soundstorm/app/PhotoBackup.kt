@@ -174,11 +174,13 @@ object PhotoBackup {
             wm.enqueueUniqueWork(NOW, ExistingWorkPolicy.KEEP,
                 OneTimeWorkRequestBuilder<BackupWorker>().setConstraints(cons).build())
         }
-        watchForNewPhotos(c)
+        // Kept as it is on an ordinary opening (appended, it grew a job on
+        // every launch - a review); replaced when the options changed.
+        watchForNewPhotos(c, if (now) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP)
     }
 
     /** A job that runs when a photo or video is added to the phone. */
-    fun watchForNewPhotos(c: Context) {
+    fun watchForNewPhotos(c: Context, policy: ExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE) {
         val cons = Constraints.Builder()
             .setRequiredNetworkType(if (prefs(c).getBoolean("wifiOnly", true)) NetworkType.UNMETERED else NetworkType.CONNECTED)
             .setRequiresCharging(prefs(c).getBoolean("charging", false))
@@ -189,7 +191,7 @@ object PhotoBackup {
         // Replaced, not kept: it is set up again from inside the job it
         // replaces, and KEEP found that running job and did nothing, so the
         // trigger fired once and no more (a review).
-        WorkManager.getInstance(c).enqueueUniqueWork(NEW_PHOTOS, ExistingWorkPolicy.APPEND_OR_REPLACE,
+        WorkManager.getInstance(c).enqueueUniqueWork(NEW_PHOTOS, policy,
             OneTimeWorkRequestBuilder<BackupWorker>().setConstraints(cons).build())
     }
 

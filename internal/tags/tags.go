@@ -420,15 +420,26 @@ func findAtom(r io.ReadSeeker, path []string, start, end int64) ([]byte, error) 
 		}
 		size := int64(binary.BigEndian.Uint32(header[:4]))
 		name := string(header[4:8])
-		if size == 0 {
+		hdr := int64(8)
+		switch size {
+		case 0:
 			size = end - offset // "to the end of the file"
+		case 1:
+			// A 64-bit size follows (an mdat over 4GB before moov, which
+			// left a big m4b looking untagged - a review).
+			big := make([]byte, 8)
+			if _, err := io.ReadFull(r, big); err != nil {
+				return nil, nil
+			}
+			size = int64(binary.BigEndian.Uint64(big))
+			hdr = 16
 		}
-		if size < 8 || offset+size > end {
+		if size < hdr || size > end-offset {
 			return nil, nil
 		}
 
 		if name == path[0] {
-			body := offset + 8
+			body := offset + hdr
 			// meta is a full atom: four bytes of version and flags before its
 			// children. Descending without skipping them lands mid-atom and
 			// finds nothing, which is the usual reason an M4A "has no tags".
@@ -436,7 +447,7 @@ func findAtom(r io.ReadSeeker, path []string, start, end int64) ([]byte, error) 
 				body += 4
 			}
 			if len(path) == 1 {
-				if size-8 > maxTagBytes {
+				if size-hdr > maxTagBytes {
 					return nil, nil
 				}
 				if _, err := r.Seek(body, io.SeekStart); err != nil {

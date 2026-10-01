@@ -437,6 +437,7 @@ function startFollowing(view, timeline, audiobook) {
 // Where there is no Wake Lock (older browsers, plain http, which is not a
 // secure context), the screen simply sleeps as before.
 let wakeLock = null;
+let wakeAsking = false;
 async function keepAwake(on) {
   if (!on) {
     const lock = wakeLock;
@@ -444,7 +445,10 @@ async function keepAwake(on) {
     if (lock) lock.release().catch(() => {});
     return;
   }
-  if (wakeLock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  // One request at a time: two quick calls took two locks, and the first was
+  // never let go, keeping the screen on after following stopped (a review).
+  if (wakeLock || wakeAsking || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  wakeAsking = true;
   try {
     const lock = await navigator.wakeLock.request('screen');
     if (!session.follow) {
@@ -455,6 +459,8 @@ async function keepAwake(on) {
     lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
   } catch {
     // Refused - low battery mode, or not allowed here. Nothing to do.
+  } finally {
+    wakeAsking = false;
   }
 }
 

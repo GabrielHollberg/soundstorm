@@ -72,7 +72,15 @@ one file at a time with progress through a big one. It sends the <em>original</e
 (<code>setRequireOriginal</code>), because otherwise Android hands over a copy without the location,
 which would empty Places and differ in size. The page decides nothing: Settings shows the switch and
 its options through a small bridge, and after signing in on a phone the app asks once whether to back
-up. The iPhone app does not have backup yet.</p>
+up. Only one backup runs at a time (a lock in the worker), Settings shows the file being sent, and
+a job runs in the foreground with a quiet notification where Android allows, since an ordinary job
+is stopped at ten minutes.</p>
+<p><strong>The iPhone half</strong> (<code>ios/SoundStorm/PhotoBackup.swift</code>) answers the same
+messages with the same status, so the page has no iPhone code. It reads the photo library (full or
+limited access), checks each batch with the server by name and month, writes each original to a
+file (iCloud allowed) and sends it in a background <code>URLSession</code>, so a file already going
+finishes with the app put away. It runs while the app is open, shortly after a photo is added, and
+as a background task iOS starts when it chooses. See <a href="../clients/iphone.html#backup">iPhone</a>.</p>
 <div class="warn"><strong>A shared phone.</strong> A security review found backup carried on into
 the next person's folder after a different account signed in. Now signing out, or another account
 appearing, turns backup off; the phone sends the account it was turned on for

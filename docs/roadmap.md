@@ -27,7 +27,8 @@ each.
 - **Photo albums kept as albums.** Imports file by date; the albums a Google or
   iCloud download knows about are not kept yet.
 - **Near-duplicate photos** (an edited or re-compressed copy) are kept twice.
-- **iPhone: native audio (stage two) and photo backup.** Android has both.
+- **iPhone: native audio (stage two).** Android's songs are played natively;
+  the iPhone app still plays them in the page. (Photo backup is built on both.)
 - **Casting** to a Chromecast needs short-lived per-song URLs.
 - **Skipping intros** needs a Jellyfin plugin to know where they are.
 - **Last.fm scrobbling** needs an API key registered to the project;
@@ -39,7 +40,8 @@ each.
   key means everyone reinstalls once), and the Windows setup file is unsigned,
   which is why it needs the Unblock step.
 - **Sessions cannot be listed or revoked one by one.** Changing a password signs
-  every other device out.
+  every other device out. (New devices can be made to need approval, and the
+  owner can ask everyone for a new password.)
 - **Per-title filtering** ("only these films"): access is per whole shelf; doing
   more means per-person Jellyfin accounts and its parental ratings.
 

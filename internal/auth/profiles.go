@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
@@ -76,8 +77,11 @@ const pinIterations = 100_000
 // SetPIN sets this person's PIN for switching, or with "" removes it. It
 // needs their password: a session left open is not enough to change how
 // they are protected on shared devices.
-func (m *Manager) SetPIN(actor state.User, password, pin string) error {
-	if err := m.verify(actor.ID, password); err != nil {
+//
+// The password is checked behind the throttle, as changing a password is:
+// otherwise this was a second, unthrottled place to guess it (a review).
+func (m *Manager) SetPIN(ctx context.Context, client string, actor state.User, password, pin string) error {
+	if err := m.throttle.guarded(ctx, client, actor.Name, func() error { return m.verify(actor.ID, password) }); err != nil {
 		return err
 	}
 	if pin == "" {

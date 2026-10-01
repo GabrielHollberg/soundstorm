@@ -210,9 +210,12 @@ func (s *Server) handleSetPIN(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "expected a JSON body with password and pin")
 		return
 	}
-	switch err := s.auth.SetPIN(user, body.Password, body.PIN); {
+	switch err := s.auth.SetPIN(r.Context(), clientOf(r), user, body.Password, body.PIN); {
 	case errors.Is(err, auth.ErrBadPIN):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case func() bool { _, ok := auth.IsThrottled(err); return ok }():
+		t, _ := auth.IsThrottled(err)
+		writeThrottled(w, t)
 	case err != nil:
 		writeError(w, http.StatusForbidden, "that password is not right")
 	default:

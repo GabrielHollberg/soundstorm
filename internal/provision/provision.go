@@ -761,6 +761,9 @@ func (m *Manager) PhotoAccountFor(ctx context.Context, backendID, userID string)
 // would be a real problem.
 func (m *Manager) ForgetUser(ctx context.Context, userID string) {
 	for _, t := range m.targets {
+		// A member account half made (its password kept, never recorded) is
+		// forgotten with them.
+		_ = m.store.ClearSetupSecrets(memberSecrets(t.ID, userID))
 		identity, ok := m.store.Identity(userID, t.ID)
 		if !ok || identity.RemoteID == "" {
 			continue

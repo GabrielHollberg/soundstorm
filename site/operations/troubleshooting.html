@@ -84,6 +84,8 @@ minutes is normal.</p>
   <li><strong>A temporary error is not a password problem.</strong> Only a 401 or 403 is taken to mean
   wrong credentials; a busy server, a timeout or a refused connection just means wait. A media server
   that is loading often accepts the connection and answers "unavailable" for a while.</li>
+  <li><strong>A setup interrupted half way</strong> - a timeout, the media server restarting - finishes
+  on the next attempt by itself: the passwords it made are kept from the moment they were made.</li>
 </ul>
 
 <h2 id="not-appearing">Files do not appear</h2>
@@ -125,7 +127,8 @@ exactly like a deliberately emptied library. Mount library drives at boot.</div>
 <h2 id="slow">Music is slow to start away from home</h2>
 <p>Usually the home's upload speed. Things that already happen automatically: songs are sent without the
 cover art inside them (which made browsers wait for megabytes), sending is paced so a skip does not wait
-behind a backlog, and a slow connection is measured as the app opens and songs start at 128 kbps.</p>
+behind a backlog, and a slow connection is measured as the app opens and songs start at 128 kbps -
+going back to full quality by itself once the connection is fast again.</p>
 <ul>
   <li><strong>Settings &rarr; Playback on this device</strong>: "Original, lower on a slow connection" is
   the default. "Always original" turns off every fallback - only choose it on a fast connection.</li>
@@ -173,6 +176,15 @@ meant to say what to do:</p>
   <li><strong>Sign-up asks for a setup code</strong>: it is in the setup window's last screen, in
   <code>.env</code> in the install folder (<code>SOUNDSTORM_SETUP_CODE</code>), or, for a compose-only
   install, in the log.</li>
+  <li><strong>"Waiting for approval"</strong> after the right password: the owner has turned on
+  approval of new devices. Allow it from another device signed in to the same account, or the owner's;
+  with nothing else signed in, the setup code from <code>.env</code> allows it. A request is forgotten
+  after ten minutes.</li>
+  <li><strong>"Choose a new password"</strong> before anything else works: the owner asked everyone
+  for one, or the old password no longer meets the rules (12 characters, not a common one).</li>
+  <li><strong>A PIN that keeps failing</strong> on a shared device: after five wrong tries switching to
+  that person waits, and after fifteen they are taken off the device - sign in with the password
+  instead.</li>
 </ul>
 </main>
 <footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>

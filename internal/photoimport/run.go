@@ -216,10 +216,12 @@ func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, soci
 	exifTaken, exifOK := ExifTaken(head)
 	switch {
 	case exifOK:
+		// The photo's own clock wins, as it ranks first: Takeout's time is
+		// UTC, so a photo taken on New Year's Eve evening in New York was
+		// filed under January, and labelled as from EXIF besides (a review).
+		// The download still gives the place.
 		src = SourceExif
-		if meta.Taken.IsZero() {
-			meta.Taken = exifTaken
-		}
+		meta.Taken = exifTaken
 	case !meta.Taken.IsZero():
 		src = SourceDownload
 		if socialSrc != SourceNone {
