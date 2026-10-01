@@ -175,7 +175,7 @@
            on and working. -->
       <!-- Per device, not per account: a phone on mobile data and the computer
            on the Wi-Fi want different things. Kept in this browser. -->
-      <div id="playback" class="account-section card" data-cat="playback" data-words="quality data saver bitrate streaming crossfade screen awake always on sleep lock">
+      <div id="playback" class="account-section card" data-cat="playback" data-words="quality data saver bitrate streaming crossfade screen awake always on sleep lock audiobook volume loud quiet">
         <h2>Playback on this device</h2>
         <label class="setting-row">
           <span>Streaming quality</span>
@@ -186,6 +186,15 @@
             <option value="256">High (256 kbps)</option>
             <option value="128">Normal (128 kbps)</option>
             <option value="96">Data saver (96 kbps)</option>
+          </select>
+        </label>
+        <label class="setting-row">
+          <span>Audiobook volume</span>
+          <select id="book-gain-select">
+            <option value="0">Same as everything else</option>
+            <option value="-4">A little quieter</option>
+            <option value="-8">Quieter, like a film's dialogue</option>
+            <option value="-12">Much quieter</option>
           </select>
         </label>
         <label class="setting-row">

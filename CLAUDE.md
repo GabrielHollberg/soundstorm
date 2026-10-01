@@ -1130,6 +1130,15 @@ has no touch and no mouse:
   and right go by chapters - the next, or back to this one's start (the one
   before near its start), as a swipe does; a book without a chapter list
   keeps its thirty seconds.
+- **The chapter list on a TV** opens with the highlight on the chapter
+  playing; up and down move one at a time, the list scrolling when the next
+  is off it, nothing past the first or last; left or right anywhere closes
+  it and gives the highlight back to the Chapters button.
+- **Audiobooks play quieter** (`bookGainDb`, Playback on this device, 8dB
+  unless changed): a book is mastered loud and a film keeps its dialogue
+  quiet, so at one volume a book was far louder (the owner's report). Per
+  device, applied as a level under the listener's own volume, as songs'
+  ReplayGain is.
 - **No view screen scrolls** - Now Playing, a film, a photo, a book - the
   owner's rule, after the projector's audiobook screen was found scrolled
   120px down, its bar off the top. `overflow: hidden` was not enough: a

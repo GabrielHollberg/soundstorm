@@ -144,6 +144,17 @@ const streamPath = (item) =>
 // iPhone cannot (there it streams the original). Downloads always keep the
 // original: streamPath, not playPath.
 const QUALITY_KEY = 'soundstorm.quality';
+// Audiobooks are mastered loud - a voice, compressed to fill phone speakers -
+// and films leave their dialogue quiet for the loud moments, so at one volume
+// a book came out far louder than a film (the owner's report). A book plays
+// quieter by this much, per device (Playback on this device), 8dB unless
+// changed - about a film's dialogue.
+const BOOK_GAIN_KEY = 'soundstorm.bookGain';
+function bookGainDb() {
+  const v = Number(localStorage.getItem(BOOK_GAIN_KEY));
+  return localStorage.getItem(BOOK_GAIN_KEY) === null || !Number.isFinite(v) ? -8 : Math.max(-24, Math.min(0, v));
+}
+
 // slowLink: set for the rest of the session once a song sat unable to start
 // at full quality (see startStream). Original quality then streams at 128
 // kbps instead: a quarter of the data, and an MP3 has none of the ~600KB of
@@ -761,6 +772,12 @@ async function loadLibrary() {
 // "Use on your phone or TV": the home address, and the away-from-home one when
 // remote access is on and working. Only the owner's session carries the latter,
 // so a member sees the home address alone.
+$('book-gain-select').value = String(bookGainDb());
+$('book-gain-select').addEventListener('change', (event) => {
+  localStorage.setItem(BOOK_GAIN_KEY, event.target.value);
+  if (audio.item && audio.item.kind === 'audiobook') applyLevel(audio.item);
+  note($('playback-note'), 'Saved.', false);
+});
 $('quality-select').value = localStorage.getItem(QUALITY_KEY) || 'smart';
 $('quality-select').addEventListener('change', (event) => {
   localStorage.setItem(QUALITY_KEY, event.target.value);
@@ -6461,7 +6478,8 @@ function levelFor(item) {
 
 function applyLevel(item) {
   const player = $('audio-player');
-  const level = item && item.kind === 'music' ? levelFor(item) : 1;
+  const level = item && item.kind === 'music' ? levelFor(item)
+    : item && item.kind === 'audiobook' ? 10 ** (bookGainDb() / 20) : 1;
   audio.level = level;
   audio.settingVolume = true;
   player.volume = Math.max(0, Math.min(1, level * audio.userVolume));
@@ -15485,6 +15503,30 @@ function tvRemote() {
   let holdTimer = 0;
   document.addEventListener('keydown', (event) => {
     const t = event.target;
+    // The chapter list (the owner's asking): up and down move a chapter at a
+    // time, the list scrolling when the next is off it, and nothing past the
+    // first or last; left or right, from anywhere on it, closes it and gives
+    // the highlight back to the Chapters button.
+    if (shown('np-chapters') && t.closest && t.closest('#np-chapters')) {
+      const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+      if (keys.includes(event.key)) {
+        event.preventDefault();
+        wake();
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          closeChapters();
+          $('np-chapters-btn').focus({ preventScroll: true });
+          return;
+        }
+        const all = [...$('np-chapters-list').querySelectorAll('button')];
+        const at = all.indexOf(t.closest('button'));
+        const to = all[at + (event.key === 'ArrowDown' ? 1 : -1)];
+        if (to) {
+          to.focus({ preventScroll: true });
+          to.scrollIntoView({ block: 'nearest' });
+        }
+        return;
+      }
+    }
     // Now Playing has no play, previous or next buttons on a TV (the owner's
     // asking). While its buttons are faded, or none of them has the focus,
     // OK plays and pauses and left and right skip - an audiobook's thirty
