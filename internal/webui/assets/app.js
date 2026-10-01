@@ -2066,6 +2066,7 @@ function playAudio(item, fromQueue) {
   showDock(true);
   updateMediaSession();
   renderNowPlaying();
+  saveNativeQueue();
 
   // A song starts now: a round trip before the first note is felt, and nothing
   // about a four minute track needs the answer. An audiobook waits, because it
@@ -2220,7 +2221,11 @@ function startAt(url, offset) {
   // addresses map to copies kept here.
   player.src = (audio.urlMap && audio.urlMap[url]) || url;
 
-  const begin = () => player.play().catch(() => {});
+  // Taking over a song the app's player has paused leaves it paused.
+  const begin = () => {
+    if (audio.adoptPaused) { audio.adoptPaused = false; return; }
+    player.play().catch(() => {});
+  };
   if (offset > 0) {
     player.addEventListener('loadedmetadata', () => {
       // Landing exactly on the end would fire 'ended' and skip the chapter.
@@ -2955,7 +2960,7 @@ async function moveToSecureName(name) {
     if (body.secureName && await moveToSecureName(body.secureName)) return;
     forgetSetupCodeInAddress();
     state.training = Boolean(body.training);
-    if (body.signedIn) showApp(body.user);
+    if (body.signedIn) { showApp(body.user); setTimeout(adoptNativePlayback, 0); }
     else showGate(body.hasAccount, body.setupCodeRequired);
     return;
   }
@@ -6259,6 +6264,44 @@ function upcomingItem() {
   if (q.index + 1 < q.items.length) return q.items[q.index + 1];
   if (audio.repeat === 'all' && q.items.length) return q.items[0];
   return null;
+}
+
+// In the Android app the page remembers its queue on the device as each
+// song starts, and a page made again after Android ended the last one (the
+// app in the background, its memory reclaimed) asks the player what is
+// playing and takes it over: the same song, where it has got to, playing or
+// paused, with the queue around it - rather than an empty Now Playing over
+// music that is still going.
+const NATIVE_QUEUE_KEY = 'soundstorm-native-queue';
+function saveNativeQueue() {
+  if (!NATIVE_AUDIO || !audio.item || audio.item.kind !== 'music') return;
+  try {
+    const q = audio.queue;
+    const items = q ? q.items : [audio.item];
+    const index = q ? q.index : 0;
+    const from = Math.max(0, index - 20);
+    localStorage.setItem(NATIVE_QUEUE_KEY, JSON.stringify({
+      items: items.slice(from, index + 200), index: index - from, queued: Boolean(q), repeat: audio.repeat || null,
+    }));
+  } catch { /* nothing to take over later */ }
+}
+
+async function adoptNativePlayback() {
+  const app = window.soundstormApp;
+  if (!NATIVE_AUDIO || !app || !app.nativeState || !app.askState || audio.item) return;
+  app.askState();
+  await new Promise((r) => setTimeout(r, 600));
+  const now = app.nativeState();
+  if (!now || !now.url || audio.item) return;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(NATIVE_QUEUE_KEY) || 'null'); } catch { saved = null; }
+  if (!saved || !Array.isArray(saved.items)) return;
+  const index = saved.items.findIndex((it) => it && it.kind === 'music' && new URL(playPath(it), location.href).href === now.url);
+  if (index < 0) return;
+  if (saved.repeat) audio.repeat = saved.repeat;
+  if (saved.queued) audio.queue = { items: saved.items, index, original: null };
+  audio.adoptPaused = !now.pwr;
+  playAudio(saved.items[index], Boolean(saved.queued));
 }
 
 // nativeUpcoming is the songs after this one for the Android app's player,

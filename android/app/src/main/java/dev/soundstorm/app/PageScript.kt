@@ -151,6 +151,11 @@ object PageScript {
         if (!url) { toWeb(); setter('src').call(el, v); return; }
         // Off the page's own player first, if it had a song.
         if (!native && getter('src').call(el)) { proto.pause.call(el); proto.removeAttribute.call(el, 'src'); proto.load.call(el); }
+        // Taking over the song the player is already playing, for a page
+        // made again: nothing is loaded again, and the next report brings the
+        // page's play and playing.
+        const adopting = !native && st.url === url && st.state !== 'idle' && st.state !== 'ended';
+        if (adopting) { st.playing = false; pwr = false; }
         native = true;
         src = url;
         st.ended = false;
@@ -238,8 +243,24 @@ object PageScript {
     } });
 
     // What the native player did.
+    // What the player is doing, kept even while the page has not handed it a
+    // song: a page made again after Android ended the last one finds the
+    // music still playing and takes it over (app.js adoptNativePlayback).
+    let outside = null;
+    window.soundstormApp.nativeState = () => outside;
+    window.soundstormApp.askState = () => send('state');
     window.__soundstormAudio = (m) => {
-      if (!native) return;
+      if (!native) {
+        if (m.ev === 'state' && m.url) {
+          outside = { url: m.url, pwr: !!m.pwr, playing: !!m.playing, position: m.position || 0 };
+          st.url = m.url;
+          st.state = m.state;
+          if (typeof m.position === 'number') { st.position = m.position; st.at = performance.now(); }
+          st.duration = typeof m.duration === 'number' ? m.duration : NaN;
+          if (typeof m.buffered === 'number') st.buffered = m.buffered;
+        }
+        return;
+      }
       if (m.ev === 'ended') {
         // It moved into the queued song by itself: the page hears this one
         // end, and sets the next, which it will find already playing.

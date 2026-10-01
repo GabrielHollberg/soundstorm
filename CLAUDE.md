@@ -1226,9 +1226,15 @@ made again when the app is looked at. And since a page that is gone cannot
 hand the player the next song, the page now hands over the next ten
 (`nativeUpcoming`, `queueUpcoming`), each with its title, artist, album and
 cover for the lock screen, a few seconds into every song rather than 30s
-from its end; the player carries on through them by itself. Not yet: a page
-made again does not know what is playing, so Now Playing is empty until a
-song is chosen, though the music plays on.
+from its end; the player carries on through them by itself. **And the page
+made again takes the music over** (0.13): the page keeps its queue on the
+device as each song starts (`saveNativeQueue`, up to 220 songs around the
+one playing); a new page asks the player what it is doing (`askState`, the
+player's "state"), and the stand-in keeps the player's reports even before
+the page has handed it a song (`nativeState`). If the song playing is in the
+kept queue, the page plays it through the usual path, which the stand-in
+takes as the song already in the player: nothing loaded again, the same
+moment, playing or paused (`adoptPaused`), the queue around it.
 **And a song started by hand was heard minutes in, away from home.** Both
 waits were the pace (`pace.go`): hearing waited for twenty seconds in hand,
 which at 1.5 times the bitrate after an eight-second burst takes about 24s,

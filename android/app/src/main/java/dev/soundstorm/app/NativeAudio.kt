@@ -157,6 +157,9 @@ object NativeAudio {
                 p.play()
             }
             "pause" -> p.pause()
+            // What is playing, asked by a page made again after Android ended
+            // the last one, to take the song over rather than show nothing.
+            "state" -> report()
             "seek" -> {
                 seeking = true
                 p.seekTo((m.optDouble("s", 0.0) * 1000).toLong().coerceAtLeast(0))
