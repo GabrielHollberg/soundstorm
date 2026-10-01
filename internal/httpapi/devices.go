@@ -45,8 +45,8 @@ type pendingSignIn struct {
 	At       time.Time
 	// No session until approved: one made at once counted towards the
 	// account's 50 and pushed out real ones (a review).
-	answer   int  // 0 waiting, 1 approved, -1 refused
-	keep     bool // "keep me on this device", applied once it is in
+	answer int  // 0 waiting, 1 approved, -1 refused
+	keep   bool // "keep me on this device", applied once it is in
 }
 
 type pendingSignIns struct {

@@ -115,7 +115,7 @@ type Server struct {
 	// playback reports sent from the app (diagnostics.go)
 	reports allowance
 	// "keep me on this device" (profiles): each rewrites state.json
-	keeps allowance
+	keeps       allowance
 	hlsSessions hlsSessions
 	lookingUpMu sync.Mutex
 	lookingUp   map[string]bool
