@@ -19,13 +19,32 @@ final class API {
         let id: String
         let name: String
         let owner: Bool?
+        /// Asked to choose a new password before anything else (the owner
+        /// asked everybody, or this one no longer meets the rules).
+        let mustRenew: Bool?
+    }
+
+    /// Set when the server refuses a request until a new password is chosen.
+    private(set) var renewDemanded = false
+    /// Whether this person must choose a new password before anything else.
+    var mustRenew: Bool { renewDemanded || user?.mustRenew == true }
+
+    /// How a sign-in went: in, or waiting for this new device to be approved.
+    enum SignIn {
+        case signedIn
+        case waiting(id: String, codeAllowed: Bool)
     }
 
     struct Session: Decodable {
         let hasAccount: Bool
         let signedIn: Bool
         let user: User?
+        let approveNewDevices: Bool?
     }
+
+    /// Whether new devices need approval (the owner's setting), known from
+    /// the session answer; nil until asked.
+    private(set) var approveNewDevices: Bool?
 
     enum Failure: LocalizedError {
         case status(Int, String?)
@@ -45,18 +64,76 @@ final class API {
     func session() async throws -> Session {
         let s: Session = try await get("api/session")
         user = s.signedIn ? s.user : nil
+        approveNewDevices = s.signedIn ? (s.approveNewDevices ?? false) : nil
         return s
     }
 
-    func signIn(username: String, password: String) async throws {
+    func signIn(username: String, password: String) async throws -> SignIn {
         struct Body: Encodable { let username: String; let password: String }
-        struct Answer: Decodable { let user: User? }
+        struct Answer: Decodable { let user: User?; let pending: String?; let code: Bool? }
         do {
             let answer: Answer = try await send("POST", "api/login", Body(username: username, password: password))
+            // With approval of new devices turned on, the right password on a
+            // device the account has not used waits for a yes.
+            if let id = answer.pending { return .waiting(id: id, codeAllowed: answer.code ?? false) }
             user = answer.user
+            renewDemanded = false
+            return .signedIn
         } catch Failure.status(401, _) {
             throw Failure.wrongPassword
         }
+    }
+
+    /// A waiting sign-in: true once it is approved (the session cookie then
+    /// arrives with the answer), false while it still waits; refused or
+    /// expired throws, saying which. With `setupCode`, the server's setup
+    /// code approves it.
+    func waitingSignIn(_ id: String, setupCode: String? = nil) async throws -> Bool {
+        struct Body: Encodable { let setupCode: String }
+        struct Answer: Decodable { let signedIn: Bool?; let user: User? }
+        let path = "api/login/pending/" + Self.part(id)
+        let answer: Answer = if let setupCode {
+            try await send("POST", path, Body(setupCode: setupCode))
+        } else {
+            try await get(path)
+        }
+        guard answer.signedIn == true else { return false }
+        user = answer.user
+        renewDemanded = false
+        return true
+    }
+
+    /// A device asking to sign in, for a device already signed in to approve.
+    struct PendingDevice: Decodable, Identifiable {
+        let id: String
+        let user: String
+        let device: String
+    }
+
+    /// New devices waiting to sign in to this account (every account, for
+    /// the owner). Asked only while approval is turned on.
+    func pendingDevices() async -> [PendingDevice] {
+        struct Answer: Decodable { let pending: [PendingDevice] }
+        if approveNewDevices == nil { _ = try? await session() }
+        guard approveNewDevices == true else { return [] }
+        let a: Answer? = try? await get("api/devices/pending")
+        return a?.pending ?? []
+    }
+
+    func answer(_ device: PendingDevice, approve: Bool) async {
+        struct Body: Encodable { let approve: Bool }
+        struct Answer: Decodable {}
+        let _: Answer? = try? await send("POST", "api/devices/pending/" + Self.part(device.id), Body(approve: approve))
+    }
+
+    /// Choosing a new password, which needs the current one. Every other
+    /// device is signed out; this one stays in.
+    func changePassword(current: String, new password: String) async throws {
+        struct Body: Encodable { let current: String; let password: String }
+        struct Answer: Decodable {}
+        let _: Answer = try await send("POST", "api/account/password", Body(current: current, password: password))
+        renewDemanded = false
+        _ = try? await session()
     }
 
     func signOut() async {
@@ -728,7 +805,10 @@ final class API {
             if code == 429 {
                 throw Failure.throttled(http?.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init))
             }
-            throw Failure.status(code, (try? JSONDecoder().decode(Problem.self, from: data))?.error)
+            let problem = try? JSONDecoder().decode(Problem.self, from: data)
+            // Held to choosing a new password: nothing else answers until then.
+            if code == 403 && problem?.mustRenew == true { renewDemanded = true }
+            throw Failure.status(code, problem?.error)
         }
         if data.isEmpty, let empty = EmptyAnswer() as? T { return empty }
         return try JSONDecoder().decode(T.self, from: data)
@@ -736,7 +816,7 @@ final class API {
 }
 
 private struct EmptyAnswer: Decodable {}
-private struct Problem: Decodable { let error: String }
+private struct Problem: Decodable { let error: String; let mustRenew: Bool? }
 
 // MARK: Models - media.Item and friends, as the server writes them.
 

@@ -195,9 +195,14 @@ struct RootView: View {
             SignInView(hasAccount: hasAccount)
         case .library:
             if let api = model.api, let player = model.player {
-                LibraryView()
-                    .environment(api)
-                    .environment(player)
+                if api.mustRenew {
+                    RenewPasswordView()
+                } else {
+                    LibraryView()
+                        .modifier(DeviceRequests())
+                        .environment(api)
+                        .environment(player)
+                }
             }
         }
     }

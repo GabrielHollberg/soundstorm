@@ -5706,6 +5706,31 @@ hearing of a click track with a crack on 2 and 4: a ground strike with spray,
 lightning spreading under the clouds, a leaning bolt, the deck lit and the
 after-images, in eight frames a quarter-second apart.
 
+**New passwords and new devices on the TV (2026-10-01).** Both arrived on
+the PC (`fcd7065` and devices.go) and the TV met neither: held to choosing a
+new password the server answers everything 403, and with approval of new
+devices on a sign-in answers 202 `pending` - the TV took that for signed in,
+with no cookie. Now:
+- **Choosing a new password** (`RenewPasswordView`): shown in place of the
+  library whenever the session says `mustRenew` or any request is refused
+  with it (`API.renewDemanded`), current and new password as on the page;
+  saving signs every other device out and this one carries on.
+- **Waiting for approval**: the sign-in view says so and asks every three
+  seconds, with the setup code too where the server allows it, and Cancel.
+- **Approving others**: while approval is on, a signed-in TV is asked every
+  eight seconds, as the page is - at the parents' house the TV may be the only
+  thing signed in. Allow, Don't allow, and Not now, which is what Back does:
+  Back must not refuse somebody's real sign-in.
+
+Checked on the tvOS simulator against a local server: with approval on, the
+TV waited and the server listed it; approved with curl, it went to the
+library; asked everyone for new passwords, it showed the screen within eight
+seconds; with `-password <old> -newPassword <new>` (debug only) it saved,
+went back to the library, the old password was refused and the new one taken
+(waiting for approval, as every other device now is); and that sign-in came
+up on the TV as "Allow this sign-in?". Not checked: pressing the alert's
+buttons, which needs a remote.
+
 ## The Android app (`android/`)
 
 The same shape as the iPhone app, and the same stage: a native shell around
