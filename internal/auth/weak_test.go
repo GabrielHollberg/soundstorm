@@ -1,6 +1,9 @@
 package auth
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestWeakPasswordsAreRefused(t *testing.T) {
 	for _, pw := range []string{
@@ -30,5 +33,40 @@ func TestReasonablePasswordsAreAllowed(t *testing.T) {
 		if err := checkPassword(pw, "gabriel"); err != nil {
 			t.Errorf("%q should be allowed, got %v", pw, err)
 		}
+	}
+}
+
+// Signing in with a password that no longer meets the rules - set before they
+// were tightened - asks for a new one: the one moment the server sees it.
+func TestSigningInWithAnOldWeakPasswordAsksForANewOne(t *testing.T) {
+	m := newManager(t)
+	u, err := m.Signup("gabe", "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As if set under the old rule.
+	salt, hash, err := derive("pass1234", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetPassword(u.ID, salt, hash, iterations); err != nil {
+		t.Fatal(err)
+	}
+	_, _, user, err := m.SignIn(context.Background(), "client", "gabe", "pass1234")
+	if err != nil {
+		t.Fatalf("an old password still signs in: %v", err)
+	}
+	if !user.MustChangePassword {
+		t.Fatal("signing in with a weak password should ask for a new one")
+	}
+	if stored, _ := m.store.User(u.ID); !stored.MustChangePassword {
+		t.Fatal("the request to change it should be kept")
+	}
+	// Choosing a good one clears it.
+	if err := m.SetPassword(u, u.ID, "violet-tractor-glacier-7"); err != nil {
+		t.Fatal(err)
+	}
+	if stored, _ := m.store.User(u.ID); stored.MustChangePassword {
+		t.Fatal("a new password should clear the request")
 	}
 }

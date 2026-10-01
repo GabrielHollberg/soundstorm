@@ -257,3 +257,21 @@ func deviceLabel(ua string) string {
 	}
 	return app + " on " + system
 }
+
+// POST /api/users/new-passwords: everybody, the owner included, must choose
+// a new password before they can do anything else. Signed-in devices stay
+// signed in and show the screen for it; choosing one signs that person's
+// other devices out, as changing a password always does.
+func (s *Server) handleRequireNewPasswords(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.store.RequirePasswordChanges()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save it")
+		return
+	}
+	s.log.Info("everyone asked to choose a new password", "by", actor.Name, "accounts", n)
+	writeJSON(w, http.StatusOK, map[string]any{"accounts": n})
+}

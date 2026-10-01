@@ -127,6 +127,16 @@ device is still one the account uses.</div>
 <p>The end-to-end test runs every client from one loopback address - exactly the Docker Desktop
 case - and fails with the exemption disabled.</p>
 
+<h3 id="renew">Asking for new passwords</h3>
+<p>The owner can ask everybody, themselves included, to choose a new password
+(<code>POST /api/users/new-passwords</code>). Each account is marked
+(<code>User.MustChangePassword</code>), and from then on every guarded route answers that
+account with a 403 saying so - only <code>/api/account/password</code> works - so it is more than a
+screen; the page shows one, asking for the current password and a new one under the rules.
+Choosing one clears the mark and signs out the person's other devices. The same mark is set on
+signing in with a password that would be refused if chosen today: sign-in is the one moment the
+server sees it, so passwords set before the rules tightened are replaced as people next sign in.</p>
+
 <h3 id="approval">New devices need approval</h3>
 <p>An owner setting, off unless turned on (People, New devices). With it on, the right password is
 not enough on a device an account has never signed in on: the sign-in is held

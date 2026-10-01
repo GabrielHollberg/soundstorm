@@ -345,6 +345,11 @@ household default can be changed too).
   make a good one.
 - Repeated wrong passwords make the sign-in wait. A device you've signed in on
   before is never held up by somebody else guessing.
+- **Ask everyone for a new password** (the owner's button, under **People**):
+  everyone, the owner included, must choose a new password before they can do
+  anything else; each sees a screen for it the next time they open SoundStorm,
+  and their other devices are signed out once they have. Signing in with a
+  password that no longer meets the rules asks for a new one the same way.
 - **New devices need approval** (the owner's switch, under **People**): when it's
   on, signing in on a phone or computer for the first time waits until someone
   allows it from a device already signed in to that account, or the owner

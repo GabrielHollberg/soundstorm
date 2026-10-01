@@ -88,6 +88,12 @@ type User struct {
 	// no limit. The owner's photos are never limited.
 	PhotoLimitGB *int `json:"photoLimitGB,omitempty"`
 
+	// MustChangePassword holds the account to choosing a new password before
+	// anything else: set by the owner for everybody at once, or on signing in
+	// with a password that no longer meets the rules. Setting a password clears
+	// it.
+	MustChangePassword bool `json:"mustChangePassword,omitempty"`
+
 	Salt       []byte    `json:"salt"`
 	Hash       []byte    `json:"hash"`
 	Iterations int       `json:"iterations"`
@@ -782,8 +788,37 @@ func (s *Store) SetPassword(id string, salt, hash []byte, iterations int) error 
 		return fmt.Errorf("no such account")
 	}
 	u.Salt, u.Hash, u.Iterations = salt, hash, iterations
+	u.MustChangePassword = false
 	s.d.Users[id] = u
 	return s.save()
+}
+
+// SetMustChangePassword holds one account to choosing a new password.
+func (s *Store) SetMustChangePassword(id string, must bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[id]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	if u.MustChangePassword == must {
+		return nil
+	}
+	u.MustChangePassword = must
+	s.d.Users[id] = u
+	return s.save()
+}
+
+// RequirePasswordChanges holds every account to choosing a new password,
+// returning how many accounts that is.
+func (s *Store) RequirePasswordChanges() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, u := range s.d.Users {
+		u.MustChangePassword = true
+		s.d.Users[id] = u
+	}
+	return len(s.d.Users), s.save()
 }
 
 // DeleteUser removes an account along with everything attached to it: its

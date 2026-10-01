@@ -123,3 +123,39 @@ func signedIn(body []byte) bool {
 	}
 	return json.Unmarshal(body, &out) == nil && out.SignedIn
 }
+
+// The owner asks everybody for a new password: until each person chooses one,
+// the server answers them nothing else; choosing one lets them back in.
+func TestEveryoneMustChooseANewPassword(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	if resp, body := h.do(t, http.MethodPost, "/api/users", `{"username":"sam","password":"violet tractor glacier"}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("adding a member: %d %s", resp.StatusCode, body)
+	}
+	sam := h.another(t)
+	if code, _ := signInAs(t, sam, "sam", "violet tractor glacier"); code != http.StatusOK {
+		t.Fatalf("member sign-in: %d", code)
+	}
+
+	if resp, body := h.do(t, http.MethodPost, "/api/users/new-passwords", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("asking everyone: %d %s", resp.StatusCode, body)
+	}
+	resp, body := sam.do(t, http.MethodGet, "/api/favorites", "")
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "mustRenew") {
+		t.Fatalf("a member held to a new password reached a guarded route: %d %s", resp.StatusCode, body)
+	}
+	if _, body := sam.do(t, http.MethodGet, "/api/session", ""); !strings.Contains(string(body), `"mustRenew": true`) {
+		t.Fatalf("the session should say so: %s", body)
+	}
+	// The owner is asked too.
+	if resp, _ := h.do(t, http.MethodGet, "/api/favorites", ""); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("the owner should be asked too: %d", resp.StatusCode)
+	}
+
+	if resp, body := sam.do(t, http.MethodPost, "/api/account/password", `{"current":"violet tractor glacier","password":"rainy tuesday in lisbon"}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("choosing a new password: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := sam.do(t, http.MethodGet, "/api/favorites", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("with a new password the member is back in: %d %s", resp.StatusCode, body)
+	}
+}

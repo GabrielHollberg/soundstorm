@@ -27,6 +27,24 @@
   </div>
 
   <!-- Signup / login ---------------------------------------------------- -->
+  <!-- Asked to choose a new password before anything else: the owner asked
+       everybody, or this password no longer meets the rules. -->
+  <main id="renew" class="centered hidden">
+    <form id="renew-form" class="card gate-card">
+      <h1 class="wordmark">SoundStorm</h1>
+      <p id="renew-blurb" class="muted">Please choose a new password to carry on.</p>
+      <label for="renew-current">Your current password</label>
+      <input id="renew-current" type="password" autocomplete="current-password" required>
+      <label for="renew-new">New password</label>
+      <input id="renew-new" type="password" autocomplete="new-password" minlength="12" required>
+      <p class="setup-detail">At least 12 characters, and not a common one. A few unrelated
+        words make a good password.</p>
+      <p id="renew-error" class="error hidden" role="alert"></p>
+      <button id="renew-submit" type="submit">Save and carry on</button>
+      <button id="renew-signout" type="button" class="ghost">Sign out</button>
+    </form>
+  </main>
+
   <main id="gate" class="centered hidden">
     <form id="gate-form" class="card gate-card">
       <h1 class="wordmark">SoundStorm</h1>
@@ -448,6 +466,13 @@
           <button type="submit">Add person</button>
         </form>
         <p id="people-note" class="muted hidden" role="status"></p>
+
+        <h3>Everyone's passwords</h3>
+        <p class="muted small-print">Ask everyone, you included, to choose a new password. Each
+          person sees a screen for it the next time they open SoundStorm, and can do nothing
+          else until they have; their other devices are then signed out.</p>
+        <button id="renew-everyone" type="button" class="ghost">Ask everyone for a new password</button>
+        <p id="renew-everyone-note" class="muted hidden" role="status"></p>
 
         <h3>New devices</h3>
         <label class="remote-switch">

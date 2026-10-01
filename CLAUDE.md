@@ -4174,11 +4174,22 @@ guesser only each exit's five free guesses - but 1,400 a day is plenty against
   browsers: waiting, asked on the owner's screen naming the browser, allowed
   and in.
 
+- **Asking everybody for a new password** (owner button in People,
+  `POST /api/users/new-passwords`): marks every account, the owner's too
+  (`User.MustChangePassword`); `withUserContext` then answers every guarded
+  route but `/api/account/password` with a 403 `{"mustRenew": true}`,
+  and the page shows a screen for it (`showRenew`, also raised by any such 403).
+  Setting a password clears it. Signing in with a password that would be
+  refused today sets the same mark (`SignIn`), so passwords from before the
+  rules tightened are replaced as people next sign in. Checked in two
+  browsers: the owner asked at once, the member on opening, a weak new one
+  refused, a good one and back in.
+
 **For the Mac:** the Apple TV signs in natively through `/api/login` and must
 handle the 202: show "waiting for approval on a device already signed in",
 poll `GET /api/login/pending/{id}` every few seconds, and take the session
 cookie from its 200 (`{"signedIn": true}`); a 403 is refused, a 404 expired.
-Until it does, an install with approval on cannot sign the TV in. The iPhone
+Until it does, an install with approval on cannot sign the TV in. And a 403 with `mustRenew` from any route means the account is held to a new password: say "Choose a new password on your phone or computer, then sign in again here" (changing it signs the TV out). The iPhone
 and Android apps use the page and need nothing.
 
 ## Tailscale, and why it is a profile rather than a service

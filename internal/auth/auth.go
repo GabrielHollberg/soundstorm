@@ -435,6 +435,14 @@ func (m *Manager) SignIn(ctx context.Context, client, name, password string, dev
 	} else {
 		err = m.throttle.guarded(ctx, client, name, check)
 	}
+	// A password that would be refused if chosen today - shorter than the
+	// rule, or a common one - is asked to be replaced: this is the one moment
+	// the server sees it, so the one moment it can tell.
+	if err == nil && !user.MustChangePassword && checkPassword(password, user.Name) != nil {
+		if m.store.SetMustChangePassword(user.ID, true) == nil {
+			user.MustChangePassword = true
+		}
+	}
 	return token, expiry, user, err
 }
 

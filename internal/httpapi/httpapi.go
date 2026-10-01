@@ -438,6 +438,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("POST /api/users", s.handleCreateUser)
 	owner.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 	owner.HandleFunc("POST /api/users/{id}/password", s.handleSetUserPassword)
+	owner.HandleFunc("POST /api/users/new-passwords", s.handleRequireNewPasswords)
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
 	owner.HandleFunc("PUT /api/users/{id}/photo-limit", s.handleSetPhotoLimit)
 	owner.HandleFunc("GET /api/photos/limit-default", s.handlePhotoLimitDefault)
@@ -488,6 +489,17 @@ func (s *Server) withUserContext(next http.Handler) http.Handler {
 		user, ok := auth.FromContext(r.Context())
 		if !ok {
 			next.ServeHTTP(w, r)
+			return
+		}
+		// Held to choosing a new password: nothing else answers until they do
+		// (the owner asked everybody, or theirs no longer meets the rules).
+		// The page shows a screen for it; this is what makes it more than a
+		// screen.
+		if user.MustChangePassword && r.URL.Path != "/api/account/password" {
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error":     "choose a new password first",
+				"mustRenew": true,
+			})
 			return
 		}
 		ctx := source.WithUserID(r.Context(), user.ID)
@@ -675,6 +687,8 @@ func publicUser(u state.User) map[string]any {
 		"role":      u.Role,
 		"owner":     u.IsOwner(),
 		"createdAt": u.CreatedAt,
+		// Asked to choose a new password before anything else.
+		"mustRenew": u.MustChangePassword,
 		"libraries": names,
 		// Whether the stored value is a restriction at all, which is what an
 		// owner editing somebody needs in order to show "everything" rather

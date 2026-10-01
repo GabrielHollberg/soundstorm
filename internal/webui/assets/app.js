@@ -58,8 +58,43 @@ async function api(path, options = {}) {
   } catch {
     // Streaming and error responses may not be JSON; callers check resp.ok.
   }
+  // Held to choosing a new password: the server answers nothing else, so the
+  // screen for it comes up wherever this happened.
+  if (resp.status === 403 && body && body.mustRenew) showRenew();
   return { ok: resp.ok, status: resp.status, body };
 }
+
+// showRenew asks for a new password before anything else.
+function showRenew() {
+  if (!$('renew').classList.contains('hidden')) return;
+  show($('boot'), false);
+  show($('gate'), false);
+  show($('app'), false);
+  show($('renew'), true);
+  $('renew-current').focus();
+}
+$('renew-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const submit = $('renew-submit');
+  submit.disabled = true;
+  const { ok, body } = await api('/api/account/password', {
+    method: 'POST',
+    body: JSON.stringify({ current: $('renew-current').value, password: $('renew-new').value }),
+  });
+  submit.disabled = false;
+  if (!ok) {
+    $('renew-error').textContent = (body && body.error) || 'Could not change it.';
+    show($('renew-error'), true);
+    return;
+  }
+  $('renew-current').value = '';
+  $('renew-new').value = '';
+  location.reload();
+});
+$('renew-signout').addEventListener('click', async () => {
+  await api('/api/logout', { method: 'POST' });
+  location.reload();
+});
 
 function show(el, visible) {
   el.classList.toggle('hidden', !visible);
@@ -405,6 +440,10 @@ if (window.soundstormApp) {
 
 async function showApp(me) {
   state.me = me || null;
+  if (me && me.mustRenew) {
+    showRenew();
+    return;
+  }
   // Downloads and kept places belong to whoever signed in on this device. If
   // somebody else signs in - the last person was signed out elsewhere, or
   // removed, without pressing Sign out here - theirs go first, or the next
@@ -494,6 +533,17 @@ async function refreshLyricsSetting() {
   show($('readalong-block'), along);
   if (along) $('readalong-toggle').checked = body.autoReadAlong;
 }
+
+$('renew-everyone').addEventListener('click', async () => {
+  if (!window.confirm('Ask everyone, you included, to choose a new password before they can use SoundStorm again?')) return;
+  const { ok, body } = await api('/api/users/new-passwords', { method: 'POST' });
+  if (!ok) {
+    note($('renew-everyone-note'), (body && body.error) || 'Could not ask.', true);
+    return;
+  }
+  // The owner is asked too, at once.
+  showRenew();
+});
 
 $('new-devices-toggle').addEventListener('change', async (event) => {
   const enabled = event.target.checked;
