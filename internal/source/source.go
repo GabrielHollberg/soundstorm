@@ -753,6 +753,8 @@ type PhotoBrowser interface {
 	// OnThisDay is the photos taken on day's date in earlier years, newest
 	// year first.
 	OnThisDay(ctx context.Context, day time.Time, perYear int) ([]PhotoDay, error)
+	// PhotosOfType is the clips ("video") or the Live Photos ("live").
+	PhotosOfType(ctx context.Context, kind string, limit int) ([]media.Item, error)
 }
 
 type audioStreamKey struct{}

@@ -4863,6 +4863,17 @@ earlier year, 25 years back, in parallel, cached an hour; 29 February only
 asks leap years. Albums are left out for now: the library had none, and
 checking them would have meant creating one on it.
 
+**Videos and Live photos** are pills in Photos too (the owner's asking,
+2026-10-01): `GET /api/photos/of?type=video|live` (`PhotosOfType`), Immich's
+metadata search with `type: VIDEO`, or `isMotion: true` - which its search
+repository reads as `livePhotoVideoId is not null` (checked in its code, 3.x).
+A Live Photo carries `extra.live`, and the viewer's **LIVE** button plays its
+moving part over the still (`/api/stream/<source>/<id>@live`: looked up
+through the photo with the asker's own key, so only a photo they can see
+gives one), quiet while music plays, gone when it ends. The owner's library
+had 63 videos and no linked Live Photos when built, so LIVE is untried
+against a real one.
+
 ## Everyone's own photos
 
 Asked for alongside phone backup, and designed by the owner: **each member

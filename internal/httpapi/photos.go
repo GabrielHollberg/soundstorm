@@ -134,6 +134,29 @@ func (s *Server) handlePlaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"places": groupsOut(places, src)})
 }
 
+// handlePhotosOfType is the Photos tab's Videos and Live photos: ?type=video
+// or ?type=live, newest first.
+func (s *Server) handlePhotosOfType(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("type")
+	if kind != "video" && kind != "live" {
+		writeError(w, http.StatusBadRequest, "expected type=video or type=live")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), photosDeadline)
+	defer cancel()
+	b, _, ok := s.photoBrowser(ctx)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		return
+	}
+	items, err := b.PhotosOfType(ctx, kind, groupPhotoLimit)
+	if err != nil {
+		s.photosError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNil(items)})
+}
+
 // onThisDayCache keeps a day's answer for an hour: Home asks on every visit,
 // and the answer is twenty-five searches.
 type onThisDayCache struct {

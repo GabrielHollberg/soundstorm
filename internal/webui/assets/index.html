@@ -715,6 +715,7 @@
   <div id="photo-overlay" class="photo-viewer hidden" role="dialog" aria-label="Photo">
     <div id="photo-stage" class="pv-stage">
       <img id="photo-image" alt="" draggable="false">
+      <video id="photo-live-video" class="pv-live-video hidden" playsinline preload="none"></video>
       <img id="photo-prev-image" class="pv-side" alt="" draggable="false">
       <img id="photo-next-image" class="pv-side" alt="" draggable="false">
     </div>
@@ -724,6 +725,7 @@
     <div class="pv-top">
       <button id="photo-close" class="np-icon" type="button" aria-label="Close"></button>
       <span id="photo-count" class="pv-count"></span>
+      <button id="photo-live" class="pv-live hidden" type="button" aria-label="Play the Live Photo">LIVE</button>
       <a id="photo-download" class="np-icon" href="#" aria-label="Download original" title="Download original"></a>
     </div>
     <div class="pv-bottom"><span id="photo-caption"></span></div>

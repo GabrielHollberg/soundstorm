@@ -120,6 +120,9 @@ type asset struct {
 	OriginalPath     string `json:"originalPath"`
 	LibraryID        string `json:"libraryId"`
 	IsTrashed        bool   `json:"isTrashed"`
+	// The moving part of a Live Photo (or an Android motion photo), a hidden
+	// video asset of its own; empty for anything else.
+	LivePhotoVideoID string `json:"livePhotoVideoId"`
 	ExifInfo         *struct {
 		City    string `json:"city"`
 		Country string `json:"country"`
@@ -261,6 +264,9 @@ func (s *Source) item(a asset, rank int) media.Item {
 	if a.Duration != nil && *a.Duration > 0 {
 		it.DurationSeconds = float64(*a.Duration) / 1000
 	}
+	if a.LivePhotoVideoID != "" && a.Type != "VIDEO" {
+		it.Extra["live"] = "1"
+	}
 	return it
 }
 
@@ -275,12 +281,21 @@ func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target
 	if err != nil {
 		return source.Target{}, err
 	}
+	// "<id>@live" is a Live Photo's moving part. It is looked up through the
+	// photo, with the asker's own key, so only a photo they can see gives one.
+	itemID, live := strings.CutSuffix(itemID, LiveSuffix)
 	var a asset
 	if err := s.getJSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
 		return source.Target{}, err
 	}
 	path := "/api/assets/" + url.PathEscape(itemID) + "/original"
-	if a.Type == "VIDEO" {
+	switch {
+	case live:
+		if a.LivePhotoVideoID == "" {
+			return source.Target{}, fmt.Errorf("immich %q: not a live photo", s.id)
+		}
+		path = "/api/assets/" + url.PathEscape(a.LivePhotoVideoID) + "/video/playback"
+	case a.Type == "VIDEO":
 		path = "/api/assets/" + url.PathEscape(itemID) + "/video/playback"
 	}
 	return source.Target{URL: s.http.URL(path, nil), Headers: h}, nil
@@ -451,6 +466,24 @@ func (s *Source) People(ctx context.Context) ([]source.PhotoGroup, error) {
 		}
 	}
 	return out, nil
+}
+
+// LiveSuffix asks StreamTarget for a Live Photo's moving part: "<id>@live".
+const LiveSuffix = "@live"
+
+// PhotosOfType is the clips ("video") or the Live Photos ("live"), newest
+// first.
+func (s *Source) PhotosOfType(ctx context.Context, kind string, limit int) ([]media.Item, error) {
+	switch kind {
+	case "video":
+		return s.photos(ctx, map[string]any{"type": "VIDEO"}, limit)
+	case "live":
+		// Immich keeps the moving part as a hidden asset of its own;
+		// isMotion asks for the photos that have one (livePhotoVideoId set,
+		// read in its search repository).
+		return s.photos(ctx, map[string]any{"type": "IMAGE", "isMotion": true}, limit)
+	}
+	return nil, fmt.Errorf("immich %q: no such kind of photo %q", s.id, kind)
 }
 
 // PersonPhotos is somebody's pictures, newest first.

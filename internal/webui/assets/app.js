@@ -2275,6 +2275,8 @@ function showPhoto(item) {
   const download = $('photo-download');
   download.href = streamPath(item);
   download.download = item.title;
+  stopLive();
+  show($('photo-live'), Boolean(item.extra && item.extra.live) && !state.offline);
 
   const photos = photosOnScreen();
   const at = photos.findIndex((p) => p.id === item.id && p.sourceId === item.sourceId);
@@ -2327,7 +2329,34 @@ async function stepPhoto(by) {
   return Boolean(next);
 }
 
+// A Live Photo's moving part, played over the still by the LIVE button and
+// gone again when it ends. Quiet while music plays, which it does not stop.
+function playLive() {
+  if (!photoShown || !(photoShown.extra && photoShown.extra.live)) return;
+  const v = $('photo-live-video');
+  v.src = `/api/stream/${encodeURIComponent(photoShown.sourceId)}/${escapeId(photoShown.id + '@live')}`;
+  v.muted = Boolean(audio.item) && !$('audio-player').paused;
+  show(v, true);
+  $('photo-live').classList.add('on');
+  v.play().catch(stopLive);
+}
+function stopLive() {
+  const v = $('photo-live-video');
+  v.pause();
+  v.removeAttribute('src');
+  v.load();
+  show(v, false);
+  $('photo-live').classList.remove('on');
+}
+$('photo-live').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if ($('photo-live-video').classList.contains('hidden')) playLive();
+  else stopLive();
+});
+$('photo-live-video').addEventListener('ended', stopLive);
+
 function closePhoto() {
+  stopLive();
   photoShown = null;
   show($('photo-overlay'), false);
   document.body.classList.remove('photo-open');
@@ -8622,7 +8651,8 @@ const TABS = {
     { kind: 'pairs', label: 'Read Along' }, { kind: 'document', label: 'Documents' },
     { kind: 'fav-books', label: 'Favorites' }, { kind: 'genres-books', label: 'Genres' }],
   photos: [{ kind: 'picture', label: 'Photos' }, { kind: 'people', label: 'People' },
-    { kind: 'places', label: 'Places' }, { kind: 'fav-photos', label: 'Favorites' }],
+    { kind: 'places', label: 'Places' }, { kind: 'photo-videos', label: 'Videos' },
+    { kind: 'photo-live', label: 'Live photos' }, { kind: 'fav-photos', label: 'Favorites' }],
 };
 // Each tab's Favorites pill shows the favorites of the kinds it holds; the
 // Books tab also browses by author and by series. Here, beside TABS, because
@@ -8633,12 +8663,14 @@ const FAV_KINDS = {
 };
 // Pages of groups rather than a shelf's list: books by author and series,
 // photos by who is in them and where.
-const BOOK_BROWSE = new Set(['authors', 'series', 'people', 'places', 'genres-music', 'genres-watch', 'genres-books']);
+const BOOK_BROWSE = new Set(['authors', 'series', 'people', 'places', 'photo-videos', 'photo-live', 'genres-music', 'genres-watch', 'genres-books']);
 // Each tab's genres are of these shelves.
 const GENRE_KINDS = { 'genres-music': ['music'], 'genres-watch': ['video', 'tv'], 'genres-books': ['audiobook', 'ebook'] };
 // A category the + button starts with put away: nobody's tab changes until they add it.
 const DEFAULT_HIDDEN = { music: ['genres'], watch: ['genres-watch'], books: ['genres-books'] };
-const PHOTO_BROWSE = new Set(['people', 'places']);
+const PHOTO_BROWSE = new Set(['people', 'places', 'photo-videos', 'photo-live']);
+// The Photos tab's kinds of picture, asked of the photo server by type.
+const PHOTO_TYPES = { 'photo-videos': 'video', 'photo-live': 'live' };
 state.tab = 'home';
 state.tabKind = {};
 
@@ -8653,7 +8685,7 @@ function shelfAvailable(kind) {
   if (kind === 'pairs') return state.pairCount > 0 && shelfAvailable('ebook') && shelfAvailable('audiobook');
   // Books by author and series: wherever there are books.
   if (kind === 'authors' || kind === 'series') return shelfAvailable('ebook') || shelfAvailable('audiobook');
-  if (kind === 'people' || kind === 'places') return shelfAvailable('picture');
+  if (kind === 'people' || kind === 'places' || PHOTO_TYPES[kind]) return shelfAvailable('picture');
   if (GENRE_KINDS[kind]) return GENRE_KINDS[kind].some((k) => shelfAvailable(k));
   // A tab's favorites: while the tab has a shelf of its own to favorite from.
   if (FAV_KINDS[kind]) return FAV_KINDS[kind].some((k) => shelfAvailable(k));
@@ -11532,6 +11564,10 @@ function showSkeleton(view, shape, round) {
 // style. Somebody it found but nobody has named yet can be named here, for
 // the whole household.
 async function showPhotoBrowse(seq) {
+  if (PHOTO_TYPES[state.kind]) {
+    await showPhotoType(seq);
+    return;
+  }
   const view = $('music-view');
   const people = state.kind === 'people';
   $('status').textContent = '';
@@ -11557,6 +11593,35 @@ async function showPhotoBrowse(seq) {
     : (state.query ? `No ${people ? 'one' : 'place'} matches.`
       : (people ? 'Nobody found in your photos yet. People appear once the photos have been looked through.'
         : 'No places yet. Photos show here when they know where they were taken.'));
+}
+
+// Videos and Live photos: every clip, or every Live Photo, newest first, as
+// a grid like the camera roll's. A Live Photo opens in the viewer, whose LIVE
+// button plays its moving part; a clip plays as a film.
+async function showPhotoType(seq) {
+  const view = $('music-view');
+  const type = PHOTO_TYPES[state.kind];
+  $('status').textContent = '';
+  if (!view.children.length) showSkeleton(view, 'grid');
+  const { ok, body } = await api(`/api/photos/of?${new URLSearchParams({ type })}`);
+  if (seq !== state.searchSeq) return;
+  if (!ok || !body) {
+    view.replaceChildren();
+    $('status').textContent = 'Could not load those.';
+    return;
+  }
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const items = (body.items || []).filter((it) => words.every((w) =>
+    `${it.title} ${it.subtitle || ''} ${(it.extra && it.extra.place) || ''}`.toLowerCase().includes(w)));
+  state.items = items;
+  const grid = document.createElement('div');
+  grid.className = 'grid browse-grid';
+  grid.append(...items.map(renderItem));
+  view.replaceChildren(grid);
+  $('status').textContent = items.length ? ''
+    : (state.query ? 'Nothing matches.'
+      : (type === 'video' ? 'No videos in your photos yet.'
+        : 'No Live Photos yet. iPhone Live Photos and Android motion photos show here.'));
 }
 
 async function showPhotoGroup(group) {
