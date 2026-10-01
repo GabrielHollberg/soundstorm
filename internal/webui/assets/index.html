@@ -538,6 +538,17 @@
           Audio
           <select id="audio-select"></select>
         </label>
+        <!-- This film's quality: starts at the device's setting (Playback on
+             this device), and a change holds until the player is closed. -->
+        <label id="quality-picker" class="hidden">
+          Quality
+          <select id="video-quality-select">
+            <option value="smart">Auto</option>
+            <option value="original">Original</option>
+            <option value="standard">Standard (20 Mbps)</option>
+            <option value="saver">Data saver (720p)</option>
+          </select>
+        </label>
       </figcaption>
     </figure>
     <!-- When an episode ends: the next one, after a short countdown. -->

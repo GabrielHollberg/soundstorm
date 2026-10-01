@@ -1828,11 +1828,18 @@ async function playVideo(item, options = {}) {
     .join(' — ');
   show($('video-overlay'), true);
 
-  // Downloaded: from the device, connection or not.
+  // Downloaded: from the device, connection or not - a kept copy, with no
+  // quality to choose.
+  show($('quality-picker'), false);
   if (isDownloaded(item) && (await playKeptVideo(item, player))) return;
 
   // Ask before building a player: the answer decides which one to build.
-  const audioQuery = `?vq=${filmQuality()}` + (options.audio !== undefined ? `&audio=${options.audio}` : '');
+  // The quality is this device's setting unless one was picked in the
+  // player, which holds until the player closes.
+  const vq = state.videoQuality || filmQuality();
+  state.videoAudio = options.audio;
+  attachQualityChoice(item, vq);
+  const audioQuery = `?vq=${vq}` + (options.audio !== undefined ? `&audio=${options.audio}` : '');
   const { ok, body } = await api(
     `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}${audioQuery}`);
   const mode = ok && body ? body.mode : 'direct';
@@ -1930,6 +1937,8 @@ $('subtitle-select').addEventListener('change', (event) => {
 
 function closeVideo() {
   hideUpNext();
+  // A quality picked in the player was for this sitting only.
+  state.videoQuality = null;
   // Before the source goes: once it does, currentTime is back to nothing.
   saveWatchPosition(true);
   state.watching = null;
@@ -10863,6 +10872,20 @@ function attachAudioChoice(item, tracks, chosen) {
     playVideo(item, { audio: Number(select.value) });
   };
   show($('audio-picker'), tracks.length > 1);
+}
+
+// The film's quality, in the player: another choice plays on from the same
+// moment, at the same audio track, and holds - across episodes too - until
+// the player is closed, when the device's setting applies again.
+function attachQualityChoice(item, vq) {
+  const select = $('video-quality-select');
+  select.value = vq;
+  select.onchange = async () => {
+    state.videoQuality = select.value;
+    await saveWatchPosition(true);
+    playVideo(item, state.videoAudio !== undefined ? { audio: state.videoAudio } : {});
+  };
+  show($('quality-picker'), true);
 }
 
 /* ------------------------------------------------ choosing the categories */

@@ -173,6 +173,11 @@ far less work than re-encoding; sound a browser cannot play (TrueHD, DTS) is
 still converted, to AAC with up to 5.1 channels. Downloads take standard: an
 original Blu-ray picture would be tens of gigabytes on a device. Blu-ray
 subtitles are pictures (PGS) and are not offered.
+**The player has a Quality picker too** (beside Subtitles and Audio, the
+owner's design): it starts at the device's setting, and a change plays on from
+the same moment at the same audio track and holds for the sitting - across
+episodes that Up next rolls into - until the player is closed
+(`state.videoQuality`, cleared in `closeVideo`). Hidden for a downloaded film.
 **The Audio picker says what a track is** (`audioLabel`): language, format and
 channels - "English · Dolby TrueHD Atmos 7.1" - with the file's own name for it
 only when that adds something (a commentary's), since a Blu-ray names its

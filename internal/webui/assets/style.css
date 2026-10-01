@@ -2833,7 +2833,7 @@ html.swiping .sk-cover, html.swiping .sk-line { animation-play-state: paused; }
 .up-next-actions { display: flex; gap: 8px; }
 .up-next-bar { height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .up-next-bar i { display: block; height: 100%; width: 0; background: var(--accent); }
-#audio-picker { margin-left: 12px; }
+#audio-picker, #quality-picker { margin-left: 12px; }
 
 /* The + at the end of a row of categories, and what is put away. */
 .pill-off { display: none !important; }
