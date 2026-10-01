@@ -14430,8 +14430,23 @@ const FULL_SCENES = {
       const Ib = I * I;
       const sc = bo.scale * dpr;
       const main = bo.main;
-      // No glow strokes round the bolt: the soft bands either side read as a
-      // ghost of the bolt, and the owner had them taken off.
+      // One faint glow round the bolt, between the two it had (a wide band and
+      // a narrower bright one, which read as a ghost of the bolt) and none,
+      // the owner's call.
+      if (I > 0.01) {
+        g.strokeStyle = rgba(st.tint, 0.14 * I);
+        g.lineWidth = 7 * sc;
+        g.beginPath();
+        stormPath(g, main, 0, main.length - 2);
+        g.stroke();
+        if (Ib > 0.01) {
+          g.strokeStyle = rgba(st.tint, 0.14 * Ib);
+          g.lineWidth = 4 * sc;
+          g.beginPath();
+          for (const b of bo.branches) stormPath(g, b.pts, 0, b.pts.length - 2);
+          g.stroke();
+        }
+      }
       if (I > 0.01) {
         const n = main.length / 2;
         g.strokeStyle = rgba(st.core, I);
