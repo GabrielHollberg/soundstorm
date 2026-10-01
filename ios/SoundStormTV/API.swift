@@ -103,6 +103,33 @@ final class API {
         return true
     }
 
+    /// A code for signing this TV in from a phone (the server's tvlink.go).
+    struct Link: Decodable {
+        let id: String
+        let code: String
+        let url: String
+    }
+
+    func newLink() async throws -> Link {
+        struct Empty: Encodable {}
+        return try await send("POST", "api/link", Empty())
+    }
+
+    /// How a code is going: true once a phone allowed it (the session cookie
+    /// arrives with the answer), false while it waits. Run out (404) or not
+    /// allowed (403) throws.
+    func linkSignedIn(_ id: String) async throws -> Bool {
+        struct Answer: Decodable { let signedIn: Bool?; let user: User? }
+        let a: Answer = try await get("api/link/" + Self.part(id))
+        guard a.signedIn == true else { return false }
+        user = a.user
+        renewDemanded = false
+        return true
+    }
+
+    /// The code's address as a QR code, drawn by the server.
+    func linkQR(_ id: String) -> URL { url("api/link/" + Self.part(id) + "/qr.png") }
+
     /// A device asking to sign in, for a device already signed in to approve.
     struct PendingDevice: Decodable, Identifiable {
         let id: String

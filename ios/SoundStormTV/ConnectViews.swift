@@ -61,13 +61,18 @@ struct SignInView: View {
     /// setup code may approve it.
     @State private var waiting: (id: String, codeAllowed: Bool)?
     @State private var setupCode = ""
+    @State private var linking = false
 
     var body: some View {
         VStack(spacing: 40) {
             Logo()
             if let waiting {
                 waitingView(waiting)
+            } else if linking {
+                LinkView(done: { linking = false })
             } else if hasAccount {
+                // The easy way first: no typing with a remote.
+                Button("Sign in with your phone") { linking = true }
                 TextField("Username", text: $username)
                     .textContentType(.username)
                     .autocorrectionDisabled()
@@ -97,6 +102,8 @@ struct SignInView: View {
         #if DEBUG
         // For the simulator, which cannot type: -username <u> -password <p>
         .task {
+            // -phoneSignIn YES opens the phone sign-in at once.
+            if UserDefaults.standard.bool(forKey: "phoneSignIn") { linking = true }
             if let u = UserDefaults.standard.string(forKey: "username"),
                let p = UserDefaults.standard.string(forKey: "password") {
                 username = u
@@ -284,5 +291,73 @@ struct DeviceRequests: ViewModifier {
             } message: { device in
                 Text("\(device.device) wants to sign in to \(device.user == api.user?.name ? "your account" : "\(device.user)'s account"). Allow it only if you, or they, are signing in on it right now.")
             }
+    }
+}
+
+/// Signing this TV in from a phone: a code and a QR code of the address that
+/// allows it; a phone signed in scans it (or has the code typed into
+/// Settings, Sign in a TV) and allows it, and this TV, asking every three
+/// seconds, is signed in as that phone's person. A code that runs out after
+/// its ten minutes is replaced.
+struct LinkView: View {
+    let done: () -> Void
+    @Environment(AppModel.self) private var model
+    @State private var link: API.Link?
+    @State private var message: String?
+
+    var body: some View {
+        VStack(spacing: 30) {
+            Text("On a phone signed in to SoundStorm, scan this - or open SoundStorm on it and enter the code under Settings, Sign in a TV.")
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 1100)
+            if let link, let api = model.api {
+                SafeImage(url: api.linkQR(link.id), maxPixels: 1000) { image in
+                    image.interpolation(.none).resizable().scaledToFit()
+                } placeholder: {
+                    Color.white.opacity(0.06)
+                }
+                .frame(width: 360, height: 360)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                Text(link.code)
+                    .font(.system(size: 72, weight: .heavy))
+                    .tracking(8)
+            } else {
+                ProgressView()
+            }
+            if let message {
+                Text(message).foregroundStyle(.red).frame(width: 900)
+            }
+            Button("Use a password instead", action: done)
+        }
+        .multilineTextAlignment(.center)
+        .task { await run() }
+    }
+
+    private func run() async {
+        guard let api = model.api else { return }
+        while !Task.isCancelled {
+            do {
+                let fresh = try await api.newLink()
+                link = fresh
+                message = nil
+                while !Task.isCancelled {
+                    try await Task.sleep(for: .seconds(3))
+                    if try await api.linkSignedIn(fresh.id) {
+                        model.signedIn()
+                        return
+                    }
+                }
+            } catch API.Failure.status(404, _) {
+                continue // run out: a new code
+            } catch is CancellationError {
+                return
+            } catch {
+                // Not allowed, or the server would not give a code: said, and
+                // tried again in a moment.
+                link = nil
+                message = error.localizedDescription
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 }
