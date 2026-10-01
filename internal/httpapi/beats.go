@@ -18,8 +18,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,9 +74,7 @@ type keptBeats struct {
 }
 
 func (b *beatStore) path(sourceID, id string) string {
-	sum := sha256.Sum256([]byte(sourceID + "\x00" + id))
-	h := hex.EncodeToString(sum[:16])
-	return filepath.Join(b.dir, h[:2], h+".json")
+	return beats.CachePath(b.dir, sourceID, id)
 }
 
 func (b *beatStore) load(sourceID, id string) (keptBeats, bool) {

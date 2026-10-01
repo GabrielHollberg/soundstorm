@@ -69,13 +69,16 @@ func main() {
 			os.Exit(backupState(os.Args[2:]))
 		case "restore":
 			os.Exit(restoreState(os.Args[2:]))
+		case "train-looks":
+			os.Exit(trainLooks(os.Args[2:]))
 		default:
 			fmt.Fprintf(os.Stderr,
 				"soundstorm: unknown command %q\n\n"+
 					"  soundstorm                 start the server\n"+
 					"  soundstorm backup [file]   copy the accounts and credentials out\n"+
 					"  soundstorm restore <file>  put them back\n"+
-					"  soundstorm reset-password  set a new password for an account\n\n"+
+					"  soundstorm reset-password  set a new password for an account\n"+
+					"  soundstorm train-looks     learn the looks from training recordings (developer)\n\n"+
 					"The server takes no arguments; everything else is environment variables.\n",
 				os.Args[1])
 			os.Exit(2)

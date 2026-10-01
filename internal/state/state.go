@@ -493,6 +493,21 @@ func Inspect(path string) (Summary, error) {
 	return Summary{Version: d.Version, Users: len(d.Users), Backends: ids}, nil
 }
 
+// ReadBackends reads a state file's backend credentials, writing nothing -
+// for a tool run beside the server (soundstorm train-looks), which must not
+// touch the file the server owns.
+func ReadBackends(path string) (map[string]Backend, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var d data
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return nil, fmt.Errorf("parse state %s: %w", path, err)
+	}
+	return d.Backends, nil
+}
+
 // CopyTo copies a state file byte for byte, touching neither end's contents.
 func CopyTo(path, dest string) error {
 	raw, err := os.ReadFile(path)

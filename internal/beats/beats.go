@@ -12,10 +12,13 @@
 package beats
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"math"
+	"path/filepath"
 	"sort"
 )
 
@@ -361,4 +364,25 @@ func toB64(v []float32) string {
 		b[i] = byte(jsRound(math.Max(0, math.Min(1, float64(x))) * 255))
 	}
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+// Frames are the raw readings behind a hearing, a value per frame in dB: the
+// whole sound, the low band (under 150Hz), the high band (over 2500Hz) and
+// the sharp highs (over 7kHz). For training the looks (internal/training),
+// which learns from more than the few lanes a result keeps.
+func (a *Analyzer) Frames() (loud, low, high, hats []float32) {
+	return a.loud, a.low, a.high, a.hats
+}
+
+// Rate is the samples a second the analyzer was made for, and Hop the
+// samples in a frame.
+func (a *Analyzer) Rate() int { return a.sr }
+func (a *Analyzer) Hop() int  { return a.hop }
+
+// CachePath is where the server keeps what was heard in a song (httpapi's
+// beat store), under dir.
+func CachePath(dir, sourceID, id string) string {
+	sum := sha256.Sum256([]byte(sourceID + "\x00" + id))
+	h := hex.EncodeToString(sum[:16])
+	return filepath.Join(dir, h[:2], h+".json")
 }

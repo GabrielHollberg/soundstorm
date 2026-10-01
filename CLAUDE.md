@@ -1427,10 +1427,30 @@ that what is learnt ships in SoundStorm for every install.
 - Kept per song under the state dir's `training/`, a file each, with what
   the song is (from the library, never the request) and the device's
   Timing (`lead`), to separate the device's lateness from the hand's.
-- Next, not built: a training script reading those files, fitting models
-  and comparing them on held-out songs - the simple one on the analysis's
-  measurements, a small raw-sound one, and one on Beat This!'s inner layers
-  ("borrowed ears"); the winner ships only if it beats today's rule.
+- **The training script** is `soundstorm train-looks` (`internal/training`),
+  run inside the server's container beside the running server:
+  `docker exec soundstorm soundstorm train-looks`. It reads Navidrome's
+  credentials read-only (`state.ReadBackends`; `state.Open` would rewrite
+  the file), hears each recorded song again through the listening
+  transcoding with the tempo prior the server's cache used (so the beats are
+  the server's), and keeps the raw readings (`beats.Analyzer.Frames`).
+  Candidates are frames where something rises (a local peak of the band
+  rises); each gets 15 measurements (`FeatureNames`: rises and levels per
+  band, loudness, distance from the beat, beat 1-4, between beats, how much
+  it stands out) - none of today's thresholds. Taps are lined up by the
+  song's median lateness (strongest candidate in the 400ms before a tap),
+  then to the strongest candidate within 80ms; only the tapped span counts,
+  and candidates near a target are left out of training. The model is a
+  logistic regression (scaled features, big moments weighted up, a little
+  decay), its threshold the best F1 on what it was fitted to. Scored
+  leave-one-song-out against today's rule (strikes within 70ms of a moment
+  meant), with what it learnt listed; intensity is a ridge fit of the slid
+  level on loudness, bass, sharp highs, hits a second and tempo against
+  loudness alone. The model is written to `training/model-big-moments.json`;
+  building it in, and the raw-sound and borrowed-ears models, come once
+  there are recordings to compare them on. The test on generated click
+  tracks tapped on each bar's first beat: the model caught 98% and learnt
+  beat 1 (+1.6) over beats 2-4; today's rule 13%.
 
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
