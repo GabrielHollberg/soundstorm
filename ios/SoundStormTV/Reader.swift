@@ -78,7 +78,9 @@ final class BookReader {
                     await show(chapter: cfi.chapter) { text in text.offset(forCFIPath: cfi.steps, charOffset: cfi.offset) }
                     return
                 }
-                let c = min(book.chapters.count - 1, Int(place.fraction * Double(book.chapters.count)))
+                // The server's number, kept to 0...1 before it becomes an index.
+                let fraction = place.fraction.isFinite ? max(0, min(1, place.fraction)) : 0
+                let c = min(book.chapters.count - 1, Int(fraction * Double(book.chapters.count)))
                 await show(chapter: c) { _ in 0 }
                 return
             }
@@ -149,11 +151,24 @@ final class BookReader {
     }
 
     /// Pictures, fetched and scaled to fit a page.
+    ///
+    /// Each picture is fetched and decoded once however often the chapter
+    /// shows it, and only the first few dozen are: a chapter of hundreds of
+    /// copies of one huge picture ran the TV out of memory.
     private func addImages(_ text: EpubText, to full: NSMutableAttributedString) async {
-        for image in text.images.reversed() {
-            guard let data = try? await api.bookResource(item, path: image.path),
-                  let picture = SafeLoad.image(data, maxPixels: 2048)
-            else { continue }
+        var decoded: [String: UIImage] = [:]
+        let shown = Set(text.images.prefix(Self.maxPictures).map(\.offset))
+        for image in text.images.reversed() where shown.contains(image.offset) {
+            let picture: UIImage
+            if let kept = decoded[image.path] {
+                picture = kept
+            } else {
+                guard let data = try? await api.bookResource(item, path: image.path),
+                      let fresh = SafeLoad.image(data, maxPixels: 1600)
+                else { continue }
+                decoded[image.path] = fresh
+                picture = fresh
+            }
             let attachment = NSTextAttachment()
             attachment.image = picture
             let box = Self.pageSize
@@ -168,6 +183,8 @@ final class BookReader {
             full.replaceCharacters(in: NSRange(location: image.offset, length: 1), with: centred)
         }
     }
+
+    static let maxPictures = 40
 
     private func paginate(_ full: NSAttributedString) {
         storage.removeLayoutManager(layout)
@@ -228,8 +245,8 @@ final class BookReader {
         let i = Self.sentence(at: player.time, in: timeline)
         guard i >= 0, i != sentence else { return }
         sentence = i
-        let parts = timeline[i].h.split(separator: "#", maxSplits: 1).map(String.init)
-        guard let c = book.chapters.firstIndex(where: { $0.path == parts[0] }) else { return }
+        let parts = timeline[i].h.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let first = parts.first, let c = book.chapters.firstIndex(where: { $0.path == first }) else { return }
         let fragment = parts.count > 1 ? parts[1] : nil
         // Turned by hand: the reader is looking elsewhere; leave the page be.
         guard Date() >= handsOffUntil else { return }

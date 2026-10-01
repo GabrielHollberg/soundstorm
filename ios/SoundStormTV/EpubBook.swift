@@ -81,8 +81,11 @@ struct EpubBook {
 
     private static func entry(_ title: String, href: String?, base: String, spine: [String]) -> Contents? {
         guard let href, !href.isEmpty else { return nil }
-        let parts = href.split(separator: "#", maxSplits: 1).map(String.init)
-        let path = join(base, parts[0])
+        // Empty pieces kept: "#" alone (a link to nowhere, in a hostile book)
+        // split into nothing and crashed on parts[0].
+        let parts = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let first = parts.first, !first.isEmpty else { return nil }
+        let path = join(base, first)
         guard let i = spine.firstIndex(of: path) else { return nil }
         let name = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return Contents(title: name.isEmpty ? "Chapter \(i + 1)" : name, chapter: i, fragment: parts.count > 1 ? parts[1] : nil)

@@ -443,6 +443,13 @@ final class API {
         parts.queryItems = [URLQueryItem(name: "kbps", value: String(kbps)), URLQueryItem(name: "listen", value: "1")]
         let (temp, response) = try await URLSession.shared.download(from: parts.url!)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, nil) }
+        // Hearing decodes the whole song into memory; past about half an hour
+        // at 96 kbps (the server's own limit for hearing) it is not heard.
+        let size = (try? FileManager.default.attributesOfItem(atPath: temp.path)[.size] as? Int) ?? Int.max
+        guard size <= 24 << 20 else {
+            try? FileManager.default.removeItem(at: temp)
+            throw Failure.status(0, "Too long to hear here.")
+        }
         // A name AVFoundation can tell the kind of.
         let file = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".mp3")
         try FileManager.default.moveItem(at: temp, to: file)

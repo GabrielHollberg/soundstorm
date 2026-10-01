@@ -465,7 +465,8 @@ struct SongCard: View {
 }
 
 func clock(_ seconds: Double) -> String {
-    guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+    // Under a billion seconds: Int() of anything past Int's range traps.
+    guard seconds.isFinite, seconds >= 0, seconds < 1e9 else { return "0:00" }
     let s = Int(seconds)
     return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
         : String(format: "%d:%02d", s / 60, s % 60)
