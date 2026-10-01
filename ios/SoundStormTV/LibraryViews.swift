@@ -268,7 +268,10 @@ struct SettingsView: View {
         VStack(spacing: 40) {
             Text(api.user.map { "Signed in as \($0.name)" } ?? "")
             Text(api.server.host() ?? "").foregroundStyle(.secondary)
+            Button("Switch person") { Task { await model.showProfiles() } }
             Button("Change server") { model.changeServer() }
+            // Signing out takes this person off the TV; Switch person keeps
+            // everybody on it.
             Button("Sign out") { Task { await model.signOut() } }
         }
     }

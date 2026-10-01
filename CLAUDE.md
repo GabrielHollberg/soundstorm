@@ -5768,11 +5768,29 @@ Browsers need nothing: each server is its own site and its own bookmark.
 **For the PC (Android):** the same in `ServerAddress.kt` - a JSON list in the
 prefs beside the current address (the current one seeds it), the connect
 screen listing them above the address box, a long press for Rename and
-Remove. **Next: profiles** - each server's people on a device, "Who's
-listening?" every time a TV opens, optional PINs (the owner's always). The
-design, agreed with the owner: the server keeps which accounts a device may
-switch between, keyed by its device token, and swaps the session cookie on a
-switch, so one design serves browsers and every app.
+Remove. **Profiles (2026-10-01): "Who's listening?"**, the second half, designed
+with the owner: optional PINs, the owner always needing their PIN (or
+password, with none), and a TV asking every time it opens. A device gets a
+profile cookie of its own (`soundstorm_profiles`, a random id, not a
+sign-in); the server keeps who may be switched to on it (`state.Kept`, keyed
+by a hash of the id, each person with a fingerprint of their password's salt,
+so a new password takes them off every device). "Keep me on this device" at
+sign-in (`keep` in the login body; ticked on a TV; kept through device
+approval; a TV signed in from a phone keeps its person by itself) puts them on
+it. `GET /api/profiles` and `POST /api/profiles/switch` are open, since a TV
+asks before anybody is signed in; a switch revokes the device's session and
+starts the person's. Wrong PINs are counted before they are checked (so a
+burst is counted as one), five then a wait of 15 minutes doubling, fifteen
+and the person is taken off. **Sign out takes you off the device; Switch
+person keeps everybody** - on a friend's phone, staying switchable would be
+staying signed in. The page: the picker on a TV's every opening, Someone
+else to sign in kept, Settings' On this device (switch, keep, take off) and
+PIN. The Apple TV: the same, and Switch person in its Settings. Checked: Go
+tests through the routes; Chrome as a TV with two people (password for the
+owner, none then a PIN for the other, a wrong PIN refused); the Apple TV
+simulator (`-profile <name> -profileSecret <s>`, debug only) - the picker on
+opening, a wrong PIN refused, the right one into the library; the iPhone UI
+tests still pass. Not checked: a remote's presses on the TV picker.
 
 ## The Android app (`android/`)
 

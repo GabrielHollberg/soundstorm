@@ -23,7 +23,7 @@ struct SoundStormTVApp: App {
 /// Where the app is: no server yet, a server but nobody signed in, or in.
 @Observable
 final class AppModel {
-    enum Stage { case connect, checking, signIn(hasAccount: Bool), library }
+    enum Stage { case connect, checking, signIn(hasAccount: Bool), profiles([API.Profile]), library }
 
     private(set) var stage: Stage = .checking
     private(set) var api: API?
@@ -86,6 +86,15 @@ final class AppModel {
         guard let api else { return }
         do {
             let s = try await api.session()
+            // "Who's listening?" every time the TV opens, when anybody is
+            // kept on it - the owner's choice for a shared screen.
+            if s.hasAccount {
+                let people = await api.profiles()
+                if !people.isEmpty {
+                    stage = .profiles(people)
+                    return
+                }
+            }
             stage = s.signedIn ? .library : .signIn(hasAccount: s.hasAccount)
         } catch {
             // Unreachable: back to the address, which says why when tried.
@@ -94,6 +103,26 @@ final class AppModel {
     }
 
     func signedIn() { stage = .library }
+
+    /// Switch person, from Settings.
+    func showProfiles() async {
+        guard let api else { return }
+        let people = await api.profiles()
+        stage = people.isEmpty ? .signIn(hasAccount: true) : .profiles(people)
+    }
+
+    /// Someone else: signing in, to be kept on this TV.
+    func signInSomeoneElse() { stage = .signIn(hasAccount: true) }
+
+    /// Switched to somebody: what the last person was doing goes with them.
+    func switched() {
+        player?.stop()
+        video = nil
+        photos = nil
+        reading = nil
+        showingNowPlaying = false
+        stage = .library
+    }
 
     func signOut() async {
         player?.stop()
@@ -193,6 +222,8 @@ struct RootView: View {
             ConnectView()
         case .signIn(let hasAccount):
             SignInView(hasAccount: hasAccount)
+        case .profiles(let people):
+            ProfilesView(people: people)
         case .library:
             if let api = model.api, let player = model.player {
                 if api.mustRenew {

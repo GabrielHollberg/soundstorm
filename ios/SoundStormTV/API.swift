@@ -69,7 +69,9 @@ final class API {
     }
 
     func signIn(username: String, password: String) async throws -> SignIn {
-        struct Body: Encodable { let username: String; let password: String }
+        // A TV is shared: whoever signs in on it is kept on it, to be
+        // switched back to ("Who's listening?").
+        struct Body: Encodable { let username: String; let password: String; var keep = true }
         struct Answer: Decodable { let user: User?; let pending: String?; let code: Bool? }
         do {
             let answer: Answer = try await send("POST", "api/login", Body(username: username, password: password))
@@ -101,6 +103,33 @@ final class API {
         user = answer.user
         renewDemanded = false
         return true
+    }
+
+    /// A person kept on this TV, and what switching to them needs: "pin",
+    /// "password" (the owner without a PIN), or nothing.
+    struct Profile: Decodable, Identifiable, Hashable {
+        let id: String
+        let name: String
+        let owner: Bool
+        let needs: String
+    }
+
+    /// Who this TV may switch between (the server's profiles.go).
+    func profiles() async -> [Profile] {
+        struct Answer: Decodable { let people: [Profile] }
+        let a: Answer? = try? await get("api/profiles")
+        return a?.people ?? []
+    }
+
+    /// Becomes that person, with their PIN or password where needed.
+    func switchProfile(_ person: Profile, secret: String) async throws {
+        struct Body: Encodable { let id: String; let pin: String?; let password: String? }
+        struct Answer: Decodable { let user: User? }
+        let a: Answer = try await send("POST", "api/profiles/switch",
+                                       Body(id: person.id, pin: person.needs == "pin" ? secret : nil,
+                                            password: person.needs == "password" ? secret : nil))
+        user = a.user
+        renewDemanded = false
     }
 
     /// A code for signing this TV in from a phone (the server's tvlink.go).

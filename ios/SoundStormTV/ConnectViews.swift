@@ -412,3 +412,106 @@ struct LinkView: View {
         }
     }
 }
+
+/// Who's listening? The people kept on this TV: a circle each, and switching
+/// to one asks for their PIN if they set one, and the owner's PIN or
+/// password always. Someone else signs in, and is kept here too.
+struct ProfilesView: View {
+    let people: [API.Profile]
+    @Environment(AppModel.self) private var model
+    @State private var picked: API.Profile?
+    @State private var secret = ""
+    @State private var busy = false
+    @State private var message: String?
+
+    private static let hues: [Double] = [210, 340, 28, 140, 265, 190, 5, 95]
+
+    var body: some View {
+        VStack(spacing: 50) {
+            Logo()
+            Text("Who's listening?").font(.title2.bold())
+            if let picked {
+                VStack(spacing: 30) {
+                    tile(picked).disabled(true)
+                    SecureField(picked.needs == "pin" ? "\(picked.name)'s PIN" : "\(picked.name)'s password", text: $secret)
+                        .keyboardType(picked.needs == "pin" ? .numberPad : .default)
+                        .frame(width: 600)
+                        .onSubmit { go(picked) }
+                    if let message {
+                        Text(message).foregroundStyle(.red)
+                    }
+                    Button(busy ? "Switching…" : "Continue") { go(picked) }
+                        .disabled(busy || secret.isEmpty)
+                    Button("Back") { self.picked = nil; secret = ""; message = nil }
+                }
+            } else {
+                HStack(spacing: 60) {
+                    ForEach(people) { person in
+                        Button { pick(person) } label: { tile(person) }
+                            .buttonStyle(.borderless)
+                    }
+                }
+                if let message {
+                    Text(message).foregroundStyle(.red)
+                }
+                Button("Someone else") { model.signInSomeoneElse() }
+            }
+        }
+        .multilineTextAlignment(.center)
+        #if DEBUG
+        // For the simulator, which cannot press: -profile <name> -profileSecret <pin or password>
+        .task {
+            if let name = UserDefaults.standard.string(forKey: "profile"),
+               let person = people.first(where: { $0.name == name }) {
+                pick(person)
+                if let s = UserDefaults.standard.string(forKey: "profileSecret") {
+                    secret = s
+                    go(person)
+                }
+            }
+        }
+        #endif
+    }
+
+    private func tile(_ person: API.Profile) -> some View {
+        let hash = person.name.unicodeScalars.reduce(UInt32(0)) { $0 &* 31 &+ $1.value }
+        return VStack(spacing: 14) {
+            Text(person.name.prefix(1).uppercased())
+                .font(.system(size: 80, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(width: 180, height: 180)
+                .background(Circle().fill(Color(hue: Self.hues[Int(hash) % Self.hues.count] / 360, saturation: 0.55, brightness: 0.62)))
+            Text(person.name)
+            Text(person.needs == "pin" ? "PIN" : person.needs == "password" ? "Password" : " ")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func pick(_ person: API.Profile) {
+        message = nil
+        if person.needs.isEmpty {
+            go(person)
+        } else {
+            secret = ""
+            picked = person
+        }
+    }
+
+    private func go(_ person: API.Profile) {
+        guard !busy, let api = model.api else { return }
+        busy = true
+        Task {
+            do {
+                try await api.switchProfile(person, secret: secret)
+                model.switched()
+            } catch API.Failure.status(403, _) {
+                message = person.needs == "pin" ? "That PIN is not right." : "That password is not right."
+                secret = ""
+            } catch {
+                message = error.localizedDescription
+            }
+            busy = false
+        }
+    }
+}

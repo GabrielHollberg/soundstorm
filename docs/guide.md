@@ -355,6 +355,14 @@ household default can be changed too).
   allows it from a device already signed in to that account, or the owner
   allows it. A guessed or leaked password then gets nobody in. With nothing
   else signed in, the setup code from the server's `.env` file allows it.
+- **Who's listening?** (profiles): a device can keep several people. Tick
+  **Keep me on this device** when signing in (ticked already on a TV), and
+  next time pick yourself instead of typing a password. A TV asks every time
+  it opens; elsewhere it's **Settings → On this device → Switch person**. Set
+  a PIN there and switching to you asks for it - without one, anybody at a
+  device you're kept on can switch to you. The owner always needs their PIN,
+  or their password if they have none. **Sign out** takes you off that device;
+  a new password takes you off every device.
 - **Sign in a TV from your phone**: on a TV's sign-in screen choose **Sign in
   with your phone**. It shows a QR code and a code like `KXT-4PM`. Scan the QR
   code with a phone signed in to SoundStorm, or open SoundStorm on the phone and
