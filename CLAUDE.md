@@ -4544,6 +4544,16 @@ that the owner can see them. A refused permission leaves it off and says why;
 a full photo space, a disk or an ended sign-in stop it with the reason shown
 until the next job. Not on a TV. Checked: the page's question and controls with
 a stand-in app; the app builds. **Not yet run on a real phone.**
+**On the owner's phone it looked stuck at 14 of 1209** (0.15): it was sending a
+long video, and only whole files moved the count; turning the switch off and on
+had started a second job sending the same video beside it. Now one backup runs
+at a time (a lock in `BackupWorker`; the switch's job is KEEP, not REPLACE),
+Settings shows the file being sent ("Sending a video: 240 of 600 MB", asked
+for every two seconds while it shows), and the job runs in the foreground with a
+quiet notification (dataSync), since WorkManager stops an ordinary job at ten
+minutes - one long video on a slow link. Android may refuse the foreground from
+the background; then it runs as before. Only a network error is called "could
+not reach the server" now; anything else names itself.
 **For the Mac:** the iPhone app has no backup yet. It wants the same: the
 photo library (PHPhotoLibrary, full or limited access), uploads in a
 background URLSession to `PUT /api/photos/backup` with the session cookie,

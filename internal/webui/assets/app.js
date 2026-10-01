@@ -768,10 +768,22 @@ function renderBackup() {
     text = st.done >= st.total
       ? `All ${st.total.toLocaleString()} photos and videos are backed up.`
       : `${st.done.toLocaleString()} of ${st.total.toLocaleString()} backed up${st.running ? ', sending now' : ''}.`;
+    if (st.running && st.sendingSize > 0) {
+      const mb = (b) => Math.round(b / 1e6).toLocaleString();
+      text += ` Sending a ${st.sendingVideo ? 'video' : 'photo'}: ${mb(st.sendingSent)} of ${mb(st.sendingSize)} MB.`;
+    }
     if (st.done < st.total && !st.running) text += st.wifiOnly ? ' It carries on when the phone is on Wi-Fi.' : ' It carries on in the background.';
   } else if (st.enabled) text = 'Starting...';
   $('backup-status').textContent = text;
   show($('backup-status'), Boolean(text));
+  // While it sends and somebody is looking, ask again every two seconds.
+  clearTimeout(renderBackup.poll);
+  if (BACKUP_APP && st.enabled && st.running) {
+    renderBackup.poll = setTimeout(() => {
+      if (!document.hidden && $('backup-controls').offsetParent) window.soundstormApp.backup('status');
+      else renderBackup();
+    }, 2000);
+  }
 }
 
 // Asked once, after signing in, on a phone with the app and Pictures.
