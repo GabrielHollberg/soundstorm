@@ -81,6 +81,9 @@ type Server struct {
 	collections *collections.Store
 	plays       allowance
 	positions   allowance
+	// nowPlaying limits "playing now" to ListenBrainz: each starts a call
+	// out of the house, and nothing else held them back.
+	nowPlaying allowance
 	// plex holds each person's Plex sign-in while they import; plexPins
 	// limits how often they may start one. plexOverride is for tests.
 	plex         plexSessions

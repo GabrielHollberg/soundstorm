@@ -43,7 +43,14 @@ function documentType(type) {
 function withoutScripts(book) {
   book.transformTarget?.addEventListener('data', ({ detail }) => {
     const type = documentType(detail.type);
-    if (!type) return;
+    if (!type) {
+      // A part the book gives no type at all becomes an untyped Blob, which
+      // a browser sniffs - and renders as a page, uncleaned, if it looks like
+      // one (a security review). Typed as text, it can only ever be text.
+      // A stylesheet keeps no type, which a browser still accepts as CSS.
+      if (!String(detail.type || '').trim() && !/\.css$/i.test(detail.name || '')) detail.type = 'text/plain';
+      return;
+    }
     // foliate parses and rewrites as text only the four exact types it knows;
     // any other spelling of a page (text/html;charset=utf-8, TEXT/HTML,
     // application/xml) arrives here as a Blob it builds the frame from as it

@@ -117,7 +117,8 @@ func shrinkLocal(target source.Target, px int) (source.Target, bool) {
 		return source.Target{Bytes: kept, ContentType: http.DetectContentType(kept), Name: target.Name, ModTime: target.ModTime}, true
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || (cfg.Width <= px && cfg.Height <= px) || cfg.Width*cfg.Height > shrinkMaxPixels {
+	if err != nil || (cfg.Width <= px && cfg.Height <= px) || cfg.Width*cfg.Height > shrinkMaxPixels ||
+		(format == "jpeg" && jpegScans(data) > maxJPEGScans) {
 		keepShrunk(key, nil)
 		return target, false
 	}
@@ -217,4 +218,17 @@ func hasAlpha(img *image.RGBA) bool {
 		}
 	}
 	return false
+}
+
+// maxJPEGScans is the most scans a JPEG may have to be shrunk. A progressive
+// one has about ten; each scan is a walk over every block of the picture, so a
+// cover of thousands of empty scans took minutes to decode (and decoding
+// cannot be stopped part way). One with more is sent as it is.
+const maxJPEGScans = 100
+
+// jpegScans counts start-of-scan markers. A 0xFF inside the compressed data
+// is always followed by 0x00, so FF DA appears only as a marker - or inside
+// metadata, which can only overcount, and so only errs toward not shrinking.
+func jpegScans(data []byte) int {
+	return bytes.Count(data, []byte{0xFF, 0xDA})
 }

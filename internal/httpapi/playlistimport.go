@@ -253,6 +253,9 @@ func tagsFromPath(p string) (artist, title string) {
 var trailingBracket = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]\s*$`)
 
 func matchKey(s string) string {
+	// No real title or artist is this long, and each pass below scans the
+	// whole string: a title of thousands of "()" took minutes of CPU.
+	s = truncateRunes(s, maxMatchKey)
 	s = strings.ToLower(strings.TrimSpace(s))
 	for {
 		t := trailingBracket.ReplaceAllString(s, "")
@@ -389,4 +392,22 @@ func (s *Server) handleImportPlaylist(w http.ResponseWriter, r *http.Request) {
 		"missing":      res.Missing,
 		"missingCount": res.MissingCount,
 	})
+}
+
+// maxMatchKey bounds a name before it is compared.
+const maxMatchKey = 300
+
+// truncateRunes keeps at most n runes of s.
+func truncateRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	i := 0
+	for j := range s {
+		if i == n {
+			return s[:j]
+		}
+		i++
+	}
+	return s
 }

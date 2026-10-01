@@ -410,6 +410,8 @@ func TestHLSTargetStripsSubtitleKeys(t *testing.T) {
 		"SubtitleMethod":      {"Hls"},
 		"SubtitleStreamIndex": {"0"},
 		"subtitlecodec":       {"srt"},
+		// Writes the same subtitle playlist, token and all.
+		"EnableSubtitlesInManifest": {"true"},
 	}
 	target, err := s.HLSTarget(context.Background(), "item-1/master.m3u8", q)
 	if err != nil {

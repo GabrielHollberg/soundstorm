@@ -79,7 +79,13 @@ type Server struct {
 // the Public Suffix List, after which each install is its own domain to Let's
 // Encrypt.
 var (
-	registerRate        = rate{10, time.Hour}      // per client network
+	registerRate     = rate{10, time.Hour}      // per client network
+	registerWideRate = rate{30, 24 * time.Hour} // per IPv4 /24 (or IPv6 /48)
+	// An install registers once; a reinstall once more. Each registration can
+	// hold a DNS record, and the zone holds 2,500 at most, so a stream of them
+	// - or of /64s, each a fresh limit - must not be able to fill it (or the
+	// limit table) in a few days.
+	globalRegisterRate  = rate{300, 24 * time.Hour}
 	addressRate         = rate{20, time.Hour}      // per install
 	challengeRate       = rate{10, 24 * time.Hour} // per install
 	challengeNetRate    = rate{20, 24 * time.Hour} // per client network
@@ -159,8 +165,13 @@ func (s *Server) PublicNameFor(id string) string { return id + "." + s.PublicLab
 func (s *Server) publicRelative(id string) string { return id + "." + s.PublicLabel }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if !s.limits.allow("register:"+s.clientNet(r), registerRate) {
+	if !s.limits.allow("register:"+s.clientNet(r), registerRate) ||
+		!s.limits.allow("register-wide:"+s.clientWide(r), registerWideRate) {
 		writeError(w, http.StatusTooManyRequests, "too many registrations from this address; try again later")
+		return
+	}
+	if !s.limits.allow("register:*", globalRegisterRate) {
+		writeError(w, http.StatusTooManyRequests, "too many registrations today; try again later")
 		return
 	}
 	id, err := newID()
