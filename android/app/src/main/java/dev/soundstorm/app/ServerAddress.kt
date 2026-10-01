@@ -27,6 +27,66 @@ object ServerAddress {
             .putString(KEY, server?.toString()).apply()
     }
 
+    // Several saved servers, as the iPhone and Apple TV apps keep them
+    // (ios/Shared/ServerAddress.swift): the latest used first. Sign-ins stay
+    // with each, since cookies belong to an address, so switching signs
+    // nobody out.
+    private const val LIST_KEY = "servers"
+
+    data class Server(val url: Uri, val name: String)
+
+    fun all(context: Context): List<Server> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(LIST_KEY, null)
+        if (raw == null) {
+            // From before the list: the one address in use seeds it.
+            return saved(context)?.let { listOf(Server(it, defaultName(it))) } ?: emptyList()
+        }
+        val array = runCatching { org.json.JSONArray(raw) }.getOrNull() ?: return emptyList()
+        val out = mutableListOf<Server>()
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            val url = parse(o.optString("url")) ?: continue
+            if (out.any { origin(it.url) == origin(url) }) continue
+            out += Server(url, o.optString("name").ifBlank { defaultName(url) })
+        }
+        return out
+    }
+
+    private fun store(context: Context, list: List<Server>) {
+        val array = org.json.JSONArray()
+        list.take(20).forEach { array.put(JSONObject().put("url", it.url.toString()).put("name", it.name)) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(LIST_KEY, array.toString()).apply()
+    }
+
+    /** The server now in use: to the top of the list, added if new. */
+    fun remember(context: Context, url: Uri) {
+        val list = all(context)
+        val name = list.firstOrNull { origin(it.url) == origin(url) }?.name ?: defaultName(url)
+        store(context, listOf(Server(url, name)) + list.filter { origin(it.url) != origin(url) })
+        save(context, url)
+    }
+
+    fun forget(context: Context, url: Uri) {
+        store(context, all(context).filter { origin(it.url) != origin(url) })
+        if (saved(context)?.let { origin(it) == origin(url) } == true) save(context, null)
+    }
+
+    fun rename(context: Context, url: Uri, name: String) {
+        store(context, all(context).map {
+            if (origin(it.url) == origin(url)) it.copy(name = name.trim().ifBlank { defaultName(url) }) else it
+        })
+    }
+
+    /** "SoundStorm abc123" for an install's own name, else the host. */
+    fun defaultName(url: Uri): String {
+        val host = url.host ?: return url.toString()
+        for (suffix in listOf(".home.soundstorm.dev", ".net.soundstorm.dev")) {
+            if (host.endsWith(suffix)) return "SoundStorm " + host.removeSuffix(suffix)
+        }
+        return host
+    }
+
     /**
      * Turns what somebody typed into the server's root URL. Anything without a
      * scheme is https: the default install has a real certificate on its

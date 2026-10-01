@@ -252,17 +252,33 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 32f)
             setTypeface(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
         }, wrap(bottom = 16))
+        // Your servers: the latest used first, the one in use ticked; a tap
+        // switches, a hold offers Rename and Remove.
+        val servers = ServerAddress.all(this)
+        if (servers.isNotEmpty()) {
+            column.addView(TextView(this).apply {
+                text = "Your servers"
+                setTextColor(Color.argb(0x99, 0xeb, 0xeb, 0xf5))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            }, fill(bottom = 8))
+            val inUse = ServerAddress.saved(this)?.let(ServerAddress::origin)
+            for (s in servers) column.addView(serverRow(s, ServerAddress.origin(s.url) == inUse, surface, accent), fill(bottom = 8))
+        }
         column.addView(TextView(this).apply {
-            text = "Enter your server's address - the one you open in a browser."
+            text = if (servers.isEmpty()) "Enter your server's address - the one you open in a browser."
+                else "Or add another - the address you open in a browser."
             setTextColor(Color.argb(0x99, 0xeb, 0xeb, 0xf5))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             gravity = Gravity.CENTER
-        }, fill(bottom = 28))
+        }, fill(top = if (servers.isEmpty()) 0 else 16, bottom = 28))
+        val known = prefill != null && servers.any { ServerAddress.origin(it.url) == ServerAddress.origin(prefill) }
         val field = EditText(this).apply {
             hint = "yourname.home.soundstorm.dev"
             // Without the scheme for https (the default when none is typed),
             // with it for plain http, which would otherwise be read as https.
-            setText(prefill?.let {
+            // A server already in the list is not typed out again.
+            setText(prefill?.takeUnless { known }?.let {
                 val hostPort = it.host + if (it.port != -1) ":${it.port}" else ""
                 if (it.scheme == "https") hostPort else "${it.scheme}://$hostPort"
             } ?: "")
@@ -296,10 +312,13 @@ class MainActivity : Activity() {
 
         // Centred in whatever the keyboard leaves, and no wider than 420dp so
         // it stays a column on a tablet.
+        // Scrolls once the list is longer than the screen.
         val holder = FrameLayout(this)
         holder.addView(column, FrameLayout.LayoutParams(minOf(dp(420), resources.displayMetrics.widthPixels), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        val scroller = android.widget.ScrollView(this).apply { isFillViewport = true }
+        scroller.addView(holder, FrameLayout.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT))
         content.removeAllViews()
-        content.addView(holder, FrameLayout.LayoutParams(MATCH, MATCH))
+        content.addView(scroller, FrameLayout.LayoutParams(MATCH, MATCH))
 
         var checking = false
         fun connect() {
@@ -327,7 +346,7 @@ class MainActivity : Activity() {
                     button.text = "Connect"
                     busy.visibility = View.GONE
                     if (problem == null) {
-                        ServerAddress.save(this, parsed)
+                        ServerAddress.remember(this, parsed)
                         hideKeyboard(field)
                         showWeb(parsed)
                     } else {
@@ -342,8 +361,99 @@ class MainActivity : Activity() {
                 connect(); true
             } else false
         }
-        field.requestFocus()
-        field.post { getSystemService(InputMethodManager::class.java).showSoftInput(field, 0) }
+        // The keyboard only when there is nothing to pick from.
+        if (servers.isEmpty()) {
+            field.requestFocus()
+            field.post { getSystemService(InputMethodManager::class.java).showSoftInput(field, 0) }
+        }
+    }
+
+    /** One saved server on the connect screen. */
+    private fun serverRow(s: ServerAddress.Server, inUse: Boolean, surface: Int, accent: Int): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            isClickable = true
+            isFocusable = true
+            // A ring for the TV remote's focus, the fill otherwise.
+            background = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat(); setColor(surface); setStroke(dp(2), Color.WHITE)
+                })
+                addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat(); setColor(Color.rgb(0x24, 0x2a, 0x34))
+                })
+                addState(intArrayOf(), GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(surface) })
+            }
+        }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(this).apply {
+            text = s.name
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        texts.addView(TextView(this).apply {
+            text = ServerAddress.origin(s.url).removePrefix("https://")
+            setTextColor(Color.argb(0x99, 0xeb, 0xeb, 0xf5))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        })
+        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        if (inUse) row.addView(TextView(this).apply {
+            text = "✓"
+            contentDescription = "In use"
+            setTextColor(accent)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(10) })
+        row.setOnClickListener {
+            ServerAddress.remember(this, s.url)
+            hideKeyboard(row)
+            showWeb(s.url)
+        }
+        row.setOnLongClickListener {
+            AlertDialog.Builder(this)
+                .setTitle(s.name)
+                .setItems(arrayOf("Rename", "Remove")) { _, which ->
+                    if (which == 0) renameServer(s) else {
+                        AlertDialog.Builder(this)
+                            .setTitle("Remove ${s.name}?")
+                            .setMessage("It comes off this list. Nothing on the server changes, and you can add it again with its address.")
+                            .setPositiveButton("Remove") { _, _ ->
+                                ServerAddress.forget(this, s.url)
+                                showConnect(null)
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                }
+                .show()
+            true
+        }
+        return row
+    }
+
+    private fun renameServer(s: ServerAddress.Server) {
+        val box = EditText(this).apply {
+            setText(s.name)
+            setSelectAllOnFocus(true)
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        }
+        val frame = FrameLayout(this).apply { setPadding(dp(20), dp(8), dp(20), 0); addView(box) }
+        AlertDialog.Builder(this)
+            .setTitle("Rename")
+            .setView(frame)
+            .setPositiveButton("Save") { _, _ ->
+                ServerAddress.rename(this, s.url, box.text.toString().take(60))
+                showConnect(null)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // -------------------------------------------------------------------- web
@@ -804,9 +914,9 @@ class MainActivity : Activity() {
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             .apply { bottomMargin = dp(bottom) }
 
-    private fun fill(height: Int = 0, bottom: Int = 0) =
+    private fun fill(height: Int = 0, bottom: Int = 0, top: Int = 0) =
         LinearLayout.LayoutParams(MATCH, if (height > 0) dp(height) else ViewGroup.LayoutParams.WRAP_CONTENT)
-            .apply { bottomMargin = dp(bottom) }
+            .apply { bottomMargin = dp(bottom); topMargin = dp(top) }
 
     private fun hideKeyboard(view: View) {
         getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(view.windowToken, 0)
