@@ -1430,6 +1430,12 @@ just under the clouds, never reaching the ground, lighting the clouds all
 along the way (four lights rolling with it) and drawn over the clouds (under
 them, a TV's wide clouds hid them); a quarter lean, landing well to one side,
 their branches mostly leaning the same way; the rest come down near straight.
+**A crawler spreads rather than aims** (`stormSpider`; the owner: ground
+strikes perfect, cloud ones too much one line going somewhere, and should
+branch more): from a point under the clouds two or three arms wander off in
+different directions, each turning a little at every kink, with branches all
+along them on both sides, up as well as down, forking twice more
+(`stormBranchAt`). The ground strikes' shape is unchanged.
 The bolt thins towards its end, branches dim faster than the main channel
 (one faint glow round it: the two bands it had read as a ghost of the bolt,
 none looked bare, and the owner chose between),

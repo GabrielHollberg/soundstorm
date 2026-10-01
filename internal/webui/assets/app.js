@@ -14137,6 +14137,7 @@ function stormBolt(w, h, s, age) {
     ty = bottom;
   }
   bo.crawl = crawl;
+  if (crawl) return stormSpider(bo, tier, w, h);
   // The shape is lightning's, jagged at every scale: a few big kinks first
   // (waypoints along the way, each pushed aside), then each stretch between
   // them broken by midpoint displacement - halved again and again, each
@@ -14184,6 +14185,69 @@ function stormBolt(w, h, s, age) {
     stormBranch(bo.branches, main[at], main[at + 1], len, bs, strong ? 0.75 : 0.35 + Math.random() * 0.15, strong ? 2 : 1);
   }
   return bo;
+}
+// Lightning in the clouds spreads rather than aims (the owner's asking: the
+// ground strikes are right, the cloud ones were too much one line going
+// somewhere): from a point under the clouds two or three arms wander off in
+// different directions, mostly sideways, and each branches again and again,
+// up as well as down, the branches forking in turn.
+function stormSpider(bo, tier, w, h) {
+  const ox = w * (0.15 + Math.random() * 0.7);
+  const oy = h * (0.18 + Math.random() * 0.17);
+  const arms = 2 + (Math.random() < 0.45 ? 1 : 0);
+  const first = (Math.random() < 0.5 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.8;
+  const paths = [];
+  bo.lights = [{ x: ox, y: Math.min(h * 0.2, oy), r: w * (0.35 + Math.random() * 0.2), k: tier === 2 ? 0.95 : 0.7, delay: 0 }];
+  for (let a = 0; a < arms; a++) {
+    // The second arm roughly the other way; a third anywhere off to a side.
+    const ang = a === 0 ? first : a === 1 ? first + Math.PI + (Math.random() - 0.5) * 0.9 : first + (Math.random() < 0.5 ? 1 : -1) * (1.2 + Math.random() * 0.6);
+    const len = w * (a === 0 ? 0.35 + Math.random() * 0.25 : 0.18 + Math.random() * 0.22);
+    const pts = [ox, oy];
+    const kinks = 3 + Math.floor(Math.random() * 3);
+    let px = ox;
+    let py = oy;
+    let dir = ang;
+    for (let k = 1; k <= kinks; k++) {
+      // Each stretch turns a little from the last, so an arm wanders.
+      dir += (Math.random() - 0.5) * 0.9;
+      const step = len / kinks;
+      const nx = px + Math.cos(dir) * step;
+      const ny = Math.max(h * 0.08, Math.min(h * 0.5, py + Math.sin(dir) * step * 0.7));
+      stormJag(pts, px, py, nx, ny, 0.45, 4);
+      px = nx;
+      py = ny;
+    }
+    paths.push(pts);
+    bo.lights.push({ x: px, y: Math.min(h * 0.2, py), r: w * (0.25 + Math.random() * 0.2), k: tier === 2 ? 0.8 : 0.6, delay: 0.05 + Math.random() * 0.1 });
+    // Branches all along the arm, either side of it.
+    const count = (tier === 2 ? 4 : 3) + Math.floor(Math.random() * 3);
+    for (let b = 0; b < count; b++) {
+      const at = Math.max(1, Math.floor((0.1 + Math.random() * 0.85) * (pts.length / 2 - 1))) * 2;
+      const bang = ang + (Math.random() < 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.9);
+      stormBranchAt(bo.branches, pts[at], pts[at + 1], h * (0.05 + Math.random() * 0.1), bang, 0.3 + Math.random() * 0.2, 2);
+    }
+  }
+  // The longest arm is the bolt's main channel; the others are drawn as
+  // heavy branches.
+  bo.main = paths[0];
+  for (let a = 1; a < paths.length; a++) bo.branches.push({ pts: paths[a], w: 0.7 });
+  bo.ex = ox;
+  bo.ey = oy;
+  return bo;
+}
+// A branch going off at an angle (radians, 0 is to the right), jagged,
+// forking up to forks times further out, each fork turned further away.
+function stormBranchAt(out, x, y, len, ang, wgt, forks) {
+  const ex = x + Math.cos(ang) * len;
+  const ey = y + Math.sin(ang) * len;
+  const pts = [x, y];
+  stormJag(pts, x, y, ex, ey, 0.5, 3);
+  out.push({ pts, w: wgt });
+  for (let f = 0; f < forks; f++) {
+    if (Math.random() > 0.6) continue;
+    const at = Math.floor((0.3 + Math.random() * 0.4) * (pts.length / 2)) * 2;
+    stormBranchAt(out, pts[at], pts[at + 1], len * (0.4 + Math.random() * 0.3), ang + (Math.random() < 0.5 ? 1 : -1) * (0.35 + Math.random() * 0.45), wgt * 0.65, forks - 1);
+  }
 }
 // Midpoint displacement from (x1, y1) to (x2, y2), adding the points after
 // the first: the middle pushed sideways by up to rough times the length, and
