@@ -98,6 +98,134 @@ type User struct {
 	Hash       []byte    `json:"hash"`
 	Iterations int       `json:"iterations"`
 	CreatedAt  time.Time `json:"createdAt"`
+
+	// PINSalt and PINHash are this person's PIN for switching to them on a
+	// shared device (profiles): none means switching needs nothing, except
+	// for the owner, who then needs their password.
+	PINSalt []byte `json:"pinSalt,omitempty"`
+	PINHash []byte `json:"pinHash,omitempty"`
+}
+
+// KeptDevice is the people a device may switch between, the latest kept
+// first, and when it last switched.
+type KeptDevice struct {
+	People []KeptPerson `json:"people"`
+	Used   time.Time    `json:"used"`
+}
+
+// KeptPerson is one person kept on a device. Password is a fingerprint of
+// their password as it was then: a new password is a new fingerprint, so
+// changing it takes them off every device at once.
+type KeptPerson struct {
+	UserID   string    `json:"userId"`
+	Password string    `json:"password"`
+	Added    time.Time `json:"added"`
+}
+
+// Kept devices are bounded: a few people each, a few hundred devices, the
+// least recently used forgotten first.
+const (
+	maxKeptPerDevice = 8
+	maxKeptDevices   = 400
+)
+
+// passwordPrint fingerprints an account's current password (its salt, which
+// changes with every new password), never the password itself.
+func passwordPrint(u User) string {
+	sum := sha256.Sum256(u.Salt)
+	return hex.EncodeToString(sum[:8])
+}
+
+// HashDevice is how a device's id cookie is kept: hashed, as session tokens
+// are.
+func HashDevice(id string) string {
+	sum := sha256.Sum256([]byte("device:" + id))
+	return hex.EncodeToString(sum[:])
+}
+
+// Keep puts somebody on a device's list of people to switch between, first.
+func (s *Store) Keep(device, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[userID]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	if s.d.Kept == nil {
+		s.d.Kept = map[string]KeptDevice{}
+	}
+	d := s.d.Kept[device]
+	people := []KeptPerson{{UserID: userID, Password: passwordPrint(u), Added: time.Now()}}
+	for _, p := range d.People {
+		if p.UserID != userID && len(people) < maxKeptPerDevice {
+			people = append(people, p)
+		}
+	}
+	d.People, d.Used = people, time.Now()
+	s.d.Kept[device] = d
+	if len(s.d.Kept) > maxKeptDevices {
+		oldest, at := "", time.Now()
+		for k, v := range s.d.Kept {
+			if v.Used.Before(at) {
+				oldest, at = k, v.Used
+			}
+		}
+		delete(s.d.Kept, oldest)
+	}
+	return s.save()
+}
+
+// KeptOn is who a device may switch between now: people since removed, or
+// whose password has changed since they were kept, are left out.
+func (s *Store) KeptOn(device string) []User {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []User
+	for _, p := range s.d.Kept[device].People {
+		if u, ok := s.d.Users[p.UserID]; ok && p.Password == passwordPrint(u) {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// Unkeep takes somebody off a device's list.
+func (s *Store) Unkeep(device, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.d.Kept[device]
+	if !ok {
+		return nil
+	}
+	var people []KeptPerson
+	for _, p := range d.People {
+		if p.UserID != userID {
+			people = append(people, p)
+		}
+	}
+	if len(people) == len(d.People) {
+		return nil
+	}
+	if len(people) == 0 {
+		delete(s.d.Kept, device)
+	} else {
+		d.People = people
+		s.d.Kept[device] = d
+	}
+	return s.save()
+}
+
+// SetPIN sets (or with nil clears) somebody's PIN for switching.
+func (s *Store) SetPIN(userID string, salt, hash []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[userID]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	u.PINSalt, u.PINHash = salt, hash
+	s.d.Users[userID] = u
+	return s.save()
 }
 
 // IsOwner reports whether this account can manage other accounts.
@@ -235,6 +363,10 @@ type data struct {
 	// ApproveNewDevices is the owner asking that the right password on a
 	// device an account has never signed in on waits for approval.
 	ApproveNewDevices bool `json:"approveNewDevices,omitempty"`
+	// Kept is who each shared device may switch between ("Who's
+	// listening?"), keyed by a hash of the device's own id cookie, as sessions
+	// are keyed by a hash of theirs: this file alone names no device.
+	Kept map[string]KeptDevice `json:"kept,omitempty"`
 	// NotPairs are Read & listen matches the owner has said are wrong, each
 	// "ebookSource/id|audiobookSource/id". A decision somebody made, like
 	// StarterInstalled - not a fact read off the media, so nothing here can
@@ -842,6 +974,20 @@ func (s *Store) DeleteUser(id string) error {
 
 	delete(s.d.Users, id)
 	delete(s.d.Identities, id)
+	for key, d := range s.d.Kept {
+		var people []KeptPerson
+		for _, p := range d.People {
+			if p.UserID != id {
+				people = append(people, p)
+			}
+		}
+		if len(people) == 0 {
+			delete(s.d.Kept, key)
+		} else {
+			d.People = people
+			s.d.Kept[key] = d
+		}
+	}
 	for key, session := range s.d.Sessions {
 		if session.UserID == id {
 			delete(s.d.Sessions, key)

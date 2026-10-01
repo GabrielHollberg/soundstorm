@@ -86,7 +86,9 @@ type Server struct {
 	// links are TVs waiting to be signed in from a phone (tvlink.go);
 	// linkAsks limits asking for codes by address, linkLookups trying them
 	// by person.
-	links       tvLinks
+	links tvLinks
+	// switchFails counts wrong PINs per device and person (profiles.go).
+	switchFails switchFails
 	linkAsks    allowance
 	linkLookups allowance
 	collections *collections.Store
@@ -328,6 +330,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	// A TV signing in from a phone: asking for a code, asking how it went,
 	// and the code's QR (tvlink.go). Allowing one needs a session, below.
+	// Who this device may switch between, and switching: open, since a TV
+	// asks "Who's listening?" before anybody is signed in (profiles.go).
+	mux.HandleFunc("GET /api/profiles", s.handleProfiles)
+	mux.HandleFunc("POST /api/profiles/switch", s.handleSwitchProfile)
 	mux.HandleFunc("POST /api/link", s.handleNewLink)
 	mux.HandleFunc("GET /api/link/{id}", s.handleLinkStatus)
 	mux.HandleFunc("GET /api/link/{id}/qr.png", s.handleLinkQR)
@@ -336,6 +342,9 @@ func (s *Server) Routes() http.Handler {
 	guarded := http.NewServeMux()
 	guarded.HandleFunc("GET /api/setup", s.handleSetup)
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
+	guarded.HandleFunc("POST /api/profiles/keep", s.handleKeepProfile)
+	guarded.HandleFunc("DELETE /api/profiles/{id}", s.handleUnkeepProfile)
+	guarded.HandleFunc("PUT /api/account/pin", s.handleSetPIN)
 	guarded.HandleFunc("GET /api/link/code/{code}", s.handleLinkLookup)
 	guarded.HandleFunc("POST /api/link/code/{code}", s.handleLinkAnswer)
 	guarded.HandleFunc("GET /api/library", s.handleLibrary)
@@ -715,6 +724,9 @@ type credentials struct {
 	Username  string `json:"username"`
 	Password  string `json:"password"`
 	SetupCode string `json:"setupCode"`
+	// Keep is "keep me on this device": the sign-in also puts this person on
+	// the device's list to switch between (profiles.go).
+	Keep bool `json:"keep"`
 }
 
 func decodeCredentials(r *http.Request) (credentials, error) {
@@ -808,6 +820,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// with approval turned on: it waits (devices.go).
 	if s.needsApproval(r, user) {
 		q := s.holdSignIn(r, user, token, expiry)
+		if q != nil {
+			q.keep = creds.Keep
+		}
 		if q == nil {
 			writeError(w, http.StatusTooManyRequests, "too many sign-ins are waiting for approval; try again later")
 			return
@@ -821,6 +836,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
+	if creds.Keep {
+		s.keepOnDevice(w, r, user)
+	}
 	// Mark this browser as one the account uses, so a stranger guessing at its
 	// name cannot hold its next sign-in in backoff. Best effort: without it the
 	// sign-in still worked, it just has no protection from that next time.
@@ -834,6 +852,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Signing out takes you off this device's people, too: on a friend's
+	// phone, staying switchable to would be staying signed in. Switching
+	// person (profiles.go) is how a shared device keeps everybody.
+	if user, ok := s.auth.UserFor(r); ok {
+		if device := s.auth.ProfileDevice(r); device != "" {
+			_ = s.store.Unkeep(device, user.ID)
+		}
+	}
 	if err := s.auth.Logout(r); err != nil {
 		s.log.Warn("logout", "err", err)
 	}

@@ -45,7 +45,8 @@ type pendingSignIn struct {
 	At       time.Time
 	token    string // the session, handed over only once approved
 	expiry   time.Time
-	answer   int // 0 waiting, 1 approved, -1 refused
+	answer   int  // 0 waiting, 1 approved, -1 refused
+	keep     bool // "keep me on this device", applied once it is in
 }
 
 type pendingSignIns struct {
@@ -142,6 +143,9 @@ func (s *Server) handlePendingSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, q.token, q.expiry)
+	if q.keep {
+		s.keepOnDevice(w, r, user)
+	}
 	if err := s.auth.SetDeviceCookie(w, r, user); err != nil {
 		s.log.Warn("could not mark this device as trusted", "err", err)
 	}

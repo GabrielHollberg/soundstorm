@@ -64,6 +64,142 @@ async function api(path, options = {}) {
   return { ok: resp.ok, status: resp.status, body };
 }
 
+// Who's listening? The people kept on this device (profiles.go on the
+// server): a tile each, and switching to one needs their PIN if they set one,
+// and the owner's PIN or password always. "Someone else" signs in, ticked to
+// be kept.
+let profilesShown = null;
+const AVATAR_HUES = [210, 340, 28, 140, 265, 190, 5, 95];
+function showProfiles(list) {
+  profilesShown = list;
+  for (const id of ['boot', 'gate', 'app', 'renew']) show($(id), false);
+  show($('tabs'), false);
+  show($('profiles'), true);
+  show($('profiles-secret'), false);
+  show($('profiles-other'), true);
+  const holder = $('profiles-list');
+  holder.replaceChildren();
+  for (const person of list.people) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'profile-tile';
+    tile.dataset.id = person.id;
+    const avatar = document.createElement('span');
+    avatar.className = 'profile-avatar';
+    let hash = 0;
+    for (const c of person.name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+    avatar.style.background = `hsl(${AVATAR_HUES[hash % AVATAR_HUES.length]} 55% 42%)`;
+    avatar.textContent = person.name.slice(0, 1).toUpperCase();
+    const name = document.createElement('span');
+    name.textContent = person.name;
+    const lock = document.createElement('span');
+    lock.className = 'profile-lock';
+    lock.textContent = person.needs === 'pin' ? 'PIN' : person.needs === 'password' ? 'Password' : '';
+    tile.append(avatar, name, lock);
+    tile.addEventListener('click', () => pickProfile(person));
+    holder.append(tile);
+  }
+  holder.firstChild?.focus();
+}
+let profilePicked = null;
+function pickProfile(person) {
+  profilePicked = person;
+  if (!person.needs) {
+    switchProfile(person, {});
+    return;
+  }
+  // The rest stand aside while this person's PIN or password is asked for.
+  for (const tile of $('profiles-list').children) show(tile, tile.dataset.id === person.id);
+  show($('profiles-other'), false);
+  show($('profiles-secret'), true);
+  show($('profiles-error'), false);
+  const input = $('profiles-secret-input');
+  input.value = '';
+  $('profiles-secret-label').textContent = person.needs === 'pin' ? `${person.name}'s PIN` : `${person.name}'s password`;
+  input.inputMode = person.needs === 'pin' ? 'numeric' : 'text';
+  input.focus();
+}
+async function switchProfile(person, secret) {
+  const { ok, status, body } = await api('/api/profiles/switch', {
+    method: 'POST', body: JSON.stringify({ id: person.id, ...secret }),
+  });
+  if (ok && body && body.signedIn) {
+    show($('profiles'), false);
+    // Whoever was here before has nothing of theirs left on screen.
+    if (state.me && state.me.id !== body.user.id) {
+      location.reload();
+      return;
+    }
+    showApp(body.user);
+    return;
+  }
+  const error = $('profiles-error');
+  error.textContent = status === 403 ? (person.needs === 'pin' ? 'That PIN is not right.' : 'That password is not right.')
+    : (body && body.error) || 'Could not switch.';
+  show(error, true);
+  if (!$('profiles-secret').classList.contains('hidden')) $('profiles-secret-input').select();
+}
+$('profiles-secret').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!profilePicked) return;
+  const value = $('profiles-secret-input').value;
+  switchProfile(profilePicked, profilePicked.needs === 'pin' ? { pin: value } : { password: value });
+});
+$('profiles-secret-back').addEventListener('click', () => showProfiles(profilesShown));
+$('profiles-other').addEventListener('click', async () => {
+  show($('profiles'), false);
+  const { body } = await api('/api/session');
+  showGate(true, body && body.setupCodeRequired);
+  $('gate-keep').checked = true;
+});
+
+// Settings, On this device: who is kept here, keeping or taking yourself off,
+// switching, and your PIN.
+async function refreshDeviceCard() {
+  const me = state.me;
+  if (!me) return;
+  const { ok, body } = await api('/api/profiles');
+  const people = (ok && body && body.people) || [];
+  const kept = people.some((p) => p.id === me.id);
+  const others = people.filter((p) => p.id !== me.id).map((p) => p.name);
+  $('device-people').textContent = kept
+    ? (others.length ? `You and ${others.join(', ')} can switch between each other here.` : 'You are kept on this device: it can switch back to you.')
+    : (others.length ? `${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} kept on this device.` : 'Nobody is kept on this device. Keep yourself on it to switch between people here, as on a shared TV.');
+  show($('device-switch'), people.length > (kept ? 1 : 0));
+  show($('device-keep'), !kept);
+  show($('device-unkeep'), kept);
+  $('pin-about').textContent = me.owner
+    ? 'Asked when someone switches to you on a shared device. As the owner, switching to you always needs your PIN, or your password if you have none.'
+    : 'Asked when someone switches to you on a shared device. Without one, anybody at a device you are kept on can switch to you.';
+}
+$('device-switch').addEventListener('click', async () => {
+  const { ok, body } = await api('/api/profiles');
+  if (ok && body) showProfiles(body);
+});
+$('device-keep').addEventListener('click', async () => {
+  await api('/api/profiles/keep', { method: 'POST', body: '{}' });
+  refreshDeviceCard();
+});
+$('device-unkeep').addEventListener('click', async () => {
+  if (state.me) await api(`/api/profiles/${encodeURIComponent(state.me.id)}`, { method: 'DELETE' });
+  refreshDeviceCard();
+});
+$('pin-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const pin = $('pin-new').value;
+  const { ok, body } = await api('/api/account/pin', {
+    method: 'PUT', body: JSON.stringify({ password: $('pin-password').value, pin }),
+  });
+  if (ok) {
+    $('pin-password').value = '';
+    $('pin-new').value = '';
+    note($('pin-note'), pin ? 'PIN saved.' : 'PIN removed.');
+    refreshDeviceCard();
+  } else {
+    note($('pin-note'), (body && body.error) || 'Could not save it.', true);
+  }
+});
+
 // showRenew asks for a new password before anything else.
 function showRenew() {
   if (!$('renew').classList.contains('hidden')) return;
@@ -315,6 +451,10 @@ function showGate(hasAccount, setupCodeRequired) {
   show($('gate-setup'), !hasAccount && setupCodeRequired && !setupFromAddress);
   // A TV may be signed in from a phone instead (tvlink.go on the server).
   show($('gate-phone'), TV && hasAccount);
+  // Keeping somebody on a device is for signing in, not for the first
+  // account; ticked already on a TV, which is shared by its nature.
+  show($('gate-keep-row'), hasAccount);
+  $('gate-keep').checked = TV;
   $('gate-username').focus();
 }
 
@@ -426,6 +566,8 @@ $('gate-form').addEventListener('submit', async (event) => {
       username: $('gate-username').value,
       password: $('gate-password').value,
       ...(mode === 'signup' ? { setupCode: $('gate-setup-code').value } : {}),
+      // Profiles: "keep me on this device", to be switched to later.
+      ...(mode === 'login' && $('gate-keep').checked ? { keep: true } : {}),
     }),
   });
 
@@ -614,6 +756,7 @@ function renderAccount() {
   // these calls for a member whether or not the form is on screen.
   show($('people-block'), Boolean(me.owner));
   refreshMyPhotos();
+  refreshDeviceCard();
   if (BACKUP_APP) window.soundstormApp.backup('status');
   if (me.owner) {
     loadPeople();
@@ -3711,6 +3854,16 @@ async function moveToSecureName(name) {
     if (body.secureName && await moveToSecureName(body.secureName)) return;
     forgetSetupCodeInAddress();
     state.training = Boolean(body.training);
+    // A TV asks "Who's listening?" every time it opens, when anybody is kept
+    // on it - the owner's choice: a shared screen should not just carry on as
+    // whoever used it last.
+    if (TV && body.hasAccount) {
+      const p = await api('/api/profiles');
+      if (p.ok && p.body && p.body.people.length) {
+        showProfiles(p.body);
+        return;
+      }
+    }
     if (body.signedIn) {
       state.approveNewDevices = Boolean(body.approveNewDevices);
       showApp(body.user);

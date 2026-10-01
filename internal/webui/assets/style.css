@@ -3803,3 +3803,38 @@ html.tv:has(#video-overlay:not(.hidden)) body { overflow: hidden; }
   letter-spacing: 0.12em;
   margin: 4px 0 16px;
 }
+
+/* Who's listening? */
+.profiles-card { text-align: center; }
+.profiles-title { margin: 8px 0 18px; font-size: 22px; }
+.profiles-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.profile-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 104px;
+  padding: 10px 4px;
+  background: none;
+  border: 0;
+  color: var(--text);
+}
+.profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff;
+}
+.profile-tile .profile-lock { font-size: 12px; color: var(--muted); min-height: 1em; }
+#profiles-secret { display: grid; gap: 10px; margin-bottom: 12px; }
+#profiles-secret.hidden { display: none; }

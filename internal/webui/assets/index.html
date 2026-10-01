@@ -29,6 +29,23 @@
   <!-- Signup / login ---------------------------------------------------- -->
   <!-- Asked to choose a new password before anything else: the owner asked
        everybody, or this password no longer meets the rules. -->
+  <!-- Who's listening? The people kept on this device (profiles). -->
+  <main id="profiles" class="centered hidden">
+    <div class="card gate-card profiles-card">
+      <h1 class="wordmark">SoundStorm</h1>
+      <h2 class="profiles-title">Who's listening?</h2>
+      <div id="profiles-list" class="profiles-list"></div>
+      <form id="profiles-secret" class="hidden">
+        <label id="profiles-secret-label" for="profiles-secret-input">PIN</label>
+        <input id="profiles-secret-input" type="password" autocomplete="off">
+        <p id="profiles-error" class="error hidden" role="alert"></p>
+        <button id="profiles-secret-go" type="submit">Continue</button>
+        <button id="profiles-secret-back" type="button" class="ghost">Back</button>
+      </form>
+      <button id="profiles-other" type="button" class="ghost">Someone else</button>
+    </div>
+  </main>
+
   <main id="renew" class="centered hidden">
     <form id="renew-form" class="card gate-card">
       <h1 class="wordmark">SoundStorm</h1>
@@ -55,6 +72,9 @@
 
       <label for="gate-password">Password</label>
       <input id="gate-password" name="password" type="password" required>
+
+      <!-- Profiles: kept, this person can be switched to here later. -->
+      <label id="gate-keep-row" class="remote-switch"><input id="gate-keep" type="checkbox"><span>Keep me on this device, to switch to later</span></label>
 
       <div id="gate-setup" class="hidden">
         <label for="gate-setup-code">Setup code</label>
@@ -294,6 +314,30 @@
             <button class="ghost small copy" type="button" data-copy="devices-away-url">Copy</button>
           </div>
         </div>
+      </div>
+
+      <div class="account-section card" data-cat="account" data-words="profiles switch person people device pin who's listening shared">
+        <h2>On this device</h2>
+        <p id="device-people" class="muted"></p>
+        <div class="account-actions">
+          <button id="device-switch" type="button" class="ghost hidden">Switch person</button>
+          <button id="device-keep" type="button" class="ghost hidden">Keep me on this device</button>
+          <button id="device-unkeep" type="button" class="ghost hidden">Take me off this device</button>
+        </div>
+        <h3>PIN for switching</h3>
+        <p id="pin-about" class="muted"></p>
+        <form id="pin-form" class="stack-form">
+          <label>
+            <span>Your password</span>
+            <input id="pin-password" type="password" autocomplete="current-password" required>
+          </label>
+          <label>
+            <span>New PIN, 4 to 8 digits - leave it empty to remove yours</span>
+            <input id="pin-new" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
+          </label>
+          <button type="submit">Save PIN</button>
+        </form>
+        <p id="pin-note" class="muted hidden" role="status"></p>
       </div>
 
       <div class="account-section card" data-cat="account" data-words="tv television sign in code link phone qr apple google">

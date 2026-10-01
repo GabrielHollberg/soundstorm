@@ -181,6 +181,8 @@ func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
+	// A TV is shared: whoever signed it in is one of its people.
+	s.keepOnDevice(w, r, user)
 	if err := s.auth.SetDeviceCookie(w, r, user); err != nil {
 		s.log.Warn("could not mark this device as trusted", "err", err)
 	}
