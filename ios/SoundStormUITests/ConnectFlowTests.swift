@@ -73,6 +73,45 @@ final class ConnectFlowTests: XCTestCase {
         XCTAssertEqual(back.value as? String, "localhost", "the connect screen should start from the current server")
     }
 
+    /// Photo backup end to end: turned on from the page (its question, or
+    /// the switch in Settings once it has been decided on this phone), photo
+    /// access allowed on the system's prompt, the simulator's sample photos
+    /// sent to the account's folder, and Settings saying so.
+    func testPhotoBackupSendsTheCameraRoll() {
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(server + "\n")
+        let web = app.webViews.firstMatch
+        let settings = web.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists, "the server's page never appeared")
+        if !settings.exists { signIn(web) }
+        XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
+
+        let turnOn = web.buttons["Turn on"]
+        if turnOn.waitForExistence(timeout: 8) {
+            turnOn.tap()
+            settings.tap()
+        } else {
+            settings.tap()
+            let toggle = web.descendants(matching: .any)["Back up this phone's photos and videos"].firstMatch
+            for _ in 0..<8 where !toggle.isHittable { web.swipeUp() }
+            XCTAssertTrue(toggle.isHittable, "no backup switch in Settings")
+            // On already from an earlier run, it stays on.
+            let on = (toggle.value as? String) == "1" || (toggle.value as? NSNumber)?.boolValue == true
+            if !on { toggle.tap() }
+        }
+        // The system asks once for the photo library.
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Full Access"]
+        if allow.waitForExistence(timeout: 10) { allow.tap() }
+
+        let done = web.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "All ", "backed up")).firstMatch
+        let deadline = Date().addingTimeInterval(120)
+        while !done.exists && Date() < deadline {
+            _ = done.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(done.exists, "Settings never said the photos were backed up")
+    }
+
     private func signIn(_ web: XCUIElement) {
         let username = web.textFields.firstMatch
         username.tap()

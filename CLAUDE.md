@@ -4759,14 +4759,31 @@ quiet notification (dataSync), since WorkManager stops an ordinary job at ten
 minutes - one long video on a slow link. Android may refuse the foreground from
 the background; then it runs as before. Only a network error is called "could
 not reach the server" now; anything else names itself.
-**For the Mac:** the iPhone app has no backup yet. It wants the same: the
-photo library (PHPhotoLibrary, full or limited access), uploads in a
-background URLSession to `PUT /api/photos/backup` with the session cookie,
-`POST /api/photos/backup/check` first, and `window.soundstormApp.photoBackup`
-plus `.backup(cmd, options)` answered through `window.__soundstormBackup`
-with the same status fields (enabled, decided, wifiOnly, videos, charging,
-permission, done, total, running, problem), so the page needs no change. iOS
-runs background uploads when it chooses, usually charging on Wi-Fi.
+**The iPhone app backs up too (2026-10-01, `ios/SoundStorm/PhotoBackup.swift`)**,
+answering the same `window.soundstormApp.backup` messages with the same
+status, so the page has no iPhone code. The photo library (full or limited
+access, asked when backup is turned on); newest first; the server asked first
+which it has (by name and month - size 0, since sizing a photo kept in iCloud
+would mean downloading it); each original written to a file
+(`PHAssetResourceManager`, iCloud allowed; a Live Photo's still only) and sent
+in a background `URLSession`, so a file already going finishes with the app
+put away, and one that finishes after the app was closed still counts. It
+sends the web view's own session cookie - WKWebView keeps cookies apart from
+URLSession's - to the server only, never through a redirect. It runs while
+the app is open, 30 seconds after a photo is added, and as a
+`BGProcessingTask` iOS starts when it chooses (requires power if "only while
+charging"). Wi-Fi only means not expensive or constrained (`NWPathMonitor`).
+Where to send: the page's secure address, its away twin, then the address the
+app was opened with. Checked with `testPhotoBackupSendsTheCameraRoll` against
+a local server: the simulator's six sample photos arrived in
+`Personal/owner/<year>/<month>/`, the five JPEGs byte for byte, and Settings
+said "All 6 photos and videos are backed up". **Not checked:** the background
+task and an upload finishing with the app closed - a real iPhone over a night
+is the test. Two things the test met: Swift 6.3 crashes compiling the `async`
+form of `willPerformHTTPRedirection` (the completion-handler form is used),
+and signing in as a different account than the device last had turns backup
+off and marks it decided, so that person is never asked - on Android too; the
+switch in Settings is still there.
 
 **Bringing a photo library in** (`internal/photoimport`, `httpapi/photoimport.go`):
 Google and Apple give no way for SoundStorm to pull photos out (Google's

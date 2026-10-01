@@ -88,6 +88,12 @@ final class WebViewController: UIViewController {
     /// rather than sent by app.js, so it needs no change to the web app.
     private static let pageScript = """
         window.soundstormApp = { version: 1 };
+        // Phone photo backup (PhotoBackup): Settings turns it on and shows how
+        // it is going, answered through window.__soundstormBackup - the same
+        // messages as the Android app's, so the page has no iPhone code.
+        window.soundstormApp.photoBackup = true;
+        window.soundstormApp.backup = (cmd, options) =>
+          window.webkit.messageHandlers.soundstorm.postMessage({ type: 'backup', cmd, options: options || {} });
         (() => {
           let open = false;
           const report = () => {
@@ -114,6 +120,13 @@ final class WebViewController: UIViewController {
         failure.show(host: server.host() ?? server.absoluteString, detail: error.localizedDescription)
     }
 
+    /// How photo backup is going, to the page's Settings.
+    private func reportBackup() {
+        guard let data = try? JSONSerialization.data(withJSONObject: PhotoBackup.shared.status()),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.__soundstormBackup && window.__soundstormBackup(\(json))")
+    }
+
     fileprivate func received(_ message: WKScriptMessage) {
         // Only the server's own pages may ask the app for anything.
         let origin = message.frameInfo.securityOrigin
@@ -132,6 +145,14 @@ final class WebViewController: UIViewController {
             onChangeServer?()
         case "nowPlaying":
             AppChrome.shared.statusBarHidden = body["open"] as? Bool ?? false
+        case "backup":
+            PhotoBackup.shared.rememberServer(current, typed: server)
+            let command = body["cmd"] as? String ?? ""
+            let options = body["options"] as? [String: Any] ?? [:]
+            Task {
+                await PhotoBackup.shared.handle(command, options: options)
+                reportBackup()
+            }
         default:
             break
         }

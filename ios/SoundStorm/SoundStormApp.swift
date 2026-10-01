@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct SoundStormApp: App {
+    @UIApplicationDelegateAdaptor private var delegate: AppDelegate
+
     init() {
         // The playback category is what lets the web page's audio carry on
         // when the phone locks or the ring switch is on silent. Without it,
@@ -20,6 +22,24 @@ struct SoundStormApp: App {
                 // Light status bar text over the app's black background.
                 .preferredColorScheme(.dark)
         }
+    }
+}
+
+/// Photo backup's half of the app's life: its background task is registered
+/// at launch, as iOS requires, and an upload that finished with the app closed
+/// is told to it here.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        PhotoBackup.shared.launched()
+        return true
+    }
+
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == Uploader.identifier else { return completionHandler() }
+        nonisolated(unsafe) let done = completionHandler
+        Uploader.shared.whenFinished { DispatchQueue.main.async { done() } }
     }
 }
 
