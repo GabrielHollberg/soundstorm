@@ -583,6 +583,9 @@ header {
 #backup-controls { margin-top: 12px; display: grid; gap: 8px; }
 #import-open { margin-top: 14px; }
 #photo-import h3 { font-size: 14px; margin: 16px 0 4px; }
+.import-source { border-top: 1px solid var(--border); padding: 8px 0; }
+.import-source summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
+.import-source[open] summary { margin-bottom: 6px; }
 .import-steps { margin: 0 0 6px; padding-left: 20px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
 .import-steps b { color: var(--text); font-weight: 600; }
 .button-like { display: inline-block; margin-top: 10px; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: #000; font-weight: 600; cursor: pointer; }

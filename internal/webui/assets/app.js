@@ -834,10 +834,14 @@ async function zipHoldsPhotos(file) {
       names.push(text.decode(new Uint8Array(cd.buffer, cd.byteOffset + i + 46, n)));
       i += 46 + n + extra + comment;
     }
-    if (names.some((n) => /(^|\/)(Google Photos|iCloud Photos)\//i.test(n) || /Photo Details[^/]*\.csv$/i.test(n))) return true;
+    // A download from a service that keeps photos, by its folders: Google,
+    // Apple, Facebook, Instagram, Snapchat, Flickr, Telegram, WhatsApp.
+    if (names.some((n) => /(^|\/)(Google Photos|iCloud Photos|your_facebook_activity|your_instagram_activity|memories|ChatExport[^/]*)\//i.test(n)
+      || /Photo Details[^/]*\.csv$|memories_history\.json$|(^|\/)photo_\d{6,}\.json$|WhatsApp Chat/i.test(n))) return true;
     const files = names.filter((n) => !n.endsWith('/'));
     const media = files.filter((n) => /\.(jpe?g|png|heic|heif|webp|gif|tiff?|avif|dng|cr2|cr3|nef|arw|raf|orf|rw2|mov|mp4|m4v|3gp)$/i.test(n));
-    return files.length > 0 && media.length / files.length >= 0.6;
+    // Mostly photos, or plenty of them among records and pages.
+    return files.length > 0 && (media.length / files.length >= 0.6 || (media.length >= 20 && media.length / files.length >= 0.3));
   } catch {
     return false;
   }
@@ -947,7 +951,7 @@ function importRow(j) {
 
 function importText(j) {
   const p = j.progress || {};
-  const from = p.source === 'google' ? 'Google Photos' : p.source === 'apple' ? 'iCloud' : '';
+  const from = { google: 'Google Photos', apple: 'iCloud', facebook: 'Facebook', instagram: 'Instagram', snapchat: 'Snapchat', flickr: 'Flickr' }[p.source] || '';
   const counts = () => [`${(p.added || 0).toLocaleString()} added`, p.duplicates ? `${p.duplicates.toLocaleString()} already here` : '',
     p.improved ? `${p.improved.toLocaleString()} of those gave a photo you had a better date or place` : '', p.failed ? `${p.failed} could not be read` : '']
     .filter(Boolean).join(', ');

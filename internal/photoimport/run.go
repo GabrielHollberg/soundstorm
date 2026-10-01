@@ -57,20 +57,33 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 
 	// First what the download says about its photos: Takeout's sidecars and
 	// iCloud's details, small files read before any photo.
-	takeout, icloud := NewTakeoutIndex(), NewICloudIndex()
+	takeout, icloud, social := NewTakeoutIndex(), NewICloudIndex(), NewJSONIndex()
 	var media []*zip.File
+	var names []string
 	for _, f := range zr.File {
 		name := f.Name
+		names = append(names, name)
 		if f.FileInfo().IsDir() || skipped(name) {
 			continue
 		}
 		lower := strings.ToLower(name)
 		switch {
-		case strings.HasSuffix(lower, ".json") && f.UncompressedSize64 < 1<<20:
-			if rc, err := f.Open(); err == nil {
-				if title, m, ok := ParseTakeoutJSON(rc); ok {
-					takeout.Add(name, title, m)
+		case strings.HasSuffix(lower, ".json") && f.UncompressedSize64 < 64<<20:
+			// A Takeout sidecar (small, one per photo), or a social
+			// network's record of its photos (Facebook's, Instagram's,
+			// Flickr's), read either way.
+			if f.UncompressedSize64 < 1<<20 {
+				if rc, err := f.Open(); err == nil {
+					if title, m, ok := ParseTakeoutJSON(rc); ok {
+						takeout.Add(name, title, m)
+						rc.Close()
+						continue
+					}
+					rc.Close()
 				}
+			}
+			if rc, err := f.Open(); err == nil {
+				social.Add(rc)
 				rc.Close()
 			}
 		case strings.HasSuffix(lower, ".csv") && strings.Contains(strings.ToLower(path.Base(name)), "photo details"):
@@ -82,8 +95,9 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 			media = append(media, f)
 		}
 	}
-	p := Progress{Total: len(media)}
+	p := Progress{Total: len(media), Source: SourceOf(names)}
 	switch {
+	case p.Source != "":
 	case takeout.Len() > 0:
 		p.Source = "google"
 	case icloud.Len() > 0:
@@ -97,7 +111,7 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 			return p, nil
 		}
 		p.Done++
-		err := one(f, t, takeout, icloud, seen, &p)
+		err := one(f, t, takeout, icloud, social, seen, &p)
 		if err != nil {
 			if room, ok := err.(ErrNoRoom); ok {
 				p.Problem = room.Error()
@@ -119,10 +133,10 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 func skipped(name string) bool {
 	lower := strings.ToLower(name)
 	return strings.Contains(lower, "__macosx/") || strings.HasPrefix(path.Base(name), "._") ||
-		strings.Contains(lower, "/trash/") || strings.Contains(lower, "/bin/")
+		strings.Contains(lower, "/trash/") || strings.Contains(lower, "/bin/") || socialSkipped(name)
 }
 
-func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen map[[32]byte]string, p *Progress) error {
+func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, social *JSONIndex, seen map[[32]byte]string, p *Progress) error {
 	size := int64(f.UncompressedSize64)
 	// The first pass: what it is (its hash), and when it was taken.
 	rc, err := f.Open()
@@ -159,6 +173,14 @@ func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen
 	// Undated/ rather than under today, where it would hide among this
 	// month's photos.
 	meta, fromTakeout := takeout.Lookup(f.Name)
+	var socialSrc DateSource
+	if !fromTakeout {
+		// Facebook, Instagram or Flickr's record, the only one their
+		// photos have: they come stripped of what was inside them.
+		if m, s, ok := social.Lookup(f.Name); ok {
+			meta, socialSrc, fromTakeout = m, s, true
+		}
+	}
 	src := SourceNone
 	exifTaken, exifOK := ExifTaken(head)
 	switch {
@@ -169,6 +191,9 @@ func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen
 		}
 	case !meta.Taken.IsZero():
 		src = SourceDownload
+		if socialSrc != SourceNone {
+			src = socialSrc // when it was posted, if that is all it knew
+		}
 	default:
 		if when, ok := icloud.Lookup(f.Name); ok {
 			meta.Taken, src = when, SourceDownload

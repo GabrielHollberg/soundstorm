@@ -19,7 +19,9 @@ type memTarget struct {
 	bySum    map[[32]byte]string
 	improved map[string]Meta
 	limit    int64
-	used     int64
+	// IsMediaPNG counts PNGs as photos, as the real folder does.
+	IsMediaPNG bool
+	used       int64
 }
 
 func newMem() *memTarget {
@@ -28,7 +30,8 @@ func newMem() *memTarget {
 
 func (m *memTarget) IsMedia(name string) bool {
 	n := strings.ToLower(name)
-	return strings.HasSuffix(n, ".jpg") || strings.HasSuffix(n, ".heic") || strings.HasSuffix(n, ".mov") || strings.HasSuffix(n, ".mp4")
+	return strings.HasSuffix(n, ".jpg") || strings.HasSuffix(n, ".heic") || strings.HasSuffix(n, ".mov") || strings.HasSuffix(n, ".mp4") ||
+		(m.IsMediaPNG && strings.HasSuffix(n, ".png"))
 }
 func (m *memTarget) Existing(size int64, sum [32]byte) (string, bool) {
 	p, ok := m.bySum[sum]
@@ -257,5 +260,89 @@ func TestADuplicateImprovesTheCopyKept(t *testing.T) {
 	// The source survives a round trip through the sidecar.
 	if m2, src := ReadSidecar(XMPSidecarFrom(got, SourceName)); src != SourceName || m2.Taken.Unix() != 1530000000 {
 		t.Errorf("read back %v from %v", src, m2)
+	}
+}
+
+// Facebook and Instagram strip what was inside their photos; their own
+// records date them, matched by where the record says each photo is - even
+// with the download unpacked inside a folder of its own - and chats, which
+// hold everybody else's photos, are left out.
+func TestFacebookAndInstagram(t *testing.T) {
+	z := writeZip(t, map[string]string{
+		"facebook-gabriel/your_facebook_activity/posts/media/Mobile_uploads/111_222_n.jpg": "fb one",
+		"facebook-gabriel/your_facebook_activity/posts/media/Mobile_uploads/333_444_n.jpg": "fb two",
+		"facebook-gabriel/your_facebook_activity/posts/your_posts__check_ins__photos_and_videos_1.json": `[{"attachments":[{"data":[
+			{"media":{"uri":"your_facebook_activity/posts/media/Mobile_uploads/111_222_n.jpg","creation_timestamp":1600000000,
+				"media_metadata":{"photo_metadata":{"exif_data":[{"taken_timestamp":1500000000,"latitude":48.85,"longitude":2.35}]}}}},
+			{"media":{"uri":"your_facebook_activity/posts/media/Mobile_uploads/333_444_n.jpg","creation_timestamp":1400000000}}]}]}]`,
+		"facebook-gabriel/your_facebook_activity/messages/inbox/friend_1/photos/555_n.jpg": "a friend's photo",
+	})
+	m := newMem()
+	p := run(t, z, m)
+	if p.Source != "facebook" || p.Added != 2 {
+		t.Errorf("progress = %+v, files %v", p, keys(m.files))
+	}
+	// Taken in July 2017 (the record kept it), and the other only posted.
+	if _, ok := m.files["2017/07/111_222_n.jpg"]; !ok {
+		t.Errorf("missing the dated one: %v", keys(m.files))
+	}
+	if _, ok := m.files["2014/05/333_444_n.jpg"]; !ok {
+		t.Errorf("missing the posted one: %v", keys(m.files))
+	}
+	if !strings.Contains(m.sidecars["2017/07/111_222_n.jpg"], "GPSLatitude") || !strings.Contains(m.sidecars["2014/05/333_444_n.jpg"], `DateSource="file"`) {
+		t.Errorf("sidecars = %v", m.sidecars)
+	}
+
+	z = writeZip(t, map[string]string{
+		"your_instagram_activity/media/posts_1.json": `[{"media":[{"uri":"media/posts/201906/17890_n.jpg","creation_timestamp":1560000000}]}]`,
+		"media/posts/201906/17890_n.jpg":             "ig",
+	})
+	m = newMem()
+	p = run(t, z, m)
+	if p.Source != "instagram" {
+		t.Errorf("source = %q", p.Source)
+	}
+	if _, ok := m.files["2019/06/17890_n.jpg"]; !ok {
+		t.Errorf("instagram: %v", keys(m.files))
+	}
+}
+
+// Flickr: a record per photo, matched by the number in the photo's name.
+func TestFlickr(t *testing.T) {
+	z := writeZip(t, map[string]string{
+		"data-download-1/photo_52011112222.json":   `{"id":"52011112222","name":"Sunset","date_taken":"2015-06-01 19:30:00","geo":[{"latitude":"51500000","longitude":"-120000"}]}`,
+		"data-download-1/sunset_52011112222_o.jpg": "flickr",
+	})
+	m := newMem()
+	p := run(t, z, m)
+	if p.Source != "flickr" {
+		t.Errorf("source = %q", p.Source)
+	}
+	side := m.sidecars["2015/06/sunset_52011112222_o.jpg"]
+	if !strings.Contains(side, `DateTimeOriginal="2015-06-01T19:30:00Z"`) || !strings.Contains(side, `GPSLatitude="51,30.000000N"`) {
+		t.Errorf("files %v sidecar %q", keys(m.files), side)
+	}
+}
+
+// Snapchat and Telegram: the date in the name; a memory's sticker layer and
+// Snapchat's chat media left out.
+func TestSnapchatAndTelegram(t *testing.T) {
+	z := writeZip(t, map[string]string{
+		"memories/2023-05-01_ABCDEF-main.jpg":                    "snap",
+		"memories/2023-05-01_ABCDEF-overlay.png":                 "sticker",
+		"chat_media/2023-05-02_x.jpg":                            "chat",
+		"json/memories_history.json":                             `{"Saved Media":[]}`,
+		"ChatExport_2020/photos/photo_1@25-12-2019_09-00-00.jpg": "telegram",
+	})
+	m := newMem()
+	m.IsMediaPNG = true
+	p := run(t, z, m)
+	if p.Source != "snapchat" || p.Added != 2 {
+		t.Errorf("progress = %+v files %v", p, keys(m.files))
+	}
+	for _, want := range []string{"2023/05/2023-05-01_ABCDEF-main.jpg", "2019/12/photo_1@25-12-2019_09-00-00.jpg"} {
+		if _, ok := m.files[want]; !ok {
+			t.Errorf("missing %s: %v", want, keys(m.files))
+		}
 	}
 }

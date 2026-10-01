@@ -318,9 +318,17 @@ func ExifTaken(head []byte) (time.Time, bool) {
 // PXL_20191225_090000123 (milliseconds after the time), Screenshot_2019-12-25-09-00-00, IMG-20191225-WA0001.
 var nameDate = regexp.MustCompile(`(?:^|[^0-9])((?:19|20)\d{2})[-_]?(0[1-9]|1[0-2])[-_]?(0[1-9]|[12]\d|3[01])(?:[-_ T]?([01]\d|2[0-3])[-_.:]?([0-5]\d)[-_.:]?([0-5]\d)\d{0,3})?(?:[^0-9]|$)`)
 
+// telegramDate is how Telegram's chat exports name a photo: the day first,
+// "photo_1@25-12-2019_09-00-00.jpg".
+var telegramDate = regexp.MustCompile(`@(0[1-9]|[12]\d|3[01])-(0[1-9]|1[0-2])-((?:19|20)\d{2})_([01]\d|2[0-3])-([0-5]\d)-([0-5]\d)`)
+
 // NameTaken reads when a photo was taken from its file name, as phones and
 // cameras name them.
 func NameTaken(name string) (time.Time, bool) {
+	if m := telegramDate.FindStringSubmatch(name); m != nil {
+		n := func(s string) int { v, _ := strconv.Atoi(s); return v }
+		return time.Date(n(m[3]), time.Month(n(m[2])), n(m[1]), n(m[4]), n(m[5]), n(m[6]), 0, time.UTC), true
+	}
 	m := nameDate.FindStringSubmatch(name)
 	if m == nil {
 		return time.Time{}, false

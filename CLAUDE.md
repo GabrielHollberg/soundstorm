@@ -4635,6 +4635,29 @@ Google's copy - moved from Undated to 2018/06, and Immich showed 26 June 2018
 in New York City. Near-duplicates (re-compressed or edited copies) are not
 caught; Immich's own duplicate detection could show them as possible
 duplicates later.
+**Every other place photos live** (the owner asked to cover them all): Your
+photos lists nine sources, each folded open to its steps - Google, iCloud,
+Facebook, Instagram, Snapchat Memories, Flickr, OneDrive/Dropbox/Amazon (a
+plain zip download), WhatsApp and Telegram, and SD cards, cameras, old phones
+and computers (drop the DCIM or Pictures folder). Social downloads strip the
+photos' own EXIF, so their JSON is the only record: `photoimport.JSONIndex`
+walks any JSON in a download for two shapes rather than one parser per
+network - Facebook's and Instagram's media objects (`uri` beside
+`creation_timestamp`, the posting date, ranked as a file's own date; and
+`taken_timestamp` with a latitude and longitude in their EXIF summary, ranked
+as a download's record) and Flickr's per-photo files (`id`, `date_taken`,
+`geo` in millionths of a degree), matched to a photo by its uri's tail or the
+number in a Flickr name. Chats (`messages/`, `inbox/`, Snapchat's
+`chat_media/`) are left out - mostly other people's photos - and so are
+Snapchat's `-overlay` sticker layers. Telegram's names carry the date
+(`photo_12@24-12-2023_18-30-05.jpg`). The browser recognises these zips by
+their folders (`zipHoldsPhotos`), or by twenty or more photos making up 30%
+of a download's files. Snapchat's memories file holds only links that expire
+unless "Export your Memories" was ticked, which the steps say. Each format
+was built from its documented shape and checked with a generated download;
+only the Facebook one went through end to end (Add media, a throwaway
+Immich): three photos filed by their kept dates, the chat photo left out. Not
+tried against a real download from any of them.
 Not built yet: albums kept as albums.
 
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
