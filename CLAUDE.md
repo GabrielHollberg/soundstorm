@@ -1425,7 +1425,10 @@ the light rolls across. A lit puff is the same shape drawn pale over the dark,
 by nearness and its own thinness, under a broad soft glow. **Lit puffs are
 painted over, not added**: four or five overlap in places, and added together
 they burned the deck white; painted, they build only to the lit colour, the
-shapes still showing.
+shapes still showing. **A bolt comes out of a cloud**: the upper rows of the
+deck are drawn a second time over the bolts and the rain, so the bolt's top
+is hidden in a cloud lit by it rather than starting at the screen's edge
+(the owner's asking), and the rain falls from under the cloud.
 **The rain has four upgrades** (five were asked for at once): depth (each drop a
 `z`: far ones thin, dim, slow, short and landing higher up, near ones thick,
 bright, fast and long; nine batches, three depths by three colours); gusts

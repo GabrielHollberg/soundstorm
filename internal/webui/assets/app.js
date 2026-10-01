@@ -14490,6 +14490,18 @@ const FULL_SCENES = {
     }
     st.bolts.length = keep;
     g.globalCompositeOperation = 'source-over';
+    // The upper clouds again, over the bolts (and the rain), so a bolt comes
+    // out of a cloud lit by it rather than from the edge of the screen - the
+    // owner's asking - and the rain falls from under the cloud.
+    for (const c of st.clouds) {
+      if (c.y > 0.2) continue;
+      g.globalAlpha = 0.9;
+      stormDrawPuff(g, st.dark[c.shape], c, w, h, R);
+      if (c.lit < 0.01) continue;
+      g.globalAlpha = Math.min(0.85, c.lit * 0.85) * shine;
+      stormDrawPuff(g, st.lit[c.shape], c, w, h, R);
+    }
+    g.globalAlpha = 1;
   },
 
   // Synthwave: a neon grid racing towards you under a striped sunset sun that
