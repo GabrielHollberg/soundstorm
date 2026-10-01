@@ -6162,7 +6162,13 @@ function openChapters() {
   }));
   show($('np-chapters'), true);
   const on = list.querySelector('.on');
-  if (on) on.scrollIntoView({ block: 'center' });
+  if (on) {
+    on.scrollIntoView({ block: 'center' });
+    // On a TV (and with a keyboard) the remote's highlight starts on the
+    // chapter playing, not on the button that opened the list (the owner's
+    // asking); a touch screen just sees it marked.
+    if (!touchScreen()) on.focus({ preventScroll: true });
+  }
 }
 function closeChapters() {
   show($('np-chapters'), false);
