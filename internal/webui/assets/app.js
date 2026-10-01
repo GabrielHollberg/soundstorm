@@ -14283,7 +14283,10 @@ const FULL_SCENES = {
     if (st.bandFor !== h) {
       st.bandFor = h;
       st.band = g.createLinearGradient(0, 0, 0, h * 0.5);
-      st.band.addColorStop(0, 'rgba(34, 38, 52, 0.97)');
+      // Solid at the very top, so nothing behind shows through there between
+      // the puffs (on a phone it did, at 97%).
+      st.band.addColorStop(0, 'rgb(34, 38, 52)');
+      st.band.addColorStop(0.22, 'rgba(30, 34, 47, 0.97)');
       st.band.addColorStop(0.5, 'rgba(16, 18, 28, 0.7)');
       st.band.addColorStop(1, 'rgba(10, 12, 20, 0)');
     }
@@ -14538,6 +14541,17 @@ const FULL_SCENES = {
     // The upper clouds again, over the bolts (and the rain), so a bolt comes
     // out of a cloud lit by it rather than from the edge of the screen - the
     // owner's asking - and the rain falls from under the cloud.
+    // And the top edge solid over the rain and bolts too, so nothing is seen
+    // falling from above the clouds.
+    if (st.capFor !== h) {
+      st.capFor = h;
+      st.cap = g.createLinearGradient(0, 0, 0, h * 0.16);
+      st.cap.addColorStop(0, 'rgb(34, 38, 52)');
+      st.cap.addColorStop(0.4, 'rgba(34, 38, 52, 0.9)');
+      st.cap.addColorStop(1, 'rgba(34, 38, 52, 0)');
+    }
+    g.fillStyle = st.cap;
+    g.fillRect(0, 0, w, h * 0.16);
     for (const c of st.clouds) {
       if (c.y > 0.2) continue;
       g.globalAlpha = 0.9;

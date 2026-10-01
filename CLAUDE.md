@@ -1439,7 +1439,11 @@ they burned the deck white; painted, they build only to the lit colour, the
 shapes still showing. **A bolt comes out of a cloud**: the upper rows of the
 deck are drawn a second time over the bolts and the rain, so the bolt's top
 is hidden in a cloud lit by it rather than starting at the screen's edge
-(the owner's asking), and the rain falls from under the cloud.
+(the owner's asking), and the rain falls from under the cloud. **The top edge
+is solid**: the band is opaque there, and a cap is drawn again over the rain
+and bolts, since on a phone the backdrop and rain still showed through at the
+very top - checked against a red backdrop, no pixel in the top 8% less than
+solid.
 **The rain has four upgrades** (five were asked for at once): depth (each drop a
 `z`: far ones thin, dim, slow, short and landing higher up, near ones thick,
 bright, fast and long; nine batches, three depths by three colours); gusts
