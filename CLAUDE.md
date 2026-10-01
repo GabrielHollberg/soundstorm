@@ -1134,6 +1134,8 @@ has no touch and no mouse:
   playing; up and down move one at a time, the list scrolling when the next
   is off it, nothing past the first or last; left or right anywhere closes
   it and gives the highlight back to the Chapters button.
+  The speed menu does the same (opening on the speed chosen), and both keep
+  room for the ring at their ends.
 - **Audiobooks play quieter** (`bookGainDb`, Playback on this device, 8dB
   unless changed): a book is mastered loud and a film keeps its dialogue
   quiet, so at one volume a book was far louder (the owner's report). Per

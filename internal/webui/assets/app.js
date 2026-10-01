@@ -8892,6 +8892,13 @@ $('np-speed').addEventListener('click', (event) => {
   const opening = menu.classList.contains('hidden');
   show(menu, opening);
   $('np-speed').setAttribute('aria-expanded', String(opening));
+  // As the chapter list: on a TV (and with a keyboard) the highlight starts
+  // on the speed chosen.
+  const chosen = opening && menu.querySelector('.chosen');
+  if (chosen && !touchScreen()) {
+    chosen.focus({ preventScroll: true });
+    chosen.scrollIntoView({ block: 'nearest' });
+  }
 });
 for (const choice of document.querySelectorAll('#np-speed-menu [data-speed]')) {
   choice.addEventListener('click', (event) => {
@@ -15503,21 +15510,29 @@ function tvRemote() {
   let holdTimer = 0;
   document.addEventListener('keydown', (event) => {
     const t = event.target;
-    // The chapter list (the owner's asking): up and down move a chapter at a
-    // time, the list scrolling when the next is off it, and nothing past the
-    // first or last; left or right, from anywhere on it, closes it and gives
-    // the highlight back to the Chapters button.
-    if (shown('np-chapters') && t.closest && t.closest('#np-chapters')) {
+    // The chapter list and the speed menu (the owner's asking): up and down
+    // move an option at a time, the list scrolling when the next is off it,
+    // and nothing past the first or last; left or right, from anywhere on
+    // it, closes it and gives the highlight back to the button that opened it.
+    const list = shown('np-chapters') && t.closest && t.closest('#np-chapters') ? 'chapters'
+      : shown('np-speed-menu') && t.closest && t.closest('#np-speed-menu') ? 'speed' : null;
+    if (list) {
       const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
       if (keys.includes(event.key)) {
         event.preventDefault();
         wake();
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-          closeChapters();
-          $('np-chapters-btn').focus({ preventScroll: true });
+          if (list === 'chapters') {
+            closeChapters();
+            $('np-chapters-btn').focus({ preventScroll: true });
+          } else {
+            show($('np-speed-menu'), false);
+            $('np-speed').setAttribute('aria-expanded', 'false');
+            $('np-speed').focus({ preventScroll: true });
+          }
           return;
         }
-        const all = [...$('np-chapters-list').querySelectorAll('button')];
+        const all = [...(list === 'chapters' ? $('np-chapters-list') : $('np-speed-menu')).querySelectorAll('button')];
         const at = all.indexOf(t.closest('button'));
         const to = all[at + (event.key === 'ArrowDown' ? 1 : -1)];
         if (to) {

@@ -3391,6 +3391,7 @@ body.plex-done main { max-width: 420px; margin: 20vh auto 0; padding: 0 24px; te
    was cut off at the bottom (reported from the projector). */
 .np-chapters { scroll-padding-block: 14px; }
 html.tv .np-chapter-list { padding: 8px 8px; }
+html.tv #np-speed-menu { padding: 10px; scroll-padding-block: 14px; }
 .np-chapter-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .np-chapter {
   display: flex; align-items: baseline; gap: 12px; width: 100%;
