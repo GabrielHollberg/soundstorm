@@ -3634,6 +3634,10 @@ html.tv .grid { padding-top: 12px; }
 /* A side tab fills the bar edge to edge, so a ring outside it ran off the
    screen: inside it on a TV. */
 html.tv .tabs button:focus { outline-offset: -4px; border-radius: 14px; }
+/* Settings in the side bar's empty top corner on a TV: with "Playing" at
+   the head of the bar, the last entry ran off the bottom of the screen
+   (reported from the projector). Up from the top entry reaches it. */
+html.tv .tabs button[data-tab="settings"] { position: absolute; top: 8px; left: 0; right: 0; }
 
 /* A film on a TV fills the screen, with no browser controls (tvRemote): the
    picture edge to edge, the name, the subtitle and audio pickers and a slim
