@@ -5731,6 +5731,28 @@ went back to the library, the old password was refused and the new one taken
 up on the TV as "Allow this sign-in?". Not checked: pressing the alert's
 buttons, which needs a remote.
 
+**Signing a TV in from a phone (2026-10-01, the owner's asking; built on
+the Mac, server and web included).** A TV's sign-in offers **Sign in with
+your phone**: a code (`KXT-4PM`) and a QR code of `/?link=KXT4PM` on the
+secure name; a phone signed in scans it or types the code under Settings,
+Sign in a TV, is told "<device> showing KXT-4PM will be signed in as <you>",
+and allows it; the TV, polling with a 128-bit id only it knows, is handed a
+session (`auth.SessionFor`). Ten minutes, once; lookups limited per person;
+skips device approval, since the phone vouched. Server `tvlink.go`, the QR
+`internal/qr` (no dependency: byte mode, level M, versions 1-10 - every
+version read back exactly by macOS's CIDetector when written; the server's
+own PNG decoded to the right address too). The page: the gate's phone sign-in
+in TV mode (Google TV and the rest), the Settings card, and the "Sign in a
+TV?" question for a scanned `?link=`, taken out of the address once asked.
+The Apple TV: the same, first on its sign-in screen. Checked: Go tests
+through the real routes (allowed, refused, used up, signed out, guessing);
+Chrome with Playwright as TV and phone - scanned address, typed lower case
+with a space, and refused; and the Apple TV simulator, allowed with curl,
+into the library. Not checked: a real phone's camera scanning a real TV - an
+iPhone's camera opens the address in Safari, not the app, so it is allowed
+there (signing in to Safari first if need be); typing the code in the app's
+Settings avoids that.
+
 ## The Android app (`android/`)
 
 The same shape as the iPhone app, and the same stage: a native shell around
