@@ -948,7 +948,8 @@ function importRow(j) {
 function importText(j) {
   const p = j.progress || {};
   const from = p.source === 'google' ? 'Google Photos' : p.source === 'apple' ? 'iCloud' : '';
-  const counts = () => [`${(p.added || 0).toLocaleString()} added`, p.duplicates ? `${p.duplicates.toLocaleString()} already here` : '', p.failed ? `${p.failed} could not be read` : '']
+  const counts = () => [`${(p.added || 0).toLocaleString()} added`, p.duplicates ? `${p.duplicates.toLocaleString()} already here` : '',
+    p.improved ? `${p.improved.toLocaleString()} of those gave a photo you had a better date or place` : '', p.failed ? `${p.failed} could not be read` : '']
     .filter(Boolean).join(', ');
   switch (j.state) {
     case 'uploading': {

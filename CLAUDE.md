@@ -4612,6 +4612,25 @@ the server's drive (for a member, by whoever looks after it). Checked with a
 test card: a photo with its date inside (2016/05), a Pixel photo by its name
 (2023/03), a clip by its file date (2015/08, with the date beside it), and a
 copy of a photo already brought in from Google, skipped.
+**A duplicate improves the copy kept** (the owner asked whether a duplicate
+had anything useful): byte-identical files carry nothing new inside, but a
+copy can arrive with a better date or a place beside it - the first import
+walkthrough had a photo from iCloud with no date and Google's copy of it with
+one, skipped. So every sidecar records where its date came from
+(`soundstorm:DateSource`; one from before is taken as a download's), ranked
+none < the file's own date < a name < Google's or Apple's record < inside the
+photo (`photoimport.DateSource`, `Better`). A duplicate - from a download or
+dropped - with a better-sourced date, or a place where the kept copy has none
+(inside it, `ExifHasPlace`, or beside it), rewrites the kept copy's sidecar
+and, when the date improved, moves it from Undated or the wrong month to the
+right one (`improvePhoto`) - never out of a folder somebody arranged, and the
+photo itself never changes. The import counts them ("of those gave a photo
+you had a better date or place"); a dropped one says "its date was
+corrected". Checked on a throwaway Immich: an undated iCloud photo, then
+Google's copy - moved from Undated to 2018/06, and Immich showed 26 June 2018
+in New York City. Near-duplicates (re-compressed or edited copies) are not
+caught; Immich's own duplicate detection could show them as possible
+duplicates later.
 Not built yet: albums kept as albums.
 
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm

@@ -221,13 +221,22 @@ func (t *personTarget) folder() string {
 	return filepath.Join(t.s.library.PathFor(media.KindPicture), filepath.FromSlash(library.PersonalFolder(t.u.Name)))
 }
 
-// Has compares against files of the same size only: hashing a whole photo
-// folder to import one zip would take as long as the import.
-func (t *personTarget) Has(size int64, sum [32]byte) bool {
+// Existing compares against files of the same size only: hashing a whole
+// photo folder to import one zip would take as long as the import.
+func (t *personTarget) Existing(size int64, sum [32]byte) (string, bool) {
 	if t.ix == nil {
 		t.ix = t.s.photoIndexFor(t.u)
 	}
-	return t.ix.has(size, sum)
+	return t.ix.find(size, sum)
+}
+
+// Improve gives the copy kept what a duplicate knew (existing is a path the
+// import saved, library-relative, or one the folder's list holds).
+func (t *personTarget) Improve(existing string, m photoimport.Meta, src photoimport.DateSource) bool {
+	if !filepath.IsAbs(existing) {
+		existing = filepath.Join(t.s.library.Root(), filepath.FromSlash(existing))
+	}
+	return t.s.improvePhoto(t.u, existing, m, src)
 }
 
 func (t *personTarget) Room(size int64) error {

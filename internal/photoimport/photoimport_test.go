@@ -16,19 +16,36 @@ import (
 type memTarget struct {
 	files    map[string][]byte
 	sidecars map[string]string
+	bySum    map[[32]byte]string
+	improved map[string]Meta
 	limit    int64
 	used     int64
 }
 
 func newMem() *memTarget {
-	return &memTarget{files: map[string][]byte{}, sidecars: map[string]string{}, limit: -1}
+	return &memTarget{files: map[string][]byte{}, sidecars: map[string]string{}, bySum: map[[32]byte]string{}, improved: map[string]Meta{}, limit: -1}
 }
 
 func (m *memTarget) IsMedia(name string) bool {
 	n := strings.ToLower(name)
 	return strings.HasSuffix(n, ".jpg") || strings.HasSuffix(n, ".heic") || strings.HasSuffix(n, ".mov") || strings.HasSuffix(n, ".mp4")
 }
-func (m *memTarget) Has(size int64, sum [32]byte) bool { return false }
+func (m *memTarget) Existing(size int64, sum [32]byte) (string, bool) {
+	p, ok := m.bySum[sum]
+	return p, ok
+}
+
+// Improve records what a duplicate offered, when it betters what was kept
+// (the kept copy's source read from its sidecar, as the server does).
+func (m *memTarget) Improve(existing string, inc Meta, src DateSource) bool {
+	have, haveSrc := ReadSidecar([]byte(m.sidecars[existing]))
+	merged, newSrc, _, changed := Better(have, haveSrc, have.HasPlace, inc, src)
+	if changed {
+		m.improved[existing] = merged
+		m.sidecars[existing] = string(XMPSidecarFrom(merged, newSrc))
+	}
+	return changed
+}
 func (m *memTarget) Room(size int64) error {
 	if m.limit >= 0 && m.used+size > m.limit {
 		return io.ErrShortBuffer
@@ -38,6 +55,7 @@ func (m *memTarget) Room(size int64) error {
 func (m *memTarget) Save(rel string, r io.Reader, size int64, sum [32]byte) (string, error) {
 	b, _ := io.ReadAll(r)
 	m.files[rel] = b
+	m.bySum[sum] = rel
 	m.used += int64(len(b))
 	return rel, nil
 }
@@ -208,5 +226,36 @@ func TestNameTaken(t *testing.T) {
 		if got, ok := NameTaken(name); ok {
 			t.Errorf("NameTaken(%q) = %v, want no date", name, got)
 		}
+	}
+}
+
+// The case that asked for this: a photo from iCloud with no date anywhere,
+// then the same photo in a Takeout download that knew its date and place.
+// The second is not saved again; it gives the first its date and place.
+func TestADuplicateImprovesTheCopyKept(t *testing.T) {
+	m := newMem()
+	run(t, writeZip(t, map[string]string{"iCloud Photos/Photos/IMG_5555.JPG": "same bytes"}), m)
+	if _, ok := m.files["Undated/IMG_5555.JPG"]; !ok {
+		t.Fatalf("first copy not in Undated: %v", keys(m.files))
+	}
+	p := run(t, writeZip(t, map[string]string{
+		"Takeout/Google Photos/Photos from 2018/IMG_5555.JPG":      "same bytes",
+		"Takeout/Google Photos/Photos from 2018/IMG_5555.JPG.json": `{"title":"IMG_5555.JPG","photoTakenTime":{"timestamp":"1530000000"},"geoData":{"latitude":40.7,"longitude":-74.0}}`,
+	}), m)
+	if p.Duplicates != 1 || p.Improved != 1 || p.Added != 0 {
+		t.Errorf("progress = %+v", p)
+	}
+	got := m.improved["Undated/IMG_5555.JPG"]
+	if got.Taken.Unix() != 1530000000 || !got.HasPlace {
+		t.Errorf("improved = %+v", got)
+	}
+	// And a worse copy improves nothing: the same photo dated only by its
+	// file, after Google's record.
+	if _, _, _, changed := Better(got, SourceDownload, true, Meta{Taken: time.Now()}, SourceFile); changed {
+		t.Error("a file date replaced Google's")
+	}
+	// The source survives a round trip through the sidecar.
+	if m2, src := ReadSidecar(XMPSidecarFrom(got, SourceName)); src != SourceName || m2.Taken.Unix() != 1530000000 {
+		t.Errorf("read back %v from %v", src, m2)
 	}
 }

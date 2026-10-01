@@ -15,8 +15,11 @@ import (
 type Target interface {
 	// IsMedia reports whether a file name is a photo or video the folder keeps.
 	IsMedia(name string) bool
-	// Has reports whether an identical file is already in the folder.
-	Has(size int64, sum [32]byte) bool
+	// Existing is an identical file already in the folder, if there is one.
+	Existing(size int64, sum [32]byte) (string, bool)
+	// Improve gives a kept copy what a duplicate knew that it did not: a
+	// better-sourced date, a place. It reports whether anything changed.
+	Improve(existing string, m Meta, src DateSource) bool
 	// Room refuses a file that would take the person past their photo space.
 	Room(size int64) error
 	// Save puts a file at rel inside the folder and returns where it went.
@@ -31,6 +34,7 @@ type Progress struct {
 	Done       int    `json:"done"`       // looked at so far
 	Added      int    `json:"added"`      // new, saved
 	Duplicates int    `json:"duplicates"` // already in the folder, or twice in the download
+	Improved   int    `json:"improved"`   // duplicates that gave the copy kept a better date or a place
 	Failed     int    `json:"failed"`
 	Source     string `json:"source"` // "google", "apple" or "" for a plain zip
 	Problem    string `json:"problem,omitempty"`
@@ -87,7 +91,7 @@ func Run(zipPath string, t Target, progress func(Progress), stop func() bool) (P
 	}
 	progress(p)
 
-	seen := map[[32]byte]bool{}
+	seen := map[[32]byte]string{} // what this download saved, by content
 	for _, f := range media {
 		if stop() {
 			return p, nil
@@ -118,7 +122,7 @@ func skipped(name string) bool {
 		strings.Contains(lower, "/trash/") || strings.Contains(lower, "/bin/")
 }
 
-func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen map[[32]byte]bool, p *Progress) error {
+func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen map[[32]byte]string, p *Progress) error {
 	size := int64(f.UncompressedSize64)
 	// The first pass: what it is (its hash), and when it was taken.
 	rc, err := f.Open()
@@ -147,35 +151,49 @@ func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen
 	rc.Close()
 	var sum [32]byte
 	copy(sum[:], h.Sum(nil))
-	if seen[sum] || t.Has(size, sum) {
-		seen[sum] = true
-		p.Duplicates++
-		return nil
-	}
-	seen[sum] = true
-	if err := t.Room(size); err != nil {
-		return ErrNoRoom{err}
+
+	// When, and how sure: what the download said, else the photo's own
+	// EXIF, else a date in its name (IMG_20191225_090000.jpg - phones name
+	// files so almost everywhere), else the date the zip gave it if that is
+	// not simply when the download was made. With none of those it goes to
+	// Undated/ rather than under today, where it would hide among this
+	// month's photos.
+	meta, fromTakeout := takeout.Lookup(f.Name)
+	src := SourceNone
+	exifTaken, exifOK := ExifTaken(head)
+	switch {
+	case exifOK:
+		src = SourceExif
+		if meta.Taken.IsZero() {
+			meta.Taken = exifTaken
+		}
+	case !meta.Taken.IsZero():
+		src = SourceDownload
+	default:
+		if when, ok := icloud.Lookup(f.Name); ok {
+			meta.Taken, src = when, SourceDownload
+		} else if when, ok := NameTaken(path.Base(f.Name)); ok {
+			meta.Taken, src = when, SourceName
+		} else if f.Modified.Year() > 1990 && time.Since(f.Modified) > 30*24*time.Hour {
+			meta.Taken, src = f.Modified.UTC(), SourceFile
+		}
 	}
 
-	// When: what the download said, else the photo's own EXIF, else a date
-	// in its name (IMG_20191225_090000.jpg - phones name files so almost
-	// everywhere), else the date the zip gave it if that is not simply when
-	// the download was made. With none of those it goes to Undated/ rather
-	// than under today, where it would hide among this month's photos.
-	meta, fromTakeout := takeout.Lookup(f.Name)
-	exifDate := false
-	if meta.Taken.IsZero() {
-		if when, ok := icloud.Lookup(f.Name); ok {
-			meta.Taken = when
-		} else if when, ok := ExifTaken(head); ok {
-			meta.Taken, exifDate = when, true
-		} else if when, ok := NameTaken(path.Base(f.Name)); ok {
-			meta.Taken = when
-		} else if f.Modified.Year() > 1990 && time.Since(f.Modified) > 30*24*time.Hour {
-			meta.Taken = f.Modified.UTC()
+	// Already kept - in the folder, or earlier in this download: not saved
+	// again, but what this copy knew improves the one kept.
+	existing, dup := seen[sum]
+	if !dup {
+		existing, dup = t.Existing(size, sum)
+	}
+	if dup {
+		p.Duplicates++
+		if existing != "" && t.Improve(existing, meta, src) {
+			p.Improved++
 		}
-	} else if _, ok := ExifTaken(head); ok {
-		exifDate = true
+		return nil
+	}
+	if err := t.Room(size); err != nil {
+		return ErrNoRoom{err}
 	}
 	rel := "Undated/" + path.Base(f.Name)
 	if !meta.Taken.IsZero() {
@@ -192,12 +210,13 @@ func one(f *zip.File, t Target, takeout *TakeoutIndex, icloud *ICloudIndex, seen
 	if err != nil {
 		return err
 	}
+	seen[sum] = saved
 	p.Added++
 	// The date and place written beside it for Immich when they came from the
 	// download, or when the photo carries no date of its own: the saved file
 	// is new, and Immich would otherwise date it the day it was saved.
-	if fromTakeout || (!exifDate && !meta.Taken.IsZero()) {
-		_ = t.Sidecar(saved, XMPSidecar(meta))
+	if fromTakeout || (src != SourceExif && !meta.Taken.IsZero()) {
+		_ = t.Sidecar(saved, XMPSidecarFrom(meta, src))
 	}
 	return nil
 }

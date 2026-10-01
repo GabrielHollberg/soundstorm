@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -187,6 +188,30 @@ func (s *Server) photoIndexFor(u state.User) *photoIndex {
 
 // has reports whether an identical file is already in the folder.
 func (ix *photoIndex) has(size int64, sum [32]byte) bool {
+	_, ok := ix.find(size, sum)
+	return ok
+}
+
+// move follows a file the folder's list knows to a new place.
+func (ix *photoIndex) move(from, to string) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	for size, ps := range ix.bySize {
+		for i, p := range ps {
+			if p == from {
+				ps[i] = to
+				ix.bySize[size] = ps
+			}
+		}
+	}
+	if sum, ok := ix.sums[from]; ok {
+		delete(ix.sums, from)
+		ix.sums[to] = sum
+	}
+}
+
+// find is an identical file already in the folder, by its path.
+func (ix *photoIndex) find(size int64, sum [32]byte) (string, bool) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 	for _, p := range ix.bySize[size] {
@@ -206,10 +231,10 @@ func (ix *photoIndex) has(size int64, sum [32]byte) bool {
 			ix.sums[p] = known
 		}
 		if known == sum {
-			return true
+			return p, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // add records a file just saved.
@@ -236,6 +261,7 @@ var errPhotoDuplicate = fmt.Errorf("%w: it is already in your photos", library.E
 type photoPlace struct {
 	rel     string // relative to pictures/
 	meta    photoimport.Meta
+	src     photoimport.DateSource
 	exif    bool
 	size    int64
 	sum     [32]byte
@@ -261,18 +287,21 @@ func (s *Server) datedPhoto(u state.User, staged, dropped string, hint int64) (*
 	pl := &photoPlace{size: int64(n) + rest, dropped: dropped}
 	copy(pl.sum[:], h.Sum(nil))
 	pl.ix = s.photoIndexFor(u)
-	if pl.ix.has(pl.size, pl.sum) {
-		return nil, errPhotoDuplicate
-	}
 	name := path.Base(dropped)
-	switch {
-	case func() bool { t, ok := photoimport.ExifTaken(head); pl.meta.Taken = t; return ok }():
-		pl.exif = true
-	case func() bool { t, ok := photoimport.NameTaken(name); pl.meta.Taken = t; return ok }():
-	case hint > 0 && time.UnixMilli(hint).Year() > 1990:
-		pl.meta.Taken = time.UnixMilli(hint).UTC()
-	default:
-		pl.meta.Taken = time.Time{}
+	if t, ok := photoimport.ExifTaken(head); ok {
+		pl.meta.Taken, pl.src, pl.exif = t, photoimport.SourceExif, true
+	} else if t, ok := photoimport.NameTaken(name); ok {
+		pl.meta.Taken, pl.src = t, photoimport.SourceName
+	} else if hint > 0 && time.UnixMilli(hint).Year() > 1990 {
+		pl.meta.Taken, pl.src = time.UnixMilli(hint).UTC(), photoimport.SourceFile
+	}
+	// Already kept: not saved again, but what this copy knows (a date from
+	// a better source) improves the one kept.
+	if existing, ok := pl.ix.find(pl.size, pl.sum); ok {
+		if s.improvePhoto(u, existing, pl.meta, pl.src) {
+			return nil, fmt.Errorf("%w: it is already in your photos; its date was corrected from this copy", library.ErrAlreadyThere)
+		}
+		return nil, errPhotoDuplicate
 	}
 	rel := "Undated/" + name
 	if !pl.meta.Taken.IsZero() {
@@ -307,7 +336,7 @@ func (s *Server) savePhoto(u state.User, dropped string, body io.Reader, hint in
 	full := filepath.Join(s.library.Root(), filepath.FromSlash(dest))
 	pl.ix.add(full, pl.size, pl.sum)
 	if !pl.exif && !pl.meta.Taken.IsZero() {
-		_ = os.WriteFile(full+".xmp", photoimport.XMPSidecar(pl.meta), 0o666)
+		_ = os.WriteFile(full+".xmp", photoimport.XMPSidecarFrom(pl.meta, pl.src), 0o666)
 	}
 	if !u.IsOwner() {
 		s.addPhotoBytes(u, pl.size)
@@ -539,4 +568,79 @@ func (s *Server) photoFieldsFor(u state.User, out map[string]any) {
 	out["photoLimitBytes"] = usage["limitBytes"]
 	out["photoLimitDefault"] = u.PhotoLimitGB == nil
 	out["photoFolder"] = usage["folder"]
+}
+
+// datedFolder is a folder SoundStorm made by date (2019/07, or Undated) rather
+// than one somebody arranged and copied in.
+var datedFolder = regexp.MustCompile(`^((19|20)\d{2}/(0[1-9]|1[0-2])|Undated)$`)
+
+// improvePhoto gives a photo kept in a person's folder what a duplicate of it
+// knew and it did not: a date from a better source (the date inside it beats
+// Google's or Apple's record, which beats one in a name, which beats a file's
+// own date) or a place where it had none, written in the sidecar beside it;
+// and, when the date improved, moves it to that date's folder - out of
+// Undated, or the wrong month - unless it sits in a folder somebody arranged.
+// The photo itself never changes. Reports whether anything did.
+func (s *Server) improvePhoto(u state.User, existing string, inc photoimport.Meta, incSrc photoimport.DateSource) bool {
+	folder := filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(library.PersonalFolder(u.Name)))
+	rel, err := filepath.Rel(folder, existing)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return false
+	}
+	f, err := os.Open(existing)
+	if err != nil {
+		return false
+	}
+	head := make([]byte, 4<<20)
+	n, _ := io.ReadFull(f, head)
+	f.Close()
+	head = head[:n]
+
+	var have photoimport.Meta
+	haveSrc := photoimport.SourceNone
+	exifDate := false
+	if t, ok := photoimport.ExifTaken(head); ok {
+		have.Taken, haveSrc, exifDate = t, photoimport.SourceExif, true
+	}
+	side, _ := os.ReadFile(existing + ".xmp")
+	if len(side) > 0 {
+		sm, ssrc := photoimport.ReadSidecar(side)
+		if !exifDate && !sm.Taken.IsZero() {
+			have.Taken, haveSrc = sm.Taken, ssrc
+		}
+		if sm.HasPlace {
+			have.Lat, have.Lon, have.HasPlace = sm.Lat, sm.Lon, true
+		}
+	}
+	haveGPS := have.HasPlace || photoimport.ExifHasPlace(head)
+	merged, src, dateBetter, changed := photoimport.Better(have, haveSrc, haveGPS, inc, incSrc)
+	if !changed {
+		return false
+	}
+	write := merged
+	if exifDate && len(side) == 0 {
+		// The date inside the photo stands; the sidecar adds only the place.
+		write.Taken = time.Time{}
+	}
+	if err := os.WriteFile(existing+".xmp", photoimport.XMPSidecarFrom(write, src), 0o666); err != nil {
+		return false
+	}
+	slash := filepath.ToSlash(rel)
+	if dateBetter && datedFolder.MatchString(path.Dir(slash)) {
+		want := fmt.Sprintf("%04d/%02d/%s", merged.Taken.Year(), int(merged.Taken.Month()), path.Base(slash))
+		if want != slash {
+			if _, err := os.Stat(filepath.Join(folder, filepath.FromSlash(want))); err == nil {
+				want = altName(want, merged.Taken.Unix())
+			}
+			dest := filepath.Join(folder, filepath.FromSlash(want))
+			if os.MkdirAll(filepath.Dir(dest), 0o777) == nil && os.Rename(existing, dest) == nil {
+				_ = os.Rename(existing+".xmp", dest+".xmp")
+				s.photoIndexFor(u).move(existing, dest)
+				_ = os.Remove(filepath.Dir(existing)) // the month it left, if now empty
+			}
+		}
+	}
+	s.log.Info("a photo's details improved from a copy of it", "by", u.Name, "photo", slash, "date", dateBetter)
+	s.scheduleRescan(media.KindPicture)
+	return true
 }
