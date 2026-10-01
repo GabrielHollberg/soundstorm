@@ -1816,6 +1816,14 @@ failure as the album sort once was. Desktop emulation hid it in screenshots;
   At home none of it runs. Checked in Chrome on a mapped `*.ts.net` name
   throttled to ~0.3 Mbps: slow on opening, the first song asked for at 128
   kbps.
+  **And it goes back** (2026-10-01, the owner's asking): while slow, the link
+  is timed again every fifteen minutes with the same 128KB, in the
+  background, while the page is looked at; over 3 Mbps (ten times what full
+  quality needs) the next song is at full quality and the slow note is
+  forgotten. Nothing stalls to find out, and a playing song is never changed.
+  Checked in Chrome with Playwright's clock: slow and 128 kbps at the start,
+  still slow at ten minutes, full quality at sixteen - the fake clock times
+  the probe too, so the threshold itself was not tried on a slow link.
 - **Why Chrome was instant and the app was not: caches and covers.** On a
   1.1 Mbps phone link (measured), Chrome had played the songs and covers
   before and kept them. The fresh app had nothing, and opening it asked for
@@ -5438,7 +5446,11 @@ running the TV's formula on the page's measured cases: 0.50, 0.28 and 1.00 for
 0, -5 and +8 dB. Not heard on a TV, and an audio mix is believed to apply to a
 progressive stream (which songs are), not to HLS. A song still not playing six
 seconds after it was asked for is started again at 128 kbps from where it is,
-and every song after it for the session (`slowLink`), as the page does.
+and every song after it (`slowLink`), as the page does - until two songs in
+a row came in over 3 Mbps by the player's own measure of the download
+(`accessLog().observedBitrate`, which a plain streamed file has too - checked
+against a range-serving local server; Python's http.server serves no ranges,
+and AVPlayer plays nothing from it), when the next song is at full quality.
 **Crossfade is not built**: off by default on the page and set per device,
 so the TV would need a setting of its own just to turn it on - left until
 wanted. The sleep timer was built with audiobooks.

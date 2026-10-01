@@ -235,6 +235,27 @@ async function probeLink() {
   } catch { /* offline: nothing to learn */ }
 }
 
+// While on the lower quality, the link is timed again every fifteen minutes
+// (the same 128KB as probeLink, in the background, while the page is looked
+// at): over 3 Mbps - ten times what full quality needs - and the next song is
+// at full quality again, and the slow note is forgotten. A short dip in the
+// Wi-Fi should not cost the rest of the evening. Nothing stalls to find out,
+// and a song already playing is never changed.
+const RECHECK_MS = 15 * 60 * 1000;
+setInterval(async () => {
+  if (!slowLink || document.hidden || state.offline) return;
+  try {
+    const t0 = performance.now();
+    const resp = await fetch('/api/probe?b=131072', { cache: 'no-store' });
+    const got = (await resp.arrayBuffer()).byteLength;
+    const mbps = (got * 8) / ((performance.now() - t0) / 1000) / 1e6;
+    if (resp.ok && got > 0 && mbps > 3) {
+      slowLink = false;
+      try { localStorage.removeItem(SLOW_KEY); } catch { /* not kept */ }
+    }
+  } catch { /* offline: nothing to learn */ }
+}, RECHECK_MS);
+
 function streamingKbps() {
   // "smart", the default, is original unless the link is found slow;
   // "original" is a promise - never lowered, whatever the connection (the
