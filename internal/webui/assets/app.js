@@ -855,6 +855,8 @@ window.__soundstormBackup = (status) => {
   maybeAskBackup();
 };
 function backupSet(options) {
+  // Changing it in Settings is an answer too: not asked again after.
+  try { localStorage.setItem('soundstorm.backupAsked', '1'); } catch { /* no storage */ }
   // The account it is for goes with it: the phone sends it with every photo,
   // and the server refuses photos meant for somebody else - on a shared
   // phone the next person's cookie would otherwise take the first person's
@@ -902,7 +904,11 @@ function renderBackup() {
 // Asked once, after signing in, on a phone with the app and Pictures.
 function maybeAskBackup() {
   const st = state.backup;
-  if (!BACKUP_APP || !st || st.decided || !hasPictures() || localStorage.getItem('soundstorm.backupAsked')) return;
+  // Asked unless backup is on, or this person has answered on this device -
+  // the page's own record, cleared with the downloads when the person changes.
+  // Not the app's "decided": switching backup off for the last person marks
+  // that too, and the next person was never asked.
+  if (!BACKUP_APP || !st || st.enabled || !hasPictures() || localStorage.getItem('soundstorm.backupAsked')) return;
   $('backup-ask-text').textContent = state.me && state.me.owner
     ? 'New photos and videos are sent to your server in the background, on Wi-Fi, into your own folder. Photos already on the server are not sent again. You can change this in Settings.'
     : 'New photos and videos are sent to this server in the background, on Wi-Fi, into your own folder. Photos already on the server are not sent again. The owner of the server can see them; nobody else can. You can change this in Settings.';

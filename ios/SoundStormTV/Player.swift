@@ -329,7 +329,7 @@ final class Player {
 
     // MARK: Queue
 
-    private func load(at i: Int) {
+    private func load(at i: Int, from start: Double = 0) {
         index = i
         counted = false
         time = 0
@@ -338,9 +338,11 @@ final class Player {
         upNext = nil
         playing = playerItem(queue[i])
         player.insert(playing!, after: nil)
+        if start > 0 { player.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
         enqueueNext()
         try? AVAudioSession.sharedInstance().setActive(true)
         player.play()
+        watchStart(of: playing!)
         isPlaying = true
         artwork = nil
         publish()
@@ -367,8 +369,75 @@ final class Player {
     }
 
     private func playerItem(_ item: Item) -> AVPlayerItem {
-        let asset = AVURLAsset(url: api.streamURL(item), options: [AVURLAssetHTTPCookiesKey: api.cookies])
-        return AVPlayerItem(asset: asset)
+        let asset = AVURLAsset(url: api.streamURL(item, kbps: slowLink ? 128 : nil),
+                               options: [AVURLAssetHTTPCookiesKey: api.cookies])
+        let playerItem = AVPlayerItem(asset: asset)
+        level(playerItem, for: item)
+        return playerItem
+    }
+
+    // MARK: Leveling
+
+    /// Everything plays this far below full, so a quiet song can be brought
+    /// up - a player can turn down but never past full. The page's
+    /// LEVEL_PREAMP_DB.
+    private static let preampDb = -6.0
+
+    /// Even levels from the ReplayGain tags most ripped and bought music
+    /// carries, as the page's levelFor: an album playing in order uses the
+    /// album's gain, so its quiet songs stay quiet beside its loud ones;
+    /// anything else each song's own; never past the song's peak. An untagged
+    /// song among tagged ones sits at the pre-amp; an untagged queue is left
+    /// alone.
+    private func levelFactor(for item: Item) -> Float {
+        let album = item.album ?? item.subtitle
+        let inAlbumOrder = queue.count > 1 && queue.allSatisfy { ($0.album ?? $0.subtitle) == album }
+        let extra = item.extra ?? [:]
+        let gain = Double((inAlbumOrder ? extra["albumGain"] : nil) ?? extra["trackGain"] ?? "")
+        let peak = Double((inAlbumOrder ? extra["albumPeak"] : nil) ?? extra["trackPeak"] ?? "")
+        guard let gain, gain.isFinite else {
+            let anyTagged = queue.contains { $0.extra?["trackGain"] != nil }
+            return anyTagged ? Float(pow(10, Self.preampDb / 20)) : 1
+        }
+        var factor = pow(10, (gain + Self.preampDb) / 20)
+        if let peak, peak.isFinite, peak > 0 { factor = min(factor, 1 / peak) }
+        return Float(max(0, min(1, factor)))
+    }
+
+    /// Set on the item, not the player, so each song's level starts exactly
+    /// where it does, the next one loaded behind it included.
+    private func level(_ playerItem: AVPlayerItem, for item: Item) {
+        let factor = levelFactor(for: item)
+        guard factor < 1 else { return }
+        Task {
+            guard let track = try? await playerItem.asset.loadTracks(withMediaType: .audio).first else { return }
+            let parameters = AVMutableAudioMixInputParameters(track: track)
+            parameters.setVolume(factor, at: .zero)
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [parameters]
+            playerItem.audioMix = mix
+        }
+    }
+
+    // MARK: A slow link
+
+    /// Set for the rest of the session once a song could not start at full
+    /// quality: songs then stream at 128 kbps, a quarter of the data, with
+    /// none of the header an iTunes M4A must deliver before its first note.
+    private var slowLink = false
+
+    /// A song still unable to play six seconds after it was asked for is
+    /// started again at 128 kbps, from where it is, as the page does.
+    private func watchStart(of item: AVPlayerItem) {
+        guard !isBook, !slowLink else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(6))
+            guard item === playing, !isBook, !slowLink, isPlaying,
+                  player.timeControlStatus != .playing
+            else { return }
+            slowLink = true
+            load(at: index, from: max(0, exactTime))
+        }
     }
 
     private func itemEnded(_ ended: AVPlayerItem?) {

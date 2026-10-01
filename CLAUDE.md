@@ -4837,9 +4837,15 @@ said "All 6 photos and videos are backed up". **Not checked:** the background
 task and an upload finishing with the app closed - a real iPhone over a night
 is the test. Two things the test met: Swift 6.3 crashes compiling the `async`
 form of `willPerformHTTPRedirection` (the completion-handler form is used),
-and signing in as a different account than the device last had turns backup
-off and marks it decided, so that person is never asked - on Android too; the
-switch in Settings is still there.
+and signing out (or in as a different account) turns backup off, which the
+app also counts as "decided" - so the next person was never asked, on Android
+too. The page now asks unless backup is on or this person answered on this
+device (its own `soundstorm.backupAsked`, set by the question or the Settings
+switch and cleared with the downloads), not by the app's flag;
+`testBackupIsAskedOfWhoeverSignsInNext` fails against the old page. After
+signing out the page focuses the username and the keyboard covers the
+password field: a person uses the keyboard's next arrow, the test opens the
+app again.
 
 **Bringing a photo library in** (`internal/photoimport`, `httpapi/photoimport.go`):
 Google and Apple give no way for SoundStorm to pull photos out (Google's
@@ -5411,9 +5417,20 @@ excluded; with `-lyricsLook YES` the third line lit about seven seconds in, at
 its 6-second start. **Not checked: the hold menu and its sheets**, which need
 a remote's press, as Now Playing's arrows do.
 
-**Still to match the page in music:** a sleep timer, ReplayGain leveling
-(AVPlayer has no per-item gain; an audio mix's volume parameter is the way),
-crossfade, and restarting a stuck song at 128 kbps on a slow link.
+**Music levelling and a slow link (2026-10-01).** ReplayGain levelling is
+the page's `levelFor` - six decibels under full, the album's gain when an
+album plays in order, never past the peak, an untagged song among tagged ones
+at the pre-amp - set as an audio mix on each AVPlayerItem rather than the
+player's volume, so the level changes exactly where the song does, the next
+song loaded behind it included (books keep `player.volume`). Checked by
+running the TV's formula on the page's measured cases: 0.50, 0.28 and 1.00 for
+0, -5 and +8 dB. Not heard on a TV, and an audio mix is believed to apply to a
+progressive stream (which songs are), not to HLS. A song still not playing six
+seconds after it was asked for is started again at 128 kbps from where it is,
+and every song after it for the session (`slowLink`), as the page does.
+**Crossfade is not built**: off by default on the page and set per device,
+so the TV would need a setting of its own just to turn it on - left until
+wanted. The sleep timer was built with audiobooks.
 
 **Photos (2026-09-30).** A Photos tab: On this day (`/api/photos/on-this-day`,
 a row per earlier year), then the camera roll newest first, the page's own
