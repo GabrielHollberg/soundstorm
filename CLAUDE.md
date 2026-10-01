@@ -3775,6 +3775,72 @@ port too (a default port reads 0 in `WKSecurityOrigin`); `absolute` throws
 for any other host (a book file, film or subtitle so refused is not played);
 `+` is sent as `%2B`. The iPhone UI tests still pass, Change server included.
 
+**The whole-project review (2026-10-01).** Fixed on the Mac:
+
+- **`/static/` served the app with no CSP.** The shell's policy is set only
+  by `ServeShell`; `http.FileServer` answered `/static/` and
+  `/static/index.html` with the same page and no policy, so a script that got
+  into a book ran with the session. `webui.Assets` now refuses any folder and
+  any `index.html`, and puts a no-script policy on every file it serves
+  (`plex-done.html` stays: Plex sends people back to it). And the reader's
+  stripping missed chapters foliate-js hands over as a Blob (anything not
+  exactly XHTML, HTML, CSS or SVG): `withoutScripts` now reads a Blob as text
+  first. Not browser-tested; `webui_test.go` covers the first half.
+- **Go 1.24 and Alpine 3.20 were out of support**: now Go 1.27 (`go.mod`, both
+  Dockerfiles, CI) and Alpine 3.24. The images were not built on the Mac (no
+  Docker); the PC's next deploy is the check.
+- **Exported volumes were world-readable tars**: `install.sh` writes them under
+  umask 077 into a 700 folder, then 600; `install.ps1` runs
+  `Protect-SecretFile` on each. The .ps1 was not syntax-checked (PowerShell
+  needs a password to install on the Mac).
+- **Book and picture reads had no ceiling on how many at once**: an EPUB entry
+  (up to 16 MB) and `shrinkLocal`'s whole-file read (up to 20 MB) each took
+  memory before any slot. Six book reads and four shrink reads at a time; a
+  shrink that waits ten seconds streams the original instead, and a book read
+  answers "try again shortly".
+- **Apple TV crashes a server or a book could cause**: markup nested past 256
+  is abandoned (freeing a tree that deep overflowed the stack, and
+  `XML.all` was recursive - now a loop); `Heard.fromServer` refuses uneven
+  lanes, an fps outside (0, 1000] and non-finite beats, and normalises `down`;
+  `VizEngine` reads NaN time as 0 and clamps frames before converting
+  (`Int(.nan)` traps); book parts, PDFs, subtitles and pictures download to
+  disk and are refused past a size (`SafeLoad`), and pictures decode through
+  `CGImageSourceCreateThumbnailAtIndex` at a bounded size. Builds; not run on
+  the TV itself.
+- iPhone: a navigation with no target frame (a new window) no longer counts
+  as the main frame - `createWebViewWith` decides those. Apple TV: `;` is sent
+  as `%3B` (Go drops a query pair holding one).
+- Sign-out now clears `soundstorm-native-queue` (the phone player's queue);
+  an OPDS reference must start `opds/`, not merely contain it.
+
+**For the PC** - Android, from the same review:
+
+- `NativeAudio.kt` (around lines 91, 116, 135-142) and `AudioService.kt`
+  (47-50) load any URL, any scheme or host, that the page passes; allow only
+  the server's own origin, as the iPhone's `absolute` does.
+- The session cookie is attached by hand in `AudioService` and
+  `PlaybackService.loadArt`, and may follow a redirect to another host; turn
+  redirects off or re-check the host.
+- The `MediaSession` has no `onConnect`, so any app on the phone can control
+  playback and read what is playing; accept only the system and the app.
+- `MainActivity.kt` (539-543, 614-626): other schemes and `onCreateWindow`
+  open without a user gesture; match the iPhone (main frame, link followed).
+- No `dataExtractionRules` (Android 12+ backups and device transfer carry the
+  WebView's cookie); exclude the WebView and shared-prefs data.
+- `taskAffinity=""` is missing on the main activity (task hijacking on older
+  Android).
+
+**Left for discussion with the owner**: no limit on sign-in attempts in flight
+from one client (`throttle.reserve`); the plain `soundstorm_session` cookie
+still accepted over TLS; remote access serving plain HTTP. Smaller, in the
+installers and CI: `SoundStorm-Setup.cmd` runs whatever `install.ps1` sits
+beside it; `install-here.sh` uses a fixed `/tmp` path; `install.ps1` elevates
+by bare name; CI's permissions are broader than publishing needs. In the
+server: intake lets companion files join an existing folder; Plex's dial
+guard misses Docker Desktop's 192.168.65.0/24 and gateways; the Jellyfin HLS
+query is a denylist; Storyteller's `readClips` is not cached. Apple TV: ATS
+allows http to public addresses.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.
