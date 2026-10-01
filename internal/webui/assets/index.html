@@ -406,10 +406,16 @@
         <p id="readalong-note" class="muted hidden" role="status"></p>
       </div>
 
-      <div id="people-block" class="account-section card hidden" data-cat="people" data-words="people users accounts family members add remove libraries">
+      <div id="people-block" class="account-section card hidden" data-cat="people" data-words="people users accounts family members add remove libraries photos limit space storage backup">
         <h2>People</h2>
         <p class="muted">Everyone gets their own login and their own place in
-          every book. Tick the shelves each person can see.</p>
+          every book. Tick the shelves each person can see. With Pictures,
+          each person sees only their own photos (you see everyone's), up to
+          their photo space.</p>
+        <label class="setting-row">
+          <span>Photo space for each person</span>
+          <select id="photo-limit-default"></select>
+        </label>
         <ul id="people-list"></ul>
 
         <form id="add-person-form" class="stack-form">
@@ -425,6 +431,14 @@
           <button type="submit">Add person</button>
         </form>
         <p id="people-note" class="muted hidden" role="status"></p>
+      </div>
+
+      <!-- Your own photos: where they go, and how much of your space they use. -->
+      <div id="my-photos-block" class="account-section card hidden" data-cat="library" data-words="photos pictures backup phone space storage limit">
+        <h2>Your photos</h2>
+        <p id="my-photos-usage"></p>
+        <div class="space-bar"><span id="my-photos-bar"></span></div>
+        <p id="my-photos-where" class="muted"></p>
       </div>
 
       <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout change server">

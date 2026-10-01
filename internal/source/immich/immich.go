@@ -34,6 +34,12 @@ type Config struct {
 	// ("/pictures"), which is how Immich reports an asset's original path.
 	// Empty means this source cannot name its files.
 	MediaRoot string
+
+	// ActAs resolves the person asking to their own Immich key and library:
+	// a member sees only their own photos, the owner everybody's. Nil, or a
+	// request with nobody asking (background work), uses APIKey and
+	// LibraryID.
+	ActAs func(ctx context.Context, userID string) (key, libraryID string, err error)
 }
 
 // Source is one Immich external library.
@@ -55,12 +61,49 @@ func New(cfg Config) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("immich %q: %w", cfg.ID, err)
 	}
-	c.SetHeader("x-api-key", cfg.APIKey)
 	c.SetHeader("Accept", "application/json")
 	return &Source{id: cfg.ID, cfg: cfg, http: c}, nil
 }
 
 func (s *Source) ID() string       { return s.id }
+
+// as is the key and library a request is made with: the person asking's own,
+// or the administrator's when nobody is (background work). An error rather
+// than a fallback to the administrator's: showing a member the whole
+// household's photos because their account could not be made is the one
+// mistake this must not make.
+func (s *Source) as(ctx context.Context) (map[string]string, string, error) {
+	key, lib := s.cfg.APIKey, s.cfg.LibraryID
+	if s.cfg.ActAs != nil {
+		if uid := source.UserID(ctx); uid != "" {
+			k, l, err := s.cfg.ActAs(ctx, uid)
+			if err != nil {
+				return nil, "", fmt.Errorf("immich %q: no photo account for this person: %w", s.id, err)
+			}
+			key, lib = k, l
+		}
+	}
+	return map[string]string{"x-api-key": key}, lib, nil
+}
+
+// admin is the administrator's own key, for what concerns every library.
+func (s *Source) admin() map[string]string { return map[string]string{"x-api-key": s.cfg.APIKey} }
+
+// getJSON is a GET as the person asking.
+func (s *Source) getJSON(ctx context.Context, path string, params url.Values, out any) error {
+	h, _, err := s.as(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := s.http.Do(ctx, httpx.Request{Path: path, Params: params, Headers: h})
+	if err != nil {
+		return err
+	}
+	if err := resp.Err(); err != nil {
+		return err
+	}
+	return resp.JSON(out)
+}
 func (s *Source) Kind() media.Kind { return media.KindPicture }
 
 // asset is the part of Immich's AssetResponseDto SoundStorm uses.
@@ -103,11 +146,14 @@ const maxPage = 1000
 // shelf nobody browses alphabetically.
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
 	limit := q.LimitOr(25)
+	_, lib, err := s.as(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var found []asset
-	var err error
 	if strings.TrimSpace(q.Text) == "" {
 		found, err = s.page(ctx, "/api/search/metadata", map[string]any{
-			"libraryId": s.cfg.LibraryID,
+			"libraryId": lib,
 			"order":     "desc",
 			"isOffline": false,
 			"withExif":  true,
@@ -122,7 +168,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 		}, limit)
 		if err != nil {
 			found, err = s.page(ctx, "/api/search/metadata", map[string]any{
-				"libraryId":        s.cfg.LibraryID,
+				"libraryId":        lib,
 				"originalFileName": q.Text,
 				"order":            "desc",
 				"isOffline":        false,
@@ -148,6 +194,10 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 
 // page asks for up to limit results, a page of at most maxPage at a time.
 func (s *Source) page(ctx context.Context, path string, body map[string]any, limit int) ([]asset, error) {
+	h, _, err := s.as(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var out []asset
 	for page := 1; len(out) < limit; page++ {
 		size := min(limit-len(out), maxPage)
@@ -155,7 +205,7 @@ func (s *Source) page(ctx context.Context, path string, body map[string]any, lim
 		for k, v := range body {
 			req[k] = v
 		}
-		resp, err := s.http.Do(ctx, httpx.Request{Method: http.MethodPost, Path: path, Body: req})
+		resp, err := s.http.Do(ctx, httpx.Request{Method: http.MethodPost, Path: path, Body: req, Headers: h})
 		if err != nil {
 			return nil, fmt.Errorf("immich %q: %w", s.id, err)
 		}
@@ -221,18 +271,19 @@ func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target
 	if itemID == "" {
 		return source.Target{}, fmt.Errorf("immich %q: empty item id", s.id)
 	}
+	h, _, err := s.as(ctx)
+	if err != nil {
+		return source.Target{}, err
+	}
 	var a asset
-	if err := s.http.JSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
+	if err := s.getJSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
 		return source.Target{}, err
 	}
 	path := "/api/assets/" + url.PathEscape(itemID) + "/original"
 	if a.Type == "VIDEO" {
 		path = "/api/assets/" + url.PathEscape(itemID) + "/video/playback"
 	}
-	return source.Target{
-		URL:     s.http.URL(path, nil),
-		Headers: map[string]string{"x-api-key": s.cfg.APIKey},
-	}, nil
+	return source.Target{URL: s.http.URL(path, nil), Headers: h}, nil
 }
 
 // PreviewSuffix asks ArtTarget for the large rendition rather than the grid
@@ -242,12 +293,13 @@ const PreviewSuffix = "@preview"
 
 // ArtTarget is the grid thumbnail, or with PreviewSuffix the large preview.
 // Both are JPEG or WebP whatever the original was.
-func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, error) {
+func (s *Source) ArtTarget(ctx context.Context, artID string) (source.Target, error) {
+	h, _, err := s.as(ctx)
+	if err != nil {
+		return source.Target{}, err
+	}
 	if face, ok := strings.CutPrefix(artID, personArt); ok && face != "" {
-		return source.Target{
-			URL:     s.http.URL("/api/people/"+url.PathEscape(face)+"/thumbnail", nil),
-			Headers: map[string]string{"x-api-key": s.cfg.APIKey},
-		}, nil
+		return source.Target{URL: s.http.URL("/api/people/"+url.PathEscape(face)+"/thumbnail", nil), Headers: h}, nil
 	}
 	id, preview := strings.CutSuffix(artID, PreviewSuffix)
 	if id == "" {
@@ -257,22 +309,37 @@ func (s *Source) ArtTarget(_ context.Context, artID string) (source.Target, erro
 	if preview {
 		size = "preview"
 	}
-	return source.Target{
-		URL:     s.http.URL("/api/assets/"+url.PathEscape(id)+"/thumbnail", url.Values{"size": {size}}),
-		Headers: map[string]string{"x-api-key": s.cfg.APIKey},
-	}, nil
+	return source.Target{URL: s.http.URL("/api/assets/"+url.PathEscape(id)+"/thumbnail", url.Values{"size": {size}}), Headers: h}, nil
 }
 
-// Rescan asks Immich to look at the pictures folder now.
+// Rescan asks Immich to look at the pictures folder now: every library on it,
+// the owner's of the whole folder and each member's of their own.
 func (s *Source) Rescan(ctx context.Context) error {
-	resp, err := s.http.Do(ctx, httpx.Request{
-		Method: http.MethodPost,
-		Path:   "/api/libraries/" + url.PathEscape(s.cfg.LibraryID) + "/scan",
-	})
-	if err != nil {
-		return fmt.Errorf("immich %q: scan: %w", s.id, err)
+	ids := []string{s.cfg.LibraryID}
+	var libs []struct {
+		ID string `json:"id"`
 	}
-	return resp.Err()
+	if resp, err := s.http.Do(ctx, httpx.Request{Path: "/api/libraries", Headers: s.admin()}); err == nil && resp.Err() == nil && resp.JSON(&libs) == nil {
+		ids = ids[:0]
+		for _, l := range libs {
+			ids = append(ids, l.ID)
+		}
+	}
+	var firstErr error
+	for _, id := range ids {
+		resp, err := s.http.Do(ctx, httpx.Request{
+			Method:  http.MethodPost,
+			Path:    "/api/libraries/" + url.PathEscape(id) + "/scan",
+			Headers: s.admin(),
+		})
+		if err == nil {
+			err = resp.Err()
+		}
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("immich %q: scan: %w", s.id, err)
+		}
+	}
+	return firstErr
 }
 
 // Health checks the key still works and the library is still there.
@@ -280,7 +347,14 @@ func (s *Source) Health(ctx context.Context) error {
 	var lib struct {
 		ID string `json:"id"`
 	}
-	if err := s.http.JSON(ctx, "/api/libraries/"+url.PathEscape(s.cfg.LibraryID), nil, &lib); err != nil {
+	resp, err := s.http.Do(ctx, httpx.Request{Path: "/api/libraries/" + url.PathEscape(s.cfg.LibraryID), Headers: s.admin()})
+	if err != nil {
+		return err
+	}
+	if err := resp.Err(); err != nil {
+		return err
+	}
+	if err := resp.JSON(&lib); err != nil {
 		return err
 	}
 	if lib.ID != s.cfg.LibraryID {
@@ -300,11 +374,15 @@ func (s *Source) ItemFiles(ctx context.Context, itemID string) ([]string, error)
 	if itemID == "" {
 		return nil, fmt.Errorf("immich %q: empty item id", s.id)
 	}
-	var a asset
-	if err := s.http.JSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
+	_, lib, err := s.as(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if a.LibraryID != "" && a.LibraryID != s.cfg.LibraryID {
+	var a asset
+	if err := s.getJSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
+		return nil, err
+	}
+	if a.LibraryID != "" && a.LibraryID != lib {
 		return nil, fmt.Errorf("immich %q: %q is not in the pictures folder", s.id, itemID)
 	}
 	rel, err := source.RelativeTo(s.cfg.MediaRoot, a.OriginalPath)
@@ -322,7 +400,7 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 		return media.Item{}, false
 	}
 	var a asset
-	if err := s.http.JSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
+	if err := s.getJSON(ctx, "/api/assets/"+url.PathEscape(itemID), nil, &a); err != nil {
 		return media.Item{}, false
 	}
 	if a.IsTrashed || a.IsOffline {
@@ -360,7 +438,7 @@ func (s *Source) People(ctx context.Context) ([]source.PhotoGroup, error) {
 			HasNextPage bool     `json:"hasNextPage"`
 		}
 		q := url.Values{"withHidden": {"false"}, "page": {fmt.Sprint(page)}, "size": {"500"}}
-		if err := s.http.JSON(ctx, "/api/people", q, &r); err != nil {
+		if err := s.getJSON(ctx, "/api/people", q, &r); err != nil {
 			return nil, err
 		}
 		for _, p := range r.People {
@@ -380,12 +458,18 @@ func (s *Source) PersonPhotos(ctx context.Context, id string, limit int) ([]medi
 	return s.photos(ctx, map[string]any{"personIds": []string{id}}, limit)
 }
 
-// NamePerson names somebody - for the whole household, as it is one library.
+// NamePerson names somebody in the asker's own photos (each person's faces
+// are their own, worked out from their own library).
 func (s *Source) NamePerson(ctx context.Context, id, name string) error {
+	h, _, err := s.as(ctx)
+	if err != nil {
+		return err
+	}
 	resp, err := s.http.Do(ctx, httpx.Request{
-		Method: http.MethodPut,
-		Path:   "/api/people/" + url.PathEscape(id),
-		Body:   map[string]any{"name": name},
+		Method:  http.MethodPut,
+		Path:    "/api/people/" + url.PathEscape(id),
+		Body:    map[string]any{"name": name},
+		Headers: h,
 	})
 	if err != nil {
 		return fmt.Errorf("immich %q: %w", s.id, err)
@@ -405,7 +489,7 @@ func (s *Source) Places(ctx context.Context) ([]source.PhotoGroup, error) {
 			Country string `json:"country"`
 		} `json:"exifInfo"`
 	}
-	if err := s.http.JSON(ctx, "/api/search/cities", nil, &cities); err != nil {
+	if err := s.getJSON(ctx, "/api/search/cities", nil, &cities); err != nil {
 		return nil, err
 	}
 	out := make([]source.PhotoGroup, 0, len(cities))
@@ -492,7 +576,11 @@ func (s *Source) OnThisDay(ctx context.Context, day time.Time, perYear int) ([]s
 // photos is a metadata search within this library, newest first, without
 // what has gone offline or to the bin.
 func (s *Source) photos(ctx context.Context, filter map[string]any, limit int) ([]media.Item, error) {
-	body := map[string]any{"libraryId": s.cfg.LibraryID, "order": "desc", "isOffline": false, "withExif": true}
+	_, lib, err := s.as(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"libraryId": lib, "order": "desc", "isOffline": false, "withExif": true}
 	for k, v := range filter {
 		body[k] = v
 	}

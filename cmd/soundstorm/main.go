@@ -258,6 +258,15 @@ func run(log *slog.Logger) error {
 
 	registry := source.NewRegistry()
 	setup := provision.New(store, registry, log, targets)
+	// Each member's photos are their own folder, which their photo account
+	// reads (provision.PhotoAccountFor).
+	setup.PhotoFolder = func(userID string) (string, error) {
+		u, ok := store.User(userID)
+		if !ok {
+			return "", fmt.Errorf("no such account")
+		}
+		return lib.EnsurePersonalFolder(u.Name)
+	}
 
 	// Shut down cleanly on Ctrl-C or SIGTERM from the container runtime.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

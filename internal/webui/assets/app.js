@@ -368,6 +368,7 @@ function renderAccount() {
   // Hiding the controls is presentation, not permission - the server refuses
   // these calls for a member whether or not the form is on screen.
   show($('people-block'), Boolean(me.owner));
+  refreshMyPhotos();
   if (me.owner) {
     loadPeople();
     refreshRemote();
@@ -579,6 +580,7 @@ $('password-form').addEventListener('submit', async (event) => {
 });
 
 async function loadPeople() {
+  if (state.photoLimitDefault === undefined) await loadPhotoLimitDefault();
   const { ok, body } = await api('/api/users');
   if (!ok || !body) return;
 
@@ -612,6 +614,7 @@ async function loadPeople() {
       li.append(libraryPicker(person));
     }
     li.append(spacer);
+    if (!person.owner) li.append(personPhotos(person));
 
     // The owner is not removable and neither are you: the server refuses both,
     // and offering a button that always fails is worse than offering none.
@@ -625,6 +628,106 @@ async function loadPeople() {
     }
     list.append(li);
   }
+}
+
+// The photo space choices, in GB; -1 is no limit.
+const PHOTO_LIMITS = [10, 25, 50, 100, 250, 500, 1000, 2000];
+function limitLabel(gb) {
+  if (gb < 0) return 'No limit';
+  return gb >= 1000 ? `${gb / 1000} TB` : `${gb} GB`;
+}
+function limitOptions(select, current, defaultGB) {
+  const opts = [];
+  if (defaultGB !== undefined) opts.push(['default', `Default (${limitLabel(defaultGB)})`]);
+  for (const gb of PHOTO_LIMITS) opts.push([String(gb), limitLabel(gb)]);
+  opts.push(['-1', 'No limit']);
+  select.replaceChildren(...opts.map(([v, label]) => {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = label;
+    return o;
+  }));
+  select.value = current;
+  if (select.value !== current) {
+    // A limit set some other way (the API): shown as it is.
+    const o = document.createElement('option');
+    o.value = current;
+    o.textContent = limitLabel(Number(current));
+    select.append(o);
+    select.value = current;
+  }
+}
+
+// personPhotos is one member's photo space: how much they use, and their
+// limit, which the owner can change here.
+function personPhotos(person) {
+  const row = document.createElement('div');
+  row.className = 'person-photos';
+  const used = document.createElement('span');
+  const limit = person.photoLimitBytes;
+  used.textContent = `Photos: ${formatBytes(person.photoUsedBytes || 0)}`
+    + (limit ? ` of ${limitLabel(Math.round(limit / 2 ** 30))}` : '');
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', `Photo space for ${person.name}`);
+  const current = person.photoLimitDefault ? 'default' : String(limit ? Math.round(limit / 2 ** 30) : -1);
+  limitOptions(select, current, state.photoLimitDefault);
+  select.addEventListener('change', async () => {
+    const gb = select.value === 'default' ? null : Number(select.value);
+    const { ok, body } = await api(`/api/users/${encodeURIComponent(person.id)}/photo-limit`,
+      { method: 'PUT', body: JSON.stringify({ gb }) });
+    note($('people-note'), ok ? `${person.name}'s photo space saved.` : ((body && body.error) || 'Could not save it.'), !ok);
+    if (ok) loadPeople();
+  });
+  row.append(used, select);
+  return row;
+}
+
+// The household default, at the top of People.
+async function loadPhotoLimitDefault() {
+  const { ok, body } = await api('/api/photos/limit-default');
+  if (!ok || !body) return;
+  state.photoLimitDefault = body.gb;
+  const select = $('photo-limit-default');
+  limitOptions(select, String(body.gb));
+  select.onchange = async () => {
+    const gb = Number(select.value);
+    const { ok: saved } = await api('/api/photos/limit-default', { method: 'PUT', body: JSON.stringify({ gb }) });
+    note($('people-note'), saved ? 'Saved. People on the default have the new space.' : 'Could not save it.', !saved);
+    if (saved) {
+      state.photoLimitDefault = gb;
+      loadPeople();
+    }
+  };
+}
+
+// "Your photos": where this person's photos go and how much of their space
+// they use. Only for an account with the picture shelf.
+async function refreshMyPhotos() {
+  const me = state.me;
+  const allowed = (me && me.libraries) || [];
+  if (!me || !allowed.includes('picture')) {
+    show($('my-photos-block'), false);
+    return;
+  }
+  const { ok, body } = await api('/api/photos/usage');
+  if (!ok || !body) return;
+  const usedText = body.usedBytes !== null && body.usedBytes !== undefined ? formatBytes(body.usedBytes) : null;
+  if (body.limitBytes) {
+    const k = Math.min(1, (body.usedBytes || 0) / body.limitBytes);
+    $('my-photos-usage').textContent = `${usedText} of ${limitLabel(Math.round(body.limitBytes / 2 ** 30))} used.`
+      + (k >= 0.9 ? ' Nearly full: ask the owner for more space, or remove some.' : '');
+    $('my-photos-bar').style.width = `${Math.round(k * 100)}%`;
+    $('my-photos-bar').classList.toggle('full', k >= 0.9);
+  } else {
+    $('my-photos-usage').textContent = me.owner ? 'Your photos have no limit.' : `${usedText || 'Nothing'} used, no limit.`;
+    $('my-photos-bar').style.width = '0';
+  }
+  show($('my-photos-bar').parentElement, Boolean(body.limitBytes));
+  // Said plainly: a member's photos are on somebody else's server.
+  $('my-photos-where').textContent = me.owner
+    ? `Photos you back up from a phone go to ${body.folder}. You see everyone's photos; each person sees only their own.`
+    : `Photos you add or back up from your phone are kept in ${body.folder} on this server. The owner of the server can see them; nobody else can.`;
+  show($('my-photos-block'), true);
 }
 
 // libraryPicker is the five shelves, ticked for the ones this person can see.
@@ -696,7 +799,8 @@ async function removePerson(person) {
   // were given on the audiobook server, so it is worth one question.
   if (!window.confirm(
     `Remove ${person.name}? Their logins stop working immediately and their `
-    + 'reading and listening positions are deleted. Your media is untouched.')) {
+    + 'reading and listening positions are deleted. Their photos stay in '
+    + `${person.photoFolder || 'their folder'}, for you to keep or delete. Your media is untouched.`)) {
     return;
   }
   const { ok, body } = await api(`/api/users/${encodeURIComponent(person.id)}`,

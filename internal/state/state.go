@@ -83,6 +83,11 @@ type User struct {
 	// must not make is failing open.
 	Libraries []string `json:"libraries"`
 
+	// PhotoLimitGB is how much this person's own photos (their folder, which
+	// their phone backs up to) may take: nil means the household default, -1
+	// no limit. The owner's photos are never limited.
+	PhotoLimitGB *int `json:"photoLimitGB,omitempty"`
+
 	Salt       []byte    `json:"salt"`
 	Hash       []byte    `json:"hash"`
 	Iterations int       `json:"iterations"`
@@ -131,6 +136,9 @@ type Identity struct {
 	Password string `json:"password,omitempty"`
 	Token    string `json:"token,omitempty"`
 	RemoteID string `json:"remoteId,omitempty"`
+	// LibraryID is the person's own library on a backend that has one per
+	// person: Immich, where each member sees only their own photos.
+	LibraryID string `json:"libraryId,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -197,6 +205,9 @@ type data struct {
 	// lyrics on LRCLIB. Off unless turned on: it sends a song's artist and
 	// title to an outside service, which nothing else here does.
 	OnlineLyrics bool `json:"onlineLyrics,omitempty"`
+	// PhotoLimitDefaultGB is the household's default limit on each person's
+	// own photos: nil means DefaultPhotoLimitGB, -1 no limit.
+	PhotoLimitDefaultGB *int `json:"photoLimitDefaultGB,omitempty"`
 	// OnlineDiscovery is whether the owner lets SoundStorm ask MusicBrainz,
 	// ListenBrainz and Wikipedia about artists: similar artists and bios. Off
 	// unless turned on, for the same reason as OnlineLyrics.
@@ -690,6 +701,61 @@ func (s *Store) SetLibraries(id string, libraries []string) error {
 		return fmt.Errorf("no such account")
 	}
 	u.Libraries = libraries
+	s.d.Users[id] = u
+	return s.save()
+}
+
+// DefaultPhotoLimitGB is how much each person's photos may take unless the
+// owner says otherwise: about 25,000 photos, or several hours of phone video.
+const DefaultPhotoLimitGB = 100
+
+// PhotoLimitDefaultGB is the household default for each person's photos, in
+// GB; -1 means no limit.
+func (s *Store) PhotoLimitDefaultGB() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.PhotoLimitDefaultGB == nil {
+		return DefaultPhotoLimitGB
+	}
+	return *s.d.PhotoLimitDefaultGB
+}
+
+// SetPhotoLimitDefaultGB changes the household default (nil: back to
+// DefaultPhotoLimitGB; -1: no limit).
+func (s *Store) SetPhotoLimitDefaultGB(gb *int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.d.PhotoLimitDefaultGB = gb
+	return s.save()
+}
+
+// PhotoLimitGB is how much an account's own photos may take, in GB, with the
+// default applied; -1 means no limit, as it always is for the owner.
+func (s *Store) PhotoLimitGB(id string) int {
+	s.mu.Lock()
+	u, ok := s.d.Users[id]
+	def := s.d.PhotoLimitDefaultGB
+	s.mu.Unlock()
+	switch {
+	case !ok || u.IsOwner():
+		return -1
+	case u.PhotoLimitGB != nil:
+		return *u.PhotoLimitGB
+	case def != nil:
+		return *def
+	}
+	return DefaultPhotoLimitGB
+}
+
+// SetPhotoLimitGB sets one account's limit (nil: the default; -1: no limit).
+func (s *Store) SetPhotoLimitGB(id string, gb *int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[id]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	u.PhotoLimitGB = gb
 	s.d.Users[id] = u
 	return s.save()
 }

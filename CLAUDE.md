@@ -4338,6 +4338,56 @@ earlier year, 25 years back, in parallel, cached an hour; 29 February only
 asks leap years. Albums are left out for now: the library had none, and
 checking them would have meant creating one on it.
 
+## Everyone's own photos
+
+Asked for alongside phone backup, and designed by the owner: **each member
+has their own photo folder, sees only their own photos, and the owner sees
+everybody's**. There is no setting to show anyone the owner's photos; what the
+owner controls is whether a member has Pictures at all (their library ticks,
+as for any shelf) and how much space their photos may take.
+
+- **The folder** is `pictures/Personal/<name>/` (`library.PersonalFolder`, the
+  account name made safe as a folder). Everything a member adds to the picture
+  shelf goes there (`personalUpload`, `personalPlan` - the drop panel shows the
+  real destination), and so does any phone's backup, the owner's included.
+- **Their own Immich account** (`provision.PhotoAccountFor`, made the first
+  time they look, like the per-member Audiobookshelf account): an account per
+  member whose one library reads only their folder. Filtering one shared
+  account was rejected because faces would leak - Immich groups faces across
+  every photo it can see - and with an account each, People, Places, search
+  and On this day are worked out from their photos alone. The owner keeps the
+  administrator's account, whose library is the whole pictures folder,
+  members' folders included. Checked against Immich 3.2.2 before building:
+  overlapping libraries are allowed, a member sees only theirs and is refused
+  another's photo by id (400). The cost: a member's photos are processed twice
+  (thumbnails, faces), once per library; the files are not copied. Removing a
+  member deletes their Immich account (`deleteImmichMember`, force) and
+  **keeps their folder**, for the owner to decide about.
+- **The adapter acts as the person asking** (`immich.Config.ActAs`, `as`): every
+  request carries that person's own key and library, the stream and art
+  targets too. An error, never a fallback to the administrator's key, when a
+  member's account cannot be made. Rescans scan every library. On this day's
+  cache is per person.
+- **Space**: 100 GB each by default (`state.DefaultPhotoLimitGB`), the owner
+  changing the household default (`/api/photos/limit-default`) or one person's
+  (`/api/users/{id}/photo-limit`, null for the default, -1 for none) in People;
+  the owner's own photos have no limit. Measured by walking the folder, kept a
+  minute and added to as files land. At the limit an upload or backup is a 507
+  saying so; nothing is deleted. A member's Settings has **Your photos**: how
+  much is used, and plainly that the owner of the server can see them.
+- **Phone backup's server half**: `POST /api/photos/backup/check` (which of
+  these do you have - name, when taken, size - so a reinstall sends nothing
+  twice) and `PUT /api/photos/backup?name=&taken=` (one file as the body, to
+  `Personal/<name>/<year>/<month>/`, a different file of the same name that
+  month kept beside it).
+
+Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
+provisioned, sharing one pictures folder: a member saw nothing, backed up a
+photo (to `Personal/alice/2025/07/`), a second send was skipped, a dragged-in
+photo went to her folder, she saw her two and the owner all four, she was
+refused the owner's photo, the owner set her limit and she could not, and
+removing her kept her folder.
+
 ## The reader
 
 Rendering is foliate-js (MIT), vendored under `internal/webui/assets/vendor/`.

@@ -95,6 +95,7 @@ type Server struct {
 	sounds           soundCache
 	libMixes         libraryMixes
 	onThisDay        onThisDayCache
+	photoUsage       photoUsage
 	reg              *source.Registry
 	store            *state.Store
 	library          *library.Library
@@ -361,6 +362,10 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("PUT /api/photos/people", s.handleNamePerson)
 	guarded.HandleFunc("GET /api/photos/places", s.handlePlaces)
 	guarded.HandleFunc("GET /api/photos/on-this-day", s.handleOnThisDay)
+	// Everyone's own photos: their space, and their phone's backup.
+	guarded.HandleFunc("GET /api/photos/usage", s.handlePhotoUsage)
+	guarded.HandleFunc("POST /api/photos/backup/check", s.handleBackupCheck)
+	guarded.HandleFunc("PUT /api/photos/backup", s.handleBackup)
 	guarded.HandleFunc("GET /api/prefs", s.handleGetPrefs)
 	guarded.HandleFunc("PATCH /api/prefs", s.handlePatchPrefs)
 	guarded.HandleFunc("POST /api/readalong", s.handleStartReadAlong)
@@ -400,6 +405,9 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
 	owner.HandleFunc("POST /api/users/{id}/password", s.handleSetUserPassword)
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
+	owner.HandleFunc("PUT /api/users/{id}/photo-limit", s.handleSetPhotoLimit)
+	owner.HandleFunc("GET /api/photos/limit-default", s.handlePhotoLimitDefault)
+	owner.HandleFunc("PUT /api/photos/limit-default", s.handlePhotoLimitDefault)
 	owner.HandleFunc("PUT /api/remote", s.handleSetRemote)
 	owner.HandleFunc("PUT /api/settings/lyrics", s.handleSetOnlineLyrics)
 	owner.HandleFunc("PUT /api/settings/discovery", s.handleSetOnlineDiscovery)
@@ -421,6 +429,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/by-hand", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/photos/limit-default", s.auth.RequireOwner(owner))
 	// Deleting is the owner's alone: every other account shares these shelves
 	// with the rest of the house. See delete.go.
 	guarded.Handle("/api/delete", s.auth.RequireOwner(owner))
@@ -779,7 +788,9 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(users))
 	for _, u := range users {
-		out = append(out, publicUser(u))
+		m := publicUser(u)
+		s.photoFieldsFor(u, m)
+		out = append(out, m)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": out})
 }
@@ -1239,6 +1250,10 @@ func (s *Server) handleUploadPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	placements, questions := s.library.Plan(body.Paths, choices)
+	// A member's pictures go to their own folder: show them where.
+	if u, ok := auth.FromContext(r.Context()); ok {
+		s.personalPlan(u, placements)
+	}
 
 	// A shelf somebody may not see is not a shelf they may add to, and the
 	// automatic sorter has to be told so too - otherwise dropping a film on
@@ -1338,6 +1353,16 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := auth.FromContext(r.Context())
+	// A member's pictures go to their own folder, within their limit.
+	path, err = s.personalUpload(user, kind, path, r.ContentLength)
+	if err != nil {
+		if errors.Is(err, errPhotoLimit) {
+			writeError(w, http.StatusInsufficientStorage, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, desensitizeFSError(err))
+		return
+	}
 	release, ok := s.takeUploadSlot(user.ID)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many uploads at once; wait for one to finish")
@@ -1373,6 +1398,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
+	if kind == media.KindPicture && !user.IsOwner() {
+		s.addPhotoBytes(user, r.ContentLength)
+	}
 
 	// Ask whoever indexes that shelf to look, rather than leaving the file
 	// sitting there unsearchable until their next sweep.

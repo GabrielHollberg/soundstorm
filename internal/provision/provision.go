@@ -18,6 +18,7 @@
 package provision
 
 import (
+	"path"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -115,6 +116,16 @@ type Manager struct {
 	mu       sync.RWMutex
 	statuses map[string]*BackendStatus
 	order    []string
+
+	// PhotoFolder makes a person's own photo folder, if it is not there yet,
+	// and answers where it is inside the pictures folder ("Personal/alice").
+	// Set by main, which knows where the library is. Their Immich library
+	// reads only that folder.
+	PhotoFolder func(userID string) (string, error)
+
+	// photoMu keeps two requests at once from making a person two Immich
+	// accounts.
+	photoMu sync.Mutex
 }
 
 // New builds a Manager for the given targets.
@@ -485,6 +496,11 @@ func (m *Manager) buildSources(t Target, creds state.Backend) ([]source.Source, 
 			LibraryID: creds.LibraryID,
 			Timeout:   15 * time.Second,
 			MediaRoot: t.MediaPath,
+			// Each member's photos are their own: their own account and
+			// library, made the first time they look.
+			ActAs: func(ctx context.Context, userID string) (string, string, error) {
+				return m.PhotoAccountFor(ctx, t.ID, userID)
+			},
 		})
 		return one(s, err)
 
@@ -610,6 +626,64 @@ func (m *Manager) TokenFor(ctx context.Context, backendID, userID string) (strin
 	return identity.Token, nil
 }
 
+// PhotoAccountFor is the Immich API key and library a person's photo requests
+// use, making both the first time a member asks.
+//
+// Every member has their own Immich account, whose one library reads only
+// their own folder, so their photos - and the faces, places and searches
+// Immich works out from them - are theirs alone: filtering one shared account
+// instead would leak through the faces, which Immich groups across every
+// photo it can see. The owner uses the administrator's account, whose library
+// is the whole pictures folder, members' folders included: the owner sees
+// everyone's.
+func (m *Manager) PhotoAccountFor(ctx context.Context, backendID, userID string) (key, libraryID string, err error) {
+	creds, ok := m.store.Backend(backendID)
+	if !ok {
+		return "", "", fmt.Errorf("%s is not provisioned yet", backendID)
+	}
+	user, ok := m.store.User(userID)
+	if !ok {
+		return "", "", fmt.Errorf("no such account")
+	}
+	if user.IsOwner() {
+		return creds.Token, creds.LibraryID, nil
+	}
+	m.photoMu.Lock()
+	defer m.photoMu.Unlock()
+	if id, ok := m.store.Identity(userID, backendID); ok && id.Token != "" && id.LibraryID != "" {
+		return id.Token, id.LibraryID, nil
+	}
+	if m.PhotoFolder == nil {
+		return "", "", fmt.Errorf("no folder for personal photos")
+	}
+	folder, err := m.PhotoFolder(userID)
+	if err != nil {
+		return "", "", err
+	}
+	var mediaPath string
+	for _, t := range m.targets {
+		if t.ID == backendID {
+			mediaPath = t.MediaPath
+		}
+	}
+	if mediaPath == "" {
+		return "", "", fmt.Errorf("%s has no pictures folder", backendID)
+	}
+	c, err := httpx.New(creds.BaseURL, backendTimeout)
+	if err != nil {
+		return "", "", err
+	}
+	identity, err := createImmichMember(ctx, c, creds.Token, backendUsername(userID), user.Name, path.Join(mediaPath, folder))
+	if err != nil {
+		return "", "", err
+	}
+	if err := m.store.SetIdentity(userID, backendID, identity); err != nil {
+		return "", "", err
+	}
+	m.log.Info("created a photo account", "backend", backendID, "for", user.Name, "folder", folder)
+	return identity.Token, identity.LibraryID, nil
+}
+
 // ForgetUser removes the accounts SoundStorm made for somebody on the backends.
 //
 // Best effort, and deliberately so: a backend that is down must not stop
@@ -631,7 +705,12 @@ func (m *Manager) ForgetUser(ctx context.Context, userID string) {
 		if err != nil {
 			continue
 		}
-		if err := deleteAudiobookshelfUser(ctx, c, creds.Token, identity.RemoteID); err != nil {
+		remove := deleteAudiobookshelfUser
+		if creds.Type == "immich" {
+			// Their photos stay: Immich only ever reads the folder.
+			remove = deleteImmichMember
+		}
+		if err := remove(ctx, c, creds.Token, identity.RemoteID); err != nil {
 			m.log.Warn("could not remove a backend account",
 				"backend", t.ID, "username", identity.Username, "err", err)
 			continue

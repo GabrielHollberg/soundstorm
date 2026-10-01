@@ -162,7 +162,8 @@ func (s *Server) handleOnThisDay(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"days": []source.PhotoDay{}})
 		return
 	}
-	key := src + "|" + day.Format("2006-01-02")
+	// Per person: a member's photos are their own.
+	key := src + "|" + source.UserID(ctx) + "|" + day.Format("2006-01-02")
 	c := &s.onThisDay
 	c.mu.Lock()
 	if c.key == key && time.Since(c.at) < time.Hour {
