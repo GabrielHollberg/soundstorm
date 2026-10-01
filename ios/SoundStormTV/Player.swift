@@ -125,6 +125,10 @@ final class Player {
         index = 0
         self.speed = speed
         player.defaultRate = Float(speed)
+        // Books are mastered loud and films keep dialogue quiet: at one volume
+        // a book was far louder, so it plays 8dB down, as on the page
+        // (bookGainDb).
+        player.volume = Float(pow(10, -8.0 / 20))
         if let tracks = playback.tracks, tracks.count > 1 {
             files = tracks.compactMap { t in (try? api.absolute(t.url)).map { BookFile(url: $0, start: t.startSeconds) } }
         } else {
@@ -192,6 +196,7 @@ final class Player {
         files = []
         chapters = []
         player.defaultRate = 1
+        player.volume = 1
         updateRemoteCommands()
     }
 
@@ -223,18 +228,26 @@ final class Player {
         publish()
     }
 
-    /// The next song; in a book, thirty seconds on (the TV rule).
+    /// The next song; in a book, the next chapter (the page's TV rule, as a
+    /// swipe does), or thirty seconds on in a book without chapters.
     func next() {
-        if isBook { return skip(by: 30) }
+        if isBook {
+            if let c = chapter, chapters.indices.contains(c.index + 1) { return jump(toChapter: c.index + 1) }
+            return skip(by: 30)
+        }
         guard index + 1 < queue.count else { return }
         load(at: index + 1)
     }
 
     /// Back to the start of the song, or the one before within its first
     /// three seconds - the rule every player has, the web page's included.
-    /// In a book, thirty seconds back.
+    /// In a book, back to this chapter's start, or the one before within its
+    /// first three seconds; thirty seconds back without chapters.
     func previous() {
-        if isBook { return skip(by: -30) }
+        if isBook {
+            guard let c = chapter else { return skip(by: -30) }
+            return time - c.start > 3 || c.index == 0 ? seek(to: c.start) : jump(toChapter: c.index - 1)
+        }
         if time > 3 || index == 0 {
             seek(to: 0)
         } else {

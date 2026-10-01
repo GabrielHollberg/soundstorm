@@ -4913,6 +4913,13 @@ things bit:
   (its page gone) failed the `/api/readalong` fetch, and the fallback opened
   the shelf's copy over the synced one. Cancelled, it now does nothing.
 
+**Audiobooks follow the page's later TV rules (2026-09-30):** left and right
+go by chapters - the next, or back to this one's start (the one before within
+its first three seconds) - and a book without chapters keeps its thirty
+seconds; and a book plays 8dB down (`player.volume`, the page's `bookGainDb`
+default; the page lets a device change it, the TV does not yet). Not checked:
+both need a remote or an ear.
+
 **Looks and visualizers, stage one (2026-09-30).** Now Playing's look is the
 account's own (`coverStyle` in `/api/prefs`, the page's setting), chosen from
 the hold menu's Look: Lyrics, Cover, Spinning disc and Record, and so far the
