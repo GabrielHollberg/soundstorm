@@ -191,7 +191,18 @@ extension WebViewController: WKNavigationDelegate {
             return .allow
         }
         if mainFrame && !isServer(url) && ["http", "https"].contains(url.scheme ?? "") {
-            await UIApplication.shared.open(url)
+            // Safari only for a link somebody followed: a page sending itself
+            // elsewhere by script would otherwise throw the person out of the
+            // app, as often as it liked (the security review; Android the same).
+            if action.navigationType == .linkActivated {
+                await UIApplication.shared.open(url)
+            }
+            return .cancel
+        }
+        if mainFrame && ["blob", "data"].contains(url.scheme ?? "") && !action.shouldPerformDownload {
+            // A page made of a blob or data address would sit in the app's
+            // window, looking like SoundStorm, with no address to show it is
+            // not. Frames may (a book's pages are blobs); the app never is.
             return .cancel
         }
         if !["http", "https", "blob", "data", "about"].contains(url.scheme ?? "") {

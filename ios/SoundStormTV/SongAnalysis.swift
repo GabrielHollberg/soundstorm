@@ -90,6 +90,12 @@ struct Heard: Sendable {
                 _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: raw.baseAddress!)
             }
             out += chunk
+            // About 35 minutes is the most that is heard (the server's limit
+            // too): every sample is held in memory, and a file can be hours.
+            if out.count > 35 * 60 * 11025 {
+                reader.cancelReading()
+                return nil
+            }
         }
         return reader.status == .completed ? out : nil
     }

@@ -253,9 +253,9 @@ final class BookReader {
         if c != chapter {
             await show(chapter: c) { text in fragment.flatMap { text.anchors[$0] } ?? 0 }
         }
-        guard let text, let fragment, let start = text.anchors[fragment] else { return }
+        guard let text, let fragment, let start = text.anchors[fragment], start <= text.text.length else { return }
         // The sentence runs to where the next anchored element begins.
-        var end = text.anchors.values.filter { $0 > start }.min() ?? text.text.length
+        var end = min(text.anchors.values.filter { $0 > start }.min() ?? text.text.length, text.text.length)
         // Not the paragraph break after it, which would light the rest of its line.
         let chars = text.text.string as NSString
         while end > start, [10, 32].contains(chars.character(at: end - 1)) { end -= 1 }

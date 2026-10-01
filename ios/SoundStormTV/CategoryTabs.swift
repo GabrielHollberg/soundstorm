@@ -500,10 +500,17 @@ struct PairsPage: View {
 
     /// Whether the page will follow: synced, syncing, or not yet (set going
     /// from the page's Read Along, where the sync is started).
+    /// The server's 0...1 as a whole percent, kept finite and in range before
+    /// it becomes an Int (Int() of anything huge traps).
+    private func percent(_ p: Double?) -> Int {
+        guard let p, p.isFinite else { return 0 }
+        return Int((max(0, min(1, p)) * 100).rounded())
+    }
+
     private func syncLine(_ pair: API.Pair) -> String {
         switch pair.sync?.state {
         case "ready": "Follows the audiobook"
-        case "queued", "working": "Syncing \(Int(((pair.sync?.progress ?? 0) * 100).rounded()))%"
+        case "queued", "working": "Syncing \(percent(pair.sync?.progress))%"
         case "failed": "Sync failed"
         default: "Not synced"
         }

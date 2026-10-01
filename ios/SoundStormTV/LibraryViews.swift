@@ -297,13 +297,11 @@ struct Cover: View {
     let url: URL?
 
     var body: some View {
-        AsyncImage(url: url) { phase in
-            if let image = phase.image {
-                image.resizable().scaledToFill()
-            } else {
-                Rectangle().fill(.white.opacity(0.06))
-                    .overlay(Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary))
-            }
+        SafeImage(url: url) { image in
+            image.resizable().scaledToFill()
+        } placeholder: {
+            Rectangle().fill(.white.opacity(0.06))
+                .overlay(Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary))
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
@@ -353,7 +351,7 @@ struct Collage: View {
     }
 
     private func cell(_ url: URL) -> some View {
-        AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.06) }
+        SafeImage(url: url, maxPixels: 300) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.06) }
             .frame(width: 150, height: 150).clipped()
     }
 }

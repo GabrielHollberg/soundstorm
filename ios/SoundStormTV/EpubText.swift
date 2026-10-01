@@ -38,23 +38,30 @@ struct EpubText {
 
     /// Where a CFI's path (after "!") is in the text: the run it names, else
     /// the first run inside the element it names, else the start.
-    func offset(forCFIPath steps: [Int], charOffset: Int?) -> Int {
-        guard !steps.isEmpty else { return 0 }
-        let last = steps[steps.count - 1]
-        if last % 2 == 1 {
-            let path = Array(steps.dropLast())
-            let matching = runs.filter { $0.path == path && $0.chunk == last }
-            if let off = charOffset,
-               let run = matching.last(where: { $0.domStart <= off }) {
-                let into = min(off - run.domStart, run.domLength)
-                return run.start + (run.domLength > 0 ? into * run.length / run.domLength : 0)
+    ///
+    /// The steps are the server's to say, so a loop, not recursion, and no
+    /// more than a real chapter could nest.
+    func offset(forCFIPath given: [Int], charOffset: Int?) -> Int {
+        guard given.count <= 512 else { return 0 }
+        var steps = given, charOffset = charOffset
+        while let last = steps.last {
+            if last % 2 == 1 {
+                let path = Array(steps.dropLast())
+                let matching = runs.filter { $0.path == path && $0.chunk == last }
+                if let off = charOffset,
+                   let run = matching.last(where: { $0.domStart <= off }) {
+                    let into = max(0, min(off - run.domStart, run.domLength))
+                    return run.start + (run.domLength > 0 ? into * run.length / run.domLength : 0)
+                }
+                if let run = matching.first { return run.start }
+            } else if let run = runs.first(where: { $0.path.starts(with: steps) }) {
+                // An element: its first text, or its parent's.
+                return run.start
             }
-            if let run = matching.first { return run.start }
-            return offset(forCFIPath: path, charOffset: nil)
+            steps.removeLast()
+            charOffset = nil
         }
-        // An element: its first text, or its parent's.
-        if let run = runs.first(where: { $0.path.starts(with: steps) }) { return run.start }
-        return offset(forCFIPath: Array(steps.dropLast()), charOffset: nil)
+        return 0
     }
 
     // MARK: Reading the XHTML
@@ -203,6 +210,8 @@ struct EpubText {
             while out.string.hasSuffix("\n") || out.string.hasSuffix(" ") {
                 out.deleteCharacters(in: NSRange(location: out.length - 1, length: 1))
             }
+            // An anchor placed in what was just trimmed would point past the end.
+            anchors = anchors.mapValues { min($0, out.length) }
         }
 
         private func attrs() -> [NSAttributedString.Key: Any] {

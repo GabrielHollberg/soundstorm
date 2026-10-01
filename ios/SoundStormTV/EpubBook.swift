@@ -161,11 +161,19 @@ final class XML {
         func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
             let done = stack.removeLast()
             // An element's text includes its children's, as textContent does.
-            stack.last?.text += done.text
+            if let parent = stack.last { keep(done.text, in: parent) }
         }
 
         func parser(_ parser: XMLParser, foundCharacters string: String) {
-            stack.last?.text += string
+            if let node = stack.last { keep(string, in: node) }
+        }
+
+        /// Text is a title or a contents label, never pages of it: each
+        /// element keeps at most 64KB, or a deep contents of 30MB was copied
+        /// into every ancestor, hundreds of times over.
+        private func keep(_ more: String, in node: XML) {
+            guard node.text.utf8.count < 64 << 10 else { return }
+            node.text += more
         }
     }
 }

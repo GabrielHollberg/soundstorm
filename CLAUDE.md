@@ -4035,6 +4035,17 @@ generated backend database passwords; firewall scope.
   Safari without a tap, and main-frame `data:`/`blob:` are allowed; match
   Android (a tap; data/blob only in subframes).
 
+*(All seven done on the Mac, 2026-10-01.)* The contents' text is kept to
+64KB an element; anchors are clamped to the trimmed text and the lit range to
+its length; the sync percent is clamped before it is an Int; the CFI walk is
+a loop over at most 512 steps; downloads go through `CappedDownload`, which
+cancels as soon as the bytes written (or promised) pass the limit - checked
+against a local server, a 50MB file refused in 0.07s and a small one whole -
+and a song's samples stop at 35 minutes; grid covers are `SafeImage`, fetched
+capped and decoded at 300-600px; the iPhone opens Safari only for a tapped
+link and refuses a main-frame blob or data page (downloads aside). Both apps
+build; the iPhone UI tests pass; not run on the TV itself.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.
