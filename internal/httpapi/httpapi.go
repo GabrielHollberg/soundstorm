@@ -1417,7 +1417,6 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
 
-
 	// Ask whoever indexes that shelf to look, rather than leaving the file
 	// sitting there unsearchable until their next sweep.
 	s.scheduleRescan(kind)
