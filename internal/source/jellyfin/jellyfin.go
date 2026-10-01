@@ -580,6 +580,16 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 	if picked {
 		query.Set("AudioStreamIndex", strconv.Itoa(chosen))
 	}
+	// Jellyfin names a conversion's files after the file, the device and the
+	// play session only - not the quality or the audio track - and this
+	// gateway is always one device, so without a session every play of a
+	// film shared one conversion: a film first played at 20 Mbit went on
+	// being served from those pieces after the quality changed (seen on the
+	// owner's projector), and another language could get the old track's.
+	// The session PlaybackInfo hands out is new each time.
+	if info.PlaySessionID != "" {
+		query.Set("playSessionId", info.PlaySessionID)
+	}
 	return source.Playback{
 		Mode:        source.PlaybackModeHLS,
 		Path:        itemID + "/master.m3u8",

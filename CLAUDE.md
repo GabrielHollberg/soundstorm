@@ -173,6 +173,12 @@ far less work than re-encoding; sound a browser cannot play (TrueHD, DTS) is
 still converted, to AAC with up to 5.1 channels. Downloads take standard: an
 original Blu-ray picture would be tens of gigabytes on a device. Blu-ray
 subtitles are pictures (PGS) and are not offered.
+**Each play is its own conversion** (`playSessionId` from PlaybackInfo in the
+HLS query). Jellyfin names a conversion's files after the file, the device and
+the play session - not the quality or audio track - and SoundStorm is always
+one device, so every play of a film shared one conversion: the first check of
+film quality found the projector served the old 20 Mbit pieces, no new ffmpeg
+run at all, and another language could have got the old track's pieces.
 
 A file with more than one audio language gets an Audio picker beside
 Subtitles. Choosing one asks `/api/playback?audio=<stream index>`: a browser
