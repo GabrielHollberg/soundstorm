@@ -731,8 +731,8 @@ async function refreshMyPhotos() {
   // Dropping sorts by date; folders of one's own are kept only by putting
   // them in the folder on the server's drive directly.
   $('my-photos-folders').textContent = me.owner
-    ? `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, copy them straight into ${body.folder} (or anywhere in the pictures folder) on the server's drive: they appear in Photos as they are, and are left alone - a photo that is also dropped here later is sorted by date as well, so it shows twice.`
-    : `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, ask whoever looks after the server to copy them straight into ${body.folder} on its drive: they appear in Photos as they are, and are left alone - a photo that is also dropped here later is sorted by date as well, so it shows twice.`;
+    ? `Photos dropped here or brought in are sorted by when they were taken, and one already here is skipped, so there is no harm in adding the same ones twice. To keep folders of your own, copy them straight into ${body.folder} (or anywhere in the pictures folder) on the server's drive: they appear in Photos as they are, and are left alone - a photo that is also dropped here later is sorted by date as well, so it shows twice.`
+    : `Photos dropped here or brought in are sorted by when they were taken, and one already here is skipped, so there is no harm in adding the same ones twice. To keep folders of your own, ask whoever looks after the server to copy them straight into ${body.folder} on its drive: they appear in Photos as they are, and are left alone - a photo that is also dropped here later is sorted by date as well, so it shows twice.`;
   show($('my-photos-block'), true);
 }
 
@@ -779,8 +779,8 @@ function maybeAskBackup() {
   const st = state.backup;
   if (!BACKUP_APP || !st || st.decided || !hasPictures() || localStorage.getItem('soundstorm.backupAsked')) return;
   $('backup-ask-text').textContent = state.me && state.me.owner
-    ? 'New photos and videos are sent to your server in the background, on Wi-Fi, into your own folder. You can change this in Settings.'
-    : 'New photos and videos are sent to this server in the background, on Wi-Fi, into your own folder. The owner of the server can see them; nobody else can. You can change this in Settings.';
+    ? 'New photos and videos are sent to your server in the background, on Wi-Fi, into your own folder. Photos already on the server are not sent again. You can change this in Settings.'
+    : 'New photos and videos are sent to this server in the background, on Wi-Fi, into your own folder. Photos already on the server are not sent again. The owner of the server can see them; nobody else can. You can change this in Settings.';
   show($('backup-ask'), true);
 }
 function answerBackup(on) {
