@@ -250,7 +250,7 @@ function showGate(hasAccount, setupCodeRequired) {
 
   $('gate-blurb').textContent = hasAccount
     ? 'Sign in to your library.'
-    : 'Create the account for this server. You will not need any API keys.';
+    : 'Create the account for this server: you will be its owner. Choose a password of at least 12 characters - a few unrelated words make a good one.';
   $('gate-submit').textContent = hasAccount ? 'Sign in' : 'Create account';
   $('gate-form').dataset.mode = hasAccount ? 'login' : 'signup';
   // Asked for only when the address did not carry it, which is the unusual
@@ -289,8 +289,93 @@ $('gate-form').addEventListener('submit', async (event) => {
     return;
   }
   $('gate-password').value = '';
+  if (body && body.pending) {
+    waitForApproval(body.pending, Boolean(body.code));
+    return;
+  }
   showApp(body && body.user);
 });
+
+// The right password on a device the account has never signed in on, with
+// approval turned on: this device waits, asking every few seconds, until a
+// device already signed in (or the owner) approves it - or the setup code
+// from the server's .env does.
+let approvalWait = null;
+function waitForApproval(id, codeAllowed) {
+  show($('gate-submit'), false);
+  show($('gate-wait'), true);
+  show($('gate-wait-code'), codeAllowed);
+  const done = (message) => {
+    clearInterval(approvalWait);
+    approvalWait = null;
+    show($('gate-wait'), false);
+    show($('gate-submit'), true);
+    if (message) {
+      $('gate-error').textContent = message;
+      show($('gate-error'), true);
+    }
+  };
+  const settle = (ok, body, status) => {
+    if (ok && body && body.signedIn) {
+      done('');
+      showApp(body.user);
+    } else if (!ok && status !== 0 && body && body.error) {
+      done(body.error);
+    }
+  };
+  const ask = async () => {
+    const r = await api(`/api/login/pending/${encodeURIComponent(id)}`);
+    settle(r.ok, r.body, r.offline ? 0 : 1);
+  };
+  clearInterval(approvalWait);
+  approvalWait = setInterval(ask, 3000);
+  $('gate-wait-cancel').onclick = () => done('');
+  $('gate-wait-code-use').onclick = async () => {
+    const r = await api(`/api/login/pending/${encodeURIComponent(id)}`, {
+      method: 'POST', body: JSON.stringify({ setupCode: $('gate-wait-code-input').value }),
+    });
+    if (!r.ok && r.body && r.body.error && /setup code/.test(r.body.error)) {
+      $('gate-error').textContent = r.body.error;
+      show($('gate-error'), true);
+      return;
+    }
+    settle(r.ok, r.body, 1);
+  };
+}
+
+// On devices already signed in: a new one asking to sign in to this account
+// (or any account, for the owner) is offered for approval.
+let deviceAsking = null;
+async function checkDeviceRequests() {
+  if (!state.me || document.hidden || deviceAsking) return;
+  if (state.approveNewDevices === undefined) {
+    // Known from the session answer; asked once for a member, whose
+    // Settings never reads it.
+    const r = await api('/api/session');
+    state.approveNewDevices = Boolean(r.ok && r.body && r.body.approveNewDevices);
+  }
+  if (!state.approveNewDevices) return;
+  const { ok, body } = await api('/api/devices/pending');
+  const next = ok && body && Array.isArray(body.pending) ? body.pending[0] : null;
+  if (!next) return;
+  deviceAsking = next.id;
+  const whose = next.user === state.me.name ? 'your account' : `${next.user}'s account`;
+  $('device-ask-text').textContent = `${next.device} wants to sign in to ${whose}. `
+    + 'Allow it only if you, or they, are signing in on it right now.';
+  show($('device-ask'), true);
+}
+async function answerDevice(approve) {
+  const id = deviceAsking;
+  show($('device-ask'), false);
+  if (id) await api(`/api/devices/pending/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ approve }) });
+  deviceAsking = null;
+  if (approve) showToast('Allowed. That device is signed in now.');
+  setTimeout(checkDeviceRequests, 500);
+}
+$('device-ask-yes').addEventListener('click', () => answerDevice(true));
+$('device-ask-no').addEventListener('click', () => answerDevice(false));
+setInterval(checkDeviceRequests, 8000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDeviceRequests(); });
 
 $('logout').addEventListener('click', async () => {
   setAccountOpen(false);
@@ -396,6 +481,10 @@ async function refreshLyricsSetting() {
   const has = ok && body && typeof body.onlineLyrics === 'boolean';
   show($('lyrics-block'), has);
   if (has) $('lyrics-toggle').checked = body.onlineLyrics;
+  if (ok && body && typeof body.approveNewDevices === 'boolean') {
+    state.approveNewDevices = body.approveNewDevices;
+    $('new-devices-toggle').checked = body.approveNewDevices;
+  }
   // Read-along's setting rides on the same answer: owner only, and only where
   // read-along is set up.
   const discovery = ok && body && typeof body.onlineDiscovery === 'boolean';
@@ -405,6 +494,20 @@ async function refreshLyricsSetting() {
   show($('readalong-block'), along);
   if (along) $('readalong-toggle').checked = body.autoReadAlong;
 }
+
+$('new-devices-toggle').addEventListener('change', async (event) => {
+  const enabled = event.target.checked;
+  const { ok, body } = await api('/api/settings/new-devices', { method: 'PUT', body: JSON.stringify({ enabled }) });
+  if (!ok) {
+    event.target.checked = !enabled;
+    note($('new-devices-note'), (body && body.error) || 'Could not change it.', true);
+    return;
+  }
+  state.approveNewDevices = enabled;
+  note($('new-devices-note'), enabled
+    ? 'On. A device that has never signed in waits for approval, which shows on devices already signed in.'
+    : 'Off. The right password is enough on any device.', false);
+});
 
 $('readalong-toggle').addEventListener('change', async (event) => {
   const enabled = event.target.checked;
@@ -3437,7 +3540,11 @@ async function moveToSecureName(name) {
     if (body.secureName && await moveToSecureName(body.secureName)) return;
     forgetSetupCodeInAddress();
     state.training = Boolean(body.training);
-    if (body.signedIn) { showApp(body.user); setTimeout(adoptNativePlayback, 0); }
+    if (body.signedIn) {
+      state.approveNewDevices = Boolean(body.approveNewDevices);
+      showApp(body.user);
+      setTimeout(adoptNativePlayback, 0);
+    }
     else {
       // Signed out from elsewhere (a password reset, the account removed):
       // what is downloaded is no longer to be opened offline without a

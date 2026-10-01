@@ -294,6 +294,7 @@ func run(log *slog.Logger) error {
 	// opens the browser with it in the address; without an installer there is
 	// none, so one is made up here and printed where the owner will look.
 	setupCode := strings.TrimSpace(os.Getenv("SOUNDSTORM_SETUP_CODE"))
+	setupFromEnv := setupCode != ""
 	if setupCode == "" {
 		setupCode = newSetupCode()
 	}
@@ -359,11 +360,12 @@ func run(log *slog.Logger) error {
 			tlsServer.Refresh() // act on the change now, not at the next check
 			return nil
 		},
-		SetupCode:   setupCode,
-		Lyrics:      lyricsFinder,
-		Discover:    discoverFinder,
-		Scrobble:    scrobble.New(),
-		Collections: collectionStore,
+		SetupCode:        setupCode,
+		SetupCodeFromEnv: setupFromEnv,
+		Lyrics:           lyricsFinder,
+		Discover:         discoverFinder,
+		Scrobble:         scrobble.New(),
+		Collections:      collectionStore,
 		// What is heard in each song, for the visualizer: a cache beside the
 		// state, never in the music folders.
 		BeatsDir:    filepath.Join(stateDir, "beats"),

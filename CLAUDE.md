@@ -4147,6 +4147,40 @@ positions or photos broken for good. Tested with stand-in backends that fail
 at the step after the account (`resume_test.go`); not tried against a real
 backend failing half way.
 
+**Defence against guessing from many addresses (2026-10-01)**, asked about
+as Tor. The throttle already counts guesses per account whatever the address
+(ten free, then doubling to a minute: about 1,400 a day), so Tor buys a
+guesser only each exit's five free guesses - but 1,400 a day is plenty against
+"password1". Two things, both built:
+
+- **Twelve characters and not a common one** (`auth/weak.go`), when a password
+  is set, never when checked. Refused: a leaked-list word (a built-in list,
+  nothing fetched) once digits and symbols are stripped and look-alikes undone,
+  two such words, the account's own name with a little around it, one
+  character repeated, a keyboard row or counting run, all digits and symbols.
+  Existing passwords are untouched until changed.
+- **New devices need approval** (`httpapi/devices.go`; owner switch in People,
+  `state.ApproveNewDevices`, off by default). The right password on a device
+  with no valid device token for the account is held: `/api/login` answers
+  202 with a pending id, the device polls `/api/login/pending/{id}`, and the
+  account's signed-in devices (and the owner's) are asked through
+  `/api/devices/pending`. Approved, the held session and a device cookie are
+  handed over; refused or after ten minutes, deleted. Not by address: the
+  owner asked for "known devices from outside", and behind Docker Desktop the
+  server cannot tell outside from in, and a request's address can be faked - so
+  it is the device token everywhere, the owner's choice when asked. With
+  nothing else signed in, the setup code approves - only one from `.env`
+  (`SetupCodeFromEnv`), never one made up at start. Checked end to end in two
+  browsers: waiting, asked on the owner's screen naming the browser, allowed
+  and in.
+
+**For the Mac:** the Apple TV signs in natively through `/api/login` and must
+handle the 202: show "waiting for approval on a device already signed in",
+poll `GET /api/login/pending/{id}` every few seconds, and take the session
+cookie from its 200 (`{"signedIn": true}`); a 403 is refused, a 404 expired.
+Until it does, an install with approval on cannot sign the TV in. The iPhone
+and Android apps use the page and need nothing.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

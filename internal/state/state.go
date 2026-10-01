@@ -225,6 +225,10 @@ type data struct {
 	// by themselves. Absent means on - the default is to sync - so it is
 	// stored the other way round from OnlineLyrics.
 	ReadAlongManual bool `json:"readAlongManual,omitempty"`
+
+	// ApproveNewDevices is the owner asking that the right password on a
+	// device an account has never signed in on waits for approval.
+	ApproveNewDevices bool `json:"approveNewDevices,omitempty"`
 	// NotPairs are Read & listen matches the owner has said are wrong, each
 	// "ebookSource/id|audiobookSource/id". A decision somebody made, like
 	// StarterInstalled - not a fact read off the media, so nothing here can
@@ -1103,6 +1107,25 @@ func (s *Store) SetOnlineLyrics(on bool) error {
 		return nil
 	}
 	s.d.OnlineLyrics = on
+	return s.save()
+}
+
+// ApproveNewDevices reports whether a sign-in on a new device waits for
+// approval.
+func (s *Store) ApproveNewDevices() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.d.ApproveNewDevices
+}
+
+// SetApproveNewDevices turns approval of new devices on or off.
+func (s *Store) SetApproveNewDevices(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.ApproveNewDevices == on {
+		return nil
+	}
+	s.d.ApproveNewDevices = on
 	return s.save()
 }
 

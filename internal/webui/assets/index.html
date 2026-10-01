@@ -57,6 +57,20 @@
       <p id="gate-error" class="error hidden" role="alert"></p>
 
       <button id="gate-submit" type="submit">Continue</button>
+
+      <!-- New devices need approval: shown once the password was right. -->
+      <div id="gate-wait" class="hidden" role="status">
+        <p><strong>Waiting for approval.</strong> This device hasn't signed in to
+          this account before. Approve it on a phone or computer that is already
+          signed in, or ask whoever looks after the server.</p>
+        <div id="gate-wait-code" class="hidden">
+          <p class="setup-detail">Nothing else signed in? The setup code from the
+            server's <code>.env</code> file approves it too.</p>
+          <input id="gate-wait-code-input" autocomplete="off" spellcheck="false" placeholder="Setup code">
+          <button id="gate-wait-code-use" type="button" class="ghost">Approve with the code</button>
+        </div>
+        <button id="gate-wait-cancel" type="button" class="ghost">Cancel</button>
+      </div>
     </form>
   </main>
 
@@ -264,8 +278,9 @@
           </label>
           <label>
             <span>New password</span>
-            <input id="new-password" type="password" autocomplete="new-password" minlength="8" required>
+            <input id="new-password" type="password" autocomplete="new-password" minlength="12" required>
           </label>
+          <p class="muted small-print">At least 12 characters, and not a common one. A few unrelated words make a good password.</p>
           <button type="submit">Change password</button>
         </form>
         <p id="password-note" class="muted hidden" role="status"></p>
@@ -427,11 +442,24 @@
           <label>
             <span>Password</span>
             <input id="new-person-password" type="password" autocomplete="new-password"
-                   minlength="8" required>
+                   minlength="12" required>
           </label>
+          <p class="muted small-print">At least 12 characters, and not a common one.</p>
           <button type="submit">Add person</button>
         </form>
         <p id="people-note" class="muted hidden" role="status"></p>
+
+        <h3>New devices</h3>
+        <label class="remote-switch">
+          <input id="new-devices-toggle" type="checkbox">
+          <span>New devices need approval</span>
+        </label>
+        <p class="muted small-print">When this is on, the right password isn't enough on a
+          phone or computer an account has never signed in on: it waits until someone
+          approves it from a device already signed in to that account, or you approve it.
+          A password that was guessed or leaked then opens nothing. Devices already signed
+          in are not asked.</p>
+        <p id="new-devices-note" class="muted hidden" role="status"></p>
       </div>
 
       <!-- Your own photos: where they go, and how much of your space they use. -->
@@ -878,6 +906,16 @@
       <ol id="np-chapters-list" class="np-chapter-list"></ol>
     </div>
   </section>
+
+  <!-- A new device waiting to sign in to this account (devices.go). -->
+  <div id="device-ask" class="backup-ask hidden" role="dialog" aria-labelledby="device-ask-title">
+    <h2 id="device-ask-title">Allow a new device?</h2>
+    <p id="device-ask-text" class="muted"></p>
+    <div class="backup-ask-buttons">
+      <button id="device-ask-no" type="button" class="ghost">Refuse</button>
+      <button id="device-ask-yes" type="button">Allow</button>
+    </div>
+  </div>
 
   <!-- Asked once, after signing in on a phone with the app. -->
   <div id="backup-ask" class="backup-ask hidden" role="dialog" aria-labelledby="backup-ask-title">

@@ -340,8 +340,16 @@ household default can be changed too).
   everywhere else.
 - When the owner resets someone's password, that person is signed out
   everywhere.
+- A password must be at least 12 characters and not a common one ("password"
+  dressed up with digits, a keyboard row, your own name). A few unrelated words
+  make a good one.
 - Repeated wrong passwords make the sign-in wait. A device you've signed in on
   before is never held up by somebody else guessing.
+- **New devices need approval** (the owner's switch, under **People**): when it's
+  on, signing in on a phone or computer for the first time waits until someone
+  allows it from a device already signed in to that account, or the owner
+  allows it. A guessed or leaked password then gets nobody in. With nothing
+  else signed in, the setup code from the server's `.env` file allows it.
 
 ## On your phone, TV or another computer
 

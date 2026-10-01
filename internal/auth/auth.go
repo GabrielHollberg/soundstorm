@@ -42,8 +42,11 @@ const (
 
 	// MinPasswordLength is enforced when a password is set, never when one is
 	// checked. Rejecting a password that already exists would lock somebody
-	// out of their own library.
-	MinPasswordLength = 8
+	// out of their own library. Twelve, with the common ones refused too
+	// (weak.go): the throttle allows about 1,400 guesses a day at one account
+	// from any number of addresses, which eight characters of "password" in
+	// some form do not survive.
+	MinPasswordLength = 12
 
 	// MaxPasswordLength is enforced both when a password is set and when one
 	// is checked - the opposite of the minimum, and safely so. PBKDF2's cost
@@ -172,7 +175,7 @@ func (m *Manager) create(name, password, role string) (state.User, error) {
 	if len(name) > 64 {
 		return state.User{}, errors.New("username is too long")
 	}
-	if err := checkPassword(password); err != nil {
+	if err := checkPassword(password, name); err != nil {
 		return state.User{}, err
 	}
 
@@ -277,7 +280,8 @@ func (m *Manager) SetPassword(actor state.User, id, password string) error {
 	if actor.ID != id && !actor.IsOwner() {
 		return ErrForbidden
 	}
-	if err := checkPassword(password); err != nil {
+	target, _ := m.store.User(id)
+	if err := checkPassword(password, target.Name); err != nil {
 		return err
 	}
 	salt, hash, err := derive(password, nil)
@@ -303,7 +307,7 @@ func (m *Manager) SetPassword(actor state.User, id, password string) error {
 func (m *Manager) ChangeOwnPassword(ctx context.Context, client string, actor state.User, current, password, keepToken string) error {
 	// Checked first, so a password that would be refused anyway costs no hash
 	// and no strike.
-	if err := checkPassword(password); err != nil {
+	if err := checkPassword(password, actor.Name); err != nil {
 		return err
 	}
 	err := m.throttle.guarded(ctx, client, actor.Name, func() error {
@@ -369,14 +373,14 @@ func (m *Manager) verify(id, password string) error {
 	return nil
 }
 
-func checkPassword(password string) error {
-	if len(password) < MinPasswordLength {
+func checkPassword(password, username string) error {
+	if len([]rune(password)) < MinPasswordLength {
 		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)
 	}
 	if len(password) > MaxPasswordLength {
 		return fmt.Errorf("password must be at most %d characters", MaxPasswordLength)
 	}
-	return nil
+	return weakPassword(password, username)
 }
 
 // derive hashes a password, generating a salt when none is given.
@@ -454,6 +458,14 @@ func (m *Manager) trustedDevice(name string, devices []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// KnownDevice reports whether a request carries a device token this account
+// issued and that still holds: a device the account has signed in on since
+// its password was last set.
+func (m *Manager) KnownDevice(name string, devices []string) bool {
+	_, ok := m.trustedDevice(name, devices)
+	return ok
 }
 
 // DeviceToken issues a token marking the current browser as one user has signed

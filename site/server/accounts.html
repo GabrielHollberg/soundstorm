@@ -54,8 +54,16 @@ query, and the first screen asked for a code the person had never seen.
 a 16-byte salt and a 32-byte key, from the standard library's <code>crypto/pbkdf2</code>. It
 costs a few hundred milliseconds per sign-in, which is the point.</p>
 <ul>
-  <li><strong>At least 8 characters</strong>, enforced only when a password is set. Rejecting a
-  password that already exists would lock somebody out of their own library.</li>
+  <li><strong>At least 12 characters, and not a common one</strong>, enforced only when a password
+  is set (<code>auth/weak.go</code>). Rejecting a password that already exists would lock somebody
+  out of their own library. The throttle holds a guesser to about one try a minute per account
+  from any number of addresses - roughly 1,400 a day, through Tor or not - which no thought-out
+  password minds and "password1" does not survive. So a password is refused when what is left
+  after its digits and symbols are stripped (and <code>@</code>, <code>0</code>, <code>$</code>
+  and the like turned back into letters) is a word from the top of the leaked-password lists, or
+  two of them, or the account's own name; when it is one character repeated, a keyboard row or a
+  counting run; or when it is all digits and symbols. The list is built in: the server asks
+  nobody about passwords.</li>
   <li><strong>At most 256 bytes</strong>, enforced both when set and when checked. PBKDF2's cost
   per round rises with the input past SHA-256's 64-byte block, so a guess thousands of bytes
   long costs several times an ordinary one. Because no genuine password can be longer, a longer
@@ -118,6 +126,20 @@ device signing in while an attack is actually running. Sign-out keeps the device
 device is still one the account uses.</div>
 <p>The end-to-end test runs every client from one loopback address - exactly the Docker Desktop
 case - and fails with the exemption disabled.</p>
+
+<h3 id="approval">New devices need approval</h3>
+<p>An owner setting, off unless turned on (People, New devices). With it on, the right password is
+not enough on a device an account has never signed in on: the sign-in is held
+(<code>devices.go</code>) and answers <code>202</code> with a random id the waiting device polls,
+while every device already signed in to that account - and the owner's - is asked "Allow a new
+device?", naming the browser. Allowed, the held session is handed to the waiting device with a
+device token, so it is not asked again; refused, or ten minutes gone, the session is deleted. A
+guessed or leaked password then opens nothing. "New" is the device token, not where the request
+came from: behind Docker Desktop every connection looks alike, and a request's account of its
+own address can be faked. A password change retires every device token, so after one every
+other device asks again. Somebody with nothing else signed in - the owner on a new laptop - can
+approve with the setup code from the server's <code>.env</code>, since whoever can read the
+server's files owns it anyway; a code made up at start (no <code>.env</code>) cannot.</p>
 
 <h2 id="access">Which shelves somebody can see</h2>
 <p><code>User.Libraries</code> is a list of media kinds; <code>nil</code> means all of them,

@@ -77,11 +77,15 @@ const maxProgressBody = 8 << 10
 // Server wires everything to HTTP handlers.
 type Server struct {
 	// moodCache keeps mood scores for the sound analysis they came from.
-	moodCache   moodCache
-	setupCode   string
-	collections *collections.Store
-	plays       allowance
-	positions   allowance
+	moodCache moodCache
+	setupCode string
+	// approvalCode is the setup code when it came from .env (blank when it
+	// was made up at start), which may approve a new device - see devices.go.
+	approvalCode string
+	pending      pendingSignIns
+	collections  *collections.Store
+	plays        allowance
+	positions    allowance
 	// nowPlaying limits "playing now" to ListenBrainz: each starts a call
 	// out of the house, and nothing else held them back.
 	nowPlaying allowance
@@ -195,6 +199,9 @@ type Config struct {
 
 	// SetupCode is what the first sign-up must present. See handleSignup.
 	SetupCode string
+	// SetupCodeFromEnv says SetupCode was configured rather than made up at
+	// start, so it can also approve a new device's sign-in.
+	SetupCodeFromEnv bool
 
 	// Collections holds each person's favorites and playlists.
 	Collections *collections.Store
@@ -265,6 +272,7 @@ func New(cfg Config) *Server {
 		remoteStatus:     cfg.RemoteStatus,
 		setRemoteAccess:  cfg.SetRemoteAccess,
 		setupCode:        NormalizeSetupCode(cfg.SetupCode),
+		approvalCode:     map[bool]string{true: NormalizeSetupCode(cfg.SetupCode)}[cfg.SetupCodeFromEnv],
 		collections:      cfg.Collections,
 		lyrics:           cfg.Lyrics,
 		discover:         cfg.Discover,
@@ -308,6 +316,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/session", s.handleSession)
 	mux.HandleFunc("POST /api/signup", s.handleSignup)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
+	// A sign-in waiting for approval asks how it went (devices.go).
+	mux.HandleFunc("GET /api/login/pending/{id}", s.handlePendingSignIn)
+	mux.HandleFunc("POST /api/login/pending/{id}", s.handlePendingSignIn)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 
 	// Everything past here needs a session, media bytes very much included.
@@ -401,6 +412,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/recap", s.handleRecap)
 	// Favorites and playlists, per person. See favorites.go.
 	guarded.HandleFunc("GET /api/favorites", s.handleFavorites)
+	guarded.HandleFunc("GET /api/devices/pending", s.handleListPending)
+	guarded.HandleFunc("POST /api/devices/pending/{id}", s.handleAnswerPending)
 	guarded.HandleFunc("PUT /api/favorites", s.limited(&s.listWrites, 60, time.Second, s.handleAddFavorite))
 	guarded.HandleFunc("DELETE /api/favorites", s.limited(&s.listWrites, 60, time.Second, s.handleRemoveFavorite))
 	guarded.HandleFunc("GET /api/playlists", s.handlePlaylists)
@@ -433,6 +446,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/settings/lyrics", s.handleSetOnlineLyrics)
 	owner.HandleFunc("PUT /api/settings/discovery", s.handleSetOnlineDiscovery)
 	owner.HandleFunc("PUT /api/settings/readalong", s.handleSetAutoReadAlong)
+	owner.HandleFunc("PUT /api/settings/new-devices", s.handleSetApproveDevices)
 	owner.HandleFunc("POST /api/books/pairs/not-same", s.handleNotSameBook)
 	owner.HandleFunc("POST /api/books/pairs/by-hand", s.handlePairByHand)
 	owner.HandleFunc("POST /api/delete/preview", s.handleDeletePreview)
@@ -448,6 +462,7 @@ func (s *Server) Routes() http.Handler {
 	// Every owner route must be mounted here as well as registered above, or it
 	// answers 404: the read-along switch did, unnoticed, until a test asked.
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/settings/new-devices", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/by-hand", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/photos/limit-default", s.auth.RequireOwner(owner))
@@ -572,6 +587,8 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		if _, ok := s.readAlong(r.Context()); ok && user.IsOwner() {
 			answer["autoReadAlong"] = s.store.AutoReadAlong()
 		}
+		// Every account's devices may be asked to approve a new one.
+		answer["approveNewDevices"] = s.store.ApproveNewDevices()
 		// The looks' training mode, on the developer's install alone.
 		if s.trainingDir != "" {
 			answer["training"] = true
@@ -758,6 +775,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Warn("failed sign-in", "remote", r.RemoteAddr)
 		writeError(w, http.StatusUnauthorized, auth.ErrInvalidCredentials.Error())
+		return
+	}
+	// The right password on a device this account has never signed in on,
+	// with approval turned on: it waits (devices.go).
+	if s.needsApproval(r, user) {
+		q := s.holdSignIn(r, user, token, expiry)
+		if q == nil {
+			writeError(w, http.StatusTooManyRequests, "too many sign-ins are waiting for approval; try again later")
+			return
+		}
+		s.log.Info("a new device is waiting for approval", "for", user.Name, "device", q.Device)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"pending": q.ID,
+			"owner":   user.IsOwner(),
+			"code":    s.approvalCode != "",
+		})
 		return
 	}
 	s.auth.SetCookie(w, r, token, expiry)
