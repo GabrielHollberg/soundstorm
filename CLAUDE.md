@@ -4803,9 +4803,15 @@ said "All 6 photos and videos are backed up". **Not checked:** the background
 task and an upload finishing with the app closed - a real iPhone over a night
 is the test. Two things the test met: Swift 6.3 crashes compiling the `async`
 form of `willPerformHTTPRedirection` (the completion-handler form is used),
-and signing in as a different account than the device last had turns backup
-off and marks it decided, so that person is never asked - on Android too; the
-switch in Settings is still there.
+and signing out (or in as a different account) turns backup off, which the
+app also counts as "decided" - so the next person was never asked, on Android
+too. The page now asks unless backup is on or this person answered on this
+device (its own `soundstorm.backupAsked`, set by the question or the Settings
+switch and cleared with the downloads), not by the app's flag;
+`testBackupIsAskedOfWhoeverSignsInNext` fails against the old page. After
+signing out the page focuses the username and the keyboard covers the
+password field: a person uses the keyboard's next arrow, the test opens the
+app again.
 
 **Bringing a photo library in** (`internal/photoimport`, `httpapi/photoimport.go`):
 Google and Apple give no way for SoundStorm to pull photos out (Google's

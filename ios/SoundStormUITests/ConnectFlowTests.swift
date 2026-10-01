@@ -55,6 +55,7 @@ final class ConnectFlowTests: XCTestCase {
         }
 
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
+        notNowToBackup(web)
         settings.tap()
         // Settings opens on its first category; Change server sits with
         // Sign out under Account.
@@ -112,18 +113,74 @@ final class ConnectFlowTests: XCTestCase {
         XCTAssertTrue(done.exists, "Settings never said the photos were backed up")
     }
 
+    /// Signing out turns this phone's backup off, as it must - the next
+    /// person's cookie would otherwise send the last person's photos - but it
+    /// also marked backup "decided", so whoever signed in next was never
+    /// asked. Now they are.
+    func testBackupIsAskedOfWhoeverSignsInNext() {
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(server + "\n")
+        let web = app.webViews.firstMatch
+        let settings = web.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists, "the server's page never appeared")
+        if settings.exists {
+            settings.tap()
+            let account = web.buttons["Account"]
+            XCTAssertTrue(account.waitForExistence(timeout: 5))
+            account.tap()
+            let signOut = web.buttons["Sign out"]
+            for _ in 0..<8 where !signOut.isHittable { web.swipeUp() }
+            XCTAssertTrue(signOut.isHittable, "no Sign out in Settings")
+            signOut.tap()
+            XCTAssertTrue(web.textFields.firstMatch.waitForExistence(timeout: 15), "signing out did not return to the sign-in form")
+            // Opened again, as the next person would: after signing out the
+            // page puts the keyboard up over the password field at once.
+            app.terminate()
+            app.launch()
+            let again = app.textFields.firstMatch
+            XCTAssertTrue(again.waitForExistence(timeout: 5))
+            again.typeText(server + "\n")
+            XCTAssertTrue(web.secureTextFields.firstMatch.waitForExistence(timeout: 15), "the sign-in form did not come back")
+        }
+        signIn(web)
+        XCTAssertTrue(web.buttons["Turn on"].waitForExistence(timeout: 15),
+                      "the person who signed in was not asked about backing up photos")
+    }
+
+    /// The page asks about photo backup after signing in, over everything,
+    /// on a phone where this person has not answered; a test about something
+    /// else says not now.
+    private func notNowToBackup(_ web: XCUIElement) {
+        let later = web.buttons["Not now"]
+        if later.waitForExistence(timeout: 4) { later.tap() }
+    }
+
+    /// Taps a field until the keyboard is up for it: just after a page loads
+    /// (or reloads, as signing out does) a tap can land before it takes focus.
+    private func focus(_ field: XCUIElement) {
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        for _ in 0..<5 {
+            field.tap()
+            for _ in 0..<10 {
+                if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+        }
+    }
+
     private func signIn(_ web: XCUIElement) {
         let username = web.textFields.firstMatch
-        username.tap()
+        focus(username)
         username.typeText("owner")
         let password = web.secureTextFields.firstMatch
-        password.tap()
+        focus(password)
         password.typeText("correct horse battery")
         // Return submits, as it would for a person; the keyboard's own bar
         // sits over the form's button.
         if web.textFields.count > 1 {
             let code = web.textFields.element(boundBy: 1)
-            code.tap()
+            focus(code)
             code.typeText("test-setup-code\n")
         } else {
             password.typeText("\n")
