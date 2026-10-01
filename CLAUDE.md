@@ -44,6 +44,9 @@ short one is needed for a risky change, merge it the same day.
 The owner switches machines by telling the session they are leaving; that
 session commits and pushes everything, and the next one pulls before touching
 anything. Never leave work uncommitted on one machine.
+**On "switching", pull as well as push** (the owner's asking): commit and push
+what is left, `git pull`, and say in a line both what went up and what came in
+from the other machine, or that nothing did.
 
 **The shared web files are where the two collide**: `app.js`, `style.css`,
 `index.html`. Web and server changes are made on the PC by default. When the
