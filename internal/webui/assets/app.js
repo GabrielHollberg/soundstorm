@@ -1347,7 +1347,7 @@ function fallbackArt(item) {
 
 /* ---------------------------------------------------------------- players */
 
-function play(item) {
+function play(item, options = {}) {
   switch (item.kind) {
     case 'video':
       playVideo(item);
@@ -1371,8 +1371,11 @@ function play(item) {
       break;
     default:
       // Music and audiobooks are both just audio as far as a browser cares.
+      // Either opens Now Playing, full screen, when started (an audiobook
+      // too, at the owner's asking) - but not under a Read Along book, which
+      // opens over it.
       playAudio(item);
-      if (item.kind === 'music') openNowPlaying();
+      if ((item.kind === 'music' || item.kind === 'audiobook') && !options.underBook) openNowPlaying();
   }
 }
 
@@ -8520,7 +8523,7 @@ async function readAlong(pair, keptGroup) {
       body = kept.readalong;
     }
     if (ok && body && body.item) {
-      play(pair.audiobook);
+      play(pair.audiobook, { underBook: true });
       closeVideo();
       const book = { ...body.item, title: pair.ebook.title, creators: pair.ebook.creators };
       window.soundstormReader.open(book, {
@@ -8533,7 +8536,7 @@ async function readAlong(pair, keptGroup) {
       return;
     }
   }
-  play(pair.audiobook);
+  play(pair.audiobook, { underBook: true });
   play(pair.ebook);
 }
 
