@@ -36,6 +36,9 @@ object PageScript {
   // and shows how it is going, answered through window.__soundstormBackup.
   window.soundstormApp.photoBackup = !/SoundStormTV/.test(navigator.userAgent);
   window.soundstormApp.backup = (cmd, options) => post({ type: 'backup', cmd, options: options || {} });
+  // What the native player saw, for a playback report, answered through
+  // window.__soundstormPlayerLog (PlayerLog).
+  window.soundstormApp.playerLog = () => post({ type: 'playerLog' });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };
@@ -293,6 +296,10 @@ object PageScript {
       if (typeof m.position === 'number') { st.position = m.position; st.at = performance.now(); }
       if (typeof m.duration === 'number') st.duration = m.duration;
       if (typeof m.buffered === 'number') st.buffered = m.buffered;
+      // The player's volume is the page's to set: should the two ever differ
+      // (the sound gone while the song plays on, reported and not explained),
+      // the page's is sent again.
+      if (typeof m.volume === 'number' && Math.abs(m.volume - volume) > 0.02) send('volume', { v: volume });
       if (m.error) { st.error = m.error; fire('error'); return; }
       if (!hadDuration && Number.isFinite(st.duration)) { fire('durationchange'); fire('loadedmetadata'); fire('canplay'); }
       // Played or paused from outside the page: the lock screen, a

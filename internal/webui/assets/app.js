@@ -3854,6 +3854,7 @@ async function moveToSecureName(name) {
     if (body.secureName && await moveToSecureName(body.secureName)) return;
     forgetSetupCodeInAddress();
     state.training = Boolean(body.training);
+    show($('player-report'), state.training && Boolean(window.soundstormApp && window.soundstormApp.playerLog));
     // A TV asks "Who's listening?" every time it opens, when anybody is kept
     // on it - the owner's choice: a shared screen should not just carry on as
     // whoever used it last.
@@ -8473,6 +8474,22 @@ $('audio-player').addEventListener('pause', () => {
 $('audio-player').addEventListener('seeking', () => {
   if (!xfade.handingOff) cancelCrossfade();
 });
+
+// A playback report (the developer's own install, the Android app): the
+// phone's player log and what the page thinks, kept on the server.
+window.__soundstormPlayerLog = async (log) => {
+  const player = $('audio-player');
+  const page = {
+    song: audio.item ? `${audio.item.title} (${audio.item.sourceId}/${audio.item.id})` : null,
+    pageVolume: player.volume, level: audio.level, userVolume: audio.userVolume,
+    paused: player.paused, at: player.currentTime, duration: player.duration,
+    fading: Boolean(audio.fading), sleep: Boolean(sleep.fading), slowLink: Boolean(slowLink),
+    hidden: document.hidden,
+  };
+  const { ok } = await api('/api/diagnostics/playback', { method: 'POST', body: JSON.stringify({ log, page }) });
+  showToast(ok ? 'Report sent. Thank you.' : 'Could not send the report.');
+};
+$('player-report-send').addEventListener('click', () => window.soundstormApp.playerLog());
 
 $('crossfade-select').value = String(crossfadeSeconds());
 $('crossfade-select').disabled = !canSetVolume;

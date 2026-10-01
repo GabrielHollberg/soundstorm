@@ -63,6 +63,10 @@ class AudioService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        // What it saw, for a playback report (PlayerLog).
+        player.addAnalyticsListener(PlayerLog.analytics)
+        PlayerLog.watchDevices(this)
+        PlayerLog.add("player made")
         NativeAudio.attach(player)
 
         // Next and previous on the lock screen, in the notification and from

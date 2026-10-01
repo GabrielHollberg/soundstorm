@@ -65,6 +65,15 @@ object NativeAudio {
         main.removeCallbacks(tick)
     }
 
+    /** The player's side of a playback report (PlayerLog). */
+    fun describe(): String {
+        val p = player ?: return " player=none"
+        return " player: volume=${p.volume} state=${p.playbackState} playing=${p.isPlaying}" +
+            " playWhenReady=${p.playWhenReady} suppressed=${p.playbackSuppressionReason}" +
+            " at=${p.currentPosition}ms of ${p.duration}ms song=${PlayerLog.song(p.currentMediaItem?.localConfiguration?.uri?.toString())}" +
+            " queued=${p.mediaItemCount}"
+    }
+
     /** Whether the player holds a song (the page's audio is native now). */
     val active: Boolean get() = (player?.mediaItemCount ?: 0) > 0
 
@@ -88,7 +97,16 @@ object NativeAudio {
 
     private fun run(m: JSONObject) {
         val p = player ?: return
-        when (m.optString("cmd")) {
+        val cmd = m.optString("cmd")
+        when (cmd) {
+            "volume" -> PlayerLog.add("page: volume ${m.optDouble("v", 1.0)}")
+            "rate" -> {}
+            "load", "queue" -> PlayerLog.add("page: $cmd ${PlayerLog.song(m.optString("url"))}")
+            "seek" -> PlayerLog.add("page: seek ${m.optDouble("s", 0.0)}s")
+            "upcoming" -> PlayerLog.add("page: upcoming ${m.optJSONArray("items")?.length() ?: 0} songs")
+            else -> PlayerLog.add("page: $cmd")
+        }
+        when (cmd) {
             "load" -> {
                 val url = m.optString("url")
                 if (!allowed(url)) return

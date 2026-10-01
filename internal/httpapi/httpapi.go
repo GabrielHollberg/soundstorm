@@ -112,6 +112,8 @@ type Server struct {
 	// audiobook server, the scrobbling token checked online, the read-along
 	// queue reordered.
 	otherWrites allowance
+	// playback reports sent from the app (diagnostics.go)
+	reports allowance
 	hlsSessions hlsSessions
 	lookingUpMu sync.Mutex
 	lookingUp   map[string]bool
@@ -394,6 +396,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/beats", s.handleSongBeats)
 	guarded.HandleFunc("GET /api/training/song", s.handleTrainingSong)
 	guarded.HandleFunc("PUT /api/training/song", s.handleSetTrainingSong)
+	guarded.HandleFunc("POST /api/diagnostics/playback", s.limited(&s.reports, 5, time.Minute, s.handlePlaybackReport))
 	guarded.HandleFunc("GET /api/myart", s.handleMyArt)
 	guarded.HandleFunc("PUT /api/myart", s.handleSetMyArt)
 	guarded.HandleFunc("DELETE /api/myart", s.limited(&s.listWrites, 60, time.Second, s.handleRemoveMyArt))

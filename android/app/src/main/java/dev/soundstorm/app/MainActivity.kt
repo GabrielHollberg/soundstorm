@@ -540,6 +540,10 @@ class MainActivity : Activity() {
             "interrupted" -> MediaBridge.interruption(true)
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
+            // A playback report: what the native player saw (PlayerLog).
+            "playerLog" -> webView?.evaluateJavascript(
+                "window.__soundstormPlayerLog && window.__soundstormPlayerLog(" +
+                    JSONObject.quote(PlayerLog.text(applicationContext)) + ")", null)
             "backup" -> {
                 PhotoBackup.rememberServer(applicationContext, ServerAddress.current)
                 backup(message.optString("cmd"), message.optJSONObject("options") ?: JSONObject())

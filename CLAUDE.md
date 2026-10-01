@@ -1583,6 +1583,19 @@ that what is learnt ships in SoundStorm for every install.
   tracks tapped on each bar's first beat: the model caught 98% and learnt
   beat 1 (+1.6) over beats 2-4; today's rule 13%.
 
+**The sound went out and the song played on** (the owner's report,
+2026-10-01, the Android app, fully silent, back on the next song). Nothing
+in the code explained it, so Android 0.20 carries a playback log
+(`PlayerLog`: the player's volume, audio focus and suppression, the audio
+track opening, closing and failing, outputs coming and going, the page's
+commands, last 600) and, on the developer's install only (the training
+switch), **Sound cut out? Send a report** in Playback on this device, which
+keeps it with the page's view under the state dir's `diagnostics/`
+(`POST /api/diagnostics/playback`) - read it with
+`docker exec soundstorm ls /var/lib/soundstorm/diagnostics`. One guess is
+guarded meanwhile: the page sends its volume again whenever the player
+reports a different one. Waiting on a report to find the real cause.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an
