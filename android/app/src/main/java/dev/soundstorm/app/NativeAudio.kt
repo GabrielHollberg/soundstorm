@@ -89,7 +89,7 @@ object NativeAudio {
         when (m.optString("cmd")) {
             "load" -> {
                 val url = m.optString("url")
-                if (url.isEmpty()) return
+                if (!allowed(url)) return
                 val index = p.currentMediaItemIndex
                 val current = p.currentMediaItem?.localConfiguration?.uri?.toString()
                 if (current == url && p.playbackState != Player.STATE_IDLE) {
@@ -114,7 +114,7 @@ object NativeAudio {
             }
             "queue" -> {
                 val url = m.optString("url")
-                if (url.isEmpty() || p.mediaItemCount == 0) return
+                if (!allowed(url) || p.mediaItemCount == 0) return
                 val index = p.currentMediaItemIndex
                 // Only ever the one song after this one.
                 if (index + 1 < p.mediaItemCount) p.removeMediaItems(index + 1, p.mediaItemCount)
@@ -133,13 +133,13 @@ object NativeAudio {
                 val items = (0 until minOf(list.length(), 50)).mapNotNull { i ->
                     val o = list.optJSONObject(i) ?: return@mapNotNull null
                     val url = o.optString("url")
-                    if (url.isEmpty()) return@mapNotNull null
+                    if (!allowed(url)) return@mapNotNull null
                     MediaItem.Builder().setUri(url).setMediaId(url)
                         .setMediaMetadata(MediaMetadata.Builder()
                             .setTitle(o.optString("title").ifEmpty { null })
                             .setArtist(o.optString("artist").ifEmpty { null })
                             .setAlbumTitle(o.optString("album").ifEmpty { null })
-                            .setArtworkUri(o.optString("art").ifEmpty { null }?.let(Uri::parse))
+                            .setArtworkUri(o.optString("art").takeIf(::allowed)?.let(Uri::parse))
                             .build())
                         .build()
                 }
@@ -197,6 +197,13 @@ object NativeAudio {
         }
     }
 
+    /** Only the server's own addresses: a page could otherwise have the
+     *  player fetch anything, anywhere, with the session. */
+    private fun allowed(url: String?): Boolean {
+        val c = app ?: return false
+        return ServerAddress.isServer(c, url)
+    }
+
     private fun item(url: String, now: MediaBridge.NowPlaying?): MediaItem =
         MediaItem.Builder().setUri(url).setMediaId(url)
             .apply { if (now != null) setMediaMetadata(meta(now)) }
@@ -207,7 +214,7 @@ object NativeAudio {
             .setTitle(now.title.ifEmpty { null })
             .setArtist(now.artist.ifEmpty { null })
             .setAlbumTitle(now.album.ifEmpty { null })
-            .setArtworkUri(now.artwork?.let(Uri::parse))
+            .setArtworkUri(now.artwork?.takeIf(::allowed)?.let(Uri::parse))
             .build()
 
     private val listener = object : Player.Listener {

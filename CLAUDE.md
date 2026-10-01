@@ -3813,7 +3813,8 @@ for any other host (a book file, film or subtitle so refused is not played);
 - Sign-out now clears `soundstorm-native-queue` (the phone player's queue);
   an OPDS reference must start `opds/`, not merely contain it.
 
-**For the PC** - Android, from the same review:
+**For the PC** - Android, from the same review *(all fixed in 0.16, 2026-10-01, with
+the ninth pass's Android items: see "Android 0.16" below the ninth pass)*:
 
 - `NativeAudio.kt` (around lines 91, 116, 135-142) and `AudioService.kt`
   (47-50) load any URL, any scheme or host, that the page passes; allow only
@@ -3903,6 +3904,25 @@ address in `onPageStarted`; the notification cover is decoded at full size
 the Gradle wrapper has no `distributionSha256Sum`; the APK is signed with the
 debug key. And the three already above (native player URLs and redirects,
 `onConnect`, gestureless launches) were found again independently.
+
+**Android 0.16 fixed both lists (2026-10-01).** The native player and its
+covers take only the server's own addresses (`ServerAddress.isServer`: the
+page's origin now, else the saved one), checked in `NativeAudio` and again in
+`AudioService`'s data source; the session cookie is no longer copied into
+headers by hand but given by a `CookieHandler` (`WebCookies`), asked afresh
+for each address so a redirect elsewhere carries none; the media session
+accepts only trusted controllers (the system, Bluetooth, the notification),
+the app and a short list (Android Auto, Wear, the Assistant); other schemes
+open only from a tapped link in the main frame, and a new window only for a
+tapped http(s) link; `onPageStarted` stops anything that is not the server
+starting in the app's window (a posted form, a data: or blob: page) and
+shows the server again; no content or file access; nothing carried in cloud
+backups or device transfer (`data_extraction_rules.xml` - a new phone signs
+in again); `taskAffinity=""`; the notification's cover is decoded sampled
+down to about 512px and refused over 8MB; the Gradle wrapper checks its
+download's SHA-256. **Still open:** the APK is signed with the debug key -
+a release key means every phone uninstalls once, so it waits for the store.
+Built; not yet run on a phone.
 
 **Left for discussion, added by this pass**: the names service's daily
 challenge budget can still be spent from about eight networks, which would

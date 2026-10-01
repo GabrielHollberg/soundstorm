@@ -239,14 +239,23 @@ class PlaybackService : Service() {
         if (url == artUrl) return
         artUrl = url
         art = null
-        if (url == null) return
+        if (url == null || !ServerAddress.isServer(this, url)) return
+        WebCookies.install()
         artLoader.execute {
             val bitmap = runCatching {
                 val conn = URL(url).openConnection() as HttpURLConnection
                 conn.connectTimeout = 10_000
                 conn.readTimeout = 10_000
-                CookieManager.getInstance().getCookie(url)?.let { conn.setRequestProperty("Cookie", it) }
-                conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                conn.instanceFollowRedirects = false
+                // Read whole (a cover, a few hundred KB at most), then decoded
+                // at a fraction of its size: a picture decoded at full size can
+                // take hundreds of megabytes, and a notification needs 512px.
+                val bytes = conn.inputStream.use { it.readBytes(8 shl 20) }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 512) sample *= 2
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
             }.getOrNull()
             if (bitmap != null) {
                 android.os.Handler(mainLooper).post {
@@ -257,6 +266,19 @@ class PlaybackService : Service() {
                 }
             }
         }
+    }
+
+    /** At most limit bytes: a cover bigger than that is not one. */
+    private fun java.io.InputStream.readBytes(limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+            if (out.size() > limit) throw java.io.IOException("too big for a cover")
+        }
+        return out.toByteArray()
     }
 
     private fun scaled(bitmap: Bitmap): Bitmap {

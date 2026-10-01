@@ -2,7 +2,6 @@ package dev.soundstorm.app
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.webkit.CookieManager
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -41,12 +40,17 @@ class AudioService : MediaSessionService() {
         super.onCreate()
         // The songs are the server's, behind the page's sign-in: every request
         // carries the web view's own cookies for that address.
+        // WebCookies gives each request its own address's cookies, a redirect
+        // elsewhere included, where a header copied in by hand went along.
+        WebCookies.install()
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent("SoundStormApp/1")
             .setAllowCrossProtocolRedirects(false)
         val signedIn: DataSource.Factory = ResolvingDataSource.Factory(http) { spec ->
-            val cookie = CookieManager.getInstance().getCookie(spec.uri.toString())
-            if (cookie.isNullOrEmpty()) spec else spec.withAdditionalHeaders(mapOf("Cookie" to cookie))
+            // NativeAudio takes only the server's addresses; this is the
+            // second look, for anything that reaches the player another way.
+            if (!ServerAddress.isServer(this, spec.uri.toString())) throw java.io.IOException("not the server")
+            spec
         }
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(signedIn))
@@ -84,6 +88,17 @@ class AudioService : MediaSessionService() {
         )
         session = MediaSession.Builder(this, forwarding)
             .setSessionActivity(open)
+            .setCallback(object : MediaSession.Callback {
+                // Who may control the music and see what is playing: the
+                // system (lock screen, notification, Bluetooth), this app, and
+                // the car, watch and assistant apps - not any app on the phone,
+                // which a media session allows unless told (a security review).
+                override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+                    if (controller.isTrusted || controller.packageName == packageName ||
+                        controller.packageName in CONTROLLERS || session.isMediaNotificationController(controller))
+                        super.onConnect(session, controller)
+                    else MediaSession.ConnectionResult.reject()
+            })
             .setBitmapLoader(DataSourceBitmapLoader(
                 MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()), signedIn))
             .build()
@@ -93,6 +108,16 @@ class AudioService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    private companion object {
+        val CONTROLLERS = setOf(
+            "com.android.systemui", "com.android.bluetooth",
+            "com.google.android.projection.gearhead", // Android Auto
+            "com.google.android.wearable.app", "com.google.android.apps.wear.companion",
+            "com.google.android.googlequicksearchbox", // the Assistant
+            "com.google.android.as", "com.samsung.android.app.routines",
+        )
+    }
 
     // The app swiped away: the music goes on while it plays, as a music app's
     // does; paused, the service goes with the app.

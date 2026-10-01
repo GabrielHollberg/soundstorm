@@ -360,6 +360,9 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             setSupportMultipleWindows(true)
             javaScriptCanOpenWindowsAutomatically = false
+            // Nothing on the phone is the page's to read (a security review).
+            allowContentAccess = false
+            allowFileAccess = false
             // Chrome's own user agent, with a name the page can test for.
             userAgentString = "$userAgentString SoundStormApp/1" + if (isTv) " SoundStormTV/1" else ""
         }
@@ -369,6 +372,7 @@ class MainActivity : Activity() {
         WebView.setWebContentsDebuggingEnabled((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
 
         val origin = ServerAddress.origin(target)
+        ServerAddress.current = origin
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(view, "SoundStormNative", setOf(origin)) { _, message, source, isMainFrame, _ ->
                 if (isMainFrame && source.toString().trimEnd('/') == origin) received(message.data)
@@ -579,8 +583,10 @@ class MainActivity : Activity() {
                 return true
             }
             if (scheme !in setOf("http", "https", "blob", "data", "about")) {
-                // mailto:, tel: and the like belong to other apps.
-                openOutside(url)
+                // mailto:, tel: and the like belong to other apps - but only
+                // from a link somebody followed in the page itself, never from
+                // a frame or a script on its own (a security review).
+                if (request.isForMainFrame && request.hasGesture()) openOutside(url)
                 return true
             }
             return false
@@ -602,6 +608,17 @@ class MainActivity : Activity() {
                 return
             }
             showFailure(error.description?.toString() ?: "")
+        }
+
+        // A form posted elsewhere, or a data: or blob: page, does not pass
+        // through shouldOverrideUrlLoading: anything that is not the server
+        // starting in the app's own window is stopped, and the server shown
+        // again (a security review).
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            val u = url?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            if (u == null || url == "about:blank" || isServer(u)) return
+            view.stopLoading()
+            content.post { load() }
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -654,10 +671,12 @@ class MainActivity : Activity() {
 
         /** target="_blank" (the ListenBrainz and LRCLIB links in Account): the browser. */
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+            // Only for a link somebody tapped, and only to a web address.
+            if (!isUserGesture) return false
             val catcher = WebView(this@MainActivity)
             catcher.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
-                    openOutside(request.url)
+                    if (request.url.scheme in setOf("http", "https")) openOutside(request.url)
                     v.destroy()
                     return true
                 }

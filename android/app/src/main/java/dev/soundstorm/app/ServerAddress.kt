@@ -49,6 +49,26 @@ object ServerAddress {
     fun origin(server: Uri): String =
         "${server.scheme}://${server.host}" + if (server.port != -1) ":${server.port}" else ""
 
+    /** The origin of the page showing now (set by MainActivity), which may
+     *  be the install's secure name rather than the address typed. */
+    @Volatile var current: String? = null
+
+    /**
+     * Whether an address the page hands the app is the server's own: the
+     * native player, its covers and the notification fetch nothing else. A
+     * page is somebody else's text as far as the app is concerned - the
+     * review found any address, any scheme, was loaded with the session.
+     */
+    fun isServer(context: Context, url: String?): Boolean {
+        if (url.isNullOrEmpty()) return false
+        val u = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        val scheme = u.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return false
+        val o = origin(u).lowercase()
+        if (current?.lowercase() == o) return true
+        return saved(context)?.let { origin(it).lowercase() == o } == true
+    }
+
     class CheckFailed(message: String) : Exception(message)
 
     /**

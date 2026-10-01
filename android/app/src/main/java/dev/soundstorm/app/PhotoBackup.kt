@@ -259,7 +259,8 @@ object PhotoBackup {
         conn.requestMethod = method
         conn.connectTimeout = 15_000
         conn.readTimeout = 120_000
-        CookieManager.getInstance().getCookie(server.toString())?.let { conn.setRequestProperty("Cookie", it) }
+        conn.instanceFollowRedirects = false
+        WebCookies.install()
         return conn
     }
 
