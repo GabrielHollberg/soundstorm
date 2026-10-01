@@ -114,6 +114,7 @@ type Server struct {
 	scrobble         *scrobble.Client
 	scrobbling       sync.Map // account id -> a send in progress
 	beats            *beatStore
+	trainingDir      string
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -192,6 +193,10 @@ type Config struct {
 	// BeatsDir is where what was heard in each song is kept (see beats.go).
 	// Empty turns hearing songs on the server off.
 	BeatsDir string
+	// TrainingDir is where the looks' training recordings are kept, on the
+	// developer's own install only (SOUNDSTORM_TRAINING; see training.go).
+	// Empty, as everywhere else, means there is no training at all.
+	TrainingDir string
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -248,6 +253,7 @@ func New(cfg Config) *Server {
 		discover:         cfg.Discover,
 		scrobble:         cfg.Scrobble,
 		beats:            newBeatStore(cfg.BeatsDir),
+		trainingDir:      cfg.TrainingDir,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -336,6 +342,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/radio", s.handleRadio)
 	guarded.HandleFunc("GET /api/music/sound", s.handleSongSound)
 	guarded.HandleFunc("GET /api/music/beats", s.handleSongBeats)
+	guarded.HandleFunc("GET /api/training/song", s.handleTrainingSong)
+	guarded.HandleFunc("PUT /api/training/song", s.handleSetTrainingSong)
 	guarded.HandleFunc("GET /api/myart", s.handleMyArt)
 	guarded.HandleFunc("PUT /api/myart", s.handleSetMyArt)
 	guarded.HandleFunc("DELETE /api/myart", s.handleRemoveMyArt)
@@ -533,6 +541,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, ok := s.readAlong(r.Context()); ok && user.IsOwner() {
 			answer["autoReadAlong"] = s.store.AutoReadAlong()
+		}
+		// The looks' training mode, on the developer's install alone.
+		if s.trainingDir != "" {
+			answer["training"] = true
 		}
 	}
 	// The install's real https address, offered to a page that is not already

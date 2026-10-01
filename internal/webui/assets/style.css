@@ -3658,3 +3658,64 @@ html.tv #video-caption { color: #fff; font-weight: 600; }
 /* Nothing behind a film scrolls on a TV: the page under it did as the
    arrows moved, its scrollbar showing at the side. */
 html.tv:has(#video-overlay:not(.hidden)) body { overflow: hidden; }
+
+/* Training the looks (the developer's install only): the bar across Now
+   Playing while recording, a flash where a tap landed, and the level line
+   while a finger slides for intensity. */
+#np-train {
+  position: absolute;
+  z-index: 5; /* under the Looks sheet (6) */
+  bottom: calc(var(--safe-bottom) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 20px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 40, 50, 0.85);
+  border: 1px solid rgba(80, 220, 255, 0.6);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+}
+#np-train button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+}
+.train-tap {
+  position: absolute;
+  z-index: 5;
+  width: 80px;
+  height: 80px;
+  margin: -40px 0 0 -40px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(80, 220, 255, 0.9), rgba(80, 220, 255, 0) 70%);
+  animation: train-tap 0.6s ease-out forwards;
+}
+@keyframes train-tap { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+#np-train-level {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  height: 2px;
+  pointer-events: none;
+  background: rgba(80, 220, 255, 0.95);
+  box-shadow: 0 0 12px rgba(80, 220, 255, 0.9);
+}
+#np-train-level::after {
+  content: attr(data-v);
+  position: absolute;
+  right: 16px;
+  bottom: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}

@@ -75,6 +75,9 @@ services:
       # How the same folder looks to whoever ran compose, for the UI to show.
       SOUNDSTORM_LIBRARY_HINT: ${SOUNDSTORM_LIBRARY_HINT:-${SOUNDSTORM_LIBRARY_PATH:-./library}}
       SOUNDSTORM_LOG_LEVEL: info
+      # Training the looks: for SoundStorm's developer only, never set on an
+      # ordinary install (see internal/httpapi/training.go).
+      SOUNDSTORM_TRAINING: ${SOUNDSTORM_TRAINING:-false}
 
       # TLS. Off by default: the only certificate SoundStorm can make by itself
       # is one no browser trusts, and a full-page warning on every device is a

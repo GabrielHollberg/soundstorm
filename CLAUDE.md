@@ -1360,6 +1360,34 @@ the frame reads `viz.scrubAt` for the moment and keeps drawing when paused.
 Checked with real touch drags (CDP) at iPhone size: 3 seconds on and back,
 same song, Now Playing still open.
 
+## Training the looks (the developer's own install only)
+
+Asked for as tapping where lightning should be and letting a model learn
+when it is right - then widened to every look: they all read the same few
+signals each frame from `viz.frame` (big moments, beat pulses, bass hits,
+sharp highs, intensity), so a trained signal improves every look using it.
+**It is a tool for SoundStorm's developer, not a feature**: the owner
+decided nobody else - owners included - should ever be able to do it, and
+that what is learnt ships in SoundStorm for every install.
+
+- `SOUNDSTORM_TRAINING=true` in one install's `.env` (this PC's; compose
+  passes it, default false). Without it the routes answer 404 and the
+  session never says `training`.
+- In the Looks sheet, "Training (only on this server)": **Tap big moments**
+  (each touch a moment, at the player's time plus Timing) or **Slide
+  intensity** (a held finger's height, ten times a second; a gap means
+  nothing was said). Now Playing's own gestures stand down while it records
+  (capture-phase listeners, as the Analysis drag uses); buttons still work.
+  A bar at the foot counts, undoes and clears. The Analysis look draws the
+  taps in cyan and the intensity as a cyan line over the loudness.
+- Kept per song under the state dir's `training/`, a file each, with what
+  the song is (from the library, never the request) and the device's
+  Timing (`lead`), to separate the device's lateness from the hand's.
+- Next, not built: a training script reading those files, fitting models
+  and comparing them on held-out songs - the simple one on the analysis's
+  measurements, a small raw-sound one, and one on Beat This!'s inner layers
+  ("borrowed ears"); the winner ships only if it beats today's rule.
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an

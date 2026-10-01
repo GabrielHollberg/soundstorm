@@ -2950,6 +2950,7 @@ async function moveToSecureName(name) {
     // it can come out of the address.
     if (body.secureName && await moveToSecureName(body.secureName)) return;
     forgetSetupCodeInAddress();
+    state.training = Boolean(body.training);
     if (body.signedIn) showApp(body.user);
     else showGate(body.hasAccount, body.setupCodeRequired);
     return;
@@ -6101,7 +6102,7 @@ function renderLooks() {
       return b;
     }));
     return [h, grid];
-  }), ...looksTiming());
+  }), ...looksTiming(), ...looksTraining());
 }
 $('np-looks-btn').addEventListener('click', (event) => {
   event.stopPropagation();
@@ -14457,6 +14458,39 @@ function analysisScene(st, m) {
     g.fill();
   }
 
+  // What was recorded for training, on the developer's install: each tap a
+  // cyan mark and line, and the intensity a cyan line over the loudness.
+  if (training.data && training.key === selectionKey(audio.item)) {
+    g.strokeStyle = 'rgba(80, 220, 255, 0.8)';
+    g.fillStyle = 'rgba(80, 220, 255, 0.95)';
+    g.lineWidth = 2 * u;
+    for (const at of training.data.taps) {
+      const x = X(at);
+      if (x < left || x > right) continue;
+      g.beginPath();
+      g.moveTo(x, gridTop + 18 * u);
+      g.lineTo(x, bottom);
+      g.stroke();
+      g.beginPath();
+      g.arc(x, gridTop + 20 * u, 4 * u, 0, Math.PI * 2);
+      g.fill();
+    }
+    const iv = training.data.intensity;
+    if (iv.length) {
+      const y0 = laneY(0), y1 = y0 + laneH;
+      g.beginPath();
+      let pen = false;
+      for (let i = 0; i < iv.length; i++) {
+        const x = X(iv[i][0]);
+        if (x < left - 20 || x > right + 20) { pen = false; continue; }
+        const y = y1 - iv[i][1] * laneH * 0.92;
+        if (pen && i > 0 && iv[i][0] - iv[i - 1][0] < 0.5) g.lineTo(x, y); else g.moveTo(x, y);
+        pen = true;
+      }
+      g.stroke();
+    }
+  }
+
   // ---- the moment playing: a line, a dot on each lane where it is now,
   // and the lanes' names and readings.
   const glow = g.createLinearGradient(px - 10 * u, 0, px + 10 * u, 0);
@@ -14511,6 +14545,7 @@ const analysisScrub = (() => {
     return { r, top: r.top + r.height * 0.2, bottom: r.top + r.height * (TV ? 0.74 : 0.75) };
   };
   const owns = (x, y, target) => {
+    if (training.mode) return false;
     const np = $('now-playing');
     if (np.classList.contains('hidden') || coverStyle() !== 'analysis' || !audio.item || audio.item.kind !== 'music') return false;
     if (audio.npMode === 'queue' || !(viz.heard && viz.heard.key === selectionKey(audio.item))) return false;
@@ -14569,6 +14604,242 @@ const analysisScrub = (() => {
   }
   return { get active() { return Boolean(drag && drag.moved); } };
 })();
+
+
+// Training the looks, on SoundStorm's developer's install alone (the server
+// says so in the session: SOUNDSTORM_TRAINING; see httpapi/training.go). In
+// Now Playing, either tap where a big moment - lightning - should be, or hold
+// and slide up and down for how intense the music should feel; what is
+// recorded is kept per song on that server, and a training script learns
+// from it, for every install. Nobody else ever sees any of this. While it
+// records, Now Playing's own gestures (swipe, hold, double tap, dragging the
+// Analysis look) stand down, so every touch is a recording.
+const training = {
+  mode: null,        // 'taps' or 'intensity'
+  key: '',           // the song the data is for
+  item: null,        // and the song itself, to save against
+  data: null,        // { taps: [], intensity: [] }
+  dirty: false,
+  saveTimer: 0,
+  watch: 0,
+  slide: null,       // { id, last } while a finger is held in intensity mode
+};
+
+function trainingSongKey() {
+  return audio.item && audio.item.kind === 'music' ? selectionKey(audio.item) : '';
+}
+
+function trainingQuery(item) {
+  return `source=${encodeURIComponent(item.sourceId)}&id=${encodeURIComponent(item.id)}`;
+}
+
+async function trainingLoad() {
+  const item = audio.item;
+  const key = trainingSongKey();
+  training.key = key;
+  training.item = key ? item : null;
+  training.data = null;
+  if (!key) return;
+  const { ok, body } = await api(`/api/training/song?${trainingQuery(item)}`);
+  if (training.key !== key) return;
+  training.data = ok && body ? { taps: body.taps || [], intensity: body.intensity || [] } : { taps: [], intensity: [] };
+  trainingBar();
+}
+
+async function trainingSave() {
+  clearTimeout(training.saveTimer);
+  if (!training.dirty || !training.data || !training.item) return;
+  training.dirty = false;
+  const data = training.data;
+  const item = training.item;
+  data.taps.sort((a, b) => a - b);
+  data.intensity.sort((a, b) => a[0] - b[0]);
+  const { ok } = await api(`/api/training/song?${trainingQuery(item)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ taps: data.taps, intensity: data.intensity, lead: vizLead(), device: navigator.userAgent }),
+  });
+  if (!ok) { training.dirty = true; showToast('Could not save the recording; trying again', 'error'); trainingSaveSoon(); }
+}
+
+function trainingSaveSoon() {
+  clearTimeout(training.saveTimer);
+  training.saveTimer = setTimeout(trainingSave, 2000);
+}
+
+function trainingStart(mode) {
+  training.mode = mode;
+  if (trainingSongKey() !== training.key || !training.data) trainingLoad();
+  // A new song is loaded as it starts; what was recorded for the last is
+  // saved first.
+  clearInterval(training.watch);
+  training.watch = setInterval(async () => {
+    if (trainingSongKey() === training.key || training.switching) return;
+    training.switching = true;
+    try {
+      await trainingSave(); // against the song it was recorded for
+      await trainingLoad();
+    } finally {
+      training.switching = false;
+    }
+  }, 700);
+  trainingBar();
+}
+
+async function trainingStop() {
+  await trainingSave();
+  training.mode = null;
+  clearInterval(training.watch);
+  trainingBar();
+}
+
+// The bar across Now Playing while recording: what is being recorded, how
+// much, and Undo, Clear and Done.
+function trainingBar() {
+  let bar = $('np-train');
+  if (!training.mode) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'np-train';
+    $('now-playing').append(bar);
+  }
+  const d = training.data;
+  const what = training.mode === 'taps'
+    ? `Big moments · ${d ? d.taps.length : '…'}`
+    : `Intensity · ${d ? Math.round(d.intensity.length / 10) : '…'}s`;
+  const text = document.createElement('span');
+  text.textContent = what;
+  const button = (name, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    return b;
+  };
+  bar.replaceChildren(text,
+    button('Undo', () => {
+      if (!training.data) return;
+      if (training.mode === 'taps') training.data.taps.pop();
+      else {
+        // The last held stretch: back to the last gap of over half a second.
+        const iv = training.data.intensity;
+        let i = iv.length - 1;
+        while (i > 0 && iv[i][0] - iv[i - 1][0] < 0.5) i--;
+        iv.length = Math.max(0, i);
+      }
+      training.dirty = true;
+      trainingSaveSoon();
+      trainingBar();
+    }),
+    button('Clear', () => {
+      if (!training.data || !confirm(`Clear this song's ${training.mode === 'taps' ? 'taps' : 'intensity'}?`)) return;
+      if (training.mode === 'taps') training.data.taps = []; else training.data.intensity = [];
+      training.dirty = true;
+      trainingSave();
+      trainingBar();
+    }),
+    button('Done', trainingStop));
+}
+
+// Where a touch on Now Playing is a recording: not on the bar, a sheet or a
+// menu, nor on any button (play, Looks), which still work.
+function trainingTouch(target) {
+  return training.mode && training.data && !$('now-playing').classList.contains('hidden')
+    && !target.closest('#np-train, #np-looks, #item-menu, .np-controls, button, a, input');
+}
+
+function trainingFlash(x, y, cls) {
+  const dot = document.createElement('div');
+  dot.className = cls;
+  dot.style.left = `${x}px`;
+  dot.style.top = `${y}px`;
+  $('now-playing').append(dot);
+  setTimeout(() => dot.remove(), 600);
+}
+
+function trainingIntensityAt(y) {
+  const r = $('now-playing').getBoundingClientRect();
+  return Math.max(0, Math.min(1, 1 - (y - r.top - r.height * 0.15) / (r.height * 0.7)));
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (!trainingTouch(e.target)) return;
+  e.stopPropagation();
+  const t = ($('audio-player').currentTime || 0) + vizLead();
+  if (training.mode === 'taps') {
+    training.data.taps.push(+t.toFixed(3));
+    if (navigator.vibrate) navigator.vibrate(8);
+    trainingFlash(e.clientX, e.clientY, 'train-tap');
+  } else {
+    training.slide = { id: e.pointerId, y: e.clientY };
+    training.data.intensity.push([+t.toFixed(2), +trainingIntensityAt(e.clientY).toFixed(3)]);
+    let line = $('np-train-level');
+    if (!line) { line = document.createElement('div'); line.id = 'np-train-level'; $('now-playing').append(line); }
+    line.style.top = `${e.clientY}px`;
+    line.dataset.v = `${Math.round(trainingIntensityAt(e.clientY) * 100)}%`;
+  }
+  training.dirty = true;
+  trainingSaveSoon();
+  trainingBar();
+}, true);
+document.addEventListener('pointermove', (e) => {
+  if (!training.slide || e.pointerId !== training.slide.id) return;
+  e.stopPropagation();
+  const line = $('np-train-level');
+  if (line) { line.style.top = `${e.clientY}px`; line.dataset.v = `${Math.round(trainingIntensityAt(e.clientY) * 100)}%`; }
+  training.slide.y = e.clientY;
+}, true);
+// While a finger is held, its height is sampled ten times a second.
+setInterval(() => {
+  if (!training.slide || training.slide.y === undefined || !training.data) return;
+  const t = ($('audio-player').currentTime || 0) + vizLead();
+  training.data.intensity.push([+t.toFixed(2), +trainingIntensityAt(training.slide.y).toFixed(3)]);
+  training.dirty = true;
+  if (training.data.intensity.length % 10 === 0) trainingBar();
+}, 100);
+for (const type of ['pointerup', 'pointercancel']) {
+  document.addEventListener(type, (e) => {
+    if (!training.slide || e.pointerId !== training.slide.id) return;
+    e.stopPropagation();
+    training.slide = null;
+    const line = $('np-train-level');
+    if (line) line.remove();
+    trainingSaveSoon();
+  }, true);
+}
+// A touch's own events, for Now Playing's swipe: stopped while recording,
+// and the page does not scroll.
+for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+  document.addEventListener(type, (e) => {
+    if (!(training.slide || (type === 'touchstart' && trainingTouch(e.target)))) return;
+    e.stopPropagation();
+    if (type === 'touchmove' && e.cancelable) e.preventDefault();
+  }, { capture: true, passive: false });
+}
+// A click on Now Playing while recording is not a tap for the next look.
+document.addEventListener('click', (e) => { if (trainingTouch(e.target)) e.stopPropagation(); }, true);
+window.addEventListener('pagehide', () => { trainingSave(); });
+
+// The Looks sheet's training section, on the developer's install alone.
+function looksTraining() {
+  if (!state.training || !audio.item || audio.item.kind !== 'music') return [];
+  const h = document.createElement('p');
+  h.className = 'np-looks-group';
+  h.textContent = 'Training (only on this server)';
+  const grid = document.createElement('div');
+  grid.className = 'np-looks-grid';
+  const add = (name, fn, on) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `np-look${on ? ' on' : ''}`;
+    b.textContent = name;
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); closeLooks(); });
+    grid.append(b);
+  };
+  add('Tap big moments', () => trainingStart('taps'), training.mode === 'taps');
+  add('Slide intensity', () => trainingStart('intensity'), training.mode === 'intensity');
+  if (training.mode) add('Stop', trainingStop);
+  return [h, grid];
+}
 
 const VIZ_SCENES = {
   flow: (st, m) => flowScene(st, m),

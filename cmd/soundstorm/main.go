@@ -305,6 +305,14 @@ func run(log *slog.Logger) error {
 		discoverFinder = nil
 	}
 
+	// Training the looks is for SoundStorm's developer: one install, by a
+	// setting nobody else has. What is learnt ships in SoundStorm itself.
+	trainingDir := ""
+	if enabled(env("SOUNDSTORM_TRAINING", "false")) {
+		trainingDir = filepath.Join(stateDir, "training")
+		log.Info("training mode is on: Now Playing can record for the looks", "dir", trainingDir)
+	}
+
 	api := httpapi.New(httpapi.Config{
 		Registry:         registry,
 		Store:            store,
@@ -346,7 +354,8 @@ func run(log *slog.Logger) error {
 		Collections: collectionStore,
 		// What is heard in each song, for the visualizer: a cache beside the
 		// state, never in the music folders.
-		BeatsDir: filepath.Join(stateDir, "beats"),
+		BeatsDir:    filepath.Join(stateDir, "beats"),
+		TrainingDir: trainingDir,
 	})
 
 	// Books with both an ebook and an audiobook are synced for read-along by
