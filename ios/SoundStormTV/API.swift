@@ -663,8 +663,11 @@ final class API {
     // MARK: URLs
 
     /// The song's bytes, original quality; ranges work.
-    func streamURL(_ item: Item) -> URL {
-        url("api/stream/\(Self.part(item.sourceId))/\(Self.path(item.id))")
+    /// A song or file; `kbps` asks for a converted copy (only 96 to 320 are
+    /// honoured), as the page does on a slow link.
+    func streamURL(_ item: Item, kbps: Int? = nil) -> URL {
+        url("api/stream/\(Self.part(item.sourceId))/\(Self.path(item.id))",
+            query: kbps.map { ["kbps": String($0)] } ?? [:])
     }
 
     func artURL(source: String, artId: String?, size: Int = 400) -> URL? {
