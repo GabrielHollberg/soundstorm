@@ -14108,37 +14108,74 @@ function stormBolt(w, h, s, age) {
   if (!tier) return bo;
   bo.scale = tier === 2 ? 1 + 0.6 * (s - 0.7) / 0.3 : 0.45 + 0.3 * (s - 0.3) / 0.4;
   const bottom = tier === 2 ? h * (0.9 + Math.random() * 0.06) : h * (0.36 + Math.random() * 0.2);
+  // Not every bolt falls straight down (the owner's asking): a quarter crawl
+  // across the sky, just under and in and out of the clouds, never reaching
+  // the ground; a third lean, landing well to one side of where they left
+  // the cloud; the rest come down more or less straight.
+  const r = Math.random();
+  const crawl = r < 0.25;
+  const lean = !crawl && r < 0.58;
+  const side = Math.random() < 0.5 ? -1 : 1;
+  let sx = x0;
+  let sy = -h * 0.02;
+  let tx;
+  let ty;
+  if (crawl) {
+    sx = w * (0.1 + Math.random() * 0.8);
+    sy = h * (0.16 + Math.random() * 0.2);
+    tx = Math.min(w * 1.05, Math.max(-w * 0.05, sx + side * w * (0.45 + Math.random() * 0.45)));
+    ty = sy + (Math.random() - 0.3) * h * 0.12;
+  } else {
+    tx = lean ? sx + side * w * (0.25 + Math.random() * 0.3) : sx + (Math.random() - 0.5) * w * 0.15;
+    tx = Math.min(w * 0.95, Math.max(w * 0.05, tx));
+    ty = bottom;
+  }
+  bo.crawl = crawl;
   // The shape is lightning's, jagged at every scale: a few big kinks first
-  // (waypoints down the screen, each pushed sideways from the last), then
-  // each stretch between them broken by midpoint displacement - halved again
-  // and again, each middle pushed aside by a share of its own length - so a
-  // stretch is as zigzag up close as the whole bolt is from afar. It starts
+  // (waypoints along the way, each pushed aside), then each stretch between
+  // them broken by midpoint displacement - halved again and again, each
+  // middle pushed aside by a share of its own length - so a stretch is as
+  // zigzag up close as the whole bolt is from afar. A falling bolt starts
   // above the screen, hidden in the cloud.
-  const main = [x0, -h * 0.02];
+  const main = [sx, sy];
   const kinks = 4 + Math.floor(Math.random() * 3);
-  let px = x0;
-  let py = -h * 0.02;
+  let px = sx;
+  let py = sy;
   for (let k = 1; k <= kinks; k++) {
-    const ny = -h * 0.02 + (bottom + h * 0.02) * (k / kinks) + (k < kinks ? (Math.random() - 0.5) * h * 0.04 : 0);
-    const nx = px + (Math.random() - 0.5) * w * 0.14;
+    const f = k / kinks;
+    const last = k === kinks;
+    const nx = sx + (tx - sx) * f + (last ? 0 : (Math.random() - 0.5) * w * (crawl ? 0.05 : 0.12));
+    const ny = sy + (ty - sy) * f + (last ? 0 : (Math.random() - 0.5) * h * (crawl ? 0.07 : 0.04));
     stormJag(main, px, py, nx, ny, 0.42, 4);
     px = nx;
     py = ny;
   }
   bo.main = main;
   bo.ex = px;
-  bo.ey = bottom;
-  // Branches: few, short, angled down and forking, gathered near the top
-  // where the bolt leaves the cloud, and shorter the lower they start. A
-  // close bolt has one strong branch, nearly as bright as the bolt itself.
+  bo.ey = py;
+  // A crawler lights the clouds all along its way, the light rolling with
+  // it, in place of one patch where a bolt leaves the cloud.
+  if (crawl) {
+    bo.lights = [];
+    for (let k = 0; k < 4; k++) {
+      const f = k / 3;
+      bo.lights.push({ x: sx + (tx - sx) * f, y: Math.min(h * 0.2, sy + (ty - sy) * f), r: w * (0.3 + Math.random() * 0.2), k: tier === 2 ? 0.9 : 0.65, delay: f * 0.12 });
+    }
+  }
+  // Branches: few, short, angled down and forking, gathered near the start
+  // where the bolt leaves the cloud, and shorter the further along they
+  // start (a crawler's anywhere along it). A close bolt has one strong
+  // branch, nearly as bright as the bolt itself.
   const n = main.length / 2;
   const count = tier === 2 ? 3 + Math.floor(Math.random() * 3 + s * 2) : 1 + Math.floor(Math.random() * 2);
   for (let b = 0; b < count; b++) {
-    const t = Math.random() * Math.random() * 0.7;
+    const t = crawl ? 0.1 + Math.random() * 0.8 : Math.random() * Math.random() * 0.7;
     const at = Math.max(2, Math.floor(t * n)) * 2;
     const strong = tier === 2 && b === 0;
-    const len = h * (strong ? 0.22 + Math.random() * 0.12 : 0.07 + Math.random() * 0.12) * (1 - t * 0.8) * (tier === 2 ? 1 : 0.6);
-    stormBranch(bo.branches, main[at], main[at + 1], len, Math.random() < 0.5 ? -1 : 1, strong ? 0.75 : 0.35 + Math.random() * 0.15, strong ? 2 : 1);
+    const len = h * (strong ? 0.22 + Math.random() * 0.12 : 0.07 + Math.random() * 0.12) * (crawl ? 0.6 : 1 - t * 0.8) * (tier === 2 ? 1 : 0.6);
+    // A leaning bolt's branches mostly lean its way.
+    const bs = lean && Math.random() < 0.7 ? side : Math.random() < 0.5 ? -1 : 1;
+    stormBranch(bo.branches, main[at], main[at + 1], len, bs, strong ? 0.75 : 0.35 + Math.random() * 0.15, strong ? 2 : 1);
   }
   return bo;
 }
@@ -14457,11 +14494,7 @@ const FULL_SCENES = {
     // The bolts: a white core thick at the top and thinning towards the end; the
     // branches dim faster than the main channel; and after the flashes a
     // faint image of the channel lingers, as it does on the eye.
-    keep = 0;
-    for (const bo of st.bolts) {
-      if (bo.age >= bo.life) continue;
-      st.bolts[keep++] = bo;
-      if (!bo.tier || bo.age < 0) continue;
+    const drawBolt = (bo) => {
       const I = bo.I;
       const Ib = I * I;
       const sc = bo.scale * dpr;
@@ -14521,7 +14554,7 @@ const FULL_SCENES = {
         stormPath(g, main, 0, main.length - 2);
         g.stroke();
       }
-      if (bo.tier === 2) {
+      if (bo.tier === 2 && !bo.crawl) {
         // Where it lands: a glow on the ground, and the first stroke throws
         // up a burst of spray and a ring of splashes.
         if (I > 0.01) {
@@ -14535,6 +14568,12 @@ const FULL_SCENES = {
           for (let k = 0; k < 5 && st.splash.length < 90; k++) st.splash.push({ x: bo.ex + (Math.random() - 0.5) * w * 0.12, y: bo.ey + Math.random() * h * 0.02, life: 1, c: 0, big: 2.5 + Math.random() * 2, bolt: true });
         }
       }
+    };
+    keep = 0;
+    for (const bo of st.bolts) {
+      if (bo.age >= bo.life) continue;
+      st.bolts[keep++] = bo;
+      if (bo.tier && bo.age >= 0 && !bo.crawl) drawBolt(bo);
     }
     st.bolts.length = keep;
     g.globalCompositeOperation = 'source-over';
@@ -14561,6 +14600,11 @@ const FULL_SCENES = {
       stormDrawPuff(g, st.lit[c.shape], c, w, h, R);
     }
     g.globalAlpha = 1;
+    // A crawler goes across the clouds, so it is drawn over them (under
+    // them, on a TV's wide clouds it was hidden).
+    g.globalCompositeOperation = 'lighter';
+    for (const bo of st.bolts) if (bo.crawl && bo.tier && bo.age >= 0) drawBolt(bo);
+    g.globalCompositeOperation = 'source-over';
   },
 
   // Synthwave: a neon grid racing towards you under a striped sunset sun that

@@ -1417,7 +1417,12 @@ crossed in a web): jagged at every scale - a few big kinks, then each stretch
 broken by midpoint displacement (`stormJag`), so it zigzags up close as it does
 from afar - with few branches, short, angled 20-55 degrees down, forking once
 more, gathered near the top and shorter the lower they start, and on a close
-bolt one strong branch. Each branch thins and fades to its tip.
+bolt one strong branch. Each branch thins and fades to its tip. **Not every
+bolt falls straight** (the owner's asking): a quarter crawl across the sky
+just under the clouds, never reaching the ground, lighting the clouds all
+along the way (four lights rolling with it) and drawn over the clouds (under
+them, a TV's wide clouds hid them); a third lean, landing well to one side,
+their branches mostly leaning the same way; the rest come down near straight.
 The bolt thins towards its end, branches dim faster than the main channel
 (one faint glow round it: the two bands it had read as a ghost of the bolt,
 none looked bare, and the owner chose between),
