@@ -117,9 +117,13 @@ final class WebViewController: UIViewController {
     fileprivate func received(_ message: WKScriptMessage) {
         // Only the server's own pages may ask the app for anything.
         let origin = message.frameInfo.securityOrigin
+        // Scheme, host and port, as isServer: a page on another port of the
+        // same machine is not the server.
+        let defaultPort = current.scheme == "https" ? 443 : 80
         guard message.frameInfo.isMainFrame,
               origin.host.lowercased() == current.host()?.lowercased(),
-              origin.protocol == current.scheme
+              origin.protocol == current.scheme,
+              (origin.port == 0 ? defaultPort : origin.port) == (current.port ?? defaultPort)
         else { return }
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         switch type {
@@ -177,16 +181,10 @@ extension WebViewController: WKNavigationDelegate {
         guard let url = action.request.url else { return .cancel }
         let mainFrame = action.targetFrame?.isMainFrame ?? true
         if mainFrame && sameInstall(url) {
-            // Kept as the address only when it replaces plain http on the
-            // LAN, which it is strictly better than. The away-from-home name
-            // stays saved, or the app would be stuck on a name that only works
-            // at home; each launch starts there and the page moves again.
-            if current.scheme == "http", var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                parts.path = ""
-                parts.query = nil
-                parts.fragment = nil
-                if let secure = parts.url { ServerAddress.saved = secure }
-            }
+            // Followed for now, never saved: the address typed stays the one
+            // the app starts from. Saving a name reached from a plain-http
+            // page let someone on the same Wi-Fi pin the app to a server of
+            // their own for good (the security review; Android the same).
             current = url
             return .allow
         }
@@ -195,8 +193,12 @@ extension WebViewController: WKNavigationDelegate {
             return .cancel
         }
         if !["http", "https", "blob", "data", "about"].contains(url.scheme ?? "") {
-            // mailto:, tel: and the like belong to other apps.
-            await UIApplication.shared.open(url)
+            // mailto:, tel: and the like belong to other apps - only when
+            // somebody followed such a link on the page itself, never because
+            // a frame or a script asked.
+            if mainFrame && action.navigationType == .linkActivated {
+                await UIApplication.shared.open(url)
+            }
             return .cancel
         }
         return .allow
@@ -255,7 +257,10 @@ extension WebViewController: WKUIDelegate {
     /// target="_blank" (the ListenBrainz and LRCLIB links in Account): Safari.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url {
+        // Only a link somebody followed, and only to the web: not a window a
+        // script opened, nor any other kind of address.
+        if let url = action.request.url, action.navigationType == .linkActivated,
+           ["http", "https"].contains(url.scheme ?? "") {
             UIApplication.shared.open(url)
         }
         return nil

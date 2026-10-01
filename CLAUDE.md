@@ -3715,7 +3715,7 @@ proxy following a backend's redirects (none known to be steerable, and
 refusing them risks breaking playback); covers kept in the browser cache
 for a week after sign-out (a URL is needed to see one).
 
-**For the Mac, not yet fixed (Swift, found in this pass):**
+**Fixed on the Mac (2026-09-30), found in this pass (Swift):**
 - `WebViewController.swift` `sameInstall`/`decidePolicyFor`: from a plain-http
   address any `https://<anything>.home.soundstorm.dev` on the same port is
   accepted and saved (`ServerAddress.saved`), redirects included - the flaw
@@ -3728,6 +3728,13 @@ for a week after sign-out (a URL is needed to see one).
   subtitle answer goes to another host; require the server's host.
 - `+` in query values is not encoded (URLQueryItem), so "C++" searches as
   "C  ".
+
+All five as asked: the move to a secure name is followed and never saved (as
+on Android); other schemes open only from a link followed in the main frame,
+and a new window only for an http(s) link followed; the bridge checks the
+port too (a default port reads 0 in `WKSecurityOrigin`); `absolute` throws
+for any other host (a book file, film or subtitle so refused is not played);
+`+` is sent as `%2B`. The iPhone UI tests still pass, Change server included.
 
 ## Tailscale, and why it is a profile rather than a service
 

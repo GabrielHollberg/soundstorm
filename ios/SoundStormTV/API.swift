@@ -600,14 +600,20 @@ final class API {
 
     /// A subtitle track's text: WebVTT, fetched with the session like the rest.
     func text(at path: String) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(from: absolute(path))
+        let (data, response) = try await URLSession.shared.data(from: try absolute(path))
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.status(0, "Subtitles didn't load.") }
         return String(decoding: data, as: UTF8.self)
     }
 
     /// The server gives paths ("/api/hls/..."); the player needs them whole.
-    func absolute(_ path: String) -> URL {
-        URL(string: path, relativeTo: server)?.absoluteURL ?? server
+    /// Only ever on the server: an answer naming another host (a full URL in a
+    /// playback, track or subtitle) is refused rather than followed, with the
+    /// session cookie, somewhere else - the security review's finding.
+    func absolute(_ path: String) throws -> URL {
+        guard let url = URL(string: path, relativeTo: server)?.absoluteURL,
+              url.scheme == server.scheme, url.host() == server.host(), url.port == server.port
+        else { throw Failure.status(0, "The server pointed somewhere else.") }
+        return url
     }
 
     /// Where this person stopped in a film or episode: the web page's own
@@ -656,6 +662,9 @@ final class API {
         parts.percentEncodedPath = "/" + path
         if !query.isEmpty {
             parts.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
+            // URLComponents leaves "+", which a server reads as a space:
+            // "C++" searched as "C  ".
+            parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         }
         return parts.url!
     }

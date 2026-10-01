@@ -126,10 +126,12 @@ final class Player {
         self.speed = speed
         player.defaultRate = Float(speed)
         if let tracks = playback.tracks, tracks.count > 1 {
-            files = tracks.map { BookFile(url: api.absolute($0.url), start: $0.startSeconds) }
+            files = tracks.compactMap { t in (try? api.absolute(t.url)).map { BookFile(url: $0, start: t.startSeconds) } }
         } else {
-            files = [BookFile(url: api.absolute(playback.url), start: 0)]
+            files = [(try? api.absolute(playback.url)).map { BookFile(url: $0, start: 0) }].compactMap { $0 }
         }
+        // Nothing on the server to play (an answer pointing elsewhere is refused).
+        guard !files.isEmpty else { isBook = false; queue = []; return }
         // Chapter marks where the book has them, else one per file.
         chapters = playback.chapters ?? (playback.tracks?.count ?? 0 > 1
             ? playback.tracks!.map { API.Chapter(title: $0.title, startSeconds: $0.startSeconds) } : [])

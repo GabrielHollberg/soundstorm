@@ -65,7 +65,7 @@ final class VideoSession: Identifiable {
             subtitleTracks = playback.subtitles ?? []
             audioTracks = playback.audio ?? []
             audioChoice = audioTracks.first(where: { $0.default == true })?.index ?? audioTracks.first?.index
-            let playerItem = load(playback)
+            let playerItem = try load(playback)
             if let seconds = await api.watchedSeconds(item) {
                 await resume(at: seconds, in: playerItem)
             }
@@ -87,8 +87,8 @@ final class VideoSession: Identifiable {
         }
     }
 
-    private func load(_ playback: API.Playback) -> AVPlayerItem {
-        let asset = AVURLAsset(url: api.absolute(playback.url), options: [AVURLAssetHTTPCookiesKey: api.cookies])
+    private func load(_ playback: API.Playback) throws -> AVPlayerItem {
+        let asset = AVURLAsset(url: try api.absolute(playback.url), options: [AVURLAssetHTTPCookiesKey: api.cookies])
         let playerItem = AVPlayerItem(asset: asset)
         playerItem.externalMetadata = metadata()
         watchEnd(of: playerItem)
@@ -138,7 +138,7 @@ final class VideoSession: Identifiable {
         do {
             let playback = try await api.playback(item, audio: index)
             audioChoice = index
-            _ = load(playback)
+            _ = try load(playback)
             await player.seek(to: at)
             if wasPlaying { player.play() }
         } catch {
