@@ -65,6 +65,10 @@ func awayFromHome(r *http.Request) bool {
 	return strings.HasSuffix(host, ".net.soundstorm.dev") || strings.HasSuffix(host, ".ts.net")
 }
 
+// AwayFromHome reports whether a request came in by an away-from-home name,
+// for a decision outside this package (a film's quality).
+func AwayFromHome(r *http.Request) bool { return awayFromHome(r) }
+
 // paceRate is how fast, in bytes a second, to send a piece of audio after the
 // burst: paceAhead times its bitrate. Zero means not to pace at all.
 func paceRate(r *http.Request, contentType string) float64 {

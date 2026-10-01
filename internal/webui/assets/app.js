@@ -150,6 +150,13 @@ const QUALITY_KEY = 'soundstorm.quality';
 // quieter by this much, per device (Playback on this device), 8dB unless
 // changed - about a film's dialogue.
 const BOOK_GAIN_KEY = 'soundstorm.bookGain';
+// Film quality, per device like the rest (Playback on this device): smart is
+// the original picture at home and a 20 Mbit copy away from home, decided by
+// the server from the address used (httpapi/filmquality.go).
+const FILM_QUALITY_KEY = 'soundstorm.filmQuality';
+function filmQuality() {
+  return localStorage.getItem(FILM_QUALITY_KEY) || 'smart';
+}
 function bookGainDb() {
   const v = Number(localStorage.getItem(BOOK_GAIN_KEY));
   return localStorage.getItem(BOOK_GAIN_KEY) === null || !Number.isFinite(v) ? -8 : Math.max(-24, Math.min(0, v));
@@ -772,6 +779,11 @@ async function loadLibrary() {
 // "Use on your phone or TV": the home address, and the away-from-home one when
 // remote access is on and working. Only the owner's session carries the latter,
 // so a member sees the home address alone.
+$('film-quality-select').value = filmQuality();
+$('film-quality-select').addEventListener('change', (event) => {
+  localStorage.setItem(FILM_QUALITY_KEY, event.target.value);
+  note($('playback-note'), 'Saved. It applies from the next film you start.', false);
+});
 $('book-gain-select').value = String(bookGainDb());
 $('book-gain-select').addEventListener('change', (event) => {
   localStorage.setItem(BOOK_GAIN_KEY, event.target.value);
@@ -1820,7 +1832,7 @@ async function playVideo(item, options = {}) {
   if (isDownloaded(item) && (await playKeptVideo(item, player))) return;
 
   // Ask before building a player: the answer decides which one to build.
-  const audioQuery = options.audio !== undefined ? `?audio=${options.audio}` : '';
+  const audioQuery = `?vq=${filmQuality()}` + (options.audio !== undefined ? `&audio=${options.audio}` : '');
   const { ok, body } = await api(
     `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}${audioQuery}`);
   const mode = ok && body ? body.mode : 'direct';
@@ -9308,7 +9320,9 @@ function hlsParts(text, base) {
 }
 
 async function keepVideo(cache, item, onProgress, shouldStop) {
-  const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
+  // A download is the standard copy: the original picture of a Blu-ray would
+  // be tens of gigabytes on the device.
+  const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}?vq=standard`);
   if (!ok || !body) throw new Error('could not ask how to play it');
   const files = [];
   const subtitles = [];

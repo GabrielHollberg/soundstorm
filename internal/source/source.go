@@ -757,6 +757,29 @@ func AudioStreamFrom(ctx context.Context) (int, bool) {
 	return i, ok
 }
 
+type videoQualityKey struct{}
+
+// VideoQuality is how much a film may be sent at, chosen per device: the most
+// bits a second the picture may take (under it, a picture the device can play
+// is copied as it is rather than re-encoded), the most audio channels, and
+// the widest picture (0 for no limit).
+type VideoQuality struct {
+	MaxBitrate       int
+	MaxAudioChannels int
+	MaxWidth         int
+}
+
+// WithVideoQuality asks a Negotiator to send a film at this quality.
+func WithVideoQuality(ctx context.Context, q VideoQuality) context.Context {
+	return context.WithValue(ctx, videoQualityKey{}, q)
+}
+
+// VideoQualityFrom is the quality asked for, if one was.
+func VideoQualityFrom(ctx context.Context) (VideoQuality, bool) {
+	q, ok := ctx.Value(videoQualityKey{}).(VideoQuality)
+	return q, ok
+}
+
 // ShowBrowser is an optional interface for a television source that knows a
 // series' episodes, not just its name - which is how anybody watches one.
 type ShowBrowser interface {

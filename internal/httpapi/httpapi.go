@@ -1644,6 +1644,7 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 		if a, err := strconv.Atoi(r.URL.Query().Get("audio")); err == nil && a >= 0 {
 			ctx = source.WithAudioStream(ctx, a)
 		}
+		ctx = source.WithVideoQuality(ctx, filmQuality(r))
 		play, err := negotiator.Playback(ctx, itemID)
 		if err != nil {
 			s.log.Warn("playback negotiation failed",

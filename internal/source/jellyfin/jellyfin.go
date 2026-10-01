@@ -288,9 +288,22 @@ func (s *Source) StreamTarget(ctx context.Context, itemID string) (source.Target
 
 // --- playback negotiation ----------------------------------------------------
 
-// maxStreamingBitrate caps what Jellyfin will transcode to. 20 Mbit is
-// generous for a home network and well above what a browser needs for 1080p.
+// maxStreamingBitrate caps what Jellyfin will transcode to when nobody asked
+// for a quality (source.VideoQuality, chosen per device): 20 Mbit, enough for
+// 1080p.
 const maxStreamingBitrate = 20_000_000
+
+// quality is the film quality asked for, or the old default.
+func quality(ctx context.Context) source.VideoQuality {
+	q, ok := source.VideoQualityFrom(ctx)
+	if !ok || q.MaxBitrate <= 0 {
+		return source.VideoQuality{MaxBitrate: maxStreamingBitrate, MaxAudioChannels: 2}
+	}
+	if q.MaxAudioChannels <= 0 {
+		q.MaxAudioChannels = 2
+	}
+	return q
+}
 
 // deviceProfile tells Jellyfin what this browser can decode.
 //
@@ -307,10 +320,10 @@ const maxStreamingBitrate = 20_000_000
 // answer.
 const directPlayContainers = "mp4,m4v,webm"
 
-func deviceProfile() map[string]any {
+func deviceProfile(bitrate int) map[string]any {
 	return map[string]any{
-		"MaxStreamingBitrate": maxStreamingBitrate,
-		"MaxStaticBitrate":    maxStreamingBitrate,
+		"MaxStreamingBitrate": bitrate,
+		"MaxStaticBitrate":    bitrate,
 		"DirectPlayProfiles": []map[string]any{
 			{"Type": "Video", "Container": "mp4,m4v", "VideoCodec": "h264", "AudioCodec": "aac,mp3"},
 			{"Type": "Video", "Container": "webm", "VideoCodec": "vp8,vp9,av1", "AudioCodec": "vorbis,opus"},
@@ -518,14 +531,15 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 	if s.cfg.UserID != "" {
 		params.Set("userId", s.cfg.UserID)
 	}
+	q := quality(ctx)
 
 	resp, err := s.http.Do(ctx, httpx.Request{
 		Method: http.MethodPost,
 		Path:   "/Items/" + url.PathEscape(itemID) + "/PlaybackInfo",
 		Params: params,
 		Body: map[string]any{
-			"DeviceProfile":       deviceProfile(),
-			"MaxStreamingBitrate": maxStreamingBitrate,
+			"DeviceProfile":       deviceProfile(q.MaxBitrate),
+			"MaxStreamingBitrate": q.MaxBitrate,
 			"StartTimeTicks":      0,
 			"AutoOpenLiveStream":  true,
 		},
@@ -562,7 +576,7 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 		return source.Playback{Mode: source.PlaybackModeDirect, Subtitles: subtitles, AudioTracks: audio}, nil
 	}
 
-	query := s.hlsParams(itemID, ms.ID)
+	query := s.hlsParams(itemID, ms.ID, q)
 	if picked {
 		query.Set("AudioStreamIndex", strconv.Itoa(chosen))
 	}
@@ -591,11 +605,15 @@ func (s *Source) browserCanPlay(container string) bool {
 }
 
 // hlsParams builds the query Jellyfin needs to produce a playlist.
-func (s *Source) hlsParams(itemID, mediaSourceID string) url.Values {
+//
+// Under q's bitrate a picture the browser can play is copied, not re-encoded
+// (Jellyfin's stream copy, on by default); sound goes to AAC with up to q's
+// channels, so 5.1 stays 5.1 where the device can play it.
+func (s *Source) hlsParams(itemID, mediaSourceID string, q source.VideoQuality) url.Values {
 	if mediaSourceID == "" {
 		mediaSourceID = itemID
 	}
-	return url.Values{
+	v := url.Values{
 		"mediaSourceId":        {mediaSourceID},
 		"deviceId":             {deviceID},
 		"videoCodec":           {"h264"},
@@ -603,9 +621,13 @@ func (s *Source) hlsParams(itemID, mediaSourceID string) url.Values {
 		"transcodingContainer": {"ts"},
 		"transcodingProtocol":  {"hls"},
 		"segmentContainer":     {"ts"},
-		"videoBitRate":         {strconv.Itoa(maxStreamingBitrate)},
-		"maxAudioChannels":     {"2"},
+		"videoBitRate":         {strconv.Itoa(q.MaxBitrate)},
+		"maxAudioChannels":     {strconv.Itoa(q.MaxAudioChannels)},
 	}
+	if q.MaxWidth > 0 {
+		v.Set("maxWidth", strconv.Itoa(q.MaxWidth))
+	}
+	return v
 }
 
 // HLSTarget maps a playlist or segment path onto Jellyfin's video namespace.

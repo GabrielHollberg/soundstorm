@@ -160,6 +160,20 @@ counts eight seconds into the next (from the page's list, else
 `GET /api/tv/next`), Play now and Cancel beside it. Before this a TV item
 fell through `play()` to the audio player - episodes played as sound only.
 
+**Film quality is per device** (Playback on this device, `?vq=` on
+`/api/playback`, `httpapi/filmquality.go`). Films were capped at 20 Mbit,
+under a Blu-ray rip's ~40, so Jellyfin re-encoded every frame (libx264
+veryfast, crf 23 - seen in its log for the owner's Lord of the Rings rip, an
+H.264 1080p picture any browser plays) and sent stereo. Now: **smart** (the
+default, and what a client that does not ask gets - the Apple TV included) is
+the original at home and 20 Mbit from an away-from-home name; **always
+original**; **standard** (20 Mbit); **data saver** (4 Mbit, 720p, stereo). Under
+the cap Jellyfin copies the picture untouched (its stream copy, on by default),
+far less work than re-encoding; sound a browser cannot play (TrueHD, DTS) is
+still converted, to AAC with up to 5.1 channels. Downloads take standard: an
+original Blu-ray picture would be tens of gigabytes on a device. Blu-ray
+subtitles are pictures (PGS) and are not offered.
+
 A file with more than one audio language gets an Audio picker beside
 Subtitles. Choosing one asks `/api/playback?audio=<stream index>`: a browser
 plays only a file's first audio track, so another language is always Jellyfin
