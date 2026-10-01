@@ -731,8 +731,8 @@ async function refreshMyPhotos() {
   // Dropping sorts by date; folders of one's own are kept only by putting
   // them in the folder on the server's drive directly.
   $('my-photos-folders').textContent = me.owner
-    ? `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, copy them straight into ${body.folder} (or anywhere in the pictures folder) on the server's drive: they appear in Photos as they are.`
-    : `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, ask whoever looks after the server to copy them straight into ${body.folder} on its drive: they appear in Photos as they are.`;
+    ? `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, copy them straight into ${body.folder} (or anywhere in the pictures folder) on the server's drive: they appear in Photos as they are, and are left alone - a photo that is also dropped here later is sorted by date as well, so it shows twice.`
+    : `Photos dropped here or brought in are sorted by when they were taken. To keep folders of your own, ask whoever looks after the server to copy them straight into ${body.folder} on its drive: they appear in Photos as they are, and are left alone - a photo that is also dropped here later is sorted by date as well, so it shows twice.`;
   show($('my-photos-block'), true);
 }
 

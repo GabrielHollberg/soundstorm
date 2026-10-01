@@ -4624,7 +4624,11 @@ dropped - with a better-sourced date, or a place where the kept copy has none
 (inside it, `ExifHasPlace`, or beside it), rewrites the kept copy's sidecar
 and, when the date improved, moves it from Undated or the wrong month to the
 right one (`improvePhoto`) - never out of a folder somebody arranged, and the
-photo itself never changes. The import counts them ("of those gave a photo
+photo itself never changes. **Only the dated folders count as kept** (the
+owner's rule, `managedPhoto`): a photo sitting only in a folder somebody
+arranged and copied in does not stop a copy being filed by date, and is never
+improved or moved - their folders are left exactly as they are, and such a
+photo then shows twice, which Your photos says. The import counts them ("of those gave a photo
 you had a better date or place"); a dropped one says "its date was
 corrected". Checked on a throwaway Immich: an undated iCloud photo, then
 Google's copy - moved from Undated to 2018/06, and Immich showed 26 June 2018

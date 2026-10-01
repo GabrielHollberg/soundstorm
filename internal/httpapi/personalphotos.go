@@ -135,8 +135,8 @@ func (s *Server) personalPlan(u state.User, placements []library.Placement) {
 
 // --- what each person already has --------------------------------------------
 
-// photoIndex is the files in one person's folder by size, and the hashes of
-// those it has had to compare, so a dropped photo or a download is checked
+// photoIndex is the files in one person's dated folders by size, and the
+// hashes of those it has had to compare, so a dropped photo or a download is checked
 // against what is there without hashing the folder for every file.
 type photoIndex struct {
 	mu     sync.Mutex
@@ -175,7 +175,7 @@ func (s *Server) photoIndexFor(u state.User) *photoIndex {
 		}
 		dir := filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(library.PersonalFolder(u.Name)))
 		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-			if err == nil && d.Type().IsRegular() && library.IsPictureFile(p) {
+			if err == nil && d.Type().IsRegular() && library.IsPictureFile(p) && managedPhoto(dir, p) {
 				if info, err := d.Info(); err == nil {
 					ix.bySize[info.Size()] = append(ix.bySize[info.Size()], p)
 				}
@@ -572,6 +572,11 @@ func (s *Server) photoFieldsFor(u state.User, out map[string]any) {
 
 // datedFolder is a folder SoundStorm made by date (2019/07, or Undated) rather
 // than one somebody arranged and copied in.
+//
+// Only photos in these count as already kept (the owner's rule): a copy of a
+// photo that sits only in a folder somebody arranged themselves is still
+// filed into the dated folders, and a duplicate improves only a copy here.
+// Their own folders are theirs, left exactly as they are.
 var datedFolder = regexp.MustCompile(`^((19|20)\d{2}/(0[1-9]|1[0-2])|Undated)$`)
 
 // improvePhoto gives a photo kept in a person's folder what a duplicate of it
@@ -643,4 +648,14 @@ func (s *Server) improvePhoto(u state.User, existing string, inc photoimport.Met
 	s.log.Info("a photo's details improved from a copy of it", "by", u.Name, "photo", slash, "date", dateBetter)
 	s.scheduleRescan(media.KindPicture)
 	return true
+}
+
+// managedPhoto reports whether a file in a person's folder is in one of the
+// folders SoundStorm sorts photos into, by date.
+func managedPhoto(personal, file string) bool {
+	rel, err := filepath.Rel(personal, file)
+	if err != nil {
+		return false
+	}
+	return datedFolder.MatchString(path.Dir(filepath.ToSlash(rel)))
 }
