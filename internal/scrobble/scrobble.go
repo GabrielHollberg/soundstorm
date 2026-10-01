@@ -92,7 +92,7 @@ func (c *Client) do(ctx context.Context, method, path, token string, body any, o
 		return ErrBadToken
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("listenbrainz answered %d", resp.StatusCode)
+		return &statusError{code: resp.StatusCode}
 	}
 	if out != nil {
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out); err != nil {
@@ -100,6 +100,20 @@ func (c *Client) do(ctx context.Context, method, path, token string, body any, o
 		}
 	}
 	return nil
+}
+
+// statusError is an answer other than 200 (and 401, which is ErrBadToken).
+type statusError struct{ code int }
+
+func (e *statusError) Error() string { return fmt.Sprintf("listenbrainz answered %d", e.code) }
+
+// refused reports whether the service turned the request down for what was in
+// it - a 4xx other than a bad token or being asked to slow down - so sending it
+// again unchanged would only be refused again.
+func refused(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.code >= 400 && se.code < 500 &&
+		se.code != http.StatusUnauthorized && se.code != http.StatusTooManyRequests
 }
 
 // Validate checks a token and says whose it is.
@@ -147,31 +161,70 @@ func sendable(l collections.Listen) bool {
 }
 
 // Submit sends listens, oldest first, a request per thousand. It answers the
-// listens that are done with - sent, or never sendable - so the caller can
-// take them off the queue; on an error, those before it are still done.
-func (c *Client) Submit(ctx context.Context, token string, listens []collections.Listen) ([]collections.Listen, error) {
-	var done []collections.Listen
+// listens that are done with - sent, never sendable, or refused - so the caller
+// can take them off the queue, and how many of those the service refused; on
+// an error, those before it are still done.
+//
+// A refusal is per listen, not per batch. ListenBrainz turns a whole request
+// down (400) for one listen it will not take, and the queue keeps everything
+// not done - so one such listen, resent with the rest every quarter hour, would
+// hold up every scrobble after it for good. So a refused batch is sent again a
+// listen at a time, and what is refused alone is dropped rather than retried.
+func (c *Client) Submit(ctx context.Context, token string, listens []collections.Listen) (done []collections.Listen, dropped int, err error) {
 	for start := 0; start < len(listens); start += maxPerRequest {
 		batch := listens[start:min(start+maxPerRequest, len(listens))]
-		var payload []listen
+		var send []collections.Listen
 		for _, l := range batch {
-			if sendable(l) {
-				payload = append(payload, listen{ListenedAt: l.At.Unix(), TrackMetadata: c.metadata(l)})
+			// A listen with no moment has no listened_at to send - the zero time
+			// is year one, which the service refuses - so it is never sendable.
+			if sendable(l) && !l.At.IsZero() {
+				send = append(send, l)
+			} else {
+				done = append(done, l)
 			}
 		}
-		if len(payload) > 0 {
-			kind := "import"
-			if len(payload) == 1 {
-				kind = "single"
-			}
-			if err := c.do(ctx, http.MethodPost, "/1/submit-listens", token,
-				map[string]any{"listen_type": kind, "payload": payload}, nil); err != nil {
-				return done, err
-			}
+		if len(send) == 0 {
+			continue
 		}
-		done = append(done, batch...)
+		err := c.submit(ctx, token, send)
+		switch {
+		case err == nil:
+			done = append(done, send...)
+		case refused(err) && len(send) == 1:
+			done = append(done, send...)
+			dropped++
+		case refused(err):
+			for _, l := range send {
+				one := c.submit(ctx, token, []collections.Listen{l})
+				switch {
+				case one == nil:
+					done = append(done, l)
+				case refused(one):
+					done = append(done, l)
+					dropped++
+				default:
+					return done, dropped, one
+				}
+			}
+		default:
+			return done, dropped, err
+		}
 	}
-	return done, nil
+	return done, dropped, nil
+}
+
+// submit sends listens in one request, "single" for one and "import" for more.
+func (c *Client) submit(ctx context.Context, token string, listens []collections.Listen) error {
+	payload := make([]listen, 0, len(listens))
+	for _, l := range listens {
+		payload = append(payload, listen{ListenedAt: l.At.Unix(), TrackMetadata: c.metadata(l)})
+	}
+	kind := "import"
+	if len(payload) == 1 {
+		kind = "single"
+	}
+	return c.do(ctx, http.MethodPost, "/1/submit-listens", token,
+		map[string]any{"listen_type": kind, "payload": payload}, nil)
 }
 
 // NowPlaying says what somebody has just started, which the service shows

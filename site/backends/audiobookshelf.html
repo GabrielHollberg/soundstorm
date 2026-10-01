@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audiobookshelf - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends/audiobookshelf" data-root="..">
+<main>
+<h1>Audiobookshelf</h1>
+<p class="lede">Audiobookshelf scans <code>library/audiobooks</code>, knows each book's files and
+chapters, and - most importantly - remembers each listener's place. It is the one backend where
+SoundStorm gives every person their own account, because that place is personal.</p>
+
+<h2 id="provisioning">Provisioning</h2>
+<p>SoundStorm creates the root user through <code>/init</code>, signs in at <code>/login</code>, creates
+the library on <code>/audiobooks</code> with <code>/api/libraries</code> and starts its first scan. Two
+things were verified against 2.36.1 rather than read anywhere:</p>
+<ul>
+  <li><strong><code>/login</code> returns two tokens.</strong> <code>user.accessToken</code> expires in an
+  hour; <code>user.token</code> is a legacy JWT with no expiry. SoundStorm stores the legacy one on
+  purpose - the other would strand the backend an hour after provisioning without a refresh flow. If a
+  release drops it, that is where the refresh dance goes.</li>
+  <li><strong><code>isActive</code> must be sent when creating a user.</strong> Without it the account is
+  created inactive: <code>POST /api/users</code> returns an ordinary 200 with a token in it, and that
+  token answers <code>Unauthorized</code> to everything. Nothing in the response hints at a problem.</li>
+</ul>
+
+<h2 id="accounts">An account per person</h2>
+<p>Listening position is keyed by <em>Audiobookshelf's</em> account, so two people sharing one would
+overwrite each other's places. So <code>provision.TokenFor</code> gives each member their own account,
+created lazily on first use rather than when they are added: a backend can be down or still provisioning
+when somebody joins, and first use is a retry that costs nothing to write. The create response carries a
+token, so there is no second login and no password to keep. The owner uses the shared administrator
+credential - they already have an account there, and a second would split their own history in two.</p>
+<p>Removing somebody deletes their Audiobookshelf account <strong>first</strong>, because deleting the
+SoundStorm account drops the record of which Audiobookshelf user was theirs. It is best effort: a backend
+that is down must not stop somebody being removed.</p>
+
+<h2 id="api">The calls SoundStorm makes</h2>
+<table>
+  <tr><th>Call</th><th>Used for</th></tr>
+  <tr><td><code>/api/libraries/{id}/search</code></td><td>Search</td></tr>
+  <tr><td><code>/api/libraries/{id}/items</code></td><td>Browsing (search matches nothing for an empty query); <code>sort=addedAt&amp;desc=1</code> for Home's newest</td></tr>
+  <tr><td><code>/api/items/{id}</code></td><td>A book's files, inodes and chapters</td></tr>
+  <tr><td><code>/api/items/{id}/file/{ino}</code></td><td>Audio bytes</td></tr>
+  <tr><td><code>/api/items/{id}/cover</code></td><td>Covers, resized</td></tr>
+  <tr><td><code>/api/me/progress/{id}</code></td><td>Reading and writing the listener's position</td></tr>
+  <tr><td><code>/api/me/items-in-progress</code>, <code>/api/me</code></td><td>The Continue row: which books, and how far</td></tr>
+  <tr><td><code>POST /api/libraries/{id}/scan</code></td><td>"Look now" after an upload</td></tr>
+</table>
+<p><strong>Audio is addressed by inode, not item id.</strong> <code>/api/items/{id}</code> has to be
+fetched to learn it - which is why <code>source.Streamer</code> takes a context: resolving a target is
+not always local arithmetic.</p>
+<p>The browse listing has the same item shape as search but one wrapper shallower. Decoding it with the
+search struct yields an empty list and looks like an empty library rather than a bug.</p>
+
+<h2 id="position">Position: sharp edges</h2>
+<p>Position is written to Audiobookshelf rather than kept by SoundStorm, so a chapter finished in its
+phone app is where the browser picks up. Its API needs care:</p>
+<ul>
+  <li><strong><code>progress</code> is not derived from <code>currentTime</code>.</strong> Send one without
+  the other and the player resumes correctly while Audiobookshelf's own shelf keeps showing the old
+  percentage. The adapter computes the fraction.</li>
+  <li><strong><code>isFinished</code> is one-way, and sending <code>false</code> is destructive.</strong>
+  For a finished book it resets <code>currentTime</code> and <code>progress</code> to zero - "mark as
+  unfinished". Someone who reached the end and scrubbed back would lose their place, so the flag is only
+  ever sent as <code>true</code>.</li>
+  <li><strong>It stores whatever it is given.</strong> PATCHing the string <code>"x"</code> as
+  <code>currentTime</code> is accepted and read back. So nothing leaves SoundStorm that is not a finite
+  time (<code>1e999</code> decodes to <code>+Inf</code>), and progress is decoded leniently so one junk
+  record cannot become a permanent error for that book.</li>
+</ul>
+<p>Continue leaves out finished books, ones hidden from continue listening in Audiobookshelf's own UI,
+missing ones and podcast episodes. A position under half a percent or over 98.5% is "not started" or
+"finished".</p>
+
+<h2 id="chapters">Files and chapters</h2>
+<p><code>source.TrackLister</code> reports a book's audio files, each with its <code>StartSeconds</code>
+on the whole-book clock. <code>source.ChapterLister</code> sends Audiobookshelf's chapter list, which
+names the marks inside a single m4b as well as one file per chapter. <code>source.AudioLayouter</code>
+says which chapters fall in which file - what <a href="storyteller.html">Storyteller</a>'s timing
+conversion rests on. Chapter names come from the chapter list when there is one per file, then the ID3
+title, then the file name. Some LibriVox MP3s ship double-encoded tags; those are left alone rather than
+"repaired" by guessing.</p>
+
+<h2 id="missing">Deleted files</h2>
+<p>Audiobookshelf sets <code>isMissing</code> on a book whose files are gone and <strong>keeps serving
+it</strong> from both search and items. That is defensible - a book on an unplugged drive should not
+lose its listening position - but it meant a shelf somebody emptied still looked full, with a play
+button behind every entry (six of seven items were missing in a live library when this was found). There
+is no "not missing" filter to ask for, so the adapter skips them client-side, on both endpoints, each
+tested separately.</p>
+
+<h2 id="version">Version</h2>
+<p>The image follows <code>latest</code>; everything above was checked against 2.36.1.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

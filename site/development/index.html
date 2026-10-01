@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="development" data-root="..">
+<main>
+<h1>Development</h1>
+<p class="lede">SoundStorm is built on two machines by two coding sessions that never see each
+other's memory, against one branch, with one real check per change. This section covers how that
+works, how things are tested, and the traps that cost real time.</p>
+
+<h2 id="glance">At a glance</h2>
+<table>
+  <tr><th>Server and web app</th><td>Go and plain JavaScript, built and deployed on the Windows PC with Docker Compose</td></tr>
+  <tr><th>Android</th><td>Kotlin, built on the PC with Gradle, published as GitHub pre-releases</td></tr>
+  <tr><th>iPhone and Apple TV</th><td>Swift, built on the Mac with Xcode, shipped through TestFlight</td></tr>
+  <tr><th>Branches</th><td><code>main</code> only</td></tr>
+  <tr><th>CI</th><td>gofmt, vet, tests, an ACME rehearsal, compose and image checks, then a multi-arch image</td></tr>
+  <tr><th>Shared memory</th><td><code>CLAUDE.md</code>, the working notes both machines read</td></tr>
+</table>
+
+<h2 id="commands">Everyday commands</h2>
+<pre><code>go test ./...                                  # or in a container, see Testing
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build soundstorm
+curl localhost:8099/healthz
+docker compose logs -f soundstorm              # watch provisioning
+docker compose down -v                         # reset everything, credentials included
+cd android &amp;&amp; ./gradlew assembleDebug           # the Android app
+open ios/SoundStorm.xcodeproj                  # the iPhone and Apple TV apps</code></pre>
+
+<h2 id="pages">In this section</h2>
+<div class="cards">
+  <a class="card" href="workflow.html"><b>How it is developed</b><span>Two machines, one branch and the bug that taught it, the start and end of every session, releases.</span></a>
+  <a class="card" href="testing.html"><b>Testing</b><span>Tests in a container, throwaway stacks, browser checks, real media - and checks that cannot see the failure.</span></a>
+  <a class="card" href="gotchas.html"><b>Gotchas</b><span>Jellyfin, Audiobookshelf, PowerShell, Docker Desktop, the CSP, service workers and phones.</span></a>
+</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

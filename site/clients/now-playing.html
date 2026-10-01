@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now Playing and the looks - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients/now-playing" data-root="..">
+<main>
+<h1>Now Playing and the looks</h1>
+<p class="lede">The music player was asked for as "competitive with Plexamp", and then as
+something wilder. It is a full-screen player with a real queue, swipes instead of buttons on a
+touch screen, synced lyrics, seventeen looks - covers, records and visualizers that follow the
+beat of the actual song - and the unglamorous parts a music app is judged on in its first
+minute: gapless playback, volume leveling and lock-screen controls.</p>
+
+<h2 id="queue">The queue and the mini-player</h2>
+<p>Every song plays inside a queue. <strong>Play next</strong> and <strong>Add to queue</strong>
+turn one song into a queue; <strong>Shuffle</strong> rearranges only what is still to come and
+restores the order when turned off; <strong>Repeat</strong> is all or one. Up next is rearranged
+by holding a song and dragging it, the others sliding aside to show where it will land.</p>
+<p>When Now Playing is put away, the music carries on in a floating card at the bottom - Now
+Playing in miniature, with the blurred cover behind it and progress along its bottom edge. A
+computer gets previous, play, next, a seek bar and volume on it; a phone gets play and next,
+swipe up for Now Playing and swipe down to stop. The browser's own <code>&lt;audio
+controls&gt;</code> is gone: its white pill clashed with everything.</p>
+<p>Radio stations, mixes and "Songs like this" all feed the same queue. A station asks the
+server for its next batch of 25 when five songs remain, sending the songs already queued so
+nothing repeats (see <a href="../server/music.html">Music: radio, moods, beats</a>).</p>
+
+<h2 id="touch">Swipes, holds and the hidden buttons</h2>
+<p>On a touch screen, songs change by swiping, not buttons. Swiping the big cover sideways moves
+it with the neighbouring covers riding beside it and plays the one that slides in. A swipe back
+is always the song before - the previous cover is what slid in - not a restart. A mouse cannot
+swipe, so a computer keeps its previous and next buttons.</p>
+<p>The covers either side are fetched and decoded as soon as a song starts
+(<code>npSwipe.prime</code>), and on release the main cover quietly takes the slid-in picture,
+which is already loaded. Before that, the neighbours' covers were only requested once the
+finger moved, and the main cover was hidden until the new picture had been fetched again -
+reported as "skipping is glitchy and the art is slow". Checked frame by frame with 250ms of
+added latency on every request: no blank or wrong frame.</p>
+<p>At the owner's asking, a phone's Now Playing shows nothing but the music, the title and the
+play button. Everything else is a <strong>hold</strong> away (<code>showHoldIcons</code>): info,
+sleep timer and favorite along the top, shuffle and repeat at the sides with Add to playlist
+between them, download, Up next and Songs like this along the bottom, and the timeline. Slide on
+to one and it grows and is named where the title was; let go on it to use it. The name says what
+letting go will do ("Turn shuffle off"), not the current state. The other buttons keep their
+places with <code>visibility: hidden</code>, so they take no taps, and appear during the hold.</p>
+<div class="note">The icon under a still thumb is chosen on letting go without moving. It used
+to need moving off and back on - so the owner put a thumb on play, held, lifted, and nothing
+happened.</div>
+<p>A <strong>double tap</strong> moves to the next look; a single tap did at first, and changed
+looks by accident. A downward drag that starts in the top 56px is left to Android, so reaching
+for the notification shade no longer closes Now Playing.</p>
+
+<h2 id="lyrics">Lyrics, and one layout for every song</h2>
+<p>Lyrics come from the backend (OpenSubsonic's <code>songLyrics</code>, synced to the
+millisecond from an <code>.lrc</code> beside a song) and, if the owner turns it on, from LRCLIB -
+off by default, because it is one of only two things that tell an outside service what somebody
+plays. The line being sung is lit and kept at the middle of the screen.</p>
+<p>A song used to get a different layout depending on whether it had lyrics, and so did every
+song until its lyrics arrived. Each song change therefore jumped once they loaded, and a song
+without lyrics jumped back - reported as "things glitch when lyrics load". Now every song keeps
+the lyrics layout, empty while loading, so nothing moves. It was measured on phone and computer,
+with and without lyrics, loading and loaded: cover, title, controls, timeline and lyrics box
+identical to the pixel.</p>
+<p>The title and artist are one line each and scroll sideways when too long, since a wrapped
+title on a phone spilled upward over the cover. The status bar of an installed app takes the
+top of the cover's colour, put through the same filter as the blurred backdrop.</p>
+
+<h2 id="orb">The play orb</h2>
+<p>Music's play button is not a triangle - a triangle read as boring. It is a small living orb
+(<code>playOrb</code>): four glowing neon lines in the cover's colours, turning against each
+other, with sixteen sparkles circling it. It keeps time with the analysed song - swelling on each
+beat, more on a bar's first, rippling on the kick - while loudness, eased over a fraction of a
+second, sets how big, bright and fast it is. Paused, it stops where it is and dims: the movement
+is the "playing". The full-screen animations fade out before they reach it
+(<code>viz.keepClearOfPlay</code>), with a soft edge rather than a hard hole. An audiobook keeps a
+plain white play button.</p>
+
+<h2 id="looks">The seventeen looks</h2>
+<p>The look is kept on the account (<code>prefs.coverStyle</code>), so it follows the person to
+every device, the Apple TV included. A <strong>Looks</strong> sheet in Now Playing lists them in
+two groups (<code>COVER_GROUPS</code>):</p>
+<table>
+  <tr><th>Group</th><th>Looks</th></tr>
+  <tr><td>Lyrics and covers</td><td><strong>Lyrics</strong> (the default), <strong>Cover</strong>, <strong>Spinning disc</strong>, <strong>Record</strong> - grooves turning, the cover as the label, title and artist printed round it on an SVG text path</td></tr>
+  <tr><td>Visualizers</td><td><strong>Orb</strong>, <strong>Spectrum</strong>, <strong>Warp</strong>, <strong>Waves</strong>, <strong>Kaleidoscope</strong>, <strong>Fireworks</strong>, <strong>Flow</strong>, <strong>Storm</strong>, <strong>Synthwave</strong>, <strong>Galaxy</strong>, <strong>Aurora</strong>, <strong>Lava</strong> and <strong>Analysis</strong></td></tr>
+</table>
+<p>Every visualizer fills the screen, drawn on two canvases behind the title and controls in the
+cover's own colours (<code>coverPalette</code>, the strongest hues of a 16x16 thumbnail). A few
+examples of what they do with the music:</p>
+<ul>
+  <li><strong>Orb</strong> - six layers whose edges are sums of travelling waves, glowing white
+  where they overlap, with 240 particles in a vortex thrown outward on standout beats.</li>
+  <li><strong>Spectrum</strong> - a mirrored equalizer, bass in the middle on the kick, highs at the
+  edges on the snare.</li>
+  <li><strong>Storm</strong> - rain at three depths that gets heavier with the music, gusts of wind,
+  mist where it lands, a deck of clouds over the top, and lightning on the sharp hits (below),
+  sized by how loud the moment is: clouds lit from inside, a thin bolt far off, or a thick close
+  bolt with branches, a flash and spray.</li>
+  <li><strong>Analysis</strong> - built to show what the analysis found: a timeline of beats,
+  loudness, bass hits and sharp highs moving past the moment playing. It can be dragged to seek.</li>
+</ul>
+<div class="warn">No reduced-motion exception for these looks. They stopped dead on an iPhone
+with Reduce Motion turned on - a common setting there and rare on Android - and were reported as
+"doing nothing on iPhone". They move only because somebody chose them, so they move regardless.</div>
+
+<h2 id="hearing">How the song is heard</h2>
+<p>The first "moving" cover kept only the song's tempo. Hearing the actual beats means analysing
+the audio, and routing a phone's music through Web Audio to do it is exactly what stops playback
+when an iPhone locks. So the song is never analysed as it plays. A copy is analysed separately:</p>
+<ol>
+  <li><strong>The server first.</strong> The server works through the whole music library ahead of
+  time (<code>internal/beats</code>, <code>GET /api/music/beats</code>), one song at a time in the
+  background, and keeps about 11KB per song. A phone asks the server and gets the beats before
+  the first note.</li>
+  <li><strong>Else the device.</strong> If the server has not reached a song yet, the app decodes a
+  copy on an <code>OfflineAudioContext</code>, which plays nothing (<code>hearSong</code>). Playback
+  stays on the normal audio element and the lock screen is untouched.</li>
+  <li><strong>Else the tempo.</strong> Until either arrives, the tempo AudioMuse-AI measured keeps
+  time.</li>
+</ol>
+<p>The analysis itself splits the sound into loudness, a bass band, a band above 7kHz, and
+onsets, finds the tempo by autocorrelation and the beats with Ellis's dynamic-programming beat
+tracker, and picks the bar's first beat as where the bass lands hardest. The Go code is
+<code>hearSong</code> step for step; <code>scripts/beats-parity.js</code> runs the real JavaScript
+under Node on the same samples and requires the same 120 beats to the millisecond. On a generated
+120bpm click track, all 120 beats are found with a mean error of 13ms. Downloaded songs have
+their analysis kept beside them, so a visualizer follows the beat offline too.</p>
+
+<h2 id="standout">What stands out, not every beat</h2>
+<p>Everything used to react hard to every beat, and a kick on every beat of a whole song pumped
+relentlessly. Now each beat's kick is compared with the typical kick of the last two bars
+(<code>kickPeaks</code>), and the loudness with the last four seconds. A steady beat settles into a
+soft pulse; an accent, a fill or a drop after a quiet part hits hard. On the click track, a steady
+loud part averaged 0.08 on that scale and the jump from quiet to loud hit 0.91.</p>
+<p>Bass hits and sharp highs are on a fixed scale, not scaled to each song. When they were
+scaled per song, every song was "full of hits" - the hi-hat lane fired all through a song with no
+hi-hats. The sharp-highs lane is named honestly: drums, but also a singer's "s" sounds, since
+telling those apart needs source separation, the kind of machine learning this project does not
+own.</p>
+
+<h3 id="lightning">Lightning</h3>
+<p>Lightning took many rounds of the owner's feedback. The current rule (<code>strikesAt</code>):
+a sharp high rising past 60% on the fixed scale, counting only once as it rises, that lands within
+70ms of a beat or of halfway between two beats. The between-beats part came from the owner
+tapping where lightning should be over ten songs (2,270 taps); a developer-only training tool
+scored versions of the rule against those taps, and this one matched best. A hit must also be
+<em>heard</em>: it counts fully only within 10dB of the song's loud highs, so a rise out of near
+silence does not strike.</p>
+<p>Every frame since the last one drawn is checked, so a hit one frame long is not missed on a TV
+drawing 30 frames a second.</p>
+
+<h2 id="timing">Timing is set by eye, per device</h2>
+<p>The code is on time against the player's clock, but a phone's speaker, Bluetooth headphones
+or a TV add latency that nothing a web page can ask will report. So the Looks sheet has a
+<strong>Timing</strong> row - Later and Sooner, a tenth of a second a step from -0.5 to +1s - kept
+on the device (<code>soundstorm-viz-lead</code>). The sheet stays open while it is adjusted, so the
+effect can be judged against the music.</p>
+
+<h2 id="smooth">Smooth means no garbage</h2>
+<p>Storm was reported as skipping every few seconds. Frames were a steady 17ms on a computer, but
+the heap dropped by over a megabyte four times a second: a new colour string and a new stroke for
+each of 420 raindrops per frame. On a phone that means a garbage-collection pause every few
+seconds. Now <code>vizColor</code> hands out colour strings from a cache (alpha rounded to one of
+64 steps, which the eye cannot tell), rain and particles are drawn in a few batches, and arrays
+are reused. Measured as heap drops over 15 seconds with the CPU slowed 4x, Storm went from 57 to
+6. On a TV the visualizers draw at reduced resolution, 30 frames a second and half the particles.</p>
+
+<h2 id="books">Audiobooks: the plain player</h2>
+<p>The looks were built for music, so an audiobook gets a plain player: always the cover, no
+visualizer, no Looks button. What changes for a book:</p>
+<ul>
+  <li><strong>Skips are thirty seconds</strong> (<code>bookSkip</code>, across files), and the lock
+  screen gets seek buttons instead of next and previous.</li>
+  <li><strong>Chapters.</strong> A Chapters sheet lists the book's chapters from Audiobookshelf's own
+  chapter list, which also names the marks inside a single m4b - so a one-file book has navigation
+  at last. A swipe left goes to the next chapter, a swipe right to the start of this one (or the
+  one before, near its start).</li>
+  <li><strong>The timeline is the chapter's</strong>, since across a ten-hour book the slightest
+  drag moved a chapter. A thin bar under it shows the whole book.</li>
+  <li><strong>Speed</strong> from 0.75x to 3x, kept on the account, set as
+  <code>defaultPlaybackRate</code> too because loading the next file resets the rate.</li>
+  <li><strong>Quieter by default</strong>: 8dB down, adjustable per device, because books are
+  mastered loud.</li>
+</ul>
+
+<h2 id="sleep">Sleep timer and crossfade</h2>
+<p>The sleep timer offers set times, a custom time, or the end of this song or chapter, and fades
+out over eight seconds. It once never stopped with the screen off - which is when a sleep timer is
+used - because the fade was stepped by animation frames, and a phone with its screen off draws
+none. It is stepped by a timer now.</p>
+<p>Crossfade uses a second, hidden audio element for the fade-in only. Everything else - lyrics,
+lock screen, queue, leveling - listens to the one main player, so at the end of a song the main
+element takes over from where the hidden one reached. It is skipped within an album playing in
+order, on repeat-one, and where a page cannot set volume (an iPhone reads back 1 whatever it is
+set to). A fade is flagged (<code>audio.fading</code>) so the leveling code does not take it for
+the listener moving the volume slider.</p>
+
+<h2 id="gapless">Gapless and leveling</h2>
+<p>The next song is fetched whole into memory while the current one plays. Gaps were measured by
+polling <code>currentTime</code> every 4ms - the <code>timeupdate</code> event only fires about every
+250ms, and the first measurement, taken on it, reported the event's interval rather than the gap.
+Real numbers on a throttled network: 180-195ms before, 15-17ms after.</p>
+<p>Volume leveling uses ReplayGain from the files, which Navidrome passes through: album gain when
+an album plays in order, track gain otherwise, with a -6dB pre-amp so a quiet track can come up,
+capped by its peak. It is applied through <code>audio.volume</code>, deliberately <em>not</em> Web
+Audio, because routing an iPhone's music through Web Audio stops it on lock. The cost is that iOS
+ignores a page's volume, so leveling does nothing on an iPhone in the browser.</p>
+
+<h2 id="lockscreen">Lock screen, headphones, car</h2>
+<p>The Media Session API carries title, artist, album and cover to the lock screen, notification,
+headphones and a car over Bluetooth, with previous and next stepping through the queue (or
+seeking, for a book). Previous more than three seconds into a song restarts it. On Android the app
+goes further and plays songs natively (see <a href="android.html">Android</a>). CarPlay and
+Android Auto are not attempted: both need a native app.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

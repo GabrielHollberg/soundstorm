@@ -1503,15 +1503,20 @@ func (s *Server) scheduleRescan(kind media.Kind) {
 		}
 	}
 
-	if timer, ok := s.rescanTimers[kind]; ok {
+	if timer, ok := s.rescanTimers[kind]; ok && timer.Stop() {
 		// Still waiting: push the moment back rather than adding a second one,
-		// so a long upload results in one scan after the last file.
+		// so a long upload results in one scan after the last file. Only if
+		// it had not fired yet: resetting one that fired (and is waiting for
+		// this lock) ran the scan twice, past the floor (a review).
 		timer.Reset(delay)
 		return
 	}
-	s.rescanTimers[kind] = time.AfterFunc(delay, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
 		s.rescanMu.Lock()
-		delete(s.rescanTimers, kind)
+		if s.rescanTimers[kind] == timer {
+			delete(s.rescanTimers, kind)
+		}
 		s.lastRescan[kind] = time.Now()
 		s.rescanMu.Unlock()
 		s.rescanNow(kind)
@@ -1524,6 +1529,7 @@ func (s *Server) scheduleRescan(kind media.Kind) {
 			s.kickBeats()
 		}
 	})
+	s.rescanTimers[kind] = timer
 }
 
 // rescanNow tells every source of a kind to scan. Best effort: a backend that
@@ -1944,6 +1950,17 @@ func (s *Server) handleHLS(w http.ResponseWriter, r *http.Request) {
 	if !s.hlsSessions.allow(user.ID, queryValue(query, "playSessionId"), time.Now()) {
 		http.Error(w, "too many videos playing at once", http.StatusTooManyRequests)
 		return
+	}
+	if stopper, ok := src.(source.PlaySessionStopper); ok {
+		s.hlsSessions.note(sourceID, queryValue(query, "playSessionId"))
+		s.hlsSessions.watch(func(sourceID, session string) {
+			if src, ok := s.reg.ByID(context.Background(), sourceID); ok {
+				if st, ok := src.(source.PlaySessionStopper); ok {
+					st.StopPlaySession(session)
+				}
+			}
+		})
+		_ = stopper
 	}
 	target, err := provider.HLSTarget(r.Context(), r.PathValue("path"), query)
 	if err != nil {

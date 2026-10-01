@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="development/testing" data-root="..">
+<main>
+<h1>Testing</h1>
+<p class="lede">Go tests guard the rules the design rests on; throwaway stacks, browser runs and
+real media catch what unit tests cannot. And one lesson recurs often enough to be the theme of
+this page: a check that cannot see the failure it exists for is worse than no check, because it is
+believed.</p>
+
+<h2 id="go">Go tests, in a container</h2>
+<p><code>go test ./...</code> covers the server. On the development PC it runs in a container:</p>
+<pre><code>docker run --rm -v "//c/path/to/soundstorm:/src" -w /src golang:1.27-alpine go test ./...</code></pre>
+<div class="why">Windows' Smart App Control refuses to run freshly built, unsigned test binaries -
+a different handful of packages on every rebuild - and it cannot simply be turned off: disabling it
+is one-way, with no exclusion list and no way back short of a reset. A Linux container runs no
+Windows binary at all, and is what CI does anyway. (The doubled slash stops Git Bash rewriting
+<code>/src</code> into a Windows path.)</div>
+<p>Some tests worth knowing about, because they protect the rules rather than a function:</p>
+<ul>
+  <li><code>internal/federate</code> and <code>internal/httpapi</code>: a dead or panicking backend
+  never takes the search down, and the answer is always 200 with <code>degraded</code>.</li>
+  <li><code>TestPagesWalkTheMergedOrderExactly</code> and each adapter's
+  <code>paging_test.go</code>: walking every page reproduces the single sorted list, against fakes
+  that order the way each backend really does - scrambled, case-blind, "The"-stripped.</li>
+  <li><code>libraries_test.go</code>: every endpoint that can hand over bytes, metadata or a
+  playable URL refuses an account restricted from that shelf.</li>
+  <li><code>TestOwnerSettingsAnswer</code>: every owner setting is mounted as well as registered,
+  after one answered 404 unnoticed.</li>
+  <li><code>TestShellHasNoInlineScript</code> and <code>pwa_test.go</code>: the CSP and the service
+  worker's rules hold.</li>
+  <li><code>internal/starter/integrity_test.go</code>: every bundled EPUB opens and every MP3's
+  frame chain walks end to end.</li>
+  <li>The uninstaller test: a marker file in <code>library/music</code> is still readable
+  afterwards.</li>
+</ul>
+
+<h2 id="blind">Checks that cannot see the failure</h2>
+<p>The project keeps meeting the same trap in different forms, and each one is recorded so the
+next test is written to fail first.</p>
+<table>
+  <tr><th>The check</th><th>What it could not see</th></tr>
+  <tr><td>PWA checks ran on <code>localhost</code> or with certificate errors ignored</td><td>Both are secure contexts whatever the certificate. A real phone could not install the app from a self-signed LAN address at all, while the check reported a registered service worker - truthfully.</td></tr>
+  <tr><td><code>TestASlowBodyIsCutOff</code> built the body deadline on its own</td><td>Behind the real logging middleware, which lacked <code>Unwrap</code>, no read deadline had ever worked. The new test goes through <code>Routes()</code> and was checked to fail with <code>Unwrap</code> removed.</td></tr>
+  <tr><td>Resolving <code>&lt;computer&gt;.local</code> on the machine itself</td><td>Windows answers for its own name regardless. It proved nothing about whether a phone could resolve it, and failed on the first other PC.</td></tr>
+  <tr><td>Reading the TLS connection's local address in a unit test</td><td>Inside Docker it is the container's address, never the one the client dialled. Caught only by fetching the LAN address from a client that trusted nothing else.</td></tr>
+  <tr><td>A PowerShell syntax check that discarded the error collection</td><td>Every file "parsed clean", including one that would not parse at all.</td></tr>
+  <tr><td>A CI guard using <code>grep -q "\r"</code></td><td>GNU grep read <code>\r</code> as the letter r, so it passed on any file containing an r - every file - for two months.</td></tr>
+  <tr><td>Counting reader <code>relocate</code> events</td><td>They fire on resize too. A tap that turned no page passed; the fraction has to change, and change back.</td></tr>
+  <tr><td><code>cmd /c script.cmd</code></td><td>Skips the shell's reputation check, so Smart App Control's block on a downloaded setup file never showed. A double-click does; <code>Start-Process</code> reproduces it.</td></tr>
+  <tr><td>Length and magic number of committed binaries</td><td>Carriage returns had been stripped from the starter media and screenshots; files were the right size and began correctly, and nine of ten ebooks could not be opened.</td></tr>
+</table>
+<div class="note">The rules that came out of it: <strong>a check that runs on the machine under test
+cannot answer a question about what another machine sees</strong>, and <strong>a committed binary
+needs a check that reads it the way its consumer will</strong>. Where it matters, a checker is
+itself checked against damage - the integrity test strips carriage returns from a bundled MP3 and
+requires the walk to object.</div>
+
+<h2 id="stacks">Throwaway stacks</h2>
+<p>Most backend behaviour is verified against a real server, not a fake: a disposable compose
+stack that SoundStorm provisions by itself, with generated media - a two-minute film, a two-season
+show, a library with ReplayGain tags of 0, -5 and +8&nbsp;dB. The notes record versions: Jellyfin
+12.1.0, Audiobookshelf 2.36.1, Navidrome 0.64.1, Immich 3.2.2, AudioMuse-AI 3.6.3.</p>
+<div class="warn">A project name (<code>-p</code>) is not enough for a second stack. The compose
+file pins <code>container_name</code> on every service, which a project name does not namespace, so
+a second stack collides by name and refuses to start. An override file renaming every container
+is what makes an isolated stack possible.</div>
+<p>One habit from Jellyfin applies everywhere: it ignores unknown query parameters with a 200, so
+<strong>test a filter by asking for the opposite and checking the count actually changes</strong>.
+Navidrome ignores unknown environment variables the same way.</p>
+
+<h2 id="browser">Browser checks</h2>
+<p>Playwright drives the system Chrome (no browser download). <code>scripts/mobile-check.js</code>
+measures phone layouts and asserts <code>document.scrollWidth &lt;= clientWidth</code> per screen,
+listing anything that sticks out - which found a grid item refusing to shrink and a 531&nbsp;px page
+on a 390&nbsp;px phone. <code>scripts/reader-swipe-check.js</code> proves swiping turns reader pages
+exactly as the arrows do.</p>
+<p>Techniques that made otherwise invisible bugs visible:</p>
+<ul>
+  <li>Chrome's <code>Emulation.setSafeAreaInsetsOverride</code> gives a real safe-area inset;
+  without it every inset is 0 and a close button under the camera cannot be seen.</li>
+  <li>Polling <code>currentTime</code> every 4&nbsp;ms to measure gapless playback, because
+  <code>timeupdate</code>'s ~250&nbsp;ms floor first reported ~270&nbsp;ms gaps that were the event,
+  not the gap (real: 11-23&nbsp;ms).</li>
+  <li>Stubbing <code>canPlayType</code> to reject HLS, since recent Chrome plays it natively and the
+  hls.js fallback otherwise never runs.</li>
+  <li>CPU throttled 4-6x and 250&nbsp;ms on every request to measure swipe frames and heap drops;
+  <code>visualViewport.width</code> to catch a page wider than the phone mid-swipe.</li>
+  <li>Driving the Android web view through its DevTools socket, because <code>adb shell
+  input</code> does not reliably reach a web page.</li>
+  <li>XCUITest for the iPhone app, since <code>simctl</code> cannot tap or type.</li>
+</ul>
+<p>A synthetic <code>DataTransfer</code> gets no filesystem entries and no automated drag can
+produce real ones, so the folder-walking code (<code>readEntries</code> until an empty batch) is
+tested with a fake entry tree.</p>
+
+<h2 id="real">Real media</h2>
+<p><code>scripts/fetch-test-library.ps1</code> builds about 750&nbsp;MB from Project Gutenberg,
+LibriVox, the Internet Archive and the Blender open movies - public domain or CC, resumable,
+throttled. The first run against real files found three bugs that thirteen generated files could
+not, because every generated file has exactly the metadata somebody chose to write.</p>
+<p>The same thinking runs through the parsers: ID3 unsynchronization, syncsafe sizes in 2.4, the
+full-atom <code>meta</code> in MP4 and XMP's <code>rdf:Alt</code> wrappers were all found on real
+files. Duplicate detection was measured on a real iTunes library before it was built (of nine
+repurchased pairs, none were identical files and five had identical audio).</p>
+<div class="warn">These are donated services. Project Gutenberg states that automated access to
+its website earns an IP block, so the script uses its sanctioned mirror at two-second intervals.
+Check the equivalent policy before adding any source.</div>
+
+<h2 id="parity">Parity and rehearsals</h2>
+<ul>
+  <li><strong>ACME against Pebble.</strong> <code>scripts/acme-rehearsal.sh</code> runs the
+  project's own ACME client against Let's Encrypt's test authority, with pebble-challtestsrv
+  standing in for the DNS provider, in CI. A fake authority written beside the client would share
+  its mistakes; Pebble does not. It found that at a 50% nonce-refusal rate, five retries failed one
+  run in six, so it is ten.</li>
+  <li><strong>Beats parity.</strong> <code>scripts/beats-parity.js</code> runs the web app's real
+  <code>hearSong</code> under Node on the Go tests' samples: 120 beats each, 0&nbsp;ms apart.</li>
+  <li><strong>Moving computers</strong> was rehearsed in all four directions (Linux and Windows to
+  each), finding CRLF manifests, names Windows cannot hold and a drive-root quoting bug.</li>
+</ul>
+
+<h2 id="ci">CI</h2>
+<p>Before any image is published, <code>publish.yml</code> requires:</p>
+<ul>
+  <li><code>gofmt</code> clean, <code>go vet ./...</code> and <code>go test ./...</code>;</li>
+  <li>the certificate rehearsal against Pebble;</li>
+  <li>the Tailscale serve config points at the <code>soundstorm-app</code> alias, not
+  <code>soundstorm</code> (which inside the sidecar resolves to itself);</li>
+  <li>compose valid with and without the Tailscale profile;</li>
+  <li>every committed PNG verified against its chunk CRCs (<code>check-images.py</code>);</li>
+  <li><code>SoundStorm-Setup.cmd</code> still has CRLF on every line - counted against the line
+  count, which also catches half a file converted.</li>
+</ul>
+
+<h2 id="pace">How much to check</h2>
+<p>One real check per change, then commit. Long comparison runs and mutation testing are not done
+by default; instead each change says what was verified and what was not ("not yet run on a real
+phone", "the hold menu needs a remote"). That keeps the record honest without slowing every change
+down to the pace of the slowest possible proof.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

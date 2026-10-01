@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellyfin (films and TV) - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends/jellyfin" data-root="..">
+<main>
+<h1>Jellyfin (films and TV)</h1>
+<p class="lede">Jellyfin identifies films and series in <code>library/movies</code> and
+<code>library/tv</code>, keeps their metadata and artwork, and - the reason it is here - transcodes
+video a browser cannot play. SoundStorm decides nothing about video formats itself; it asks Jellyfin
+and does what it is told.</p>
+
+<h2 id="why">Why Jellyfin</h2>
+<p>Asked and answered rather than assumed. Plex needs a plex.tv account, so it cannot be provisioned
+without a human logging into a cloud service - fatal to the zero-keys promise. Emby went closed-source.
+Everything else in the space is too thin to bet on. And video fails the rule for what SoundStorm owns:
+it is not self-describing and does need transcoding. The honest cost is API churn (Jellyfin 12 broke two
+documented auth methods) and a 2.5 GB image.</p>
+
+<h2 id="provisioning">Provisioning</h2>
+<p>Jellyfin's startup wizard is a plain REST API - <code>/Startup/Configuration</code>,
+<code>/Startup/User</code>, <code>/Startup/RemoteAccess</code>, <code>/Startup/Complete</code> - and it
+stops accepting calls once setup completes, which makes driving it safe. SoundStorm then signs in
+(<code>/Users/AuthenticateByName</code>) and creates two libraries with
+<code>/Library/VirtualFolders</code>: films on <code>/media/movies</code> and shows on
+<code>/media/tv</code>, both mounted read-only.</p>
+<p>Films and series are separate Jellyfin libraries with different collection types and scrapers, so
+one Jellyfin is registered as <strong>two sources sharing one token</strong>: <code>jellyfin</code>
+(Movie) and <code>jellyfin-tv</code> (Series, Episode). The house shares one Jellyfin account, which is
+why film and episode positions are kept by SoundStorm per person rather than in Jellyfin.</p>
+<div class="note">Jellyfin accepts connections while it is still loading and answers 503. Provisioning
+treats that, like any 5xx or dial error, as "wait" - only a 401 or 403 means the credentials are
+wrong.</div>
+
+<h2 id="api">The calls SoundStorm makes</h2>
+<table>
+  <tr><th>Call</th><th>Used for</th></tr>
+  <tr><td><code>/Items</code></td><td>Search and browse; <code>IncludeItemTypes=Series</code> to list shows; <code>SortBy=SortName</code> only when browsing</td></tr>
+  <tr><td><code>/Items/{id}/PlaybackInfo</code></td><td>Negotiating playback with a device profile</td></tr>
+  <tr><td><code>/videos/{id}/master.m3u8</code> and children</td><td>HLS transcodes, proxied under <code>/api/hls/</code></td></tr>
+  <tr><td><code>/Videos/{item}/{source}/Subtitles/{n}/Stream.vtt</code></td><td>Subtitles as WebVTT</td></tr>
+  <tr><td><code>DELETE /Videos/ActiveEncodings</code></td><td>Stopping a transcode when the viewer leaves</td></tr>
+  <tr><td><code>/Shows/{id}/Episodes</code></td><td>A show's page, season by season</td></tr>
+  <tr><td><code>/Items/{id}/Images/Primary</code></td><td>Posters, resized by Jellyfin</td></tr>
+  <tr><td><code>POST /Library/Refresh</code></td><td>"Look now" after an upload (every library; there is no per-library trigger without its id)</td></tr>
+</table>
+
+<h2 id="playback">Playback is negotiated, never assumed</h2>
+<p>Whether a file needs transcoding depends on container, video codec, audio codec, profile and level.
+Jellyfin knows all five; SoundStorm knows none. So <code>StreamTarget</code> POSTs a device profile to
+<code>PlaybackInfo</code> and follows the answer. The profile errs conservative on purpose - h264/aac in
+mp4, VPx/AV1 in webm - because claiming a codec the browser cannot decode is the silent failure: Jellyfin
+hands over the original and the video element shows nothing, with no error anywhere. Claiming too little
+only costs an unnecessary transcode.</p>
+<ul>
+  <li><strong>Transcodes are HLS, for seeking.</strong> A progressive transcode has no length until it
+  finishes, so a 20 s file showed 9.9 s that grew, and seeking to 15 s snapped back to 3 s. Jellyfin's
+  HLS is a VOD playlist listing every segment, which gives a real timeline.</li>
+  <li><strong>Playlists reference their children relatively</strong>, so
+  <code>/api/hls/{source}/{path...}</code> mirrors Jellyfin's own <code>/videos/</code> namespace and the
+  browser resolves every segment onto SoundStorm by itself, with no playlist rewriting.</li>
+  <li><strong>Each play is its own conversion.</strong> Jellyfin names a conversion after the file, the
+  device and the play session - and SoundStorm is always one device - so the <code>playSessionId</code>
+  from <code>PlaybackInfo</code> goes in the HLS query. Without it, a change of quality or language got
+  the old conversion's pieces. A person's live conversions are capped at four.</li>
+  <li><strong>Film quality is per device</strong>: under the bitrate cap Jellyfin copies the picture
+  untouched and converts only sound a browser cannot play (TrueHD, DTS) to AAC with up to 5.1 channels.
+  Another audio language is always HLS with <code>AudioStreamIndex</code>.</li>
+  <li><strong>Transcodes must be stopped.</strong> A transcode is an ffmpeg process that outlives the
+  request, so <code>Target.OnDone</code> sends <code>DELETE /Videos/ActiveEncodings</code> (verified: it
+  answers 204 where a made-up path answers 404).</li>
+</ul>
+
+<h2 id="quirks">Verified against live servers</h2>
+<ul>
+  <li><strong>Jellyfin 12.1.0 rejects <code>X-Emby-Token</code> and <code>?api_key=</code></strong> with
+  401. The only form it accepts is <code>Authorization: MediaBrowser ... Token="..."</code>; most docs
+  still show the other two. This is why <code>source.Target</code> carries headers.</li>
+  <li><strong>An unknown query parameter is silently ignored with a 200</strong>, so a 200 is not evidence
+  a filter applied. <code>IsVirtualItem=true</code> returned a real film, exactly like an invented
+  parameter. Test a filter by asking for the opposite and checking the count changes.
+  <code>IsMissing=false</code> does work, and keeps a Series (which has no file of its own).</li>
+  <li><strong>Empty search</strong>: <code>searchTerm</code> must be omitted, not blank, to browse.</li>
+  <li><strong>Direct play is not trusted alone.</strong> 12.1.0 says <code>SupportsDirectPlay: true</code>
+  for an MKV even when the profile offers only mp4, so the container is checked again against the
+  profile's list.</li>
+  <li><strong>Subtitle URLs are built, not taken.</strong> <code>DeliveryUrl</code> comes back empty, but
+  the <code>Stream.vtt</code> path works for embedded and sidecar tracks and converts SRT on the fly.
+  Only text subtitles are offered: PGS and VOBSUB are pictures and would render nothing.</li>
+</ul>
+
+<h2 id="security">Keeping the admin token in</h2>
+<p>One account serves two sources, so every Jellyfin target checks the item comes back from a query
+restricted to its own types (cached ten minutes, since every HLS segment asks) - otherwise a member
+refused films could play one through the TV source. HLS paths must match the shapes Jellyfin's own
+playlists use; a doubly-encoded <code>..</code> once reached the admin API. And some options make
+Jellyfin write URLs carrying the admin token into the master playlist - HLS subtitles, subtitles in the
+manifest, trickplay tiles - so every subtitle key is stripped and <code>enableTrickplay=false</code> is
+forced.</p>
+
+<h2 id="missing">Deleted files</h2>
+<p>Jellyfin removes items for deleted files on its next validation - <em>unless the library folder is
+empty</em>. Then it logs that the folder is "inaccessible or empty, skipping" and changes nothing,
+because it cannot tell "everything was deleted" from "the drive did not mount". So every deleted film
+stayed searchable forever. The folders' <code>README.txt</code> placeholders are what keep them never
+empty, and <code>EnsurePlaceholders</code> writes them back before every scan. The adapter also sends
+<code>IsMissing=false</code>, so episodes Jellyfin manufactures for gaps in a series never appear.</p>
+
+<h2 id="version">Version</h2>
+<p>The image follows <code>latest</code>; everything above was checked against 12.1.0. Jellyfin's API has
+moved under SoundStorm before, so re-verify authentication and the HLS query keys when it changes.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

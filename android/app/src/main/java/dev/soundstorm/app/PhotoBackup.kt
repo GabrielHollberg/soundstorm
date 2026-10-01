@@ -186,7 +186,10 @@ object PhotoBackup {
             .addContentUriTrigger(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true)
             .setTriggerContentUpdateDelay(30, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(c).enqueueUniqueWork(NEW_PHOTOS, ExistingWorkPolicy.KEEP,
+        // Replaced, not kept: it is set up again from inside the job it
+        // replaces, and KEEP found that running job and did nothing, so the
+        // trigger fired once and no more (a review).
+        WorkManager.getInstance(c).enqueueUniqueWork(NEW_PHOTOS, ExistingWorkPolicy.APPEND_OR_REPLACE,
             OneTimeWorkRequestBuilder<BackupWorker>().setConstraints(cons).build())
     }
 
@@ -439,8 +442,19 @@ class BackupWorker(context: Context, params: WorkerParameters) : Worker(context,
                     }
                     val (item, size) = pair
                     val sentSoFar = done
-                    PhotoBackup.send(c, server, item, PhotoBackup.original(c, item.uri), size) { sent ->
-                        showProgress(sentSoFar, roll.size, sent, size)
+                    try {
+                        PhotoBackup.send(c, server, item, PhotoBackup.original(c, item.uri), size) { sent ->
+                            showProgress(sentSoFar, roll.size, sent, size)
+                        }
+                    } catch (e: PhotoBackup.Refused) {
+                        // One photo the server will not take (a type it
+                        // refuses, a file that cannot be read) is passed
+                        // over: newest first, every retry met it first and
+                        // nothing older was ever sent (a review). Space, the
+                        // sign-in and access still stop the job.
+                        if (e.code in listOf(401, 403, 429, 507)) throw e
+                        android.util.Log.w("PhotoBackup", "passed over ${item.name}: ${e.message}")
+                        PhotoBackup.record(c, problem = "Passed over ${item.name}: ${e.message}")
                     }
                     PhotoBackup.markSent(c, listOf(item.key))
                     done++

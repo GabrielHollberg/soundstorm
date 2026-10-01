@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threat model - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="security/model" data-root="..">
+<main>
+<h1>Threat model</h1>
+<p class="lede">Six kinds of attacker, from a stranger on the internet to a malicious file, and what
+stands between each of them and the household's media and accounts.</p>
+
+<h2 id="attackers">Who the attackers are</h2>
+<table>
+  <tr><th>Attacker</th><th>What they have</th><th>What they would want</th></tr>
+  <tr><td>A stranger on the internet</td><td>The install's public name, when remote access is on</td><td>An account; to keep the household out; to use the server's resources</td></tr>
+  <tr><td>Someone on the same Wi-Fi</td><td>Plain-http traffic on the LAN; the ability to answer router discovery</td><td>Session cookies, photos in transit, to steer an app to their own server</td></tr>
+  <tr><td>A member of the household</td><td>A real account, upload rights to the shelves they can see</td><td>Another person's photos or account, the owner's powers, shelves they were refused</td></tr>
+  <tr><td>A crafted file</td><td>Whatever a member uploads: EPUB, PDF, MP3, M4A, FLAC, image, zip</td><td>To run script as whoever opens it, or to exhaust memory and CPU</td></tr>
+  <tr><td>A malicious backend or service</td><td>Control over answers SoundStorm reads: a backend, plex.tv, a router, an ACME server</td><td>To redirect credentials elsewhere, crash the server, or reach internal services</td></tr>
+  <tr><td>Another install</td><td>A trusted name under the same domain as every install</td><td>Cookie tossing, cross-site requests, the name service's shared budgets</td></tr>
+</table>
+
+<h2 id="first-account">Before the first account</h2>
+<p>Until an account exists, whoever reaches the port could claim the server. "Only from the home
+network" cannot be checked - under Docker Desktop every connection arrives from Docker's own
+address - so the first sign-up needs a <strong>setup code</strong>: eighty random bits the installer
+writes into <code>.env</code>, shows at the end of setup, and passes to the browser it opens.
+Signup closes for good the moment an account exists, and the role of every later account is decided
+by the server under a lock, so two first sign-ups racing cannot both become owner.</p>
+
+<h2 id="signin">Signing in</h2>
+<ul>
+  <li>Passwords are PBKDF2-SHA256 at 600,000 rounds, at most 256 characters (a longer one would cost
+  more per guess than the throttle was sized for). An unknown name is hashed too, at the same cost.</li>
+  <li>Only two hashes run at once for everyone; a client gets five free failures and then a doubling
+  wait capped at five minutes; an account gets ten, capped at a minute; one guess per account is in
+  flight at a time, so a burst cannot outrun the backoff.</li>
+  <li>A browser that has signed in before carries a <strong>device token</strong> (an HMAC over the
+  account's current salt) and is judged on its own record, with a hashing slot of its own - so a
+  stranger guessing at the owner's name cannot keep the owner out.</li>
+  <li>Sessions are random 256-bit tokens stored only as hashes; over TLS the cookie is
+  <code>__Host-</code>, which another install's page cannot overwrite.</li>
+</ul>
+
+<h2 id="members">What a member can reach</h2>
+<p>Two roles: the owner and members. A member's access is a list of media kinds; the middleware puts
+it in the request context, and <code>Registry.All</code>, <code>Matching</code> and <code>ByID</code>
+take a context, so no handler can reach a source without the restriction applied. Jellyfin serves
+films and TV from one account, so every Jellyfin target checks the item comes back from a query
+limited to its own types - an id alone cannot cross from TV to films.</p>
+<p>Photos are private by design: each member has a folder of their own and an Immich account whose
+only library is that folder, so faces, places and search see their photos alone. The owner sees
+everybody's. Deleting, people, settings and remote access are the owner's routes, mounted behind an
+owner check.</p>
+
+<h2 id="files">Files from other people</h2>
+<p>The most-tested boundary. A book's chapters are rendered in same-origin frames, so a script inside
+a book would run with the reader's session. Defences, in layers:</p>
+<ul>
+  <li>The shell's Content-Security-Policy allows scripts only from the server itself, and no inline
+  script.</li>
+  <li>The reader strips scripts, event attributes, <code>javascript:</code> links, frames, objects,
+  SVG animation, non-stylesheet links, XSLT, and any reference back to the server, from every chapter
+  before it is shown.</li>
+  <li>The server never serves a script type from a book, a cover or a stream (demoted to
+  <code>text/plain</code>), refuses requests whose destination is a script, worker or style, and
+  sandboxes HTML, XML and SVG.</li>
+  <li><code>app.js</code> and <code>reader.js</code> refuse to run inside a frame at all.</li>
+</ul>
+<p>Every parser is bounded: EPUB directories checked before archive/zip reads them, XMP packets and
+OPF documents capped, image decodes limited to 12 megapixels and two at a time, MP4 box nesting and
+tag walks capped, a zip that would unpack to far more than its size refused.</p>
+
+<h2 id="backends">Backends and outside services</h2>
+<ul>
+  <li><strong>A path is an instruction to a backend holding admin credentials.</strong> The shared
+  client refuses absolute references, second leading slashes and dot segments after decoding; HLS
+  paths must match Jellyfin's own shapes; subtitle and trickplay parameters that would make Jellyfin
+  write its token into a playlist are stripped.</li>
+  <li>Redirects to another host are not followed with a backend's headers; Plex servers are dialled
+  only at addresses that are not loopback, link-local, CGNAT, Docker's or the container's own
+  networks, checked again as each connection is made.</li>
+  <li>Transport errors are redacted before anyone sees them: a Subsonic URL carries its credential in
+  the query.</li>
+</ul>
+
+<h2 id="network">The network and the apps</h2>
+<ul>
+  <li>Cross-site writes are refused on <em>origin</em>, not site - every install shares a parent
+  domain until it is on the Public Suffix List.</li>
+  <li>The local certificate authority is name-constrained to the install's own networks, so a leaked
+  key cannot mint a certificate for a bank.</li>
+  <li>The name service only ever names private addresses for the home name, and the public name only
+  after it has reached the install itself.</li>
+  <li>The phone apps follow the page to the install's secure name but never save a name a page asked
+  for; the Android app plays only the server's own addresses, sends cookies only to the host they
+  belong to, and lets only trusted apps control playback.</li>
+</ul>
+
+<h2 id="left">Accepted and open</h2>
+<div class="warn">Recorded rather than forgotten: images are pulled by tag and the Windows installer
+is unsigned; the name service's daily budgets can be spent by many networks until the domain is on
+the Public Suffix List; backends' database passwords are fixed defaults reachable only on the
+compose network; the Android app is signed with a test key.</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

@@ -309,7 +309,7 @@ func TestMapTargetFallsThroughToUPnP(t *testing.T) {
 		internalClient: netip.MustParseAddr("192.168.1.50"),
 		upnpLocation:   f.location,
 	}
-	m, err := mapTarget(context.Background(), t2, TCP, 8080, 8099, time.Hour)
+	m, err := mapTarget(context.Background(), t2, TCP, 8080, 8099, time.Hour, Mapping{})
 	if err != nil {
 		t.Fatalf("mapTarget: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestSilentPCPAndNATPMPLeaveTimeForUPnP(t *testing.T) {
 		gateway:        gw.addr,
 		internalClient: netip.MustParseAddr("192.168.1.50"),
 		upnpLocation:   igd.location,
-	}, TCP, 8080, 8099, time.Hour)
+	}, TCP, 8080, 8099, time.Hour, Mapping{})
 	if err != nil {
 		t.Fatalf("mapTarget: %v", err)
 	}

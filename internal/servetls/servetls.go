@@ -169,7 +169,11 @@ type Server struct {
 	// operator configured. It answers any handshake that does not name
 	// something specific - which is every connection to a bare IP address,
 	// because browsers send no SNI for those.
-	fallback *tls.Certificate
+	// Guarded by mu once serving: it is reissued in place near expiry (see
+	// currentFallback), from fallbackNames, and saved under dir.
+	fallback      *tls.Certificate
+	fallbackNames []string
+	dir           string
 
 	mu     sync.Mutex
 	leaves map[string]*tls.Certificate
@@ -437,6 +441,8 @@ func loadSelfSigned(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s.fallback = fallback
+	s.fallbackNames = names
+	s.dir = cfg.Dir
 
 	cfg.Log.Info("tls enabled with a local authority",
 		"install", "/ca.crt",
@@ -464,15 +470,46 @@ func (s *Server) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, e
 		// handshake says which address was dialed - behind Docker's NAT the
 		// connection's local address is the container's own - so this is what
 		// the configured names are for.
-		return s.fallback, nil
+		return s.currentFallback(), nil
 	}
-	if covers(s.fallback, name) {
-		return s.fallback, nil
+	if fallback := s.currentFallback(); covers(fallback, name) {
+		return fallback, nil
 	}
 	// A hostname nobody configured. SNI is trustworthy enough to answer for,
 	// and minting keeps a name somebody set up in their router working without
 	// it also having to be listed here.
 	return s.certFor(name, []string{name})
+}
+
+// currentFallback returns the fallback certificate, reissuing it first when it
+// is near expiry. It is issued at start, and a server left running for longer
+// than its lifetime would otherwise go on handing out an expired certificate to
+// every bare-IP connection until somebody restarted it. The new one is saved,
+// as at start, so a click-through exception survives the next restart.
+func (s *Server) currentFallback() *tls.Certificate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fallback == nil || !expiringSoon(s.fallback) || len(s.fallbackNames) == 0 {
+		return s.fallback
+	}
+	fresh, err := issue(s.ca, s.caLeaf, s.fallbackNames)
+	if err != nil {
+		// The old one is still better than none, and the next handshake tries
+		// again.
+		if s.log != nil {
+			s.log.Warn("could not renew the local certificate", "err", err)
+		}
+		return s.fallback
+	}
+	if s.dir != "" {
+		saveFallback(s.dir, fresh)
+	}
+	s.fallback = fresh
+	if s.log != nil {
+		s.log.Info("renewed the local certificate",
+			"expires", fresh.Leaf.NotAfter.Format("2006-01-02"))
+	}
+	return fresh
 }
 
 // covers reports whether a certificate already answers for a name.
@@ -822,13 +859,18 @@ func loadOrIssueFallback(dir string, ca tls.Certificate, caLeaf *x509.Certificat
 	if err != nil {
 		return nil, err
 	}
-	// Best effort: a certificate that cannot be saved still works for this
-	// run, and refusing to serve because of it would be the worse failure.
-	if pemPair, err := encodePair(fresh); err == nil {
-		_ = os.WriteFile(certPath, pemPair.cert, 0o644)
-		_ = os.WriteFile(keyPath, pemPair.key, 0o600)
-	}
+	saveFallback(dir, fresh)
 	return fresh, nil
+}
+
+// saveFallback writes the fallback certificate where loadOrIssueFallback looks.
+// Best effort: a certificate that cannot be saved still works for this run, and
+// refusing to serve because of it would be the worse failure.
+func saveFallback(dir string, cert *tls.Certificate) {
+	if pemPair, err := encodePair(cert); err == nil {
+		_ = os.WriteFile(filepath.Join(dir, "server.pem"), pemPair.cert, 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "server-key.pem"), pemPair.key, 0o600)
+	}
 }
 
 // sameNames reports whether a certificate covers exactly the names asked for,

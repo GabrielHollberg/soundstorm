@@ -101,8 +101,8 @@ var layout = []Folder{
 	{
 		Kind:        media.KindPicture,
 		Name:        "pictures",
-		Description: "Photos and the videos you took with them, in whatever folders you like.",
-		Example:     "pictures/2024 Holiday/IMG_4031.heic",
+		Description: "Photos and the videos you took with them. What each person adds is sorted into their own folder under Personal, by when it was taken; folders you copy in yourself are kept as they are.",
+		Example:     "pictures/Personal/Alex/2024/07/IMG_4031.heic",
 	},
 }
 

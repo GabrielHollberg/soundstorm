@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Running it - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="operations" data-root="..">
+<main>
+<h1>Running it</h1>
+<p class="lede">SoundStorm is meant to be installed by somebody who has never opened a terminal,
+and kept running by the same person. This section covers the whole life of an install: setting it
+up, updating it, moving it, reaching it away from home, and what to check when something is wrong.</p>
+
+<h2 id="shape">The shape of an install</h2>
+<p>An install is a folder holding a <code>docker-compose.yml</code>, a <code>.env</code> file of
+settings, and a <code>library/</code> folder with the media. Docker runs SoundStorm and its media
+servers as containers; their own data (accounts, databases, credentials) lives in Docker volumes.
+Two rules follow from that layout and run through every page here:</p>
+<ul>
+  <li><strong>Updating is installing again.</strong> There is no separate update path to break.</li>
+  <li><strong>Nothing ever touches <code>library/</code></strong> except SoundStorm placing files you
+  added. Uninstalling, moving and resetting all leave the media where it is.</li>
+</ul>
+<div class="why">SoundStorm has no access to Docker itself. That is deliberate: if SoundStorm were
+compromised, it could not reach the host. The price is that anything which drives Docker - updating,
+moving the library to another drive, uninstalling - lives in the installer scripts, not in the
+app.</div>
+
+<h2 id="pages">In this section</h2>
+<div class="cards">
+  <a class="card" href="install.html"><b>Installing</b><span>The Windows setup file, Docker and WSL, the setup code, Mac and Linux, compose alone, the starter library.</span></a>
+  <a class="card" href="maintain.html"><b>Updating, moving, removing</b><span>Updates, moving to another computer, backup and restore, a forgotten password, uninstalling.</span></a>
+  <a class="card" href="remote.html"><b>Away from home</b><span>The secure name, remote access with port mapping, Tailscale, and slow links.</span></a>
+  <a class="card" href="troubleshooting.html"><b>Troubleshooting</b><span>Organised by symptom: what you see, what causes it, what to check.</span></a>
+</div>
+
+<h2 id="commands">Everyday commands</h2>
+<p>Run in the install folder. None of them are needed day to day; the installer and the app cover
+the common cases.</p>
+<pre><code>docker compose logs -f soundstorm   # what it is doing right now
+docker compose down                 # stop (nothing is lost)
+docker compose up -d                # start
+docker compose pull &amp;&amp; docker compose up -d   # update by hand</code></pre>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

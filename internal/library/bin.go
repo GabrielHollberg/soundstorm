@@ -102,7 +102,10 @@ func (l *Library) Resolve(kind media.Kind, rels []string) ([]string, error) {
 		if !info.IsDir() {
 			picked = withCompanions(full)
 			parent := filepath.Dir(full)
-			if parent != shelf && !otherMediaIn(parent, kind, picked) {
+			// Not for documents: a folder like Taxes/2024 is somebody's own
+			// arrangement, holding spreadsheets and notes beside the PDF,
+			// and deleting the last PDF took the whole folder (a review).
+			if parent != shelf && kind != media.KindDocument && !otherMediaIn(parent, kind, picked) {
 				picked = []string{parent}
 			}
 		}

@@ -103,6 +103,10 @@ type autoCert struct {
 	mu         sync.RWMutex
 	reg        names.Registration
 	publicName string // the remote name, once the service has published it
+	// clearedPublic is the remote name last taken down after remote access was
+	// turned off, so a certificate that still carries it (until its next
+	// renewal) does not have it taken down again on every step.
+	clearedPublic string
 	// recheckSoon asks run to step again after firstRetry rather than
 	// checkEvery: the name service could not say whether remote access works,
 	// and half a day is too long to leave that unanswered.
@@ -196,7 +200,9 @@ func (a *autoCert) upstreamNow() portmap.Upstream {
 func (a *autoCert) remoteNameNow() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	if a.cert == nil || a.publicName == "" || time.Now().After(a.cert.Leaf.NotAfter) {
+	// While remote access is off, publicName may still hold a name whose public
+	// record could not be taken down yet; that is not remote access being up.
+	if a.cert == nil || a.publicName == "" || time.Now().After(a.cert.Leaf.NotAfter) || !a.remoteOn() {
 		return ""
 	}
 	return a.publicName
@@ -342,6 +348,9 @@ func (a *autoCert) step(ctx context.Context) error {
 	// port means anyway - so it is logged and the remote name dropped.
 	domains := []string{reg.Name}
 	publicName := ""
+	// pendingClear is a remote name whose public record still has to come down,
+	// kept in memory until it does so the next step tries again.
+	pendingClear := ""
 	if a.remoteOn() {
 		// Open the port on the router first, so the reachability probe that
 		// SetPublic triggers finds it already open on the first try instead of
@@ -367,6 +376,9 @@ func (a *autoCert) step(ctx context.Context) error {
 		switch {
 		case name != "":
 			publicName = name
+			a.mu.Lock()
+			a.clearedPublic = ""
+			a.mu.Unlock()
 			domains = append(domains, name)
 		case !definite && had != "":
 			// The name service could not be asked - it timed out, was
@@ -393,12 +405,20 @@ func (a *autoCert) step(ctx context.Context) error {
 		}
 	} else {
 		a.mu.RLock()
-		had := a.publicName
+		had, cleared := a.publicName, a.clearedPublic
 		a.mu.RUnlock()
+		if had == "" {
+			// Just started, with remote access turned off while it was down: the
+			// certificate on disk still names the remote name, whose public
+			// record nothing has taken down yet.
+			if n := remoteNameIn(cert, reg); n != cleared {
+				had = n
+			}
+		}
 		if had != "" {
-			// Remote access was just turned off. Close the port and take the
-			// public record down so the name stops resolving; both best effort,
-			// since the LAN name working does not depend on either.
+			// Remote access was turned off. Close the port and take the public
+			// record down so the name stops resolving; both best effort, since
+			// the LAN name working does not depend on either.
 			if a.portMapper != nil {
 				a.portMapper.DropNow(ctx)
 			}
@@ -406,14 +426,27 @@ func (a *autoCert) step(ctx context.Context) error {
 			a.upstream = portmap.UpstreamUnknown
 			a.mu.Unlock()
 			if err := a.names.ClearPublic(ctx, reg); err != nil {
-				a.log.Warn("could not remove the public name", "err", err)
+				// Keep the name so the next step tries again, and make that
+				// soon: left alone, the record would point the world at this
+				// house with remote access off.
+				a.log.Warn("could not remove the public name; trying again soon", "err", err)
+				pendingClear = had
+				a.mu.Lock()
+				a.recheckSoon = true
+				a.mu.Unlock()
 			} else {
 				a.log.Info("remote access turned off; public name removed")
+				a.mu.Lock()
+				a.clearedPublic = had
+				a.mu.Unlock()
 			}
 		}
 	}
 	a.mu.Lock()
 	a.publicName = publicName
+	if pendingClear != "" {
+		a.publicName = pendingClear
+	}
 	a.mu.Unlock()
 
 	if cert != nil && certCovers(cert.Leaf, domains) && !dueForRenewal(cert.Leaf, time.Now()) {

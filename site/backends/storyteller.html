@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storyteller (read-along) - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends/storyteller" data-root="..">
+<main>
+<h1>Storyteller (read-along)</h1>
+<p class="lede">Storyteller transcribes an audiobook and finds every sentence of it in the matching
+ebook. SoundStorm hands it pairs from Read Along, takes back the sentence timings, and uses them to turn
+the reader's page as the audiobook plays - through SoundStorm's own player, not Storyteller's.</p>
+
+<h2 id="why">Why a backend</h2>
+<p>Pages that turn by themselves need to know, sentence by sentence, where the narrator is. That is forced
+alignment - transcribe the audio, find it in the text - which is machine learning over audio, the
+expensive layer SoundStorm does not own. A cheap alternative, guessing in proportion through each chapter,
+was offered and declined: a page off by one reads as broken. Storyteller is MIT-licensed and runs in
+Docker. Its image is 2.9 GB, idle RAM about 300 MB and 0.7 GB while syncing.</p>
+
+<h2 id="pinning">Pinned by digest</h2>
+<p>Its API moves between releases, so it is pinned by digest (to web-v2.14.21), and a new version is a
+deliberate change.</p>
+
+<h2 id="provisioning">Provisioning</h2>
+<p>All checked live:</p>
+<ul>
+  <li><strong>The first account is a Next.js server action on <code>/init</code></strong>, which works as a
+  plain multipart form. The action id changes per build, so it is scraped off the page each time.</li>
+  <li><strong><code>/api/v2/token</code></strong> (form data) gives a thirty-day session;
+  <strong><code>/api/v2/token/app</code></strong> trades it for a 35-year one - and reads only the
+  <code>st_token</code> cookie. A bearer token is sent to the login page, which cost a test cycle.</li>
+  <li><strong>Settings</strong> (<code>/api/v2/settings</code>): synced books written inside its own
+  <code>/data</code> (the default writes beside the source - into the library), the <code>base.en</code>
+  model (tiny missed a chapter of synthetic speech), cache cleaned after, OPDS off, and the maximum track
+  length set huge so chapters are the only cuts.</li>
+</ul>
+<p>The audiobook folder is mounted read-only, so Storyteller can never change a recording.</p>
+
+<h2 id="adding">Two steps to add a pair</h2>
+<p>The one-call form is broken: naming the EPUB and the audio together in <code>POST /api/v2/books</code>
+fails when they are in different folders - each tries to create the book and the second hits a duplicate
+id. So the recording is added by reference (never copied), and the ebook is uploaded into that book over
+tus (<code>/api/v2/books/upload</code>). That also keeps the shelf's file untouched when an EPUB 2 - most of
+a Calibre library - has to be upgraded: the upgrade happens to Storyteller's copy. A synced book is found
+again by its audiobook's folder, so SoundStorm stores nothing about it.</p>
+
+<h2 id="timing">What is used, and the timing conversion</h2>
+<p>Storyteller's output is an EPUB 3 with media overlays and its own copy of the audio inside. Playing that
+would lose the lock screen, the mini-player and Audiobookshelf's listening position. So only its
+<em>text</em> is used - every sentence wrapped in a span with an id - and its SMIL timings, converted by
+<code>storyteller.Timeline</code> to the audiobook's whole-book clock.</p>
+<p>The conversion rests on how Storyteller cuts audio, read from its source and checked end to end: input
+files are numbered in name order (<code>Audio/0000F-0000C</code>), and each is cut at its chapter marks.
+Piece C of file F therefore starts at that file's C-th chapter - which is Audiobookshelf's chapter list,
+exposed as <code>source.AudioLayouter</code>. Where the pieces and chapters do not line up there is no
+timeline, and the book opens saying it cannot follow rather than following the wrong sentence.</p>
+
+<h2 id="sync">Syncing</h2>
+<p>Pairs sync by themselves: a look two minutes after start, every half hour, and three minutes after a
+book scan. One sync runs at a time. Measured on the development machine: 8 minutes of speech in 30 s with
+<code>base.en</code>, so a 10-hour book takes about 40 minutes; disk use is roughly the audiobook's size
+again, since the synced EPUB embeds the audio. A failed pair is not retried automatically - a failure
+retried every half hour would be the better part of an hour of CPU, repeated - and is never unmatched,
+because failure is usually Storyteller, not the match. "Not the same book" deletes Storyteller's copies
+only; its delete touches nothing outside its own storage.</p>
+
+<h2 id="quirks">Quirks and open items</h2>
+<ul>
+  <li>It still syncs its changelog from GitLab on a daily schedule despite
+  <code>STORYTELLER_SYNC_CHANGELOG=false</code>, which only stops the one at start.</li>
+  <li>Its secret key has a default, reachable only on the compose network - recorded as a decision left
+  open, like Immich's database password.</li>
+  <li>If its long-lived token was never issued, it re-provisions rather than signing in again.</li>
+</ul>
+<p>Verified end to end on an isolated stack with synthetic speech: an EPUB 3 with two MP3s and an EPUB 2
+with a chaptered M4B both synced through SoundStorm's API, each timeline ended exactly where its recording
+did, and in Chrome the lit sentence moved with the narration and the page turned on its own. See
+<a href="../server/books.html">Books and read-along</a>.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AudioMuse-AI (moods) - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends/audiomuse" data-root="..">
+<main>
+<h1>AudioMuse-AI (moods)</h1>
+<p class="lede">AudioMuse-AI listens to every song in the library and says how it sounds: danceable,
+aggressive, happy, party, relaxed, sad, its energy, tempo and key, and which songs sound alike. It is the
+backend behind mood stations and "sounds like" radio, and nothing it does leaves the house.</p>
+
+<h2 id="why">Why a backend</h2>
+<p>Asked for as "we're still missing mood". Measured first, on a real library of 4,413 songs: 42% were
+tagged just "Pop", none carried a tempo or mood tag, and MusicBrainz's tags name moods only for famous
+albums. Mood from metadata would have been a guess from "Pop". Hearing mood is machine learning over the
+audio - the layer SoundStorm does not own - so it is delegated. The owner chose this over tags-only,
+knowing the cost: three containers (web, worker, Postgres) and a 1.9 GB image. AGPL-3.0, run
+unmodified.</p>
+
+<h2 id="pinning">Pinned by digest</h2>
+<p>AudioMuse-AI releases weekly, so it is pinned by digest (to 3.6.3).</p>
+
+<h2 id="provisioning">Provisioned with nobody logging in</h2>
+<p>Checked live against 3.6.3 in a throwaway stack:</p>
+<ul>
+  <li><strong><code>/api/setup</code> answers without a login until the first save and never after</strong>:
+  a second unauthenticated save is a 401 and a made-up token is refused - Jellyfin's startup wizard again.
+  SoundStorm generates its API token and admin password.</li>
+  <li><strong>It gets a non-admin Navidrome account of its own</strong>, <code>audiomuse</code>, made
+  through Navidrome's native <code>/api/user</code>. It sees every song and is refused a scan. If
+  AudioMuse's volumes were wiped and Navidrome's were not, the account is reset rather than refused. It
+  reads songs through Navidrome, so it mounts no folder at all.</li>
+  <li><strong>Nothing leaves the house</strong>: its models ship in the image (nothing is downloaded), and
+  its third-party lyrics lookup is switched off at setup. Lyrics transcription is off too - hours of CPU
+  for nothing SoundStorm shows.</li>
+  <li><strong>A nightly listen</strong> is scheduled through its <code>/api/cron</code>, and SoundStorm's
+  rescan hook starts one (<code>/api/analysis/start</code>) three minutes after a music scan, debounced,
+  once Navidrome has indexed the arrivals.</li>
+</ul>
+
+<h2 id="api">The calls SoundStorm makes</h2>
+<table>
+  <tr><th>Call</th><th>Used for</th></tr>
+  <tr><td><code>/api/sync</code></td><td>The whole analysis, 500 a page, <code>include_embeddings=false</code></td></tr>
+  <tr><td><code>/api/similar_tracks</code></td><td>Song, album and artist radio from what sounds like the seed (a few seeds interleaved)</td></tr>
+  <tr><td><code>/api/last_task</code></td><td>How far the listening has got, shown while it is under way</td></tr>
+  <tr><td><code>/api/analysis/start</code>, <code>/api/cron</code></td><td>Starting and scheduling listens</td></tr>
+</table>
+<p><strong>Song ids are Navidrome's own</strong>, so the analysis joins to SoundStorm's songs with no
+matching at all. It is registered as a music source that finds nothing in search, so per-account access
+applies to it like any other source.</p>
+
+<h2 id="ranks">Ranks, not raw scores</h2>
+<div class="why">The classifiers answer in a narrow band - a solo piano piece scored 0.58 to 0.63 on all
+six - so the raw numbers mean little and their order means a lot. Every feature becomes its rank in
+<em>this</em> library (ties share one), and a mood is an average of ranks (<code>moods.go</code>): Chill is
+relaxed, calm and not aggressive; Focus leans on the instrumental tag. A station takes songs scoring over
+0.6, weighted by how far over. Energy, likewise as a rank, also tells the visualizers how hard a song
+should hit, and its tempo is the prior the beat tracker leans on.</div>
+
+<h2 id="timing">Timing and cost</h2>
+<p>Measured: about 9 seconds a song on the development machine, so a large library's first listen is
+roughly 11 hours in the background; worker memory peaked around 700 MB. Until a song is heard, radio from
+it falls back to similar artists and genres.</p>
+<p>Verified end to end on the preview: SoundStorm provisioned a fresh AudioMuse-AI on its first attempt,
+the 14 test songs were heard, all six mood stations appeared, and song radio came back "Songs that sound
+like it". Its song-path and text-to-sound search ("rainy day piano") are there for later. Its Postgres
+password, like Immich's, has a fixed default reachable only on the compose network.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

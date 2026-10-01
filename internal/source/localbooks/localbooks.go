@@ -102,6 +102,7 @@ type Source struct {
 	byID     map[string]book
 	scanned  time.Time
 	scanning bool
+	again    bool // a scan was asked for while one ran
 }
 
 // New builds a local book source. It does no I/O; call Start.
@@ -208,6 +209,10 @@ func (s *Source) scanRecovered(ctx context.Context) (err error) {
 func (s *Source) scan(ctx context.Context) error {
 	s.mu.Lock()
 	if s.scanning {
+		// Asked for while one runs, which may already have walked past the
+		// new book: once it ends, it runs again (a review found an upload
+		// waiting for the next tick, two minutes on).
+		s.again = true
 		s.mu.Unlock()
 		return nil
 	}
@@ -218,7 +223,15 @@ func (s *Source) scan(ctx context.Context) error {
 	defer func() {
 		s.mu.Lock()
 		s.scanning = false
+		rerun := s.again
+		s.again = false
 		s.mu.Unlock()
+		if rerun {
+			go func() {
+				defer func() { _ = recover() }()
+				_ = s.scan(context.WithoutCancel(ctx))
+			}()
+		}
 	}()
 
 	started := time.Now()

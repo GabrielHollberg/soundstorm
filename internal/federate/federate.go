@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
@@ -286,8 +287,12 @@ func normalize(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range strings.ToLower(s) {
+		r = foldAccent(r)
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		// Any letter or digit, not only a-z: accented names and other
+		// scripts became spaces, so "Beyonce" never ranked "Beyoncé" as an
+		// exact match and a Japanese search scored nothing (a review).
+		case unicode.IsLetter(r), unicode.IsDigit(r):
 			b.WriteRune(r)
 		default:
 			// Keep word boundaries where punctuation used to be.
@@ -355,4 +360,25 @@ func recoverInto(status *SourceStatus, src source.Source) {
 		Kind:     src.Kind(),
 		Error:    fmt.Sprintf("panicked: %v", r),
 	}
+}
+
+// foldAccent turns the common accented Latin letters into their plain ones,
+// so a search typed without accents ranks names spelled with them.
+func foldAccent(r rune) rune {
+	if r < 0xC0 || r > 0x17F {
+		return r
+	}
+	for plain, accented := range accentFolds {
+		if strings.ContainsRune(accented, r) {
+			return plain
+		}
+	}
+	return r
+}
+
+var accentFolds = map[rune]string{
+	'a': "àáâãäåāăą", 'c': "çćĉċč", 'd': "ďđ", 'e': "èéêëēĕėęě",
+	'g': "ĝğġģ", 'h': "ĥħ", 'i': "ìíîïĩīĭįı", 'j': "ĵ", 'k': "ķ",
+	'l': "ĺļľŀł", 'n': "ñńņňŉ", 'o': "òóôõöøōŏő", 'r': "ŕŗř",
+	's': "śŝşš", 't': "ţťŧ", 'u': "ùúûüũūŭůűų", 'w': "ŵ", 'y': "ýÿŷ", 'z': "źżž",
 }

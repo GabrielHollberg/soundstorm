@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updating, moving, removing - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="operations/maintain" data-root="..">
+<main>
+<h1>Updating, moving, removing</h1>
+<p class="lede">Everything that happens to an install after day one: updating it, backing up the
+one file that cannot be regenerated, getting back in after a forgotten password, carrying the whole
+thing to another computer, and removing it without touching anybody's media.</p>
+
+<h2 id="update">Updating is installing again</h2>
+<p>There is no separate update path. Running the installer again pulls newer images and restarts,
+keeping the library, accounts and settings. Windows gets an <strong>Update SoundStorm</strong>
+shortcut in the Start menu that does exactly that; on Mac and Linux the install command is run again;
+by hand it is <code>docker compose pull &amp;&amp; docker compose up -d</code>.</p>
+<div class="why">SoundStorm cannot update itself, and should not learn how. It has no access to the
+Docker socket, which is the reason a compromised SoundStorm cannot reach the host. An in-app update
+button would mean handing it that socket.</div>
+
+<h3 id="self-update">The installer updates itself first</h3>
+<p>For a while, "Update SoundStorm" ran the copy of the script saved by the <em>previous</em> install,
+so a fix to the installer only took effect on the update after the one that fetched it. Now a saved
+copy fetches the newest script first and, when it differs, hands over to it with the same arguments.
+A local checkout runs as it is. If the new copy fails, the run ends rather than falling back to the old
+copy. The newest script is fetched by commit, not by branch, because the raw file host caches branch
+addresses and ignores query strings.</p>
+<p>An update whose image download fails - a registry rate limit, a dropped connection - starts the
+version already installed instead of stopping, since nothing about the install is broken.</p>
+
+<h2 id="backup">Backup and restore</h2>
+<p>One file holds every account, sessions, everyone's favorites and playlists (as one extra field),
+and the passwords SoundStorm generated for each media server. <strong>Those passwords exist nowhere
+else.</strong> If a media server's data survives but SoundStorm's does not, that server has an account
+whose password nobody holds - the one failure provisioning cannot recover from by itself. Keep a copy
+somewhere other than the server, and treat it like a password.</p>
+<pre><code># Mac and Linux, in the install folder
+(umask 077; docker compose run --rm -T soundstorm backup - &gt; soundstorm-backup.json)
+docker compose run --rm -T soundstorm restore - &lt; soundstorm-backup.json
+
+# Windows (PowerShell), in the install folder
+docker compose run --rm -v "${PWD}:/backup" soundstorm backup /backup/soundstorm-backup.json
+docker compose run --rm -v "${PWD}:/backup" soundstorm restore /backup/soundstorm-backup.json</code></pre>
+<p>Some details that matter:</p>
+<ul>
+  <li><strong>Backup is read-only.</strong> Opening the state normally migrates and saves it, which would
+  rewrite the file being backed up and hand its ownership to whoever ran the command. The backup command
+  looks without touching (<code>state.Inspect</code>, <code>state.CopyTo</code>).</li>
+  <li><strong>Standard output on Linux.</strong> A file written through a bind mount belongs to the
+  container's user, and on Linux neither side can hand it to the person who asked. So <code>backup -</code>
+  writes to standard output and the shell creates the file as the user. It refuses a terminal, so the
+  passwords never scroll past on screen. On Docker Desktop a bind-mounted file appears as the host user's,
+  so Windows keeps the bind mount and then locks the file's permissions.</li>
+  <li><strong>Restore checks before it changes anything</strong>, refuses anything that is not a
+  SoundStorm backup, keeps what it replaced as <code>state.json.bak</code>, and puts the file's ownership
+  back so the server can read it.</li>
+  <li><strong>The uninstaller takes a backup automatically</strong> before removing anything - the one
+  moment the credentials would otherwise stop existing.</li>
+</ul>
+<p>What a backup does not carry: covers somebody set by hand, the listen log behind the year-in-music
+recap, and media. A move (below) carries everything.</p>
+
+<h2 id="password">A forgotten password</h2>
+<p>Sign-up closes once the first account exists, so a forgotten owner password used to mean hand-editing
+the state file inside a container. Now:</p>
+<pre><code>docker compose down
+docker compose run --rm soundstorm reset-password        # or: reset-password alex
+docker compose up -d</code></pre>
+<p>It prints a new password. Two things about it were found by doing it to a live install:</p>
+<ul>
+  <li><strong>The server must be stopped first.</strong> A running SoundStorm holds the state in memory and
+  rewrites the whole file on its next change, silently undoing the reset.</li>
+  <li><strong>File ownership.</strong> Run as root against a volume owned by the container's user, the old
+  tool took ownership of the state file, and SoundStorm then crash-looped on "permission denied". The tool
+  now records the ownership <em>before</em> opening the file and hands it back afterwards.</li>
+</ul>
+<p>Sessions are left alone: recovering your own password is not evidence of a break-in, and signing out
+every device in the house would be its own small disaster. Changing a password from inside the app is
+different - it asks for the current one and signs out every other device.</p>
+<p>The server treats any unknown argument as an error. It used to fall through to starting normally, so
+<code>backup</code> against an image too old to know the command quietly started a second SoundStorm on
+the same state.</p>
+
+<h2 id="move">Moving to another computer</h2>
+<p>The installers pack an install into one folder, <code>SoundStorm-move</code>, to carry on a USB drive
+or over the network between Windows, Mac and Linux in any direction:</p>
+<pre><code># Windows: Start menu, "Move SoundStorm to another computer", or
+.\soundstorm.ps1 -Export E:\
+
+# Mac and Linux
+curl -fsSL .../install.sh | sh -s -- --export /media/usb      # --no-library leaves media out</code></pre>
+<p>On the new computer, the folder carries a launcher for each kind of computer that installs from the
+folder it sits in.</p>
+<ul>
+  <li><strong>What goes:</strong> every data volume except caches and downloaded machine-learning models,
+  and except Tailscale's node identity, which belongs to one machine. Each volume is a plain tar made in a
+  small container, so file owners travel as numbers and each media server can read its own files on the
+  other side. The export files are readable by the owner only.</li>
+  <li><strong>Settings without the old computer:</strong> the port, LAN address, router and library path
+  are left out and worked out afresh; the setup code and generated secrets come across.</li>
+  <li><strong>SoundStorm is stopped for the copy</strong>, because a database copied mid-write may not
+  open, and started again whatever happens.</li>
+  <li><strong>Import refuses</strong> a computer that already has SoundStorm data: writing over accounts is
+  not something to do by accident. Volumes are restored before anything starts, since a media server
+  started on an empty volume sets itself up afresh.</li>
+</ul>
+<p>Rehearsals between throwaway projects in all four directions found real bugs: Windows wrote the
+manifest with CRLF line endings that Linux refused; one file name a Windows-formatted drive cannot hold
+stopped a whole export (now everything that can be copied is, and problem names are listed in
+<code>windows-name-problems.txt</code>); and a drive root such as <code>E:\</code> broke the relaunch,
+because a trailing backslash escaped the closing quote.</p>
+
+<h2 id="uninstall">Uninstalling: never touch <code>library/</code></h2>
+<p>Windows registers SoundStorm under the current user's uninstall key, so it appears in Settings &rarr;
+Apps like anything else, with no administrator needed. On Mac and Linux it is
+<code>install.sh --uninstall</code>.</p>
+<p>The uninstaller takes a backup, runs <code>docker compose down -v</code> - which removes the named
+volumes: accounts and each media server's database - and removes the compose file, the
+<code>.env</code>, the saved script and the shortcuts. It then prints where the media was left. Docker
+itself stays installed.</p>
+<div class="warn">The install folder itself is never deleted, because the library is inside it by
+default. Deleting the folder wholesale would take somebody's media with it. A test puts a marker file in
+<code>library/music</code> and requires it to be readable after uninstalling.</div>
+<p>One consequence of the design: an install can only be removed by a version of the script that knows
+how, because the uninstall entry points at the copy saved in the install folder.</p>
+
+<h2 id="deleting">Deleting media from the app</h2>
+<p>Separately from uninstalling, the owner can delete items from inside the app. Nothing is deleted at
+once: files move into <code>library/.trash/</code> with a record of what they were, Undo puts them back
+without ever overwriting, and a daily sweep empties entries older than 30 days. The bin is a hidden
+top-level folder that no media server has mounted, so a binned item leaves every server's view at
+once.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

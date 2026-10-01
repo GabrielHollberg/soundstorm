@@ -484,6 +484,59 @@ func (s *Server) limited(a *allowance, burst float64, every time.Duration, h htt
 type hlsSessions struct {
 	mu   sync.Mutex
 	seen map[string]map[string]time.Time
+	// source of each live session, so one left idle can be stopped
+	sources map[string]string
+	once    sync.Once
+}
+
+// hlsIdle is how long a play session may ask for nothing before its
+// conversion is stopped: a closed film, or one paused for a long while
+// (which carries on - the backend converts again from where it is asked).
+const hlsIdle = 3 * time.Minute
+
+// watch stops the conversions of sessions gone quiet, once a minute.
+func (h *hlsSessions) watch(stop func(sourceID, session string)) {
+	h.once.Do(func() {
+		go func() {
+			defer func() { _ = recover() }()
+			t := time.NewTicker(time.Minute)
+			defer t.Stop()
+			for now := range t.C {
+				for _, gone := range h.idle(now) {
+					stop(gone[0], gone[1])
+				}
+			}
+		}()
+	})
+}
+
+func (h *hlsSessions) idle(now time.Time) [][2]string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out [][2]string
+	for _, mine := range h.seen {
+		for session, at := range mine {
+			if session != "" && now.Sub(at) > hlsIdle {
+				if src, ok := h.sources[session]; ok {
+					out = append(out, [2]string{src, session})
+					delete(h.sources, session)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (h *hlsSessions) note(sourceID, session string) {
+	if session == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.sources == nil {
+		h.sources = map[string]string{}
+	}
+	h.sources[session] = sourceID
 }
 
 const maxHLSSessions = 4
@@ -500,11 +553,18 @@ func (h *hlsSessions) allow(userID, session string, now time.Time) bool {
 		h.seen[userID] = mine
 	}
 	for k, t := range mine {
-		if now.Sub(t) > 2*time.Minute {
+		if now.Sub(t) > hlsIdle+2*time.Minute {
 			delete(mine, k)
 		}
 	}
-	if _, live := mine[session]; !live && len(mine) >= maxHLSSessions {
+	// Live for the cap: asked for in the last two minutes.
+	live := 0
+	for _, t := range mine {
+		if now.Sub(t) <= 2*time.Minute {
+			live++
+		}
+	}
+	if t, known := mine[session]; (!known || now.Sub(t) > 2*time.Minute) && live >= maxHLSSessions {
 		return false
 	}
 	mine[session] = now

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP API - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/http-api" data-root="..">
+<main>
+<h1>The HTTP API</h1>
+<p class="lede">Every app - the web page, the Android and iPhone shells, the native Apple TV app -
+talks to the same <code>/api</code>. It is built in one function, <code>Routes()</code> in
+<code>internal/httpapi/httpapi.go</code>, out of three nested muxes and a short chain of
+middleware that every request passes through.</p>
+
+<h2 id="layers">Three muxes, one chain</h2>
+<p>The routes are registered on three <code>http.ServeMux</code>es, each behind a stricter door
+than the last:</p>
+<div class="diagram" role="img" aria-label="A request passes logging, security headers, same-origin and body deadline middleware, then the public mux; /api/ goes through sign-in and user context to the guarded mux; owner paths go through RequireOwner to the owner mux.">
+  <div class="row">
+    <div class="box">withLogging<small>status, time taken</small></div>
+    <div class="box">secureHeaders<small>framing, nosniff, HSTS</small></div>
+    <div class="box">sameOrigin<small>cross-site writes refused</small></div>
+    <div class="box">bodyDeadline<small>30s for a body</small></div>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="row"><div class="box core">public mux<small>shell, static files, /healthz, /ca.crt, session, sign-up, sign-in, sign-out</small></div></div>
+  <div class="arrow">&#8595; /api/ &rarr; auth.Require &rarr; withUserContext &#8595;</div>
+  <div class="row"><div class="box core">guarded mux<small>everything a signed-in person may do</small></div></div>
+  <div class="arrow">&#8595; owner paths &rarr; auth.RequireOwner &#8595;</div>
+  <div class="row"><div class="box core">owner mux<small>people, settings, deleting, pairing books</small></div></div>
+</div>
+
+<h3>The public mux</h3>
+<p>Only what must work before anybody signs in: the app shell at <code>/</code> (one page for
+every state - it asks <code>/api/session</code> and draws the sign-up form, the sign-in form or the
+library), <code>/static/</code>, the service worker and manifest (served from the root, because a
+service worker's scope is its own directory), <code>/healthz</code>, <code>/ca.crt</code> for a
+device that wants to trust the local authority, the name service's reachability challenge, and
+<code>GET /api/session</code>, <code>POST /api/signup</code>, <code>/api/login</code> and
+<code>/api/logout</code>.</p>
+
+<h3>The guarded mux</h3>
+<p>Everything else under <code>/api/</code> is mounted as
+<code>s.auth.Require(s.withUserContext(guarded))</code>. <code>Require</code> refuses a request
+without a valid session with 401. <code>withUserContext</code> then puts two things into the
+request's context: the account id (<code>source.WithUserID</code>) and what that account may
+reach (<code>source.WithAccess</code>).</p>
+<div class="why">Access is enforced by the registry, not remembered by each handler.
+<code>Registry.All</code>, <code>Matching</code> and <code>ByID</code> all take a context, so a
+handler physically cannot reach a source without passing the request's context - and with it
+the restriction. Changing those three signatures made the compiler find every call site;
+remembering to check in each handler would not have. A test walks every endpoint that can hand
+over bytes, metadata or a playable address and checks a restricted account is refused.</div>
+
+<h3>The owner mux</h3>
+<p>Routes only the owner may use live on a third mux, wrapped in
+<code>s.auth.RequireOwner</code>. One trap shaped how it is wired: <strong>an owner route must be
+mounted as well as registered</strong>. The owner mux only answers for paths also handed to the
+guarded mux with <code>guarded.Handle("/api/...", RequireOwner(owner))</code>. The read-along
+switch in Settings was once registered but not mounted, and answered 404 unnoticed until a test
+for another feature went through the same door. <code>TestOwnerSettingsAnswer</code> now asks
+every owner setting.</p>
+
+<h2 id="middleware">The middleware, outermost first</h2>
+<h3>Logging</h3>
+<p><code>withLogging</code> records method, path, status and milliseconds for each request.
+Media, art, book resources and static files log at debug - a film is hundreds of requests and
+would bury everything else. It wraps the response writer in a <code>statusRecorder</code>, and
+that recorder has an <code>Unwrap</code> method for a reason that cost months:
+<code>http.ResponseController</code> reaches the real connection only through wrappers that
+unwrap. Without it, every read deadline set behind the logger answered
+<code>ErrNotSupported</code>, each caller discarded the error, and both the body deadline and the
+upload window silently did nothing. Their unit tests built the handler without the logger and
+passed throughout; a test through the real route chain is what found it.</p>
+
+<h3>Security headers</h3>
+<p><code>secureHeaders</code> sets <code>X-Frame-Options: SAMEORIGIN</code> (a PDF opens in an
+iframe of SoundStorm's own, so not DENY), <code>nosniff</code> and a same-origin referrer policy.
+HSTS is sent only on the real certificate's name and only while a valid real certificate is
+loaded - and for a week, not a year. A home server's certificate can genuinely lapse, and a
+browser pinned for a year to a name now served by the untrusted fallback would have no way
+through. A week heals itself, and every visit while the certificate works pushes it back out.</p>
+
+<h3>Same origin</h3>
+<p>The session cookie is <code>SameSite=Lax</code>, which is normally enough against cross-site
+writes. Here it is not: every install's real name is under <code>soundstorm.dev</code>, which is
+not yet on the Public Suffix List, so to a browser another install - including one an attacker
+set up - is the same <em>site</em>. So <code>sameOrigin</code> refuses any request other than
+GET, HEAD or OPTIONS whose <code>Sec-Fetch-Site</code> is anything but
+<code>same-origin</code> or <code>none</code>, falling back to comparing <code>Origin</code> with
+the host. A request with neither header did not come from a browser page - the installer, curl,
+the Apple TV app - and carries no cookie a page could have borrowed.</p>
+
+<h3>Body deadlines</h3>
+<p><code>bodyDeadline</code> gives any request that has a body thirty seconds to send it. Every
+body here except a file is a few hundred bytes of JSON, so that is generous, and it stops a
+client holding a connection open by sending a byte at a time. File uploads - <code>/api/upload</code>,
+a phone's photo backup, a piece of a photo download - get a rolling window instead
+(<code>stallReader</code>): the deadline moves a minute forward only once 16KB has arrived since
+it last moved. A bad mobile link manages that easily; a trickle of one byte every fifty-nine
+seconds never does. An account may also have at most four uploads in flight.</p>
+
+<h2 id="no-readtimeout">Why there is no global ReadTimeout</h2>
+<p>The <code>http.Server</code> has a <code>ReadHeaderTimeout</code> of ten seconds, an
+<code>IdleTimeout</code> of two minutes and a 64KB header limit - and deliberately no
+<code>ReadTimeout</code> or <code>WriteTimeout</code>. A write timeout would cut off a film
+mid-playback. A read timeout is subtler: a read deadline that expires while a response is still
+being written cancels the request's context, and a stream stops with it. A film is a request
+with no body and a response that runs for two hours, so the deadline belongs on the body
+alone, which is exactly what <code>bodyDeadline</code> does.</p>
+
+<h2 id="limits">Rate limits: allowances</h2>
+<p>Some writes are cheap to send and expensive to receive - each rewrites a person's whole
+collections file, or <code>state.json</code> under the lock every request takes, or calls a
+service outside the house. Those go through an <code>allowance</code>: a per-person token bucket
+with a burst and a refill rate, put in front of a handler with
+<code>s.limited(&amp;bucket, burst, every, handler)</code>. Past it the answer is 429, "too many
+changes at once; wait a moment".</p>
+<table>
+  <tr><th>Allowance</th><th>Covers</th><th>Shape</th></tr>
+  <tr><td><code>listWrites</code></td><td>Favorites, playlists, custom covers, preferences</td><td>60, then one a second</td></tr>
+  <tr><td><code>plays</code></td><td>Recording a play (rewrites the collections file and appends to the listen log)</td><td>20, then one every 10s; dropped quietly past it</td></tr>
+  <tr><td><code>positions</code></td><td>Reading positions (each rewrites <code>state.json</code>)</td><td>30, then one every 2s; the app keeps an unsynced copy and retries</td></tr>
+  <tr><td><code>otherWrites</code></td><td>Audiobook positions sent to Audiobookshelf, the scrobbling token check, the read-along queue</td><td>per route</td></tr>
+  <tr><td><code>nowPlaying</code>, <code>imports</code>, <code>plexPins</code>, <code>artUploads</code></td><td>"Playing now" to ListenBrainz, playlist imports, Plex sign-ins, cover uploads</td><td>per route</td></tr>
+</table>
+<p>Other ceilings are not token buckets: at most four Jellyfin video conversions per person
+(<code>hlsSessions</code>), four uploads in flight, two password hashes at once across the whole
+server (see <a href="accounts.html">accounts</a>), and minimum gaps between library rescans.</p>
+
+<h2 id="errors">Error conventions</h2>
+<ul>
+  <li><strong>JSON everywhere.</strong> <code>writeJSON</code> sets the content type and
+  <code>nosniff</code>; <code>writeError</code> answers <code>{"error": "..."}</code> with a
+  sentence written for a person, because the app shows it as it is.</li>
+  <li><strong>Search never fails.</strong> A federated search is always 200, with
+  <code>degraded</code> and a per-source error slot saying what is missing. A dead backend must
+  never take the search down.</li>
+  <li><strong>Declining on purpose is not failing.</strong> An upload of something already in
+  the library is a 409 ("already in your library"), and the app shows it as skipped, not
+  failed. A full photo space is a 507.</li>
+  <li><strong>No secrets in errors.</strong> A transport error's text can carry the request
+  address, and a Subsonic address carries its credential in the query; <code>httpx.Redact</code>
+  strips it. Members see "did not answer"; the owner sees setup detail; the log gets the rest.
+  Filesystem errors have the container's own paths taken out before a browser sees them.</li>
+  <li><strong>A shelf you may not see is not there.</strong> For a restricted account the
+  registry's <code>ByID</code> reports a source outside its access exactly as it reports one
+  that does not exist, so streams, art and lookups fail as "no such source". Uploading, where a
+  person chose the shelf, says so plainly: "you do not have the films library", a 403.</li>
+</ul>
+
+<h2 id="endpoints">Notable endpoints</h2>
+<table>
+  <tr><th>Area</th><th>Endpoints</th></tr>
+  <tr><td>Session</td><td><code>GET /api/session</code> (signed in? secure name to move to? remote-access state), <code>POST /api/signup</code>, <code>/api/login</code>, <code>/api/logout</code>, <code>POST /api/account/password</code></td></tr>
+  <tr><td>Setup and library</td><td><code>GET /api/setup</code> (backends getting ready), <code>GET /api/library</code> (counts, free space), <code>POST /api/library/rescan</code>, <code>GET /api/probe</code> (a link-speed sample)</td></tr>
+  <tr><td>Search and browse</td><td><code>GET /api/search</code> (empty <code>q</code> browses a shelf), <code>GET /api/home</code>, <code>GET /api/continue</code>, <code>GET /api/genres</code>, <code>GET /api/books/pairs|authors|series</code>, <code>GET /api/tv/show</code>, <code>/api/tv/next</code></td></tr>
+  <tr><td>Playing</td><td><code>GET /api/stream/{source}/{id}</code>, <code>GET /api/art/{source}/{id}</code>, <code>GET /api/playback/{source}/{id}</code> (direct or HLS, tracks, chapters, position), <code>PUT /api/playback/...</code> (audiobook position), <code>GET /api/hls/{source}/{path}</code>, <code>GET /api/subtitle/...</code></td></tr>
+  <tr><td>Books</td><td><code>GET /api/book/manifest</code>, <code>/api/book/resource</code> (one file from inside an EPUB), <code>GET|PUT /api/book/progress</code>, <code>GET|POST /api/readalong</code></td></tr>
+  <tr><td>Music</td><td><code>/api/music/albums</code>, <code>/artists</code>, <code>/mixes</code>, <code>GET|POST /api/music/radio</code>, <code>/api/music/sound</code>, <code>/api/music/beats</code>, <code>/api/music/lyrics/...</code>, <code>POST /api/history</code>, <code>/api/scrobble</code>, <code>GET /api/recap</code></td></tr>
+  <tr><td>Collections</td><td><code>/api/favorites</code>, <code>/api/playlists</code> (and items, move, import), <code>/api/plex/*</code>, <code>/api/myart</code>, <code>GET|PATCH /api/prefs</code></td></tr>
+  <tr><td>Uploads</td><td><code>POST /api/upload/plan</code> (where would these go?), <code>PUT /api/upload?path=&amp;kind=</code> (one file as the whole body)</td></tr>
+  <tr><td>Photos</td><td><code>/api/photos/people</code>, <code>/places</code>, <code>/on-this-day</code>, <code>/usage</code>, <code>POST /api/photos/backup/check</code>, <code>PUT /api/photos/backup</code>, <code>/api/photos/import</code> (resumable pieces)</td></tr>
+  <tr><td>Owner only</td><td><code>/api/users</code> (add, remove, reset password, libraries, photo limit), <code>PUT /api/remote</code>, <code>/api/settings/lyrics|discovery|readalong</code>, <code>/api/books/pairs/not-same|by-hand</code>, <code>POST /api/delete/preview</code>, <code>/api/delete</code>, <code>/api/delete/undo</code></td></tr>
+</table>
+<p>Item ids in paths are attacker-supplied and are treated as such: the hardened client in
+<code>internal/httpx</code> refuses absolute references, a second leading slash and dot segments
+for every adapter, after a path like <code>/api/hls/jellyfin/%252e%252e/System/Info</code> once
+reached Jellyfin's admin API through a double decode. HLS paths must match the shapes Jellyfin's
+own playlists use.</p>
+
+<h2 id="bodies">Body limits</h2>
+<p>Every JSON body is read through <code>http.MaxBytesReader</code> with a cap sized to what it
+can legitimately hold:</p>
+<table>
+  <tr><th>Body</th><th>Cap</th></tr>
+  <tr><td>Sign-in, sign-up, password change, account creation</td><td>4KB (<code>maxCredentialBody</code>) - an unauthenticated endpoint must not be a memory sink</td></tr>
+  <tr><td>Reading position</td><td>8KB (<code>maxProgressBody</code>); a CFI is also capped at 2KB and a fraction must be in [0, 1]</td></tr>
+  <tr><td>Small settings (lyrics, discovery, radio taste, scrobbling token)</td><td>1KB</td></tr>
+  <tr><td>Favorites, playlists, preferences, read-along requests</td><td>per-route constants of a few KB</td></tr>
+  <tr><td>Photo backup check, Plex import list</td><td>1MB, 64KB</td></tr>
+  <tr><td>Custom cover</td><td>4MB, and only JPEG, PNG or WebP by their bytes</td></tr>
+  <tr><td>File uploads</td><td>no fixed cap; refused when they would leave under 1GB free on the library's disk</td></tr>
+</table>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

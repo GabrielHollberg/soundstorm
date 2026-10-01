@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="operations/troubleshooting" data-root="..">
+<main>
+<h1>Troubleshooting</h1>
+<p class="lede">Organised by what you see. Most of these symptoms were real reports, and each entry
+says what was behind it and what to check - starting with the cheap checks, because the usual
+cause is a network setting, not SoundStorm.</p>
+
+<div class="note">The single most useful command, in the install folder:
+<code>docker compose logs -f soundstorm</code>. SoundStorm's log is written never to carry a
+credential, so it is safe to share with whoever is helping. The media servers' own logs are not held
+to that rule - a music server request can carry a password in its address - so do not post those
+publicly.</div>
+
+<h2 id="phone">A phone or TV cannot reach it</h2>
+<p>The computer itself opens <code>http://localhost:8099</code>, but another device does not.</p>
+<ol>
+  <li><strong>Use the computer's address, not localhost.</strong> On a phone, <code>localhost</code> is
+  the phone. Settings &rarr; Use on your phone or TV shows the right address, for example
+  <code>http://192.168.1.50:8099</code>. Include the port.</li>
+  <li><strong>Same network?</strong> A guest Wi-Fi network usually cannot see other devices, and mobile
+  data is not the home network at all. The installer cannot check either of these.</li>
+  <li><strong>Windows: is the network Public?</strong> Windows makes every new Wi-Fi network Public, and
+  Public lets nothing in. Run <strong>Update SoundStorm</strong> while on the home network: it notices,
+  asks whether this is your home network, and with your consent marks it Private and opens SoundStorm's
+  port for private networks only.</li>
+  <li><strong>Windows: a Docker firewall block.</strong> If the firewall alert for "Docker Desktop
+  Backend" was cancelled during setup, Windows added a Block rule, and Block beats Allow. The same
+  update step removes the block for private networks.</li>
+  <li><strong>Did the computer's address change?</strong> A laptop that moves, or a router that hands out
+  a new address, breaks the secure name. The installer updates it on every launch on Windows; elsewhere
+  update <code>SOUNDSTORM_TLS_HOSTS</code> in <code>.env</code>. Giving the computer a fixed address in
+  the router (a DHCP reservation) prevents it.</li>
+</ol>
+
+<h2 id="certs">Certificate warnings</h2>
+<p><strong>In the default (auto) mode there should be none.</strong> The secure
+<code>https://&lt;id&gt;.home.soundstorm.dev:8099</code> name carries a real Let's Encrypt certificate.
+If you see a warning:</p>
+<ul>
+  <li><strong>You typed <code>https://</code> with an IP address.</strong> A trusted certificate is for the
+  name, not the address. Use <code>http://</code> with the IP, and the page moves to the secure name by
+  itself once it has checked it can reach it.</li>
+  <li><strong>The page never moves to the secure name.</strong> Some routers refuse to resolve a public
+  name that points at a private address (DNS rebinding protection). SoundStorm then stays on plain http
+  rather than redirect into a failure. Allowing <code>soundstorm.dev</code> in the router's rebinding
+  settings, or using a different DNS server, fixes it.</li>
+  <li><strong>Self-signed mode</strong> (<code>SOUNDSTORM_TLS=self-signed</code>) warns on every device
+  until <code>https://&lt;server&gt;:8099/ca.crt</code> is installed on it. That is expected.</li>
+  <li><strong>A warning after a reinstall</strong> in self-signed mode: a browser pins a clicked-through
+  exception to one exact certificate, and a reinstall makes a new one. Click through once more.</li>
+</ul>
+<p>The service worker never answers a page load, precisely so that a changed certificate shows the
+browser's own warning rather than a cached page that cannot work. A browser still holding a very old
+version of the worker can be stuck until its site data is cleared.</p>
+
+<h2 id="install-app">Android will not offer "Install app"</h2>
+<p>Chrome only installs a web app from an origin with a trusted certificate - not from a LAN IP address,
+and not from a self-signed certificate even after clicking through the warning. Open the secure
+<code>.home.soundstorm.dev</code> address and install from there, or use the Android app.</p>
+
+<h2 id="getting-ready">A shelf stuck on "Getting ready"</h2>
+<p>SoundStorm sets up each media server itself in the background, retrying with backoff, and the setup
+box shows each shelf's state. The media servers take from seconds to a minute or more to start - the
+photo server's models and the films server are the slowest - so "Getting ready" for the first few
+minutes is normal.</p>
+<ul>
+  <li><strong>Still waiting after several minutes:</strong> check that the container is running and
+  healthy (<code>docker compose ps</code>) and look at SoundStorm's log, which says what it is waiting
+  for. The owner also sees the raw error, folded under Details, on a failed shelf.</li>
+  <li><strong>A shelf that says its credentials do not work</strong>: this happens when a media server's
+  data and SoundStorm's data got out of step - one volume wiped and not the other - so the server has an
+  account whose password nobody holds. SoundStorm says so rather than retrying for ever, because the fix
+  is a human decision: restore a backup (see <a href="maintain.html#backup">Backup and restore</a>), or
+  reset the media server's volume and let it be set up afresh.</li>
+  <li><strong>A temporary error is not a password problem.</strong> Only a 401 or 403 is taken to mean
+  wrong credentials; a busy server, a timeout or a refused connection just means wait. A media server
+  that is loading often accepts the connection and answers "unavailable" for a while.</li>
+</ul>
+
+<h2 id="not-appearing">Files do not appear</h2>
+<ul>
+  <li><strong>Dropped onto the window:</strong> SoundStorm asks the right media server to look at once,
+  two seconds after the last file of a drop, and an uploaded file is normally searchable within about
+  five seconds. If a file was skipped, the drop panel says why: already in your library, a format that
+  shelf does not take, or no shelf it could name.</li>
+  <li><strong>Copied into the folders by hand:</strong> each media server finds new files on its own
+  timer, every minute or two. <strong>Settings &rarr; Check for new files</strong> asks them all
+  now.</li>
+  <li><strong>"Indexing new files..."</strong> under the filters means a media server is still working
+  through what arrived. An empty search during that is not a fault.</li>
+  <li><strong>Music filed under a strange artist:</strong> the artist comes from the file's tags. A file
+  with no tags lands under the folder above it, or <code>Unknown Author</code> when that folder is a
+  container like <code>Music</code> or <code>Downloads</code> - somewhere obvious to find and fix.</li>
+  <li><strong>A shelf you cannot see at all:</strong> the owner can tick which shelves each person sees.
+  A hidden shelf disappears from tabs, search and uploads.</li>
+  <li><strong>Only EPUBs and PDFs</strong> are read on the ebook shelf; other book formats are ignored.</li>
+</ul>
+
+<h2 id="still-showing">Deleted items still show</h2>
+<p>This was a real report - "I deleted all the files but some still show" - and it had a different cause
+for each media server:</p>
+<ul>
+  <li><strong>Films and TV, after emptying a folder by hand:</strong> the films server refuses to remove
+  anything when a library folder comes back completely empty, because it cannot tell "everything was
+  deleted" from "the drive did not mount". SoundStorm keeps a small <code>README.txt</code> in every shelf
+  so it is never empty, and writes it back before every scan. Do not delete it; if you did, Check for new
+  files puts it back and the old entries go within seconds.</li>
+  <li><strong>Audiobooks:</strong> the audiobook server keeps serving books whose files are missing (so a
+  book on an unplugged drive keeps its listening position). SoundStorm filters them out itself.</li>
+  <li><strong>Deleted from inside the app:</strong> items go to a bin for 30 days and leave every shelf at
+  once; Undo brings them back.</li>
+</ul>
+<div class="warn">On Linux, an external library drive that did not mount leaves an empty folder that looks
+exactly like a deliberately emptied library. Mount library drives at boot.</div>
+
+<h2 id="slow">Music is slow to start away from home</h2>
+<p>Usually the home's upload speed. Things that already happen automatically: songs are sent without the
+cover art inside them (which made browsers wait for megabytes), sending is paced so a skip does not wait
+behind a backlog, and a slow connection is measured as the app opens and songs start at 128 kbps.</p>
+<ul>
+  <li><strong>Settings &rarr; Playback on this device</strong>: "Original, lower on a slow connection" is
+  the default. "Always original" turns off every fallback - only choose it on a fast connection.</li>
+  <li><strong>A ring round the play button</strong> means the song is waiting on the network, not
+  stuck.</li>
+  <li><strong>Films</strong> default to the original at home and 20 Mbit away; the player's Quality picker
+  can go lower for the sitting.</li>
+  <li><strong>Downloads</strong> play from the device and need no connection at all.</li>
+</ul>
+
+<h2 id="remote">Remote access says it cannot work</h2>
+<ul>
+  <li><strong>"Carrier-grade NAT"</strong>: the internet provider shares one public address between many
+  homes, so no port forward can ever reach the house. Use Tailscale instead.</li>
+  <li><strong>"Double NAT"</strong>: the router is behind another router, often the provider's box. A
+  forward is needed on both, or put the provider's box in bridge mode.</li>
+  <li><strong>"The port is not open yet"</strong>: the router did not accept an automatic mapping. Forward
+  the port shown to the computer shown, by hand, in the router's settings; the panel notices when it starts
+  working.</li>
+</ul>
+<p>More on <a href="remote.html">Away from home</a>.</p>
+
+<h2 id="backup">Photo backup messages</h2>
+<p>The Android app's photo backup shows why it stopped in Settings &rarr; Your photos, and the message is
+meant to say what to do:</p>
+<table>
+  <tr><th>Message</th><th>What it means</th></tr>
+  <tr><td>SoundStorm needs permission to read your photos</td><td>The permission was refused or withdrawn. Allow it in the phone's settings for the app.</td></tr>
+  <tr><td>Sign in to SoundStorm again to carry on backing up</td><td>The session ended (a password change signs out other devices). Open the app and sign in.</td></tr>
+  <tr><td>This account does not have Pictures</td><td>The owner has not given this account the photo shelf.</td></tr>
+  <tr><td>There is no room left for photos</td><td>The person's photo space is full (100 GB by default, set by the owner in People), or the server's disk is. Nothing is deleted; backup resumes when there is room.</td></tr>
+  <tr><td>Could not reach the server; it will try again</td><td>A network problem. Android retries by itself.</td></tr>
+  <tr><td>It carries on when the phone is on Wi-Fi</td><td>Not an error: backup is set to Wi-Fi only.</td></tr>
+</table>
+<p>Android decides when backup jobs run, so a large backup proceeds in stretches, especially with
+"only while charging" on. Photos already on the server are never sent twice, even after a reinstall.</p>
+
+<h2 id="password">Locked out</h2>
+<ul>
+  <li><strong>Sign-in makes you wait</strong> after several wrong passwords, doubling up to a few minutes.
+  A device that has signed in successfully before is judged on its own record, so somebody else guessing
+  never holds it up.</li>
+  <li><strong>Forgotten password</strong>: the owner can reset anybody else's in People. For the owner's
+  own, see <a href="maintain.html#password">A forgotten password</a>.</li>
+  <li><strong>Sign-up asks for a setup code</strong>: it is in the setup window's last screen, in
+  <code>.env</code> in the install folder (<code>SOUNDSTORM_SETUP_CODE</code>), or, for a compose-only
+  install, in the log.</li>
+</ul>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

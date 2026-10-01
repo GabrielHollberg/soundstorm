@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients/iphone" data-root="..">
+<main>
+<h1>iPhone</h1>
+<p class="lede">The iPhone app exists so SoundStorm can be on the App Store rather than only a
+home-screen web app. It is a native Swift shell around the server's own page today, with native
+audio planned as the second stage - and a deliberate decision not to rewrite the app in Swift.</p>
+
+<h2 id="shapes">Three shapes, and the one chosen</h2>
+<p>Three ways of building it were weighed:</p>
+<ul>
+  <li><strong>A thin wrapper</strong> - a native shell that loads the server's web app.</li>
+  <li><strong>A wrapper whose audio is native</strong> - the same shell, with music and audiobooks
+  played by iOS itself rather than by the page.</li>
+  <li><strong>A fully native app</strong>, rebuilt in Swift.</li>
+</ul>
+<p>The second was chosen, built in two stages.</p>
+<div class="why"><code>app.js</code> is the whole product across five kinds of media. A Swift rewrite
+would mean building every feature twice from then on - and Android would still be on the web. What
+only native code can give on a phone is CarPlay, audio that iOS will not stop, and the lock screen:
+all of it audio. So only the audio goes native. Nothing commits the shell to staying thin; it can
+grow screen by screen later if that ever looks worth it.</div>
+<p>The reasoning that ruled out a WebView app on Android does not carry over. Android's WebView has
+no Media Session API and is stopped in the background; an iPhone's <code>WKWebView</code> is Safari's
+engine, and with background audio enabled (<code>UIBackgroundModes</code>) and the
+<code>.playback</code> audio session, the page's <code>&lt;audio&gt;</code> keeps playing when the
+phone locks.</p>
+
+<h2 id="stage-one">Stage one: the shell</h2>
+<p>Plain Swift in <code>ios/SoundStorm</code>, with no Capacitor. Capacitor is built to bundle a web
+app inside the app, and this web app lives on each person's own server; stage two is Swift anyway.
+What the shell does:</p>
+<ul>
+  <li><strong>Asks for the server's address</strong> on first launch, since every install is somebody's
+  own, and checks that <code>/healthz</code> answers like SoundStorm before keeping it. With no scheme
+  typed it assumes https.</li>
+  <li><strong>Shows the page full screen</strong>, laid out under the status bar with the same
+  <code>env(safe-area-inset-*)</code> values the installed web app uses.</li>
+  <li><strong>Shows <code>alert</code>, <code>confirm</code> and <code>prompt</code></strong> - a
+  <code>WKWebView</code> shows none of them unless its app does, and SoundStorm asks before removing
+  downloads.</li>
+  <li><strong>Sends links off the server to Safari</strong>, but only for a link that was actually
+  tapped in the main frame; other schemes and new windows are not opened on a page's say-so.</li>
+  <li><strong>Sets <code>window.soundstormApp</code></strong> before the page runs, which is how
+  <code>app.js</code> knows to show <strong>Change server</strong> beside Sign out.</li>
+  <li><strong>Allows plain http only on the local network</strong>
+  (<code>NSAllowsLocalNetworking</code>).</li>
+</ul>
+<p>Messages from the page are accepted only from the server's own origin, port included - anyone can
+get a <code>*.net.soundstorm.dev</code> name, so a matching host alone is not enough.</p>
+
+<h2 id="moves">Moving to the secure name</h2>
+<p>The first TestFlight build had a bug the Android app had had too. Opened at the away-from-home
+name while at home, the page moves itself to the install's home name
+(<code>moveToSecureName</code> - the server offers it to any page not already on it), and the app
+took that move for a link out of SoundStorm and sent it to Safari.</p>
+<p>The app now follows a move to https on <code>&lt;id&gt;.home.soundstorm.dev</code>, on the same
+port, where the id is the current name's own. It follows the move for this launch and <strong>does not
+save it</strong>. A phone leaves the house; with the home name saved, the app would stop working the
+moment it did. Not saving also closes a hole a security review found: from a plain-http address,
+anybody on the same Wi-Fi could otherwise have pinned the app to a server of their own.</p>
+
+<h2 id="status-bar">The status bar in Now Playing</h2>
+<p>The status bar hides while Now Playing is open, and only then - the owner's choice. Android hides
+both bars everywhere, but an iPhone has no swipe that brings a hidden status bar back for a glance at
+the time, so everywhere else it stays. The app watches the page's body for the
+<code>np-open</code> class from its document-start script rather than being told by
+<code>app.js</code>, so the feature needed no change to the web app and no server deploy.</p>
+
+<h2 id="no-sw">No service worker, and what that costs</h2>
+<p>A <code>WKWebView</code> runs a service worker only for App-Bound Domains: a fixed list of at most
+ten, set when the app is built. Every install has its own address, so the list cannot name them. The
+practical result is that opening the app with no connection shows the "can't reach" screen rather
+than the downloads. That is expected, not a bug in the shell; offline downloads on the iPhone are
+part of stage two.</p>
+
+<h2 id="stage-two">Stage two: native audio</h2>
+<p>The plan is an <code>AVPlayer</code> behind a bridge the page talks to in place of
+<code>&lt;audio&gt;</code>, giving the system's Now Playing, remote commands and, later, CarPlay - the
+same shape the Android app already uses with Media3. It is not a small bridge, because the page's
+audio is not one element:</p>
+<ul>
+  <li>crossfade uses a second, hidden element;</li>
+  <li>gapless playback preloads the next song into memory;</li>
+  <li>leveling sets <code>volume</code>, and audiobooks set <code>playbackRate</code>;</li>
+  <li>downloads play from the Cache API through blob addresses.</li>
+</ul>
+<p>The bridge has to answer for all of those. One question decides how urgent it is: whether the lock
+screen shows the page's Media Session title and controls on a real iPhone. The simulator cannot say,
+and it has not yet been checked on a device.</p>
+
+<h2 id="backup">Photo backup, planned</h2>
+<p>The Android app backs up a phone's photos; the iPhone app does not yet. The server side is ready
+and the page needs no change: the iPhone app would read the photo library (full or limited access),
+check with <code>POST /api/photos/backup/check</code> which photos the server already has, upload the
+rest with a background <code>URLSession</code> to <code>PUT /api/photos/backup</code>, and answer the
+page's <code>soundstormApp.backup(...)</code> calls with the same status fields the Android app
+reports. iOS runs background uploads when it chooses, usually while charging on Wi-Fi.</p>
+
+<h2 id="testing">How it is tested</h2>
+<p>An XCUITest in <code>ios/SoundStormUITests</code> drives the app through connecting and signing
+in, and skips itself when no server answers locally. <code>simctl</code> cannot type or tap, and
+scripting the Simulator through System Events waits on a macOS permission prompt nobody sees, so the
+UI test is how the app gets driven. Two small traps from building it: a centred stack view measures a
+multi-line label as one line until <code>preferredMaxLayoutWidth</code> is set, and in the UI test the
+keyboard's accessory bar sits over the web form's submit button, so the test presses Return instead -
+which is also what a person does.</p>
+<p>The iPhone and Apple TV apps share one bundle id, so Apple's Universal Purchase makes them a single
+App Store listing (see <a href="tv.html#apple-tv">TVs</a>).</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

@@ -232,3 +232,29 @@ func TestAPlaylistShowsItsSongsInItsOwnOrder(t *testing.T) {
 		t.Errorf("a made-up order = %v", err)
 	}
 }
+
+// Recording a refused token changes only the problem: plays queued after the
+// scrobbler was read must survive it.
+func TestSetScrobblerProblemKeepsThePlaysQueuedMeanwhile(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	if err := s.SetScrobbler("u1", &Scrobbler{Service: "listenbrainz", Token: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordPlay("u1", song("a"), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetScrobblerProblem("u1", "connect again"); err != nil {
+		t.Fatal(err)
+	}
+	sc, ok, err := s.ScrobblerFor("u1")
+	if err != nil || !ok || sc.Problem != "connect again" || len(sc.Pending) != 1 || sc.Token != "t" {
+		t.Errorf("scrobbler = %+v, ok %v, err %v", sc, ok, err)
+	}
+	// Nobody connected: nothing to record, and nothing made up.
+	if err := s.SetScrobblerProblem("u2", "x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.ScrobblerFor("u2"); ok {
+		t.Error("a problem recorded for nobody's service connected one")
+	}
+}

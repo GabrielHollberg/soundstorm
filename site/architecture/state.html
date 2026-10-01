@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>State and data - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="architecture/state" data-root="..">
+<main>
+<h1>State and data</h1>
+<p class="lede">SoundStorm started out stateless and had to learn to remember. What it remembers
+is kept small and deliberately shaped: credentials, accounts and decisions in one file, each
+person's lists in their own, rebuildable caches beside them - and never a fact about the media,
+which belongs to the backends and the folders.</p>
+
+<h2 id="line">The line that matters</h2>
+<div class="note"><strong>SoundStorm keeps nothing about the media itself.</strong> No index of
+songs, no copy of metadata, no list of what is in a folder. That is why nothing it keeps can go
+stale when somebody copies files in with a file manager.</div>
+<p>Per-person things that are SoundStorm's own - favorites, playlists, film positions - are stored
+as references (a source and an id, with a snapshot of how the backend described the item), and
+are filtered through the registry each time they are shown, so a deleted song simply fails to
+play and a shelf an account has lost drops out.</p>
+
+<h2 id="map">Where everything lives</h2>
+<table>
+  <tr><th>Where</th><th>What</th><th>If lost</th></tr>
+  <tr><td><code>state.json</code></td><td>Backend credentials, accounts, sessions, reading positions, a few decisions</td><td>Cannot be regenerated - the backends hold accounts whose passwords nobody else knows</td></tr>
+  <tr><td><code>collections/&lt;user&gt;.json</code></td><td>Favorites, playlists, history counts, preferences, scrobble queue</td><td>That person's lists</td></tr>
+  <tr><td><code>collections/listens/</code></td><td>Every play, with its moment, one file per person per year</td><td>The year in music</td></tr>
+  <tr><td><code>collections/art/&lt;user&gt;/</code></td><td>Covers people chose themselves</td><td>Those choices</td></tr>
+  <tr><td><code>beats/</code>, <code>lyrics/</code>, <code>discover/</code></td><td>Caches: song analysis, LRCLIB answers, artist info</td><td>Nothing - rebuilt</td></tr>
+  <tr><td><code>tls/</code></td><td>Local authority, server certificate, Let's Encrypt certificate</td><td>Devices that installed the authority must install it again</td></tr>
+  <tr><td><code>training/</code></td><td>The developer's own taps for training the looks (one install only)</td><td>Recordings</td></tr>
+  <tr><td>Library folders</td><td>The media, plus hidden <code>.uploads</code>, <code>.trash</code>, <code>.imports</code></td><td>The media - which nothing in SoundStorm ever deletes outright</td></tr>
+  <tr><td>Backend volumes</td><td>Each backend's own database, thumbnails, transcode cache</td><td>Re-provisioning, or a lost password</td></tr>
+  <tr><td>The browser</td><td>Downloads, the offline shell, small per-device settings</td><td>That device's downloads</td></tr>
+</table>
+<p>Everything in the first seven rows lives under the state directory,
+<code>SOUNDSTORM_STATE_DIR</code>, which is <code>/var/lib/soundstorm</code> in the container,
+backed by the <code>soundstorm-state</code> named volume.</p>
+
+<h2 id="statejson">state.json</h2>
+<p>Owned by <code>internal/state</code>, version 3 of its schema. It holds:</p>
+<ul>
+  <li><strong>Backends</strong> - the generated admin credentials for each media server.</li>
+  <li><strong>Users</strong> - accounts with a PBKDF2 hash (600,000 rounds), a role (owner or
+  member), which media kinds they may see, and their photo limit. An empty
+  <code>libraries</code> list is written as <code>[]</code>, never dropped: read back as nil it
+  would mean <em>every</em> library, the one way this field must never fail.</li>
+  <li><strong>Identities</strong> - per-person accounts on backends that need them
+  (Audiobookshelf for listening positions, Immich for each member's own photos).</li>
+  <li><strong>Sessions</strong>, keyed by a SHA-256 hash of the token. They used to be keyed by the
+  token itself, which made a backup or an abandoned volume enough to sign in as anyone; the
+  migration hashed the keys in place, so nobody was signed out. Capped at 50 per account.</li>
+  <li><strong>Progress</strong> - ebook positions (an EPUB CFI) and film and episode positions
+  (<code>t=1234.5</code>), kept only for items that exist and rate limited.</li>
+  <li><strong>Decisions</strong>: the starter library has unpacked, remote access on or off,
+  online lyrics and discovery allowed, read-along syncing manual, wrong read-along matches
+  (<code>notPairs</code>) and hand-made ones, and the key that signs device cookies.</li>
+</ul>
+<div class="why">Why is "the starter library has unpacked" in here rather than a marker file? An
+emptied shelf and a never-used one look identical on disk, so without the flag somebody who
+deleted the samples got them back on every restart. A marker file in the library would be the one
+stray item at the top of a folder in Windows Explorer (which does not hide dot-files) - and
+deleting it, the natural thing to do, would bring the samples back.</div>
+<p>The file is rewritten whole, to a temporary name and renamed, on every sign-in and session
+change, under a lock every request takes. That is why the large per-person data is
+<em>not</em> in it, and why every write path into it is bounded. Each save also leaves a
+<code>.bak</code>, which covers a bad write and nothing else.</p>
+<div class="warn"><code>state.Open</code> migrates and saves every time it opens the file, so any
+process that opens it as another user takes ownership of it - and the server then crash-loops on
+"permission denied". The password-reset and restore commands stat the file first and hand
+ownership back; backup uses the read-only <code>state.Inspect</code> and
+<code>state.CopyTo</code> instead.</div>
+
+<h2 id="collections">Each person's collections</h2>
+<p><code>internal/collections</code> keeps one small file per person: favorites (up to 5,000),
+playlists (200, of up to 5,000 songs each, 25,000 in all), listening history (count, first and last
+play, 5,000 songs), preferences such as the pill order and Now Playing look, and the ListenBrainz
+queue. One change writes one small file. Removing a person removes their file, art and
+listens.</p>
+<p>Favorites and playlists are SoundStorm's rather than Navidrome's, although Navidrome has both:
+the house shares one Navidrome account, so lists kept there would be everybody's at once. The same
+reasoning keeps film positions in <code>state.json</code> rather than in Jellyfin.</p>
+<p><strong>Listens</strong> are append-only JSON lines, one file per person per year
+(<code>listens/&lt;user&gt;-2026.jsonl</code>), capped at 32&nbsp;MB a year. Recording costs one
+small write; a damaged last line from a crash is skipped.</p>
+<p><strong>Art</strong> is pictures people chose for a song, an album or a playlist, cropped and
+shrunk on the device, named by content so one picture for an album is stored once; 5,000 covers,
+1,000 pictures and 300&nbsp;MB per person, served only to its owner.</p>
+
+<h2 id="caches">Caches</h2>
+<ul>
+  <li><code>beats/</code> - what the server heard in each song (beats, loudness, hit lanes, about
+  11&nbsp;KB a song), made by a background pass. A cache that can always be made again; never
+  written into the music folders.</li>
+  <li><code>lyrics/</code> - every LRCLIB answer, "none" included (re-asked after 30 days). Only
+  when the owner has turned online lyrics on.</li>
+  <li><code>discover/</code> - MusicBrainz, ListenBrainz and Wikipedia answers, kept for months.
+  Only with discovery on.</li>
+</ul>
+<p>In memory only: shelf listings (30 seconds), slim song layouts (an hour), shrunk covers, and a
+Plex token during an import (30 minutes, never written down).</p>
+
+<h2 id="library">The library folders</h2>
+<p>The media is the person's, in plain folders: <code>music/</code>, <code>movies/</code>,
+<code>tv/</code>, <code>audiobooks/</code>, <code>ebooks/</code>, <code>documents/</code> and
+<code>pictures/</code>, under <code>SOUNDSTORM_LIBRARY_PATH</code>. Three hidden top-level
+folders sit beside them, hidden for the same reason: no backend has a top-level dot-directory
+mounted, so whatever is in them is invisible to every scanner.</p>
+<ul>
+  <li><code>.uploads</code> - bytes of an upload in progress, renamed into place only once complete,
+  so no scanner ever indexes half a file. Swept at boot.</li>
+  <li><code>.trash</code> - deleted items, kept 30 days with an <code>entry.json</code> describing
+  them, so Undo can put them back. Owner only.</li>
+  <li><code>.imports</code> - Google Takeout and iCloud zips being uploaded and sorted into a
+  person's photo folder, deleted once sorted.</li>
+</ul>
+<p>A <code>README.txt</code> in each shelf is load-bearing: Jellyfin refuses to remove items when
+a library folder comes back empty (it cannot tell "everything deleted" from "the drive did not
+mount"), so an empty folder would keep deleted films searchable for ever.</p>
+
+<h2 id="backends">The backends' own volumes</h2>
+<p>Each backend keeps its database and caches in named volumes - <code>navidrome-data</code>,
+<code>jellyfin-config</code>, <code>abs-config</code>, <code>immich-db</code> and so on. These are
+the backends' business; SoundStorm never reads them. Immich's Postgres in particular must sit on a
+named volume, because it must not live on a network share or an NTFS drive. Caches and downloaded
+models (<code>jellyfin-cache</code>, <code>immich-models</code>, <code>storyteller-models</code>)
+are left out of a move to another computer.</p>
+
+<h2 id="browser">The browser and the apps</h2>
+<ul>
+  <li><strong>Downloads</strong> live in the Cache API (<code>soundstorm-offline-v1</code>), with an
+  index in localStorage, keyed by the address the app would ask the server for. Songs, books,
+  films (as a file, or as an HLS playlist and its pieces) and photos.</li>
+  <li><strong>The offline shell</strong> (<code>soundstorm-offline-shell-v1</code>) lets the app open
+  with no connection, only on <code>*.soundstorm.dev</code> names with a trusted certificate.</li>
+  <li><strong>Per-device settings</strong> in localStorage: streaming quality, film quality,
+  visualizer timing, the station tuner, keep-the-screen-on.</li>
+  <li><strong>Heard songs</strong>, the last 500 analyses, so a song played before follows its beats
+  from the first second.</li>
+</ul>
+<p>Signing out clears downloads; the device also remembers whose they were and clears them for
+anybody else who signs in.</p>
+
+<h2 id="backup">Backup and restore</h2>
+<p><code>soundstorm backup</code> writes the state file plus a <code>collections</code> field with
+everyone's lists. A field rather than a wrapper, so a backup still is a state file: an older
+SoundStorm restores the accounts and ignores the lists, and with no lists the backup is the state
+file byte for byte. Pictures and listens are not included; moving to another computer copies the
+whole state volume instead.</p>
+<pre><code>(umask 077; docker compose run --rm -T soundstorm backup - &gt; soundstorm-backup.json)
+docker compose run --rm -T soundstorm restore - &lt; soundstorm-backup.json
+docker compose up -d</code></pre>
+<p>With <code>-</code> the backup goes to standard output, so the host shell creates the file as
+the user, under <code>umask 077</code> - a file written through a bind mount by the container's
+own user would be unreadable to whoever asked for it on Linux (Windows, where Docker Desktop
+presents bind-mounted files as the user's, uses a bind mount and a locked-down ACL instead).
+<code>backup -</code> refuses a terminal so
+credentials never scroll past on screen. Restore checks the lists before touching anything, so a
+damaged backup changes nothing. The uninstaller takes a backup before <code>down -v</code>,
+the one moment the credentials would otherwise stop existing anywhere.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

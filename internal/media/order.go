@@ -2,6 +2,7 @@ package media
 
 import (
 	"container/list"
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -83,6 +84,9 @@ type ShelfCache struct {
 	order   *list.List               // front is most recently used
 	entries map[string]*list.Element // key -> element holding *shelfEntry
 	pending map[string]*shelfFetch   // fetches in flight, for coalescing
+	// gen moves on at every Clear: a fetch begun before a rescan must not
+	// put its older listing back afterwards (a review).
+	gen uint64
 }
 
 type shelfEntry struct {
@@ -106,7 +110,12 @@ const maxShelves = 8
 // otherwise calls fetch and caches what it returns. A fetch already running
 // for this key, started by another caller, is waited on and shared rather
 // than repeated - see the type doc for why that matters.
-func (c *ShelfCache) GetOrFetch(key string, fetch func() ([]Item, error)) ([]Item, error) {
+//
+// The fetch is given a context of its own, not the first caller's: it is
+// shared, and the first caller going away (a closed tab, a newer search)
+// used to fail everybody waiting on it. Each caller still stops waiting at
+// its own deadline (a review).
+func (c *ShelfCache) GetOrFetch(ctx context.Context, key string, fetch func(context.Context) ([]Item, error)) ([]Item, error) {
 	c.mu.Lock()
 	if items, ok := c.getLocked(key); ok {
 		c.mu.Unlock()
@@ -114,15 +123,36 @@ func (c *ShelfCache) GetOrFetch(key string, fetch func() ([]Item, error)) ([]Ite
 	}
 	if f, ok := c.pending[key]; ok {
 		c.mu.Unlock()
-		<-f.done
-		return f.items, f.err
+		select {
+		case <-f.done:
+			return f.items, f.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	f := &shelfFetch{done: make(chan struct{})}
 	if c.pending == nil {
 		c.pending = map[string]*shelfFetch{}
 	}
 	c.pending[key] = f
+	gen := c.gen
 	c.mu.Unlock()
+
+	go c.run(key, f, gen, fetch)
+	select {
+	case <-f.done:
+		return f.items, f.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// shelfFetchTimeout bounds a shared fetch that nobody is waiting on any more.
+const shelfFetchTimeout = 2 * time.Minute
+
+func (c *ShelfCache) run(key string, f *shelfFetch, gen uint64, fetch func(context.Context) ([]Item, error)) {
+	ctx, cancel := context.WithTimeout(context.Background(), shelfFetchTimeout)
+	defer cancel()
 
 	// Deliberately outside the lock: this is the network call, and holding
 	// the lock across it would serialize every shelf's fetches behind
@@ -137,19 +167,20 @@ func (c *ShelfCache) GetOrFetch(key string, fetch func() ([]Item, error)) ([]Ite
 				err = fmt.Errorf("listing the shelf failed: %v", p)
 			}
 		}()
-		items, err = fetch()
+		items, err = fetch(ctx)
 	}()
 
 	c.mu.Lock()
-	delete(c.pending, key)
-	if err == nil {
+	if c.pending[key] == f {
+		delete(c.pending, key)
+	}
+	if err == nil && gen == c.gen {
 		c.putLocked(key, items)
 	}
 	c.mu.Unlock()
 
 	f.items, f.err = items, err
 	close(f.done)
-	return items, err
 }
 
 func (c *ShelfCache) getLocked(key string) ([]Item, bool) {
@@ -196,6 +227,10 @@ func (c *ShelfCache) Clear() {
 	defer c.mu.Unlock()
 	c.order = nil
 	c.entries = nil
+	c.gen++
+	// A fetch in flight is no longer shared: a request after the rescan
+	// starts its own.
+	c.pending = nil
 }
 
 func (c *ShelfCache) ttl() time.Duration {

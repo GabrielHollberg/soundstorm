@@ -1,8 +1,8 @@
 Put your pictures here.
 
-Photos and the videos you took with them, in whatever folders you like.
+Photos and the videos you took with them. What each person adds is sorted into their own folder under Personal, by when it was taken; folders you copy in yourself are kept as they are.
 
-  pictures/2024 Holiday/IMG_4031.heic
+  pictures/Personal/Alex/2024/07/IMG_4031.heic
 
 SoundStorm picks up new files automatically - there is nothing to import and no
 scan to trigger by hand.

@@ -202,3 +202,74 @@ func TestRubbishIsNotAnError(t *testing.T) {
 		}
 	}
 }
+
+// iTunes wrote ID3v2.2 into MP3s for years: three-letter frame names and
+// three-byte sizes. Read as 2.3, the walk finds nothing and the track files
+// as untagged.
+func TestID3v22(t *testing.T) {
+	var body []byte
+	for _, f := range [][2]string{{"TT2", "Karma Police"}, {"TP1", "Radiohead"}, {"TP2", "Radiohead"}, {"TAL", "OK Computer"}} {
+		payload := append([]byte{0}, f[1]...)
+		n := len(payload)
+		body = append(body, f[0]...)
+		body = append(body, byte(n>>16), byte(n>>8), byte(n))
+		body = append(body, payload...)
+	}
+	body = append(body, make([]byte, 20)...) // padding
+	n := len(body)
+	raw := append([]byte{'I', 'D', '3', 2, 0, 0,
+		byte(n >> 21 & 0x7F), byte(n >> 14 & 0x7F), byte(n >> 7 & 0x7F), byte(n & 0x7F)}, body...)
+
+	got, err := Read(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Tags{AlbumArtist: "Radiohead", Artist: "Radiohead", Album: "OK Computer", Title: "Karma Police"}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+// In 2.4 a frame's size counts its bytes as stored, unsynchronized. Undoing
+// the whole tag first shortens the frame under its own size and every frame
+// after it is misread.
+func TestID3v24UnsynchronisedFrames(t *testing.T) {
+	frame := func(id string, text []byte, format byte) []byte {
+		payload := append([]byte{0}, text...)
+		stored := bytes.ReplaceAll(payload, []byte{0xFF}, []byte{0xFF, 0x00})
+		n := len(stored)
+		out := append([]byte(id), byte(n>>21&0x7F), byte(n>>14&0x7F), byte(n>>7&0x7F), byte(n&0x7F), 0, format)
+		return append(out, stored...)
+	}
+	for _, tagLevel := range []bool{true, false} {
+		var format, flags byte = 0x02, 0
+		if tagLevel {
+			format, flags = 0, 0x80
+		}
+		// "\xFF" is y with diaeresis in Latin-1.
+		body := append(frame("TPE1", []byte("Mot\xFFrhead"), format), frame("TALB", []byte("Ace"), format)...)
+		n := len(body)
+		raw := append([]byte{'I', 'D', '3', 4, 0, flags,
+			byte(n >> 21 & 0x7F), byte(n >> 14 & 0x7F), byte(n >> 7 & 0x7F), byte(n & 0x7F)}, body...)
+		got, err := Read(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Artist != "Motÿrhead" || got.Album != "Ace" {
+			t.Errorf("tag-level flag %v: got %+v", tagLevel, got)
+		}
+	}
+}
+
+// A 2.4 text frame may hold several values split by NULs. Run together they
+// would file a track under an artist called "AB".
+func TestID3MultiValueTakesTheFirst(t *testing.T) {
+	got, _ := Read(bytes.NewReader(id3v2(4, 3, [][2]string{{"TPE1", "Daft Punk\x00Pharrell Williams"}})))
+	if got.Artist != "Daft Punk" {
+		t.Errorf("UTF-8: got %q", got.Artist)
+	}
+	got, _ = Read(bytes.NewReader(id3v2(4, 1, [][2]string{{"TPE1", "Daft Punk\x00Pharrell Williams"}})))
+	if got.Artist != "Daft Punk" {
+		t.Errorf("UTF-16: got %q", got.Artist)
+	}
+}

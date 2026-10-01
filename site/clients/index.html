@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apps - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients" data-root="..">
+<main>
+<h1>The apps</h1>
+<p class="lede">There is one product, and it is a web page. Every phone app is a thin shell
+around that same page, and code is written natively only where a web page cannot do the job:
+the audio on Android, and the whole of the Apple TV, which has no web view at all.</p>
+
+<h2 id="one-page">One web app, everywhere</h2>
+<p>The server embeds a single-page web app (<code>internal/webui/assets</code>): <code>app.js</code>
+for the library, the player and settings, <code>reader.js</code> for books, and a small service
+worker. A browser on a computer, a phone's home screen, the Android app, the iPhone app and an
+Android TV all show exactly that page. A feature built once - a new radio station, a look for
+Now Playing, a category pill - arrives on every one of them the moment the server is updated.</p>
+<div class="why">Every "client app" multiplies the work: a feature has to be built once per
+platform from then on, and the versions drift apart. Television apps in particular are where
+projects like this go to die. So the rule is the opposite of the usual: the page is the
+product, and a shell only adds what the page physically cannot do from inside a browser.</div>
+
+<p>What a page cannot do is mostly about audio. A browser tab can be stopped when the phone
+locks, cannot always keep a lock-screen player, and on Android a web view has no Media Session
+API at all. Those are the gaps the native code fills, and nothing else.</p>
+
+<h2 id="table">What each app is</h2>
+<table>
+  <tr><th>App</th><th>What it is</th><th>Native parts</th></tr>
+  <tr><td>Web app</td><td>The page itself, in any browser. Installable to a home screen (a PWA) from the secure address.</td><td>None</td></tr>
+  <tr><td>Android</td><td>A Kotlin shell around the page (<code>android/</code>)</td><td>Songs play through Media3's ExoPlayer in a media session service; photo backup; the system bars and camera cutout</td></tr>
+  <tr><td>Android TV, Google TV, Fire TV</td><td>The same Android app; the page switches to a TV mode</td><td>As Android, plus a TV banner and launcher entry</td></tr>
+  <tr><td>iPhone</td><td>A Swift shell around the page (<code>ios/SoundStorm</code>)</td><td>Address entry, dialogs, status bar; native audio is the planned next stage</td></tr>
+  <tr><td>Apple TV</td><td>A native SwiftUI app (<code>ios/SoundStormTV</code>) talking to the same <code>/api</code></td><td>Everything: tvOS has no web view</td></tr>
+</table>
+
+<p>All of them sign in with the same session cookie and speak the same HTTP API. None of them
+ever talks to a backend directly; every song, film and picture comes through the SoundStorm
+server.</p>
+
+<h2 id="pages">In this section</h2>
+<div class="cards">
+  <a class="card" href="web.html"><b>The web app</b><span>Tabs and pills, Home, holding and selecting, dropping files, offline downloads, the service worker, installing it.</span></a>
+  <a class="card" href="now-playing.html"><b>Now Playing and the looks</b><span>Queue, swipes, lyrics, the play orb, fifteen looks, beats and lightning, gapless, leveling.</span></a>
+  <a class="card" href="reader.html"><b>The reader</b><span>foliate-js, positions as CFIs, untrusted book content, read-along following the audiobook.</span></a>
+  <a class="card" href="android.html"><b>Android</b><span>A web view shell with native audio, photo backup and the same app on TVs.</span></a>
+  <a class="card" href="iphone.html"><b>iPhone</b><span>The shell, why it is not a native rewrite, and what comes next.</span></a>
+  <a class="card" href="tv.html"><b>TVs</b><span>The page's TV mode on Android TV, and the native Apple TV app.</span></a>
+</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

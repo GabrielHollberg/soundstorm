@@ -565,6 +565,12 @@ func RelativeTo(root, reported string) (string, error) {
 	return rel, nil
 }
 
+// PlaySessionStopper is a backend that converts video per play session and
+// can be told one has ended.
+type PlaySessionStopper interface {
+	StopPlaySession(playSessionID string)
+}
+
 // Started is something one person has begun and not finished, for the
 // "Continue" row.
 type Started struct {

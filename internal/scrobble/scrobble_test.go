@@ -44,7 +44,7 @@ func TestListensAreSentTheWayListenBrainzAsks(t *testing.T) {
 	if _, err := c.Validate(ctx, "bad"); !errors.Is(err, ErrBadToken) {
 		t.Errorf("a refused token = %v", err)
 	}
-	done, err := c.Submit(ctx, "good", []collections.Listen{listenOf("One", "Band"), listenOf("No artist", ""), listenOf("Two", "Band")})
+	done, _, err := c.Submit(ctx, "good", []collections.Listen{listenOf("One", "Band"), listenOf("No artist", ""), listenOf("Two", "Band")})
 	if err != nil || len(done) != 3 {
 		t.Fatalf("submit = %d done, %v", len(done), err)
 	}
@@ -62,7 +62,63 @@ func TestListensAreSentTheWayListenBrainzAsks(t *testing.T) {
 	if got[1]["listen_type"] != "single" {
 		t.Errorf("one listen went as %v", got[1]["listen_type"])
 	}
-	if done, err := c.Submit(ctx, "bad", []collections.Listen{listenOf("Four", "Band")}); !errors.Is(err, ErrBadToken) || len(done) != 0 {
+	if done, _, err := c.Submit(ctx, "bad", []collections.Listen{listenOf("Four", "Band")}); !errors.Is(err, ErrBadToken) || len(done) != 0 {
 		t.Errorf("refused submit = %d done, %v", len(done), err)
+	}
+}
+
+// One listen ListenBrainz will not take must not hold up the rest: it refuses
+// the whole request, so the batch is resent a listen at a time and only the
+// refused one is dropped. A 5xx, which says nothing about the listens, still
+// leaves everything queued. And a listen with no moment is never sent.
+func TestARefusedListenDoesNotBlockTheQueue(t *testing.T) {
+	var requests int
+	serverDown := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if serverDown {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		var body struct {
+			Payload []struct {
+				ListenedAt    int64 `json:"listened_at"`
+				TrackMetadata struct {
+					TrackName string `json:"track_name"`
+				} `json:"track_metadata"`
+			} `json:"payload"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		for _, p := range body.Payload {
+			if p.TrackMetadata.TrackName == "Poison" || p.ListenedAt <= 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		io.WriteString(w, "{\"status\":\"ok\"}")
+	}))
+	defer srv.Close()
+	c := &Client{BaseURL: srv.URL, HTTP: srv.Client()}
+	ctx := context.Background()
+
+	undated := listenOf("Undated", "Band")
+	undated.At = time.Time{}
+	queue := []collections.Listen{listenOf("One", "Band"), listenOf("Poison", "Band"), listenOf("Two", "Band"), undated}
+	done, dropped, err := c.Submit(ctx, "good", queue)
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if len(done) != 4 || dropped != 1 {
+		t.Fatalf("done %d, dropped %d; want all four done and the poisoned one dropped", len(done), dropped)
+	}
+	// The batch, then One, Poison and Two alone; the undated one never went.
+	if requests != 4 {
+		t.Errorf("%d requests, want 4", requests)
+	}
+
+	serverDown = true
+	done, dropped, err = c.Submit(ctx, "good", []collections.Listen{listenOf("Three", "Band"), listenOf("Four", "Band")})
+	if err == nil || len(done) != 0 || dropped != 0 {
+		t.Errorf("a 502 gave done %d, dropped %d, err %v; want nothing done", len(done), dropped, err)
 	}
 }

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The repository - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="architecture/repository" data-root="..">
+<main>
+<h1>The repository</h1>
+<p class="lede">One repository, one long-lived branch, holding the server, the web app, the
+Android, iPhone and Apple TV apps, the installers and this site. This page lists every top-level
+folder and every server package, each in a line, so you know where to look.</p>
+
+<h2 id="top">Top level</h2>
+<table>
+  <tr><th>Path</th><th>What it is</th></tr>
+  <tr><td><code>cmd/soundstorm/</code></td><td>The server's <code>main</code>, plus its subcommands: <code>backup</code>, <code>restore</code>, <code>reset-password</code>, <code>train-looks</code>. Any argument it does not know is an error, never a second server.</td></tr>
+  <tr><td><code>cmd/soundstorm-names/</code></td><td>The names service: gives each install a name under <code>soundstorm.dev</code> and publishes ACME challenges. Deployed separately, with its own Dockerfile.</td></tr>
+  <tr><td><code>internal/</code></td><td>Every server package (below).</td></tr>
+  <tr><td><code>android/</code></td><td>The Android app (Kotlin): phones, Google TV, Android TV and Fire TV.</td></tr>
+  <tr><td><code>ios/</code></td><td>The Xcode project: the iPhone app, the Apple TV app (<code>SoundStormTV/</code>), shared code and UI tests.</td></tr>
+  <tr><td><code>library/</code></td><td>The folder skeleton with a <code>README.txt</code> per shelf, so a fresh clone has somewhere to put media. Contents are ignored by git.</td></tr>
+  <tr><td><code>scripts/</code></td><td>Development tools (below).</td></tr>
+  <tr><td><code>docs/</code></td><td>Older Markdown guides and the README's screenshots. Some of it predates later changes; the working notes and the code are the reference.</td></tr>
+  <tr><td><code>site/</code></td><td>This documentation site: plain HTML, one stylesheet, one script, no build step.</td></tr>
+  <tr><td><code>docker-compose.yml</code></td><td>The install: SoundStorm and every backend, naming a published image and containing no <code>build:</code> key, so it works alone in an empty folder.</td></tr>
+  <tr><td><code>docker-compose.dev.yml</code></td><td>Adds <code>build: .</code> back for development.</td></tr>
+  <tr><td><code>Dockerfile</code></td><td>Builds the server image, cross-compiling on the builder's platform for linux/amd64 and linux/arm64.</td></tr>
+  <tr><td><code>install.ps1</code>, <code>SoundStorm-Setup.cmd</code></td><td>The Windows installer (with its own window) and the double-clickable file that starts it.</td></tr>
+  <tr><td><code>install.sh</code></td><td>The Mac and Linux installer, plain <code>/bin/sh</code> so it runs on dash.</td></tr>
+  <tr><td><code>tailscale-serve.json</code></td><td>The Tailscale sidecar's proxy config, written on every install because compose bind-mounts it.</td></tr>
+  <tr><td><code>.github/workflows/publish.yml</code></td><td>CI: checks, then publishes the image to the GitHub container registry.</td></tr>
+  <tr><td><code>CLAUDE.md</code></td><td>The project's working notes: every decision, reversal and trap, in detail. The main source for this site.</td></tr>
+</table>
+
+<h2 id="internal">Server packages</h2>
+<p>Grouped by role. Each line is the package's own opening sentence, lightly shortened.</p>
+
+<h3>The surface</h3>
+<table>
+  <tr><td><code>httpapi</code></td><td>SoundStorm's only published surface: every route, its middleware and handlers.</td></tr>
+  <tr><td><code>webui</code></td><td>Serves the browser UI out of the binary, with its Content-Security-Policy, the service worker and the manifest.</td></tr>
+  <tr><td><code>auth</code></td><td>Sign-in, sessions, device cookies and the throttle.</td></tr>
+  <tr><td><code>servetls</code></td><td>TLS without anybody running openssl: a local authority, one port for HTTP and TLS, real certificates in auto mode.</td></tr>
+  <tr><td><code>acme</code></td><td>Gets a certificate from Let's Encrypt over DNS-01 - RFC 8555 for one account and one name.</td></tr>
+  <tr><td><code>names</code></td><td>Gives every install a real name, so it can have a real certificate (the service's logic).</td></tr>
+  <tr><td><code>portmap</code></td><td>Opens one inbound port on a home router (UPnP) for remote access, and reads its WAN address.</td></tr>
+</table>
+
+<h3>Backends</h3>
+<table>
+  <tr><td><code>source</code></td><td>The plug point for a backend: the <code>Source</code> interface, the optional capability interfaces (<code>Streamer</code>, <code>MusicBrowser</code>, <code>Rescanner</code>...), access in the context, and the <code>Registry</code>.</td></tr>
+  <tr><td><code>source/subsonic</code></td><td>Navidrome, over OpenSubsonic - including the folder view of artists and albums.</td></tr>
+  <tr><td><code>source/jellyfin</code></td><td>Jellyfin, registered twice (films and TV).</td></tr>
+  <tr><td><code>source/audiobookshelf</code></td><td>Audiobookshelf: books, tracks, chapters, per-person positions.</td></tr>
+  <tr><td><code>source/immich</code></td><td>Immich, acting as the person asking.</td></tr>
+  <tr><td><code>source/localbooks</code></td><td>The ebook and documents shelves SoundStorm reads itself.</td></tr>
+  <tr><td><code>source/storyteller</code></td><td>Storyteller, for read-along timelines.</td></tr>
+  <tr><td><code>source/audiomuse</code></td><td>AudioMuse-AI's sound analysis, for moods and "sounds like".</td></tr>
+  <tr><td><code>source/opds</code></td><td>An opt-in Calibre server running elsewhere.</td></tr>
+  <tr><td><code>provision</code></td><td>Gets SoundStorm credentials on each backend without a human, and per-person accounts where needed.</td></tr>
+  <tr><td><code>federate</code></td><td>Fans a query out across every source and merges the answers.</td></tr>
+  <tr><td><code>media</code></td><td>The vocabulary every backend is translated into: <code>Item</code>, <code>Kind</code>, <code>Less</code>, <code>ShelfCache</code>.</td></tr>
+  <tr><td><code>httpx</code></td><td>A small hardened HTTP client shared by adapters: no dot segments, no absolute references, credentials redacted from errors.</td></tr>
+  <tr><td><code>stream</code></td><td>Pipes media bytes from a backend to the device: slim headers, pacing, resized covers, content guards.</td></tr>
+</table>
+
+<h3>Files and formats</h3>
+<table>
+  <tr><td><code>library</code></td><td>Owns the folder layout: creating it, deciding where a dropped file goes, saving uploads, the bin. Not an indexer.</td></tr>
+  <tr><td><code>tags</code></td><td>Reads just enough of an audio file (ID3, MP4 atoms, Vorbis comments) to know where to file it.</td></tr>
+  <tr><td><code>epub</code></td><td>Reads metadata and resources out of EPUB files, with zip-bomb guards.</td></tr>
+  <tr><td><code>pdf</code></td><td>Reads what metadata a PDF is willing to admit to - XMP, then the Info dictionary, then the file name.</td></tr>
+  <tr><td><code>flac</code></td><td>Decodes FLAC, just enough to hear a song's beats on the server.</td></tr>
+  <tr><td><code>photoimport</code></td><td>Brings a photo library in from Google, Apple and others: dates, places, duplicates.</td></tr>
+  <tr><td><code>starter</code></td><td>Ships one item per shelf inside the binary, unpacked once.</td></tr>
+</table>
+
+<h3>Per person, and music</h3>
+<table>
+  <tr><td><code>state</code></td><td>Persists the little SoundStorm must remember: credentials, accounts, sessions, decisions.</td></tr>
+  <tr><td><code>collections</code></td><td>Each person's favorites, playlists, history, listens and own covers.</td></tr>
+  <tr><td><code>beats</code></td><td>Hears a song the way the visualizers want it heard: beats, loudness, hits.</td></tr>
+  <tr><td><code>lyrics</code></td><td>Finds lyrics a song's files do not have, on LRCLIB (opt-in).</td></tr>
+  <tr><td><code>discover</code></td><td>Finds out about an artist from open music services (opt-in).</td></tr>
+  <tr><td><code>scrobble</code></td><td>Sends plays to a person's own ListenBrainz account.</td></tr>
+  <tr><td><code>plex</code></td><td>Brings playlists across from a Plex server.</td></tr>
+  <tr><td><code>training</code></td><td>Learns the looks from the developer's own taps (one install only).</td></tr>
+</table>
+
+<h2 id="apps">The apps' code</h2>
+<p><strong>The web app</strong> is in <code>internal/webui/assets</code>: <code>index.html</code>,
+<code>app.js</code> (the whole product, every media type), <code>style.css</code>,
+<code>reader.js</code>, <code>sw.js</code> and <code>sw-register.js</code> (kept in a file because
+the CSP forbids inline script), and <code>vendor/</code>. It is embedded in the Go binary with
+<code>go:embed</code>.</p>
+<p><strong>Android</strong> (<code>android/app/src/main/java</code>): <code>MainActivity</code> (the
+web view, system bars, back), <code>PageScript</code> (injected before the page's own scripts),
+<code>NativeAudio</code> and <code>AudioService</code> (songs through Media3 ExoPlayer),
+<code>PlaybackService</code> and <code>MediaBridge</code> (media session),
+<code>PhotoBackup</code> (WorkManager jobs), <code>ServerAddress</code>,
+<code>WebCookies</code>.</p>
+<p><strong>iOS</strong> (<code>ios/</code>): <code>SoundStorm/</code> is the iPhone shell
+(<code>ConnectViewController</code>, <code>WebViewController</code>); <code>SoundStormTV/</code> the
+native Apple TV app (player, reader, photo viewer, all twelve visualizers, song analysis);
+<code>Shared/</code> what both use; <code>SoundStormUITests/</code> the XCUITest that drives the
+phone app.</p>
+
+<h2 id="scripts">Scripts</h2>
+<table>
+  <tr><td><code>acme-rehearsal.sh</code></td><td>Runs the ACME client against Pebble, Let's Encrypt's test authority, in CI.</td></tr>
+  <tr><td><code>beats-parity.js</code></td><td>Runs the web app's own <code>hearSong</code> under Node on the Go test's samples, to prove the server hears songs identically.</td></tr>
+  <tr><td><code>check-images.py</code></td><td>Verifies every committed PNG against its per-chunk CRC32 and decoded size.</td></tr>
+  <tr><td><code>fetch-starter-media.sh</code></td><td>Fetches and records how each starter-library file is made.</td></tr>
+  <tr><td><code>fetch-test-library.ps1</code></td><td>Builds a ~750&nbsp;MB library of real public-domain and CC media for testing.</td></tr>
+  <tr><td><code>make-sample-media.ps1</code></td><td>A synthetic library with no downloads.</td></tr>
+  <tr><td><code>make-icons.py</code></td><td>Draws every icon from the cloud's three shapes. Change icons here, not in the PNGs.</td></tr>
+  <tr><td><code>mkepub</code></td><td>Generates test EPUBs without Calibre.</td></tr>
+  <tr><td><code>mobile-check.js</code></td><td>Playwright: mobile layouts and overflow.</td></tr>
+  <tr><td><code>reader-swipe-check.js</code></td><td>Playwright: swiping the reader turns pages exactly as the arrows do.</td></tr>
+  <tr><td><code>calibreweb-init</code></td><td>Support for the opt-in external Calibre server.</td></tr>
+</table>
+
+<h2 id="deps">The zero-dependency rule</h2>
+<p>The Go module has <strong>no third-party dependencies</strong> and therefore no
+<code>go.sum</code>. Password hashing is <code>crypto/pbkdf2</code> from the standard library; the
+ACME client, the FLAC decoder, the tag reader, the EPUB and PDF readers and the HEIC-free image
+shrinking are all small and the project's own.</p>
+<div class="why">Every dependency is code that runs with the server's privileges, in a binary that
+sits on people's home networks and holds admin credentials for their media servers. Each parser
+here reads only what answers one question - "where should this file go", "what is this book
+called" - and is deliberately not a general library. The cost is real (the tag reader's history
+of syncsafe integers and unsynchronization is a list of edge cases found the hard way), but it is
+paid once, with tests built from real files, instead of carried as supply-chain risk for ever.</div>
+
+<h2 id="vendored">Vendored browser code</h2>
+<p>Two third-party libraries are checked in under <code>internal/webui/assets/vendor/</code>,
+pinned by content, embedded with <code>go:embed</code>, and fetched at no point during a build:</p>
+<ul>
+  <li><strong>foliate-js</strong> (MIT) renders EPUBs. Writing it was considered and rejected for
+  the same reason as transcoding: <code>paginator.js</code> (44&nbsp;KB) and
+  <code>epubcfi.js</code> (13&nbsp;KB) are the two genuinely hard parts of a reader, and reflowable
+  text needs content-anchored positions (EPUB CFIs), not page numbers. SoundStorm unzips books on
+  the server, so no zip library runs in the browser.</li>
+  <li><strong>hls.js</strong> (Apache 2.0) plays Jellyfin's HLS where a browser cannot natively.
+  It is loaded lazily and only when needed.</li>
+</ul>
+<p>Some app behaviour depends on foliate's internals - for example that its paginator handles
+touch swipes and its fixed-layout renderer does not - so <code>reader-swipe-check.js</code> must
+be re-run whenever foliate-js is updated.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

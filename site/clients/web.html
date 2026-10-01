@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The web app - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients/web" data-root="..">
+<main>
+<h1>The web app</h1>
+<p class="lede">The whole product, in plain JavaScript with no framework and no build step,
+embedded in the server binary. It is what a browser shows, what installs to a home screen,
+and what the Android and iPhone apps wrap.</p>
+
+<h2 id="files">The files</h2>
+<p>Everything lives in <code>internal/webui/assets</code> and is served by the Go server through
+<code>go:embed</code>, so a server and its web app can never be out of step.</p>
+<table>
+  <tr><th>File</th><th>Job</th></tr>
+  <tr><td><code>index.html</code></td><td>The shell: one page, every screen hidden or shown by class.</td></tr>
+  <tr><td><code>app.js</code></td><td>Almost everything - the library, search, the player and Now Playing, the visualizers, settings, downloads, the TV mode. About 17,000 lines.</td></tr>
+  <tr><td><code>reader.js</code></td><td>The book reader, around the vendored foliate-js (see <a href="reader.html">The reader</a>).</td></tr>
+  <tr><td><code>sw.js</code>, <code>sw-register.js</code></td><td>The service worker and the file that registers it.</td></tr>
+  <tr><td><code>style.css</code></td><td>All styling, including the TV mode (<code>html.tv</code>) and the safe-area variables.</td></tr>
+  <tr><td><code>manifest.webmanifest</code></td><td>What makes it installable: name, icons, <code>display: standalone</code>.</td></tr>
+  <tr><td><code>vendor/</code></td><td>foliate-js and hls.js, the only third-party code in the project, checked in and pinned.</td></tr>
+</table>
+
+<h2 id="tabs">Five tabs and their pills</h2>
+<p>The first design had a sideways row of ten filter chips - one per kind of media - most of
+which were off the screen on a phone. Now there are five tabs: <strong>Home</strong>,
+<strong>Music</strong> (mixes, radio, playlists, songs, albums, artists), <strong>Watch</strong>
+(films, TV), <strong>Books</strong> (audiobooks, ebooks, documents, authors, series, read
+along) and <strong>Photos</strong> (photos, people, places). They sit along the bottom on a
+phone and down the side on a computer. The old chips are still in the page, hidden, and a tab
+simply presses one, so every search path underneath stayed the same.</p>
+<p>Inside a tab, a row of <em>pills</em> picks the page. A few things about them are worth
+knowing:</p>
+<ul>
+  <li><strong>They can be put in any order.</strong> Hold one for 450ms and slide it; the others
+  move aside as it passes their middles. The order is kept on the account
+  (<code>GET</code>/<code>PATCH /api/prefs</code>), so it follows the person to every device - the
+  Apple TV reads it too.</li>
+  <li><strong>The + at the end</strong> lists the pills that were put away; drag a pill onto it
+  to put it away. Genres start put away. An empty list is stored as an empty list and never as
+  null, or "I added Genres back" would read as "use the defaults" and hide it again.</li>
+  <li><strong>A sideways swipe steps between pills</strong> anywhere below the header, as pages of
+  one strip. The moment the gesture locks sideways, the current page is moved into a "ghost"
+  laid where it was and the neighbouring pill is pressed, so the next page is already loading
+  while the finger is still down.</li>
+  <li><strong>The lit pill sits in the middle of its row</strong>, with spacers at each end so the
+  first and last can get there.</li>
+</ul>
+<p>Making that swipe smooth on a real phone took several rounds, and the fixes are typical of
+the whole app: move the list's own nodes into the ghost rather than deep-cloning them (a clone's
+lazy images drew blank); pin the pills under the header so they do not jump; turn off scroll
+anchoring during the swipe (Chrome re-aimed the page by 40px); pause the shimmer animation while
+moving; write positions once a frame, not per touch event. On an iPhone, the body under pills
+gets <code>touch-action: pan-y pinch-zoom</code>, because Safari decides within a few pixels
+whether a drag is a scroll and then ignores being told otherwise.</p>
+
+<h2 id="home">Home</h2>
+<p>Home is a front page rather than "everything, alphabetically". It opens with one-tap music
+for an account that has music - <strong>Shuffle all music</strong>, Favorite songs, Music radio
+and New music - then runs in three groups: Continue and Recently played, then every "New" row
+(music first), then the favorites of each tab.</p>
+<p>The Continue row is what this person is part way through, newest first. Books and films are
+SoundStorm's own records (<code>state.Progress</code>); an audiobook's place belongs to
+Audiobookshelf, so a book started in its phone app shows up here too. The New rows come from
+<code>GET /api/home</code>, which asks every source at once with a five-second limit each and
+leaves out a shelf that fails - the same rule the search follows, so one dead backend never
+blanks the page.</p>
+<p>"Shuffle all" is a true random shuffle: each batch is drawn with equal odds from songs not
+played yet this session, never repeating until the whole library has been through (the app
+sends the last 1,500 songs it queued).</p>
+
+<h2 id="holding">Holding, menus and selecting</h2>
+<p>On a touch screen there are no buttons over covers. Every card once carried a heart, an
+info button, add to queue, play next and download; they cluttered the art and every one of them
+was already in the menu, so they went. What is left on a cover is a small green tick for
+"downloaded".</p>
+<ul>
+  <li><strong>Hold</strong> (450ms) opens a card's menu. Moving more than 10px cancels it - that
+  is a scroll - and lifting early is a tap.</li>
+  <li><strong>Press, slide, release.</strong> A menu opened by a hold can be used without lifting
+  the finger: slide over an option and it lights, lift on it to choose it. Lifting without having
+  moved leaves the menu open to tap.</li>
+  <li><strong>In a shelf's list, a hold selects instead.</strong> Keep the finger down and drag on
+  to another card, and everything between is selected, as a phone's photo gallery does. The
+  bottom 120px of the screen scrolls the page, so a drag can reach any number of items. Hold any
+  selected card to get the menu for the whole selection.</li>
+  <li><strong>A mouse</strong> uses right-click, the menu key or Shift+F10; a hover "..." button
+  appears only for a fine pointer.</li>
+</ul>
+<div class="note">The finger lifting at the end of a hold is still a click to the browser. If it
+reached the page, the page's "click outside closes the menu" rule would close the menu the hold
+had just opened - which is exactly what the first version did. Every hold swallows its own
+lift, and <code>html.holding</code> sets <code>overscroll-behavior: none</code> so a selection
+drag cannot trigger pull-to-refresh.</div>
+<p>The owner can delete from the same menu. <strong>Delete from library</strong> asks the server
+what it would remove ("1 file, 321 KB. It stays in the bin for 30 days"), moves the files into
+a hidden bin, and offers Undo in a message at the bottom.</p>
+
+<h2 id="dropping">Dropping files in</h2>
+<p>Dragging files anywhere onto the window does what dragging them into the right folder would
+have done, including working out which folder that is. On a phone, which cannot drag,
+<strong>Settings &rarr; Add media</strong> opens a file picker instead.</p>
+<p>It is two steps, not one upload. <code>POST /api/upload/plan</code> takes the list of paths
+and answers where each would go, so the panel can say "14 files, 2 skipped, all going to Films"
+before a gigabyte moves, and can ask a question when it genuinely cannot tell (is this mp3 a song
+or an audiobook chapter?). Then each file goes up alone as the whole body of
+<code>PUT /api/upload</code>. The rules for where things go are on
+<a href="../server/library.html">The library and dropping files in</a>.</p>
+<div class="warn">A browser's folder reader, <code>readEntries</code>, hands back at most a
+hundred entries at a time. Calling it once silently loses the rest of a large folder - the
+classic way to lose half an album. <code>walkEntry</code> calls it until it returns an empty
+batch, and a test builds a fake entry tree to hold that, because no automated drag can produce
+real filesystem entries.</div>
+
+<h2 id="offline">Downloads and offline mode</h2>
+<p>Anything can be downloaded to the device: songs, albums, audiobooks, ebooks, documents,
+films, episodes and photos. Downloads live in the browser's Cache API
+(<code>soundstorm-offline-v1</code>), keyed by the very address the app would ask the server for,
+with a small index in <code>localStorage</code>. One index and one Remove therefore serve every
+kind of media.</p>
+<ul>
+  <li><strong>Downloads come first even online.</strong> A downloaded song, book, film or photo is
+  always read from the device.</li>
+  <li><strong>A film a browser can play is kept as it is.</strong> One it cannot is kept as the
+  HLS stream the app would have played - playlist, every piece and <code>hls.min.js</code> - and
+  played offline from a playlist rewritten to <code>blob:</code> addresses. The playlist is cached
+  last, so an interrupted download is never mistaken for a whole one.</li>
+  <li><strong>Positions are kept on the device too</strong>, marked unsynced until a save reaches
+  the server; an unsynced position wins on the next open.</li>
+  <li><strong>Signing out clears it all</strong>, and the device remembers whose downloads they are,
+  so a shared tablet does not hand one person's downloads to the next.</li>
+</ul>
+<p>Offline, the app stays itself rather than showing an error screen: each tab lists only what
+is on the device, Home shows one strip per downloaded kind, and search looks through the
+downloads. The browser's <code>online</code> event brings everything back.</p>
+
+<h2 id="sw">The service worker's rules</h2>
+<p>The service worker (<code>sw.js</code>) exists so the app can be installed to a home screen.
+It is deliberately the smallest thing that does that, because every failure of a cache in front
+of a media server is worse than the problem it solves. It has three rules:</p>
+<ol>
+  <li><strong>Nothing under <code>/api/</code> is ever cached.</strong> Search results, sessions and
+  positions are live state; a stale one is worse than no answer.</li>
+  <li><strong>Media bytes are never touched.</strong> Any request with a <code>Range</code> header is
+  left alone. A worker that answers a range request without honouring it breaks seeking in a way
+  that looks exactly like a corrupt file.</li>
+  <li><strong>Page loads are never answered.</strong> It used to serve a cached shell when loading
+  failed - which hid the browser's certificate warning after a reinstall or renewal and left
+  "cannot reach SoundStorm" with no way past it. Now the browser fails the page itself, with the
+  warning people know how to handle.</li>
+</ol>
+<p>The one exception to rule 3 is opening the app offline for downloads, and it applies only on
+the real <code>*.soundstorm.dev</code> names, only when the network actually failed. Those names
+carry trusted certificates that renew themselves, so the trap rule 3 exists for cannot happen
+there. On an IP address, localhost or a self-signed certificate, the rule holds exactly.</p>
+<p>What the worker does answer - the app's own <code>/static/</code> files - is network-first.
+At home the server is metres away, so the cache is a fallback for the seconds it restarts, and an
+update can never leave anybody pinned to an old build. Requests it does not handle are never
+passed to <code>respondWith</code> at all, so the browser behaves as if no worker existed.</p>
+<div class="note">The worker is served from <code>/sw.js</code>, not <code>/static/sw.js</code>: a
+service worker's scope is its own folder, and from <code>/static/</code> it could never control
+<code>/</code>, the only page there is. It would register, report success and intercept nothing.
+The manifest is likewise served by hand, because Go's MIME table has no
+<code>.webmanifest</code> and Chrome ignores a manifest not sent as JSON.</div>
+
+<h2 id="install">Installing it as an app</h2>
+<p>On an iPhone, Share &rarr; Add to Home Screen works from any address. On Android, Chrome's
+<strong>Install app</strong> only appears where a service worker can register - and Chrome refuses
+to register one on an origin with a certificate error, even after the warning was clicked
+through. So the app installs only from the secure <code>https://&lt;id&gt;.home.soundstorm.dev:8099</code>
+name, which has a real Let's Encrypt certificate (see
+<a href="../server/tls.html">Certificates and names</a>).</p>
+<div class="warn">For a long time every installability test ran against <code>localhost</code> or
+with certificate errors ignored - both of which count as secure whatever the certificate. The
+test truthfully reported a registered worker while a real phone could not install the app at
+all. A check that cannot see the failure it is meant to catch is worse than none, because it is
+believed.</div>
+
+<h2 id="csp">The content security policy, and no inline scripts</h2>
+<p>The shell is served with a strict Content-Security-Policy, and it is load-bearing rather than
+hardening. Books can contain scripts, and the reader renders chapters in a <code>blob:</code>
+frame that shares SoundStorm's origin; <code>script-src 'self'</code> is part of what keeps a
+stranger's EPUB from running JavaScript with the session.</p>
+<p>The cost is that inline <code>&lt;script&gt;</code> is refused - silently, except in the
+console. The service-worker registration first shipped inline; the app worked, nothing looked
+wrong, and "Add to Home Screen" made a bookmark instead of an app. The fix was never to loosen
+the policy but to move the script into <code>sw-register.js</code>, and
+<code>TestShellHasNoInlineScript</code> walks the shell so the next one cannot slip in. Files
+under <code>/static/</code> carry a no-script policy of their own, and no folder listing or second
+copy of the page is served there.</p>
+
+<h2 id="settings">Settings, and the back button</h2>
+<p>The account page is a page of its own, not a card pushed into the library. Its cards are
+grouped into pills - Library, Playback, Devices, People, Account - which can be reordered and
+swiped like any other row. While Settings is open, the search box searches settings: every card
+containing all the words typed, across every pill. Per-device choices (streaming quality, film
+quality, keep the screen on, audiobook loudness) live in <code>localStorage</code>; per-person ones
+(pill order, cover look, audiobook speed) live on the account.</p>
+<p>The app never changes its address, so for a while Android's back gesture had nothing to go
+back to and closed the app from inside a film. Now one history entry is kept armed while anything
+back should close is open (<code>backTarget</code>, in order: menu, selection, photo, book, film,
+Now Playing, Settings, a detail page, a search, any tab but Home). Back pops it, the top thing
+closes, and it is armed again if anything is left. Something closed by its own X takes the entry
+away, so back never needs pressing twice.</p>
+<p>Switching page swaps the old content at once for grey placeholder covers with a slow shimmer
+(<code>showSkeleton</code>). The previous page sitting there read as the new one, and the word
+"Loading..." read as stuck.</p>
+
+<h2 id="mobile">Mobile layout lessons</h2>
+<p>Most of these were found by measuring - a script asserts the page is no wider than the
+screen on every view - rather than by looking.</p>
+<ul>
+  <li><strong><code>minmax(0, 1fr)</code>, not <code>1fr</code>.</strong> A grid item's minimum width is
+  its content's, so one unbreakable line pushed the first screen to 531px on a 390px phone.</li>
+  <li><strong>Two explicit columns on a phone.</strong> <code>auto-fill</code> with 168px tracks made one
+  column, and every result filled the screen.</li>
+  <li><strong>Inputs at 16px.</strong> iOS Safari zooms in on any smaller input and does not zoom
+  back out.</li>
+  <li><strong><code>overflow-x: clip</code> on the body and <code>#app</code>.</strong> A page mid-swipe
+  hanging off the side made the page wider than the phone, which zoomed out and threw the tab bar
+  around. <code>clip</code> rather than <code>hidden</code>, so sticky headers keep working.</li>
+  <li><strong>Safe areas through variables.</strong> Every edge uses <code>--safe-top</code> and its
+  siblings, which default to <code>env(safe-area-inset-*)</code> but can be set by the Android
+  app, whose web view reports zero for the camera cutout it draws into. A safe-area rule must also
+  be in the rule that finally sets the padding, or a later rule silently overrides it.</li>
+  <li><strong>Fractional header height.</strong> <code>--header-h</code> is measured with
+  <code>getBoundingClientRect</code>; <code>offsetHeight</code> rounds, and left a sliver through which
+  the page showed above the pills.</li>
+  <li><strong>Icons are SVG, never characters.</strong> The "&#8943;" glyph rendered as three dashes in
+  the UI font, and hearts sit on a different baseline in every font.</li>
+  <li><strong>No tap highlight on cards.</strong> Chrome's tap flash is a rectangle over a button's
+  whole box, however round the cover inside. It cannot be screenshotted, so it is switched off by
+  name and replaced by the cover settling to 97%.</li>
+  <li><strong>Hover styles only for real pointers.</strong> On a touch screen <code>:hover</code> sticks
+  to whatever was last tapped.</li>
+</ul>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

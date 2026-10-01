@@ -1,0 +1,143 @@
+/* SoundStorm - how it works. The app's own colours, a reading layout. */
+:root {
+  --bg: #0b0d11;
+  --surface: #151920;
+  --surface-2: #1c222b;
+  --border: #2a3039;
+  --text: #e6e9ee;
+  --muted: #9aa2ae;
+  --accent: #6aa8ff;
+  --accent-dim: #21344f;
+  --warn: #ffb648;
+  --good: #59d38c;
+  --radius: 10px;
+  --header-h: 56px;
+  --side-w: 250px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-padding-top: calc(var(--header-h) + 16px); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, kbd, pre { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.9em; }
+code { overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 0.05em 0.35em; }
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; border: 0; padding: 0; }
+
+/* --- header ------------------------------------------------------------ */
+.site-header {
+  position: sticky; top: 0; z-index: 10;
+  height: var(--header-h);
+  display: flex; align-items: center; gap: 24px;
+  padding: 0 20px;
+  background: rgba(11, 13, 17, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 800; font-style: italic; white-space: nowrap; }
+.brand:hover { text-decoration: none; }
+.brand .cloud { width: 24px; height: 24px; }
+.brand-sub { color: var(--muted); font-weight: 400; font-style: normal; font-size: 0.85em; }
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.tabs a { color: var(--muted); padding: 6px 12px; border-radius: 999px; white-space: nowrap; font-size: 0.95em; }
+.tabs a:hover { color: var(--text); background: var(--surface); text-decoration: none; }
+.tabs a[aria-current] { color: var(--text); background: var(--accent-dim); }
+.menu-button { display: none; margin-left: auto; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font: inherit; }
+
+/* --- layout ------------------------------------------------------------ */
+.side {
+  position: fixed; top: var(--header-h); bottom: 0; left: 0;
+  width: var(--side-w); overflow-y: auto;
+  padding: 20px 12px 40px;
+  border-right: 1px solid var(--border);
+}
+.side ul { list-style: none; margin: 0; padding: 0; }
+.side a { display: block; padding: 6px 12px; border-radius: 8px; color: var(--muted); font-size: 0.95em; }
+.side a:hover { background: var(--surface); color: var(--text); text-decoration: none; }
+.side a[aria-current] { background: var(--accent-dim); color: var(--text); }
+.side li:first-child a { color: var(--text); font-weight: 600; }
+.side li.sub a { padding-left: 22px; }
+.phone-sections { display: none; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 28px 80px; }
+body.has-side main { margin-left: calc(var(--side-w) + max(0px, (100vw - var(--side-w) - 860px) / 2)); }
+
+.crumbs { color: var(--muted); font-size: 0.88em; margin-bottom: 12px; }
+.crumbs span { color: var(--text); }
+h1 { font-size: 2.1em; line-height: 1.2; margin: 0.2em 0 0.3em; letter-spacing: -0.01em; }
+h2 { font-size: 1.4em; margin: 2em 0 0.5em; padding-top: 0.4em; border-top: 1px solid var(--border); }
+h3 { font-size: 1.1em; margin: 1.6em 0 0.4em; }
+.lede { font-size: 1.15em; color: var(--muted); margin-top: 0; }
+p, li { color: #d6dae1; }
+strong { color: var(--text); }
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.25em 0; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.94em; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+
+.toc { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 18px; margin: 18px 0 8px; font-size: 0.93em; }
+.toc p { margin: 0 0 4px; color: var(--muted); font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.06em; }
+.toc ul { margin: 0; padding-left: 1.1em; columns: 2; }
+
+/* Notes and the "why" boxes the writing leans on. */
+.note, .why, .warn {
+  border-radius: var(--radius); padding: 12px 16px; margin: 1.2em 0;
+  border: 1px solid var(--border); background: var(--surface);
+}
+.note { border-left: 3px solid var(--accent); }
+.why { border-left: 3px solid var(--good); }
+.why::before { content: "Why"; display: block; font-weight: 700; color: var(--good); font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.06em; }
+.warn { border-left: 3px solid var(--warn); }
+
+/* Cards that lead one level down. */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 1.2em 0; }
+.card { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; color: var(--text); transition: border-color 0.15s, transform 0.15s; }
+.card:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
+.card b { display: block; margin-bottom: 4px; }
+.card span { color: var(--muted); font-size: 0.92em; }
+
+/* The architecture diagram: boxes in rows, drawn in HTML. */
+.diagram { display: grid; gap: 10px; margin: 1.4em 0; }
+.diagram .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.diagram .box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; text-align: center; font-size: 0.9em; }
+.diagram .box small { display: block; color: var(--muted); }
+.diagram a.box { color: var(--text); }
+.diagram a.box:hover { border-color: var(--accent); text-decoration: none; }
+.diagram .box.core { background: var(--accent-dim); border-color: var(--accent); font-weight: 600; }
+.diagram .label { color: var(--muted); font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.06em; text-align: center; }
+.diagram .arrow { text-align: center; color: var(--muted); line-height: 1; }
+
+.pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 3em; padding-top: 1.2em; border-top: 1px solid var(--border); }
+.pager a { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; color: var(--text); max-width: 48%; }
+.pager a:hover { border-color: var(--accent); text-decoration: none; }
+.pager .next { margin-left: auto; text-align: right; }
+.pager small { display: block; color: var(--muted); }
+
+footer.site-footer { color: var(--muted); font-size: 0.85em; text-align: center; padding: 30px; }
+
+/* --- phones ------------------------------------------------------------ */
+@media (max-width: 900px) {
+  .tabs { display: none; }
+  .menu-button { display: block; }
+  .side { transform: translateX(-100%); transition: transform 0.2s; background: var(--bg); z-index: 9; width: 80vw; max-width: 320px; }
+  body.side-open .side { transform: none; }
+  body.has-side main { margin-left: auto; }
+  body:not(.has-side).side-open .tabs { display: flex; position: fixed; top: var(--header-h); left: 0; right: 0; flex-direction: column; background: var(--bg); padding: 12px; border-bottom: 1px solid var(--border); }
+  main { padding: 18px 18px 60px; }
+  table { display: block; overflow-x: auto; }
+  .side .phone-sections { display: block; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .side .phone-sections li:first-child a { font-weight: 400; color: var(--muted); }
+  .side .phone-sections a[aria-current] { color: var(--text); }
+  .diagram .row { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+  .pager a { max-width: 100%; }
+  .pager { flex-direction: column; }
+  h1 { font-size: 1.7em; }
+  .toc ul { columns: 1; }
+}

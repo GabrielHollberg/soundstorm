@@ -158,7 +158,7 @@ func (s *Server) handleRecap(w http.ResponseWriter, r *http.Request) {
 		year = y
 	}
 	// A year in somebody's own time zone reaches into the files either side.
-	var listens []collections.Listen
+	var listens, earlier []collections.Listen
 	for _, y := range []int{year - 1, year, year + 1} {
 		ls, err := s.collections.Listens(user.ID, y)
 		if err != nil {
@@ -166,14 +166,23 @@ func (s *Server) handleRecap(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, l := range ls {
-			if l.At.In(zone).Year() == year && visible[l.SourceID] {
+			ly := l.At.In(zone).Year()
+			if ly == year && visible[l.SourceID] {
 				listens = append(listens, l)
+			} else if ly < year {
+				// Last year's plays, read for the time zone's sake, count as
+				// "before": they were read and then thrown away, so last
+				// year's artists came back as new (a review).
+				earlier = append(earlier, l)
 			}
 		}
 	}
 	// Artists played before this year, for "new to you": from earlier years'
 	// listens, and from History's first plays, which reach back further.
 	before := map[string]bool{}
+	for _, l := range earlier {
+		before[nameKey(l.Artist)] = true
+	}
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, zone)
 	if hist, err := s.collections.History(user.ID); err == nil {
 		for _, p := range hist {

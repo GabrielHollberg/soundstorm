@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Provisioning - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/provisioning" data-root="..">
+<main>
+<h1>Provisioning with nobody logging in</h1>
+<p class="lede">A fresh install starts six media servers, every one of which normally wants a
+human to click through a setup wizard. Nobody does. <code>internal/provision</code> walks each
+backend's first run through its own API, keeps the credentials it made, and reconnects with them
+after every restart - without ever mistaking "not up yet" for "wrong password".</p>
+
+<h2 id="rule">A backend is two halves</h2>
+<p>The third rule the design rests on: <strong>a backend is search and provisioning, both, or it
+is not done.</strong> A backend a human must configure by hand defeats the point of the product -
+and would mean showing them its admin screens, which is exactly the seam SoundStorm hides. That
+rule is also why Plex was rejected outright: it requires a plex.tv account, so it cannot be set up
+without a human logging into a cloud service.</p>
+<p>Compose decides the stack: a backend is managed if its URL is set
+(<code>SOUNDSTORM_NAVIDROME_URL</code>, <code>SOUNDSTORM_JELLYFIN_URL</code> and so on), and
+<code>targetsFromEnv</code> turns those into provisioning targets. Each gets its own goroutine in
+<code>Manager.Start</code>, so the server opens its port immediately and shows "Films and TV:
+Getting ready" while Jellyfin boots. Sources join the registry as each becomes ready.</p>
+
+<h2 id="backends">Each backend's first run</h2>
+<p>Every endpoint below was checked against a running server rather than taken from
+documentation, and several only work while the backend has no users - which makes driving them
+safe: they cannot be used to hijack an install that is already set up.</p>
+
+<h3>Navidrome (music)</h3>
+<p>A <code>/ping</code> first, so the retry loop reports "waiting for navidrome" rather than a
+confusing failure, then <code>POST /auth/createAdmin</code> with the account name
+<code>soundstorm</code> and a generated password. That endpoint works only while no user exists.
+The music folder needs no call: compose sets <code>ND_MUSICFOLDER</code>, and the same compose
+file sets <code>ND_SCANINTERVAL</code> (not <code>ND_SCANSCHEDULE</code>, which Navidrome ignores
+silently), real file paths (<code>ND_SUBSONIC_DEFAULTREPORTREALPATH</code>) and a transcoding
+setting the beat analysis needs. Navidrome's Subsonic API takes credentials in each request, so
+the username and password are what is stored.</p>
+
+<h3>Jellyfin (films and TV)</h3>
+<p>Jellyfin's startup wizard is a plain REST API that stops accepting calls once setup completes:
+<code>/Startup/Configuration</code>, <code>/Startup/User</code>, <code>/Startup/RemoteAccess</code>,
+<code>/Startup/Complete</code>. Then <code>/Users/AuthenticateByName</code> for a token, and
+<code>/Library/VirtualFolders</code> to create two libraries - films and series are separate
+Jellyfin libraries with different collection types and scrapers. So one Jellyfin is provisioned
+once and registered as <strong>two sources sharing one token</strong>, <code>jellyfin</code>
+(Movie) and <code>jellyfin-tv</code> (Series, Episode); <code>buildSources</code> returns a slice
+for exactly this reason. Jellyfin accepts its listening socket while still loading and answers 503
+"server is loading" for several seconds, which matters below.</p>
+
+<h3>Audiobookshelf</h3>
+<p><code>/status</code> says whether it is initialized; <code>POST /init</code> creates the root
+account; <code>/login</code> returns two tokens. <code>user.accessToken</code> expires in an hour;
+<code>user.token</code> is a legacy JWT with no expiry, and SoundStorm stores that one on purpose -
+the other would strand the backend an hour after provisioning without a refresh flow. Then a
+library on the audiobooks folder, and a scan. Members get their own Audiobookshelf accounts later,
+on first use (<code>TokenFor</code>); creating one needs <code>isActive</code> sent explicitly, or
+the account is created inactive and its token, returned in an ordinary 200, answers Unauthorized
+to everything.</p>
+
+<h3>Immich (photos)</h3>
+<p><code>/api/auth/admin-sign-up</code> with <code>soundstorm@soundstorm.invalid</code> (RFC 2606's
+never-existing domain - Immich validates the shape and sends nothing to it), a login, then an API
+key with <code>permissions: ["all"]</code>. The session token expires and the key does not, so
+only the key is kept and the password is thrown away. Then an <strong>external library</strong>
+on <code>/pictures</code>, mounted read-only, so Immich can never move, rename or delete a photo.
+Folder watching is switched on by reading <code>/api/system-config</code>, changing
+<code>library.watch.enabled</code> and sending the whole document back - a test holds that it
+changes nothing else. Members get an Immich account each whose one library is their own folder
+(<code>PhotoAccountFor</code>), made the first time they look.</p>
+
+<h3>Storyteller (read-along)</h3>
+<p>The first account is a Next.js server action on <code>/init</code>, which works as a plain
+multipart form; the action id changes per build, so it is scraped off the page each time.
+<code>/api/v2/token</code> gives a thirty-day session, and <code>/api/v2/token/app</code> trades it
+for a 35-year one - and reads only the <code>st_token</code> cookie, not a bearer header, which
+cost a test cycle. Settings then keep synced books inside Storyteller's own storage (the default
+writes beside the source, into the library), choose the transcription model, and set the maximum
+track length huge so chapters are the only cuts. Books are later uploaded to it over tus.</p>
+
+<h3>AudioMuse-AI (moods)</h3>
+<p>Its <code>/api/setup</code> answers without a login until the first save and never after - a
+second unauthenticated save is a 401 - the same shape as Jellyfin's wizard. SoundStorm generates
+its API token and admin password, switches off its third-party lyrics lookup and lyrics
+transcription, and gives it a <strong>non-admin Navidrome account of its own</strong>
+(<code>audiomuse</code>, made through Navidrome's <code>/api/user</code>), since it reads songs
+through Navidrome and mounts no folder. A nightly analysis is scheduled through
+<code>/api/cron</code>. If AudioMuse's volumes were wiped and Navidrome's were not, that account
+is reset rather than refused.</p>
+
+<h3>Ebooks and documents</h3>
+<p>No backend: SoundStorm reads those folders itself (<code>source/localbooks</code>), so
+"provisioning" is the first scan, run synchronously, with a ticker for the rest.</p>
+
+<h2 id="credentials">What is kept</h2>
+<p>Credentials go into <code>state.json</code> beside the accounts: base URL, username and
+password or token, library ids, and when it was provisioned. Passwords are generated with
+<code>crypto/rand</code>, 192 bits. Nothing about the media itself is ever stored there - that is
+the line that keeps the state from becoming an index that goes stale.</p>
+<div class="warn">Provisioning is not idempotent across a volume reset. If a backend's volume is
+wiped but SoundStorm's state survives, or the other way round, you get a backend with an account
+whose password nobody holds. The provisioners detect it and say so precisely - "navidrome already
+has an admin account but SoundStorm has no stored credentials for it; either restore SoundStorm's
+state file or reset the navidrome volume" - rather than retrying for ever. The fix is a human
+decision. <code>soundstorm backup</code> and <code>restore</code> are that decision's tools, and the
+uninstaller takes a backup before <code>down -v</code>, the one moment the credentials would stop
+existing anywhere.</div>
+
+<h2 id="reconnect">Reconnecting is not provisioning</h2>
+<p>On a restart, SoundStorm is listening seconds after its container starts and Jellyfin is not.
+A health check then fails with "connection refused" - which is emphatically not the same as "this
+token is wrong". Treating them alike meant throwing away good credentials and falling through to
+provisioning, which can never succeed on a backend that is already set up. <strong>One unlucky
+restart, and a backend was permanently broken with its working token still on disk.</strong></p>
+<p>So <code>run</code> checks for stored credentials first and calls <code>reconnect</code>, which
+retries until the backend answers. Only a definite answer from the backend - in practice a 401 or
+403 refusing the credentials - sends it to <code>provision</code> (a backend whose volume really was reset can be set up again).
+<code>transient()</code> owns the distinction, at two layers:</p>
+<ul>
+  <li><strong>Transport</strong>: connection refused, DNS failure, timeout, any
+  <code>net.OpError</code> - nothing is listening yet.</li>
+  <li><strong>HTTP</strong>: something is listening but not ready - 5xx (Jellyfin's 503 while
+  loading) and 429.</li>
+</ul>
+<p><code>provision_test.go</code> guards it.</p>
+
+<h2 id="backoff">Backoff, and giving up</h2>
+<p>Both loops start at a two-second wait and add two seconds per attempt up to about fifteen,
+showing "waiting for jellyfin (attempt 6)" to the owner meanwhile - the setup box shows shelves,
+never server names, to everybody else. After ten minutes (<code>giveUpAfter</code>) a backend is
+marked failed: one can be genuinely absent - an image that failed to pull, a wrong URL - and
+SoundStorm must stay useful for the ones that worked. Calls made while somebody waits, like
+creating a member's account, get twenty seconds; a search gets five.</p>
+
+<h2 id="panics">Recovering panics</h2>
+<p><code>provision.run</code> is started once with <code>go</code> and answers to no request, so
+<code>net/http</code>'s per-request panic recovery does not cover it. It parses responses from
+software outside the process - and a localbooks scan parses EPUBs a member uploaded before the
+backend came up. An unrecovered panic would take the whole server down. So <code>run</code> is
+wrapped in <code>recover()</code>: a panic marks that one backend failed, with the panic in the
+log, and SoundStorm keeps serving the others. It was verified with a real panic (a nil state store
+inside provisioning), not a synthetic one.</p>
+
+<h2 id="rescans">Telling the backends to look</h2>
+<p>Every backend indexes on its own timer - Navidrome every minute, the ebook scanner every two,
+Jellyfin and Audiobookshelf when their watchers notice - so an uploaded file could sit on disk,
+unsearchable, for up to two minutes after the progress bar finished. <code>source.Rescanner</code>
+is the optional "look now" call, and an upload schedules one:</p>
+<table>
+  <tr><th>Backend</th><th>Call</th></tr>
+  <tr><td>Navidrome</td><td><code>/rest/startScan.view</code> - the quick kind, looking only at what changed</td></tr>
+  <tr><td>Jellyfin</td><td><code>POST /Library/Refresh</code> (204; a made-up path is 404, so the 204 means something). It refreshes every library.</td></tr>
+  <tr><td>Audiobookshelf</td><td><code>POST /api/libraries/{id}/scan</code></td></tr>
+  <tr><td>Immich</td><td>a scan of every library, members' included</td></tr>
+  <tr><td>Ebooks, documents</td><td>the scan the ticker would have run</td></tr>
+</table>
+<p><strong>The debounce is the load-bearing part.</strong> A dropped folder arrives as one upload
+per file, and triggering per file would ask Navidrome to scan thirty times for one album.
+<code>scheduleRescan</code> keeps one timer per kind and pushes it back on each upload, so a long
+upload produces one scan, two seconds after the last file. Measured after: an uploaded ebook was
+searchable in five seconds.</p>
+<p>The manual "Check for new files" button is open to any signed-in person, and each real scan is
+expensive. The debounce does nothing against separate triggers spaced further apart, so
+<code>minRescanInterval</code> (30s) floors the gap between two real scans of one kind - and a
+trigger arriving while a floor-extended timer is pending recomputes the same floor rather than
+resetting to two seconds, or a steady stream could keep a scan two seconds away for ever.</p>
+<p>Before any scan, <code>library.EnsurePlaceholders</code> puts back each shelf's
+<code>README.txt</code>. Jellyfin refuses to remove anything when a library folder comes back empty
+- it cannot tell "everything was deleted" from "the drive did not mount" - so a folder emptied by
+hand left every deleted film searchable for ever. The placeholder keeps the folder non-empty. A
+failed scan is logged and dropped: the upload already succeeded, and the backend's own timer will
+find the file regardless.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The server - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server" data-root="..">
+<main>
+<h1>The server</h1>
+<p class="lede">One Go program, <code>cmd/soundstorm</code>, sits between every app and every
+backend. It signs people in, searches every shelf at once, carries every byte of every song,
+film and photo, files what is dropped onto the window, and remembers the few things that
+belong to a person rather than to the media.</p>
+
+<h2 id="one-program">One program, no dependencies</h2>
+<p>The server is a single static binary built from the standard library alone: there is no
+<code>go.sum</code>, because there are no third-party Go modules - not for password hashing
+(<code>crypto/pbkdf2</code>), not for the ACME client that gets real certificates, not for the
+FLAC decoder the beat analysis uses. The web app is embedded in the same binary with
+<code>go:embed</code>, so the image is the program and nothing else. The only third-party code
+in the whole project is foliate-js, the EPUB renderer, vendored into the web assets.</p>
+<p>It runs in a container beside the backends it drives, as an unprivileged user (uid 10001),
+with no access to the Docker socket. That last point is a choice, not an omission: a server
+that cannot drive Docker cannot be turned into a way onto the host, which is also why it
+cannot update itself - updating is running the installer again.</p>
+<p>Besides serving, the same binary carries a few subcommands that run beside a stopped or
+running server: <code>reset-password</code>, <code>backup</code>, <code>restore</code> and
+<code>train-looks</code>. Any other argument is an error rather than a second server, because a
+typo once started two writers on one state file.</p>
+
+<h2 id="startup">What happens at start</h2>
+<p>The order in <code>main</code> is deliberate: everything a person needs to see the app is done
+before the port opens, and everything that waits on another container happens in the
+background afterwards.</p>
+<ol>
+  <li><strong>The library folders.</strong> <code>library.Open</code> makes sure
+  <code>music/</code>, <code>movies/</code>, <code>tv/</code>, <code>audiobooks/</code>,
+  <code>ebooks/</code>, <code>documents/</code> and <code>pictures/</code> exist, so a fresh
+  install already has somewhere to put things.</li>
+  <li><strong>The state file.</strong> <code>state.Open</code> reads (and migrates) the one file
+  holding backend credentials, accounts, sessions and a handful of decisions. Never anything
+  about the media itself.</li>
+  <li><strong>The starter library</strong> - one public-domain or CC0 item per stocked shelf,
+  about 17MB embedded in the binary - is unpacked into empty folders <em>once, ever</em>. A flag
+  in the state file records that it happened, so somebody who deletes the samples does not get
+  them back at the next restart.</li>
+  <li><strong>Housekeeping.</strong> Half-finished uploads in the hidden staging folder are
+  cleared, the per-person collections folder is opened, and a daily sweep empties the bin of
+  anything deleted more than thirty days ago.</li>
+  <li><strong>TLS is loaded</strong> in whichever mode <code>SOUNDSTORM_TLS</code> names:
+  off, self-signed (a local authority), file, or auto (a real certificate). An unknown value is
+  fatal - quietly serving plain HTTP to somebody who asked for encryption is the worst way to
+  be wrong.</li>
+  <li><strong>Provisioning starts in the background.</strong> Each backend named in the
+  environment is set up, or reconnected with stored credentials, in its own goroutine. A
+  backend can take a minute to boot, and SoundStorm should be showing setup progress meanwhile,
+  not refusing to start. So sources join the registry as they become ready.</li>
+  <li><strong>The real certificate</strong> is fetched in the background too, in auto mode.</li>
+  <li><strong>A setup code</strong> is printed to the log while no account exists - the first
+  sign-up needs it.</li>
+  <li><strong>Background loops</strong> start: automatic read-along syncing, sending plays to
+  ListenBrainz, hearing every song's beats ahead of time, and sorting imported photo
+  downloads.</li>
+  <li><strong>The listener opens</strong> - on one port that speaks both plain HTTP and TLS
+  in auto mode, told apart by the first byte of each connection.</li>
+</ol>
+<div class="why">Every goroutine started once and left running is wrapped in
+<code>recover()</code>. Go's <code>net/http</code> protects only the goroutine serving a request;
+a panic anywhere else ends the whole process, for everybody. A parser that trips over one
+strange file on a timed scan would otherwise crash the server on that file, and again on
+every restart, because the file is still on disk.</div>
+
+<h2 id="map">Package map</h2>
+<p>Packages live under <code>internal/</code>. The rule that keeps them apart is
+<em>normalization at the edge</em>: only an adapter knows its backend's vocabulary, and
+everything past it speaks <code>media.Item</code>.</p>
+
+<div class="diagram" role="img" aria-label="The HTTP API sits on top of auth, federate, stream and the library; those use the source registry and its adapters; underneath are state, collections and the parsers.">
+  <div class="label">The door</div>
+  <div class="row">
+    <a class="box core" href="http-api.html">httpapi<small>routes, middleware, handlers</small></a>
+    <a class="box" href="../clients/web.html">webui<small>the embedded web app</small></a>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="label">What a request does</div>
+  <div class="row">
+    <a class="box" href="accounts.html">auth<small>sign-in, sessions, throttle</small></a>
+    <a class="box" href="search.html">federate<small>every shelf at once</small></a>
+    <a class="box" href="streaming.html">stream<small>the byte proxy</small></a>
+    <a class="box" href="library.html">library<small>folders, uploads, bin</small></a>
+    <a class="box" href="collections.html">collections<small>favorites, playlists, plays</small></a>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="label">Backends</div>
+  <div class="row">
+    <a class="box" href="search.html">source<small>registry, interfaces, access</small></a>
+    <a class="box" href="../backends/index.html">source/*<small>one adapter per backend</small></a>
+    <a class="box" href="provisioning.html">provision<small>first run, accounts</small></a>
+    <a class="box" href="../backends/index.html">httpx<small>hardened client</small></a>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="label">Underneath</div>
+  <div class="row">
+    <a class="box" href="../architecture/state.html">state<small>credentials, accounts</small></a>
+    <a class="box" href="tls.html">servetls &middot; acme &middot; names &middot; portmap</a>
+    <a class="box" href="music.html">beats &middot; flac &middot; lyrics &middot; discover &middot; scrobble</a>
+    <a class="box" href="library.html">tags &middot; epub &middot; pdf &middot; photoimport</a>
+  </div>
+</div>
+
+<table>
+  <tr><th>Package</th><th>What it owns</th></tr>
+  <tr><td><code>httpapi</code></td><td>Every route, the middleware chain, rate limits, and the handlers that tie the rest together.</td></tr>
+  <tr><td><code>auth</code></td><td>Password hashing, sessions and their cookies, device tokens, the sign-in throttle, per-kind access.</td></tr>
+  <tr><td><code>state</code></td><td>The one JSON file: backend credentials, accounts, hashed sessions, reading positions, a few owner decisions.</td></tr>
+  <tr><td><code>source</code>, <code>source/*</code></td><td>The <code>Source</code> interface and its optional extras, the registry that enforces access, and one adapter each for Navidrome, Jellyfin, Audiobookshelf, Immich, Storyteller, AudioMuse-AI, OPDS and the local book folders.</td></tr>
+  <tr><td><code>federate</code></td><td>Asking every source at once with a deadline each, and merging the answers into one ordered page.</td></tr>
+  <tr><td><code>media</code></td><td><code>media.Item</code>, the one comparator (<code>media.Less</code>) and the shelf cache.</td></tr>
+  <tr><td><code>stream</code></td><td>Proxying media and art: ranges, picture-free song headers, pacing, cover shrinking, active-content guards.</td></tr>
+  <tr><td><code>provision</code></td><td>Setting up each backend with nobody logging in, reconnecting after restarts, per-member backend accounts.</td></tr>
+  <tr><td><code>library</code></td><td>The folders, where a dropped file goes, staging and atomic placement, the bin, free space.</td></tr>
+  <tr><td><code>collections</code></td><td>Per-person favorites, playlists, listening history, the listen log, custom covers, preferences.</td></tr>
+  <tr><td><code>servetls</code>, <code>acme</code>, <code>names</code>, <code>portmap</code></td><td>Certificates, the in-house ACME client, the name service and its client, router port mapping.</td></tr>
+  <tr><td><code>beats</code>, <code>flac</code></td><td>Hearing each song once on the server for the visualizers, through a FLAC decoder of its own.</td></tr>
+  <tr><td><code>tags</code>, <code>epub</code>, <code>pdf</code>, <code>photoimport</code></td><td>Small readers that answer one question each - where to file a file, what a book is called, when a photo was taken.</td></tr>
+  <tr><td><code>lyrics</code>, <code>discover</code>, <code>scrobble</code>, <code>plex</code></td><td>The opt-in outside services: LRCLIB, MusicBrainz and friends, ListenBrainz, and Plex playlist import.</td></tr>
+  <tr><td><code>starter</code>, <code>webui</code></td><td>The embedded starter library and web app.</td></tr>
+</table>
+
+<h2 id="parts">The parts, one page each</h2>
+<div class="cards">
+  <a class="card" href="http-api.html"><b>HTTP API</b><span>Route groups, the guarded and owner muxes, middleware, rate limits and errors.</span></a>
+  <a class="card" href="accounts.html"><b>Accounts and sign-in</b><span>Owner and member, the setup code, sessions, the throttle and per-shelf access.</span></a>
+  <a class="card" href="search.html"><b>Search and browsing</b><span>Federated search, merged paging, Home, Continue, genres, authors and series.</span></a>
+  <a class="card" href="streaming.html"><b>Streaming</b><span>Why every byte passes through, ranges, slim headers, pacing, covers, HLS.</span></a>
+  <a class="card" href="provisioning.html"><b>Provisioning</b><span>Each backend's first run with nobody logging in, and surviving restarts.</span></a>
+  <a class="card" href="library.html"><b>The library and dropping files in</b><span>Shelves, where things are filed, staging, duplicates and the bin.</span></a>
+  <a class="card" href="collections.html"><b>Favorites, playlists, history</b><span>What is kept per person, and why not in the backends.</span></a>
+  <a class="card" href="music.html"><b>Music: radio, moods, beats</b><span>Stations, moods from AudioMuse-AI, and hearing every song ahead of time.</span></a>
+  <a class="card" href="photos.html"><b>Photos: folders, backup, imports</b><span>Everyone's own photos, phone backup, and bringing a library in from Google or Apple.</span></a>
+  <a class="card" href="books.html"><b>Books and read-along</b><span>Ebooks SoundStorm reads itself, and pages that turn with the audiobook.</span></a>
+  <a class="card" href="tls.html"><b>Certificates and names</b><span>TLS modes, the name service, the ACME client and remote access.</span></a>
+</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

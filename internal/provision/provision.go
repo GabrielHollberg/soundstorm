@@ -126,6 +126,9 @@ type Manager struct {
 	// photoMu keeps two requests at once from making a person two Immich
 	// accounts.
 	photoMu sync.Mutex
+	// absMu does the same for a person's Audiobookshelf account: two first
+	// requests at once both created it, and one failed (a review).
+	absMu sync.Mutex
 }
 
 // New builds a Manager for the given targets.
@@ -325,7 +328,12 @@ func (m *Manager) provision(ctx context.Context, t Target, log *slog.Logger) {
 				m.set(t.ID, StatusReady, "", "")
 				return
 			}
-			log.Warn("provisioned but not usable yet", "err", err)
+			// Set up and saved, just not answering yet (Jellyfin's 503 while
+			// it loads): from here it is reconnecting, not provisioning - a
+			// second setup can only fail with "already set up" (a review).
+			log.Warn("provisioned but not usable yet; waiting for it", "err", err)
+			m.reconnect(ctx, t, creds, log)
+			return
 		}
 
 		if time.Now().After(deadline) {
@@ -609,6 +617,16 @@ func (m *Manager) TokenFor(ctx context.Context, backendID, userID string) (strin
 	if identity, ok := m.store.Identity(userID, backendID); ok && identity.Token != "" {
 		return identity.Token, nil
 	}
+	m.absMu.Lock()
+	defer m.absMu.Unlock()
+	if identity, ok := m.store.Identity(userID, backendID); ok && identity.Token != "" {
+		return identity.Token, nil
+	}
+	// Not the request's own context: an account made and then the request
+	// gone would leave it made but unrecorded, and every later try refused
+	// as a name already taken (a review).
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*backendTimeout)
+	defer cancel()
 
 	c, err := httpx.New(creds.BaseURL, backendTimeout)
 	if err != nil {
@@ -648,11 +666,18 @@ func (m *Manager) PhotoAccountFor(ctx context.Context, backendID, userID string)
 	if user.IsOwner() {
 		return creds.Token, creds.LibraryID, nil
 	}
+	// Looked at before the lock too: every photo request asks, and while one
+	// member's account was being made every member's grid waited (a review).
+	if id, ok := m.store.Identity(userID, backendID); ok && id.Token != "" && id.LibraryID != "" {
+		return id.Token, id.LibraryID, nil
+	}
 	m.photoMu.Lock()
 	defer m.photoMu.Unlock()
 	if id, ok := m.store.Identity(userID, backendID); ok && id.Token != "" && id.LibraryID != "" {
 		return id.Token, id.LibraryID, nil
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 4*backendTimeout)
+	defer cancel()
 	if m.PhotoFolder == nil {
 		return "", "", fmt.Errorf("no folder for personal photos")
 	}

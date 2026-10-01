@@ -28,6 +28,7 @@ type fakeGateway struct {
 	wanIP     netip.Addr    // reported WAN address
 	maps      int           // create requests seen (lifetime > 0)
 	deletes   int           // delete requests seen (lifetime == 0)
+	nonces    [][12]byte    // the nonce of every PCP request seen
 }
 
 func newFakeGateway(t *testing.T) *fakeGateway {
@@ -127,6 +128,9 @@ func (g *fakeGateway) replyNATPMP(req []byte) []byte {
 func (g *fakeGateway) replyPCP(req []byte) []byte {
 	lifetime := binary.BigEndian.Uint32(req[4:8])
 	g.record(lifetime)
+	var nonce [12]byte
+	copy(nonce[:], req[24:36])
+	g.nonces = append(g.nonces, nonce)
 	external := binary.BigEndian.Uint16(req[42:44])
 	if g.forcePort != 0 && lifetime != 0 {
 		external = g.forcePort
@@ -397,5 +401,79 @@ func TestExternalAddressWithoutAGateway(t *testing.T) {
 	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099}
 	if _, err := mt.ExternalAddress(testCtx(t)); !errors.Is(err, ErrNoGateway) {
 		t.Errorf("err = %v, want ErrNoGateway", err)
+	}
+}
+
+// RFC 6887 names a PCP mapping by its nonce: a refresh must send the same one
+// the mapping was made with, or it asks for a second mapping on the port.
+func TestPCPRefreshReusesTheNonce(t *testing.T) {
+	g := newFakeGateway(t)
+	g.set(func(g *fakeGateway) { g.grant = time.Minute })
+	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099, Lifetime: 2 * time.Minute, testServer: g.addr}
+	on := func() bool { return true }
+	mt.step(testCtx(t), on)
+	mt.step(testCtx(t), on)
+	mt.DropNow(testCtx(t))
+
+	g.mu.Lock()
+	nonces := append([][12]byte(nil), g.nonces...)
+	g.mu.Unlock()
+	if len(nonces) != 3 {
+		t.Fatalf("gateway saw %d PCP requests, want map, refresh, delete", len(nonces))
+	}
+	if nonces[1] != nonces[0] || nonces[2] != nonces[0] {
+		t.Errorf("the refresh or delete used a different nonce from the mapping: %x", nonces)
+	}
+}
+
+// A refresh that fails does not mean the router let the mapping go, so turning
+// remote access off afterwards must still remove it - or the port stays open.
+func TestDropAfterAFailedRefreshStillRemovesTheMapping(t *testing.T) {
+	g := newFakeGateway(t)
+	g.set(func(g *fakeGateway) { g.grant = time.Minute })
+	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099, Lifetime: 2 * time.Minute, testServer: g.addr}
+	on := true
+	enabled := func() bool { return on }
+	mt.step(testCtx(t), enabled)
+
+	g.set(func(g *fakeGateway) { g.pcpResult = 8; g.pmpResult = 3 }) // busy
+	mt.step(testCtx(t), enabled)
+	if _, ok := mt.Current(); ok {
+		t.Fatal("a failed refresh still reports a live mapping")
+	}
+
+	g.set(func(g *fakeGateway) { g.pcpResult = 0; g.pmpResult = 0 })
+	on = false
+	mt.step(testCtx(t), enabled)
+	if _, deletes := g.counts(); deletes != 1 {
+		t.Fatalf("gateway saw %d deletes after remote access went off, want 1", deletes)
+	}
+	// Removed, so nothing is left to remove again.
+	mt.step(testCtx(t), enabled)
+	if _, deletes := g.counts(); deletes != 1 {
+		t.Errorf("the mapping was removed again (%d deletes)", deletes)
+	}
+}
+
+// A router that answers none of the methods is asked less and less often, up
+// to once a lease, and as soon as it works the short retry comes back.
+func TestMaintainerBacksOffWhileNothingWorks(t *testing.T) {
+	g := newFakeGateway(t)
+	g.set(func(g *fakeGateway) { g.pcpResult = 1; g.pmpResult = 2 })
+	mt := &Maintainer{Proto: TCP, InternalPort: 8080, ExternalPort: 8099, Lifetime: 10 * time.Minute, testServer: g.addr}
+	on := func() bool { return true }
+
+	want := []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 10 * time.Minute, 10 * time.Minute}
+	for i, w := range want {
+		if got := mt.step(testCtx(t), on); got != w {
+			t.Errorf("failure %d: wait %v, want %v", i+1, got, w)
+		}
+	}
+
+	g.set(func(g *fakeGateway) { g.pcpResult = 0; g.grant = 10 * time.Minute })
+	mt.step(testCtx(t), on)
+	g.set(func(g *fakeGateway) { g.pcpResult = 1 })
+	if got := mt.step(testCtx(t), on); got != time.Minute {
+		t.Errorf("first failure after a success: wait %v, want the short retry again", got)
 	}
 }

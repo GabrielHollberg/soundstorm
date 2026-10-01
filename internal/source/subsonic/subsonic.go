@@ -215,7 +215,7 @@ func (e *envelope) check() error {
 // ordered and cut here; a search is returned whole for the merge to rank.
 // Listings are cached briefly so scrolling costs one fetch.
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
-	all, err := s.shelf.GetOrFetch(q.Text, func() ([]media.Item, error) { return s.fetchAll(ctx, q.Text) })
+	all, err := s.shelf.GetOrFetch(ctx, q.Text, func(fctx context.Context) ([]media.Item, error) { return s.fetchAll(fctx, q.Text) })
 	if err != nil {
 		return nil, err
 	}

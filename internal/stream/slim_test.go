@@ -177,3 +177,78 @@ func TestCraftedSongsDoNotPanic(t *testing.T) {
 		t.Error("an MP4 with an impossible box size was slimmed")
 	}
 }
+
+// A backend answering 503 says nothing about the song. Cached as "send it as
+// it is", the song would go out with its picture for an hour after the
+// backend came back.
+func TestABackendErrorIsNotRemembered(t *testing.T) {
+	orig, _ := testM4A()
+	down := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "audio/mp4")
+		http.ServeContent(w, r, "", time.Unix(1700000000, 0), bytes.NewReader(orig))
+	}))
+	t.Cleanup(srv.Close)
+	p := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, ok := slimGet(t, p, srv.URL, http.MethodGet, ""); ok {
+		t.Fatal("slimmed while the backend was down")
+	}
+	if l := p.slim.get("navidrome/x"); l != nil {
+		t.Fatalf("a 503 was cached: %+v", l)
+	}
+	down = false
+	if _, ok := slimGet(t, p, srv.URL, http.MethodGet, ""); !ok {
+		t.Error("not slimmed once the backend was back")
+	}
+}
+
+// A backend that ignores ranges answers 200, and that is remembered.
+func TestABackendWithoutRangesIsRemembered(t *testing.T) {
+	orig, _ := testM4A()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mp4")
+		w.Write(orig)
+	}))
+	t.Cleanup(srv.Close)
+	p := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, ok := slimGet(t, p, srv.URL, http.MethodGet, ""); ok {
+		t.Fatal("slimmed without ranges")
+	}
+	if l := p.slim.get("navidrome/x"); l == nil || l.ok {
+		t.Errorf("no negative layout cached: %+v", l)
+	}
+}
+
+// Expired and dropped keys leave the order with the map, so a stale entry in
+// the order cannot evict a fresh one put back under the same name.
+func TestSlimCacheOrderFollowsTheMap(t *testing.T) {
+	var c slimCache
+	c.put("a", &slimLayout{made: time.Now(), head: []byte("x")})
+	c.drop("a")
+	c.put("old", &slimLayout{made: time.Now().Add(-2 * slimKeep)})
+	if c.get("old") != nil {
+		t.Fatal("an expired layout was returned")
+	}
+	c.put("a", &slimLayout{made: time.Now()})
+	for i := 0; i < slimCacheSize-1; i++ {
+		c.put(strconv.Itoa(i), &slimLayout{made: time.Now()})
+	}
+	if len(c.order) != len(c.m) {
+		t.Fatalf("order holds %d keys, map %d", len(c.order), len(c.m))
+	}
+	if c.get("a") == nil {
+		t.Error("a fresh entry was evicted for a stale one")
+	}
+	if c.bytes != 0 {
+		t.Errorf("bytes = %d after the only head was dropped", c.bytes)
+	}
+	// Put again, a key moves to the back rather than appearing twice.
+	c.put("a", &slimLayout{made: time.Now()})
+	if len(c.order) != len(c.m) || c.order[len(c.order)-1] != "a" {
+		t.Errorf("re-put: order %d keys, map %d, last %q", len(c.order), len(c.m), c.order[len(c.order)-1])
+	}
+}

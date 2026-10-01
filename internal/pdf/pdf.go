@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // scanWindow is how much of each end of a large file is searched.
@@ -213,10 +214,8 @@ func fromXMP(raw []byte) (Metadata, bool) {
 // --- Info dictionary ---------------------------------------------------------
 
 var (
-	infoTitle   = regexp.MustCompile(`/Title\s*\(((?:[^()\\]|\\.)*)\)`)
-	infoAuthor  = regexp.MustCompile(`/Author\s*\(((?:[^()\\]|\\.)*)\)`)
-	infoSubject = regexp.MustCompile(`/Subject\s*\(((?:[^()\\]|\\.)*)\)`)
-	infoDate    = regexp.MustCompile(`/CreationDate\s*\(D:(\d{4})`)
+	infoRef  = regexp.MustCompile(`/Info\s+(\d+)\s+(\d+)\s+R`)
+	infoDate = regexp.MustCompile(`/CreationDate\s*\(D:(\d{4})`)
 )
 
 // fromInfoDict reads the trailer's Info dictionary, when it is not compressed.
@@ -224,26 +223,153 @@ var (
 // Only the uncompressed case, because the compressed one needs the whole
 // cross-reference machinery this package exists to avoid, and because every
 // real PDF measured that hid its Info also had nothing worth finding in it.
+//
+// The dictionary is found by the trailer's /Info reference rather than by the
+// first /Title in the file: in an uncompressed PDF the bookmarks come first,
+// and each of them has a /Title too, so a book came out called "Chapter 1".
 func fromInfoDict(raw []byte) (Metadata, bool) {
+	dict, found := infoObject(raw)
+	if !found {
+		// No trailer that names one (or the file is cut in the middle and
+		// it fell in the gap): the first /Title anywhere is the best guess.
+		dict = raw
+	}
 	var meta Metadata
-	if m := infoTitle.FindSubmatch(raw); m != nil {
-		meta.Title = decodePDFString(m[1])
+	if s, ok := dictString(dict, "Title"); ok {
+		meta.Title = s
 	}
-	if m := infoAuthor.FindSubmatch(raw); m != nil {
-		if a := decodePDFString(m[1]); a != "" {
-			meta.Authors = splitAuthors(a)
-		}
+	if a, ok := dictString(dict, "Author"); ok && a != "" {
+		meta.Authors = splitAuthors(a)
 	}
-	if m := infoSubject.FindSubmatch(raw); m != nil {
-		meta.Subject = decodePDFString(m[1])
+	if s, ok := dictString(dict, "Subject"); ok {
+		meta.Subject = s
 	}
-	if m := infoDate.FindSubmatch(raw); m != nil {
+	if m := infoDate.FindSubmatch(dict); m != nil {
 		meta.Date = string(m[1])
 	}
 	return meta, meta.Title != ""
 }
 
-// decodePDFString undoes PDF string escaping, and UTF-16 when marked.
+// infoObject returns the body of the object the trailer names as /Info. found
+// is false only when no trailer names one; a reference to an object that is
+// not here in plain text (it sits in a compressed object stream) is found but
+// empty, which says nothing rather than guessing at a bookmark.
+func infoObject(raw []byte) ([]byte, bool) {
+	// The last reference wins: an incremental update appends a new trailer,
+	// and with it, often, a new Info.
+	refs := infoRef.FindAllSubmatch(raw, -1)
+	if len(refs) == 0 {
+		return nil, false
+	}
+	ref := refs[len(refs)-1]
+	obj := regexp.MustCompile(`(?:^|[^0-9])` + string(ref[1]) + `\s+` + string(ref[2]) + `\s+obj\b`)
+	starts := obj.FindAllIndex(raw, -1)
+	if len(starts) == 0 {
+		return []byte{}, true
+	}
+	// Likewise the last definition of the object is the current one.
+	body := raw[starts[len(starts)-1][1]:]
+	if end := bytes.Index(body, []byte("endobj")); end >= 0 {
+		body = body[:end]
+	}
+	return body, true
+}
+
+// dictString finds /key in a dictionary and reads the string after it, as a
+// literal (...) or a hex <...> string.
+func dictString(dict []byte, key string) (string, bool) {
+	name := []byte("/" + key)
+	for from := 0; ; {
+		i := bytes.Index(dict[from:], name)
+		if i < 0 {
+			return "", false
+		}
+		at := from + i + len(name)
+		from = at
+		// /Title must not be the start of /TitleSomething.
+		if at < len(dict) && isNameByte(dict[at]) {
+			continue
+		}
+		for at < len(dict) && isSpace(dict[at]) {
+			at++
+		}
+		if at >= len(dict) {
+			return "", false
+		}
+		switch {
+		case dict[at] == '(':
+			if b, ok := literalString(dict[at+1:]); ok {
+				return decodePDFString(b), true
+			}
+		case dict[at] == '<' && (at+1 >= len(dict) || dict[at+1] != '<'):
+			if end := bytes.IndexByte(dict[at+1:], '>'); end >= 0 {
+				return pdfText(hexString(dict[at+1 : at+1+end])), true
+			}
+		}
+	}
+}
+
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == 0
+}
+
+func isNameByte(c byte) bool {
+	return !isSpace(c) && !bytes.ContainsRune([]byte("()<>[]{}/%"), rune(c))
+}
+
+// literalString returns the still-escaped contents of a literal string whose
+// opening parenthesis has been read. Parentheses inside need no escape when
+// they balance, so "(Dune (1965))" is all one string.
+func literalString(b []byte) ([]byte, bool) {
+	depth := 1
+	for i := 0; i < len(b); i++ {
+		switch b[i] {
+		case '\\':
+			i++
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return b[:i], true
+			}
+		}
+	}
+	return nil, false
+}
+
+// hexString decodes <...>: whitespace ignored, an odd last digit taken as
+// followed by a 0, as the format says.
+func hexString(b []byte) []byte {
+	var out []byte
+	var hi byte
+	half := false
+	for _, c := range b {
+		var v byte
+		switch {
+		case c >= '0' && c <= '9':
+			v = c - '0'
+		case c >= 'a' && c <= 'f':
+			v = c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			v = c - 'A' + 10
+		default:
+			continue
+		}
+		if half {
+			out = append(out, hi<<4|v)
+		} else {
+			hi = v
+		}
+		half = !half
+	}
+	if half {
+		out = append(out, hi<<4)
+	}
+	return out
+}
+
+// decodePDFString undoes literal-string escaping, then reads the text.
 func decodePDFString(in []byte) string {
 	var out []byte
 	for i := 0; i < len(in); i++ {
@@ -252,7 +378,7 @@ func decodePDFString(in []byte) string {
 			continue
 		}
 		i++
-		switch in[i] {
+		switch c := in[i]; c {
 		case 'n':
 			out = append(out, '\n')
 		case 'r':
@@ -261,21 +387,68 @@ func decodePDFString(in []byte) string {
 			out = append(out, '\t')
 		case 'b', 'f':
 			out = append(out, ' ')
+		case '\r':
+			// A backslash at the end of a line continues the string on the
+			// next, and stands for nothing.
+			if i+1 < len(in) && in[i+1] == '\n' {
+				i++
+			}
+		case '\n':
 		default:
-			out = append(out, in[i])
+			if c >= '0' && c <= '7' {
+				// \ddd, one to three octal digits: how a byte-order mark
+				// (\376\377) and anything else unprintable is usually written.
+				v := int(c - '0')
+				for n := 1; n < 3 && i+1 < len(in) && in[i+1] >= '0' && in[i+1] <= '7'; n++ {
+					i++
+					v = v*8 + int(in[i]-'0')
+				}
+				out = append(out, byte(v))
+				continue
+			}
+			out = append(out, c)
 		}
 	}
+	return pdfText(out)
+}
 
-	// A byte-order mark means the rest is UTF-16BE, which is how anything
-	// outside Latin-1 gets into a PDF string.
-	if len(out) >= 2 && out[0] == 0xFE && out[1] == 0xFF {
+// pdfText reads the bytes of a text string: UTF-16BE behind a byte-order mark,
+// which is how anything outside Latin-1 gets into a PDF string, UTF-8 behind
+// its own mark (PDF 2.0), and otherwise PDFDocEncoding.
+func pdfText(b []byte) string {
+	switch {
+	case len(b) >= 2 && b[0] == 0xFE && b[1] == 0xFF:
 		var codes []uint16
-		for i := 2; i+1 < len(out); i += 2 {
-			codes = append(codes, uint16(out[i])<<8|uint16(out[i+1]))
+		for i := 2; i+1 < len(b); i += 2 {
+			codes = append(codes, uint16(b[i])<<8|uint16(b[i+1]))
 		}
 		return strings.TrimSpace(string(utf16.Decode(codes)))
+	case len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF:
+		return strings.TrimSpace(strings.ToValidUTF8(string(b[3:]), "FFFD"))
+	case utf8.Valid(b):
+		// Plain ASCII, or a producer that wrote UTF-8 without saying so -
+		// which happens, and read as PDFDocEncoding would turn every accent
+		// into two wrong characters.
+		return strings.TrimSpace(string(b))
 	}
-	return strings.TrimSpace(string(out))
+	runes := make([]rune, 0, len(b))
+	for _, c := range b {
+		if c >= 0x80 && c <= 0xA0 && pdfDocHigh[c-0x80] != 0 {
+			runes = append(runes, pdfDocHigh[c-0x80])
+		} else {
+			runes = append(runes, rune(c)) // the rest is Latin-1
+		}
+	}
+	return strings.TrimSpace(string(runes))
+}
+
+// pdfDocHigh is where PDFDocEncoding parts from Latin-1: 0x80 to 0xA0.
+var pdfDocHigh = [...]rune{
+	0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x0192, 0x2044,
+	0x2039, 0x203A, 0x2212, 0x2030, 0x201E, 0x201C, 0x201D, 0x2018,
+	0x2019, 0x201A, 0x2122, 0xFB01, 0xFB02, 0x0141, 0x0152, 0x0160,
+	0x0178, 0x017D, 0x0131, 0x0142, 0x0153, 0x0161, 0x017E, 0xFFFD,
+	0x20AC,
 }
 
 // --- filenames ---------------------------------------------------------------

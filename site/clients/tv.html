@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TVs - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients/tv" data-root="..">
+<main>
+<h1>TVs</h1>
+<p class="lede">TV apps are the graveyard this project's notes warn about, and they were built
+anyway, knowingly, in a shape that keeps them small: Android-family TVs run the same Android app
+with the web page in a TV mode, and the Apple TV - which has no web view at all - gets one native
+app that follows the same rules.</p>
+
+<h2 id="families">Two platform families, two apps</h2>
+<table>
+  <tr><th>TV</th><th>App</th><th>How</th></tr>
+  <tr><td>Google TV, Android TV, Fire TV</td><td>The Android app (<code>android/</code>)</td><td>The web page, switched into TV mode</td></tr>
+  <tr><td>Apple TV</td><td><code>ios/SoundStormTV</code></td><td>Native SwiftUI over the same <code>/api</code></td></tr>
+</table>
+<p>The scope on both is watching, listening, photos and books. Settings, uploads and account
+management stay on a phone or computer.</p>
+
+<h2 id="android-tv">Android-family TVs</h2>
+<p>The Android app's manifest adds the <code>LEANBACK_LAUNCHER</code> category, a TV banner (drawn by
+<code>scripts/make-icons.py</code>, like every icon), and marks leanback and a touchscreen as not
+required, so phones install the app exactly as before. When the app finds itself on a television, the
+web view's user agent gains <code>SoundStormTV/1</code> and the page does the rest. In a browser,
+<code>?tv=1</code> turns the TV mode on for testing and <code>?tv=0</code> off.</p>
+
+<h3 id="focus">A remote instead of a finger</h3>
+<p>A TV has no touch and no mouse, only arrows, OK and Back. The TV mode (<code>tvRemote</code> in
+<code>app.js</code>, <code>html.tv</code> in the stylesheet) handles that:</p>
+<ul>
+  <li><strong>The arrows move a focus</strong> to whatever can be pressed nearest in that direction,
+  scoring the gap along the arrow plus three times the offset to the side. Only the top layer is
+  reachable - a menu over Now Playing, Now Playing over the library - and closing something puts the
+  focus back where it was.</li>
+  <li><strong>OK acts on release</strong>, so holding it for 450ms opens the menu a hold opens on a
+  phone. It is timed rather than counted in key repeats, because remotes differ in whether a held
+  button repeats.</li>
+  <li><strong>A text box reached with the arrows is only highlighted</strong>, read-only until OK.
+  Focused for real, it brought up the TV's keyboard at once, which took the arrows - the first
+  emulator run could not leave the search box.</li>
+  <li><strong>The TV's web view reports <code>pointer: coarse</code></strong>, like a phone, so every
+  touch rule applied, including hiding buttons until a hold a remote cannot do.
+  <code>touchScreen()</code> in JavaScript and <code>html:not(.tv)</code> in CSS keep touch behaviour
+  off a TV.</li>
+  <li><strong>A white ring and a slightly grown cover</strong> mark the focus, with padding in
+  sideways rows so the ring is not clipped, and margins clear of overscan.</li>
+</ul>
+
+<h3 id="films">Films: the whole screen</h3>
+<p>A film is the whole screen with no browser controls - their small buttons were out of reach of a
+projector's remote. It opens with the picture focused: OK pauses and plays, left and right skip ten
+seconds, Back closes. The name, the subtitle and audio pickers and a slim timeline show along the foot
+when a key is pressed or it is paused, and fade after four seconds. Down reaches the pickers; up
+returns to the film, which needed handling by hand because the film fills the screen and spatial
+navigation never finds it "above" anything.</p>
+
+<h3 id="now-playing">Now Playing on a TV</h3>
+<p>Now Playing on a projector was reported as laggy and as not fitting. On a TV the visualizers draw
+at 0.6 of a CSS pixel and 30 frames a second with half the particles, since the drawing runs on the
+TV's own modest processor. With a look on screen the layout is the TV one: title centred at the top,
+controls and timeline at the bottom, nothing that scrolls.</p>
+<ul>
+  <li><strong>The buttons fade after four seconds</strong> without the remote, leaving the music, its
+  animation and the title. The next press only brings them back, so nobody skips a song by pressing a
+  key to see the controls.</li>
+  <li><strong>No play, previous or next buttons.</strong> OK plays and pauses; left and right change
+  song while the controls are faded, and move ten seconds while the timeline shows.</li>
+  <li><strong>An audiobook's</strong> left and right go by chapters.</li>
+</ul>
+<div class="warn">Opening Looks once froze the app until it was restarted. The fade's watcher
+observed Now Playing's classes and woke the buttons by removing <code>tv-idle</code> - and removing a
+class that is not there still rewrites the attribute, which the watcher saw and answered by waking
+again, for ever. Any MutationObserver that writes to what it watches must change a class only when it
+would actually change.</div>
+
+<h3 id="no-mini">No mini-player, no scrolling</h3>
+<p>The phone's floating mini-player is gone on a TV: a remote reached it only by scrolling to the foot
+of a page, and it covered the bottom of every one. Its place is the side bar's first entry while
+something plays, showing the song's cover; OK opens Now Playing. No view screen scrolls - Now Playing,
+a film, a photo, a book - after the projector's audiobook screen was found scrolled 120px down. A
+browser scrolls even an <code>overflow: hidden</code> box to bring a focused element into view, so
+those views use <code>overflow: clip</code>, which cannot be scrolled at all.</p>
+<p>Photos no longer stop the music. On a TV, down over a photo or a book pauses and resumes the music,
+with a message saying which; left and right step photos and turn pages.</p>
+
+<h3 id="setup">Two bugs from the first real install</h3>
+<p>Installed on a projector and opened at its LAN address, the app sat on the loading spinner: the
+page checked it could reach the install's secure name and moved there, and the app took the move for a
+link out of SoundStorm and refused it. A move to https on the install's own names, same port, is now
+followed. And on Android 16, Back from inside a menu closed the whole app until the app registered the
+new back callback (see <a href="android.html#back">Android</a>).</p>
+
+<h2 id="apple-tv">Apple TV: a native app</h2>
+<p>tvOS has no web view, so the page cannot be wrapped as it is on Android TV. The owner decided on a
+real Apple TV app rather than relying on AirPlay. It is a second target in the iPhone project, written
+in SwiftUI, with the same bundle id as the iPhone app so that Universal Purchase makes them one App
+Store listing. What carries over is not code but every behaviour already settled for Android TV - OK
+plays and pauses, buttons fade after four seconds, the playing song first in the side bar, photos and
+books keep the music playing - so the app was built to those rules rather than working them out
+again.</p>
+<p>It talks to the same <code>/api</code> the page uses, with the server's session cookie in the shared
+cookie store. One trap: <strong>AVPlayer does not read that cookie store</strong>, so every stream is
+given the cookies explicitly (<code>AVURLAssetHTTPCookiesKey</code>), or the server refuses it.</p>
+
+<h3 id="apple-features">What it does</h3>
+<table>
+  <tr><th>Area</th><th>How</th></tr>
+  <tr><td>Music</td><td><code>AVQueuePlayer</code> with the next song loaded behind the one playing, for gapless playback. Home and Music rows from the page: mixes, radio and moods (topping a station up as the page does), playlists, artists, albums. A play counts at half a song or four minutes.</td></tr>
+  <tr><td>Now Playing</td><td>One focusable view taking the remote's presses itself, so the focus engine cannot wander. Holding OK opens the menu: favorite, playlist, lyrics, Up next, looks, sleep timer.</td></tr>
+  <tr><td>Films and TV</td><td><code>AVPlayerViewController</code> as it is. Direct files or Jellyfin's HLS through <code>/api/hls</code>. Places shared with the page through <code>/api/book/progress</code>; Up next counts eight seconds into the next episode.</td></tr>
+  <tr><td>Subtitles</td><td>WebVTT read into cues and drawn by the app over the picture (<code>SubtitleOverlay</code>), since AVPlayer cannot attach a separate subtitle file to a stream. Subtitles and Audio are menus in the player's own transport bar.</td></tr>
+  <tr><td>Photos</td><td>On this day and the camera roll, a full-screen viewer at preview size; left and right step, down pauses the music.</td></tr>
+  <tr><td>Audiobooks</td><td>A book as its files on one clock, the place shared with Audiobookshelf, the account's speed, chapters, and left and right by chapter.</td></tr>
+  <tr><td>Reader</td><td>A native EPUB reader (<code>EpubBook</code>, <code>EpubText</code>) laying chapters into pages with TextKit, reading and writing the same CFI as the web reader. PDFs drawn a page at a time by Core Graphics.</td></tr>
+  <tr><td>Read Along</td><td>Storyteller's synced copy, with the sentence at the player's time lit and followed, as the web reader does.</td></tr>
+  <tr><td>Categories</td><td>Every tab's pills, in the account's own order and without the ones put away.</td></tr>
+</table>
+
+<h3 id="apple-viz">All the visualizers, redrawn</h3>
+<p>The looks were the largest part. All twelve visualizers were ported from the page's JavaScript into
+SwiftUI <code>Canvas</code> drawing (<code>Visualizers.swift</code>, <code>Visualizers2.swift</code>,
+<code>Visualizers3.swift</code>, and Storm in <code>Storm.swift</code>), with the page's TV counts and
+the same frame loop (<code>VizEngine</code>). Where the page fades a trail canvas, which
+<code>Canvas</code> has no equivalent for, particles keep their last few places and draw them fading.</p>
+<p>The beats come from the server first, exactly as on the page:
+<code>/api/music/beats</code> returns the server's analysis, and the TV gets the page's current lightning
+rule with it. Only when the server has not heard a song does the TV analyse it itself
+(<code>SongAnalysis</code>, the page's analysis ported step by step). On the page's own test track it
+found all 120 beats with a mean error of 6ms.</p>
+
+<h3 id="signing">Signing</h3>
+<p>Release builds are signed by hand with a distribution profile. Automatic signing archives with a
+development profile first, which needs a registered Apple TV, and the team had none it could pair. So
+the Release configuration uses the Apple Distribution certificate and an App Store profile made on the
+developer site, and an export options file in <code>ios/scripts</code> uses it. When the profile
+expires, a new one is made under the same name and nothing in the project changes. An unsigned
+archive was tried and is no good: the Organizer refuses it as having no team.</p>
+<div class="note">Much of the Apple TV app was checked on the tvOS simulator against a stand-in server
+that refuses any stream without the session cookie, and the reader against the real server code.
+The simulator has no remote, so the press-driven parts - Now Playing's arrows, the hold menus - were
+written to the rules but checked less than the rest.</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

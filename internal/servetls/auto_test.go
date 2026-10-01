@@ -652,3 +652,82 @@ func TestARestartDuringANameServiceOutageKeepsTheRemoteName(t *testing.T) {
 		t.Error("an unanswered check should be tried again soon, not at the next half-day check")
 	}
 }
+
+// Turning remote access off while the server is down must still take the
+// public record down after the restart, though nothing is in memory: the
+// certificate on disk names it. And a failed removal is tried again, rather
+// than forgotten with the record left pointing at the house.
+func TestRemoteAccessOffAfterARestartTakesThePublicNameDown(t *testing.T) {
+	const publicName = "abcdefghij.net.soundstorm.dev"
+	dns := &memDNS{records: map[string]string{}}
+	svc := &names.Server{Secret: []byte("a-secret-that-is-long-enough-to-use"), Zone: "soundstorm.dev", Label: "home", DNS: dns, Log: quietLog()}
+	h := svc.Handler()
+	var clears, clearFails atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/public" {
+			switch r.Method {
+			case http.MethodPut:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"name":"` + publicName + `","ip":"203.0.113.7"}`))
+				return
+			case http.MethodDelete:
+				if clearFails.Add(-1) >= 0 {
+					http.Error(w, `{"error":"busy"}`, http.StatusBadGateway)
+					return
+				}
+				clears.Add(1)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	authority := newStubAuthority(t)
+	dir := t.TempDir()
+	load := func(remote bool) *Server {
+		s, err := Load(Config{
+			Mode: ModeAuto, Dir: dir, Hosts: []string{"192.168.0.19"},
+			NamesURL: srv.URL, Remote: remote, Port: 8099, Log: quietLog(),
+		})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		s.auto.newACME = func(*ecdsa.PrivateKey) issuer { return authority }
+		return s
+	}
+	if s := load(true); s.auto.step(context.Background()) != nil || s.RemoteName() != publicName {
+		t.Fatalf("first step did not publish the remote name")
+	}
+
+	// Restarted with remote access off, and the first removal fails.
+	clearFails.Store(1)
+	again := load(false)
+	if err := again.auto.step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if clears.Load() != 0 {
+		t.Fatal("the removal was expected to fail")
+	}
+	if again.auto.publicName != publicName || !again.auto.recheckSoon {
+		t.Fatalf("a failed removal was forgotten (publicName %q, recheckSoon %v)",
+			again.auto.publicName, again.auto.recheckSoon)
+	}
+	if again.RemoteName() != "" {
+		t.Errorf("RemoteName = %q with remote access off", again.RemoteName())
+	}
+
+	if err := again.auto.step(context.Background()); err != nil {
+		t.Fatalf("second step: %v", err)
+	}
+	if clears.Load() != 1 {
+		t.Fatalf("the public name was not taken down on the retry (%d removals)", clears.Load())
+	}
+	if err := again.auto.step(context.Background()); err != nil {
+		t.Fatalf("third step: %v", err)
+	}
+	if clears.Load() != 1 {
+		t.Errorf("the public name was taken down again on a later step (%d removals)", clears.Load())
+	}
+}

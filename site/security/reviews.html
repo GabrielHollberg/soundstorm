@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The review passes - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="security/reviews" data-root="..">
+<main>
+<h1>The review passes</h1>
+<p class="lede">Security was reviewed ten times as the project grew, most passes by several reviewers
+at once. The later ones were run <em>blind</em>: reviewers saw the code and nothing else, because the
+eyes that had not absorbed the project's reasoning were the ones that found the real bugs.</p>
+
+<div class="why">Every finding was checked against the code before anything changed, and the serious
+ones were reproduced first - a fix confirmed only by reasoning is the kind that turned out not to
+work. Several did not: two read deadlines were silently no-ops for months, and the test that was
+meant to catch it built the handler without the middleware that broke it.</div>
+
+<h2 id="early">Before the internet: passes one to three</h2>
+<p>The first review came before remote access was built. It found that a path is an instruction to a
+backend holding an admin credential - <code>/api/hls/jellyfin/%252e%252e/System/Info</code> reached
+Jellyfin's admin API through a double-decoded dot segment - and that one Jellyfin account serving
+films and TV let an id cross between them. It added the first-account setup code, per-account
+guess limits, origin-based CSRF checks, no-overwrite uploads, a disk reserve, hashed session keys and
+validated reading positions.</p>
+<p>The second, broader pass found little. The third found the largest thing in the whole series and it
+was architectural: <code>recover()</code> appeared nowhere, so a panic in any goroutine SoundStorm
+started - per-source search, the ebook scanner, provisioning, certificate renewal - took the whole
+process down. Every such loop now recovers.</p>
+
+<h2 id="reader">The reader, three times</h2>
+<p>The same class of bug was found three times through three doors, which is why the reader's
+defences are layered:</p>
+<ol>
+  <li><strong>Fourth pass:</strong> a book's chapter pointing an absolute <code>&lt;script src&gt;</code>
+  at the server's own book-resource endpoint ran under <code>script-src 'self'</code>, as the owner.
+  Fixed by refusing non-fetch destinations and never serving a script type.</li>
+  <li><strong>Fifth pass:</strong> the same through a cover - a declared cover named <code>x.js</code>
+  was served as JavaScript. Fixed centrally for every stream path.</li>
+  <li><strong>Sixth pass:</strong> a chapter loading the app's own <code>app.js</code>, which ran against
+  the book's copy of the page's ids. Fixed by stripping scripts from every chapter before rendering
+  and refusing to run the app in a frame.</li>
+</ol>
+
+<h2 id="remote">After remote access: passes five to seven</h2>
+<ul>
+  <li><strong>Fifth:</strong> anyone could switch off renewals for every install by spending the name
+  service's daily challenge budget; cookie tossing from another install's trusted name; state-file
+  growth by any member; OPDS ids as an authenticated GET anywhere; an EPUB directory that cost four
+  times the file's size in memory; and the discovery that no read deadline behind the logging
+  middleware had ever worked.</li>
+  <li><strong>Sixth:</strong> links out of a book kept <code>window.opener</code>; a zip64 gap; the
+  Linux installer writing a router's answer into <code>.env</code> unchecked; any member restarting
+  read-along syncs; Jellyfin's trickplay tiles carrying the admin token.</li>
+  <li><strong>Seventh:</strong> the Plex import could reach the compose network; any app on a phone
+  could repoint the Android app through a leftover launch extra; the published APK was debuggable;
+  covers and song headers that exhausted memory; downloads carried over to the next person on a
+  shared device.</li>
+</ul>
+
+<h2 id="later">Passes eight to ten</h2>
+<ul>
+  <li><strong>Eighth (whole project):</strong> <code>/static/</code> served the app without its policy;
+  Go and Alpine versions past support; exported volumes world-readable; no ceiling on book and picture
+  reads in flight; Apple TV crashes from a malicious server.</li>
+  <li><strong>Ninth (eight reviewers, every file):</strong> a 16MB PDF that took 2.6GB to read its
+  title; a playlist import that pinned the CPU on a title of brackets; a JPEG of thousands of empty
+  scans; Jellyfin's subtitle manifest leaking its token by another parameter; a panicking shelf fetch
+  that hung every later request; the setup log carrying the setup code.</li>
+  <li><strong>Tenth (nine reviewers, every file):</strong> a small photo zip that ran the server out of
+  memory at every start; phone backup carrying on into the next person's folder on a shared phone;
+  backup over plain http when a secure name existed; one member slowing everybody through list
+  writes and unlimited video conversions; quota bypass by an upload without a length.</li>
+</ul>
+
+<h2 id="lessons">What the passes taught</h2>
+<ul>
+  <li>Blind reviewers find more. Context is what makes a reviewer accept a design's assumptions.</li>
+  <li>Denial of service by a signed-in member is the most common remaining class: not one expensive
+  operation, but nothing capping how many run at once.</li>
+  <li>The same bug returns through a different door; fix the class, centrally, not the instance.</li>
+  <li>The fail-open default deserves a test that walks every route - the access check has one.</li>
+</ul>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

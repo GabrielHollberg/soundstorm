@@ -2150,10 +2150,14 @@ function readBook(item) {
   }
   // The reader is a module; if it failed to load, handing over the file still
   // beats doing nothing.
-  downloadBook(item);
+  saveBookFile(item);
 }
 
-function downloadBook(item) {
+// saveBookFile hands the book's file to the browser to save. It shared a name
+// with downloadBook further down (which keeps a book in the offline cache),
+// and the later one won for every caller: the reader's Download button did
+// nothing anyone could see (a review).
+function saveBookFile(item) {
   const format = (item.extra && item.extra.format) || 'epub';
   const author = (item.creators && item.creators[0]) || '';
 
@@ -2171,7 +2175,7 @@ function downloadBook(item) {
 }
 
 // The reader's download button needs the item it is showing.
-window.soundstormDownloadBook = downloadBook;
+window.soundstormDownloadBook = saveBookFile;
 
 // hls.js is 620KB, so it is fetched the first time a video actually needs a
 // transcoded stream and never for music, books, or films that play directly.
@@ -2204,9 +2208,18 @@ async function playVideo(item, options = {}) {
   stopAudio();
   detachHls();
   hideUpNext();
+  // Which play this is: closing the film, or starting another, while this
+  // one waits on the server makes its answer stale - it used to start the
+  // film playing behind a closed player, or the older of two (a review).
+  const token = state.videoToken = (state.videoToken || 0) + 1;
+  const current = () => token === state.videoToken;
+  const player = $('video-player');
+  // The last film's source goes first, or a saved place arriving early was
+  // applied to the film going out, and the new one started at 0:00.
+  player.removeAttribute('src');
+  player.load();
   startWatching(item);
 
-  const player = $('video-player');
   $('video-caption').textContent = [item.title, subtitleFor(item)]
     .filter(Boolean)
     .join(' — ');
@@ -2216,6 +2229,7 @@ async function playVideo(item, options = {}) {
   // quality to choose.
   show($('quality-picker'), false);
   if (isDownloaded(item) && (await playKeptVideo(item, player))) return;
+  if (!current()) return;
 
   // Ask before building a player: the answer decides which one to build.
   // The quality is this device's setting unless one was picked in the
@@ -2226,6 +2240,7 @@ async function playVideo(item, options = {}) {
   const audioQuery = `?vq=${vq}` + (options.audio !== undefined ? `&audio=${options.audio}` : '');
   const { ok, body } = await api(
     `/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}${audioQuery}`);
+  if (!current()) return;
   const mode = ok && body ? body.mode : 'direct';
   const url = ok && body && body.url ? body.url : streamPath(item);
 
@@ -2247,6 +2262,7 @@ async function playVideo(item, options = {}) {
 
   try {
     const Hls = await loadHls();
+    if (!current()) return;
     if (!Hls || !Hls.isSupported()) throw new Error('this browser cannot play transcoded video');
 
     hls = new Hls({ enableWorker: true });
@@ -2321,6 +2337,7 @@ $('subtitle-select').addEventListener('change', (event) => {
 
 function closeVideo() {
   hideUpNext();
+  state.videoToken = (state.videoToken || 0) + 1;
   // A quality picked in the player was for this sitting only.
   state.videoQuality = null;
   // Before the source goes: once it does, currentTime is back to nothing.
@@ -2545,7 +2562,9 @@ function startStream(item) {
     if (player.readyState >= 2) return; // it has started, or can
     rememberSlowLink();
     showToast('Slow connection - streaming at a lower quality for now.');
-    startAt(playPath(item), 0);
+    // From where it is, not the top: a jump made while it was starting
+    // was thrown away.
+    startAt(playPath(item), player.currentTime || 0);
   }, SLOW_START_MS);
 }
 
@@ -2651,12 +2670,19 @@ function startAt(url, offset) {
     if (audio.adoptPaused) { audio.adoptPaused = false; return; }
     player.play().catch(() => {});
   };
+  // An earlier jump still waiting for its file is let go: started again
+  // before the metadata came, it fired on the next file and moved that to
+  // the old place (a review).
+  if (audio.pendingSeek) player.removeEventListener('loadedmetadata', audio.pendingSeek);
+  audio.pendingSeek = null;
   if (offset > 0) {
-    player.addEventListener('loadedmetadata', () => {
+    audio.pendingSeek = () => {
+      audio.pendingSeek = null;
       // Landing exactly on the end would fire 'ended' and skip the chapter.
       player.currentTime = Math.min(offset, Math.max(0, player.duration - 1));
       begin();
-    }, { once: true });
+    };
+    player.addEventListener('loadedmetadata', audio.pendingSeek, { once: true });
   } else {
     begin();
   }
@@ -4504,10 +4530,13 @@ const PLAYLIST_SORTS = [
 ];
 
 async function showPlaylist(id) {
+  const seq = ++state.searchSeq;
   const view = $('playlists-view');
   view.dataset.open = id;
   startLoading(view);
   const { ok, body } = await api(`/api/playlists/${encodeURIComponent(id)}`);
+  // Left for another page while this one loaded: its answer is not wanted.
+  if (seq !== state.searchSeq) return;
   if (!ok || !body) {
     showPlaylists();
     return;
@@ -5417,9 +5446,11 @@ function playButtons(getSongs) {
 }
 
 async function showAlbum(sourceId, id) {
+  const seq = ++state.searchSeq;
   const view = $('music-view');
   startLoading(view);
   const { ok, body } = await api(`/api/music/albums/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
+  if (seq !== state.searchSeq) return;
   if (!ok || !body) {
     view.replaceChildren(backButton('Albums', () => runSearch()));
     $('status').textContent = 'Could not load that album.';
@@ -5506,9 +5537,11 @@ function trackRow(song, index, songs) {
 }
 
 async function showArtist(sourceId, id) {
+  const seq = ++state.searchSeq;
   const view = $('music-view');
   startLoading(view);
   const { ok, body } = await api(`/api/music/artists/${encodeURIComponent(sourceId)}/${escapeId(id)}`);
+  if (seq !== state.searchSeq) return;
   if (!ok || !body) {
     view.replaceChildren(backButton('Artists', () => runSearch()));
     $('status').textContent = 'Could not load that artist.';

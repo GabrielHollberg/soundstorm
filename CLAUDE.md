@@ -4046,6 +4046,85 @@ capped and decoded at 300-600px; the iPhone opens Safari only for a tapped
 link and refuses a main-frame blob or data page (downloads aside). Both apps
 build; the iPhone UI tests pass; not run on the TV itself.
 
+**A review for bugs, not security (2026-10-01)**: reviewers per surface,
+every finding checked before changing. Fixed on the PC:
+
+- **Server:** Jellyfin conversions were never stopped (the stop call was
+  dead code) - a play session asked for nothing in three minutes is now
+  stopped (`hlsSessions.watch`, `source.PlaySessionStopper`); a TV episode
+  looked up by id came back as nothing (Continue and favorites); MP4s named
+  by ffprobe's container list went to HLS; a shared shelf fetch ran on its
+  first caller's context, failing everybody waiting when that request went
+  away, and one begun before a rescan was cached after it (`ShelfCache`
+  takes a context, `gen`); a backend set up but not yet answering was set
+  up again (now reconnects); a person's Audiobookshelf account made twice at
+  once, or made and not recorded when the request ended (`absMu`, its own
+  context); every photo request waited on one lock while somebody's Immich
+  account was made; a scan asked for during a scan was dropped (`again`); a
+  read-along queue reorder stopped half way left books cancelled; last
+  year's artists counted as new in the year recap; the rescan timer could
+  fire twice; deleting the last PDF in a documents folder took the folder;
+  search ranking dropped accents and non-Latin scripts (`foldAccent`);
+  history grew past its cap after a clock change; ID3v2.2 tags (old iTunes
+  MP3s) were not read, v2.4 unsynchronised and multi-value frames went
+  wrong; a PDF took a bookmark's title; PDF octal and hex strings; a 503
+  cached as "send it as it is" for an hour and the slim cache's order going
+  stale; the training model written when it lost to the rule; the local
+  fallback certificate never renewed while running; one refused play
+  blocked ListenBrainz scrobbling for good; turning remote access off after
+  a failed refresh or a restart could leave the router port and public name
+  up; PCP refreshes with a new nonce; port mapping retried every five
+  minutes forever with a warning each time.
+- **Web app:** the reader's Download button did nothing visible (two
+  functions named `downloadBook`; the file one is `saveBookFile`); a film
+  closed while loading played on behind the closed player (`videoToken`);
+  a late album, artist, playlist or show page replaced the one on screen;
+  an audiobook jump landed on the next file (`audio.pendingSeek`); the
+  slow-start fallback restarted a song at 0:00; a book closed while opening
+  carried on (`opening`); the reader took keys meant for Now Playing.
+- **Android 0.18:** one photo the server refused stopped the whole backup
+  for good (now passed over and named); the new-photo trigger fired only
+  once (KEEP found its own running job); Try again after the home name
+  failed kept loading the away name; every pause counted as an interruption;
+  a destroyed page kept being written to; a stopped player started the next
+  song by itself.
+- **Docs:** README, the guide, developers, roadmap, remote-access,
+  names-service, both app READMEs and two folder placeholders brought up to
+  date (photos, apps, film quality, looks, audiobooks, remote access).
+
+**The documentation website is `site/`** - plain HTML, no build, opens from
+disk. `site/assets/nav.js` holds the whole map (sections and pages) and
+builds the header, side bar, breadcrumb, table of contents and next and
+previous; a page is only its `<main>`, with `<body data-page="section/page"
+data-root="..">`. Adding a page means a file and a line in `SITE`. It was
+written from this file and the code; keep it in step when a decision changes,
+as this file is.
+
+**Left from this review:** setup that fails half way through still loses the
+backend's password (the roadmap's first item); stored member tokens are not
+cleared when a backend is set up again; the web app's Escape is handled by
+seven listeners rather than one top-layer path; object URLs for downloaded
+songs, audiobooks and films are not revoked; dead CSS; app.js wants splitting
+into modules; Navidrome's whole library is fetched twice per cache window.
+
+**For the Mac, from this review (Apple TV and iPhone):**
+- `Player.swift:217` `resume()` after the last item ended plays an empty
+  AVQueuePlayer and shows playing: reload the item when `items()` is empty.
+- `Player.swift`: no observation of item failure, `timeControlStatus` or
+  audio-session interruptions - a 401 or a Siri pause shows "playing" with
+  no sound (VideoSession already does this for films).
+- `play(book:)` does not save the outgoing book; "end of chapter" never
+  stops a book without chapters; the system Now Playing keeps the old
+  chapter name (publish on chapter change); `SongListener.listen` writes an
+  earlier song's tempo without checking it is still current.
+- `API.perform` treats 401 as an ordinary error: route it to sign-in; at
+  launch a network error drops to Connect rather than "retrying".
+- `VideoPlayer.swift:145`: a failed audio switch ends the film; show a
+  message and keep playing.
+- iPhone: fall back to the `.net` twin when a saved `.home` name fails away
+  from home, as Android does; `present(alert)` while something is presented
+  never resumes the page's `confirm()`.
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

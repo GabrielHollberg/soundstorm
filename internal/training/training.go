@@ -152,7 +152,8 @@ func Prior(beatsDir, sourceID, id string) float64 {
 }
 
 // Run hears every recording and reports, writing the model to dir when one
-// was fitted. hear is how a song is heard (Hear, in the real run).
+// was fitted and it beat today's rule on songs it had not seen. hear is how a
+// song is heard (Hear, in the real run).
 func Run(ctx context.Context, dir string, recs []Recording, hear func(Recording) (*Heard, error), out func(string)) error {
 	return run(ctx, dir, recs, hear, out, false)
 }
@@ -194,6 +195,12 @@ func run(ctx context.Context, dir string, recs []Recording, hear func(Recording)
 	}
 	report, model := Evaluate(songs)
 	out(report)
+	// Only a model that beat today's rule on songs it had not seen is worth
+	// building in; a fitted one that did not would make the looks worse.
+	if model != nil && !modelBeatsRule(songs) {
+		out("model not written: it did not beat today's rule")
+		model = nil
+	}
 	if model != nil {
 		raw, err := json.MarshalIndent(model, "", "  ")
 		if err != nil {
@@ -206,4 +213,29 @@ func run(ctx context.Context, dir string, recs []Recording, hear func(Recording)
 		out("model written to " + p)
 	}
 	return nil
+}
+
+// modelBeatsRule scores the model as Evaluate does - each tapped song by a
+// model fitted on the others - against today's rule on the same songs, and
+// reports whether it did strictly better overall.
+func modelBeatsRule(songs []*Song) bool {
+	var tapped []*Song
+	for _, s := range songs {
+		if len(s.Rec.Taps) > 0 {
+			tapped = append(tapped, s)
+		}
+	}
+	if len(tapped) < 2 {
+		return false
+	}
+	var ruleAll, modelAll score
+	for i, s := range tapped {
+		ruleAll.add(match(ruleStrikes(s), s.Targets))
+		others := append(append([]*Song{}, tapped[:i]...), tapped[i+1:]...)
+		if m := fit(others); m != nil {
+			modelAll.add(match(modelStrikes(m, s), s.Targets))
+		}
+	}
+	f := func(a score) float64 { return ratio(2*a.found, 2*a.found+a.extra+a.missed) }
+	return f(modelAll) > f(ruleAll)
 }

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Favorites, playlists, history - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/collections" data-root="..">
+<main>
+<h1>Favorites, playlists, history</h1>
+<p class="lede">Almost nothing in SoundStorm differs per person: a search returns the same results
+and a film is the same bytes whoever asks. The exceptions are what a person collects and does -
+favorites, playlists, what they played and when, their own covers, their preferences. Those live
+in <code>internal/collections</code>, one file per person.</p>
+
+<h2 id="why-ours">Why SoundStorm keeps them, not Navidrome</h2>
+<p>Navidrome has favorites and playlists built in. But the household shares one Navidrome
+account - an account each would be several times the provisioning for no visible gain - so
+anything stored there would be everybody's at once. The same reasoning keeps film positions in
+SoundStorm rather than Jellyfin. The notes had always said "revisit when favorites reach the UI";
+this is that moment, answered by keeping them above the backends rather than giving every person
+a backend account.</p>
+
+<h2 id="files">A file per person, not state.json</h2>
+<p><code>state.json</code> holds credentials, accounts and sessions. It is rewritten whole on every
+sign-in and session change, under a lock every request takes. A household's playlists in it would
+slow all of those. So each person has a collections file of their own: one change writes one small
+file, to a temporary name, renamed over.</p>
+<table>
+  <tr><th>Limit</th><th>Value</th></tr>
+  <tr><td>Favorites</td><td>5,000</td></tr>
+  <tr><td>Playlists</td><td>200, up to 5,000 songs each, 25,000 songs in all</td></tr>
+  <tr><td>Names</td><td>100 characters</td></tr>
+  <tr><td>Listening history</td><td>5,000 songs (count, first and last play)</td></tr>
+  <tr><td>Own covers</td><td>5,000 covers, 1,000 pictures, 300 MB</td></tr>
+</table>
+<p>Writes are rate limited per person (a burst of 60, then one a second) because the file is
+rewritten under a lock everyone shares - one member scripting changes must not slow the house.
+Removing a person removes their file.</p>
+
+<h3>Snapshots, not ids alone</h3>
+<p>Each entry is a snapshot of the item as its backend described it, fetched through
+<code>source.ItemGetter</code> - never what the browser sent. That makes a list of 500 songs one
+file read rather than 500 backend calls. Playing still goes by id, so a deleted song fails to
+play rather than playing something else. Lists are filtered through the registry every time they
+are shown, so a favorite on a shelf an account has since lost is hidden: a list is not a way back
+in.</p>
+<p>Favorites are for anything; playlists are songs only. A playlist plays as a queue, and a
+playlist of films has no player to play it in.</p>
+
+<h2 id="playlists">Playlists: order and sort</h2>
+<p>A playlist holds each song once. Adding one already there is a 409 ("already in this
+playlist"); adding several skips those and says how many. Each playlist has its own sort: A to Z
+(the default, stored as nothing), Artist, Recently added, or Custom order. <code>Items</code>
+always keeps the order the songs were added and dragged into, whatever the sort, so choosing
+Custom again brings a hand-made order back. The server returns songs already sorted
+(<code>Playlist.Ordered</code>), each carrying its position in <code>Items</code> for removing and
+moving. Removing has an Undo: the add endpoint answers the new count, so the song goes back and is
+moved into place.</p>
+<p>A playlist can have a picture of its own, stored like a song's own cover under the key
+<code>playlist:&lt;id&gt;</code>, accepted only for the person's own playlist and deleted with it.</p>
+
+<h2 id="m3u">Importing M3U</h2>
+<p>Asked for as bringing somebody's playlists across from another player. Most players can write
+an M3U, so <code>POST /api/playlists/import</code> takes one as the request body (the app decodes
+UTF-8 strictly, else Windows-1252, for old iTunes files). Each song is found on the music shelf:</p>
+<ol>
+  <li>By the tail of its path - the last three, two or one segments - so the same files under
+  another root match. <code>source.SongFileLister</code> answers from the folder view's cached song
+  list with real paths.</li>
+  <li>Else by artist and title from <code>#EXTINF</code> (or read off an
+  <code>Artist/Album/01 Title</code> path), with case, punctuation, a leading "The" and a trailing
+  "(Remastered)" set aside, and the length choosing between versions.</li>
+  <li>A file name alone, or a title alone, must agree on length when one is given.</li>
+</ol>
+<p>What is not found is named back to the person, never guessed. A file becomes one playlist in
+one write, in the file's order. Names are cut to 300 characters before matching: stripping
+trailing brackets one pass at a time over a title of thousands of "()" once pinned the CPU for
+minutes.</p>
+
+<h2 id="plex">Importing straight from Plex</h2>
+<p>Plexamp keeps playlists on the Plex server, which has no export button - so the M3U route meant
+a computer and a script. <code>internal/plex</code> lets a phone do it. SoundStorm asks plex.tv for
+a PIN, the person signs in on Plex's own page in a new tab, and the app polls
+<code>/api/plex/status</code> until plex.tv hands over the account token. The server then lists the
+account's servers, finds an address one answers on (home network first, Plex's relay last), reads
+the audio playlists, and runs them through the same matching as M3U, trying both track and album
+artist.</p>
+<div class="why">The token lives in memory, per person, for 30 minutes of use. It is never sent to a
+browser or written down, and nothing talks to plex.tv unless somebody taps. A server's addresses
+are plex.tv's say-so - which means anyone with a Plex account could publish internal addresses - so
+only scheme and host are kept, eight at most, and each is checked again as it is dialed: loopback,
+link-local, carrier-grade NAT ranges, Docker Desktop's host range and any network the container is
+on are refused. A home-network Plex server is not.</div>
+<p>Tested against a stand-in plex.tv and Plex server through the real routes; not yet against a real
+Plex account.</p>
+
+<h2 id="art">Covers of one's own</h2>
+<p>"Change cover" on a song or album keeps a picture per person (<code>collections/art.go</code>,
+<code>/api/myart</code>), cropped square and shrunk to 1000px on the device, stored under the state
+directory's <code>art/&lt;account&gt;/</code> and named by content, so one picture for an album is
+stored once. Keys name what is replaced: <code>song:&lt;source&gt;/&lt;id&gt;</code> or
+<code>art:&lt;source&gt;/&lt;art id&gt;</code> with Navidrome's version suffix dropped, so an
+edited file keeps the choice. Only JPEG, PNG and WebP are accepted, judged by their bytes (never
+SVG), up to 4 MB; pictures are served only to their owner, sandboxed and <code>nosniff</code>;
+unused ones are deleted.</p>
+
+<h2 id="listens">Listen logs</h2>
+<p>History keeps a count per song, which says <em>what</em> but not <em>when</em>. Every play is now
+also logged with its moment (<code>collections/listens.go</code>): one append-only file per person
+per year, a line per play carrying what the song was. Recording costs one small write; a year is
+one file. A play counts at half the song or four minutes. A damaged last line - a crash mid-write -
+is skipped. Plays are rate limited (a burst of 20, then one per 10 seconds, quietly dropped past
+it) and a year's log stops at 32 MB, so a client cannot grow the disk without bound.</p>
+
+<h2 id="scrobble">Scrobbling to ListenBrainz</h2>
+<p>ListenBrainz needs no app key, so each person pastes their own user token in Settings. It is
+checked with <code>validate-token</code> - which answers 200 with <code>valid: false</code> for a
+bad one, checked live, so the status code alone proves nothing. Plays are sent from the server, so
+every device counts and the token never reaches a browser; the API never returns it.</p>
+<ul>
+  <li>Each play is queued in the person's collections file as it is recorded, sent in the
+  background, and taken off by song and moment once sent, so plays queued meanwhile survive.</li>
+  <li>Failures wait (1,000 at most) and are retried after the next play and every quarter hour.</li>
+  <li>A 401 stops sending and says "connect again", keeping the queue for the reconnect.</li>
+  <li>Songs without an artist are never sent; "playing now" is sent too, and rate limited.</li>
+</ul>
+<p>Last.fm is not built: it needs an API key and secret registered to the project.</p>
+
+<h2 id="recap">The year in music</h2>
+<p><code>GET /api/recap</code> powers a story of slides: minutes, plays, top artists, songs and
+albums, genres, a month chart, the busiest weekday, a listener kind from the peak hour, the longest
+streak, artists new that year and the first song - and, with the sound analysis, the share of plays
+whose strongest mood was each. For this year, any year with listens, or all time.</p>
+<p>The app sends its time-zone offset, because the server runs in UTC and a 10pm play belongs to
+its own evening; a local year reads the UTC files either side. All time comes from History's
+counts, so it says something from the first day.</p>
+
+<h2 id="prefs">Preferences</h2>
+<p>Settings that should follow a person rather than a device - the order of the category pills and
+which are put away, the Now Playing look, audiobook speed, the read-along highlight - are kept in
+the same file behind <code>GET</code>/<code>PATCH /api/prefs</code>, bounded. One subtlety: a row
+with no saved list means "defaults", which hide Genres, so an empty list is stored as an empty list,
+never null - otherwise "I added Genres back" would read as "defaults" and hide it again.</p>
+
+<h2 id="backup">Backup</h2>
+<p>Collections travel in <code>soundstorm backup</code> as one more field, <code>collections</code>,
+keyed by account id, beside the state. A field rather than a wrapper, so the backup still is a state
+file:</p>
+<ul>
+  <li>An older SoundStorm restores the accounts from a new backup and ignores the lists.</li>
+  <li>A backup from before the field restores exactly as it did and leaves current lists alone.</li>
+  <li>With no lists at all, the backup is the state file byte for byte.</li>
+</ul>
+<p>Restore validates the lists before touching anything, so a damaged backup changes nothing, and
+gives the list files the same owner as the state file. Own-cover pictures and listen logs are not in
+the backup; moving to another computer carries the whole state folder, so they go with it there.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

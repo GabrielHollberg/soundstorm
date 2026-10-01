@@ -189,3 +189,48 @@ func TestAnOversizedXMPPacketIsNotDecoded(t *testing.T) {
 		t.Fatalf("reading a 4MB PDF allocated %dMB", used>>20)
 	}
 }
+
+// In an uncompressed PDF the bookmarks come before the Info dictionary, and
+// each has a /Title. The trailer's /Info says which object is the book's.
+func TestTheTrailersInfoWinsOverABookmark(t *testing.T) {
+	path := writePDF(t, `3 0 obj << /Title (Chapter 1) /Parent 2 0 R /Dest [4 0 R /Fit] >> endobj
+9 0 obj << /Title (Old Title) /Author (Nobody) >> endobj
+13 0 obj << /Title (Moby Dick) /Author (Herman Melville) >> endobj
+trailer << /Size 14 /Root 1 0 R /Info 9 0 R >>
+startxref 0
+%%EOF
+trailer << /Size 14 /Root 1 0 R /Info 13 0 R /Prev 0 >>`)
+
+	meta, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The last trailer is the latest incremental update's.
+	if meta.Title != "Moby Dick" || len(meta.Authors) != 1 || meta.Authors[0] != "Herman Melville" {
+		t.Errorf("got %q by %v", meta.Title, meta.Authors)
+	}
+}
+
+// Octal escapes, an escaped byte-order mark, hex strings, balanced
+// parentheses and PDFDocEncoding are all ordinary ways to write a title.
+func TestPDFStringForms(t *testing.T) {
+	for _, c := range []struct{ title, want string }{
+		{`(Caf\351)`, "Café"},
+		{`(\376\377\000C\000a\000f\000\351)`, "Café"},
+		{`<FEFF00430061006600E9>`, "Café"},
+		{`<43 61 66 E9>`, "Café"},
+		{`(Dune (1965))`, "Dune (1965)"},
+		{`(Esc\(aped\))`, "Esc(aped)"},
+		{"(Caf\xe9 \x8dQuoted\x8e)", "Café “Quoted”"},
+		{"(Line \\\nJoined)", "Line Joined"},
+	} {
+		path := writePDF(t, "1 0 obj << /Title "+c.title+" >> endobj\ntrailer << /Info 1 0 R >>")
+		meta, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if meta.Title != c.want {
+			t.Errorf("%s: title = %q, want %q", c.title, meta.Title, c.want)
+		}
+	}
+}

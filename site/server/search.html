@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search and browsing - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/search" data-root="..">
+<main>
+<h1>Search and browsing</h1>
+<p class="lede">One search box over six backends. <code>internal/federate</code> asks every
+shelf at once and merges the answers into one ordered list; browsing a shelf is the same call
+with nothing typed. Around it sit the server-side views that make the app feel like one
+library: Home, the Continue row, genres, authors, series and Read Along.</p>
+
+<h2 id="federate">Asking everyone at once</h2>
+<p><code>federate.Search</code> takes a query, asks the registry which sources match it (by kind,
+and by what this account may see), and queries each in its own goroutine with its own deadline -
+five seconds by default (<code>SOUNDSTORM_PER_SOURCE_TIMEOUT</code>). It returns once every
+source has answered, failed or run out of time, and it never returns an error.</p>
+<pre><code>{
+  "items":    [ ...media.Item, merged and ordered... ],
+  "sources":  [ {"sourceId": "navidrome", "kind": "music", "ok": true,  "count": 42, "tookMs": 31},
+                {"sourceId": "jellyfin",  "kind": "video", "ok": false, "error": "did not answer", "count": 0} ],
+  "degraded": true,
+  "offset":   0,
+  "hasMore":  true
+}</code></pre>
+<p>That shape is the first of the three rules the design rests on: <strong>a dead backend must
+never take the search down.</strong> Every source has a deadline and an error slot of its own,
+the answer is always 200, and <code>degraded</code> says what is missing. The items that did
+arrive are valid; they are just incomplete. Tests in <code>internal/federate</code> and
+<code>internal/httpapi</code> protect this.</p>
+<div class="why">The same goroutine-per-source design that keeps a slow backend from holding up
+the others meant a <em>panicking</em> adapter would take the whole process down - worse than the
+dead-backend case the package exists for. <code>recoverInto</code> catches a panic and reports
+that one source as failed, the same shape as an ordinary error. <code>HealthAll</code> is guarded
+the same way.</div>
+<p>The second rule is <strong>normalization at the edge</strong>. Only an adapter knows its
+backend's vocabulary - Subsonic's <code>search3</code>, Jellyfin's <code>/Items</code>,
+Audiobookshelf's library items, Immich's smart search. Everything past the adapter speaks
+<code>media.Item</code>: an id, a kind, a title, a sort key, artwork, and an <code>Extra</code>
+map for what only some kinds have (an album, a genre, a series and its number).</p>
+<p>Ranking is <code>federate.Relevance</code>, deliberately simple: every backend has already done
+its own matching, and the only job left is deciding whose hits go near the top. An exact title
+scores 1.0, a title starting with the query 0.85, containing it 0.7; then a matching creator
+(0.65, or 0.5 for a partial match), then the subtitle - the album for music, the series for a
+book - at 0.45, which matters for live recordings where almost nothing matches on the track
+title; then how many of the query's words the title covers. Ties fall through to the title order
+described below.</p>
+
+<h2 id="browse">Browsing is searching for nothing</h2>
+<p>An empty query is a request to see the shelf, not a request for nothing. Picking Audiobooks
+with nothing typed lists every audiobook; typing narrows from there. <code>/api/search?q=</code>
+used to answer 400, which made that impossible to ask for.</p>
+<p>Each adapter turns an empty query into whatever listing call its backend offers, and none of
+them agree - checked against real servers, not their documentation:</p>
+<table>
+  <tr><th>Backend</th><th>Empty query becomes</th></tr>
+  <tr><td>Navidrome</td><td><code>search3.view?query=</code> already answers with everything - no change needed, the opposite of what was expected.</td></tr>
+  <tr><td>Jellyfin</td><td><code>searchTerm</code> <em>omitted</em>, not blank, plus <code>SortBy=SortName</code> - only when browsing, or it would override relevance on a search. Browsing the TV shelf lists series only.</td></tr>
+  <tr><td>Audiobookshelf</td><td>Its search matches nothing for an empty <code>q</code>, so browsing uses <code>/api/libraries/{id}/items</code> - same item shape, one wrapper shallower.</td></tr>
+  <tr><td>Local books</td><td>The folder scan's own list; <code>matches()</code> accepts everything with no terms.</td></tr>
+  <tr><td>Immich</td><td>Its own newest-first timeline.</td></tr>
+</table>
+<p>Nothing in <code>federate</code> changed for browsing: <code>Relevance</code> scores every
+item 0 for an empty query, so the sort falls through to its title tiebreak and a browse comes
+back alphabetical for free.</p>
+
+<h2 id="paging">Paging a merged list</h2>
+<p>Infinite scroll asks for <code>?offset=</code>. <code>federate.Search</code> answers by asking
+every source for <code>offset + window</code> items and slicing <em>after</em> the merge - so page
+two asks each backend for 200 and throws the first 100 away. That looks wasteful and is not.
+Per-source paging is the obvious alternative and is wrong: each source's second page starts at
+the top of its own order, so those items sort in behind ones already on screen.
+<code>TestPagesWalkTheMergedOrderExactly</code> holds the property that matters: walking every
+page reproduces the single sorted list, nothing repeated, nothing skipped.</p>
+<p>That only holds if <strong>every source returns its own first N in exactly the merge's
+order</strong> - the globally first N can only come from the union of each source's first N. It
+is a requirement on the adapters, and <strong>no backend's own sort satisfies it.</strong> It was
+reported as "I'm seeing repeats in music" and measured on a real library by scrolling forty
+pages through the real merge:</p>
+<ul>
+  <li><strong>Navidrome:</strong> 240 distinct songs and 1,760 repeats. <code>search3</code> lists
+  songs in an order of its own; of the first 50 by title in a 4,413-song library, its first 50
+  held none.</li>
+  <li><strong>Audiobookshelf:</strong> 4 repeats and 4 books never shown, of 113. Its title sort
+  ignores case, so "How to Fast" and "How To Overcome" swap.</li>
+  <li><strong>Jellyfin:</strong> <code>SortName</code> drops a leading "The" - the same shape.</li>
+</ul>
+<p>So there is one comparator, <code>media.Less</code>: <code>OrderKey</code> (the item's
+<code>SortKey</code>, else its title) and then the id, so two songs called "Intro" cannot trade
+places between pages. The adapters that browse fetch the <strong>whole</strong> shelf, order it
+with <code>media.Less</code>, and cut. Searches return every match and let the merge rank them,
+since a cut in the backend's relevance order is a cut in the wrong order.</p>
+<p>Fetching a whole shelf for every page would be slow, so <code>media.ShelfCache</code> keeps a
+listing for thirty seconds and a rescan clears it. The same forty pages of music went from 28.6s
+to 3.2s, and after the fix: 2,000 distinct songs, 0 repeats; all 113 audiobooks.
+<code>GetOrFetch</code> shares one fetch among concurrent callers of the same key (a cold cache
+opened from two devices was a stampede), and eviction is least-recently-used, so the shelf a
+scroll is paging through is not evicted by a burst of one-off searches. A fetch that panics
+becomes that fetch's error rather than a key left pending for ever.</p>
+<div class="note">Photos are the deliberate exception. Nobody browses a camera roll
+alphabetically, so Immich returns newest first and each photo's <code>SortKey</code> <em>is</em>
+its rank in that order, behind a <code>~</code> so that in a browse of everything photos follow
+the titled media. The merge property holds because the key is the source's own order.</div>
+<p>Two more details: <code>HasMore</code> is not just "this page was full" - a source returning
+exactly what it was asked for was probably truncated, so there is more behind it even when the
+merged page came up short. And <code>MaxDepth</code> (10,000) stops paging rather than serving
+pages that never arrive; it was 2,000, which cut a real music shelf off halfway, and with
+shelves cached a deep page is a sort in memory rather than a bigger backend request.</p>
+<p><code>internal/source/*/paging_test.go</code> scroll each adapter through the real merge
+against a fake that orders the way its backend does - scrambled, case-blind, "The"-stripped -
+and require every item once, in order. The music test fails against the code from before the
+fix, with the same repeat the user saw.</p>
+
+<h2 id="home">Home</h2>
+<p>Home is a front page, not "everything, alphabetically". The app builds most of it from
+existing calls - Continue, recently played, favorites, new music - plus <code>GET /api/home</code>,
+the newest items per shelf. That asks every source at once through
+<code>source.RecentLister</code>, five seconds each, and leaves out a shelf that fails: the
+search's rule again. Each backend orders by its own record of arrival:</p>
+<ul>
+  <li>Jellyfin by <code>DateCreated</code>, and a series by <code>DateLastContentAdded</code>, so
+  a new season brings it forward;</li>
+  <li>Audiobookshelf by <code>sort=addedAt&amp;desc=1</code>;</li>
+  <li>Immich by its own newest-first order;</li>
+  <li>the folders SoundStorm reads itself by the file's modification time.</li>
+</ul>
+
+<h2 id="continue">The Continue row</h2>
+<p><code>GET /api/continue</code> is what this person is part way through, newest first. Two
+places know, and neither is new:</p>
+<ul>
+  <li><strong>Books, films and episodes</strong> are SoundStorm's own <code>state.Progress</code>,
+  keyed <code>userID/sourceID/itemID</code>. A video's location is its time
+  (<code>t=1234.5</code>), so adding video did not change the state format.</li>
+  <li><strong>Audiobooks</strong> belong to Audiobookshelf, per person, through the per-member
+  account - so a book started in its own phone app shows up here.
+  <code>source.InProgressLister</code> is the optional interface for a backend that remembers;
+  for Audiobookshelf it is <code>/api/me/items-in-progress</code> plus the fractions in
+  <code>/api/me</code>, leaving out finished, hidden and missing books and podcast episodes.</li>
+</ul>
+<p>A position under half a percent is "not started" and over 98.5% is "finished"; for a film or
+episode the top is 93%, because the credits are the end. <code>source.ItemGetter</code> turns a
+stored id back into a card, through the registry - so a shelf an account can no longer see drops
+out of the row.</p>
+<div class="why">Film positions are kept by SoundStorm, not Jellyfin, because the house shares
+one Jellyfin account: a position kept there would be everybody's - one person's half-watched
+film in another's row. Per-member Jellyfin accounts would fix that at the cost of a second
+provisioning path, and buy nothing, since nobody ever sees Jellyfin's own resume. To stop a
+made-up id growing the state file, a position is accepted only for an item that exists
+(<code>HasBook</code> for local books, the cached <code>HasItem</code> ownership check for
+Jellyfin).</div>
+
+<h2 id="genres">Genres</h2>
+<p><code>GET /api/genres?kinds=</code> groups the shelves the server already lists and caches,
+rather than asking each backend for its genre list. Every item carries its genre in
+<code>Extra["genre"]</code> (from Navidrome, Jellyfin and Audiobookshelf; an EPUB's subjects as
+tags). Audiobookshelf's are often several joined with commas ("Action &amp; Adventure,
+Dystopian"), so they are split, and grouped as one genre per name whatever its case. A genre's
+items come back with <code>&amp;name=</code>.</p>
+
+<h2 id="books">Authors, series and Read Along</h2>
+<p>The Books tab looks across two shelves at once - ebooks and audiobooks - so these views are
+built in the server from both listings (<code>listBookShelves</code>, through the registry so
+access applies) and grouped on each request. Nothing is stored.</p>
+<h3>Authors and series</h3>
+<p><code>GET /api/books/authors</code> groups on a key that reads "Herbert, Frank" and "Frank
+Herbert" alike, shows the reading form, and sorts by surname. A comma is a list (Audiobookshelf
+joins co-authors with one) unless one side of a single comma is one word - the sort form.
+<code>GET /api/books/series</code> comes from Calibre's series and index or Audiobookshelf's
+series name, which carries the number ("Dune #2"). With <code>?key=</code> either returns one
+author's or series' page: an author's series in order, then their other books.</p>
+<h3>Read Along pairing</h3>
+<p><code>GET /api/books/pairs</code> lists what somebody has as both an ebook and an audiobook.
+It matches on a key with the edition noise taken out - anything bracketed (an ASIN,
+"Unabridged", "Full-Cast Edition"), a subtitle after a colon, a trailing "Book 1", curly quotes,
+punctuation, a leading article - plus a shared author surname. Each edition of an audiobook is
+its own pair. On a real library, 1,663 ebooks and 113 audiobooks gave four pairs, and a scan for
+same-author near-misses found none.</p>
+<p>The owner can correct it: <strong>Not the same book</strong> leaves a pair out for everyone
+and deletes what Storyteller made of it (kept as <code>notPairs</code> in the state file - a
+decision, not a fact about the media), and <strong>Pair with its audiobook</strong> makes a match
+by hand (<code>manualPairs</code>). What happens to a pair next - syncing the text to the
+recording - is on the <a href="books.html">books page</a>.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

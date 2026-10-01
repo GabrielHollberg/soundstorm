@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Away from home - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="operations/remote" data-root="..">
+<main>
+<h1>Away from home</h1>
+<p class="lede">An install has up to three addresses: the computer's own LAN address, a secure
+home name with a real certificate that works on the home network, and - only if the owner turns it
+on - a second name that works from anywhere. For anybody who would rather not be on the internet at
+all, Tailscale is the other way out. And because a home's upload is often slow, the server paces
+what it sends to a phone away from home.</p>
+
+<h2 id="addresses">Three addresses</h2>
+<table>
+  <tr><th>Address</th><th>Where it works</th><th>Certificate</th></tr>
+  <tr><td><code>http://192.168.1.50:8099</code></td><td>The home network</td><td>None (plain http)</td></tr>
+  <tr><td><code>https://&lt;id&gt;.home.soundstorm.dev:8099</code></td><td>The home network</td><td>Let's Encrypt, trusted everywhere</td></tr>
+  <tr><td><code>https://&lt;id&gt;.net.soundstorm.dev:8099</code></td><td>Anywhere, once remote access is on</td><td>The same certificate, carrying both names</td></tr>
+</table>
+<p>The id is random and per install. All three are served on the same port: SoundStorm's listener tells
+a TLS connection from a plain HTTP request by its first byte (<code>servetls.Listener</code>), so the
+address people already have keeps working while the secure one is added.</p>
+
+<h2 id="home-name">The home name and its certificate</h2>
+<p>A trusted certificate needs a name on the internet, and a home server has neither a domain nor a
+route an ACME challenge can reach. So SoundStorm runs one small central service, the names service,
+which gives each install <code>&lt;id&gt;.home.soundstorm.dev</code>, points it at the install's
+<em>private</em> LAN address, and publishes the DNS-01 challenge that lets Let's Encrypt issue a
+certificate for a server nothing on the internet can reach. It is the same idea as Plex's
+<code>plex.direct</code>, without the account.</p>
+<ul>
+  <li><strong>It never carries media.</strong> DNS records and a challenge every couple of months cost
+  the same however many films are watched; a relay would not.</li>
+  <li><strong>It holds no state.</strong> Once a name resolves, it resolves without the service; an outage
+  stops registration and renewal, never a lookup, and renewal starts a month early.</li>
+  <li><strong>It only names private addresses</strong> for the home name - a trusted certificate on an
+  arbitrary public address would be a phishing kit with the project's name on it.</li>
+  <li><strong>Every failure falls back.</strong> Until the certificate arrives, or if it never can, the
+  server carries on as before.</li>
+</ul>
+<p>The page moves to the secure name only after checking it works: it fetches the name's
+<code>/healthz</code> in <code>no-cors</code> mode, which succeeds only if the name resolved, the
+connection opened and the certificate verified. Plenty of routers refuse to resolve a public name that
+points at a private address (DNS rebinding protection), and on those the page simply stays on http.
+Details are on <a href="../server/tls.html">Certificates and names</a>.</p>
+
+<h2 id="remote-access">Remote access</h2>
+<p>Turned on under Settings (or with <code>-Remote</code> / <code>--remote</code> at install), remote access
+gives the install the second, public name. It is <strong>off by default</strong>, with a plain warning,
+because once it is on the sign-in page faces the internet. The security reviews that had to come first -
+the setup code, per-account sign-in throttling, request timeouts, cross-origin checks, the reader fixes -
+were done before it shipped.</p>
+<p>Turning it on does three things:</p>
+<ol>
+  <li><strong>Open the port.</strong> <code>internal/portmap</code> asks the router to forward it, trying
+  PCP, then NAT-PMP, then UPnP. PCP is best where it works, but it carries a client address that a strict
+  router compares with the packet's source - and behind Docker's NAT those differ - so NAT-PMP is the
+  fallback. UPnP's discovery is multicast, which does not cross Docker's bridge, so the installer
+  discovers the router on the host and passes it in, along with the router's address
+  (<code>SOUNDSTORM_GATEWAY</code>): inside the container, the "gateway" is Docker's bridge, which does
+  not answer. The mapping is refreshed on a timer and dropped when remote access is turned off.</li>
+  <li><strong>Prove it.</strong> The names service probes the install at the address the request came
+  from - never an address the install supplies, so it cannot be aimed at anybody else - and expects an
+  answer only that install can compute from its own token. Only then does it publish the public record.
+  "Your port is not open yet" is actionable in a way a silently dead record is not.</li>
+  <li><strong>Get the certificate.</strong> One certificate carries both names, so the public name does
+  not double each install's draw on the domain's shared Let's Encrypt allowance.</li>
+</ol>
+<div class="why">Two names rather than one, because many routers cannot "hairpin" - loop a device on the
+home network back in through the public address. With a single public name, home access would break on
+those routers. The page already checks which name it can reach before moving, so it prefers whichever
+works.</div>
+
+<h3 id="nat">When it cannot work: CGNAT and double NAT</h3>
+<p>The router's own WAN address says a lot, and <code>portmap</code> asks for it even when the port
+mapping <em>succeeded</em> - a router behind carrier-grade NAT opens the port without complaint, on an
+address the internet cannot reach. <code>ClassifyWAN</code> judges it:</p>
+<ul>
+  <li><strong>In <code>100.64.0.0/10</code></strong>: carrier-grade NAT. The provider shares one public
+  address between many homes, and no forward can ever be reached. The panel says so and points at
+  Tailscale.</li>
+  <li><strong>In a private range</strong>: double NAT, a router behind another router, where a forward is
+  needed on both.</li>
+  <li><strong>Public</strong>: the ordinary case. Where no automatic method worked, the panel says exactly
+  which port to forward to which computer and shows when it starts working.</li>
+</ul>
+<p>Over IPv6 there is nothing to forward: the public name also carries an AAAA record, published from a
+call the install makes over IPv6, which proves it has working IPv6. That path stays dormant until the
+container actually has IPv6, which Docker does not give it by default.</p>
+<div class="note">A restart once forgot the remote name. Keeping it through a names-service outage relied
+on memory, which a restart empties, so when the DNS provider answered with an error just as the server
+came back, the certificate was reissued without it and phones away from home were refused. The remote
+name is now read back from the certificate on disk, and an unanswered check retries in five minutes.</div>
+
+<h2 id="tailscale">Tailscale</h2>
+<p>Tailscale connects devices privately with nothing exposed to the internet and nothing to forward, on
+any connection - including behind carrier-grade NAT. <code>docker compose --profile tailscale up -d</code>
+runs a Tailscale sidecar that puts SoundStorm on a tailnet at
+<code>https://&lt;hostname&gt;.&lt;tailnet&gt;.ts.net</code>. On Windows a Start menu shortcut,
+<strong>Set up Tailscale</strong>, walks through it: a window with the steps, a button to Tailscale's key
+page, and a box that accepts only something shaped like a Tailscale auth key. On Mac and Linux it is
+<code>--tailscale --auth-key ...</code>.</p>
+<div class="why">It is opt-in for the same reason Plex was rejected as a backend: it needs an account, an
+auth key and an app on every device, none of which can be automated. SoundStorm works fully without it,
+and nobody is walked through a sign-up they did not ask for. Making it the default would make the
+"no accounts, no keys" claim untrue.</div>
+<p>Three things were learned by running it:</p>
+<ul>
+  <li><strong>Userspace networking</strong> is the default, so the sidecar needs no special privileges -
+  which matters on Docker Desktop.</li>
+  <li><strong>The proxy target must not be called <code>soundstorm</code>.</strong> The sidecar takes that as
+  its own hostname, and Docker writes a container's own hostname into its hosts file, so the proxy looped
+  back to itself and answered 502 while every container reported healthy. SoundStorm has a second alias,
+  <code>soundstorm-app</code>, and the serve config points there. A CI step guards it.</li>
+  <li><strong>The serve config's scheme must match</strong> how SoundStorm is serving -
+  <code>https+insecure://</code> or <code>http://</code> - or it is another silent 502. And the file is
+  written on every install, Tailscale or not, because Docker answers a missing bind-mount source by
+  creating a <em>directory</em> with that name.</li>
+</ul>
+
+<h2 id="slow">Pacing and slow links</h2>
+<p>A home's upload is often the narrowest pipe in the whole path. The report that started this work:
+songs sat at 0:00 for a minute or more on a phone away from home, over a link measured at about 0.3
+Mbps. Several causes were found, one after another:</p>
+<ul>
+  <li><strong>The picture inside the song.</strong> A browser's media engine treats embedded cover art as a
+  second stream and reads megabytes before playing. Measured at 0.6 Mbps on a real iTunes M4A: 34 seconds
+  as it is, 2.5 seconds with the header slimmed. Files are never changed; instead an original stream is
+  sent <strong>slim</strong> (<code>internal/stream/slim.go</code>) - a header rebuilt in memory without the
+  tags and artwork, offsets shifted to match, then the original audio fetched by byte range. Seeking still
+  works.</li>
+  <li><strong>The pipe was full.</strong> The server handed each song to the network in full the moment it
+  was asked, and over a slow link those megabytes queue in the connection, so the next song, a skip and the
+  covers all wait behind bytes nobody plays. Audio to a device that came in by an away-from-home name
+  (<code>*.net.soundstorm.dev</code> or <code>*.ts.net</code>) is now <strong>paced</strong>
+  (<code>internal/stream/pace.go</code>): the header plus eight seconds at once, then 1.5 times the song's
+  own bitrate. At home nothing is paced, and neither are films, whose pieces are asked for one at a
+  time.</li>
+  <li><strong>Known before the first song.</strong> On an away-from-home address the app times 128KB from
+  <code>/api/probe</code> once a session; under 1.2 Mbps songs start at 128 kbps MP3 from the first one,
+  remembered on the device for six hours. A song that cannot play six seconds after starting is restarted
+  at 128 kbps anyway.</li>
+  <li><strong>Covers are card-sized</strong> unless asked otherwise (400px by default), and load at low
+  priority behind the song.</li>
+</ul>
+<p>Streaming quality can be set per device under Settings &rarr; Playback on this device. <strong>Always
+original</strong> is a promise: no probe and no fallback. Films have their own setting; the default,
+<strong>smart</strong>, sends the original at home and caps at 20 Mbit from an away-from-home name.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

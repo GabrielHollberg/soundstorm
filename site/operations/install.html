@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installing - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="operations/install" data-root="..">
+<main>
+<h1>Installing</h1>
+<p class="lede">The install is a Docker Compose file plus an installer script. On Windows it is a
+file to double-click, which installs Docker itself and shows a window rather than a console; on
+Mac and Linux it is one command. Either way it ends with a setup code and an address, and the first
+person to sign up with that code owns the server.</p>
+
+<h2 id="pieces">The pieces</h2>
+<p><code>docker-compose.yml</code> names a <strong>published image</strong> and contains no
+<code>build:</code> key, so it works on its own in an empty folder for somebody who never cloned
+anything. Developers add <code>docker-compose.dev.yml</code>, which puts the build back. The images
+are built for linux/amd64 and linux/arm64, because many home servers are a Raspberry Pi, a Synology
+box or an Apple silicon Mac.</p>
+<table>
+  <tr><th>Platform</th><th>How</th></tr>
+  <tr><td>Windows</td><td><code>SoundStorm-Setup.cmd</code>, from the latest GitHub release, which runs <code>install.ps1</code></td></tr>
+  <tr><td>Mac, Linux</td><td><code>curl -fsSL .../install.sh | sh</code></td></tr>
+  <tr><td>Anything with Docker</td><td>The compose file alone</td></tr>
+</table>
+
+<h2 id="windows">Windows</h2>
+<p>The Windows installer is aimed at somebody who has never opened a terminal, because that is who a
+self-hosted media server usually gets given to. It installs Docker Desktop itself, starts it, and
+leaves desktop, Start menu and start-up shortcuts instead of an address to remember.</p>
+
+<h3 id="setup-file">The setup file</h3>
+<p>The download link points at a release asset,
+<code>/releases/latest/download/SoundStorm-Setup.cmd</code>, not at the raw file in the repository.
+A raw link is served as plain text with no download header, so the browser shows the script instead
+of saving it. A release asset is a real download, and the link always follows the newest release.</p>
+<div class="warn">Windows Smart App Control blocks any script downloaded from the web, by extension,
+whatever it contains: "Dangerous file extension from the web", with no Run anyway. It cannot be fixed
+inside the file. Right-click, Properties, <strong>Unblock</strong> clears the download mark, which is
+why that is the first step in the instructions. The real fixes, a signed program or a winget package,
+are still open.</div>
+<p>The setup file hands straight to a hidden PowerShell and closes. That PowerShell downloads
+<code>install.ps1</code> <em>to a file</em> and runs the file - never piping a download into
+PowerShell from memory, which is the classic malware pattern that Windows Defender blocks on sight.
+It downloads from the newest commit's address rather than the branch's, because GitHub's raw file
+host caches a branch address for five minutes and ignores any cache-busting query string.</p>
+
+<h3 id="window">A window, not a console</h3>
+<p>Numbered steps and coloured boxes made the console legible, but the black window itself put people
+off. So the setup shows a Windows Forms window: the four steps ticking off (Getting Docker ready,
+Preparing the SoundStorm folder, Downloading the media servers, Starting SoundStorm), a status line, a
+progress bar, callouts in a coloured panel, and at the end the setup code, the address for phones and
+an Open SoundStorm button. The console text survives under "Show details" and in a log file in the
+temp folder.</p>
+<p>A few details of how that window works, because each was learned the hard way:</p>
+<ul>
+  <li><strong>One thread, kept painted.</strong> The window runs on the setup's own thread, and every
+  place the script waits keeps it repainting. A second thread would have to marshal every dialog; a
+  compiled helper would be blocked by Smart App Control on exactly these PCs.</li>
+  <li><strong>Shown twice, on purpose.</strong> A process started hidden applies "hidden" to the first
+  window it shows, which turned out to be the setup's own window, not the console. The first full run
+  sat on its error screen invisibly.</li>
+  <li><strong>No message tells anybody to type a command.</strong> A failure offers a button that opens
+  the log file, with SoundStorm's own recent log lines appended and the setup code removed, so it can be
+  sent to whoever helps.</li>
+</ul>
+
+<h3 id="virtualization">Virtualization, WSL, then Docker</h3>
+<p>Docker on Windows runs Linux in a virtual machine, so the order of checks matters:</p>
+<ol>
+  <li><strong>Is virtualization on?</strong> A PC with VT-x or SVM switched off in its firmware cannot
+  run any of this. The first person to try the installer found out only after half a gigabyte of Docker
+  had installed, from a Docker error offering to fix it by signing in - which fixes nothing. Now the
+  installer asks Windows first. The trick is to ask <code>HypervisorPresent</code> before
+  <code>VirtualizationFirmwareEnabled</code>: once a hypervisor is running, Windows can no longer see the
+  firmware and reports the second as false or blank on a perfectly working PC. When it cannot tell, it
+  assumes yes; refusing a working machine is the worse mistake.</li>
+  <li><strong>WSL.</strong> Docker Desktop runs its engine in WSL2. On a machine without it, Docker
+  installs and then asks the person to install WSL by hand, as administrator, with a restart. So the
+  installer runs <code>wsl --install --no-distribution</code> first. <code>--no-distribution</code>
+  skips Ubuntu, a gigabyte and a prompt for a Linux username nobody will use.</li>
+  <li><strong>Docker Desktop</strong>, through <code>winget</code>, elevated for that one step only.
+  Its dashboard is turned off in Docker's settings file <em>before</em> it is installed, because it
+  launches itself the moment its installer finishes.</li>
+</ol>
+<p>Before Docker's first start, a window explains its first-run screens - Accept, Skip, Skip, no
+account needed - with one button, <strong>I understand</strong>. A description alone was not enough:
+people walked away expecting everything to happen by itself, leaving setup waiting on a Docker window
+nobody clicked. Downloads then count up ("Downloaded 3 of 12: jellyfin"), and a registry rate limit is
+retried after 30, 60 and 120 seconds rather than reported as a broken connection.</p>
+
+<h3 id="network">The home network</h3>
+<p>A server people can only reach from the computer it runs on is not much use, and two Windows
+defaults stop phones reaching it:</p>
+<ul>
+  <li><strong>Windows makes every new Wi-Fi network Public</strong>, and Public lets nothing in.</li>
+  <li><strong>The firewall alert for Docker's backend</strong> appears during the first start and ticks
+  Private only; anything unticked gets a Block rule, and Block beats Allow.</li>
+</ul>
+<p>After starting, <code>Set-LanAccess</code> checks the profile of the network holding the LAN
+address. If it is Public, the installer <em>asks</em> whether this is the home network, because
+marking a caf&eacute;'s network Private is the wrong default. With consent, one elevated step marks it
+Private, adds an Allow rule for the port on Private only, and takes Private out of Docker's Block
+rules. A work (domain) network is left alone.</p>
+<p>The installer also works out the computer's LAN address, preferring <code>192.168.</code>, then
+<code>10.</code>, then <code>172.</code> (where Docker and WSL put virtual adapters that reach
+nothing), and writes it into <code>.env</code> as <code>SOUNDSTORM_TLS_HOSTS</code>. The container
+cannot work this out: inside Docker, the only addresses visible are the container's own. On every
+launch the address is updated if the old one has gone from every adapter, so a laptop that moves
+keeps working.</p>
+
+<h3 id="refusals">One install per computer</h3>
+<p>The compose project name is fixed, so a second install in a second folder would adopt the first
+one's containers and point them at an empty library. Both installers check the running container's
+working folder and refuse, naming the other folder.</p>
+
+<h2 id="unix">Mac and Linux</h2>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/soundstorm/main/install.sh | sh</code></pre>
+<p><code>install.sh</code> is written for <code>/bin/sh</code>, not bash, because a stock Debian's
+<code>/bin/sh</code> is dash - and the cheap home server it is aimed at is exactly where a bash-only
+script would fail. It downloads the compose file into a <code>soundstorm</code> folder, picks a free
+port, writes <code>.env</code> with owner-only permissions (it holds the setup code and any Tailscale
+key), starts the stack and waits until it answers. Every failure says what to do next; "Docker is
+installed but not running" has a branch of its own because it is the most common by far.</p>
+<table>
+  <tr><th>Option</th><th>What it does</th></tr>
+  <tr><td><code>--library PATH</code></td><td>Keep the media library somewhere else, such as an external drive</td></tr>
+  <tr><td><code>--no-https</code></td><td>Plain http only (https with a real certificate is the default)</td></tr>
+  <tr><td><code>--remote</code></td><td>Reach it from anywhere over the internet (off by default; also a switch in the app)</td></tr>
+  <tr><td><code>--tailscale</code></td><td>Also reach it away from home over a tailnet</td></tr>
+  <tr><td><code>--export PATH</code>, <code>--import PATH</code></td><td>Move to another computer</td></tr>
+  <tr><td><code>--uninstall</code></td><td>Remove it, keeping the library</td></tr>
+</table>
+<p>On macOS and Linux with Avahi, the computer's <code>.local</code> name is offered as well as the IP
+address. Windows prints only the IP address: it does not reliably advertise its name over mDNS, and an
+earlier version that "verified" the name by resolving it on the same machine proved nothing - a machine
+always answers for its own name.</p>
+
+<h2 id="compose">Compose alone</h2>
+<p>Anybody can put the compose file in a folder and run <code>docker compose up -d</code>. Two
+differences from the installers: with no installer to generate a setup code, SoundStorm makes one up at
+each start and writes it to its log until an account exists; and https stays off by default, because
+without an installer nothing records the LAN address that the secure name would point at.</p>
+
+<h2 id="first">The setup code and the first sign-up</h2>
+<p>Sign-up is a first-boot action. It closes the moment the first account exists, and that account is
+the owner; after that only the owner adds people. Until then, whoever reaches the port could claim the
+server, so the first sign-up needs a <strong>setup code</strong>.</p>
+<div class="why">"Only allow sign-up from the home network" was the first idea, and it cannot be
+checked. Under Docker Desktop every connection - from the same computer, the LAN, or the internet
+through a forwarded port - arrives from Docker's own internal address. That was measured, not assumed.
+A code is the only thing that tells the person who installed it from a stranger.</div>
+<p>The installers generate it into <code>.env</code> (<code>SOUNDSTORM_SETUP_CODE</code>, eighty random
+bits) and open the browser at an address carrying it; the page removes it from the address once it is
+staying, so it is not left in history. Because it can still go astray - a closed tab, the desktop icon
+opened instead - it is also shown in full at the end of setup, grouped in fours (case, spaces and dashes
+are ignored), and the desktop icon opens with it while no account exists. The sign-up form says where
+to look: the setup window, then <code>.env</code> in Notepad, then, for compose alone, the logs.</p>
+<p>A real bug lived here for a while: the page stripped the code from the address, <em>then</em> moved
+itself to the secure https name carrying an address that no longer had it. On a fresh install the
+first screen asked for a code the person had never seen. The code is now only removed on paths that
+stay put.</p>
+
+<h2 id="library">Where the library lives</h2>
+<p>The installer creates <code>library/</code> in the install folder with a subfolder per shelf:
+<code>music</code>, <code>movies</code>, <code>tv</code>, <code>audiobooks</code>, <code>ebooks</code>,
+<code>documents</code> and <code>pictures</code>, named for what people call things. To keep it on
+another drive, run the installer with <code>-Library</code> (Windows; or the Start menu's Move
+SoundStorm library) or <code>--library</code>. That writes <code>SOUNDSTORM_LIBRARY_PATH</code>, which
+every mount in the compose file reads, so the shelves cannot drift apart.</p>
+<p>It is an installer option and not an app setting because which folders a container can see is fixed
+when it starts; changing it from inside would mean SoundStorm driving Docker. The installer never moves
+existing media - it says where the old files are.</p>
+<div class="warn">On Linux, mount an external library drive at boot. An unmounted drive leaves an empty
+folder that looks, to every media server, like a library somebody emptied. On Windows a missing drive
+simply stops the stack from starting, which is the safe failure.</div>
+
+<h2 id="starter">The starter library</h2>
+<p>A fresh install arrives with one item per stocked shelf, about 17MB embedded in the binary and
+unpacked once into empty shelves: a public-domain ebook from Wikisource, a public-domain LibriVox
+audiobook, and a CC0 recording of a Goldberg Variations aria. It answers the question a first run has to
+answer - does each kind of media work? - and the credits point people at LibriVox and Wikisource.</p>
+<ul>
+  <li><strong>Bundled, not downloaded</strong>: fetching on install would spend donated services'
+  bandwidth on every installation, and the first run works without internet.</li>
+  <li><strong>No film.</strong> A Blender open movie was bundled for exactly one commit; it was 60% of
+  the bundle. Everybody already has a film; the credit points at Blender's free films instead.</li>
+  <li><strong>Once, ever.</strong> A flag in the state file records that it has unpacked, so someone
+  who deletes the samples does not get them back at the next restart.
+  <code>SOUNDSTORM_STARTER_LIBRARY=false</code> turns it off entirely.</li>
+</ul>
+
+<h2 id="after">After installing</h2>
+<p>From another device, use the computer's address with the port, for example
+<code>http://192.168.1.50:8099</code>; Settings &rarr; Use on your phone or TV shows it with a Copy
+button. Within a minute the server also gets a secure <code>https://&lt;id&gt;.home.soundstorm.dev:8099</code>
+name with a real certificate, and pages move there by themselves once they have checked they can reach
+it. That is the address to install the app from on Android. See <a href="remote.html">Away from
+home</a> for how the name works.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

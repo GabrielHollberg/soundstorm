@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func TestGetOrFetchCoalescesConcurrentMisses(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			items, err := c.GetOrFetch("q", func() ([]Item, error) {
+			items, err := c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) {
 				mu.Lock()
 				calls++
 				mu.Unlock()
@@ -55,12 +56,12 @@ func TestGetOrFetchDoesNotCacheAFailure(t *testing.T) {
 	c := &ShelfCache{}
 	boom := errFake("upstream exploded")
 
-	if _, err := c.GetOrFetch("q", func() ([]Item, error) { return nil, boom }); err != boom {
+	if _, err := c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) { return nil, boom }); err != boom {
 		t.Fatalf("err = %v, want %v", err, boom)
 	}
 	// The next call must try again rather than replaying the failure.
 	called := false
-	items, err := c.GetOrFetch("q", func() ([]Item, error) {
+	items, err := c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) {
 		called = true
 		return []Item{{ID: "1"}}, nil
 	})
@@ -80,26 +81,26 @@ func (e errFake) Error() string { return string(e) }
 // entry a caller is still actively re-reading.
 func TestShelfCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	c := &ShelfCache{}
-	fetch := func(id string) func() ([]Item, error) {
-		return func() ([]Item, error) { return []Item{{ID: id}}, nil }
+	fetch := func(id string) func(context.Context) ([]Item, error) {
+		return func(context.Context) ([]Item, error) { return []Item{{ID: id}}, nil }
 	}
 	for i := 0; i < maxShelves; i++ {
 		key := string(rune('a' + i))
-		if _, err := c.GetOrFetch(key, fetch(key)); err != nil {
+		if _, err := c.GetOrFetch(context.Background(), key, fetch(key)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Touch "a" so it is the most recently used, not the next to go.
-	if _, err := c.GetOrFetch("a", fetch("a")); err != nil {
+	if _, err := c.GetOrFetch(context.Background(), "a", fetch("a")); err != nil {
 		t.Fatal(err)
 	}
 	// One more key must evict "b" (now the least recently used), not "a".
-	if _, err := c.GetOrFetch("z", fetch("z")); err != nil {
+	if _, err := c.GetOrFetch(context.Background(), "z", fetch("z")); err != nil {
 		t.Fatal(err)
 	}
 
 	aFetched := false
-	if _, err := c.GetOrFetch("a", func() ([]Item, error) { aFetched = true; return nil, nil }); err != nil {
+	if _, err := c.GetOrFetch(context.Background(), "a", func(context.Context) ([]Item, error) { aFetched = true; return nil, nil }); err != nil {
 		t.Fatal(err)
 	}
 	if aFetched {
@@ -107,7 +108,7 @@ func TestShelfCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	}
 
 	bFetched := false
-	if _, err := c.GetOrFetch("b", func() ([]Item, error) { bFetched = true; return []Item{{ID: "b"}}, nil }); err != nil {
+	if _, err := c.GetOrFetch(context.Background(), "b", func(context.Context) ([]Item, error) { bFetched = true; return []Item{{ID: "b"}}, nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !bFetched {
@@ -118,10 +119,10 @@ func TestShelfCacheEvictsLeastRecentlyUsed(t *testing.T) {
 // Clear forgets everything, cached or in flight, for a rescan.
 func TestShelfCacheClear(t *testing.T) {
 	c := &ShelfCache{}
-	c.GetOrFetch("q", func() ([]Item, error) { return []Item{{ID: "1"}}, nil })
+	c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) { return []Item{{ID: "1"}}, nil })
 	c.Clear()
 	fetched := false
-	c.GetOrFetch("q", func() ([]Item, error) { fetched = true; return []Item{{ID: "1"}}, nil })
+	c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) { fetched = true; return []Item{{ID: "1"}}, nil })
 	if !fetched {
 		t.Error("Clear did not forget the cached listing")
 	}
@@ -131,17 +132,68 @@ func TestShelfCacheClear(t *testing.T) {
 // for it would wait for ever.
 func TestGetOrFetchSurvivesAPanickingFetch(t *testing.T) {
 	var c ShelfCache
-	if _, err := c.GetOrFetch("k", func() ([]Item, error) { panic("adapter bug") }); err == nil {
+	if _, err := c.GetOrFetch(context.Background(), "k", func(context.Context) ([]Item, error) { panic("adapter bug") }); err == nil {
 		t.Fatal("a panic came back as no error")
 	}
 	done := make(chan struct{})
 	go func() {
-		_, _ = c.GetOrFetch("k", func() ([]Item, error) { return nil, nil })
+		_, _ = c.GetOrFetch(context.Background(), "k", func(context.Context) ([]Item, error) { return nil, nil })
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the next fetch of the shelf hung")
+	}
+}
+
+// A shared fetch outlives the caller that started it: one request going away
+// (a closed tab, a newer search) used to fail everybody waiting on the fetch.
+func TestGetOrFetchSurvivesItsFirstCaller(t *testing.T) {
+	c := &ShelfCache{}
+	release := make(chan struct{})
+	first, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.GetOrFetch(first, "q", func(ctx context.Context) ([]Item, error) {
+			<-release
+			return []Item{{ID: "1"}}, ctx.Err()
+		})
+		done <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("the cancelled caller should stop waiting")
+	}
+	result := make(chan []Item, 1)
+	go func() {
+		items, _ := c.GetOrFetch(context.Background(), "q", nil)
+		result <- items
+	}()
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	if items := <-result; len(items) != 1 {
+		t.Fatalf("the second caller got %v, want the shared fetch's item", items)
+	}
+}
+
+// A listing fetched before a rescan is not cached after it.
+func TestClearDropsAFetchInFlight(t *testing.T) {
+	c := &ShelfCache{}
+	release := make(chan struct{})
+	go c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) {
+		<-release
+		return []Item{{ID: "old"}}, nil
+	})
+	time.Sleep(20 * time.Millisecond)
+	c.Clear()
+	close(release)
+	time.Sleep(20 * time.Millisecond)
+	items, _ := c.GetOrFetch(context.Background(), "q", func(context.Context) ([]Item, error) {
+		return []Item{{ID: "new"}}, nil
+	})
+	if len(items) != 1 || items[0].ID != "new" {
+		t.Fatalf("got %v after the rescan, want the new listing", items)
 	}
 }

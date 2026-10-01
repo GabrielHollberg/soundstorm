@@ -126,11 +126,26 @@ func (c *slimCache) get(key string) *slimLayout {
 	defer c.mu.Unlock()
 	l := c.m[key]
 	if l != nil && time.Since(l.made) > slimKeep {
-		c.bytes -= len(l.head)
-		delete(c.m, key)
+		c.forget(key)
 		return nil
 	}
 	return l
+}
+
+// forget takes key out of the map and the order together. Left in the order,
+// a key long gone would later be evicted in place of a fresh one put back
+// under the same name - or count against the size as if it still held room.
+func (c *slimCache) forget(key string) {
+	if old, ok := c.m[key]; ok {
+		c.bytes -= len(old.head)
+		delete(c.m, key)
+	}
+	for i, k := range c.order {
+		if k == key {
+			c.order = append(c.order[:i:i], c.order[i+1:]...)
+			break
+		}
+	}
 }
 
 func (c *slimCache) put(key string, l *slimLayout) {
@@ -139,11 +154,10 @@ func (c *slimCache) put(key string, l *slimLayout) {
 	if c.m == nil {
 		c.m = map[string]*slimLayout{}
 	}
-	if old, ok := c.m[key]; ok {
-		c.bytes -= len(old.head)
-	} else {
-		c.order = append(c.order, key)
-	}
+	// Put again, a song is as fresh as one put for the first time, so it
+	// moves to the back of the order.
+	c.forget(key)
+	c.order = append(c.order, key)
 	c.m[key] = l
 	c.bytes += len(l.head)
 	for len(c.order) > 0 && (len(c.order) > slimCacheSize || c.bytes > slimCacheBytes) {
@@ -158,10 +172,7 @@ func (c *slimCache) put(key string, l *slimLayout) {
 func (c *slimCache) drop(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if old, ok := c.m[key]; ok {
-		c.bytes -= len(old.head)
-		delete(c.m, key)
-	}
+	c.forget(key)
 }
 
 // slimmable reports whether a stream request may be sent slim: an original
@@ -333,7 +344,15 @@ func (p *Proxy) slimLayoutFor(ctx context.Context, target source.Target) (*slimL
 	}
 	no := &slimLayout{made: time.Now()}
 	if err != nil {
-		return no, nil // no ranges: send it as it is
+		// A 200 is a backend that ignores ranges, which will not change:
+		// remember to send the song as it is. Anything else - a 503 while
+		// it restarts, a body cut short - is not an answer about the song,
+		// and kept for an hour it would stop the song being sent slim long
+		// after the backend was back.
+		if resp.StatusCode == http.StatusOK {
+			return no, nil
+		}
+		return nil, err
 	}
 	size, ok := rangeTotal(resp)
 	if !ok || size <= 0 {

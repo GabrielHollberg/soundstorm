@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ebooks and documents - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends/local" data-root="..">
+<main>
+<h1>Ebooks and documents</h1>
+<p class="lede">Ebooks and documents have no backend. SoundStorm reads <code>library/ebooks</code> and
+<code>library/documents</code> itself, with <code>localbooks</code> as the source and two small readers,
+<code>internal/epub</code> and <code>internal/pdf</code>, that read just enough of each file to describe
+it. An optional OPDS source can still point at a Calibre server running elsewhere.</p>
+
+<h2 id="why">Why no backend</h2>
+<p>Calibre-Web was the original ebook backend, and was removed: it needed a database rather than a
+folder, its setup had no API (CSRF form-scraping), and its password could not be rotated. Reading the
+folder directly is justified by one property: <strong>an EPUB is self-describing</strong> - its title,
+author, language and cover are in documented XML inside it - and a book needs no transcoding. A PDF
+needs none either. That is the whole precedent, and it should not be cited for anything else: video is
+never self-describing, and photos fail on HEIC.</p>
+
+<h2 id="localbooks">localbooks</h2>
+<p><code>internal/source/localbooks</code> is one source type, instantiated twice:
+<code>localbooks.Config.Kind</code> picks EPUB-and-PDF for <code>ebooks</code> or PDF-only for
+<code>documents</code>. A document is opened exactly as a PDF book is; the difference is which shelf it
+is on, and so which permission and rescan it belongs to.</p>
+<ul>
+  <li><strong>Scanning.</strong> <code>Start</code> runs the first scan before provisioning
+  health-checks it; after that a ticker rescans every two minutes
+  (<code>DefaultRescanInterval</code>), and an upload asks for one at once. It keeps what it learnt in
+  memory - there is nothing to provision and nothing on disk to go stale.</li>
+  <li><strong>Search and browse</strong> are a match over that list. Browsing sorts by title and then
+  path before cutting a page, so paging through the merge is exact.</li>
+  <li><strong>Serving.</strong> File targets come from SoundStorm's own disk (<code>Target.FilePath</code>)
+  and covers extracted from inside an EPUB from memory (<code>Target.Bytes</code>).
+  <code>BookOpener</code> serves a book's inner files to the reader.</li>
+  <li><strong>Deletion</strong> is the question that cannot arise: the folder is read on every scan, so a
+  deleted book is simply gone from the next one.</li>
+</ul>
+<div class="warn">This is the one parser that ordinary members can feed directly - anyone with upload
+access drops a file, and the scan parses it on a ticker with nobody watching. A panic there, unrecovered,
+would crash the server on that file and again on every restart, because the file is still on disk. So
+each file is read through <code>readSafely</code>, which turns a panic into an ordinary "could not read",
+and the whole walk runs inside <code>scanRecovered</code>.</div>
+
+<h2 id="epub">internal/epub</h2>
+<p>An EPUB is a zip with a <code>META-INF/container.xml</code> naming an OPF package file, whose Dublin
+Core metadata gives title, author, language, subjects and the cover. <code>internal/epub</code> reads
+exactly that. Calibre writes a <code>metadata.opf</code> beside every book in the same format, so
+<code>ParseOPF</code> reads both - which is how an existing Calibre library works with no SQLite driver,
+series and series index included. The sidecar wins where it exists, since it holds curated metadata.</p>
+<p>It is written defensively because the input is a stranger's file:</p>
+<table>
+  <tr><th>Guard</th><th>Why</th></tr>
+  <tr><td>Central directory measured first, over 2 MB refused, any zip64 trigger refused</td><td><code>zip.OpenReader</code> parses the directory from its start to the end of the file whatever the entry count claims, at about four times its size; archive/zip also switches to zip64 when a 16-bit field reads 0xFFFF.</td></tr>
+  <tr><td>16 MB per entry (<code>maxResourceBytes</code>)</td><td>Zip-bomb protection for anything the reader fetches.</td></tr>
+  <tr><td>2 MB for the OPF and the sidecar</td><td>The sidecar was once an unbounded read on every scan.</td></tr>
+  <tr><td>A few books open at once</td><td>Bounded memory under concurrent readers.</td></tr>
+  <tr><td>Covers must be declared images, never SVG</td><td>A cover declared as <code>x.js</code> was once served as a script.</td></tr>
+</table>
+
+<h2 id="pdf">internal/pdf</h2>
+<p><code>internal/pdf</code> deliberately does not parse PDF structure. Doing it properly means the
+cross-reference table, then cross-reference streams, then object streams - hundreds of lines before the
+first title. Measured against five real PDFs from five producers (pdfTeX, Gutenberg, Adobe Designer,
+Ghostscript, PDFsam), all of it would have returned nothing: every Info dictionary was absent or literally
+<code>/Title ()</code>.</p>
+<p>Two of the five carried an XMP packet - Dublin Core, plain XML, uncompressed - which a byte scan and
+<code>encoding/xml</code> reach for free, in the vocabulary <code>internal/epub</code> already speaks. So
+the order is: XMP, then the Info dictionary if it happens to be readable, then the file name. For PDFs the
+file name is a primary source - "Title - Author (2017).pdf" is often the only information anyone wrote
+down - and it is always the <em>dropped</em> name that is parsed, never the staged upload's
+<code>part-123456789</code>.</p>
+<ul>
+  <li><strong>XMP nests every value</strong> inside <code>rdf:Alt</code> or <code>rdf:Seq</code> containing
+  <code>rdf:li</code>, so reading <code>dc:title</code> as a plain string yields an empty one. That is
+  exactly how the five files first looked as if they had no metadata at all.</li>
+  <li><strong>Packets over 1 MB are not decoded</strong> (<code>maxXMP</code>): a 16 MB PDF of nothing but
+  empty <code>&lt;Description/&gt;</code>s took 2.6 GB to decode, on upload and every scan.</li>
+  <li><strong>No covers</strong>: extracting one means rendering page one, which needs a PDF renderer this
+  project does not carry. <strong>No position</strong> either: PDFs open in the browser's own viewer, which
+  does not expose one.</li>
+</ul>
+
+<h2 id="shelves">Which shelf a PDF belongs on</h2>
+<p>Deciding book or document is decided at upload, with evidence first and a question only without it: a
+PDF beside a <code>metadata.opf</code> or an EPUB is a book (Calibre), one under <code>Books</code> or
+<code>Calibre</code> is a book, one under <code>Papers</code>, <code>Manuals</code> or <code>Taxes</code>
+is a document - whole folder names only, so "Paperback Writer" is not a paper. A loose PDF is asked about
+once per dropped folder. Ebooks are filed <code>Author/Title/</code>; documents keep the shape they were
+dropped in. See <a href="../server/library.html">the library</a>.</p>
+
+<h2 id="opds">The optional OPDS source</h2>
+<p><code>internal/source/opds</code> and <code>internal/provision/calibreweb.go</code> remain as an opt-in
+for a Calibre server running somewhere else, via <code>SOUNDSTORM_CALIBREWEB_URL</code>. SoundStorm no
+longer runs that server, so it cannot vouch for it: a log line used to call its published default password
+safe "because it is unreachable except through SoundStorm", which stopped being true when the bundled
+container went, and now says the password is safe only if the operator's own server is. OPDS ids are the
+client's, fetched with the server's credential, so an id must stay under the server's <code>opds/</code>
+tree with no query of its own. A remote catalog cannot serve a book's insides, so the in-browser reader is
+for local books only.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

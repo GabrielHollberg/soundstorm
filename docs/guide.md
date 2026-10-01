@@ -53,6 +53,11 @@ shelf each belongs on and files it tidily:
   `Author/Title/`, whatever shape the drop had. Names come from the files' own
   tags where they have them.
 - A film's subtitles and poster travel with it.
+- **Photos and videos from a phone or camera** go into your own photo folder,
+  sorted by when they were taken (see [Photos](#photos)).
+- **A zip** is looked inside without unpacking it: a photo download (Google,
+  Apple, Facebook and the rest) is brought into your photos; any other zip is
+  not unpacked, and a message says so.
 - **When it can't tell, it asks**, once per folder: whether an MP3 is a song or
   an audiobook chapter, whether a PDF is a book or a document, and whether a
   folder of unnumbered videos is a series.
@@ -97,30 +102,27 @@ year.
 
 ### Now Playing
 
-Playing a song opens **Now Playing**, with the cover and the lyrics lit up as
-they're sung.
+Playing a song opens **Now Playing**, with the lyrics lit up as they're sung
+(on a computer, beside the cover).
 
 ![Now Playing on a computer, lyrics lit up as they're sung](shots/desktop-now-playing.png)
 
 - **Swipe sideways** anywhere to go to the next or previous song.
-- **The sparkle button** at the top of Now Playing opens **Cover looks**: every
-  look in one place, grouped as Covers, Visualizers and Full screen. Tap one to
-  switch to it.
-- **Tap the cover** to go round the cover, a spinning disc, a record and the
-  last visualizer you used. The looks are:
-  - the cover
-  - a spinning disc
-  - a **record**, with the cover as its label and the song, artist and album
-    printed round it
-  - six **visualizers**, which replace the cover with something that moves
-    to the actual song: its beats, the kick and snare, and how loud it is.
-    They are **Orb** (a glowing orb and a vortex of light trails),
-    **Spectrum**, **Warp**, **Waves**, **Kaleidoscope** and **Fireworks**,
-    all in the cover's colours.
-  - six **full-screen** ones that fill the whole screen behind the title and
-    controls: **Flow**, **Storm** (rain and lightning), **Synthwave**,
-    **Galaxy**, **Aurora** and **Lava**.
-
+- **The Looks button** at the top of Now Playing opens a sheet of every look,
+  in two groups. Tap one to switch to it. **Double-tap** the screen on a phone
+  to move to the next look.
+  - **Lyrics and covers:** **Lyrics** (the default: the song's words, the line
+    being sung in the middle), the cover, a spinning disc, and a **record**
+    with the cover as its label and the song, artist and album printed round
+    it.
+  - **Visualizers**, full screen behind the title and controls, moving to the
+    actual song - its beats, the bass and sharp hits, how loud it is - in the
+    cover's colours: **Orb**, **Spectrum**, **Warp**, **Waves**,
+    **Kaleidoscope**, **Fireworks**, **Flow**, **Storm** (rain, clouds and
+    lightning), **Synthwave**, **Galaxy**, **Aurora**, **Lava**, and
+    **Analysis**, which shows what SoundStorm heard in the song.
+  - **Timing** in the same sheet nudges the visualizers earlier or later if
+    they look out of step with the sound on this device.
 
   Your choice is remembered on every device.
 - **Hold anywhere** to show every option as icons over the cover: info, sleep
@@ -143,8 +145,8 @@ its menu.
 - **Data saver.** Stream at a lower quality on this device, or only on mobile
   data.
 - **Even volume.** Songs with ReplayGain tags play at the same loudness.
-- **Sleep timer.** Stop after 15 minutes to an hour, or at the end of the song,
-  fading out.
+- **Sleep timer.** Stop after 15 minutes to an hour, a time of your own, or at
+  the end of the song, fading out. It works with the screen off.
 - **Keep the screen on.** Under **Settings → Playback on this device**: off,
   while Now Playing is open (for watching the visualizers), or always while the
   app is open. Set on each device separately.
@@ -185,17 +187,29 @@ When an episode ends, the next one starts after a short countdown.
 
 Anything plays: files a browser can't decode are converted as they play, and
 seeking still works. **Subtitles** (embedded or beside the file) and a choice
-of **audio language** are in the player. **Continue** on Home remembers where
-you stopped, for each person separately.
+of **audio language** are in the player; each track says what it is, for
+example "English · Dolby TrueHD Atmos 7.1". **Continue** on Home remembers
+where you stopped, for each person separately.
+
+**Picture quality** is set for each device under **Settings → Playback on this
+device → Film quality**: *Smart* (the original at home, lighter away from home;
+the default), *Always original*, *Standard* (about 20 Mbps) or *Data saver*
+(720p). The **Quality** button in the player changes it for the film you're
+watching, and the next episode. **Downloading** a film asks which quality, and
+which audio language when there's more than one.
 
 ## Books
 
 **Books** has **Audiobooks**, **Ebooks** and **Documents**, plus **Authors**
 and **Series** across both kinds of book.
 
-- **Audiobooks** play with chapters, a speed control (0.75x to 3x) and a sleep
-  timer. Your place is kept, and it's the same place the Audiobookshelf phone
-  app uses.
+- **Audiobooks** play with a speed control (0.75x to 3x) and a sleep timer.
+  **Chapters** opens the book's table of contents. The timeline is the
+  chapter you're in, with the whole book's progress under it; the skip buttons
+  go back and on thirty seconds, and a swipe moves to the next or previous
+  chapter. Books play a little quieter than songs, since they're mastered loud
+  (change it under **Settings → Playback on this device**). Your place is
+  kept, and it's the same place the Audiobookshelf phone app uses.
 - **Ebooks** (EPUB and PDF) open in the reader. Swipe or tap the sides to turn
   pages. Your place is kept across devices. You can read while music plays.
 - **Read along** lists every book you have both as an ebook and as an
@@ -217,6 +231,33 @@ and **Series** across both kinds of book.
 **Download original** gives you the untouched file, and videos play in the
 player. You can name somebody the photo server found but couldn't name, from
 their page.
+
+**Everyone has their own photos.** What each person adds goes into their own
+folder (`pictures/Personal/<name>/`), sorted by year and month taken, and they
+see only their own; the owner sees everybody's. **Settings → Your photos** says
+how much space you've used. The owner sets each person's space under
+**Settings → People** (100 GB unless changed); the owner's own has no limit.
+
+**Phone backup.** In the Android app, **Settings → Your photos → Back up this
+phone's photos** sends new photos and videos to your folder in the background:
+on Wi-Fi only unless you untick it, videos too unless you untick that, and
+only while charging if you ask. It shows how far it has got, and photos
+already on the server are never sent twice.
+
+**Bring your photos in from anywhere.** Under **Settings → Your photos**, each
+place your photos might be has its own steps: Google Photos (Takeout), iCloud,
+Facebook, Instagram, Snapchat Memories, Flickr, OneDrive, Dropbox or Amazon
+Photos, WhatsApp and Telegram, and SD cards, cameras, old phones and computers.
+Download your photos from the service as zips and drop them anywhere on the
+window. Each photo is filed by when it was taken, with its date and place kept
+(written beside it, never changing the photo itself), and a photo you already
+have is skipped - if the copy coming in knows its date or place better, the
+one you have is corrected. Big downloads carry on where they stopped if the
+connection drops.
+
+**Keeping your own folders.** Dropped photos are always sorted by date. To keep
+an arrangement of folders, copy them straight into your folder on the server's
+drive; they appear as they are and are left alone.
 
 ## Favorites, playlists and selecting
 
@@ -290,7 +331,9 @@ tab disappears, search stops finding films, and the files can't be reached
 directly either. The unit is a whole shelf ("no films"), not individual titles.
 
 Everyone has their own favorites, playlists, history, recap, and place in every
-film and book.
+film and book - and their own **photos**, which only they and the owner can
+see. The owner sets each person's photo space here (100 GB unless changed; the
+household default can be changed too).
 
 **Passwords:**
 - Changing your own password asks for the current one and signs you out
@@ -309,7 +352,16 @@ a Copy button.
 Within a minute of starting, SoundStorm also gets a secure address like
 `https://k3x9m2p7qa.home.soundstorm.dev:8099`, which it moves to by itself.
 
-**Install it as an app:**
+**The apps:**
+- **Android** (phones, and Google TV, Android TV and Fire TV): the newest
+  `android-` file on the [releases page](https://github.com/GabrielHollberg/soundstorm/releases).
+  Music plays like any music app's, with the lock screen, Bluetooth and car
+  controls, and it can back up the phone's photos. On a TV it's driven by the
+  remote: the arrows move, OK plays, Back goes back.
+- **iPhone** and **Apple TV**: SoundStorm apps (in testing). The Apple TV app
+  plays music with every visualizer, films, audiobooks, photos and books.
+
+**Or install the web app:**
 - **iPhone:** Share → Add to Home Screen.
 - **Android:** Chrome menu → Install app. This only works from the secure
   address.
@@ -392,7 +444,9 @@ Your library, accounts and settings are kept.
 ## Backing it up
 
 One file holds every account, everyone's favorites and playlists, and the
-passwords SoundStorm made for the media servers. **Those passwords exist
+passwords SoundStorm made for the media servers. (It doesn't hold everyone's
+year-in-music listening log or the covers and playlist pictures people chose;
+those stay in SoundStorm's data and move with it to another computer.) **Those passwords exist
 nowhere else.** Keep a copy somewhere other than this computer, and treat it
 like a password.
 
@@ -505,6 +559,9 @@ it, run `docker compose up -d`.
 | `SOUNDSTORM_TLS` | `auto` (default from the installers), `off`, `self-signed`, `file` |
 | `SOUNDSTORM_TLS_HOSTS` | The server's LAN address(es), for the secure name |
 | `SOUNDSTORM_SETUP_CODE` | The code the first sign-up needs |
+| `SOUNDSTORM_REMOTE_ACCESS` | `on` to reach it from anywhere (also a switch in Settings) |
+| `SOUNDSTORM_TRUST_PROXY` | `true` behind your own reverse proxy that terminates HTTPS |
+| `SOUNDSTORM_IMAGE` | Which SoundStorm image to run, to hold a specific version |
 
 Useful commands, in the install folder:
 

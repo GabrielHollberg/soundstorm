@@ -91,6 +91,11 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 	if size <= 0 || size > maxTagBytes {
 		return Tags{}, errUnsupported
 	}
+	// 2.2 had a compression flag here whose scheme was never defined; nobody
+	// can read such a tag, so it says nothing.
+	if major == 2 && flags&0x40 != 0 {
+		return Tags{}, nil
+	}
 
 	if _, err := r.Seek(10, io.SeekStart); err != nil {
 		return Tags{}, err
@@ -104,12 +109,17 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 	// tag can look like the start of an audio frame to a decoder that does not
 	// understand tags. Undo it, or every frame length after the first such
 	// pair is wrong and the walk below falls off the end.
-	if flags&0x80 != 0 {
-		body = bytes.ReplaceAll(body, []byte{0xFF, 0x00}, []byte{0xFF})
+	//
+	// Only up to 2.3 is it undone across the whole tag. In 2.4 a frame's size
+	// counts the bytes as stored, unsynchronized, so the frames are cut out
+	// first and each is undone on its own (below).
+	unsynced := flags&0x80 != 0
+	if unsynced && major < 4 {
+		body = undoUnsync(body)
 	}
 	// An extended header sits between the header and the frames and is not
-	// one; skip it by the length it declares.
-	if flags&0x40 != 0 && len(body) >= 4 {
+	// one; skip it by the length it declares. 2.2 has none.
+	if major >= 3 && flags&0x40 != 0 && len(body) >= 4 {
 		skip := syncsafe(body[:4])
 		if major < 4 {
 			skip = int(binary.BigEndian.Uint32(body[:4])) + 4
@@ -117,6 +127,10 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 		if skip > 0 && skip < len(body) {
 			body = body[skip:]
 		}
+	}
+
+	if major == 2 {
+		return readID3v22(body), nil
 	}
 
 	var t Tags
@@ -135,7 +149,31 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 		if frameSize <= 0 || frameSize+10 > len(body) {
 			break
 		}
+		format := body[9]
 		payload := body[10 : 10+frameSize]
+		body = body[10+frameSize:]
+
+		if major >= 4 {
+			// Compressed or encrypted: nothing here can read it.
+			if format&0x0C != 0 {
+				continue
+			}
+			// The tag's flag means every frame is unsynchronized; a frame
+			// may also say so for itself.
+			if unsynced || format&0x02 != 0 {
+				payload = undoUnsync(payload)
+			}
+			// A data length indicator: four syncsafe bytes giving the
+			// frame's real length, before the text.
+			if format&0x01 != 0 {
+				if len(payload) < 4 {
+					continue
+				}
+				payload = payload[4:]
+			}
+		} else if format&0xC0 != 0 {
+			continue // 2.3: compressed or encrypted
+		}
 
 		switch id {
 		case "TPE1":
@@ -147,12 +185,51 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 		case "TIT2":
 			t.Title = decodeID3Text(payload)
 		}
-		body = body[10+frameSize:]
 	}
 	return t, nil
 }
 
+// readID3v22 walks the frames of an ID3v2.2 tag, which is what iTunes wrote
+// into MP3s for years: three-letter frame names, three-byte sizes and a
+// six-byte header with no flags. The text inside is the same as later
+// versions'.
+func readID3v22(body []byte) Tags {
+	var t Tags
+	for len(body) >= 6 {
+		id := string(body[0:3])
+		if id == "\x00\x00\x00" {
+			break
+		}
+		frameSize := int(body[3])<<16 | int(body[4])<<8 | int(body[5])
+		if frameSize <= 0 || frameSize+6 > len(body) {
+			break
+		}
+		payload := body[6 : 6+frameSize]
+		body = body[6+frameSize:]
+		switch id {
+		case "TP1":
+			t.Artist = decodeID3Text(payload)
+		case "TP2":
+			t.AlbumArtist = decodeID3Text(payload)
+		case "TAL":
+			t.Album = decodeID3Text(payload)
+		case "TT2":
+			t.Title = decodeID3Text(payload)
+		}
+	}
+	return t
+}
+
+// undoUnsync turns every 0xFF 0x00 back into the 0xFF it stood for.
+func undoUnsync(b []byte) []byte {
+	return bytes.ReplaceAll(b, []byte{0xFF, 0x00}, []byte{0xFF})
+}
+
 // decodeID3Text reads a text frame: one encoding byte, then the string.
+//
+// A 2.4 frame can hold several values separated by NULs ("A\x00B"). Only the
+// first is kept: they are usually several artists, and run together they
+// would become one artist called "AB".
 func decodeID3Text(b []byte) string {
 	if len(b) < 1 {
 		return ""
@@ -160,6 +237,9 @@ func decodeID3Text(b []byte) string {
 	encoding, text := b[0], b[1:]
 	switch encoding {
 	case 0: // ISO-8859-1, one byte per rune
+		if i := bytes.IndexByte(text, 0); i >= 0 {
+			text = text[:i]
+		}
 		runes := make([]rune, 0, len(text))
 		for _, c := range text {
 			runes = append(runes, rune(c))
@@ -170,10 +250,14 @@ func decodeID3Text(b []byte) string {
 	case 2: // UTF-16BE, no mark
 		return clean(decodeUTF16(text, false))
 	default: // 3, and anything unknown, is UTF-8 in practice
+		if i := bytes.IndexByte(text, 0); i >= 0 {
+			text = text[:i]
+		}
 		return clean(string(text))
 	}
 }
 
+// decodeUTF16 decodes up to the first NUL code unit, which ends a value.
 func decodeUTF16(b []byte, expectBOM bool) string {
 	bigEndian := true
 	if expectBOM && len(b) >= 2 {
@@ -186,11 +270,16 @@ func decodeUTF16(b []byte, expectBOM bool) string {
 	}
 	units := make([]uint16, 0, len(b)/2)
 	for i := 0; i+1 < len(b); i += 2 {
+		var u uint16
 		if bigEndian {
-			units = append(units, binary.BigEndian.Uint16(b[i:i+2]))
+			u = binary.BigEndian.Uint16(b[i : i+2])
 		} else {
-			units = append(units, binary.LittleEndian.Uint16(b[i:i+2]))
+			u = binary.LittleEndian.Uint16(b[i : i+2])
 		}
+		if u == 0 {
+			break
+		}
+		units = append(units, u)
 	}
 	return string(utf16.Decode(units))
 }

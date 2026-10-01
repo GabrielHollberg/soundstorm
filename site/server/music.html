@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music: radio, moods, beats - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/music" data-root="..">
+<main>
+<h1>Music: radio, moods, beats</h1>
+<p class="lede">Navidrome scans the music and serves the bytes. Everything a music app is judged on
+past that - albums that match the folders, stations that never run dry, moods, lyrics, leveling and
+an animation that keeps time with the song - is built in the server on top of it, mostly from what
+is already there, with the two genuinely expensive parts (hearing mood, and lyrics or bios from the
+internet) delegated or opt-in.</p>
+
+<h2 id="folders">Artists and albums are the folders</h2>
+<p>Navidrome groups by tags. On a real 4,408-song library that made <strong>1,467 albums out of 551
+album folders</strong>: an album whose tracks disagree about the year or album artist splits, and
+"Artist feat. Someone" becomes an artist. SoundStorm files every upload as
+<code>Artist/Album/track</code>, so the folders are the tidy version, and the music browser shows
+them (<code>internal/source/subsonic/folders.go</code>): the first folder of a song's path is the
+artist, the second the album, a disc folder stays in its album, and a song loose in an artist folder
+is one of their Singles. It is a grouping of Navidrome's own song list, cached like the shelf -
+nothing reads the disk.</p>
+<p>Names are the folders', spelled as the tags spell them when they are the same name with case and
+punctuation set aside: a folder cannot be "AC/DC", so <code>AC-DC</code> shows as AC/DC. An artist's
+picture is the cover of their newest album that has one, since Navidrome's own artist image is a
+placeholder silhouette without an internet agent.</p>
+<div class="warn">This depended on real paths, and Navidrome had been making them up from the tags
+unless told otherwise - which looks right exactly when tags and folders agree, the case in every test
+library. Deleting a song used that path. The fix was <code>ND_SUBSONIC_DEFAULTREPORTREALPATH</code>
+plus a new client name, because Navidrome reads that setting only once per client.</div>
+
+<h2 id="radio">Radio</h2>
+<p>Asked for as "blow Plexamp out of the water". Plexamp's radio rests on analysing every track's
+audio; these stations rest on the whole music shelf, this person's plays and favorites, the sound
+analysis where AudioMuse-AI has heard a song, and (with discovery on) which artists people play
+together.</p>
+<ul>
+  <li><strong>Stations:</strong> Library radio, Deep cuts (unplayed songs by the artists you play
+  most), Time travel (year by year), Discovery radio, a true random Shuffle all, and radio from a
+  song, album or artist - built from what <em>sounds like</em> the seed once it has been heard,
+  falling back to similar artists and genres.</li>
+  <li><strong>A tuner:</strong> build a station by hand - how familiar (never played to favorites),
+  which decades, genres, moods and an energy slider.</li>
+  <li><strong>Sequenced, not shuffled.</strong> A weighted draw (Efraimidis-Spirakis), no artist more
+  than their share of a batch, then ordered so no artist repeats within three songs and no album
+  plays twice in a row. The share cap is what makes the spread possible: a draw where one artist has
+  half the songs cannot be spread, whatever the order.</li>
+  <li><strong>Endless.</strong> <code>POST /api/music/radio</code> answers 25 songs; the app asks for
+  the next batch while five remain, sending up to 1,500 queued ids so nothing repeats. Once
+  everything is excluded a station starts over rather than stopping. Songs played in the last six
+  hours are drawn a tenth as often.</li>
+</ul>
+<p>Library mixes come from <code>source.MixSource</code> (Navidrome's random songs and genres):
+shuffle, recently added, genres with five or more songs, decades.</p>
+
+<h2 id="moods">Moods, by rank</h2>
+<p>Measured first on a real library: 42% of songs were tagged just "Pop", none carried a mood or
+tempo tag, and MusicBrainz names moods only for famous albums. Mood from metadata would have been a
+guess from "Pop". Hearing mood is machine learning over the audio, so it is a backend:
+<a href="../backends/audiomuse.html">AudioMuse-AI</a>, which gives six classifiers (danceable,
+aggressive, happy, party, relaxed, sad), energy, tempo, key and style tags.</p>
+<div class="why">The classifiers answer in a narrow band - a solo piano piece scored 0.58 to 0.63 on
+all six - so the raw numbers mean little and their <em>order</em> means a lot. Every feature becomes
+its rank in this library (ties share one), and a mood is an average of ranks
+(<code>moods.go</code>): Chill is relaxed, calm and not aggressive; Focus leans on the instrumental
+tag. A mood station takes songs scoring over 0.6, weighted by how far over.</div>
+
+<h2 id="lyrics">Lyrics</h2>
+<p>Local lyrics come through OpenSubsonic's <code>getLyricsBySongId</code> - a <code>.lrc</code> beside
+a song gives synced lines with millisecond starts. <strong>LRCLIB</strong> (<code>internal/lyrics</code>)
+fills in songs that have none, and is the first thing SoundStorm sends outside the house about what
+somebody plays, so it is an owner setting, <strong>off by default</strong>. LRCLIB because it needs
+no key or account and has synced lyrics. It is asked only on play, never in bulk, and matched on
+artist, title, album and <strong>duration</strong> - duration is what picks the studio take over a
+live one. Every answer, "none" included, is cached under the state directory for good (none re-asks
+after 30 days); never in the music folders, which are the user's and scanned.</p>
+
+<h2 id="discovery">Discovery</h2>
+<p>Also off by default (<code>internal/discover</code>). MusicBrainz names the artist (a confident
+match only - another artist's bio is worse than none), ListenBrainz gives the artists people play in
+the same sessions, and Wikipedia, found through MusicBrainz's Wikidata link, gives the bio. None needs
+a key, which is why not Last.fm. MusicBrainz's one request a second is kept to; answers are cached for
+months. Only artists in the library are ever offered or looked up. It gives artist pages an About and
+Similar artists, and "More like" mixes - from what is already known, the rest fetched in the
+background so the mixes page never waits on the network.</p>
+
+<h2 id="leveling">Leveling and gapless</h2>
+<p>Navidrome passes ReplayGain through as OpenSubsonic <code>replayGain</code>. The app uses album
+gain when an album plays in order, track gain otherwise, with a -6 dB pre-amp so a quiet track can
+come <em>up</em>, capped by its peak. Checked with tags of 0, -5 and +8 dB: volumes came out at
+exactly the computed 0.50, 0.28 and 1.00.</p>
+<div class="why">It is set through <code>audio.volume</code>, not Web Audio. Routing a phone's music
+through Web Audio is what stops it when an iPhone locks; iOS ignoring a page's volume is the cheaper
+loss.</div>
+<p>Gapless: the next song is fetched whole into memory while the current one plays. Measured by
+polling <code>currentTime</code> every 4 ms - <code>timeupdate</code> fires only every ~250 ms and
+the first measurement taken on it reported its own floor - the gap is 20-23 ms on a fast network and
+180-195 ms before falling to 15-17 ms on a throttled one. Streaming quality, slim headers without
+embedded pictures, and pacing on slow links are on the <a href="streaming.html">streaming page</a>.</p>
+
+<h2 id="beats">The server hears every song</h2>
+<p>The visualizers keep time with the song's actual beats, loudness and hits. The phone used to hear
+each song itself, which meant downloading every song twice and the first seconds of a hand-started
+song moving to the tempo only. Now the server hears every song once, ahead of time
+(<code>internal/beats</code>, <code>GET /api/music/beats</code>, about 11 KB a song), and the app
+only hears a song itself when the server has not.</p>
+<div class="diagram" role="img" aria-label="Navidrome converts a song to mono FLAC through the listening transcoding; internal/flac decodes it; internal/beats analyses it; the result is cached under the state directory.">
+  <div class="row">
+    <div class="box">Navidrome<small>transcoding "sslisten": mono FLAC</small></div>
+    <div class="box">internal/flac<small>a decoder of our own</small></div>
+    <div class="box core">internal/beats<small>hearSong, step for step</small></div>
+    <div class="box">state/beats/<small>a cache, never the music folders</small></div>
+  </div>
+</div>
+<ul>
+  <li><strong>Getting PCM.</strong> Go's standard library has no FLAC decoder, so
+  <code>internal/flac</code> is one, checked sample for sample against ffmpeg (16- and 24-bit, all
+  stereo modes). Navidrome's own "flac" will not do: asked for a lossy song as FLAC, it sends Opus.
+  A transcoding under SoundStorm's own name (<code>subsonic/listen.go</code>) is converted as asked,
+  and Navidrome accepts one only with <code>ND_ENABLETRANSCODINGCONFIG</code> on, which compose sets.
+  If it is refused, phones hear songs themselves as before.</li>
+  <li><strong>The analysis.</strong> 23 ms frames give loudness, a bass band and a high band above
+  7 kHz, and onsets; the tempo is the onsets' autocorrelation in tenths of a frame (whole frames could
+  not represent 170 bpm), leaning on AudioMuse's tempo; the beats come from Ellis's
+  dynamic-programming tracker; the bar's first beat is where the kick lands hardest.
+  <code>scripts/beats-parity.js</code> runs the browser's own <code>hearSong</code> under Node on the
+  same samples: 120 beats each, 0 ms apart.</li>
+  <li><strong>When.</strong> A background pass three minutes after start, two minutes after a music
+  scan and every six hours, one song at a time with a rest between; a song asked for before the pass
+  reaches it is heard then.</li>
+</ul>
+
+<h2 id="lightning">Lightning, and how its rule was found</h2>
+<p>Every look reads the same few signals, and the most visible is "strike": the moment Storm draws
+lightning and Fireworks bursts. The rule went through several readings of the owner's asks and
+measurements on real songs:</p>
+<ul>
+  <li><strong>Fixed scales, not per-song ones.</strong> Hits used to be each song's sharpest half,
+  so every song was full of hits - a song with no hi-hats lit the hi-hat lane. Now a bass jump of
+  4 dB starts to count and 10 dB is a full hit, and sharp highs above 7 kHz run on their own fixed
+  scale.</li>
+  <li><strong>A rise from the quietest of the three frames before</strong>, so a hit whose rise
+  falls across a frame boundary is not read as two half jumps.</li>
+  <li><strong>It must be heard</strong>: a hit counts in full only within 10 dB of the song's loud
+  highs (their 95th percentile), since a rise from near silence is as big as one in a chorus.</li>
+  <li><strong>On the beat</strong>: good strikes land within milliseconds of a beat; most others
+  fell 100-350 ms between beats (fills, a singer's "s"). <code>strikesAt</code> now takes a strong
+  sharp high at 60% within 70 ms of a beat or halfway between two - the threshold chosen by scoring
+  rules against the owner's own taps.</li>
+  <li><strong>Size from loudness and bass</strong>: a close bolt needs the song at 85% loudness with
+  a bass hit; otherwise a far bolt or lit clouds. Sizing by the hit had made 79% of strikes big
+  bolts.</li>
+</ul>
+<p>Analyses carry a version (now 8), so a change of rule hears downloads again, and the Apple TV
+asks the server for the same answer rather than computing its own.</p>
+
+<h2 id="training">Training the looks (developer only)</h2>
+<p>A tool for SoundStorm's developer, not a feature: it exists only with
+<code>SOUNDSTORM_TRAINING=true</code> in one install's <code>.env</code>, and the routes are owner-only
+and answer 404 elsewhere. In the Looks sheet the developer taps big moments or slides intensity while
+a song plays; each song's taps are kept under the state directory's <code>training/</code> with the
+device's timing offset, to separate the device's lateness from the hand's.</p>
+<p><code>soundstorm train-looks</code> (<code>internal/training</code>), run inside the container,
+hears each recorded song again with the same transcoding and tempo prior, finds candidate frames where
+something rises, gives each 15 measurements (rises and levels per band, loudness, distance from the
+beat, beat 1-4 and more), lines taps up by the song's median lateness, and fits a logistic regression
+scored leave-one-song-out against today's rule. On generated click tracks tapped on each bar's first
+beat, the model caught 98% where the rule caught 13%. <code>train-looks rules</code> scores versions
+of the hand-written rule against the taps - which is how the 60% lightning threshold was chosen, over
+2,270 taps on ten songs. What is learnt ships in SoundStorm for every install; nobody else can
+train.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

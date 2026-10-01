@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A request, end to end - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="architecture/request" data-root="..">
+<main>
+<h1>A request, end to end</h1>
+<p class="lede">Two journeys through the system: somebody on a train pressing play on a song in the
+Android app, and a search typed on Home that asks every backend at once. Each step names the
+package or function that does it, so the rest of the site can be read against this one.</p>
+
+<h2 id="play">Pressing play, away from home</h2>
+<div class="diagram" role="img" aria-label="Phone to SoundStorm over TLS; SoundStorm checks the session and access, finds the music source, builds a Navidrome stream URL, fetches it and sends a slimmed, paced stream back.">
+  <div class="row">
+    <div class="box">Android app<small>ExoPlayer, page's cookie</small></div>
+  </div>
+  <div class="arrow">&#8595; <code>GET /api/stream/navidrome/&lt;id&gt;</code> over TLS &#8595;</div>
+  <div class="row">
+    <div class="box">servetls.Listener<small>TLS or HTTP on one port</small></div>
+    <div class="box">auth.Require<small>session cookie</small></div>
+    <div class="box">withUserContext<small>user id, access</small></div>
+    <div class="box">Registry.ByID<small>is this shelf allowed?</small></div>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="row">
+    <div class="box core">stream.Proxy.ServeMedia<small>slim header, pace, Range</small></div>
+  </div>
+  <div class="arrow">&#8595; <code>/rest/stream.view</code> with SoundStorm's own credential &#8595;</div>
+  <div class="row">
+    <div class="box">Navidrome<small>on the compose network only</small></div>
+  </div>
+</div>
+
+<h3>1. The phone already knows it is away</h3>
+<p>The app is pointed at the install's away-from-home name
+(<code>&lt;id&gt;.net.soundstorm.dev</code>, or a Tailscale <code>ts.net</code> name). On opening,
+the page times 128&nbsp;KB from <code>/api/probe</code> once a session; under 1.2&nbsp;Mbps it
+starts songs at 128&nbsp;kbps from the first one, and remembers a slow address for six hours.
+Otherwise it asks for the original.</p>
+<p>On Android the page does not play the song itself. <code>PageScript</code> gave the page's
+<code>&lt;audio id="audio-player"&gt;</code> a stand-in, so setting its <code>src</code> becomes an
+"audio" message to <code>NativeAudio</code>, which hands the URL to Media3's ExoPlayer in
+<code>AudioService</code>. The native player carries the web view's cookies
+(<code>ResolvingDataSource</code>), so to the server it is the same signed-in person. Doing the
+playing natively is what lets Android treat the app as a music player: it survives the screen
+going off, pauses for an alarm and resumes after, and gives the lock screen its controls.</p>
+
+<h3>2. One port, two protocols</h3>
+<p>The published port speaks both plain HTTP (for <code>http://localhost:8099</code> and a first
+visit by LAN address) and TLS (for the trusted name). <code>servetls.Listener</code> peeks at the
+first byte: a TLS handshake starts with <code>0x16</code> and no HTTP request does. It hands
+<code>net/http</code> a real <code>*tls.Conn</code>, not a wrapper, because that type check is what
+fills in <code>r.TLS</code> - and <code>r.TLS</code> is what makes the session cookie Secure. The
+certificate is a real Let's Encrypt one obtained through the <a href="../server/tls.html">names
+service</a>, or the local authority's as a fallback.</p>
+
+<h3>3. The outer middleware</h3>
+<p>Every route, signed in or not, passes through the same chain built at the end of
+<code>Routes()</code>: logging, security headers, <code>sameOrigin</code> (cross-site writes refused
+on origin, not merely site, because every install shares <code>soundstorm.dev</code>) and
+<code>bodyDeadline</code>. There is deliberately no global read or write timeout: a deadline that
+expired mid-response would cancel the request's context, and a film would stop with it.</p>
+
+<h3>4. Who is asking, and what may they reach</h3>
+<p><code>auth.Require</code> finds the session. Over TLS the cookie is
+<code>__Host-soundstorm_session</code>, which a browser refuses to accept with a Domain - so a
+server under another install's name cannot plant a cookie for the whole zone. The server looks the
+token up by its SHA-256 hash; the raw token is never on disk.</p>
+<p>Then <code>withUserContext</code> puts two things on the request context:
+<code>source.WithUserID</code> (so an adapter can act as this person without depending on how
+sign-in works) and <code>source.WithAccess</code>, the set of media kinds this account may see.</p>
+<div class="why">The restriction lives in the context, and <code>Registry.All</code>,
+<code>Matching</code> and <code>ByID</code> all take a context - so a handler physically cannot
+reach a source without passing the request's permissions along. When those signatures changed,
+the compiler found every one of the ten call sites; remembering to check in each handler would
+not have. A test then walks every endpoint that can hand over bytes, metadata or a playable URL
+and asserts a restricted account is refused - <code>/api/stream</code> included, because hiding a
+search result is not a permission if the URL can be guessed.</div>
+
+<h3>5. Finding the source</h3>
+<p><code>handleStream</code> reads <code>?kbps=</code>, honouring only 96, 128, 192, 256 or 320 so
+a request cannot ask the music server for anything odd, and calls
+<code>stream.Proxy.ServeMedia</code>. That asks <code>Registry.ByID(ctx, "navidrome")</code> - which
+answers "unknown source" for an account without music - and checks the source implements
+<code>source.Streamer</code>.</p>
+
+<h3>6. The adapter builds the upstream request</h3>
+<p>The Subsonic adapter's <code>StreamTarget</code> returns a <code>source.Target</code>: a URL for
+<code>/rest/stream.view</code> with SoundStorm's own Navidrome credential in the query (that is the
+Subsonic protocol), plus headers. For a reduced bitrate it adds <code>maxBitRate</code>,
+<code>format=mp3</code> (Navidrome's default, Opus, is patchy on iPhones) and
+<code>estimateContentLength=true</code>, which gives the converted stream a length and Range
+support. A Target can also be a local file or bytes in memory; for Jellyfin it carries an
+<code>OnDone</code> that stops the transcode when the player goes away.</p>
+<p>The credential never reaches the device. Transport errors pass through <code>httpx.Redact</code>
+before they can be logged or shown, because a Subsonic URL carries its credential.</p>
+
+<h3>7. The proxy: slim, paced, seekable</h3>
+<p><strong>Slim headers.</strong> An iTunes M4A carries roughly 600&nbsp;KB before its first note,
+and a browser's media engine treats an embedded cover as a second stream and reads megabytes ahead
+before playing. Measured at 0.6&nbsp;Mbps on a real song: 34&nbsp;seconds to start as it was, 2.5
+seconds with the tags and artwork removed. So <code>serveSlim</code> builds a header in memory - the
+<code>moov</code> without <code>udta</code>/<code>meta</code>, padding dropped, every
+<code>stco</code>/<code>co64</code> chunk offset shifted - then fetches the original's audio from
+Navidrome by byte range. For an MP3 it starts at the first frame, skipping the ID3 tags. The files
+on disk are never changed.</p>
+<p><strong>Range.</strong> Any byte range of the slim file maps onto the original, so seeking still
+works (<code>parseRange</code>). A layout is cached per song for an hour, one fetch shared among
+concurrent requests.</p>
+<p><strong>Pacing.</strong> Over a slow link, handing a whole song to the network at once fills
+every buffer between server and phone, and everything after it - a skip, the next song, a cover -
+waits behind bytes nobody will play. So a request arriving by an away-from-home name
+(<code>awayFromHome</code>) is paced (<code>paceFor</code>, <code>pacedCopy</code>): a burst of the
+header plus eight seconds of audio, then 1.5 times the song's own bitrate, read from the file. At
+home nothing is paced, and nor are films.</p>
+<p><strong>Guards.</strong> Every stream path refuses a <code>Sec-Fetch-Dest</code> of script,
+worker or style (<code>RefusedDestination</code>), and <code>GuardActiveContent</code> demotes any
+script content type to <code>text/plain</code>. Audio is sent <code>no-store</code>, because a
+cached song once made the next song wait exactly 20 seconds on a browser cache lock.</p>
+
+<h3>8. Back on the phone</h3>
+<p>ExoPlayer plays; its state comes back to the page as the element's own events every half
+second, so lyrics, the timeline and the visualizers keep reading <code>currentTime</code>. A few
+seconds into the song the page hands the native player the next ten songs, with their titles and
+covers, so playback carries on gaplessly even if Android ends the page in the background. At half
+the song (or four minutes) the page records a play, which also queues a ListenBrainz scrobble if
+the person connected one.</p>
+
+<h2 id="search">A search across every backend</h2>
+<p>Typing "dune" on Home sends <code>GET /api/search?q=dune</code>. The handler builds a
+<code>media.Query</code> and calls <code>federate.Search(ctx, reg, query, perSourceTimeout)</code>.</p>
+
+<h3>Fan out, with a deadline each</h3>
+<p><code>Registry.Matching</code> returns only the sources this account may see that serve the
+asked-for kinds. Each runs in its own goroutine with its own deadline -
+<code>SOUNDSTORM_PER_SOURCE_TIMEOUT</code>, 5 seconds by default - and its own error slot. A panic
+in an adapter is caught by <code>recoverInto</code> and reported as that one source failing, the
+same shape as an error.</p>
+<div class="note">The answer is always 200. If Jellyfin is still starting, the result carries
+<code>degraded: true</code> and says which source is missing, and the books and songs still come
+back. A dead backend never takes the search down.</div>
+
+<h3>Each adapter speaks its own dialect</h3>
+<p>The backends disagree even about an empty query: Navidrome's <code>search3</code> returns
+everything, Jellyfin needs <code>searchTerm</code> omitted rather than blank, and Audiobookshelf's
+search matches nothing, so browsing uses its items endpoint instead. Each adapter returns
+<code>media.Item</code>s, the shared vocabulary.</p>
+
+<h3>Merge, rank, and page correctly</h3>
+<p><code>federate.Relevance</code> scores each item against the query and <code>sortItems</code>
+merges them; with an empty query everything scores 0 and the list falls through to alphabetical.
+Infinite scroll asks for <code>?offset=</code>, and the merge asks every source for
+<code>offset + window</code> items and slices after merging.</p>
+<div class="why">Asking each backend for "its page two" looks cheaper and is wrong: each source's
+second page starts over in its own order, so items sort in behind ones already on screen. That
+showed up as 1,760 repeated songs in 40 pages of music, because Navidrome lists songs in an order
+of its own. Now there is one comparator, <code>media.Less</code> (sort key, then title, then id),
+browsing adapters fetch their whole shelf and order it with that, and
+<code>media.ShelfCache</code> keeps the listing for 30 seconds so a scroll fetches a shelf once.
+After the fix: 2,000 distinct songs, 0 repeats, and the same 40 pages in 3.2&nbsp;s instead of
+28.6&nbsp;s.</div>
+<p>Photos are the one deliberate exception: they come newest first, Immich's own order, and each
+photo's <code>SortKey</code> is its rank in it. <code>HasMore</code> treats a source that returned
+exactly what was asked for as probably truncated, and paging stops at a depth of 10,000.</p>
+
+<h3>Back in the app</h3>
+<p>Cards draw with covers from <code>/api/art/...</code>, which come card-sized (400&nbsp;px by
+default) unless the big Now Playing cover asks for more. Tapping a result goes back down the
+first journey.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The library and dropping files in - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/library" data-root="..">
+<main>
+<h1>The library and dropping files in</h1>
+<p class="lede">The library is a folder with a subfolder per kind of media. It is the one part
+of SoundStorm a person can touch without the app, so it is created for them, named for what
+people call things, and kept tidy by the server. Dragging files onto the window does what
+dragging them into the right folder would have done - including working out which folder
+that was.</p>
+
+<h2 id="folders">The folders</h2>
+<p>Installing SoundStorm creates <code>library/</code> with <code>music/</code>,
+<code>movies/</code>, <code>tv/</code>, <code>audiobooks/</code>, <code>ebooks/</code>,
+<code>documents/</code> and <code>pictures/</code> - "movies", not "video", because that is the
+word people use. Each backend has exactly one of them mounted (read-only wherever it can be),
+so nothing scans the same folder twice. <code>SOUNDSTORM_LIBRARY_PATH</code> in
+<code>.env</code> moves the whole library, usually to an external drive, and every mount in the
+compose file reads the same variable so the shelves cannot drift apart.</p>
+<p><code>internal/library</code> owns the folders. It reads the directory for very few reasons -
+creating it, counting files so the UI can tell "nothing added yet" from "a scan is still
+running", and placing uploads. It does not index. That line matters: the moment it keeps a
+list of what is on disk, that list can go stale, and the backends already keep one each.</p>
+<div class="note">Each folder holds a generated <code>README.txt</code>. It is documentation, and
+it is also load-bearing: Jellyfin refuses to remove items when a library folder comes back
+empty (it cannot tell "everything was deleted" from "the drive did not mount"), so a folder
+that is never empty is a folder where deletions are noticed. See
+<a href="#rescan">telling the backends to look</a>.</div>
+
+<h2 id="layout">The shelf layout is enforced</h2>
+<p>Music is always <code>Artist/Album/track</code>, audiobooks always
+<code>Author/Title/part</code>, and ebooks <code>Author/Title/book</code>. A loose track at the
+top of <code>music/</code> is not broken - Navidrome reads tags, not paths - but it is exactly
+the mess the folders exist to prevent, and it accumulates one file at a time.</p>
+
+<h3>Always exactly two levels - a reversal</h3>
+<p>The first rule only filled in missing levels and left anything already two folders deep
+alone, on the theory that a folder somebody chose beats a tag. Then a drop of an audiobook
+tool's <code>Books</code> folder - <code>Books/&lt;Title&gt; [ASIN]/&lt;file&gt;.m4b</code> -
+filed ninety-four audiobooks under an author called "Books". Whatever sits above an album in a
+drop is at least as often a container as a name. So now:</p>
+<ul>
+  <li><strong>The album or book folder keeps its dropped name</strong> when it had one.
+  <code>Atomic Habits [1524779261]</code> beats the tag's <code>Atomic Habits (Unabridged)</code>,
+  and the ASIN keeps two editions apart. Only a loose file takes its album from the tags.</li>
+  <li><strong>The artist or author comes from the tags.</strong> For audiobooks the artist tag
+  is the author on every part. For music it is the performer, which varies across a
+  compilation, so the order is album artist, then the folder the album was dropped in, then the
+  track artist - otherwise a compilation without an album-artist tag scatters into a folder per
+  guest.</li>
+  <li><strong>Without tags</strong>, the folder above is used unless it is a container -
+  <code>Books</code>, <code>Music</code>, <code>Downloads</code>, <code>iTunes</code> and a few
+  more, listed in <code>intake.go</code> - in which case it is <code>Unknown Author</code>,
+  somewhere obvious to be found and fixed.</li>
+  <li><strong>Disc folders stay inside the album</strong> (<code>CD1</code>,
+  <code>Disc 2</code>), or every CD rip of an audiobook would become a book called "CD1".</li>
+  <li>Everything else in front of the artist - <code>Music/Rock/</code> - is discarded.</li>
+</ul>
+
+<h3>Ebooks follow the music rule</h3>
+<p>Ebooks used to be flat, which was fine while nothing read the folders - until a Calibre
+library arrived as <code>Author/Title (id)/</code> with its <code>metadata.opf</code> and
+<code>cover.jpg</code>, and every other upload landed loose beside it. Flattening it would have
+parted over sixteen hundred books from the sidecars that carry their curated metadata. So ebooks
+take <strong>the folder above first</strong> (a Calibre author folder is curated, while the name
+inside an EPUB is often the sort form, "Herbert, Frank"), then the book's own metadata, then the
+file name - which for a PDF is often all there is ("Title - Author (2017).pdf").</p>
+<p>What describes itself is decided per shelf, not per extension. A PDF is a book on the ebook
+shelf and a companion on the audiobook one; counted as self-describing everywhere, an Audible
+PDF would read its own metadata and land under a different author from its m4b.</p>
+
+<h3>Not restructured</h3>
+<p>Films and television keep their dropped shape: Jellyfin matches on the <em>name</em>, not the
+depth, and anything dropped there is already folder-shaped. Documents keep theirs too - a tax
+form has no author, and <code>Taxes/2024/</code> is exactly how somebody finds it again.
+Pictures are sorted by date into each person's own folder, which has
+<a href="photos.html">its own page</a>.</p>
+
+<h2 id="tags">Reading just enough</h2>
+<p><code>internal/tags</code> reads album artist, artist, album and title - from ID3v2 in MP3,
+iTunes atoms in M4A/MP4 and Vorbis comments in FLAC - and nothing else. It is not a tag library
+and must not become one: duration, artwork and replay gain belong to the backends, which are
+much better at them. Three details were verified against real files rather than reasoned about:</p>
+<ul>
+  <li><strong>ID3 frame sizes are plain integers in 2.3 and syncsafe in 2.4.</strong> Read one as
+  the other and the walk falls off the end of the first frame.</li>
+  <li><strong>Unsynchronization</strong> rewrites every <code>0xFF 0x00</code> pair. Left undone,
+  every length after the first such pair is wrong - and the first real file tested had it.</li>
+  <li><strong>MP4's <code>meta</code> is a full atom</strong> with four bytes of version and flags
+  before its children. Skip them or the walk lands mid-atom, the usual reason an M4A looks
+  untagged.</li>
+</ul>
+<p>Tags are somebody else's text, so they go through <code>cleanRelPath</code> like any path.
+Separators are replaced rather than refused - an album really is called "AC/DC Live" - and
+<code>../../etc/passwd</code> as an album name becomes the single harmless segment
+<code>..-..-etc-passwd</code>.</p>
+
+<h2 id="plan">Two steps: plan, then save</h2>
+<p>A drop is not one multipart request. <code>POST /api/upload/plan</code> takes the list of
+paths and answers where each would go; <code>PUT /api/upload?path=&amp;kind=</code> takes one
+file as the whole request body.</p>
+<div class="diagram" role="img" aria-label="The browser sends a list of paths to plan, shows the result, then uploads each file into staging, from where it is renamed into place.">
+  <div class="row">
+    <div class="box">Browser<small>walks the dropped folders</small></div>
+    <div class="box">POST /api/upload/plan<small>destinations, skips, questions</small></div>
+    <div class="box">PUT /api/upload<small>one file per request</small></div>
+  </div>
+  <div class="arrow">&#8595;</div>
+  <div class="row">
+    <div class="box">library/.uploads<small>staged, invisible to backends</small></div>
+    <div class="box core">Save<small>tags read, rule run again, duplicate check</small></div>
+    <div class="box">Shelf<small>linked or renamed into place</small></div>
+  </div>
+</div>
+<div class="why">The split buys three things a streamed multipart upload cannot have: the UI can
+say "14 files, 2 skipped, all going to Films" before a gigabyte moves; the grouping can see the
+whole list at once; and a body that is nothing but the file means no parser between the socket
+and the disk.</div>
+<p><strong>Plan and Save share the rule.</strong> Plan runs it with empty tags because the bytes
+have not arrived; Save runs it again with the file's own. They agree for an untagged file, and
+where they differ Save is better informed, never worse. So the drop panel replaces its planned
+destination with the one each upload returns.</p>
+<p>The staged file is called something like <code>part-123456789</code>, so anything that looks
+at a name - the PDF title parser, the duplicate check's format - must use the <em>dropped</em>
+name. Twice a feature first read the staged name and got it wrong; both are now tested.</p>
+<p>On the browser side, <code>walkEntry</code> must call <code>readEntries</code> until it
+returns an empty batch. It hands back at most a hundred at a time, and reading once silently
+truncates a large folder - the classic way to lose half an album.</p>
+
+<h2 id="placement">Placement is per dropped item</h2>
+<p>A film folder holds an .mkv, a .srt and a poster. The subtitle is useless in the ebook shelf
+and invisible anywhere but beside its film. So the first file in a group that can name a shelf
+decides for all of them, and companions - subtitles, artwork, .nfo, .opf - get no vote and
+inherit the answer. A folder of nothing but companions names no shelf and is skipped: a lone
+.srt has no home.</p>
+<p>Some evidence is decisive: <code>.epub</code> is a book, <code>.m4b</code> an audiobook, a
+path mentioning audiobooks is believed, and <code>S01E01</code>, <code>1x02</code> or a
+<code>Season 01</code> folder is television. A group of only images is pictures; images beside
+audio or a book are artwork. A video named the way a camera names it (<code>MVI_</code>,
+<code>PXL_</code>, <code>GOPR</code>, a date and time) is a clip for the photo shelf even on its
+own - the first test filed a camera's .MOV as a film.</p>
+
+<h2 id="questions">When it cannot tell, it asks</h2>
+<p>There is one drop zone and no shelf targets. Guessing wrong costs somebody moving files on
+disk, so the bar for guessing is "there is real evidence", not "one of them is more likely".
+The list of things worth asking about is deliberately short, because a question on every album
+drop would be worse than the occasional wrong guess:</p>
+<table>
+  <tr><th>Case</th><th>Why it is ambiguous</th></tr>
+  <tr><td>mp3, and only mp3</td><td>flac, wav and alac are music in practice; m4a is music because audiobooks use m4b. Mp3 really is both - every LibriVox recording is one.</td></tr>
+  <tr><td>Three or more videos in a folder with no episode numbering</td><td>One or two unnumbered .mkv files is a film and its extras; six is a series somebody named badly.</td></tr>
+  <tr><td>A loose PDF with no evidence</td><td>A PDF is a book or a gas bill. Beside a <code>metadata.opf</code> or under <code>Books</code> it is a book; under <code>Taxes</code> or <code>Manuals</code> a document. Otherwise asked, once per dropped folder.</td></tr>
+</table>
+<p>A question is asked per <em>group</em>, so a thirty-chapter audiobook is one decision, and the
+answer goes back to the plan endpoint, which re-plans - the destination shown is always the one
+the server will use. A question offers only shelves the account may see, and with one option
+left it stops being a question. Uploading follows the same permission as reading.</p>
+
+<h2 id="staging">Nothing appears until all of it is there</h2>
+<p>Navidrome and Audiobookshelf watch these folders, and a half-written file is exactly what a
+scanner indexes as a corrupt track. Bytes land in <code>library/.uploads</code>, a top-level
+dot-directory no backend has mounted, and are placed once complete. <code>ClearStaging</code>
+sweeps it at boot for the crash case.</p>
+<ul>
+  <li><strong>An upload never replaces a file.</strong> Two uploads of one name could both pass
+  an "is it there" check, and the second rename would overwrite the first. Files are hard-linked
+  into place, which fails if the name is taken; where a filesystem cannot link, the check is
+  repeated right before the rename.</li>
+  <li><strong>A shelf on another drive</strong> breaks a rename (<code>invalid cross-device
+  link</code>). <code>placeFile</code> then copies to a hidden
+  <code>.&lt;name&gt;.*.soundstorm-part</code> beside the destination and renames from there -
+  atomic again, with an extension no backend indexes.</li>
+</ul>
+
+<h2 id="duplicates">The same recording under another name</h2>
+<p>An iTunes library keeps repurchases side by side: <code>03 Heathens.m4a</code> and
+<code>03 Heathens 1.m4a</code>. Measured on a real library before building anything: of nine
+such pairs, <strong>none</strong> were identical files - iTunes writes a catalog id, a purchase
+date and its own copy of the artwork into each - and five had identical audio.</p>
+<p>So <code>duplicate.go</code> fingerprints audio by the audio alone: the <code>mdat</code> of
+an MP4, the frames of an MP3 between its ID3 tags, the frames of a FLAC after its metadata
+blocks. A file whose structure does not parse is compared whole, which errs toward keeping both.
+A clean and an explicit version differ in their audio and are both kept.</p>
+<p>The scope is deliberately narrow: only the destination folder, only the same format, only
+uploads, only music and audiobooks, and only siblings of exactly the same audio length are ever
+hashed. The same song on an album and a compilation is not a duplicate. A skip comes back as a
+409 "already in your library", which the drop panel shows as <em>skipped</em>, not failed.</p>
+
+<h2 id="safety">Every path is attacker-supplied</h2>
+<p>One trap cost a real bug, caught by its own test: <code>TrimRight(segment, ". ")</code> ran
+<em>before</em> the <code>..</code> check, so ".." became "" and was skipped - quietly turning
+<code>../../etc/passwd.mp3</code> into <code>etc/passwd.mp3</code>. No escape, but a strange file
+in somebody's music folder. Dot runs are now refused before anything is trimmed, and
+<code>Save</code> re-checks that the joined path is still inside the folder - worth doing twice.
+<code>Save</code> also applies the plan's file-type test itself, because the upload endpoint can
+be called without a plan. Filesystem errors are stripped of the container's absolute paths before
+they reach a browser.</p>
+
+<h2 id="bin">Deleting, into a bin</h2>
+<p>The owner - and only the owner, since everyone else shares these shelves - can delete from an
+item's menu. The server first answers a preview ("1 file, 321 KB. It stays in the bin for 30
+days"), then moves the files to <code>library/.trash/&lt;entry&gt;/files/&lt;path&gt;</code> with
+an <code>entry.json</code> saying what they were. Undo puts them back; a daily sweep empties
+entries older than <code>library.BinKeep</code> (30 days). Undo never overwrites: a path whose
+place has been taken since stays in the bin and is reported.</p>
+<p>Which files an item <em>is</em> is normalization at the edge again:
+<code>source.FileLister</code> asks each adapter, because Navidrome, Audiobookshelf, Jellyfin and
+Immich each report paths differently. <code>library.Resolve</code> then decides what goes with
+it: a folder goes whole; a file takes its same-named companions (<code>Dune.mkv</code> takes
+<code>Dune.en.srt</code> but not <code>Dune Part Two.mkv</code>); and when nothing of the shelf's
+kind would be left in the folder, the folder goes instead, so the last track of an album does not
+leave its cover behind. Emptied parent folders are removed up to, never including, the shelf.</p>
+
+<h2 id="space">Free space</h2>
+<p>Free space is read from the filesystem the library is on (<code>statfs</code>). On Docker
+Desktop for Windows that is the real drive, not Docker's disk - measured, not assumed.
+<strong>Low</strong> is under 25 GB <em>and</em> under a fifth of the disk (the fraction keeps a
+small card that is simply small from warning forever); <strong>critical</strong> is under 5 GB.
+Uploads always leave 1 GB free, refused up front when the size is known and mid-copy when it is
+not, because the library is often Docker's disk too, and a backend database that cannot write is
+a broken server, not a full shelf.</p>
+
+<h2 id="rescan">Telling the backends to look</h2>
+<p>Every backend indexes on its own timer, so an uploaded file could sit unsearchable for up to
+two minutes. <code>source.Rescanner</code> is the optional "look now" call, checked against each
+running server: Navidrome's <code>startScan</code> (a quick scan of what changed), Jellyfin's
+<code>POST /Library/Refresh</code>, Audiobookshelf's per-library scan, and for ebooks simply the
+scan the ticker would have run. Measured after: an uploaded ebook was searchable in five
+seconds.</p>
+<p><strong>The debounce is the load-bearing part.</strong> A dropped album is one upload per file;
+triggering per file would ask Navidrome to scan thirty times. <code>scheduleRescan</code> keeps
+one timer per kind and pushes it back on each upload (two seconds), and
+<code>minRescanInterval</code> floors the gap between two real scans at 30 seconds however many
+requests ask - the manual "check for new files" button is open to every member. Before scanning,
+<code>EnsurePlaceholders</code> writes back any missing README, because the scan that matters
+most is the one right after somebody emptied a folder from their file manager.</p>
+<div class="warn">Only one of four backends needed no help with deleted files. Navidrome flags them
+missing and drops them from search; Jellyfin removes them only if the folder is not empty;
+Audiobookshelf marks them <code>isMissing</code> and <em>keeps serving them</em>, so the adapter
+filters them out. See each <a href="../backends/index.html">backend's page</a>.</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

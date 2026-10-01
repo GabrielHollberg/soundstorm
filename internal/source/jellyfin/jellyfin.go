@@ -171,7 +171,7 @@ func (s *Source) searchParams(q media.Query) url.Values {
 // returned whole for the merge to rank. Listings are cached briefly so
 // scrolling costs one fetch.
 func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error) {
-	all, err := s.shelf.GetOrFetch(q.Text, func() ([]media.Item, error) { return s.fetchAll(ctx, q) })
+	all, err := s.shelf.GetOrFetch(ctx, q.Text, func(fctx context.Context) ([]media.Item, error) { return s.fetchAll(fctx, q) })
 	if err != nil {
 		return nil, err
 	}
@@ -611,9 +611,13 @@ func (s *Source) Playback(ctx context.Context, itemID string) (source.Playback, 
 // alone reproduces the silent failure this whole mechanism exists to remove, so
 // the container is checked against the same list the profile advertises.
 func (s *Source) browserCanPlay(container string) bool {
-	for _, ok := range strings.Split(directPlayContainers, ",") {
-		if strings.EqualFold(strings.TrimSpace(ok), container) {
-			return true
+	// Jellyfin may name a container as ffprobe's list ("mov,mp4,m4a,3gp"):
+	// any part the browser plays will do.
+	for _, part := range strings.Split(container, ",") {
+		for _, ok := range strings.Split(directPlayContainers, ",") {
+			if strings.EqualFold(strings.TrimSpace(ok), strings.TrimSpace(part)) {
+				return true
+			}
 		}
 	}
 	return false
@@ -743,6 +747,12 @@ var hlsPath = regexp.MustCompile(`^([A-Za-z0-9-]{1,64})/(?:master\.m3u8|main\.m3
 // Without this every abandoned playback leaves an encoder running until
 // Jellyfin times it out, which on a home server is the difference between an
 // idle machine and a hot one.
+// StopPlaySession ends the conversion a play session started. Nothing called
+// it before (a review found it dead), so every film closed left Jellyfin's
+// ffmpeg running until its own timeout. The server calls it once a session
+// has asked for nothing for a few minutes (httpapi's hlsSessions).
+func (s *Source) StopPlaySession(playSessionID string) { s.stopTranscode(playSessionID) }
+
 func (s *Source) stopTranscode(playSessionID string) {
 	if playSessionID == "" {
 		return
@@ -926,7 +936,12 @@ func (s *Source) ItemByID(ctx context.Context, itemID string) (media.Item, bool)
 	}
 	params := s.searchParams(media.Query{})
 	params.Del("SortBy")
+	params.Del("SortOrder")
 	params.Set("Ids", itemID)
+	// An empty query is a browse, which on the TV source lists shows only:
+	// an episode looked up by id came back as nothing, so a half-watched one
+	// never reached Continue and could not be a favorite (a review).
+	params.Set("IncludeItemTypes", s.itemTypes)
 	items, err := s.fetchPage(ctx, params)
 	if err != nil || len(items) == 0 {
 		return media.Item{}, false

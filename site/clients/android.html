@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Android - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients/android" data-root="..">
+<main>
+<h1>Android</h1>
+<p class="lede">A small Kotlin app around the server's own web page. The page still decides
+everything; the app adds what Android's web view cannot do - a real music player that survives
+alarms, calls and a locked screen, photo backup, the full screen - and the same app installs on
+Google TV, Android TV and Fire TV.</p>
+
+<h2 id="shell">A web view shell</h2>
+<p>The app lives in <code>android/</code>: a handful of Kotlin files, no Compose and no AppCompat.
+On first launch it asks for the server's address, checks that <code>/healthz</code> answers like
+SoundStorm before keeping it (so a typo is caught at the door, not as a strange page), and then
+shows the page edge to edge. It answers <code>alert</code>, <code>confirm</code> and
+<code>prompt</code>, sends links off the server to the browser, offers Try again or Change server
+when a load fails, and hands file pickers and a film's full screen to the platform.</p>
+<table>
+  <tr><th>File</th><th>Job</th></tr>
+  <tr><td><code>MainActivity.kt</code></td><td>The web view, the system bars, navigation rules, the back gesture</td></tr>
+  <tr><td><code>PageScript.kt</code></td><td>Script run in the page before its own, on the server's origin only</td></tr>
+  <tr><td><code>NativeAudio.kt</code>, <code>AudioService.kt</code></td><td>Songs played natively by Media3</td></tr>
+  <tr><td><code>PlaybackService.kt</code>, <code>MediaBridge.kt</code></td><td>The lock-screen player for what the page plays itself</td></tr>
+  <tr><td><code>PhotoBackup.kt</code></td><td>Phone photo backup</td></tr>
+  <tr><td><code>WebCookies.kt</code>, <code>ServerAddress.kt</code></td><td>Cookies for native requests; the saved server address</td></tr>
+</table>
+<p>The web app cannot tell the Android and iPhone apps apart, by design. Both give the page
+<code>window.soundstormApp</code> and the same message channel
+(<code>window.webkit.messageHandlers.soundstorm.postMessage</code>), so "Change server" and the
+other app-only features needed no Android-specific code in <code>app.js</code>.</p>
+
+<h2 id="pagescript">PageScript and the message channel</h2>
+<p><code>PageScript</code> is injected with <code>addDocumentStartJavaScript</code>, for the server's
+origin only, so it runs before any of the page's scripts. It sets up
+<code>window.soundstormApp</code>, the message channel, and a <code>navigator.mediaSession</code> -
+which Android's WebView simply does not have. The page already describes what is playing through
+that API (title, artist, cover, position, which buttons work), so the stand-in passes it to the app
+for the lock screen and notification, and hands button presses back to the page's own handlers.</p>
+<div class="why">The channel is <code>addWebMessageListener</code>, limited to the server's origin
+and the main frame - not <code>addJavascriptInterface</code>, which every frame of every origin
+would see, EPUB chapters included. A book should never be able to talk to the app.</div>
+
+<h2 id="native-audio">Native audio with Media3</h2>
+<p>The first versions let the page do all the playing, with a foreground service holding the
+media session. Two bugs came from that, both reported from a real phone:</p>
+<ul>
+  <li><strong>Music stayed stopped after an alarm.</strong> The web view pauses when an alarm or call
+  takes the sound, and never plays again. The service then dropped out of the foreground like any
+  paused player, and Android could end the app.</li>
+  <li><strong>With the screen off, music stopped after one song.</strong> Between songs the page is
+  briefly paused; the service left the foreground, and the next song, starting with the screen off,
+  had to come back from the background - which Android 12 and later refuse, and the uncaught refusal
+  took the app down.</li>
+</ul>
+<p>Each got a workaround, and then the owner chose the real fix: <strong>songs from the server are
+played by Media3's ExoPlayer</strong> in a media session service (<code>AudioService</code>), which
+Android treats as a music player. It keeps the foreground, pauses for an alarm or call and plays on
+after, pauses when headphones come out, and gives the lock screen, notification and car their
+controls.</p>
+<p>The page still decides everything. <code>PageScript</code> gives the page's
+<code>&lt;audio id="audio-player"&gt;</code> a stand-in on the element itself, installed the moment it
+is parsed. Setting its <code>src</code> to a song, play, pause, seeking, volume and speed become
+messages to <code>NativeAudio</code>, and the player's state comes back every half second as the
+element's own events - <code>playing</code>, <code>pause</code>, <code>timeupdate</code>,
+<code>ended</code>. The lyrics, the looks and the timeline keep reading <code>currentTime</code> as
+before and never know the difference.</p>
+<p>What stays in the page: downloads (they are <code>blob:</code> addresses the native player cannot
+read), audiobooks and crossfade's second element, which is why crossfade is off in the app. For
+those, <code>PlaybackService</code> still provides the lock-screen player from the page's media
+session.</p>
+
+<h3 id="handover">Handing over the next songs</h3>
+<p>The next song is handed to the player ahead of time (<code>queueNext</code>), so it moves into it
+by itself - gapless, never stopping between songs. It then tells the page the song ended; the page
+sets the next song as always and finds it already playing.</p>
+<p>Android also reclaims a background web view's memory by ending its page. The app used to tear the
+old page down in a way that told the player to stop, so music stopped while somebody was in another
+app. Now a page Android ends is dropped without touching the music, and since a page that is gone
+cannot hand over the next song, the page hands over the next ten up front
+(<code>queueUpcoming</code>), each with its title, artist, album and cover for the lock screen.</p>
+
+<h3 id="adopt">The page takes the music back</h3>
+<p>When the app is looked at again and the page is rebuilt, it asks the player what it is doing
+(<code>askState</code>). The page keeps its queue on the device as each song starts
+(<code>saveNativeQueue</code>, up to 220 songs around the one playing). If the song playing is in that
+kept queue, the page plays it through its normal path, and the stand-in recognises it as the song
+already in the player: nothing is reloaded, the position is the same, playing or paused, with the
+queue rebuilt around it.</p>
+<p>Two smaller fixes from the same work: a song that had played to the end would not play again (a
+finished ExoPlayer must be sent back to the start, and the same song asked for again looked "already
+loaded"), and after the player moved into the next song by itself, the stand-in kept reporting the
+old one until it started afresh on <code>ended</code>.</p>
+
+<h2 id="backup">Photo backup with WorkManager</h2>
+<p>A phone's photos and videos are sent to the person's own photo folder on the server
+(<code>PhotoBackup.kt</code>). The page decides nothing about the mechanics: Settings &rarr; Your
+photos has the switch and options and talks to the app through
+<code>soundstormApp.backup(...)</code>; the app does the work.</p>
+<ul>
+  <li><strong>WorkManager jobs</strong>, so Android decides when, and backup carries on with the app
+  closed: one when a photo or video is added, one every six hours. Wi-Fi only unless turned off, and
+  optionally only while charging.</li>
+  <li><strong>Newest first, one file at a time</strong>, with progress through a large video.</li>
+  <li><strong>Nothing sent twice.</strong> What was sent is remembered by its MediaStore id, and each
+  batch of 100 is first checked with the server (<code>POST /api/photos/backup/check</code>), so a
+  reinstall or a new phone sends nothing it already has.</li>
+  <li><strong>The original file</strong> (<code>setRequireOriginal</code>, with the media-location
+  permission). Otherwise Android hands over a copy without the place it was taken, which would empty
+  Places and differ in size.</li>
+  <li><strong>Plain reasons when it stops</strong>: a refused permission, a full photo space, a full
+  disk or an ended sign-in are shown until the next job.</li>
+</ul>
+<p>After signing in on a phone with Pictures, the page asks once, "Back up this phone's photos?",
+and tells a member plainly that the owner of the server can see them. It is not offered on a TV.</p>
+
+<h2 id="screen">Full screen and the camera cutout</h2>
+<p>Both system bars are hidden everywhere, at the owner's asking - something the installed web app
+could never do, since Chrome owns its bars. A swipe in from an edge shows them for a moment. The app
+draws into the camera cutout, so there is no black strip over the camera.</p>
+<p>The catch: the web view reports zero for the cutout it draws into (measured: a 136-pixel cutout,
+<code>env(safe-area-inset-top)</code> read 0). So the stylesheet never uses <code>env()</code>
+directly. Every edge is spaced by <code>--safe-top</code> and its siblings, which default to the
+<code>env()</code> values in a browser and on the iPhone, and which the Android app sets to the real
+cutout size in CSS pixels. That change was first made only on an Android branch, whose web files the
+server never serves - so the installed app's title sat under the camera until it was brought to
+main. It is why the project now has one branch.</p>
+<p>The status bar takes the page's theme colour, watched with a MutationObserver on
+<code>meta[name=theme-color]</code>, so it matches Now Playing's backdrop.</p>
+
+<h2 id="back">The back gesture</h2>
+<p>Back steps back through the page's own history first (closing a menu, Now Playing, a film - see
+<a href="web.html#settings">the web app</a>), and with nothing left it moves the app to the
+background rather than closing it, since closing would stop the music. Android 16 no longer calls
+<code>onBackPressed</code> for an app built for API 36, so the system closed the app from inside a
+menu; <code>MainActivity</code> now registers an <code>OnBackInvokedCallback</code> that does the
+same job.</p>
+
+<h2 id="security">Security</h2>
+<p>A review pass looked at the app with fresh eyes, and version 0.16 fixed what it found:</p>
+<ul>
+  <li><strong>Server addresses only.</strong> The native player and cover loader take only the
+  server's own addresses; any other URL the page passes is refused.</li>
+  <li><strong>Cookies per host.</strong> The session cookie used to be copied into a request header
+  by hand - and a header follows a redirect to any host. Now <code>WebCookies</code> is the process's
+  cookie handler and answers each address, redirects included, with that address's own cookies only.</li>
+  <li><strong>Trusted controllers.</strong> A media session lets any app on the phone control playback
+  and read what is playing unless told otherwise. <code>onConnect</code> now accepts only the system,
+  the app itself, and known car, watch and assistant apps.</li>
+  <li><strong>Nothing off-server in the app's window</strong>, and other apps or new windows open
+  only from a link the person actually tapped.</li>
+  <li><strong>The secure-name move is followed, not saved.</strong> From a plain-http address the page
+  moves to the install's https name; someone on the same Wi-Fi could once have pinned the app to their
+  own server that way. Now a move from a soundstorm.dev name is accepted only to its own twin (the
+  same install id), and never written as the saved address.</li>
+  <li><strong>No backups of the session</strong> (<code>allowBackup="false"</code> and data extraction
+  rules), <code>taskAffinity=""</code> against task hijacking, a non-debuggable build, and a checksum
+  on the Gradle wrapper.</li>
+</ul>
+<p>Plain http is still allowed, because an install is often first reached by its LAN address and
+Android cannot allow only private address ranges.</p>
+
+<h2 id="releases">Releases</h2>
+<p>APKs are built on the Windows development machine from <code>android/</code> on main
+(<code>gradlew assembleDebug</code>), with <code>versionCode</code> raised every time so a phone
+installs over the last one. They are published as GitHub pre-releases named
+<code>android-&lt;version&gt;</code> and never marked Latest, because the Latest release is where the
+server's Windows installer lives.</p>
+
+<h2 id="tv">The same app on a TV</h2>
+<p>Google TV, Android TV and Fire TV run this same app, not a second one. The manifest adds the
+leanback launcher category and a banner, and marks leanback and a touchscreen as not required so
+phones install it exactly as before. On a TV the web view's user agent gains
+<code>SoundStormTV/1</code>, and the page switches into its TV mode: remote-control focus, films
+full screen, no mini-player. That is described on <a href="tv.html">TVs</a>.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

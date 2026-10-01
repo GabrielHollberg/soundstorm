@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Books and read-along - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/books" data-root="..">
+<main>
+<h1>Books and read-along</h1>
+<p class="lede">Books are where SoundStorm does the most itself. Ebooks and documents have no backend
+at all - the server reads the folders - while audiobooks belong to Audiobookshelf. Read Along joins
+the two: an ebook whose page turns with its audiobook, the timing worked out by Storyteller.</p>
+
+<h2 id="owned">The media types SoundStorm owns</h2>
+<p>Calibre-Web was the original ebook backend and was removed: it needed a <em>database</em> rather
+than a folder, its setup had no API (it meant scraping forms past CSRF tokens), and its password could
+not be rotated. SoundStorm reads the folder itself instead.</p>
+<div class="why">The justification is narrow and should stay narrow: <strong>an EPUB is
+self-describing.</strong> The file holds its own title, author, language and cover in documented XML,
+and a book needs no transcoding. <code>Dune.2021.mkv</code> holds none of that, which is precisely the
+work Jellyfin exists to do. So the rule is: SoundStorm can own a media type when it is self-describing
+and needs no transcoding. EPUB qualifies; video never will; photos fail it on HEIC.</div>
+<p>Documents are a second shelf served the same way (<code>media.KindDocument</code>,
+<code>documents/</code>): a PDF is a book or a gas bill, and the ebook shelf used to hold both.
+Documents get everything a kind gets - their own chip, access checkbox and rescan - because a half-kind
+sharing ebooks' permission would be a shelf you could see into from the wrong account. Both shelves
+are instances of one source type, <code>localbooks</code>; see the
+<a href="../backends/local.html">ebooks and documents page</a> for the scanner and parsers.</p>
+
+<h3>PDFs without a PDF parser</h3>
+<p><code>internal/pdf</code> deliberately does not parse PDF structure. Doing it properly means the
+cross-reference table, then cross-reference streams, then object streams - hundreds of lines before
+the first title. Measured on five real PDFs from five producers, all that machinery would have
+returned nothing: every one had an Info dictionary that was absent or literally <code>/Title ()</code>.
+Two carried an XMP packet - plain uncompressed XML - which a byte scan and <code>encoding/xml</code>
+reach for free. So the order is XMP, then the Info dictionary if readable, then the file name, which
+for most PDFs is the only real information anybody wrote down.</p>
+
+<h3>Calibre libraries</h3>
+<p>Existing Calibre libraries work with no SQLite driver: Calibre writes a <code>metadata.opf</code>
+beside every book in exactly the format an EPUB carries inside, so one parser reads both - including
+series and series index, and a curated <code>cover.jpg</code>. That is also why ebooks are filed
+<code>Author/Title/</code>: it is Calibre's shape, and flattening it would part books from their
+sidecars.</p>
+
+<h2 id="position">Reading position</h2>
+<p>Reflowable text means a page number is meaningless - change the font size and "page 47" is
+different words - so position is a content-anchored locator, an <strong>EPUB CFI</strong>, plus how
+far through the book. It is kept in SoundStorm's own state, keyed
+<code>userID/sourceID/itemID</code>, so it follows a person across devices (the Apple TV's native
+reader reads and writes the same CFI). Because <code>state.json</code> is rewritten whole by every
+login, saving a position is guarded hard:</p>
+<ul>
+  <li>The fraction must be in [0, 1] (<code>isFraction</code>) - a JSON <code>1e400</code> decodes to
+  <code>+Inf</code> without error.</li>
+  <li>A CFI is at most 2 KB (<code>maxLocationLength</code>).</li>
+  <li>Positions are kept only for books that exist (<code>HasBook</code>), capped per account, and
+  rate limited (30, then one per 2 seconds; the app keeps a refused save unsynced and retries).</li>
+</ul>
+<p>PDFs open in the browser's own viewer, which exposes no position, so the web app keeps none for
+them.</p>
+
+<h2 id="reader">The reader, server side</h2>
+<p>Rendering is foliate-js, vendored - the one piece of third-party code in the project, pinned by
+content and embedded. What is SoundStorm's is that the server unzips: the reader fetches each chapter,
+stylesheet and image from <code>/api/book/resource</code>, so no zip library runs in the browser.</p>
+<p>A book is somebody else's file, opened in the owner's signed-in session, and three review passes
+each found a way for a crafted EPUB to run script. The guards that resulted:</p>
+<ul>
+  <li><strong>Only <code>fetch()</code> may read a book resource.</strong> The reader always fetches
+  (<code>Sec-Fetch-Dest: empty</code>), so a request whose destination is a script, image or frame is
+  refused. Otherwise a chapter's absolute <code>&lt;script src&gt;</code> pointing back at the server
+  passed <code>script-src 'self'</code>.</li>
+  <li><strong>No JavaScript content type is ever emitted</strong> - it becomes
+  <code>text/plain</code> - and an untyped part is given <code>text/plain</code> too, so nothing can be
+  sniffed into a runnable page. <code>stream.GuardActiveContent</code> applies this to every stream,
+  covers included, after a cover declared as <code>x.js</code> got through.</li>
+  <li><strong>Resources are sandboxed</strong> when served from the server's origin, and the reader
+  strips scripts, event attributes, <code>javascript:</code> links, frames and references to the
+  server itself from every chapter before it renders; <code>app.js</code> refuses to run in a
+  frame.</li>
+  <li><strong>Size and concurrency.</strong> Entries are read through a 16 MB limit; the zip's central
+  directory is measured before <code>zip.OpenReader</code> touches it (over 2 MB or any zip64 trigger
+  is refused, since the reader parses a directory at about four times its size); OPF and sidecars are
+  capped at 2 MB; a limited number of books are opened at once, and a busy server answers "try again
+  shortly".</li>
+</ul>
+
+<h2 id="audiobooks">Audiobooks</h2>
+<p><strong>Listening position belongs to Audiobookshelf</strong>, per person, written with its own
+<code>PATCH /api/me/progress/{id}</code>. A private copy would quietly fork from the one every other
+client reads; this way a chapter finished in Audiobookshelf's phone app is where the browser picks up.
+That requires each member to have their own Audiobookshelf account, which
+<code>provision.TokenFor</code> creates lazily on first use (the owner uses the administrator's).
+Details of the API's sharp edges - <code>progress</code> not derived from <code>currentTime</code>,
+<code>isFinished: false</code> resetting a book to zero - are on the
+<a href="../backends/audiobookshelf.html">Audiobookshelf page</a>.</p>
+<p>A book is its files on one clock: <code>source.TrackLister</code> reports each file with its
+<code>StartSeconds</code>, so "two hours in" converts to a file and an offset.
+<code>source.ChapterLister</code> sends Audiobookshelf's own chapter list, which names the marks inside
+a single m4b as well as one file per chapter - so a single-file book has navigation too. Without a
+chapter list, the files stand in. Books in progress appear in the Continue row through
+<code>source.InProgressLister</code>.</p>
+
+<h2 id="pairs">Read Along: finding pairs</h2>
+<p><code>GET /api/books/pairs</code> lists what somebody has as both an ebook and an audiobook. It
+lists both shelves through the registry, so access applies, and matches on a key with edition noise
+removed - anything bracketed (ASIN, Unabridged), a subtitle after a colon, a trailing "Book 1", curly
+quotes, punctuation, a leading article - plus a shared author surname, reading "Rowling, J.K." and
+"J.K. Rowling" alike. Nothing is stored. On a real library, 1,663 ebooks and 113 audiobooks gave four
+pairs, and a scan for near-misses found none.</p>
+<p>The owner can correct it either way: <strong>Not the same book</strong> (kept as
+<code>notPairs</code>, and whatever Storyteller made of it deleted) and <strong>Pair with its
+audiobook</strong> (kept as <code>manualPairs</code>). These are decisions in <code>state.json</code>,
+like the starter-library flag - not facts about the media.</p>
+
+<h2 id="sync">Read Along: syncing with Storyteller</h2>
+<p>Matching a recording to its text sentence by sentence is forced alignment - transcribe the audio,
+find it in the book - the ML-shaped layer this project does not own. So it is
+<a href="../backends/storyteller.html">Storyteller</a>. A cheaper chapter-proportional guess was
+offered and declined: a page off by one reads as broken.</p>
+<div class="why">SoundStorm keeps playing the audiobook through its own player. Storyteller's output
+is an EPUB 3 with media overlays and its own copy of the audio; playing that would lose the lock
+screen, the mini-player and Audiobookshelf's listening position. So only its <em>text</em> is used -
+every sentence wrapped in a span with an id - plus its SMIL timings, converted to the audiobook's
+whole-book clock (<code>storyteller.Timeline</code>).</div>
+<p>The conversion rests on how Storyteller cuts audio, read from its source and checked end to end:
+files numbered in name order, each cut at its chapter marks (the maximum track length is set huge at
+provisioning so chapters are the only cuts). Piece C of file F therefore starts at that file's C-th
+chapter, which is Audiobookshelf's chapter list (<code>source.AudioLayouter</code>). Where pieces and
+chapters do not line up there is no timeline, and the book opens saying it cannot follow rather than
+following the wrong sentence.</p>
+<p>Books sync by themselves: a look two minutes after start, every half hour, and three minutes after a
+book scan. A pair that fails is not retried automatically - a failure retried every half hour would be
+the better part of an hour of CPU, repeated - but a failure never unmatches either, since it is usually
+Storyteller, not the match. In the reader, four times a second the sentence at the player's time is
+found, turned to and lit; turning the page by hand pauses the following for twelve seconds. Measured: a
+10-hour book takes about 40 minutes to sync.</p>
+<p><code>POST /api/readalong</code> accepts only a pair Read Along lists, and a Storyteller book needs
+audiobook access as well as ebook access to read, since it holds the audiobook's audio.</p>
+
+<h2 id="downloads">Downloads</h2>
+<p>Downloading is the web app's (the Cache API, with an index in local storage), but the server shapes
+it. Audiobooks, ebooks, documents and Read Along pairs download - both halves, plus a synced book's
+text without its copy of the audio, and its timeline. Everything is keyed by the address the app would
+ask the server for, so one index and one Remove serve every kind. Listening and reading positions are
+kept on the device too, marked unsynced until a save reaches the server, and an unsynced one wins on the
+next open. The reader reads a downloaded book from the cache before asking the server at all.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

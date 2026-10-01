@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it is developed - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="development/workflow" data-root="..">
+<main>
+<h1>How it is developed</h1>
+<p class="lede">Two computers, each with its own coding session and its own private memory, work on
+one repository. Everything both need to know lives in the repository itself - and the one rule
+that holds it together, a single branch, was learnt from a bug that shipped.</p>
+
+<h2 id="machines">Two machines, one main</h2>
+<table>
+  <tr><th></th><th>The Windows PC</th><th>The Mac</th></tr>
+  <tr><td>Works on</td><td>The server, the web app (<code>internal/webui/assets</code>), the Android app (<code>android/</code>), Android TV</td><td>The iPhone app and the Apple TV app (<code>ios/</code>) - Xcode runs nowhere else</td></tr>
+  <tr><td>Runs</td><td>The live server, in Docker</td><td>Simulators, against the live server at home or by its away-from-home name</td></tr>
+  <tr><td>Deploys</td><td>Yes - it is the only machine that does</td><td>No</td></tr>
+</table>
+<p>The PC deploys with:</p>
+<pre><code>docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build soundstorm
+curl localhost:8099/healthz
+git push</code></pre>
+<p>The dev override adds <code>build: .</code>, which the published compose file deliberately
+lacks so that it works in an empty folder for somebody who never cloned anything.</p>
+<p>Each session has its own memory, which the other never sees. So anything both must know - a
+decision, a reversal, a trap, a task handed over - goes into <code>CLAUDE.md</code>, the working
+notes at the root of the repository. Hand-offs are written there explicitly: a "For the PC" list
+from the Mac's security review, "For the Mac" notes when the Apple TV's song analysis had to
+follow a server change, each marked done when the other machine finished it.</p>
+
+<h2 id="main">Why main is the only branch</h2>
+<p>The apps used to live on branches of their own, <code>android-app</code> and
+<code>ios-app</code>. That is how a bug shipped.</p>
+<div class="warn">The Android app needed two changes to the web files - CSS variables for the
+camera cutout (<code>--safe-top</code> and its siblings) and a Change server button. They were
+made on the <code>android-app</code> branch. But the server serves the web app from
+<code>main</code>, so the installed app's title sat under the phone's camera until the changes
+were brought across.</div>
+<p>Both branches were merged into main and the rule written down: <strong>the apps are folders on
+main; do not start per-app branches again.</strong> If a short branch is needed for a risky change,
+it is merged the same day. Web changes for the phone apps always go to main, never into an app's
+folder.</p>
+<p>The shared web files - <code>app.js</code>, <code>style.css</code>, <code>index.html</code> - are
+where the two machines can collide. Web and server changes are made on the PC by default. When the
+iPhone app needs one, the Mac may make it: pull first, keep it small, push at once, and tell the
+owner it reaches phones only once the PC deploys.</p>
+
+<h2 id="session">The start and end of every session</h2>
+<ol>
+  <li><strong>Start with <code>git pull</code>.</strong> Before touching anything.</li>
+  <li>Work, with one real check per change, and commit.</li>
+  <li><strong>End with a commit and a push.</strong> Never leave work uncommitted on one
+  machine.</li>
+</ol>
+<p>The owner switches machines by telling the session they are leaving; that session commits and
+pushes everything, and the next one pulls before starting. Commits end with a Co-Authored-By line
+for the coding assistant, and never name a model.</p>
+
+<h2 id="releases">Releases</h2>
+<h3>The server image</h3>
+<p><code>.github/workflows/publish.yml</code> runs on every push to main, on tags, and on pull
+requests. A <code>test</code> job checks formatting, vet and tests, rehearses certificate issuance
+against Pebble, validates compose with and without the Tailscale profile, decodes every committed
+image, and checks the Windows setup file still has CRLF line endings. Only then does
+<code>publish</code> build linux/amd64 and linux/arm64 and push to
+<code>ghcr.io/&lt;owner&gt;/soundstorm</code>.</p>
+<ul>
+  <li>arm64 matters: many home media servers are a Raspberry Pi, a Synology or an Apple silicon
+  Mac. The Dockerfile cross-compiles on the builder's platform, so Go never runs under QEMU.</li>
+  <li>The GitHub owner name has capitals, and a registry path may not, so the workflow folds it to
+  lowercase.</li>
+  <li>Every action is pinned to a commit, not a tag - a moved tag in the publish job would push to
+  the image every install pulls - and jobs get only the permissions they need.</li>
+  <li>A <code>v*</code> tag also creates the release and attaches <code>SoundStorm-Setup.cmd</code>.
+  The README links to <code>/releases/latest/download/SoundStorm-Setup.cmd</code>, because a raw
+  link opens a <code>.cmd</code> as text in the browser instead of downloading it.</li>
+</ul>
+<p>Users update by running the installer again, which pulls the newer image. SoundStorm never
+updates itself.</p>
+
+<h3>The Android app</h3>
+<p>Built on the PC from <code>android/</code> on main with <code>gradlew assembleDebug</code>,
+with <code>versionCode</code> raised every time so a phone installs over the last build. Published
+as a GitHub pre-release named <code>android-&lt;version&gt;</code>, <strong>never marked
+Latest</strong>, because Latest is where the README's installer link points.</p>
+
+<h3>The Apple apps</h3>
+<p>Archived on the Mac and sent to TestFlight. The Apple TV's release build is signed by hand with
+a distribution profile, because automatic signing first wants a development profile, which needs a
+registered Apple TV the team does not have.</p>
+
+<h2 id="owner">How the owner works</h2>
+<p>These are working agreements, written down so both machines follow them:</p>
+<ul>
+  <li><strong>They dictate.</strong> A strange word may be a mis-transcription, so an ambiguous
+  request is restated before anything is built.</li>
+  <li><strong>One real check per change, then commit.</strong> Not long comparison or mutation
+  runs; say what was not verified instead. For phone fixes they would rather deploy and test on
+  their own phone than wait on a long simulation.</li>
+  <li><strong>Plain words</strong>, about what they will see, rather than what the code does.</li>
+  <li><strong>Ask first</strong> before experiments on the live server, before writing to their
+  real backends for a test, and before deleting media. Their media may be read for analysis, never
+  changed or copied.</li>
+  <li><strong>Never print credentials.</strong></li>
+</ul>
+<p>That style shows throughout the notes: decisions are often recorded as "at the owner's asking",
+and a reversal records what was reported ("glitching when lyrics load"), what was measured, and
+what changed - so the reasoning survives even when the behaviour is changed again later.</p>
+
+<h2 id="notes">Writing things down</h2>
+<p>The notes follow a few habits worth copying:</p>
+<ul>
+  <li><strong>Record reversals as reversals.</strong> "This used to say X, and that was wrong,
+  because Y" stops the next person from reasoning their way back to X.</li>
+  <li><strong>Say how something was verified</strong> - against a live server, a real file, a
+  throwaway stack - and what was not.</li>
+  <li><strong>Prefer measured numbers</strong>: 34 seconds to 2.5, 1,760 repeats to 0, 57 heap
+  drops to 6.</li>
+  <li><strong>Note what to re-check</strong> if a version moves (Jellyfin's auth, foliate's touch
+  handling, Immich's major version).</li>
+</ul>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

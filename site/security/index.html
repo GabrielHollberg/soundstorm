@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="security" data-root="..">
+<main>
+<h1>Security</h1>
+<p class="lede">A media server for a household that can be reached from the internet, holding an
+administrator account on every backend behind it. This section says who it defends against, how,
+and what ten review passes found.</p>
+
+<h2 id="shape">The shape of the problem</h2>
+<p>Three things make SoundStorm a bigger target than its size suggests:</p>
+<ul>
+  <li><strong>It holds the keys to everything behind it.</strong> It created every backend's
+  administrator account and keeps the credentials. A request that can steer what SoundStorm asks a
+  backend for is a request made with an administrator's credentials.</li>
+  <li><strong>Its users upload files that other users open.</strong> A member can drop an EPUB, an
+  MP3, a photo or a zip; the owner may open it later. Every parser is reading somebody else's bytes,
+  and a book's HTML is rendered on SoundStorm's own origin.</li>
+  <li><strong>It can face the internet.</strong> Remote access gives each install a public name and
+  opens a port on the router. Anything unauthenticated - sign-in above all - is answered for
+  strangers.</li>
+</ul>
+
+<h2 id="principles">Principles that recur</h2>
+<ul>
+  <li><strong>The context carries who is asking.</strong> Access to a kind of media is not checked by
+  each handler remembering to: the registry only hands out sources through the request's context,
+  so the compiler finds every call site.</li>
+  <li><strong>Normalize and refuse at the edge.</strong> Paths, ids and backend answers are cleaned
+  where they enter, and a shared HTTP client refuses dot segments and absolute references for every
+  adapter.</li>
+  <li><strong>Nothing a browser would run is served as runnable.</strong> Script types become
+  <code>text/plain</code>; HTML, XML and SVG get a sandbox policy; book parts can only be fetched,
+  not loaded as scripts or frames.</li>
+  <li><strong>Every write has a ceiling.</strong> State files, collections, positions, plays, imports
+  and uploads are bounded and rate limited, because the file every login rewrites is the one an
+  attacker would grow.</li>
+  <li><strong>A background goroutine recovers.</strong> net/http protects only its own goroutines; every
+  loop SoundStorm starts catches a panic, so one crafted file cannot take the server down.</li>
+  <li><strong>A check that cannot see the failure is believed anyway.</strong> Tests go through the
+  real route chain, and fixes are confirmed by reproducing the attack first.</li>
+</ul>
+
+<div class="cards">
+  <a class="card" href="model.html"><b>Threat model</b><span>Who the attackers are, what each can reach, and the defence at each layer.</span></a>
+  <a class="card" href="reviews.html"><b>The review passes</b><span>Ten passes, most of them blind, and what each one found and fixed.</span></a>
+</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

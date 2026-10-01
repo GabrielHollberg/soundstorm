@@ -33,12 +33,34 @@ answer them.
 
 ## Apple TV
 
-The **SoundStormTV** scheme builds the Apple TV app (same project, same
-bundle id for Universal Purchase). Run it on the Apple TV simulator from
-Xcode, or on a real Apple TV paired with Xcode (Settings → Remotes and
-Devices → Remote App and Devices on the TV). In a debug build,
-`-autoplay YES` as a launch argument plays the first recently played song,
-for a simulator with no remote:
+The **SoundStormTV** scheme builds the Apple TV app, a native SwiftUI app in
+the same project (tvOS has no web view), with the same bundle id for Universal
+Purchase. It talks to the same `/api` the web page uses and follows the rules
+settled for Android TV. What it has: Home, Music (mixes, radio and moods,
+playlists, artists, albums, Now Playing with the twelve visualizers and
+lyrics), Watch (films and shows, subtitles and audio languages, Up next),
+Books (audiobooks with chapters, ebooks and PDFs in a native reader, Read
+Along), Photos (the roll, On this day, people and places), each tab with the
+account's own categories in its order. Settings and anything that changes the
+library stay on the web.
+
+Run it on the Apple TV simulator from Xcode, or on a real Apple TV paired with
+Xcode (Settings → Remotes and Devices → Remote App and Devices on the TV).
+
+A debug build takes launch arguments, for a simulator with no remote:
+
+| Argument | Does |
+| --- | --- |
+| `-serverURL <address>` | the server, skipping the connect screen |
+| `-username <name> -password <pw>` | signs in |
+| `-tab <tab>`, `-category <value>` | opens a tab (`home`, `music`, `watch`, `books`, `photos`) and one of its categories |
+| `-autoplay YES` | plays the first recently played song |
+| `-autostation YES` | tunes the first radio station |
+| `-autovideo <id>` | plays a film or episode; `-autosubtitle <n>`, `-autoaudio <n>` choose its tracks |
+| `-autobook YES` | plays the first audiobook |
+| `-autoread <id>`, `-autoturn <n>` | opens a book and turns n pages |
+| `-autopair YES` | opens the first Read Along book |
+| `-autophoto YES`, `-autostep YES` | opens the first photo, then steps and pauses the music |
 
 ```sh
 xcrun simctl launch booted dev.soundstorm.app -serverURL https://yourname.home.soundstorm.dev:8099 -autoplay YES
@@ -70,6 +92,22 @@ Xcode → Settings → Accounts), "PLA Update available" (accept the new
 Program License Agreement at developer.apple.com/account), then
 `missingApp` (no app record yet; Xcode's Organizer created it - the command
 line cannot).
+
+### The Apple TV build
+
+The TV target's Release is **signed by hand**: automatic signing archives with
+a development profile first, which needs a registered Apple TV. It uses the
+"Apple Distribution" certificate and the profile named **SoundStorm tvOS App
+Store** (tvOS, App Store Connect, `dev.soundstorm.app`), made on
+developer.apple.com; when it expires, make a new one under the same name.
+
+```sh
+xcodebuild archive -project ios/SoundStorm.xcodeproj -scheme SoundStormTV   -configuration Release -destination 'generic/platform=tvOS'   -archivePath /tmp/SoundStormTV.xcarchive
+xcodebuild -exportArchive -archivePath /tmp/SoundStormTV.xcarchive   -exportOptionsPlist ios/scripts/export-testflight-tv.plist   -exportPath /tmp/SoundStormTV-export
+```
+
+An unsigned archive (`CODE_SIGNING_ALLOWED=NO`) does not work: the Organizer
+refuses it with "No Team Found in Archive".
 
 ## Tests
 

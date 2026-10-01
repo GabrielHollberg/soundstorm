@@ -1,7 +1,11 @@
 # Remote access — design
 
-Reaching a SoundStorm install from the internet without Tailscale. This is the
-design; it is built in stages, each shipping usable value on its own.
+Reaching a SoundStorm install from the internet without Tailscale. This was
+written as the design, built in stages; **stages 1 and 2 are built and live**
+(the Settings switch and `-Remote`/`--remote`, the `<id>.net.soundstorm.dev`
+name on the same certificate as the home name, the reachability probe, and
+port mapping by PCP, NAT-PMP and UPnP with carrier-grade and double NAT
+detected). Stage 3 is partly built, as its own section says.
 
 ## Goal and non-goals
 
@@ -38,7 +42,7 @@ Most of #2 already exists and is indifferent to public vs private:
   below), so the install needs a certificate for it too. Rather than a second
   certificate — which would double each install's draw on the shared
   soundstorm.dev Let's Encrypt quota, the very pressure point the review
-  flagged — the plan is **one certificate carrying both names as SANs**: one
+  flagged — it is built as **one certificate carrying both names as SANs**: one
   order, one renewal, two DNS-01 challenge records (one per name). This needs
   the ACME client to handle two authorizations in an order, and the name
   service's challenge endpoint to publish under either label.
@@ -84,7 +88,7 @@ phishing value is low. Named here rather than hidden.
 ## Two names, not one (the hairpin trap)
 
 Keep the existing private `<id>.home.soundstorm.dev` for the LAN, and add a
-*separate* public name for remote (label TBD, e.g. `<id>.net.soundstorm.dev`).
+*separate* public name for remote: `<id>.net.soundstorm.dev`.
 Many routers cannot hairpin — loop a LAN client back in through the public IP —
 so a single public name would break home access on those routers. The client
 already probes reachability before switching to `secureName`, so it can prefer
@@ -92,7 +96,7 @@ whichever name it can actually reach.
 
 ## Ingress, in stages
 
-### Stage 1 — public naming, manual port-forward
+### Stage 1 — public naming, manual port-forward (built)
 
 The foundation everything else builds on, and shippable alone.
 
@@ -106,7 +110,7 @@ The foundation everything else builds on, and shippable alone.
   port-forward guidance.
 - Installer/compose: nothing required beyond an env flag; the toggle drives it.
 
-### Stage 2 — automatic IPv4 port-forward
+### Stage 2 — automatic IPv4 port-forward (built)
 
 Remove the manual step where the router allows it.
 
@@ -222,7 +226,7 @@ name service's new outbound probe is SSRF-safe by construction (above).
 
 ## Open questions
 
-- The public name's label (`net`, `remote`, or reuse `home` with a flag).
+- ~~The public name's label~~ - decided: `net`.
 - Whether the client should auto-detect "I am away from home" and switch names,
   or leave it to the reachability probe it already does.
 - How loudly to surface exposure in the UI once remote access is on (a standing

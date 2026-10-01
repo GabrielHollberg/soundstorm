@@ -264,7 +264,14 @@ function isPDF(item) {
   return ((item.extra && item.extra.format) || '').toLowerCase() === 'pdf';
 }
 
+// opening counts opens: a book closed while it was still opening carried on
+// behind the app - its view added, read-along's timer and wake lock started
+// behind a hidden reader (a review).
+let opening = 0;
+
 export async function open(item, options = {}) {
+  const me = ++opening;
+  const stillOpen = () => me === opening;
   const overlay = $('reader-overlay');
   const host = $('reader-host');
 
@@ -300,6 +307,7 @@ export async function open(item, options = {}) {
     await loadManifest(item);
 
     const book = await new EPUB(makeLoader(item)).init();
+    if (!stillOpen()) return;
     withoutScripts(book);
 
     const view = document.createElement('foliate-view');
@@ -328,6 +336,7 @@ export async function open(item, options = {}) {
     });
 
     await view.open(book);
+    if (!stillOpen()) return;
 
     // Which renderer foliate picked decides whether a finger can turn the
     // page, and the arrows are hidden on touch only where it can.
@@ -352,6 +361,7 @@ export async function open(item, options = {}) {
       await view.init({});
     }
 
+    if (!stillOpen()) return;
     applyTheme(view);
     if (options.timeline && options.timeline.length && options.audiobook) {
       startFollowing(view, options.timeline, options.audiobook);
@@ -548,6 +558,7 @@ async function tick(follow) {
 }
 
 export async function close() {
+  opening++;
   stopFollowing();
   await flushProgress();
 
@@ -583,6 +594,9 @@ $('reader-next').addEventListener('click', () => turn(1));
 
 document.addEventListener('keydown', (event) => {
   if ($('reader-overlay').classList.contains('hidden')) return;
+  // Now Playing or a menu over the book has the keys: Escape closed them and
+  // the book at once, and the arrows turned pages behind them (a review).
+  if (document.body.classList.contains('np-open') || !$('item-menu').classList.contains('hidden')) return;
   switch (event.key) {
     case 'Escape':
       close();

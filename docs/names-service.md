@@ -19,7 +19,8 @@ container (Railway here), and about fifteen minutes.
    or a commit.
 
 Nothing else changes at Porkbun. The domain keeps its nameservers, and any
-website or mail on it is untouched: installs live under `home.soundstorm.dev`.
+website or mail on it is untouched: installs live under `home.soundstorm.dev`,
+and, with remote access on, `net.soundstorm.dev` (see `docs/remote-access.md`).
 
 ## 2. Railway
 
@@ -125,8 +126,15 @@ the router is refusing to resolve a public name that points at a home address
   (a create or edit when it has), and a renewal about three calls. A refusal is
   a 429 with `Retry-After`; the service passes it on as a 502 and the install
   retries in five minutes.
-- **The service caps challenges** at ten per install and three hundred overall
-  per day, in memory, so a restart forgets them.
+- **The service limits everything that costs a shared budget**, in memory, so
+  a restart forgets them (`internal/names/server.go`). Challenges: 10 a day per
+  install, 20 per client network, 40 per IPv4 /24 or IPv6 /48, 300 a day in
+  all. Registrations: 10 an hour per network, 30 a day per /24 (/48), 300 a day
+  in all - each can hold a record, and the zone holds 2,500. Addresses 20 an
+  hour per install; the remote-access probe (`/v1/public`, which first reaches
+  the install from outside to prove it is really there) 20 an hour; clearing
+  records 30 an hour. IPv6 clients are counted per /64, or one host would be a
+  fresh limit per address.
 
 ## Abandoned installs are swept, and come back by themselves
 
@@ -143,7 +151,7 @@ valid for ever, so its first announce recreates the record under **the same
 name**, and a certificate that expired meanwhile renews within a minute.
 
 It only ever touches names shaped exactly like an install's under
-`home.soundstorm.dev` - never the apex, a website, `names`, or anything else -
+`home.soundstorm.dev` and `net.soundstorm.dev` - never the apex, a website, `names`, or anything else -
 and skips any record without a date, such as one written before dates
 existed; that install's next announce dates it. It **refuses to run** if it
 would delete more than a quarter of all installs at once (or twenty, for a

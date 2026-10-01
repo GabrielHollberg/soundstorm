@@ -186,7 +186,7 @@ func (s *Source) Search(ctx context.Context, q media.Query) ([]media.Item, error
 	// more than one tab, more than one device opening the app at once -
 	// would otherwise each fetch the whole shelf independently.
 	if q.Text == "" {
-		items, err := s.shelf.GetOrFetch("", func() ([]media.Item, error) { return s.browseAll(ctx) })
+		items, err := s.shelf.GetOrFetch(ctx, "", func(fctx context.Context) ([]media.Item, error) { return s.browseAll(fctx) })
 		if err != nil {
 			return nil, err
 		}

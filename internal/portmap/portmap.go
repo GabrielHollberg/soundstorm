@@ -96,7 +96,7 @@ func Map(ctx context.Context, gateway netip.Addr, proto Protocol, internalPort, 
 // mapVia is Map against an explicit server address, so a test can point it at a
 // fake gateway on an ephemeral port. The public API always uses port 5351.
 func mapVia(ctx context.Context, server netip.AddrPort, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
-	return mapTarget(ctx, target{gateway: server}, proto, internalPort, externalPort, lifetime)
+	return mapTarget(ctx, target{gateway: server}, proto, internalPort, externalPort, lifetime, Mapping{})
 }
 
 // udpMethodBudget is how long PCP and NAT-PMP each get before the next method
@@ -110,14 +110,20 @@ func mapVia(ctx context.Context, server netip.AddrPort, proto Protocol, internal
 var udpMethodBudget = 4 * time.Second // a variable only so a test can shorten it
 
 // mapTarget tries every configured method in order - PCP, NAT-PMP, then UPnP -
-// and returns the first mapping that succeeds.
-func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration) (Mapping, error) {
+// and returns the first mapping that succeeds. prev is the mapping being
+// refreshed, or zero for a new one: RFC 6887 identifies a PCP mapping by its
+// nonce, so a refresh has to send the same one. A fresh nonce asks the router
+// for a second mapping on the same port, which a strict one refuses and a lax
+// one grants beside the first - leaving an entry the later delete never names.
+func mapTarget(ctx context.Context, t target, proto Protocol, internalPort, externalPort uint16, lifetime time.Duration, prev Mapping) (Mapping, error) {
 	var attempts []string
 
 	if t.gateway.IsValid() {
-		var nonce [12]byte
-		if _, err := rand.Read(nonce[:]); err != nil {
-			return Mapping{}, err
+		nonce := prev.nonce
+		if prev.Method != "PCP" {
+			if _, err := rand.Read(nonce[:]); err != nil {
+				return Mapping{}, err
+			}
 		}
 		pcpCtx, cancel := context.WithTimeout(ctx, udpMethodBudget)
 		m, err := pcpMap(pcpCtx, t.gateway, proto, internalPort, externalPort, lifetime, nonce)
@@ -204,6 +210,15 @@ type Maintainer struct {
 
 	mu      sync.Mutex
 	current *Mapping // the live mapping, or nil when none is held
+	// last is the most recent mapping the router granted, kept after a refresh
+	// fails. A failed refresh does not mean the router let the old mapping go -
+	// its lease may have hours left - so drop still has to remove it, or turning
+	// remote access off could leave the port open for good (UPnP mappings are
+	// often permanent). Cleared only once the router has taken it down.
+	last *Mapping
+	// failures counts refreshes failed in a row, for backing off and for
+	// warning once rather than every attempt.
+	failures int
 }
 
 // server is the gateway address to talk to: the test override if set, else the
@@ -284,8 +299,14 @@ func (mt *Maintainer) step(ctx context.Context, enabled func() bool) time.Durati
 	m, err := mt.ensure(ctx)
 	if err != nil {
 		// Retry sooner than a full lease - a router that was briefly busy, or a
-		// gateway that has only just come up.
-		return retryWait(mt.lease())
+		// gateway that has only just come up - but back off, doubling up to a
+		// lease, on a router that answers none of the methods: that is the
+		// normal state of many networks, and asking every five minutes for ever
+		// is noise to the router and the log alike.
+		mt.mu.Lock()
+		n := mt.failures
+		mt.mu.Unlock()
+		return backoffWait(mt.lease(), n)
 	}
 	// Refresh at half the granted lease, so a missed refresh has a whole second
 	// half to recover in before the mapping actually lapses.
@@ -307,6 +328,7 @@ func (mt *Maintainer) ensure(ctx context.Context) (Mapping, error) {
 	if !t.gateway.IsValid() && !t.internalClient.IsValid() {
 		mt.mu.Lock()
 		mt.current = nil
+		mt.failures++
 		mt.mu.Unlock()
 		return Mapping{}, ErrNoGateway
 	}
@@ -316,13 +338,27 @@ func (mt *Maintainer) ensure(ctx context.Context) (Mapping, error) {
 	opCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	m, err := mapTarget(opCtx, t, mt.Proto, mt.InternalPort, mt.ExternalPort, mt.lease())
+	mt.mu.Lock()
+	var prev Mapping
+	if mt.last != nil {
+		prev = *mt.last
+	}
+	mt.mu.Unlock()
+
+	m, err := mapTarget(opCtx, t, mt.Proto, mt.InternalPort, mt.ExternalPort, mt.lease(), prev)
 	if err != nil {
+		// No longer known to be live, but last keeps it for drop.
 		mt.mu.Lock()
 		mt.current = nil
+		mt.failures++
+		firstFailure := mt.failures == 1
 		mt.mu.Unlock()
 		if mt.Log != nil {
-			mt.Log.Warn("could not open the port automatically; manual forwarding may be needed",
+			log := mt.Log.Debug
+			if firstFailure {
+				log = mt.Log.Warn
+			}
+			log("could not open the port automatically; manual forwarding may be needed",
 				"port", mt.ExternalPort, "err", err)
 		}
 		return Mapping{}, err
@@ -331,6 +367,8 @@ func (mt *Maintainer) ensure(ctx context.Context) (Mapping, error) {
 	mt.mu.Lock()
 	first := mt.current == nil
 	mt.current = &m
+	mt.last = &m
+	mt.failures = 0
 	mt.mu.Unlock()
 	if first && mt.Log != nil {
 		mt.Log.Info("opened the port on the router", "method", m.Method,
@@ -345,19 +383,42 @@ func (mt *Maintainer) drop(ctx context.Context) {
 	defer mt.opMu.Unlock()
 
 	mt.mu.Lock()
-	m := mt.current
+	m := mt.last
 	mt.current = nil
+	mt.failures = 0
 	mt.mu.Unlock()
 	if m == nil {
 		return
 	}
 	dropCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := unmapTarget(dropCtx, mt.target(), *m, mt.Proto, mt.InternalPort); err != nil && mt.Log != nil {
-		mt.Log.Warn("could not remove the port mapping", "err", err)
-	} else if mt.Log != nil {
+	err := unmapTarget(dropCtx, mt.target(), *m, mt.Proto, mt.InternalPort)
+	if err != nil && !alreadyGone(err) {
+		// Kept, so the next drop - the loop calls it every lease while remote
+		// access is off - tries again.
+		if mt.Log != nil {
+			mt.Log.Warn("could not remove the port mapping; will try again", "err", err)
+		}
+		return
+	}
+	mt.mu.Lock()
+	if mt.last == m {
+		mt.last = nil
+	}
+	mt.mu.Unlock()
+	if mt.Log != nil {
 		mt.Log.Info("removed the port mapping", "externalPort", m.ExternalPort)
 	}
+}
+
+// upnpErrNoSuchEntry is UPnP's answer to deleting a mapping the router does
+// not hold - one a reboot already cleared. The goal is met, so it is not a
+// failure to retry for ever.
+const upnpErrNoSuchEntry = 714
+
+func alreadyGone(err error) bool {
+	var fe *soapError
+	return asSOAPError(err, &fe) && fe.code == upnpErrNoSuchEntry
 }
 
 // retryWait bounds the after-failure retry to something short but not a busy
@@ -369,6 +430,19 @@ func retryWait(lifetime time.Duration) time.Duration {
 	}
 	if w > 5*time.Minute {
 		w = 5 * time.Minute
+	}
+	return w
+}
+
+// backoffWait is the wait after failures refreshes failed in a row: retryWait
+// for the first, doubling each time after, capped at a whole lease.
+func backoffWait(lifetime time.Duration, failures int) time.Duration {
+	w := retryWait(lifetime)
+	for i := 1; i < failures && w < lifetime; i++ {
+		w *= 2
+	}
+	if w > lifetime {
+		w = lifetime
 	}
 	return w
 }

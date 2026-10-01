@@ -169,6 +169,9 @@ object NativeAudio {
             "volume" -> p.volume = m.optDouble("v", 1.0).toFloat().coerceIn(0f, 1f)
             "rate" -> p.playbackParameters = PlaybackParameters(m.optDouble("r", 1.0).toFloat().coerceIn(0.25f, 4f))
             "stop" -> {
+                // Paused too, or the next song loaded played before the page
+                // asked it to (a review).
+                p.pause()
                 p.stop()
                 p.clearMediaItems()
                 report()

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Immich (photos) - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends/immich" data-root="..">
+<main>
+<h1>Immich (photos)</h1>
+<p class="lede">Immich reads <code>library/pictures</code>, makes thumbnails and previews (from HEIC and
+raw too), recognises faces and places, and searches by what is in a picture. SoundStorm provisions it
+with nobody logging in, gives every member an Immich account that sees only their own folder, and never
+lets Immich touch a photo file.</p>
+
+<h2 id="why">Why Immich</h2>
+<p>Photos fail the rule for what SoundStorm owns: iPhones save HEIC, which Go's standard library cannot
+decode, clips need transcoding, and a photo library is a scanning job. Immich was chosen over lighter
+options such as Photoview (closer to "the folder is the interface") for search by what is in a picture -
+the feature people compare against Google Photos - at the price of four containers (server, machine
+learning, Postgres with vector search, Valkey), about 5 GB of images and 6-8 GB of RAM.</p>
+
+<h2 id="pinning">Pinned to a major version</h2>
+<p>Researched, not assumed: Immich 2.0 (October 2025) promised semver, and 3.0 (July 2026) then broke API
+endpoints "that affect only third-party tools" - which is what SoundStorm is. So every Immich image is
+pinned to its major version, <code>v3</code>, never <code>latest</code>, and moving to v4 is a deliberate
+change with an adapter update behind it.</p>
+
+<h2 id="provisioning">Provisioning</h2>
+<p>Every step was checked against a live 3.2.2:</p>
+<ol>
+  <li><code>/api/auth/admin-sign-up</code> with <code>soundstorm@soundstorm.invalid</code> - RFC 2606's
+  never-existing domain. Immich validates the address's shape and sends nothing to it.</li>
+  <li>Log in, then create an API key with <code>permissions: ["all"]</code>. The session token expires and
+  the key does not, so the key is kept and the password is not.</li>
+  <li>Create an <strong>external library</strong> on <code>/pictures</code>, mounted read-only. Immich's
+  docs describe creating one only through its admin screens; the endpoint behind them is in the API.</li>
+  <li>Switch folder watching on by reading <code>/api/system-config</code>, changing
+  <code>library.watch.enabled</code>, and sending the whole document back - a test holds that this changes
+  nothing else.</li>
+</ol>
+<div class="why">An external library rather than Immich's own upload storage, deliberately: a photo is a
+file in <code>pictures/</code> however it arrived, and Immich can never move, rename or delete one. Its
+thumbnails and previews live in a named volume, regenerable from the photos. Its database must be a
+named volume too: Immich's Postgres must not sit on a network share or an NTFS drive, and a named volume
+lives on Docker's own Linux disk on every host.</div>
+
+<h2 id="members">An account per member</h2>
+<p>Each member gets an Immich account (<code>/api/admin/users</code>, made the first time they look)
+whose one external library reads only <code>pictures/Personal/&lt;name&gt;/</code>. The owner keeps the
+administrator's account, whose library is the whole folder. The adapter acts as the person asking
+(<code>immich.Config.ActAs</code>): every request carries their own key - never a fallback to the
+administrator's. Filtering one shared account was rejected because Immich groups faces across every photo
+it can see; separate accounts keep People, Places and search to each person's own photos. Verified first:
+overlapping libraries are allowed, and a member asking for another's photo by id gets a 400. Removing a
+member deletes their account with <code>force</code> and keeps their folder. See
+<a href="../server/photos.html">Photos</a>.</p>
+
+<h2 id="api">The calls SoundStorm makes</h2>
+<table>
+  <tr><th>Call</th><th>Used for</th></tr>
+  <tr><td><code>/api/search/metadata</code></td><td>Browsing newest first, filename search, a person's or town's photos, On this day (one search per earlier year)</td></tr>
+  <tr><td><code>/api/search/smart</code></td><td>Search by what is in a picture</td></tr>
+  <tr><td><code>/api/assets/{id}/thumbnail</code></td><td>Thumbnails (WebP) and previews (JPEG, art id <code>&lt;id&gt;@preview</code>)</td></tr>
+  <tr><td><code>/api/assets/{id}/original</code></td><td>The original, as a download</td></tr>
+  <tr><td><code>/api/assets/{id}/video/playback</code></td><td>Clips; honors <code>Range</code>, so seeking works through the proxy</td></tr>
+  <tr><td><code>/api/people</code>, <code>PUT /api/people/{id}</code></td><td>People, faces, naming someone found but unnamed</td></tr>
+  <tr><td><code>/api/search/cities</code></td><td>Places</td></tr>
+  <tr><td><code>POST /api/libraries/{id}/scan</code></td><td>"Look now" - every library, members' included</td></tr>
+</table>
+
+<h2 id="quirks">Quirks</h2>
+<ul>
+  <li><strong>Paths are as Immich's container sees them</strong> (<code>/pictures/...</code>), so the
+  adapter trims its media root with <code>source.RelativeTo</code>, which refuses anything outside it. An
+  asset uploaded to Immich's own storage can therefore never be named for deletion.</li>
+  <li><strong>Smart search needs models Immich downloads on first use.</strong> On a fresh install the
+  first searches timed out while it did, so the adapter falls back to a filename search.</li>
+  <li><strong>Order is Immich's, deliberately.</strong> Photos are not browsed alphabetically, so each item's
+  <code>SortKey</code> is its rank in Immich's newest-first order, behind a <code>~</code> so photos follow
+  titled media in a browse of everything - and merged paging still holds, because the key is the source's
+  order.</li>
+  <li><strong>Memories are not used.</strong> Immich makes them overnight and only for days it picked (empty
+  on a real library), so On this day is SoundStorm's own.</li>
+  <li><strong>Dates and places from imports</strong> are written as XMP sidecars beside the photo, which
+  Immich reads; checked with a Takeout photo whose sidecar put it in the right city and year.</li>
+</ul>
+<p>Uploads appear about four seconds after landing, through folder watching plus SoundStorm's rescan.
+Immich's Postgres uses a fixed default password reachable only on the compose network; generating one
+would require telling a fresh install from an existing database, whose password cannot change under it.
+That is recorded as a decision left open.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

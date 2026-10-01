@@ -219,6 +219,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         webView?.let {
             MediaBridge.detach(it)
+            NativeAudio.detachView(it)
+            (it.parent as? android.view.ViewGroup)?.removeView(it)
             it.destroy()
         }
         background.shutdownNow()
@@ -541,7 +543,14 @@ class MainActivity : Activity() {
             setTextColor(Color.BLACK)
             background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(accent) }
             stateListAnimator = null
-            setOnClickListener { load() }
+            // From the address the app starts from: after one failure on the
+            // home name it had moved to the away name, and Try again kept
+            // loading that one for as long as the app ran (a review).
+            setOnClickListener {
+                triedAway = false
+                val saved = ServerAddress.saved(this@MainActivity)
+                if (saved != null && saved != server) showWeb(saved) else load()
+            }
         }, LinearLayout.LayoutParams(dp(200), dp(48)).apply { bottomMargin = dp(8) })
         column.addView(Button(this).apply {
             text = "Change server"
@@ -641,6 +650,8 @@ class MainActivity : Activity() {
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            // Loaded: the next failure may try the away name again.
+            triedAway = false
             CookieManager.getInstance().flush()
         }
 

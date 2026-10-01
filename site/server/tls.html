@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificates and names - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/tls" data-root="..">
+<main>
+<h1>Certificates and names</h1>
+<p class="lede">A home server has no domain name, and no route on which a certificate authority
+could reach it. Yet phones refuse to install an app from an address with a certificate warning,
+and a session cookie on shared Wi-Fi deserves encryption. <code>internal/servetls</code>,
+<code>internal/acme</code>, <code>internal/names</code> and <code>internal/portmap</code> are how
+SoundStorm gets a browser-trusted certificate with no account, no domain and no openssl.</p>
+
+<h2 id="modes">Four modes</h2>
+<p><code>SOUNDSTORM_TLS</code> picks one. An unknown value is fatal: quietly serving plain HTTP to
+somebody who asked for encryption is the worst available way to be wrong.</p>
+<table>
+  <tr><th>Mode</th><th>What it serves</th><th>For</th></tr>
+  <tr><td><code>off</code></td><td>Plain HTTP</td><td>The compose file's own default: on localhost there is nothing on the wire to protect.</td></tr>
+  <tr><td><code>self-signed</code></td><td>Certificates from a local authority SoundStorm makes</td><td>Encryption without the internet, at the cost of trusting <code>/ca.crt</code> on each device.</td></tr>
+  <tr><td><code>file</code></td><td>A PEM pair given in <code>SOUNDSTORM_TLS_CERT</code> and <code>_KEY</code></td><td>Somebody with a real certificate of their own.</td></tr>
+  <tr><td><code>auto</code></td><td>Plain HTTP and the local authority at once, plus a real Let's Encrypt certificate for <code>&lt;id&gt;.home.soundstorm.dev</code> once it arrives</td><td>The installers' default since real certificates became free to get.</td></tr>
+</table>
+<div class="note">HTTPS was off by default for a long time, and that was argued for. The only
+certificate SoundStorm could make by itself was one no browser trusts, so turning it on meant a
+full-page "your connection is not private" on every device, which reads like being hacked to
+somebody who has never seen one, against the threat of somebody on your own Wi-Fi reading your
+traffic. Real certificates under <code>soundstorm.dev</code> took the cost away, so both installers
+now write <code>SOUNDSTORM_TLS=auto</code> for new installs and for existing ones that never
+chose. A choice somebody made is left alone.</div>
+
+<h2 id="local-ca">The local authority</h2>
+<p>Self-signed mode (and auto mode's fallback) makes a local <em>authority</em> rather than a bare
+self-signed certificate. Install <code>/ca.crt</code> once on a device and everything SoundStorm
+issues afterwards is trusted, including certificates for addresses it has never seen. A
+self-signed leaf would need re-trusting at every renewal and every new address.</p>
+<p>A hostname arrives in the TLS handshake (SNI), so certificates for names are minted on demand.
+A bare IP does not - browsers send no SNI for one - and the obvious fallback,
+<code>Conn.LocalAddr()</code>, is wrong in exactly the way the software ships: Docker NATs the
+published port, so inside the container the local address is the container's own, never the LAN
+address the phone dialed. That passed every unit test and every run of the binary directly on the
+host. It was caught by a client that trusted only the published authority fetching the LAN address
+- the thing the feature exists for. So <code>SOUNDSTORM_TLS_HOSTS</code> is required to reach the
+server by IP, and the installer, which runs on the host and can find the LAN address, writes it.</p>
+<p>The certificate's names are exactly what was configured plus localhost - not every address
+the machine has. An early version listed a machine's VPN address, eight IPv6 prefixes and its
+hostname to anybody who opened a connection.</p>
+<h3>Name constraints</h3>
+<p>A device that trusts the authority trusts anything it signs, so a leaked
+<code>ca-key.pem</code> would be a way to impersonate any site to that device. The authority
+carries critical name constraints: it may sign only <code>localhost</code>, <code>.local</code>,
+<code>.lan</code>, <code>.home</code>, <code>home.arpa</code> and configured names; loopback; and
+for each configured address its /16 (/48 for IPv6), or exactly itself if public. It used to permit
+all of <code>soundstorm.dev</code>, corporate-style names and every private range - and a laptop
+that trusts it goes to the office, where <code>10.0.0.0/8</code> is somebody else's intranet.
+<code>loadOrMakeCA</code> replaces an authority whose constraints are not exactly the current
+policy, logs why, and reissues the server certificate if the current authority did not sign it.
+The authority itself has <code>MaxPathLenZero</code>, so it cannot mint another authority, and
+every private key file is written 0600.</p>
+<h3>The server certificate is kept</h3>
+<p>Most devices never install the authority; people click through the browser's warning once,
+and a browser pins that exception to the exact certificate it saw. Minting a fresh one on every
+start revoked it on every restart, and with a service worker holding the page in cache the
+symptom was not a warning but a spinner that never stopped. So <code>server.pem</code> is
+persisted beside the authority and reissued only near expiry or when the configured hosts change.
+The service worker also never answers a page load, so when a certificate does change - a
+reinstall, a yearly renewal - the browser's own warning comes through instead of a cached page
+that cannot work.</p>
+
+<h2 id="one-port">One port, both protocols</h2>
+<p>The address everybody already has is <code>http://localhost:8099</code>; the real certificate
+is for <code>https://&lt;name&gt;:8099</code>; the published port lives in compose, so both must be
+the same port. A TLS connection opens with byte <code>0x16</code> and no HTTP request does, so
+<code>servetls.Listener</code> peeks at one byte per connection and hands net/http either the plain
+connection or a real <code>*tls.Conn</code>. A real <code>*tls.Conn</code>, not a wrapper, because
+that type check is what fills in <code>r.TLS</code>, and <code>r.TLS</code> is what makes the
+session cookie Secure and <code>__Host-</code>. HTTP/2 still negotiates, which a test asserts.
+The listener backs off and retries on accept errors rather than closing - running out of file
+descriptors once restarted the server.</p>
+<p>Auto mode serves plain HTTP beside TLS even when it has no LAN address to name; falling back to
+https-only would have broken the <code>http://localhost</code> address the installer prints.</p>
+
+<h2 id="names">The name service</h2>
+<p>The only thing that removes the warning is a certificate somebody on the internet vouches for,
+which needs a name on the internet. <code>cmd/soundstorm-names</code> is a small service that gives
+each install <code>&lt;id&gt;.home.soundstorm.dev</code>, points it at the install's LAN address,
+and publishes the DNS-01 challenge that lets Let's Encrypt issue a certificate for a server
+nothing on the internet can reach. It is what Plex does with <code>plex.direct</code>, without the
+account. It is the first piece of central infrastructure the project has, and its shape is what
+keeps it from becoming a trap:</p>
+<ul>
+  <li><strong>It never carries media.</strong> A relay's cost grows with every film watched; DNS
+  records and a challenge every couple of months do not. Roughly $5 a month on Railway plus the
+  domain, however many installs.</li>
+  <li><strong>It holds no state.</strong> An install's token is an HMAC of its id; the DNS provider
+  (Porkbun) is the only record of anything. Once a name resolves it resolves without the service,
+  and an outage stops registration and renewal, never a lookup - with a month of slack, since
+  renewal starts with a third of the certificate's life left.</li>
+  <li><strong>It only names private addresses</strong> for the home name. A trusted certificate on
+  a public address is a phishing kit with the project's name on it. It also only publishes values
+  shaped like an ACME challenge, and caps challenges per install, per client network and overall,
+  because every certificate under the zone spends the domain's weekly Let's Encrypt allowance until
+  the zone is on the Public Suffix List.</li>
+  <li><strong>Every failure falls back to how things were.</strong> Until the certificate arrives,
+  or if it never can, the local authority serves exactly as in self-signed mode.</li>
+</ul>
+<div class="why">The first design had the service answer DNS itself, reading the address out of
+the name (<code>192-168-1-20.&lt;id&gt;...</code>). Railway offers no UDP and no port 53, and it
+would have made every lookup depend on the service's uptime. Writing ordinary records through the
+registrar's API is less clever and strictly more robust. <code>netip.ParseAddr</code> does the
+address check, which rejects the leading-zero and IPv4-mapped-IPv6 tricks that would otherwise
+smuggle a public address past <code>IsPrivate()</code>.</div>
+<h3>Limits and the sweep</h3>
+<p>Porkbun allows 2,500 records per domain, and each install holds one for good - roughly 2,400
+installs in use, which is a lower ceiling than Let's Encrypt's. So abandoned installs are swept:
+the date an install was last heard from is kept in the record's notes field, refreshed monthly by
+the install's twice-daily re-announce, and records silent for 180 days are deleted daily. Nothing
+is lost by it - the registration is an id and an HMAC, valid for ever, so a server switched back on
+after a year recreates its record under the same name on its first announce. The sweep matches only
+install-shaped names, skips undated records, and refuses outright to delete more than a quarter of
+installs at once: a wrong clock is likelier than a mass exodus. Sign-ups are limited per network
+(30 a day per /24 or /48) and overall (300 a day); every limit keys IPv6 by /64. The client
+address comes from Railway's <code>X-Real-IP</code>, measured to be unspoofable, where the last
+<code>X-Forwarded-For</code> entry would have been Railway's own edge and put every install behind
+one limit.</p>
+
+<h2 id="acme">An ACME client of its own</h2>
+<p><code>internal/acme</code> exists for the zero-dependency rule: RFC 8555 for one account, a
+couple of names, dns-01 and ES256 is a few hundred lines. JWS signatures use fixed-width R and S,
+not the DER encoding <code>crypto/ecdsa</code> produces by default. It is believed because of
+<code>scripts/acme-rehearsal.sh</code>, which runs it in CI against <strong>Pebble</strong> - Let's
+Encrypt's own test authority - with pebble-challtestsrv standing in for the DNS provider. A fake
+authority written beside the client would share its mistakes; Pebble does not. It found one: at
+Pebble's 50% nonce-refusal rate, five retries failed a run in six, so it is ten.</p>
+<p>The first live run, against real Railway, Porkbun and Let's Encrypt, got a staging certificate
+in 13 seconds and found three things Pebble could not:</p>
+<ul>
+  <li><strong>Compose passes settings by name</strong>, and two new variables were missing from
+  <code>docker-compose.yml</code>. Any new <code>SOUNDSTORM_</code> setting must be added there.</li>
+  <li><strong>"Service busy; retry later" is typed <code>rateLimited</code></strong> but sent as a
+  503 when Let's Encrypt sheds load. Taken for a real limit, it silenced the install for a day. Only
+  a 429 is a limit.</li>
+  <li><strong>A push to main redeploys the service</strong>, and a request in flight gets a bare 502.
+  The install retries in five minutes, which is correct.</li>
+</ul>
+<p>The issuer is recorded beside the certificate, so changing the ACME directory forces a new one
+rather than keeping a staging certificate until renewal. The certificate loop checks every twelve
+hours, and an unanswered check is retried after five minutes.</p>
+
+<h2 id="move">The page moves itself, after checking</h2>
+<p><code>GET /api/session</code> offers <code>secureName</code> to a page not already on it. The
+page then fetches <code>https://&lt;name&gt;:&lt;port&gt;/healthz</code> in <code>no-cors</code>
+mode - which resolves only if the name resolved, the connection opened and the certificate
+verified - and only then <code>location.replace</code>s itself there. Plenty of routers refuse to
+resolve a public name that points at a private address (DNS rebinding protection), and redirecting
+into that failure would be worse than staying on http. The shell's CSP admits the secure name in
+<code>connect-src</code> for exactly this check. HSTS is then sent on that name for a week, and
+only while the real certificate is loaded (see the <a href="http-api.html">HTTP API</a>).</p>
+
+<h2 id="remote">Remote access: the <code>*.net</code> name</h2>
+<p>Reaching the server away from home needs a public address, so remote access adds a second name,
+<code>&lt;id&gt;.net.soundstorm.dev</code>, which the owner switches on in Settings. Two names, not
+one, because many routers cannot "hairpin" - loop a LAN client back in through the public address -
+and a single public name would break access at home on those routers. Both names go on one
+certificate, one order and one renewal, so remote access does not double an install's draw on the
+shared Let's Encrypt allowance.</p>
+<p>The name service lifts its private-addresses-only rule for this name only behind a
+<strong>reachability challenge</strong>, built to be safe against being turned into a probe of
+somebody else:</p>
+<ul>
+  <li>It only ever probes the caller's own source address - the install supplies a port, never a
+  target - so it cannot be pointed at a victim or at cloud metadata endpoints.</li>
+  <li>That address must be public; private, loopback, link-local and carrier-grade NAT addresses
+  are refused.</li>
+  <li>It fetches <code>/api/remote-reachable?nonce=</code> at that address and port and expects an
+  HMAC of the nonce under the install's own token, so a stranger on the same address cannot claim
+  the name.</li>
+</ul>
+<p>IPv4 and IPv6 are published from separate calls pinned to each family, so an <code>AAAA</code>
+record appears only when the install actually reached the service over IPv6. Audio to a device on
+a <code>*.net</code> name is paced (see <a href="streaming.html">streaming</a>). After a restart the
+remote name is read back from the certificate on disk, so a DNS-provider hiccup at start-up cannot
+drop it from the reissued certificate.</p>
+
+<h2 id="portmap">Opening the port, and knowing when you cannot</h2>
+<p><code>internal/portmap</code> opens the port on the router where it allows, in pure standard
+library: <strong>PCP</strong> first, then <strong>NAT-PMP</strong>, then <strong>UPnP-IGD</strong>.
+PCP carries a client-address field that a strict router checks against the packet's source, and
+behind Docker's NAT those differ, so NAT-PMP, which has no such field, is the fallback. UPnP's SSDP
+discovery is multicast and does not cross the Docker bridge, so the installer discovers the
+router's description URL on the host and passes it in (<code>SOUNDSTORM_UPNP_URL</code>), as it does
+the gateway (<code>SOUNDSTORM_GATEWAY</code>) - inside the container the default route is the Docker
+bridge, not the router. UPnP is used only to open this one port at the owner's request, follows no
+redirects, and with a gateway configured talks only to a device at that address. The name service's
+probe, not any protocol's reply, is the final word on whether the port opened.</p>
+<p>The router's own WAN address says when remote access cannot work at all, and
+<code>Maintainer.ExternalAddress</code> asks for it even when the mapping <em>succeeded</em> -
+because a router behind carrier-grade NAT opens the port without complaint, on an address the
+internet cannot reach. <code>ClassifyWAN</code> judges it:</p>
+<table>
+  <tr><th>Router's WAN address</th><th>Meaning</th><th>What Settings says</th></tr>
+  <tr><td>In <code>100.64.0.0/10</code></td><td>Carrier-grade NAT: no forward can ever be reached</td><td>Use Tailscale</td></tr>
+  <tr><td>In a private range</td><td>Double NAT: a forward is needed on both routers</td><td>Explains, and points at Tailscale</td></tr>
+  <tr><td>Public, or no answer</td><td>Ordinary</td><td>Forward the port if it did not open by itself</td></tr>
+</table>
+
+<h2 id="tailscale">Tailscale, as a profile</h2>
+<p><code>docker compose --profile tailscale up -d</code> runs a Tailscale sidecar that puts the
+server on a tailnet at <code>https://&lt;hostname&gt;.&lt;tailnet&gt;.ts.net</code>, with
+Tailscale's own certificate. It is for away from home, especially behind carrier-grade NAT where
+there is no port to forward, and for anybody who would rather not put a server on the internet.</p>
+<p>It is opt-in for the same reason Plex was rejected: it needs an account, an auth key and an app
+on every device, none of which can be automated. SoundStorm works fully without it, and nobody is
+walked through a sign-up they did not ask for. It is offered where it is needed - when the WAN
+check says remote access cannot work - and set up from a Start menu shortcut that takes the key.</p>
+<p>Three things were learned by running it. Userspace networking is the default, so the sidecar
+needs no <code>NET_ADMIN</code> and no <code>/dev/net/tun</code>. The proxy target must not be
+called <code>soundstorm</code>, because that is the sidecar's own tailnet hostname, and Docker writes
+a container's hostname into its <code>/etc/hosts</code>: the proxy looped back to itself and
+answered 502 while every container reported healthy, so SoundStorm has a second network alias,
+<code>soundstorm-app</code>. And the scheme in the serve config must match what SoundStorm speaks on
+the compose network - <code>http://</code> or <code>https+insecure://</code> - or it is another
+silent 502.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

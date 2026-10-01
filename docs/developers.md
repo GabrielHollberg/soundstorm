@@ -38,7 +38,7 @@ On Windows, Smart App Control refuses to run freshly built test binaries, so
 run the suite in a container instead, as CI does:
 
 ```sh
-docker run --rm -v "//h/dev/soundstorm:/src" -w /src golang:1.24-alpine go test ./...
+docker run --rm -v "//h/dev/soundstorm:/src" -w /src golang:1.27-alpine go test ./...
 ```
 
 Releases are tags: pushing `vX.Y.Z` runs `.github/workflows/publish.yml`, which
@@ -86,7 +86,7 @@ transcoding. Video never will be.
 ## Layout
 
 ```
-cmd/soundstorm/        main, env config, subcommands (backup, restore, reset-password)
+cmd/soundstorm/        main, env config, subcommands (backup, restore, reset-password, train-looks)
 cmd/soundstorm-names/  the name service behind *.soundstorm.dev
 internal/media/        Item, Query, Kind - the shared vocabulary
 internal/source/       the Source interface, optional interfaces, Registry
@@ -110,6 +110,15 @@ internal/scrobble/     ListenBrainz
 internal/discover/     MusicBrainz, ListenBrainz, Wikipedia
 internal/lyrics/       LRCLIB
 internal/epub/, pdf/, tags/   read just enough metadata, no dependencies
+internal/photoimport/  bringing photo downloads in (Takeout, iCloud, social), dates and sidecars
+internal/beats/        hearing every song for its beats, on the server
+internal/flac/         a FLAC decoder, for the beats
+internal/training/     the developer's tool for training the visualizers
+internal/httpx/        the hardened HTTP client every adapter uses
+internal/starter/      the starter library bundled into the binary
+android/               the Android app (phones and TVs); see android/README.md
+ios/                   the iPhone and Apple TV apps; see ios/README.md
+site/                  the documentation website: how it all works, in depth
 ```
 
 ## Adding a backend
@@ -143,8 +152,9 @@ The second half is the one people skip, and the one that matters.
 ## API
 
 The UI talks to SoundStorm's JSON API under `/api/`. The routes are listed in
-`Routes()` in `internal/httpapi/httpapi.go`. Every route but sign-up, sign-in
-and `/api/session` needs a session, owner-only routes are mounted separately,
+`Routes()` in `internal/httpapi/httpapi.go`. Every route but sign-up, sign-in,
+sign-out, `/api/session`, `/api/remote-reachable`, `/healthz`, `/ca.crt` and
+the static files needs a session, owner-only routes are mounted separately,
 and cross-site writes are refused. A search always answers 200: check
 `degraded` and `sources` for what was missing.
 

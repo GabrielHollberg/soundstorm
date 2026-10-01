@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photos: folders, backup, imports - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/photos" data-root="..">
+<main>
+<h1>Photos: folders, backup, imports</h1>
+<p class="lede">Photos are delegated to Immich, the way music is to Navidrome. What SoundStorm adds
+is the part that makes them a household's rather than one account's: everybody has their own folder
+and sees only their own photos, phones back up into it, and a lifetime of photos can be brought in
+from Google, Apple and the rest - sorted by when they were taken, with duplicates noticed.</p>
+
+<h2 id="why-immich">Why photos are delegated</h2>
+<p>SoundStorm owns a media type only when it is self-describing and needs no transcoding. Photos
+fail that concretely: <strong>iPhones save HEIC, and Go's standard library cannot decode it</strong>,
+so SoundStorm could not even show a thumbnail of most phone photos without a dependency; phone clips
+need transcoding; and a photo library of any size is the scanning-and-indexing job this project
+exists not to rebuild. Immich was chosen over lighter options for search by what is in a picture -
+the feature people compare against Google Photos - at the price of four containers and 6-8 GB of
+RAM. How it is provisioned and pinned is on the <a href="../backends/immich.html">Immich page</a>.</p>
+<p>The viewer always shows Immich's preview (a JPEG whatever the original was - a browser can show
+neither HEIC nor raw). The original is a download, and a clip plays through the ordinary video
+player with seeking, since Immich's playback endpoint honors <code>Range</code>.</p>
+
+<h2 id="own">Everyone's own photos</h2>
+<p>Designed by the owner: <strong>each member has their own folder, sees only their own photos, and
+the owner sees everybody's.</strong> There is no setting to show anyone the owner's photos; what the
+owner controls is whether a member has Pictures at all, and how much space their photos may take.</p>
+<ul>
+  <li><strong>The folder</strong> is <code>pictures/Personal/&lt;name&gt;/</code>
+  (<code>library.PersonalFolder</code>, the account name made safe as a folder). Everything a member
+  adds to the picture shelf goes there, and so does any phone's backup, the owner's included. A new
+  account whose folder would be somebody else's - or a removed person's, kept - is refused.</li>
+  <li><strong>Their own Immich account</strong> (<code>provision.PhotoAccountFor</code>, made the
+  first time they look), whose one library reads only their folder. The owner keeps the
+  administrator's account, whose library is the whole pictures folder.</li>
+  <li><strong>The adapter acts as the person asking</strong> (<code>immich.Config.ActAs</code>):
+  every request, stream and thumbnail carries that person's own key. If a member's account cannot be
+  made it is an error - never a fallback to the administrator's key.</li>
+  <li>Removing a member deletes their Immich account and <strong>keeps their folder</strong>, for the
+  owner to decide about.</li>
+</ul>
+<div class="why">Filtering one shared Immich account was rejected because faces would leak: Immich
+groups faces across every photo it can see. With an account each, People, Places, search and On this
+day are worked out from that person's photos alone. Checked against Immich before building:
+overlapping libraries are allowed, and a member is refused another's photo by id. The cost is that a
+member's photos are processed twice (thumbnails, faces) - once per library - though never copied.</div>
+
+<h3>Space</h3>
+<p>100 GB each by default (<code>state.DefaultPhotoLimitGB</code>). The owner changes the household
+default or one person's limit (or none); the owner's own photos have no limit. Use is measured by
+walking the folder, kept for a minute and added to as files land. At the limit an upload, backup or
+import gets a 507 saying so - nothing is ever deleted. A member's Settings shows how much is used,
+and says plainly that the owner of the server can see their photos.</p>
+
+<h2 id="backup">Phone backup</h2>
+<p><strong>The server half</strong> is two endpoints. <code>POST /api/photos/backup/check</code>
+asks "which of these do you have" by name, time taken and size, so a reinstall or a new phone sends
+nothing twice. <code>PUT /api/photos/backup?name=&amp;taken=</code> takes one file as the body and
+files it under <code>Personal/&lt;name&gt;/&lt;year&gt;/&lt;month&gt;/</code>, keeping a different
+file of the same name beside it. These uploads are exempt from the 30-second body deadline, which
+would cut off a phone's video on a slow uplink.</p>
+<p><strong>The Android half</strong> (<code>PhotoBackup.kt</code>) runs as WorkManager jobs, so
+Android decides when (Wi-Fi only unless turned off, charging if asked) and it carries on with the app
+closed: one when a photo is added, one every six hours, each chaining the next while there is more,
+one file at a time with progress through a big one. It sends the <em>original</em>
+(<code>setRequireOriginal</code>), because otherwise Android hands over a copy without the location,
+which would empty Places and differ in size. The page decides nothing: Settings shows the switch and
+its options through a small bridge, and after signing in on a phone the app asks once whether to back
+up. The iPhone app does not have backup yet.</p>
+<div class="warn"><strong>A shared phone.</strong> A security review found backup carried on into
+the next person's folder after a different account signed in. Now signing out, or another account
+appearing, turns backup off; the phone sends the account it was turned on for
+(<code>?account=</code>); and the server refuses photos meant for someone else. Backup also goes to
+the secure name the page was on, never plain http on the Wi-Fi when a secure one exists.</div>
+
+<h2 id="imports">Bringing a photo library in</h2>
+<p>Google and Apple give no way for SoundStorm to pull photos out - Google's Photos API stopped
+reading a person's library in 2025, and iCloud never had one - but both hand out a download of
+everything as zips. So "Your photos" walks through each service's export, and the zips can be dropped
+anywhere on the window. <code>internal/photoimport</code> does the sorting.</p>
+<ol>
+  <li><strong>Upload in pieces.</strong> 8 MB pieces to <code>library/.imports/&lt;account&gt;/</code>
+  (<code>POST /api/photos/import</code>, <code>PUT /api/photos/import/{id}?offset=</code>), carrying on
+  from where the server has it after a dropped connection or a reload.</li>
+  <li><strong>Recognize.</strong> The browser reads a zip's own table of contents from its end -
+  zip64 too, as Takeout's 50 GB zips are - without unpacking. A Google or iCloud download, a social
+  network's, or a zip mostly of photos goes to the importer; any other zip is not unpacked and a
+  message says so.</li>
+  <li><strong>Sort</strong>, one download at a time, a restart resuming, into the person's folder by
+  when each photo was taken. The zip is deleted once sorted.</li>
+</ol>
+
+<h3>When was it taken?</h3>
+<p>In order of trust:</p>
+<table>
+  <tr><th>Source</th><th>Notes</th></tr>
+  <tr><td>The download's own record</td><td>Takeout's JSON sidecars, found despite Takeout's naming (edited copies, "(1)" copies, names cut at 47 characters, album copies whose sidecar lives in the year's folder); iCloud's "Photo Details.csv", whose date has an unquoted comma; Facebook, Instagram and Flickr JSON.</td></tr>
+  <tr><td>EXIF</td><td>Found by its marker, so in a HEIC too (<code>ExifTaken</code>).</td></tr>
+  <tr><td>A date in the name</td><td><code>IMG_20191225_090000</code>, <code>PXL_...</code>, screenshots, WhatsApp's, Telegram's (<code>NameTaken</code>).</td></tr>
+  <tr><td>The file's own date</td><td>If not the day of the download.</td></tr>
+  <tr><td>Nothing</td><td><code>Undated/</code> - never today's month.</td></tr>
+</table>
+<p>That last rule came from the first walkthrough, which filed a photo under the current month: the
+iCloud zip finished first and had no date for it, while the Google zip knew it.</p>
+<p>Social downloads strip the photos' EXIF, so their JSON is the only record.
+<code>photoimport.JSONIndex</code> walks any JSON in a download for two shapes rather than one parser
+per network: Facebook's and Instagram's media objects (a <code>uri</code> beside a timestamp, and
+sometimes a latitude and longitude), and Flickr's per-photo files. Chats (<code>messages/</code>,
+<code>inbox/</code>, Snapchat's <code>chat_media/</code>) are left out - mostly other people's photos -
+and so are Snapchat's sticker overlay layers. Cards, cameras, old phones and computers are just a
+dropped <code>DCIM</code> or <code>Pictures</code> folder. Only the Facebook format was taken through
+end to end; the rest were built from documented shapes and checked with generated downloads.</p>
+<div class="note">A crafted zip once could run the server out of memory at every start, because every
+JSON was decoded and a half-sorted job was begun again at boot. Now 256 MB of JSON and two million
+records per download at most, a zip that would unpack to over three times its size plus 2 GB or holds
+over 500,000 files is refused (<code>ErrImplausible</code>), and a download is attempted at most
+twice.</div>
+
+<h3>Sidecars, never the photo</h3>
+<p>When the date or place came from the download, or the photo has no date of its own, it is written
+beside the photo as an XMP sidecar (<code>&lt;file&gt;.xmp</code>). The photo itself is never changed;
+Immich reads the sidecar. Checked: a Takeout photo at the Eiffel Tower showed its 2019 date in Paris.</p>
+<p>Every upload to the picture shelf - not just imports - is sorted the same way
+(<code>savePhoto</code>, <code>library.SaveDecided</code>, which places a file once its bytes have
+arrived), with the browser sending the file's own date as a last resort, which on a camera's card is
+when it was taken.</p>
+
+<h2 id="duplicates">Duplicates improve the kept copy</h2>
+<p>Takeout copies a photo into every album, and the same photo is often in Google, iCloud and the
+phone's backup. Duplicates are skipped by content (SHA-256, against same-size files already in the
+folder and within the download). But byte-identical files can arrive with different knowledge around
+them: in the first walkthrough an iCloud copy had no date and Google's copy did.</p>
+<p>So every sidecar records where its date came from (<code>soundstorm:DateSource</code>), ranked
+<em>none &lt; the file's own date &lt; a name &lt; Google's or Apple's record &lt; inside the
+photo</em> (<code>photoimport.Better</code>). A duplicate with a better-sourced date, or a place where
+the kept copy has none, rewrites the kept copy's sidecar and - when the date improved - moves it from
+<code>Undated</code> or the wrong month to the right one, to a free name only. Checked on a throwaway
+Immich: an undated photo, then Google's copy - moved to the right month, and Immich showed the date
+and city.</p>
+
+<h3>Managed and arranged folders</h3>
+<p>Only the dated folders count as SoundStorm's (<code>managedPhoto</code>). A photo that sits only in
+a folder somebody arranged and copied in by hand does not stop a copy being filed by date, and is never
+improved or moved: their folders are left exactly as they are. Such a photo then shows twice, which
+"Your photos" says. Near-duplicates (re-compressed or edited copies) are not caught.</p>
+
+<h2 id="browse">People, Places and On this day</h2>
+<p><code>source.PhotoBrowser</code> exposes what Immich works out itself: <code>GET /api/people</code>
+(a face is art id <code>person:&lt;id&gt;</code>), a person's photos, <code>GET /api/search/cities</code>
+for towns (the id carries city, state and country, since towns share names) and their photos. Somebody
+found but unnamed can be named by anyone who can see the photos - a name is for the household.</p>
+<p><strong>On this day is SoundStorm's own</strong>, not Immich's memories, which are made overnight
+and only for days Immich picked (empty on a real library). It is one metadata search per earlier year,
+25 years back, in parallel, cached an hour; 29 February asks only leap years.</p>
+<p>Browsing breaks the title order paging depends on - nobody browses a camera roll alphabetically - so
+photos carry a <code>SortKey</code> that is their rank in Immich's newest-first order. Smart search
+needs models Immich downloads on first use, so until they arrive the adapter falls back to a filename
+search.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

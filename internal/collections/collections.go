@@ -594,10 +594,14 @@ func (s *Store) RecordPlay(userID string, item media.Item, at time.Time) error {
 	p, ok := c.History[key]
 	if !ok {
 		if len(c.History) >= MaxHistory {
-			oldest, oldestAt := "", at
+			// The oldest of them all, whatever the clock says now: starting
+			// from now found nothing when every entry was later (a clock put
+			// back), and the history grew past its cap (a review).
+			oldest, first := "", true
+			var oldestAt time.Time
 			for k, v := range c.History {
-				if v.Last.Before(oldestAt) {
-					oldest, oldestAt = k, v.Last
+				if first || v.Last.Before(oldestAt) {
+					oldest, oldestAt, first = k, v.Last, false
 				}
 			}
 			delete(c.History, oldest)
@@ -830,4 +834,20 @@ func totalEntries(c *collection) int {
 		n += len(p.Items)
 	}
 	return n
+}
+
+// SetScrobblerProblem records why somebody's service stopped taking their
+// plays, changing nothing else. Reading the scrobbler, setting Problem and
+// writing it back with SetScrobbler would put back a stale queue, losing any
+// play recorded in between; this does the change under the lock instead. A
+// person with no service connected is left alone.
+func (s *Store) SetScrobblerProblem(userID, msg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.load(userID)
+	if err != nil || c.Scrobbler == nil {
+		return err
+	}
+	c.Scrobbler.Problem = msg
+	return s.save(userID, c)
 }

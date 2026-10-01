@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accounts and sign-in - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="server/accounts" data-root="..">
+<main>
+<h1>Accounts and sign-in</h1>
+<p class="lede">One login is half of what SoundStorm promises, so the server keeps its own
+accounts - two roles, a password hash, sessions - and makes the backends' accounts itself.
+<code>internal/auth</code> owns signing in; <code>internal/state</code> keeps what outlives a
+restart.</p>
+
+<h2 id="roles">Two roles, deliberately thin</h2>
+<p>The <strong>owner</strong> is whoever installed the server; they can add and remove people,
+choose which shelves each may see, change server settings and delete media. Everybody else is a
+<strong>member</strong>. That is the entire difference. A media server for a household does not
+need a permission matrix, and every role beyond these two is a decision somebody has to make
+about their family.</p>
+<p>The owner is always unrestricted, whatever is stored for them. They are the only account that
+can change restrictions, so an owner who locked themselves out of a shelf would have no way
+back in.</p>
+<p>There are no invite links and no open registration. Sign-up is a first-boot action that
+closes the moment an account exists - a second sign-up would be a stranger who found the port
+claiming somebody else's server. After that, only the owner adds accounts. Even the role of the
+first account is decided by the server: <code>AddUser</code> makes the first account the owner
+and everyone after a member under one lock, so two sign-ups racing on a fresh install cannot
+both become owner.</p>
+
+<h2 id="setup-code">The setup code</h2>
+<p>Until the first account exists, whoever reaches the port owns the server. "Only from the home
+network" was the first answer and cannot be checked: under Docker Desktop every connection -
+<code>localhost</code>, the LAN address, anything a router forwards from the internet - arrives
+from Docker's own bridge address. That was measured with a failed sign-in from each, not
+assumed.</p>
+<p>So the first sign-up needs a setup code, eighty random bits. It costs the person installing
+nothing: the installers generate it into <code>.env</code> (<code>SOUNDSTORM_SETUP_CODE</code>)
+and open the browser at <code>/?setup=&lt;code&gt;</code>, and the page fills it in. The installer
+also shows it in full at the end, grouped in fours; case, spaces and dashes are ignored when
+typed (<code>NormalizeSetupCode</code>). With no installer, SoundStorm makes one up at each start
+and logs it until an account exists.</p>
+<div class="note">The page removes <code>?setup=</code> from the address once it knows it is
+staying, so the code is not left in history or a bookmark. That once ran too early: the page
+stripped the code, then moved itself to the install's secure name carrying an already-empty
+query, and the first screen asked for a code the person had never seen.
+<code>forgetSetupCodeInAddress</code> now runs only on the paths that stay.</div>
+
+<h2 id="passwords">Passwords</h2>
+<p>Passwords are hashed with PBKDF2-HMAC-SHA256 at 600,000 iterations (OWASP's recommendation),
+a 16-byte salt and a 32-byte key, from the standard library's <code>crypto/pbkdf2</code>. It
+costs a few hundred milliseconds per sign-in, which is the point.</p>
+<ul>
+  <li><strong>At least 8 characters</strong>, enforced only when a password is set. Rejecting a
+  password that already exists would lock somebody out of their own library.</li>
+  <li><strong>At most 256 bytes</strong>, enforced both when set and when checked. PBKDF2's cost
+  per round rises with the input past SHA-256's 64-byte block, so a guess thousands of bytes
+  long costs several times an ordinary one. Because no genuine password can be longer, a longer
+  guess is refused before hashing at all.</li>
+</ul>
+
+<h2 id="sessions">Sessions and cookies</h2>
+<p>A session is a 256-bit random token in a cookie, valid for thirty days. The state file keys
+sessions by a <strong>SHA-256 hash</strong> of the token, never the token itself. That file is
+what a backup copies and what an old volume leaves behind with nobody running the server
+around it; with raw tokens as keys it was itself enough to sign in as anybody with a live
+session. A slow hash is unnecessary - the input is 256 random bits, not a password. The
+migration was free: since the old key was the raw token, hashing it in place computes exactly
+what a real cookie looks up next, and nobody was signed out.</p>
+<p>Over TLS the cookie is called <code>__Host-soundstorm_session</code>. Every install's real
+name is under one shared domain not yet on the Public Suffix List, so any other install - one
+an attacker set up included - is the same site and could plant a cookie for the whole domain,
+sent ahead of the real one, signing the owner out over and over. A browser refuses a
+<code>__Host-</code> cookie that names a Domain, so no other host can plant one. Over plain HTTP
+on a LAN address the cookie keeps the plain name; a domain-scoped cookie never reaches a bare
+IP anyway. Every session cookie a request carries is tried, not only the first.</p>
+<p>Each account keeps at most fifty sessions; the oldest go first.
+<code>SOUNDSTORM_TRUST_PROXY</code> lets <code>X-Forwarded-Proto</code> decide whether the cookie
+is Secure behind a TLS-terminating proxy - off unless asked for, because any client can send
+that header.</p>
+
+<h2 id="throttle">The sign-in throttle</h2>
+<p>Signing in is the one unauthenticated endpoint that costs real CPU: 600,000 rounds is enough
+to pin every core of a Raspberry Pi with a handful of parallel requests.
+<code>internal/auth/throttle.go</code> answers that, and guessing, separately.</p>
+<table>
+  <tr><th>Limit</th><th>Rule</th><th>Why</th></tr>
+  <tr><td>Hashing slots</td><td>At most two hashes at once, server-wide; a sign-in waits up to 10s for a slot</td><td>Protects the CPU whoever is asking.</td></tr>
+  <tr><td>Per address</td><td>5 free wrong passwords, then 1s, doubling, capped at 5 minutes; forgotten after an hour without failures</td><td>Slows a single guesser.</td></tr>
+  <tr><td>Per account</td><td>10 free, then 2s, doubling, capped at 1 minute; counted for any name, existing or not</td><td>Per address is five guesses per address an attacker can borrow. The cap is short because it reaches the real owner too.</td></tr>
+  <tr><td>One guess in flight per account</td><td><code>throttle.reserve</code></td><td>The wait was checked before hashing and a failure recorded after, so a burst sent at once all passed the check. Now a burst against one name waits on itself.</td></tr>
+</table>
+<p>Three details make it honest. A throttled request is refused <em>before</em> hashing, and
+refused even with the right password - otherwise the 429 would fire only for wrong answers and
+a guesser would learn something for free. Names are counted whether or not the account exists,
+so the 429 does not reveal who has one, and a spray of made-up names is pruned first so it
+cannot flush the real one out of the table. And it is capped backoff, never a lockout: behind
+Docker Desktop everybody can share one address, and a household locked out of its own server is
+far worse than a script slowing it down for a few minutes. IPv6 clients are keyed by their /64.</p>
+
+<h3>Device tokens</h3>
+<p>Capped backoff still let a stranger guessing at a known name once a minute hold that
+account's sign-ins in backoff indefinitely, the owner's included, and let one stranger's wrong
+guesses on Docker Desktop's single shared address slow the whole household. So every successful
+sign-in, sign-up and password change leaves a device cookie (<code>soundstorm_device</code>,
+<code>__Host-</code> over TLS) holding <code>id.issued.nonce.HMAC</code>, keyed by the state's
+device key and covering the account's current salt. A sign-in carrying a valid one for the
+account being signed in to skips the address's and account's backoff and is judged on that
+device's own record alone - the same five free failures and doubling wait, one guess in flight
+at a time (<code>guardedTrusted</code>).</p>
+<div class="why">A stolen device token is no faster a guessing channel than one address, and the
+stranger, who has never signed in, has no token at all. Any password change or reset changes
+the salt and retires every token issued before it. What remains exposed is only a brand-new
+device signing in while an attack is actually running. Sign-out keeps the device cookie: the
+device is still one the account uses.</div>
+<p>The end-to-end test runs every client from one loopback address - exactly the Docker Desktop
+case - and fails with the exemption disabled.</p>
+
+<h2 id="access">Which shelves somebody can see</h2>
+<p><code>User.Libraries</code> is a list of media kinds; <code>nil</code> means all of them,
+which is what every account made before the field existed has, and the default for a new one.
+The granularity is <strong>a whole media kind</strong>, which is the same thing as a source,
+because each source serves exactly one kind. "No films for the seven-year-old" is answerable;
+"only these films" is not, and would mean per-person Jellyfin accounts and parental ratings -
+not worth a second provisioning path without deciding so.</p>
+<p><code>auth.Access(user)</code> turns the account into a <code>source.Access</code>, the
+middleware puts it in the request context once for every guarded route, and the registry
+refuses anything outside it. A few kinds need more than one permission: a Storyteller book is an
+ebook holding an audiobook's audio, so reading one needs audiobook access too
+(<code>AlsoNeeds</code>).</p>
+<div class="warn">An empty list must never read back as <code>nil</code>. <code>User.Libraries</code>
+has no <code>omitempty</code> for exactly this reason: with it, an account allowed no libraries
+would serialize to nothing, read back as nil, and silently mean every library. A test writes it,
+reads it back and checks. Similarly, <code>{}</code> sent to the owner's libraries endpoint once
+made a member unrestricted, because a <code>*[]string</code> cannot tell an absent key from null;
+it is now refused.</div>
+<p><code>AccessFrom</code> defaults to unrestricted, because provisioning, health checks and the
+library counter run with no account and must see everything. That is a fail-open default, which
+is why <code>internal/httpapi/libraries_test.go</code> walks every endpoint that hands over
+bytes, metadata or a playable address - <code>/api/stream</code> included, since hiding search
+results is no permission when the address is guessable.</p>
+
+<h2 id="per-person">The few things that are per person</h2>
+<p>Search returns the same results whoever asks, and a film is the same bytes. What differs:
+reading and video positions (kept by SoundStorm, keyed <code>userID/sourceID/itemID</code>),
+favorites, playlists and history (in <a href="collections.html">collections</a>), audiobook
+listening positions, and photos.</p>
+<h3>Per-member backend accounts</h3>
+<p>Two backends get an account per member, because what they remember is personal:</p>
+<ul>
+  <li><strong>Audiobookshelf</strong> keeps listening positions per <em>its</em> account, so two
+  people sharing one would overwrite each other. <code>provision.TokenFor</code> creates a
+  member's account lazily on first use rather than when they are added - a backend can be down
+  or still provisioning when somebody joins, and first use is a retry that costs nothing. The
+  owner uses the shared administrator credential, or their own history would split in two.</li>
+  <li><strong>Immich</strong> gives each member an account whose one library reads only their own
+  photo folder (<code>provision.PhotoAccountFor</code>). Filtering one shared account would leak
+  faces, because Immich groups faces across every photo it can see. See
+  <a href="photos.html">photos</a>.</li>
+</ul>
+<p>Navidrome and Jellyfin keep one shared account on purpose: favorites and watch positions are
+SoundStorm's own, so nothing surfaced from them differs per person. <code>source.WithUserID</code>
+carries the account id to adapters, and lives in <code>internal/source</code> rather than
+<code>internal/auth</code> so an adapter can learn who is asking without depending on how signing
+in works.</p>
+
+<h2 id="passwords-change">Changing and resetting passwords</h2>
+<ul>
+  <li><strong>Your own</strong> (<code>POST /api/account/password</code>,
+  <code>ChangeOwnPassword</code>) needs the current password, and signs out every other device.
+  A session is only a cookie; without the check, a browser left signed in would be enough to
+  take the account over. It goes through the same throttle as signing in.</li>
+  <li><strong>Somebody else's</strong> (owner only, <code>ResetPassword</code>) needs no current
+  password and signs that account out everywhere. It refuses the owner's own id: otherwise a
+  stolen owner session could set a new password with no current one, the persistence the
+  current-password check exists to deny.</li>
+</ul>
+
+<h2 id="removing">Removing somebody</h2>
+<p>Removing a person deletes their sessions, positions, collections file, custom covers, listen
+log and backend accounts. The backend accounts go <strong>first</strong>, because deleting the
+SoundStorm account drops the record of which Audiobookshelf or Immich user belonged to it, and
+after that nothing knows what to clean up. It is best effort: a backend that is down must not
+stop somebody being removed. Their photo folder is kept, for the owner to decide about.</p>
+
+<h2 id="reset-password">Getting back in: <code>reset-password</code></h2>
+<p>Because sign-up closes forever, a forgotten owner password used to mean hand-editing
+<code>state.json</code> inside a container. <code>soundstorm reset-password</code> is the
+supported path, built into the main binary so it is wherever the server is:</p>
+<pre><code>docker compose stop soundstorm
+docker compose run --rm soundstorm reset-password
+docker compose start soundstorm</code></pre>
+<p>The server must be stopped first: a running SoundStorm holds the state in memory and rewrites
+the whole file on its next change, silently undoing the reset. And because
+<code>state.Open</code> writes the file every time it opens it, a reset run as root against a
+volume owned by uid 10001 would hand ownership of the file to root, and the server would then
+crash-loop on "permission denied". So the command stats the file <em>before</em> opening it and
+puts the ownership back afterwards. Sessions are left alone: recovering your own password is not
+evidence of a compromise, and signing every device in the house out would be its own small
+disaster.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

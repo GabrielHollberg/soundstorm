@@ -1,8 +1,8 @@
 Put your ebooks here.
 
-EPUB and PDF files. An existing Calibre library works here too.
+EPUB and PDF books. An existing Calibre library works here too.
 
-  ebooks/A Wizard of Earthsea.epub
+  ebooks/Ursula K. Le Guin/A Wizard of Earthsea/book.epub
 
 SoundStorm picks up new files automatically - there is nothing to import and no
 scan to trigger by hand.

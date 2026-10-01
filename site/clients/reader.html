@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The reader - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="clients/reader" data-root="..">
+<main>
+<h1>The reader</h1>
+<p class="lede">Ebooks open in a reader inside the app, which remembers the place across
+devices and can follow along with the audiobook, turning pages and lighting each sentence as it
+is read aloud. It is also the part of the app that renders the most untrusted content, and three
+rounds of security review found a way for a book to run script before it was closed for good.</p>
+
+<h2 id="foliate">foliate-js, and why it is vendored</h2>
+<p>Rendering is done by foliate-js (MIT licensed), checked in under
+<code>internal/webui/assets/vendor/</code>. Writing a reader was considered and rejected for the
+same reason SoundStorm does not transcode video: the two hard parts, the paginator and the EPUB
+CFI code, are about 44KB and 13KB of careful work that already exists.</p>
+<div class="why">It is the only third-party code in the project, and it does not break the
+zero-dependency rule's intent. The files are checked in and pinned by content, embedded with
+<code>go:embed</code>, and fetched at no point during a build. The Go module still has no
+dependencies at all.</div>
+<p>What is SoundStorm's own: the server unzips books (<code>GET /api/book/resource</code>), so no zip
+library runs in the browser; it remembers the reading position per person; and
+<code>reader.js</code> wraps foliate with the bar, settings, read-along and the security filters
+described below.</p>
+<p>Two foliate behaviours cost time and are worth knowing. <code>view.open(book)</code> renders
+nothing by itself: <code>view.init({ lastLocation })</code> must follow, or the reader is blank with
+no error anywhere. And its shadow root is closed, so a browser test cannot look inside it; tests
+watch the <code>relocate</code> event instead.</p>
+
+<h2 id="position">Position is a CFI, not a page number</h2>
+<p>Reflowable text has no page numbers worth keeping: change the font size and "page 47" is
+different words. So the place is an <strong>EPUB CFI</strong> - a path into the book's structure
+down to a character, such as <code>epubcfi(/6/4!/4/2/1:0)</code> - plus how far through the book
+it is, as a fraction for the progress bar. Both are saved to the server
+(<code>/api/book/progress</code>), keyed by person, source and book.</p>
+<p>The server validates them: the fraction must be between 0 and 1 (a JSON number like
+<code>1e400</code> decodes to infinity without complaint), the CFI is capped at 2KB, positions are
+kept only for books that exist, and saves are rate limited. Without those limits any member could
+grow the state file - the one every sign-in rewrites - without bound.</p>
+<p>The Apple TV has its own native reader and reads and writes the same CFI, so a book left on the
+TV opens at the same spot in a browser.</p>
+
+<h2 id="turning">Swipe, and when the arrows stay</h2>
+<p>On a touch screen pages turn by swiping, and the two arrow buttons are hidden: two 56px arrows
+were 29% of a 390px-wide screen. This was measured rather than assumed:
+<code>scripts/reader-swipe-check.js</code> swipes the reader and watches the fraction on the
+<code>relocate</code> event, and swiping reached exactly the positions the arrows reach, three times
+out of three in both directions.</p>
+<div class="note">A <code>relocate</code> event firing is not a page turn - it fires on a resize too.
+The first version of that check counted events and passed a tap that moved nothing. The fraction
+has to change, and change back.</div>
+<p>The exception matters. foliate's paginator handles touch; its fixed-layout renderer, used for
+comics and illustrated books, has no touch handling at all. So <code>reader.js</code> marks a
+fixed-layout book and the arrows stay for it. The rule is keyed on <code>pointer: coarse</code>, not
+screen width, because a narrow desktop window still has a mouse and cannot swipe.</p>
+<p>Opening a book no longer stops the music or the audiobook - reading to something is the point.
+The mini-player floats over the reader, and the page is laid out above it so no line hides
+behind it. A film still stops, since it would play behind the book.</p>
+
+<h2 id="untrusted">Book content is untrusted</h2>
+<p>An EPUB is a zip of web pages, and anyone with upload access to the ebook shelf can add one. A
+member could upload a book whose chapters contain script, then wait for the owner to open it.
+foliate renders each chapter in a <code>blob:</code> iframe, which shares SoundStorm's origin - so a
+script that ran there would run with the reader's session.</p>
+<p>Several layers stand in the way:</p>
+<ul>
+  <li><strong>The shell's Content-Security-Policy</strong> allows scripts only from SoundStorm
+  itself (<code>script-src 'self'</code>), which blocks inline scripts and <code>blob:</code> scripts
+  in chapters. <code>blob:</code> is allowed for styles and fonts, or books render unstyled.</li>
+  <li><strong>Everything a browser would run as a page is sandboxed</strong> when served from the
+  origin: book resources and streamed HTML, XML or SVG carry a sandbox policy of their own.</li>
+  <li><strong>Script types are never served.</strong> <code>stream.GuardActiveContent</code> demotes
+  every JavaScript content type to <code>text/plain</code>, and requests whose
+  <code>Sec-Fetch-Dest</code> is script, worker or style are refused on every stream path.</li>
+  <li><strong>The reader strips chapters before they render.</strong> On foliate's
+  <code>data</code> event, before the blob exists, <code>reader.js</code> removes scripts, event
+  attributes, <code>javascript:</code> links, frames, objects and refresh tags from every chapter,
+  whatever its declared type.</li>
+  <li><strong>The app refuses to run in a frame.</strong> <code>app.js</code> and
+  <code>reader.js</code> check and stop if loaded inside one.</li>
+  <li><strong>Links out of a book</strong> are handled by the reader: http and https only, opened
+  with <code>noopener</code>, so the book's page cannot swap the app's tab for a fake sign-in.</li>
+</ul>
+
+<h3 id="rounds">Three rounds of the same attack</h3>
+<p>Each layer above exists because a review found a door the previous ones missed. It is a good
+illustration of why the project runs blind security reviews (see
+<a href="../security/reviews.html">The review passes</a>).</p>
+<table>
+  <tr><th>Round</th><th>The door</th><th>The fix</th></tr>
+  <tr><td>First</td><td>A chapter with an <em>absolute</em> <code>&lt;script src="https://this-install/api/book/resource?...x.js"&gt;</code>. foliate rewrites relative references to <code>blob:</code> (blocked), but leaves absolute ones alone - and an absolute reference to SoundStorm's own origin is <code>'self'</code>. The script ran as the owner and reached the accounts API.</td><td>The book resource endpoint answers only <code>fetch()</code> requests, and never emits a JavaScript type.</td></tr>
+  <tr><td>Second</td><td>The cover endpoint served a book's declared cover with a type taken from its file name, so a cover named <code>x.js</code> came back as JavaScript.</td><td>The guard moved to one central place for every stream path; a cover must be declared an image, and SVG is not accepted as one.</td></tr>
+  <tr><td>Third</td><td>A chapter loading SoundStorm's real <code>/static/app.js</code> by absolute address - a genuine script that must stay loadable. It ran against the book's copy of the app's element ids, and an invisible label over a copied switch could turn on remote access at the owner's first tap.</td><td>The reader strips every script from every chapter, and the app refuses to run in a frame.</td></tr>
+</table>
+<p>Later passes widened the stripping: a chapter declared <code>text/xml</code> or with a charset
+parameter once skipped it, and chapters foliate hands over as a Blob are now read as text first.
+The CSP stops these on its own; the stripping means the reader does not have to rely on every web
+view passing the policy on.</p>
+
+<h2 id="readalong">Read-along: the page follows the audiobook</h2>
+<p>When somebody has the same book as an ebook and an audiobook, the <strong>Read Along</strong>
+pill in Books pairs them. Matching a recording to its text sentence by sentence is forced
+alignment - transcribe the audio, find it in the book - which is machine learning, so it is done
+by a backend, <a href="../backends/storyteller.html">Storyteller</a>. SoundStorm provisions it,
+hands it the pairs, and reads back two things: Storyteller's copy of the text, with every sentence
+wrapped in an element with an id, and a timeline converted to the audiobook's whole-book clock.</p>
+<p>Crucially, the audio still plays through SoundStorm's own player, from Audiobookshelf. Storyteller's
+EPUB carries its own copy of the audio, and playing that would lose the lock screen, the
+mini-player and the listening position shared with Audiobookshelf's apps.</p>
+<p>Four times a second the reader finds the sentence at the player's current time, turns to it
+with foliate's own navigation calls (the same ones its read-aloud uses) and lights it. Because it
+reads the player's own clock, it follows at any playback speed.</p>
+<ul>
+  <li><strong>Turning a page by hand</strong> stops the following for twelve seconds, so somebody
+  can glance back without fighting it.</li>
+  <li><strong>Highlight</strong> in the reader's bar turns the lit sentence off and on, kept on the
+  account; off, pages still turn with the voice.</li>
+  <li><strong>When the timing cannot be trusted</strong> - Storyteller's audio pieces do not line up
+  with Audiobookshelf's chapters - there is no timeline, and the book opens saying it cannot follow
+  rather than following the wrong sentence.</li>
+  <li><strong>Pairs</strong> are matched by title and author surname with edition noise removed. The
+  owner can pair a missed match by hand or mark a wrong one "Not the same book".</li>
+</ul>
+
+<h2 id="wakelock">Keeping the screen on</h2>
+<p>While a book follows its audiobook nobody touches the phone, so it used to sleep mid-chapter.
+The reader holds a screen wake lock (<code>navigator.wakeLock</code>) from the moment it starts
+following until it stops, and asks again whenever the page becomes visible, since the browser
+drops the lock whenever the page is hidden. Wake Lock needs a secure context, so over plain http
+the screen sleeps as before. A separate setting can keep the screen on while Now Playing is open,
+or always.</p>
+
+<h2 id="offline">Offline books</h2>
+<p>Ebooks, documents and Read Along pairs can be downloaded: both halves, plus a synced book's
+text (without its copy of the audio) and its timeline. They go into the same Cache API store as
+songs, keyed by the address the reader would ask for, and the reader reads a downloaded book from
+the device before asking the server. Because the reader is several JavaScript modules, the
+service worker serves any <code>/static/</code> file network-first with a cached fallback, and the
+kept shell lists foliate's modules - the first offline test found the reader undefined without
+that.</p>
+
+<h2 id="pdf">PDFs: the browser's own viewer</h2>
+<p>PDFs are not rendered by foliate. They open in the browser's built-in viewer inside an iframe,
+which is why the page may be framed by SoundStorm's own pages (and not by anybody else's). PDFs are
+the one book resource not sandboxed, because Chrome will not render a PDF in a sandboxed document.
+The cost is that browser viewers do not expose a position, so a PDF keeps no reading place in the
+web app. There are no PDF covers either: extracting one means rendering page one, which needs a PDF
+renderer the project does not carry.</p>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

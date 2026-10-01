@@ -358,20 +358,22 @@ func (s *Source) SyncNext(ctx context.Context, uuid string) error {
 		return fmt.Errorf("storyteller: no sync %q", uuid)
 	}
 	sort.SliceStable(queue, func(i, j int) bool { return queue[i].place < queue[j].place })
+	// Carried through to the end whatever fails: stopping half way left the
+	// rest cancelled, and nothing ever queued them again (a review).
+	var first error
+	keep := func(err error) {
+		if err != nil && first == nil {
+			first = err
+		}
+	}
 	for _, w := range append([]waiting{{uuid: uuid}}, queue...) {
-		if err := s.cancel(ctx, w.uuid); err != nil {
-			return err
-		}
+		keep(s.cancel(ctx, w.uuid))
 	}
-	if err := s.process(ctx, uuid, ""); err != nil {
-		return err
-	}
+	keep(s.process(ctx, uuid, ""))
 	for _, w := range queue {
-		if err := s.process(ctx, w.uuid, ""); err != nil {
-			return err
-		}
+		keep(s.process(ctx, w.uuid, ""))
 	}
-	return nil
+	return first
 }
 
 // Delete stops a book's sync and deletes it from Storyteller: its copy of

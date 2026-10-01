@@ -534,3 +534,40 @@ func TestAConfiguredNameIsPermitted(t *testing.T) {
 		t.Errorf("a configured host was not permitted: %v", err)
 	}
 }
+
+// The fallback certificate is issued at start, so a server left running past
+// its lifetime would keep handing an expired one to every bare-IP connection.
+// It must be reissued in place when near expiry, and saved, as at start.
+func TestTheFallbackCertificateRenewsWhileRunning(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Load(Config{Mode: ModeSelfSigned, Dir: dir, Hosts: []string{"192.168.0.19"}, Log: testLog()})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	old := s.fallback
+	// No clock to move, so make the certificate in hand look nearly expired.
+	old.Leaf.NotAfter = time.Now().Add(time.Hour)
+
+	got, err := s.getCertificate(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatalf("getCertificate: %v", err)
+	}
+	if got.Leaf.SerialNumber.Cmp(old.Leaf.SerialNumber) == 0 {
+		t.Fatal("a nearly expired fallback certificate was handed out again, not renewed")
+	}
+	if !time.Now().Add(renewBefore).Before(got.Leaf.NotAfter) {
+		t.Errorf("renewed certificate expires %v, still too soon", got.Leaf.NotAfter)
+	}
+	if !covers(got, "192.168.0.19") {
+		t.Errorf("renewed certificate does not cover the configured address")
+	}
+
+	// Saved, so the next start picks up the renewed one rather than reissuing.
+	again, err := Load(Config{Mode: ModeSelfSigned, Dir: dir, Hosts: []string{"192.168.0.19"}, Log: testLog()})
+	if err != nil {
+		t.Fatalf("Load again: %v", err)
+	}
+	if again.fallback.Leaf.SerialNumber.Cmp(got.Leaf.SerialNumber) != 0 {
+		t.Errorf("the renewed certificate was not saved")
+	}
+}

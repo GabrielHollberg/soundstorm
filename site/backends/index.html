@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backends - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="backends" data-root="..">
+<main>
+<h1>Backends</h1>
+<p class="lede">A backend is an existing open-source media server that owns one kind of media and one
+folder. SoundStorm installs each one in its own container, sets it up with nobody logging in, keeps the
+credentials it generated, and drives it through its API - so the person using SoundStorm never sees it.</p>
+
+<h2 id="table">The backends at a glance</h2>
+<table>
+  <tr><th>Backend</th><th>Kind</th><th>Image</th><th>Provisioned by</th><th>What SoundStorm uses</th></tr>
+  <tr><td><a href="navidrome.html">Navidrome</a></td><td>Music</td><td><code>deluan/navidrome</code></td><td>First-run admin form while no user exists</td><td>Subsonic search, streams, covers, albums, lyrics, ReplayGain, transcoding for beats</td></tr>
+  <tr><td><a href="jellyfin.html">Jellyfin</a></td><td>Films, TV</td><td><code>jellyfin/jellyfin</code></td><td>Its startup wizard, a plain REST API</td><td>Search, playback negotiation, HLS transcoding, subtitles, episodes</td></tr>
+  <tr><td><a href="audiobookshelf.html">Audiobookshelf</a></td><td>Audiobooks</td><td><code>advplyr/audiobookshelf</code></td><td>Root user, library, per-member users</td><td>Search, tracks, chapters, per-person listening position</td></tr>
+  <tr><td><a href="immich.html">Immich</a></td><td>Photos</td><td><code>immich-app/*:v3</code></td><td>Admin sign-up, API key, external library</td><td>Thumbnails, previews, smart search, people, places, per-member accounts</td></tr>
+  <tr><td><a href="storyteller.html">Storyteller</a></td><td>Read-along timing</td><td>pinned by digest</td><td>A server action on <code>/init</code>, then tokens</td><td>Sentence-level alignment of ebook text to audiobook audio</td></tr>
+  <tr><td><a href="audiomuse.html">AudioMuse-AI</a></td><td>Song analysis</td><td>pinned by digest</td><td><code>/api/setup</code> before its first save</td><td>Moods, energy, tempo, "sounds like"</td></tr>
+  <tr><td><a href="local.html">SoundStorm itself</a></td><td>Ebooks, documents</td><td>-</td><td>Nothing to provision; it scans the folders</td><td>EPUB and PDF metadata, covers, the reader's resources</td></tr>
+</table>
+<p>Jellyfin is provisioned once and registered as two sources sharing one token -
+<code>jellyfin</code> (films) and <code>jellyfin-tv</code> (series and episodes) - because they are
+separate Jellyfin libraries with different scrapers. That is why <code>provision.buildSources</code>
+returns a slice.</p>
+
+<h2 id="why">Why these, and why delegate at all</h2>
+<p>Owning scanning, metadata, artwork and transcoding is years of work to arrive somewhere worse than
+what exists. So each media type goes to the best open server for it, and the test for whether SoundStorm
+owns a type itself is: is it self-describing and free of transcoding? EPUB is; video and HEIC photos
+are not. Navidrome rather than Jellyfin for music because its music model is first-class (multi-value
+artists, compilations, ReplayGain, a fast scanner). Jellyfin rather than Plex because Plex needs a
+plex.tv account, which no installer can create - fatal to the zero-keys promise. Emby went closed-source.</p>
+<div class="why">A backend is two halves: search and provisioning. A backend a human must configure by
+hand defeats the point, so both halves or it is not done. Every one of these was set up from a script
+against a live server before it was accepted.</div>
+
+<h2 id="adapter">The adapter interface</h2>
+<p>Every backend is reached through an adapter in <code>internal/source/&lt;name&gt;</code> that
+implements <code>source.Source</code>:</p>
+<pre><code>type Source interface {
+    ID() string                 // "navidrome", "jellyfin-tv" ...
+    Kind() media.Kind           // exactly one kind per source
+    Search(ctx context.Context, q media.Query) ([]media.Item, error)
+    Health(ctx context.Context) error
+}</code></pre>
+<p>Everything else is an optional interface a handler checks for with a type assertion. A source that
+cannot do something simply does not implement it, and the feature is absent for that shelf rather than
+broken. The main ones:</p>
+<table>
+  <tr><th>Interface</th><th>What it answers</th><th>Implemented by</th></tr>
+  <tr><td><code>Streamer</code>, <code>ArtProvider</code></td><td>An authenticated upstream <code>Target</code> for an item's bytes or artwork, which the server fetches and pipes through</td><td>All</td></tr>
+  <tr><td><code>Negotiator</code>, <code>HLSProvider</code>, <code>SubtitleProvider</code></td><td>Whether a film needs transcoding, its HLS playlists and segments, WebVTT subtitles</td><td>Jellyfin</td></tr>
+  <tr><td><code>TrackLister</code>, <code>ChapterLister</code>, <code>PositionTracker</code>, <code>AudioLayouter</code></td><td>An audiobook's files on one clock, its chapters, the listener's place, how its files map to chapters</td><td>Audiobookshelf</td></tr>
+  <tr><td><code>MusicBrowser</code>, <code>MixSource</code>, <code>LyricsSource</code>, <code>SongFileLister</code>, <code>Listener</code></td><td>Albums and artists, random songs and genres, lyrics, real file paths, FLAC for beat analysis</td><td>Navidrome</td></tr>
+  <tr><td><code>ShowBrowser</code></td><td>A show's seasons and episodes</td><td>Jellyfin (TV)</td></tr>
+  <tr><td><code>PhotoBrowser</code></td><td>People, places, a person's photos</td><td>Immich</td></tr>
+  <tr><td><code>BookOpener</code></td><td>A book's internal files for the reader</td><td>localbooks</td></tr>
+  <tr><td><code>ItemGetter</code></td><td>One item by id, for favorites, playlists and Continue</td><td>All</td></tr>
+  <tr><td><code>FileLister</code></td><td>Which files an item is, relative to its shelf, for deletion</td><td>Media backends</td></tr>
+  <tr><td><code>RecentLister</code>, <code>InProgressLister</code></td><td>Newest first for Home, books in progress for Continue</td><td>Most</td></tr>
+  <tr><td><code>Rescanner</code>, <code>Starter</code></td><td>"Look now" after an upload; work to do before answering at all</td><td>Most; localbooks</td></tr>
+</table>
+<p>A <code>Target</code> carries headers as well as a URL because backends disagree about where a
+credential goes: Subsonic in the query string, Jellyfin 12 only in an <code>Authorization</code> header.
+The proxy just replays both parts. It is never given to a browser.</p>
+
+<h2 id="edge">Normalization at the edge</h2>
+<p>Only an adapter knows its backend's vocabulary. Everything past it speaks <code>media.Item</code>.
+That rule absorbs a surprising amount of disagreement, each found against a live server:</p>
+<ul>
+  <li><strong>Browsing an empty query</strong>: Navidrome answers an empty <code>search3</code> with
+  everything; Jellyfin needs <code>searchTerm</code> omitted, not blank; Audiobookshelf's search matches
+  nothing for an empty <code>q</code>, so browsing uses a different endpoint with a differently nested
+  response.</li>
+  <li><strong>Order</strong>: paging a merged list needs every source to return its first N in exactly
+  the merge's order, and no backend's own sort does - Navidrome's produced 1,760 repeats in 40 pages.
+  So browsing adapters fetch the whole shelf, order it with the one comparator <code>media.Less</code>,
+  and cut; <code>media.ShelfCache</code> keeps it for 30 seconds. Immich is the deliberate exception,
+  newest first, with a <code>SortKey</code> that encodes it.</li>
+  <li><strong>Paths</strong>: Navidrome reports them relative to the music folder, Audiobookshelf
+  gives a book folder, Immich and Jellyfin give paths as their containers see them, trimmed with
+  <code>source.RelativeTo</code>, which refuses anything outside the root.</li>
+  <li><strong>Missing files</strong>: only Navidrome hides them by itself. Audiobookshelf keeps serving
+  items whose files are gone, so its adapter filters them.</li>
+</ul>
+
+<h2 id="rules">Rules every backend lives under</h2>
+<ul>
+  <li><strong>A dead backend never takes search down</strong>: a deadline and an error slot per source,
+  always 200, and <code>degraded</code> says what is missing. A panicking adapter is recovered and
+  reported the same way.</li>
+  <li><strong>Reconnecting is not provisioning.</strong> On restart SoundStorm can beat a backend to
+  listening; only a 401 or 403 means the credentials are wrong. A 5xx, 429 or dial error means wait.
+  Treating those as "wrong password" once bricked a working backend.</li>
+  <li><strong>Access is per kind</strong>: <code>Registry.All</code>, <code>Matching</code> and
+  <code>ByID</code> take the request's context, which carries what the account may see, so a handler
+  cannot reach a source without the restriction being applied.</li>
+  <li><strong>No backend publishes a port.</strong> Only SoundStorm's port is published; the backends
+  are reachable only on the compose network, and the shared HTTP client refuses absolute references,
+  dot segments and redirects to another host, since its headers carry admin keys.</li>
+</ul>
+
+<h2 id="pages">Each backend</h2>
+<div class="cards">
+  <a class="card" href="navidrome.html"><b>Navidrome</b><span>Music: Subsonic, real paths, ReplayGain, the listening transcoding.</span></a>
+  <a class="card" href="jellyfin.html"><b>Jellyfin</b><span>Films and TV: playback negotiation, HLS, subtitles, and an API that moves.</span></a>
+  <a class="card" href="audiobookshelf.html"><b>Audiobookshelf</b><span>Audiobooks: per-person accounts and positions, inodes, chapters.</span></a>
+  <a class="card" href="immich.html"><b>Immich</b><span>Photos: external libraries, API keys, an account per member.</span></a>
+  <a class="card" href="storyteller.html"><b>Storyteller</b><span>Read-along: forced alignment, two-step books, timing conversion.</span></a>
+  <a class="card" href="audiomuse.html"><b>AudioMuse-AI</b><span>Moods: hearing every song, nothing leaving the house.</span></a>
+  <a class="card" href="local.html"><b>Ebooks and documents</b><span>No backend: localbooks, EPUB and PDF metadata, optional OPDS.</span></a>
+</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

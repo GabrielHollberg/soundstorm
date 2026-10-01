@@ -1,114 +1,94 @@
 # Roadmap
 
-The vertical slice works: one login, one search, two backends provisioned with
-zero keys, playback in place. What follows is ordered by what would most change
-whether this is usable, not by what is most interesting to build.
+SoundStorm works end to end: one login and one search over six backends
+provisioned with nobody logging in (Navidrome, Jellyfin, Audiobookshelf,
+Immich, Storyteller, AudioMuse-AI) plus the ebook and document shelves it reads
+itself; apps for the web, Android (and Android TV), iPhone and Apple TV; remote
+access; per-person photos with phone backup and imports. What follows is
+ordered by what would most change whether it is usable, not by what is most
+interesting to build.
 
-## 1. Real libraries, real scale
+## 1. Setup that survives a failure half way
 
-Everything so far has been proven against thirteen synthetic files. That is
-enough to show each mechanism works and nothing about whether it holds up.
+Each backend is set up by creating its administrator account and then a few
+more steps (signing in, an API key, a library). The generated password is
+saved only once all of them succeed, so a failure after the account exists -
+a timeout, a backend restarting - leaves an account whose password nobody
+holds, and the next attempt is refused as "already set up". Recovering means
+resetting that backend's volume by hand. The fix is to save the credentials
+the moment the account exists and finish setup from them on later attempts.
+It is the most likely thing to go wrong on a fresh install on a slow machine.
 
-Unknowns that only appear at size:
+## 2. Scale
 
-- search latency with 100k tracks, and whether the merged ranking is still
-  sensible when every backend returns 25 hits
-- Jellyfin's first scan of a large library blocking provisioning
-- the ebook scan parses every EPUB on first boot; the mtime cache makes
-  rescans cheap but a cold start on thousands of books is untested
-- how often real files fall outside the conservative direct-play profile, and
-  therefore how much transcoding actually happens
-- whether one machine can transcode for more than one viewer at a time
+Measured on a real library - 4,413 songs, 1,663 ebooks, 113 audiobooks - which
+found and fixed paging repeats, made-up paths and slow first loads. Still
+untested: a 100k-track library, Jellyfin's first scan of a large film library,
+and how many viewers one machine can convert video for at once (conversions are
+now capped at four play sessions per person).
 
-This is now the largest gap in the project by a wide margin. Every other item
-below is a feature; this one is the question of whether the features work.
+## 3. More ebook formats
 
-## 2. More ebook formats
+EPUB and PDF are handled. MOBI, AZW3, FB2 and CBZ are not. foliate-js ships
+readers for them that were not vendored; the Go side would need metadata for
+each.
 
-EPUB and PDF are handled. MOBI, AZW3, FB2 and CBZ are not, and neither the
-library scan nor the reader knows about them.
+## 4. Smaller open items
 
-foliate-js already ships readers for all of them - `mobi.js`, `fb2.js`,
-`comic-book.js` - and they were simply not vendored. The Go side would need
-metadata for each, which for MOBI means parsing the PalmDOC header and for CBZ
-means there is nothing to parse and the filename is all there is.
+- **Photo albums kept as albums.** Imports file by date; the albums a Google or
+  iCloud download knows about are not kept yet.
+- **Near-duplicate photos** (an edited or re-compressed copy) are kept twice.
+- **iPhone: native audio (stage two) and photo backup.** Android has both.
+- **Casting** to a Chromecast needs short-lived per-song URLs.
+- **Skipping intros** needs a Jellyfin plugin to know where they are.
+- **Last.fm scrobbling** needs an API key registered to the project;
+  ListenBrainz works today.
+- **The Plex import** has been tested against stand-ins, not a real account.
+- **Bitmap subtitles** (PGS, VOBSUB) would mean burning them in, a mandatory
+  re-encode; only text subtitles are offered.
+- **Signing.** The Android app is signed with a test key (moving to a release
+  key means everyone reinstalls once), and the Windows setup file is unsigned,
+  which is why it needs the Unblock step.
+- **Sessions cannot be listed or revoked one by one.** Changing a password signs
+  every other device out.
+- **Per-title filtering** ("only these films"): access is per whole shelf; doing
+  more means per-person Jellyfin accounts and its parental ratings.
 
-## 3. Reading position is per-account, not per-device
+Settled since this roadmap was first written: favorites, positions and history
+are kept per person by SoundStorm itself, so per-person Navidrome and Jellyfin
+accounts are not needed; reading position is per account and last writer wins,
+which suits one person reading one book.
 
-Progress is stored as an EPUB CFI in SoundStorm's state, so it already follows you
-between browsers. What it does not do is merge sensibly if two devices read the
-same book at once - last writer wins. Fine for one account; revisit with
-multi-user.
+## 5. HTTPS and remote access
 
-## 4. Bitmap subtitles
+Built and live:
 
-Only text subtitles are offered. PGS, VOBSUB and DVB are pictures of text, and
-attaching one as a track renders nothing at all - so they are filtered out
-rather than shown and silently broken.
+- **A trusted certificate on a plain LAN address, with no account.**
+  `SOUNDSTORM_TLS=auto` names each install `<id>.home.soundstorm.dev` through
+  the name service and gets a Let's Encrypt certificate by DNS challenge. Both
+  installers default to it. See `docs/names-service.md`.
+- **Remote access without Tailscale.** A switch in Settings (or `--remote`)
+  gives the install `<id>.net.soundstorm.dev` on the home's public address,
+  on the same certificate, opens the port by PCP, NAT-PMP or UPnP where the
+  router allows, checks it can really be reached, and says what to do where it
+  cannot (carrier-grade NAT, double NAT). It came after several security
+  reviews of everything facing the internet. See `docs/remote-access.md`.
+- **Tailscale** as an opt-in profile, for homes behind carrier-grade NAT or for
+  anybody who would rather not be on the internet.
 
-Making them work means burning them into the video, which turns a stream that
-might have been direct played into a mandatory re-encode. Jellyfin can do it;
-the work is deciding when to ask, since the cost is real and the user is the
-only one who knows whether they want those subtitles.
-
-## 5. Multi-user, the rest of it
-
-Accounts exist: an owner, members, per-person reading and listening position,
-and a per-person Audiobookshelf account so two people do not overwrite each
-other in a book. What is not built:
-
-- **Per-user Navidrome and Jellyfin accounts.** They share one. Nothing
-  SoundStorm surfaces from them differs per person today, so this only matters
-  when watched state, play counts or favorites reach the UI.
-- **Per-title or age-rating filtering.** Access is per whole library, so "no
-  films for the seven-year-old" works and "only these films" does not. Doing it
-  properly means per-user Jellyfin accounts and its parental ratings, which is
-  a second provisioning path for one feature - worth it only once somebody
-  actually asks.
-- **Sessions cannot be listed or revoked individually.** Changing a password
-  signs every other device out, which covers the leaked-password case; there
-  is still no "sign out that one phone".
-
-## 6. HTTPS
-
-Built: `SOUNDSTORM_TLS` serves HTTPS from a local certificate authority, and
-the Tailscale profile gives remote access over a tailnet.
-
-**Built and live: a trusted certificate on a plain LAN address, with no
-account.** `SOUNDSTORM_TLS=auto` registers the install with the name service
-(`cmd/soundstorm-names`), which names it `<id>.home.soundstorm.dev`, points
-that at its LAN address through Porkbun's DNS, and publishes the DNS challenge
-Let's Encrypt checks. Rehearsed end to end against Pebble, in CI and in a real
-browser. See `docs/names-service.md`. What is left, in order:
-
-1. ~~Deploy the name service at `names.soundstorm.dev` and run one install
-   against Let's Encrypt staging.~~ Done 2026-09-23.
-2. ~~Then production, and make `auto` what the installer writes.~~ Done
-   2026-09-23: staging, then production, on a real install, and both
-   installers now default to auto.
-3. Apply for `soundstorm.dev` on the Public Suffix List before installs
-   number in the hundreds. Until then every install shares the domain's weekly
-   Let's Encrypt allowance of about fifty new certificates.
-4. Remote access without Tailscale: the same name pointed at the home's public
-   address, with the port opened by UPnP where the router allows it. The
-   service refuses public addresses today, on purpose - it would first have to
-   prove the install is really there, or a trusted certificate on a public
-   address is a phishing kit.
-
-   **Deferred, deliberately (2026-09-23).** It is the feature that most
-   directly answers Plex - a library on any device, nothing installed on it -
-   and also the one that puts SoundStorm on the open internet, where it has
-   never been. It waits for a security review of everything that faces the
-   internet (sign-in, sessions, uploads), and when it comes it is opt-in: a
-   port opened on somebody's router without asking is a breach of trust, not
-   a convenience. Tailscale covers remote access safely until then, and stays
-   afterwards for homes behind carrier-grade NAT.
+Still to do: apply for `soundstorm.dev` on the **Public Suffix List** before
+installs number in the hundreds. Until then every install shares the domain's
+Let's Encrypt allowance and the name service's daily budgets, and another
+install's name is "same site" to browsers.
 
 The rule that keeps it cheap, and must not bend: **the service never carries
-media**. A relay would scale its cost with every film watched; DNS records
-and a challenge every couple of months do not.
+media**.
 
 ## Deliberately not planned
 
-Transcoding *by SoundStorm*, metadata scraping, library scanning, TV client apps,
-rebuilding an app store. See CLAUDE.md for why each is a trap.
+Transcoding *by SoundStorm*, metadata scraping, library scanning, rebuilding an
+app store. See CLAUDE.md for why each is a trap.
+
+TV apps were on this list, and were built anyway, knowingly: Android TV and
+Google TV run the Android app with the page's TV mode, and Apple TV has a
+native app because tvOS has no web view.

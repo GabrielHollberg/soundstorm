@@ -86,3 +86,31 @@ func TestLearnsTheFirstBeatOfEachBar(t *testing.T) {
 		}
 	}
 }
+
+// Taps exactly where today's rule strikes leave the model nothing to do
+// better, so nothing is written to be built in.
+func TestAModelThatDoesNotBeatTheRuleIsNotWritten(t *testing.T) {
+	var recs []Recording
+	heard := map[string]*Heard{}
+	for i, id := range []string{"a", "b", "c"} {
+		h := click(40, int64(i+1))
+		// A song tapped from end to end, so the rule is asked everywhere.
+		span := NewSong("", Recording{Taps: []float64{2, 38}}, h)
+		var taps []float64
+		for _, at := range ruleStrikes(span) {
+			taps = append(taps, at+0.15)
+		}
+		recs = append(recs, Recording{Source: "s", ID: id, Title: "Song " + id, Taps: taps})
+		heard[id] = h
+	}
+	var log strings.Builder
+	dir := t.TempDir()
+	err := Run(context.Background(), dir, recs, func(r Recording) (*Heard, error) { return heard[r.ID], nil }, func(s string) { log.WriteString(s + "\n") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(log.String())
+	if m, _ := LoadModel(dir); m != nil {
+		t.Error("a model that did not beat the rule was written")
+	}
+}

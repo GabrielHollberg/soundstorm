@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="architecture" data-root="..">
+<main>
+<h1>Architecture</h1>
+<p class="lede">Four layers: apps that people hold, one Go server in the middle, a set of
+media servers it drives on their behalf, and five plain folders at the bottom. This page is the
+map; the pages under it go down into the decisions, a single request, where data lives and how
+the repository is laid out.</p>
+
+<h2 id="layers">The four layers</h2>
+<div class="diagram" role="img" aria-label="Apps call the SoundStorm server over one API. The server calls each backend with an admin account it created, and each backend reads one folder of the library.">
+  <div class="label">1. Apps</div>
+  <div class="row">
+    <a class="box" href="../clients/web.html">Web app<small>browser, installable</small></a>
+    <a class="box" href="../clients/android.html">Android<small>phones and TVs</small></a>
+    <a class="box" href="../clients/iphone.html">iPhone<small>web app in a shell</small></a>
+    <a class="box" href="../clients/tv.html">Apple TV<small>native SwiftUI</small></a>
+  </div>
+  <div class="arrow">&#8595; HTTPS, a session cookie, <code>/api/...</code> &#8595;</div>
+  <div class="label">2. The server</div>
+  <div class="row">
+    <a class="box core" href="../server/index.html">SoundStorm<small>accounts, search, playback, the stream proxy, uploads, favorites, radio</small></a>
+  </div>
+  <div class="arrow">&#8595; admin credentials SoundStorm generated &#8595;</div>
+  <div class="label">3. Backends</div>
+  <div class="row">
+    <a class="box" href="../backends/navidrome.html">Navidrome<small>music</small></a>
+    <a class="box" href="../backends/jellyfin.html">Jellyfin<small>films, TV</small></a>
+    <a class="box" href="../backends/audiobookshelf.html">Audiobookshelf<small>audiobooks</small></a>
+    <a class="box" href="../backends/immich.html">Immich<small>photos</small></a>
+    <a class="box" href="../backends/local.html">built in<small>ebooks, documents</small></a>
+  </div>
+  <div class="row">
+    <a class="box" href="../backends/audiomuse.html">AudioMuse-AI<small>moods</small></a>
+    <a class="box" href="../backends/storyteller.html">Storyteller<small>read-along</small></a>
+  </div>
+  <div class="arrow">&#8595; each reads one folder &#8595;</div>
+  <div class="label">4. The library</div>
+  <div class="row">
+    <div class="box">music/</div>
+    <div class="box">movies/ &middot; tv/</div>
+    <div class="box">audiobooks/</div>
+    <div class="box">ebooks/ &middot; documents/</div>
+    <div class="box">pictures/</div>
+  </div>
+</div>
+
+<h3>Apps</h3>
+<p>The web app (<code>internal/webui/assets</code>) is the product: one page, <code>app.js</code>,
+covering every kind of media. The Android and iPhone apps are native shells around that same
+page, adding only what a web page cannot do - native audio on Android, the lock screen, hiding
+system bars, photo backup. The Apple TV has no web view, so it is the one app written natively,
+against the same API the page uses.</p>
+
+<h3>The server</h3>
+<p>One Go program with no third-party Go dependencies, shipped as a container image. It holds the
+accounts, answers every API call, merges search across backends, and carries every byte of media
+from a backend to a device. It also provisions the backends - creating their admin accounts on
+first start - so nobody ever logs into one.</p>
+
+<h3>Backends</h3>
+<p>Each kind of media belongs to exactly one mature open-source server, running in its own
+container on a private compose network. Only SoundStorm's port is published. Ebooks and
+documents are the exception: they need no transcoding and describe themselves, so SoundStorm
+reads those folders itself.</p>
+
+<h3>The library</h3>
+<p>Five folders (with films and TV split, and documents beside ebooks) are the one part of the
+system a person can touch without SoundStorm. Media can be copied in with a file manager or
+dropped onto the app's window, which files it in the same place. Nothing scans the same folder
+twice.</p>
+
+<h2 id="talk">How the pieces talk</h2>
+<ul>
+  <li><strong>One API.</strong> Every app speaks the same HTTP API under <code>/api/</code>,
+  signed in with a session cookie. There is no second protocol for the TV or the phones.</li>
+  <li><strong>Admin credentials SoundStorm made itself.</strong> Each backend is provisioned
+  with a generated account (192 random bits per password) kept in <code>state.json</code>.
+  Members get their own backend accounts only where a backend keeps per-person data that would
+  otherwise collide: Audiobookshelf (listening positions) and Immich (each member's own photos).</li>
+  <li><strong>Bytes are proxied.</strong> A song, a film's HLS segments, a cover, a photo -
+  everything travels through <code>internal/stream</code>. The backends are never reachable from a
+  device, which is what makes "one login" true.</li>
+  <li><strong>Normalised at the edge.</strong> Each backend has an adapter under
+  <code>internal/source/</code> that turns its vocabulary into <code>media.Item</code>. Past the
+  adapter, nothing knows which backend an item came from.</li>
+</ul>
+
+<h2 id="rules">Three rules the design rests on</h2>
+<ol>
+  <li><strong>A dead backend must never take the search down.</strong> Each source gets its own
+  deadline (5 seconds by default) and its own error slot; the answer is always 200, with
+  <code>degraded</code> saying what is missing. Tests in <code>internal/federate</code> and
+  <code>internal/httpapi</code> protect this.</li>
+  <li><strong>Normalisation happens at the edge.</strong> Only an adapter knows its backend's
+  quirks; everything past it speaks <code>media.Item</code>.</li>
+  <li><strong>A backend is two halves: search and provisioning.</strong> A backend a human must
+  configure by hand defeats the point, so both halves or it is not done.</li>
+</ol>
+<div class="why">The whole value of SoundStorm is that it feels like one server. Each rule protects
+that from a different side: one slow backend cannot make the app look broken, one backend's odd
+vocabulary cannot leak into the UI, and nobody is ever sent to a backend's own setup screen.</div>
+
+<h2 id="more">In this section</h2>
+<div class="cards">
+  <a class="card" href="decisions.html"><b>The decisions</b><span>Own the layer above, why each backend, the ownership rule, two reversals, and what SoundStorm will not do.</span></a>
+  <a class="card" href="request.html"><b>A request, end to end</b><span>Pressing play away from home, and a search across every backend, step by step.</span></a>
+  <a class="card" href="state.html"><b>State and data</b><span>What is kept where - and the line that keeps facts about media out of SoundStorm's own files.</span></a>
+  <a class="card" href="repository.html"><b>The repository</b><span>Every top-level folder and every internal package in one line, and the zero-dependency rule.</span></a>
+</div>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

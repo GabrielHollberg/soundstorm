@@ -164,7 +164,10 @@ func (s *Server) sendScrobbles(userID string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), scrobbleTimeout)
 	defer cancel()
-	done, err := s.scrobble.Submit(ctx, sc.Token, sc.Pending)
+	done, dropped, err := s.scrobble.Submit(ctx, sc.Token, sc.Pending)
+	if dropped > 0 {
+		s.log.Warn("ListenBrainz refused some plays; they will not be sent", "dropped", dropped)
+	}
 	if len(done) > 0 {
 		if serr := s.collections.Sent(userID, done); serr != nil {
 			s.log.Warn("could not take sent listens off the queue", "err", serr)
@@ -173,9 +176,11 @@ func (s *Server) sendScrobbles(userID string) {
 	if errors.Is(err, scrobble.ErrBadToken) {
 		// Revoked or changed on their side: stop, and say so, until they
 		// connect again. Their plays keep queueing meanwhile.
-		if cur, ok, _ := s.collections.ScrobblerFor(userID); ok {
-			cur.Problem = "ListenBrainz no longer accepts the token. Connect again with a new one."
-			_ = s.collections.SetScrobbler(userID, &cur)
+		// Only the problem changes: writing back a copy read earlier would
+		// lose plays queued since.
+		if perr := s.collections.SetScrobblerProblem(userID,
+			"ListenBrainz no longer accepts the token. Connect again with a new one."); perr != nil {
+			s.log.Warn("could not record the refused token", "err", perr)
 		}
 		return
 	}

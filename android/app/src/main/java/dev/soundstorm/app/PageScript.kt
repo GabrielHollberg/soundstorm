@@ -227,6 +227,8 @@ object PageScript {
     } });
     def('pause', { value() {
       if (!native) return proto.pause.call(el);
+      // The page's own pause: not an interruption (see pausedAt below).
+      window.__soundstormPausedAt = Date.now();
       send('pause');
       if (pwr) {
         pwr = false;
@@ -338,7 +340,7 @@ object PageScript {
   document.addEventListener('pause', (ev) => {
     const el = ev.target;
     if (!el || el.id !== 'audio-player' || el.ended) return;
-    if (Date.now() - pausedAt > 500) post({ type: 'interrupted' });
+    if (Date.now() - Math.max(pausedAt, window.__soundstormPausedAt || 0) > 500) post({ type: 'interrupted' });
   }, true);
   document.addEventListener('playing', (ev) => {
     if (ev.target && ev.target.id === 'audio-player') post({ type: 'resumed' });

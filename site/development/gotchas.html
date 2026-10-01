@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gotchas - SoundStorm</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body data-page="development/gotchas" data-root="..">
+<main>
+<h1>Gotchas</h1>
+<p class="lede">A curated selection of the traps that cost real time, each checked against a running
+system rather than taken from documentation. Most of them fail silently - a 200 that means
+nothing, a file of the right length that cannot be opened - which is exactly why they are written
+down.</p>
+
+<h2 id="jellyfin">Jellyfin</h2>
+<ul>
+  <li><strong>12.1.0 rejects <code>X-Emby-Token</code> and <code>?api_key=</code> with 401.</strong>
+  Only <code>Authorization: MediaBrowser ... Token="..."</code> works, though most docs and older
+  clients show the other two. This is why <code>source.Target</code> carries headers, not just a
+  URL.</li>
+  <li><strong>Unknown query parameters are ignored with a 200.</strong> <code>IsVirtualItem=true</code>
+  returned a real film, just as an invented parameter name did. Test a filter by asking for the
+  opposite and checking the count changes.</li>
+  <li><strong>Its direct-play answer is not trusted alone.</strong> It reports
+  <code>SupportsDirectPlay: true</code> for an MKV even when the device profile offers only MP4, so
+  the container is checked again. Believing it gives a video element that shows nothing, with no
+  error anywhere.</li>
+  <li><strong>The device profile errs conservative.</strong> Claiming a codec the browser cannot
+  decode is the silent failure; claiming too little only costs a transcode.</li>
+  <li><strong>Transcodes are HLS because of seeking.</strong> A progressive transcode has no length
+  until it finishes: a 20&nbsp;s file showed 9.9&nbsp;s and seeking snapped back. The HLS VOD
+  playlist lists every segment up front.</li>
+  <li><strong>Its playlists are relative</strong>, so <code>/api/hls/{source}/{path...}</code>
+  mirrors Jellyfin's own <code>/videos/</code> namespace and the browser resolves every segment
+  onto SoundStorm by itself.</li>
+  <li><strong>Subtitle URLs are built, not read.</strong> <code>DeliveryUrl</code> comes back empty;
+  <code>/Videos/{item}/{source}/Subtitles/{index}/Stream.vtt</code> works for every text track.
+  Picture subtitles (PGS, VOBSUB) are not offered - attached, they render nothing.</li>
+  <li><strong>Transcodes must be stopped</strong>: ffmpeg outlives the request, so
+  <code>OnDone</code> sends <code>DELETE /Videos/ActiveEncodings</code>.</li>
+  <li><strong>It will not remove items from an empty library folder</strong> - it cannot tell
+  "everything deleted" from "the drive did not mount". A generated <code>README.txt</code> in each
+  shelf keeps folders non-empty, so deleted films do leave search.</li>
+  <li><strong>Each play needs its own <code>playSessionId</code></strong>, or every play of a film
+  shares one conversion's files - old quality, possibly the old audio track.</li>
+  <li><strong>Several query options make it write its admin token into the master
+  playlist</strong> (HLS subtitles, subtitles in the manifest, trickplay), which would be piped to
+  the device. Those keys are stripped and trickplay forced off.</li>
+</ul>
+
+<h2 id="abs">Audiobookshelf</h2>
+<ul>
+  <li><strong><code>/login</code> returns two tokens.</strong> <code>accessToken</code> expires in an
+  hour; the legacy <code>token</code> never does. SoundStorm stores the legacy one, or the backend
+  would be stranded an hour after provisioning.</li>
+  <li><strong><code>isActive</code> must be sent when creating a user.</strong> Without it the user
+  is created inactive, the response is an ordinary 200 with a token, and that token answers
+  Unauthorized to everything.</li>
+  <li><strong>Audio is addressed by inode, not item id</strong>, so the item must be fetched first.</li>
+  <li><strong><code>progress</code> is not derived from <code>currentTime</code>.</strong> Send one
+  without the other and the player resumes correctly while its own shelf shows the old
+  percentage.</li>
+  <li><strong>Sending <code>isFinished: false</code> is destructive</strong>: for a finished book it
+  resets the position to zero. It is only ever sent as true.</li>
+  <li><strong>It stores progress unvalidated</strong> - the string "x" as a time is accepted. So
+  nothing leaves SoundStorm that is not a finite time, and progress is decoded leniently.</li>
+  <li><strong>Missing items keep being served</strong> from search and listing, with
+  <code>isMissing</code> set. The adapter skips them; there is no "not missing" filter to ask for.</li>
+</ul>
+
+<h2 id="others">Navidrome, Immich and the rest</h2>
+<ul>
+  <li><strong><code>ND_SCANINTERVAL</code>, not <code>ND_SCANSCHEDULE</code>.</strong> Unknown keys
+  are ignored, so the wrong name looks fine while no periodic scan ever runs.</li>
+  <li><strong>Navidrome's file paths were made up from tags</strong> unless
+  <code>ND_SUBSONIC_DEFAULTREPORTREALPATH</code> is on - and that setting is read once per client
+  name, so SoundStorm introduced itself under a new name to get real paths.</li>
+  <li><strong>Navidrome will not turn lossy into lossless</strong>: a lossy song asked for as FLAC
+  comes back as Opus. The server's beat analysis uses a transcoding of its own name instead.</li>
+  <li><strong>Immich is pinned to its major version.</strong> v3 broke endpoints "that affect only
+  third-party tools" - which is what SoundStorm is.</li>
+  <li><strong>Storyteller's app token reads only the <code>st_token</code> cookie</strong>; a bearer
+  token is sent to the login page.</li>
+  <li><strong>Every backend handles a deleted file differently</strong>: Navidrome hides it,
+  Jellyfin removes it (unless the folder is empty), Audiobookshelf keeps serving it.</li>
+  <li><strong>Reconnecting is not provisioning.</strong> After a restart a backend may answer 503
+  while loading; only 401/403 means bad credentials. Treating any failure as "re-provision" once
+  bricked a backend whose working token was still on disk.</li>
+</ul>
+
+<h2 id="powershell">PowerShell traps</h2>
+<ul>
+  <li><strong>A line break before an operator inside <code>if (...)</code></strong> is a syntax
+  error in 5.1. The file did not parse for two commits because the syntax check ignored the
+  errors <code>PSParser::Tokenize</code> returns through a <code>[ref]</code>.</li>
+  <li><strong>Inner double quotes are stripped</strong> on the way to native programs, so
+  <code>--format '{{index .Config.Labels "..."}}'</code> broke docker. Labels are read as JSON
+  instead.</li>
+  <li><strong><code>Start-Process -PassThru</code> returns a process with no cached handle</strong>,
+  and <code>WaitForExit(timeout)</code> then never sees the exit. Reading <code>.Handle</code> once
+  fixes it; otherwise every launch takes exactly the timeout and reports failure.</li>
+  <li><strong>Native stderr becomes an ErrorRecord</strong>, so with
+  <code>$ErrorActionPreference = 'Stop'</code> docker's progress output kills the script. Every
+  external call goes through <code>Invoke-Native</code> or <code>Invoke-Docker</code> - after
+  <code>docker info</code> crashed in exactly the case it existed to detect.</li>
+  <li><strong>A scriptblock certificate callback breaks <code>Invoke-WebRequest</code></strong> for
+  every https address, with an error that never mentions the callback.
+  <code>HttpWebRequest</code> on the pipeline thread works.</li>
+  <li><strong><code>--no-https</code> bound to nothing</strong>: a parameter name cannot contain a
+  hyphen, so it was accepted and ignored until an alias was added.</li>
+  <li><strong>Here-strings carry CRLF</strong> into <code>docker exec bash -c</code>.</li>
+  <li><strong><code>Set-Acl</code> writes the audit list too</strong>, which needs a privilege
+  ordinary accounts lack. <code>FileInfo.SetAccessControl</code> writes only what changed.</li>
+  <li><strong><code>install.ps1</code> stays pure ASCII</strong>: without a byte order mark, box
+  characters and em dashes become mojibake in Windows PowerShell 5.1.</li>
+  <li><strong><code>docker compose pull</code> writes no colon</strong> after a layer id, unlike
+  <code>docker pull</code>. A filter written for the latter filtered nothing.</li>
+</ul>
+
+<h2 id="windows">Docker Desktop and Windows</h2>
+<ul>
+  <li><strong>Every connection arrives from Docker's gateway address</strong> - localhost, the LAN,
+  and anything a router forwards. "Only from the home network" cannot be checked, which is why the
+  first sign-up needs a setup code, and why sign-in throttling cannot simply lock out by address.</li>
+  <li><strong>The TLS connection's local address is the container's</strong>, so an IP certificate
+  needs the LAN address configured (<code>SOUNDSTORM_TLS_HOSTS</code>), written by the installer.</li>
+  <li><strong><code>os.MkdirAll</code> can return EEXIST on a bind mount</strong> for a directory
+  that exists - only for folders mounted into other containers.</li>
+  <li><strong>A rename cannot cross filesystems</strong>, so a shelf on another drive needs a copy
+  to a hidden temporary name beside the destination, then a rename.</li>
+  <li><strong>New Wi-Fi networks are Public</strong>, and the firewall prompt for Docker's backend
+  defaults to Private only, leaving a Block rule that beats any Allow.</li>
+  <li><strong>Docker Desktop opens its dashboard on every start</strong> unless
+  <code>OpenUIOnStartupDisabled</code> is written before its installer finishes - which launches it
+  immediately.</li>
+  <li><strong>Install WSL first</strong> (<code>wsl --install --no-distribution</code>), and check
+  <code>HypervisorPresent</code> before the firmware virtualization flag, which reads false once a
+  hypervisor is running.</li>
+  <li><strong>Smart App Control blocks downloaded scripts by extension</strong>, and Defender blocks
+  piping a downloaded script into PowerShell on sight. The setup file downloads to a file and runs
+  it with <code>-File</code>.</li>
+  <li><strong>A raw GitHub URL ignores the query string when caching</strong>, so the installer
+  downloads from the newest commit's URL instead.</li>
+  <li><strong>The compose project name is fixed</strong>, so a second install in another folder
+  would adopt the first one's containers. Both installers refuse, naming the other folder.</li>
+  <li><strong><code>go:embed</code> rejects file names with an apostrophe.</strong></li>
+  <li><strong>Do not fix a <code>.cmd</code> with <code>sed -i</code></strong>: it strips the CRLF
+  that cmd.exe's <code>goto</code> needs.</li>
+</ul>
+
+<h2 id="csp">The Content-Security-Policy</h2>
+<ul>
+  <li><strong>It is load-bearing, not hardening.</strong> EPUBs can contain scripts, and the reader
+  renders chapters in a same-origin blob iframe. Without <code>script-src 'self'</code>, opening a
+  book would run a stranger's JavaScript with the session cookie. <code>blob:</code> stays allowed
+  for styles and fonts, or books render unstyled.</li>
+  <li><strong>It forbids inline script, and says so only in the console.</strong> The service-worker
+  registration shipped inline; it was refused silently, and "Add to Home Screen" made a bookmark
+  instead of an app. The fix is a file, never a looser policy.</li>
+  <li><strong><code>'self'</code> includes the server's own URLs</strong>, so a book naming an
+  absolute <code>/api/...</code> or <code>/static/app.js</code> address could run it. The reader
+  strips scripts from every chapter, stream paths refuse script destinations and script content
+  types, and app.js refuses to run in a frame.</li>
+  <li><strong>No <code>crossorigin</code> on the video element</strong> - everything is
+  same-origin, and the attribute forces CORS checks that then fail.</li>
+</ul>
+
+<h2 id="sw">Service worker rules</h2>
+<ul>
+  <li><strong>Served from <code>/</code>, not <code>/static/</code></strong>: a worker's scope is its
+  directory, and one under <code>/static/</code> would register, report success and intercept
+  nothing.</li>
+  <li><strong>The manifest must be served as JSON</strong>; Go's mime table has no
+  <code>.webmanifest</code>.</li>
+  <li><strong>It never answers a range request, anything under <code>/api/</code>, or a page
+  load.</strong> A cached search is stale state; an unhonoured Range breaks seeking like a corrupt
+  file; a cached page hides the browser's certificate warning behind a page that cannot work - the
+  spinner that never stopped after a reinstall.</li>
+  <li><strong>Network-first</strong>, so an update cannot pin anybody to an old build.</li>
+  <li><strong>A PWA needs a trusted certificate, not merely https.</strong> Chrome treats a
+  self-signed origin as a certificate error and will not register a worker there - hidden by every
+  test run on localhost.</li>
+  <li><strong>Nothing may assume <code>fetch</code> resolves.</strong> A failed handshake left the
+  boot spinner turning; <code>api()</code> now returns an offline result.</li>
+</ul>
+
+<h2 id="mobile">Mobile layout lessons</h2>
+<ul>
+  <li><strong><code>minmax(0, 1fr)</code>, not <code>1fr</code>.</strong> A grid item's minimum is its
+  min-content, so one <code>nowrap</code> path pushed a 390&nbsp;px phone's page to 531&nbsp;px.</li>
+  <li><strong><code>auto-fill, minmax(168px, 1fr)</code> is one column on a phone</strong> - every
+  result a screen tall. Phones get two explicit columns.</li>
+  <li><strong>iOS zooms on inputs under 16&nbsp;px</strong> and does not zoom back.</li>
+  <li><strong>A safe-area rule must live in the rule that sets the padding</strong>; a later rule
+  setting the whole padding silently undid it and put a close button under the camera.</li>
+  <li><strong>The Android web view reports 0 for the cutout it draws into</strong>, so the app sets
+  <code>--safe-top</code> and friends, and the CSS never uses <code>env()</code> directly.</li>
+  <li><strong>Translate, rotate, then transform</strong>: a spinning record slid by
+  <code>transform</code> went off at its own angle. The swipe uses the <code>translate</code>
+  property.</li>
+  <li><strong>Chrome's tap highlight is a rectangle</strong> over a button's whole box, and cannot
+  be screenshotted. It is switched off by name on cards.</li>
+  <li><strong><code>:hover</code> sticks after a tap</strong>, so hover styles apply only with
+  <code>(hover: hover)</code>.</li>
+  <li><strong>Anything hanging off the side zooms the phone out</strong> and drops the tab bar;
+  <code>overflow-x: clip</code> on the body and app, clip so sticky headers still work.</li>
+  <li><strong>Safari decides scroll-or-not within a few pixels</strong>, so sideways swipes need
+  <code>touch-action: pan-y pinch-zoom</code>.</li>
+  <li><strong>A MutationObserver that writes to what it watches</strong> must change a class only
+  when it would change, or removing an absent class rewrites the attribute and it loops for ever -
+  which froze the TV.</li>
+  <li><strong>Reduce Motion is common on iPhones.</strong> Looks somebody chose to animate ignore it;
+  otherwise they stood still on iPhone and moved on Android.</li>
+  <li><strong>Routing music through Web Audio stops it when an iPhone locks</strong>, so leveling
+  uses <code>audio.volume</code> and analysis decodes a copy offline.</li>
+</ul>
+
+<h2 id="binaries">Files and state</h2>
+<ul>
+  <li><strong>Something read committed binaries as text and dropped every carriage return.</strong>
+  Ebooks would not open and MP3s clicked - all quietly. Committed binaries now have checks that
+  read them as their consumer does.</li>
+  <li><strong><code>state.Open</code> saves every time</strong>, taking ownership of the file for
+  whoever opened it. Tools stat first and hand it back.</li>
+  <li><strong>An empty list must never read back as nil</strong> where nil means "everything" - the
+  account libraries list and the hidden-pills list both.</li>
+  <li><strong>An unknown command-line argument is an error</strong>; it once started a second server
+  against the same state volume.</li>
+  <li><strong>The rename invalidated every provisioned volume</strong>, since backend account names
+  and the state path changed. Remember it if the project is ever renamed again.</li>
+</ul>
+</main>
+<footer class="site-footer">SoundStorm. This site is written from the code and its working notes.</footer>
+<script src="../assets/nav.js"></script>
+</body>
+</html>
