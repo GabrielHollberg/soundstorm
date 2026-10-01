@@ -11,8 +11,8 @@ android {
         applicationId = "dev.soundstorm.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.13"
+        versionCode = 14
+        versionName = "0.14"
     }
 
     buildTypes {
@@ -55,4 +55,7 @@ dependencies {
     // screen-off playback, audio focus, gapless.
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
+    // Phone photo backup (PhotoBackup): jobs Android runs when it suits -
+    // on Wi-Fi, while charging - with the app closed.
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
 }

@@ -369,6 +369,7 @@ function renderAccount() {
   // these calls for a member whether or not the form is on screen.
   show($('people-block'), Boolean(me.owner));
   refreshMyPhotos();
+  if (BACKUP_APP) window.soundstormApp.backup('status');
   if (me.owner) {
     loadPeople();
     refreshRemote();
@@ -729,6 +730,71 @@ async function refreshMyPhotos() {
     : `Photos you add or back up from your phone are kept in ${body.folder} on this server. The owner of the server can see them; nobody else can.`;
   show($('my-photos-block'), true);
 }
+
+// Phone photo backup, in the Android app (android/ PhotoBackup): the camera
+// roll sent to the person's own folder, in the background. The page decides
+// nothing about it; it asks the app and shows what the app says.
+const BACKUP_APP = Boolean(window.soundstormApp && window.soundstormApp.photoBackup && window.soundstormApp.backup);
+window.__soundstormBackup = (status) => {
+  state.backup = status;
+  renderBackup();
+  maybeAskBackup();
+};
+function backupSet(options) {
+  if (BACKUP_APP) window.soundstormApp.backup('set', options);
+}
+function hasPictures() {
+  return Boolean(state.me && (state.me.libraries || []).includes('picture'));
+}
+
+function renderBackup() {
+  const st = state.backup;
+  show($('backup-controls'), Boolean(BACKUP_APP && st && hasPictures()));
+  if (!st) return;
+  $('backup-on').checked = st.enabled;
+  $('backup-wifi').checked = st.wifiOnly;
+  $('backup-videos').checked = st.videos;
+  $('backup-charging').checked = st.charging;
+  show($('backup-options'), st.enabled);
+  let text = '';
+  if (st.enabled && !st.permission) text = 'SoundStorm needs permission to read your photos: allow it in the phone\'s settings.';
+  else if (st.enabled && st.problem) text = st.problem;
+  else if (st.enabled && st.total) {
+    text = st.done >= st.total
+      ? `All ${st.total.toLocaleString()} photos and videos are backed up.`
+      : `${st.done.toLocaleString()} of ${st.total.toLocaleString()} backed up${st.running ? ', sending now' : ''}.`;
+    if (st.done < st.total && !st.running) text += st.wifiOnly ? ' It carries on when the phone is on Wi-Fi.' : ' It carries on in the background.';
+  } else if (st.enabled) text = 'Starting...';
+  $('backup-status').textContent = text;
+  show($('backup-status'), Boolean(text));
+}
+
+// Asked once, after signing in, on a phone with the app and Pictures.
+function maybeAskBackup() {
+  const st = state.backup;
+  if (!BACKUP_APP || !st || st.decided || !hasPictures() || localStorage.getItem('soundstorm.backupAsked')) return;
+  $('backup-ask-text').textContent = state.me && state.me.owner
+    ? 'New photos and videos are sent to your server in the background, on Wi-Fi, into your own folder. You can change this in Settings.'
+    : 'New photos and videos are sent to this server in the background, on Wi-Fi, into your own folder. The owner of the server can see them; nobody else can. You can change this in Settings.';
+  show($('backup-ask'), true);
+}
+function answerBackup(on) {
+  localStorage.setItem('soundstorm.backupAsked', '1');
+  show($('backup-ask'), false);
+  backupSet({ enabled: on, wifiOnly: true, videos: true, charging: false });
+}
+$('backup-ask-yes').addEventListener('click', () => answerBackup(true));
+$('backup-ask-later').addEventListener('click', () => answerBackup(false));
+$('backup-on').addEventListener('change', (e) => backupSet({ enabled: e.target.checked }));
+$('backup-wifi').addEventListener('change', (e) => backupSet({ wifiOnly: e.target.checked }));
+$('backup-videos').addEventListener('change', (e) => backupSet({ videos: e.target.checked }));
+$('backup-charging').addEventListener('change', (e) => backupSet({ charging: e.target.checked }));
+// While Settings is open the numbers move; asked every few seconds.
+setInterval(() => {
+  if (BACKUP_APP && !$('my-photos-block').classList.contains('hidden') && document.visibilityState === 'visible') {
+    window.soundstormApp.backup('status');
+  }
+}, 4000);
 
 // libraryPicker is the five shelves, ticked for the ones this person can see.
 function libraryPicker(person) {

@@ -32,6 +32,10 @@ object PageScript {
   // The songs after it too, each with its title and cover, so the player
   // carries on if Android ends the page in the background.
   window.soundstormApp.queueUpcoming = (items) => post({ type: 'audio', cmd: 'upcoming', items: items || [] });
+  // Phone photo backup (PhotoBackup), on a phone only: Settings turns it on
+  // and shows how it is going, answered through window.__soundstormBackup.
+  window.soundstormApp.photoBackup = !/SoundStormTV/.test(navigator.userAgent);
+  window.soundstormApp.backup = (cmd, options) => post({ type: 'backup', cmd, options: options || {} });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };

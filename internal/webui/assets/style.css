@@ -580,6 +580,16 @@ header {
 .space-bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin: 6px 0 10px; }
 .space-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; }
 .space-bar span.full { background: #e5534b; }
+#backup-controls { margin-top: 12px; display: grid; gap: 8px; }
+#backup-options { display: grid; gap: 6px; padding-left: 4px; }
+/* The one-time question: a card over the page, at the bottom on a phone. */
+.backup-ask {
+  position: fixed; left: 12px; right: 12px; bottom: calc(var(--safe-bottom, 0px) + 84px); z-index: 90;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 16px 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.backup-ask h2 { margin: 0 0 6px; font-size: 17px; }
+.backup-ask-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
 
 .remote-switch {
   display: inline-flex;

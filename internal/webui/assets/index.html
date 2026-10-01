@@ -439,6 +439,16 @@
         <p id="my-photos-usage"></p>
         <div class="space-bar"><span id="my-photos-bar"></span></div>
         <p id="my-photos-where" class="muted"></p>
+        <!-- In the Android app: backing up this phone's camera roll. -->
+        <div id="backup-controls" class="hidden">
+          <label class="remote-switch"><input id="backup-on" type="checkbox"><span>Back up this phone's photos and videos</span></label>
+          <div id="backup-options">
+            <label class="remote-switch"><input id="backup-wifi" type="checkbox"><span>Only on Wi-Fi</span></label>
+            <label class="remote-switch"><input id="backup-videos" type="checkbox"><span>Include videos</span></label>
+            <label class="remote-switch"><input id="backup-charging" type="checkbox"><span>Only while charging</span></label>
+          </div>
+          <p id="backup-status" class="muted" role="status"></p>
+        </div>
       </div>
 
       <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout change server">
@@ -803,6 +813,16 @@
       <ol id="np-chapters-list" class="np-chapter-list"></ol>
     </div>
   </section>
+
+  <!-- Asked once, after signing in on a phone with the app. -->
+  <div id="backup-ask" class="backup-ask hidden" role="dialog" aria-labelledby="backup-ask-title">
+    <h2 id="backup-ask-title">Back up this phone's photos?</h2>
+    <p id="backup-ask-text" class="muted"></p>
+    <div class="backup-ask-buttons">
+      <button id="backup-ask-later" type="button" class="ghost">Not now</button>
+      <button id="backup-ask-yes" type="button">Turn on</button>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
   <script type="module" src="/static/reader.js"></script>

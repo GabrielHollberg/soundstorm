@@ -4526,6 +4526,33 @@ as for any shelf) and how much space their photos may take.
   `Personal/<name>/<year>/<month>/`, a different file of the same name that
   month kept beside it).
 
+**The phone's half, in the Android app (0.14, `PhotoBackup.kt`)**: WorkManager
+jobs, so Android decides when (Wi-Fi only unless turned off, while charging if
+asked) and it carries on with the app closed - one when a photo or video is
+added (a content trigger), one every six hours, and each job (eight minutes at
+most) chains the next while there is more. Newest first. What was sent is kept
+by MediaStore id on the phone, and each batch of 100 is first checked with the
+server, so a reinstall or a new phone sends nothing twice. The file sent is the
+original (`setRequireOriginal`, with ACCESS_MEDIA_LOCATION asked for alongside
+the photo permissions): otherwise Android hands over a copy without the place
+it was taken, which would empty Places and differ in size. It signs in with the
+web view's own cookie. The page decides nothing: Settings' **Your photos** has
+the switch and its options in the app (`soundstormApp.backup('set'|'status')`,
+answered through `window.__soundstormBackup`), and after signing in on a phone
+with Pictures it asks once, "Back up this phone's photos?", saying for a member
+that the owner can see them. A refused permission leaves it off and says why;
+a full photo space, a disk or an ended sign-in stop it with the reason shown
+until the next job. Not on a TV. Checked: the page's question and controls with
+a stand-in app; the app builds. **Not yet run on a real phone.**
+**For the Mac:** the iPhone app has no backup yet. It wants the same: the
+photo library (PHPhotoLibrary, full or limited access), uploads in a
+background URLSession to `PUT /api/photos/backup` with the session cookie,
+`POST /api/photos/backup/check` first, and `window.soundstormApp.photoBackup`
+plus `.backup(cmd, options)` answered through `window.__soundstormBackup`
+with the same status fields (enabled, decided, wifiOnly, videos, charging,
+permission, done, total, running, problem), so the page needs no change. iOS
+runs background uploads when it chooses, usually charging on Wi-Fi.
+
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
 provisioned, sharing one pictures folder: a member saw nothing, backed up a
 photo (to `Personal/alice/2025/07/`), a second send was skipped, a dragged-in

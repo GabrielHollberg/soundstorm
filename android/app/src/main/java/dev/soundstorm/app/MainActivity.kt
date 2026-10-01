@@ -135,6 +135,8 @@ class MainActivity : Activity() {
         // security review.)
         val saved = ServerAddress.saved(this)
         if (saved != null) showWeb(saved) else showConnect(null)
+        // Photo backup's jobs, if it is on: kept up to date with its options.
+        if (!isTv) PhotoBackup.schedule(applicationContext)
     }
 
     /**
@@ -422,7 +424,47 @@ class MainActivity : Activity() {
             "interrupted" -> MediaBridge.interruption(true)
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
+            "backup" -> backup(message.optString("cmd"), message.optJSONObject("options") ?: JSONObject())
         }
+    }
+
+    /**
+     * Phone photo backup, as the page's Settings asks: "status" answers how
+     * it is going; "set" turns it on or off and changes its options, asking
+     * for the camera roll first when it is turned on.
+     */
+    private fun backup(cmd: String, options: JSONObject) {
+        if (isTv) return
+        when (cmd) {
+            "set" -> {
+                if (options.optBoolean("enabled") && !PhotoBackup.hasPermission(this)) {
+                    pendingBackup = options
+                    requestPermissions(PhotoBackup.permissions(), BACKUP_PERMISSION)
+                    return
+                }
+                PhotoBackup.configure(applicationContext, options)
+            }
+        }
+        reportBackup()
+    }
+
+    private var pendingBackup: JSONObject? = null
+
+    private fun reportBackup() {
+        val view = webView ?: return
+        view.evaluateJavascript(
+            "window.__soundstormBackup && window.__soundstormBackup(" + PhotoBackup.status(this) + ")", null)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != BACKUP_PERMISSION) return
+        val options = pendingBackup ?: return
+        pendingBackup = null
+        // Refused, backup stays off and the page says why.
+        if (!PhotoBackup.hasPermission(this)) options.put("enabled", false)
+        PhotoBackup.configure(applicationContext, options)
+        reportBackup()
     }
 
     private fun setStatusColor(color: Int) {
@@ -708,5 +750,6 @@ class MainActivity : Activity() {
     companion object {
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private const val PICK_FILES = 1
+        private const val BACKUP_PERMISSION = 2
     }
 }
