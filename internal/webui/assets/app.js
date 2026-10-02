@@ -493,13 +493,17 @@ async function startLink() {
   $('gate-link-code').textContent = body.code;
   $('gate-link-qr').src = `/api/link/${encodeURIComponent(body.id)}/qr.png`;
   $('gate-link-cancel').focus();
+  // One poll at a time, and none for a code already replaced or cancelled
+  // (two slow polls both found it run out and started two new codes). A
+  // variable of its own: the interval's id is a number, and setting a
+  // property on it threw, so every poll failed and an allowed TV sat on its
+  // code (the owner's report).
+  let busy = false;
   const mine = setInterval(async () => {
-    // One poll at a time, and none for a code already replaced or cancelled
-    // (two slow polls both found it run out and started two new codes).
-    if (mine.busy) return;
-    mine.busy = true;
+    if (busy) return;
+    busy = true;
     const r = await api(`/api/link/${encodeURIComponent(body.id)}`);
-    mine.busy = false;
+    busy = false;
     if (linkWait !== mine) return;
     if (r.ok && r.body && r.body.signedIn) {
       stopLink();
