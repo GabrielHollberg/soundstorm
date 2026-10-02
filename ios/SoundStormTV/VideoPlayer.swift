@@ -69,6 +69,8 @@ final class VideoSession: Identifiable {
             if let seconds = await api.watchedSeconds(item) {
                 await resume(at: seconds, in: playerItem)
             }
+            // Back pressed while it loaded: nothing plays behind the library.
+            guard !stopped else { return }
             player.play()
             stage = .playing
             await carryOnSubtitles()
@@ -142,12 +144,21 @@ final class VideoSession: Identifiable {
             await player.seek(to: at)
             if wasPlaying { player.play() }
         } catch {
-            stage = .failed(error.localizedDescription)
+            // The film plays on in the language it had; a moment's word says
+            // the other could not be had. It used to end the film.
+            subtitleNotice = "That language couldn't be played."
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                subtitleNotice = nil
+            }
         }
     }
 
+    /// A short message drawn where subtitles are, over them for a moment.
+    private var subtitleNotice: String?
+
     private func showSubtitle() {
-        let text = subtitles?.text(at: player.currentTime().seconds) ?? ""
+        let text = subtitleNotice ?? subtitles?.text(at: player.currentTime().seconds) ?? ""
         if text != subtitleText { subtitleText = text }
     }
 
@@ -160,7 +171,11 @@ final class VideoSession: Identifiable {
         await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
     }
 
+    /// Closed: a start still loading must not play after.
+    private var stopped = false
+
     func stop() {
+        stopped = true
         save(force: true)
         countdown?.cancel()
         player.pause()

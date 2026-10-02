@@ -23,7 +23,7 @@ struct SoundStormTVApp: App {
 /// Where the app is: no server yet, a server but nobody signed in, or in.
 @Observable
 final class AppModel {
-    enum Stage { case connect, checking, signIn(hasAccount: Bool), profiles([API.Profile]), library }
+    enum Stage { case connect, checking, unreachable(String), signIn(hasAccount: Bool), profiles([API.Profile], fromSettings: Bool), library }
 
     private(set) var stage: Stage = .checking
     private(set) var api: API?
@@ -91,48 +91,105 @@ final class AppModel {
             if s.hasAccount {
                 let people = await api.profiles()
                 if !people.isEmpty {
-                    stage = .profiles(people)
+                    stage = .profiles(people, fromSettings: false)
                     return
                 }
             }
             stage = s.signedIn ? .library : .signIn(hasAccount: s.hasAccount)
+            lastUser = api.user?.id
         } catch {
-            // Unreachable: back to the address, which says why when tried.
-            stage = .connect
+            // A request given up on (the screen that asked has gone) says
+            // nothing about the server: taken for "unreachable", it put the
+            // error back just after the server answered.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+            // Not reachable now - the server restarting, the Wi-Fi: said, and
+            // tried again, rather than dropping to the address as if it were
+            // wrong.
+            stage = .unreachable(api.server.host() ?? api.server.absoluteString)
         }
     }
 
-    func signedIn() { stage = .library }
+    /// Whose things are on screen, to tell when somebody else signs in.
+    private var lastUser: String?
+
+    func signedIn() {
+        // Somebody else: the last person's music and pages go with them. The
+        // place in a book was saved before the sign-in (signInSomeoneElse),
+        // while the session was still theirs.
+        if let api, lastUser != nil, api.user?.id != lastUser {
+            reset()
+            player?.stop()
+        }
+        lastUser = api?.user?.id
+        stage = .library
+    }
+
+    /// What a person was doing, gone with them: shared by switching person,
+    /// signing out and changing server.
+    private func reset() {
+        video = nil
+        photos = nil
+        reading = nil
+        showingNowPlaying = false
+        favorites = []
+        pills = nil
+        look = "lyrics"
+    }
 
     /// Switch person, from Settings.
     func showProfiles() async {
         guard let api else { return }
         let people = await api.profiles()
-        stage = people.isEmpty ? .signIn(hasAccount: true) : .profiles(people)
+        stage = people.isEmpty ? .signIn(hasAccount: true) : .profiles(people, fromSettings: true)
     }
 
-    /// Someone else: signing in, to be kept on this TV.
-    func signInSomeoneElse() { stage = .signIn(hasAccount: true) }
+    /// Someone else: signing in, to be kept on this TV - the book playing
+    /// saved first, as the person still signed in.
+    func signInSomeoneElse() async {
+        await player?.stopSaving()
+        stage = .signIn(hasAccount: true)
+    }
+
+    /// Back from the picker opened in Settings, to the person still here.
+    func cancelSwitch() { stage = .library }
 
     /// Switched to somebody: what the last person was doing goes with them.
+    /// The player was stopped, and the book's place saved, before the switch
+    /// (`beforeSwitch`), so it went to the person who was listening.
     func switched() {
-        player?.stop()
-        video = nil
-        photos = nil
-        reading = nil
-        showingNowPlaying = false
+        reset()
+        lastUser = api?.user?.id
         stage = .library
     }
 
+    /// Before the account changes: the place in a book saved, as the person
+    /// it belongs to, and the music stopped.
+    func beforeSwitch() async {
+        await player?.stopSaving()
+    }
+
     func signOut() async {
-        player?.stop()
+        await player?.stopSaving()
+        reset()
         await api?.signOut()
+        lastUser = nil
         stage = .signIn(hasAccount: true)
     }
 
     func changeServer() {
-        player?.stop()
+        Task { await player?.stopSaving() }
+        reset()
+        lastUser = nil
         stage = .connect
+    }
+
+    /// The server said this TV is not signed in any more (a session ended
+    /// elsewhere): back to signing in.
+    func signedOutElsewhere() {
+        player?.stop()
+        reset()
+        lastUser = nil
+        stage = .signIn(hasAccount: true)
     }
 
     /// A film or an episode, full screen. The music pauses for it, as a
@@ -218,16 +275,20 @@ struct RootView: View {
         switch model.stage {
         case .checking:
             ProgressView()
+        case .unreachable(let host):
+            UnreachableView(host: host)
         case .connect:
             ConnectView()
         case .signIn(let hasAccount):
             SignInView(hasAccount: hasAccount)
-        case .profiles(let people):
-            ProfilesView(people: people)
+        case .profiles(let people, let fromSettings):
+            ProfilesView(people: people, canGoBack: fromSettings)
         case .library:
             if let api = model.api, let player = model.player {
                 if api.mustRenew {
                     RenewPasswordView()
+                } else if api.sessionEnded {
+                    ProgressView().task { model.signedOutElsewhere() }
                 } else {
                     LibraryView()
                         .modifier(DeviceRequests())

@@ -181,6 +181,9 @@ struct PagedItems: View {
     @State private var hasMore = true
     @State private var loading = false
     @State private var loaded = false
+    /// How far into the server's list: not items.count, since repeats are
+    /// left out, and asking from fewer fetched the same page again.
+    @State private var offset = 0
 
     var body: some View {
         ScrollView {
@@ -196,7 +199,8 @@ struct PagedItems: View {
         guard hasMore, !loading else { return }
         loading = true
         defer { loading = false; loaded = true }
-        guard let page = try? await api.page(kinds: kinds, offset: items.count) else { return }
+        guard let page = try? await api.page(kinds: kinds, offset: offset) else { return }
+        offset += page.items.count
         let known = Set(items.map(\.key))
         items += page.items.filter { !known.contains($0.key) }
         hasMore = page.hasMore && !page.items.isEmpty

@@ -418,6 +418,10 @@ struct LinkView: View {
 /// password always. Someone else signs in, and is kept here too.
 struct ProfilesView: View {
     let people: [API.Profile]
+    /// Opened from Settings: Back keeps the person signed in. Never when the
+    /// TV opens - that is the question being asked, and Back would skip the
+    /// PIN of whoever was here last.
+    var canGoBack = false
     @Environment(AppModel.self) private var model
     @State private var picked: API.Profile?
     @State private var secret = ""
@@ -454,7 +458,11 @@ struct ProfilesView: View {
                 if let message {
                     Text(message).foregroundStyle(.red)
                 }
-                Button("Someone else") { model.signInSomeoneElse() }
+                Button("Someone else") { Task { await model.signInSomeoneElse() } }
+                // Opened from Settings: Back keeps the person signed in.
+                if canGoBack {
+                    Button("Back") { model.cancelSwitch() }
+                }
             }
         }
         .multilineTextAlignment(.center)
@@ -503,6 +511,9 @@ struct ProfilesView: View {
         busy = true
         Task {
             do {
+                // The book playing keeps its place as the person listening,
+                // saved before the account changes.
+                if api.user?.id != person.id { await model.beforeSwitch() }
                 try await api.switchProfile(person, secret: secret)
                 model.switched()
             } catch API.Failure.status(403, _) {
@@ -512,6 +523,35 @@ struct ProfilesView: View {
                 message = error.localizedDescription
             }
             busy = false
+        }
+    }
+}
+
+/// The server did not answer: said, and tried again every ten seconds, with
+/// a way to another server - not dropped to the address as if it were wrong.
+struct UnreachableView: View {
+    let host: String
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 40) {
+            Logo()
+            Text("Can't reach \(host)")
+                .font(.title2.bold())
+            Text("Is the computer SoundStorm runs on switched on, and this TV on a network that reaches it? Trying again by itself.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 1100)
+            Button("Try again") { Task { await model.refreshSession() } }
+            Button("Change server") { model.changeServer() }
+        }
+        .multilineTextAlignment(.center)
+        .task {
+            while true {
+                try? await Task.sleep(for: .seconds(10))
+                if Task.isCancelled { return } // left for the library or the picker
+                await model.refreshSession()
+            }
         }
     }
 }

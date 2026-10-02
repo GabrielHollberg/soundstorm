@@ -29,6 +29,9 @@ final class Player {
     private let player = AVQueuePlayer()
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var otherObservers: [NSObjectProtocol] = []
+    private var statusObservation: NSKeyValueObservation?
+    private var remoteTargets: [(MPRemoteCommand, Any)] = []
     private var counted = false
     /// The AVPlayerItem of what is playing, and of what is loaded after it.
     private var playing: AVPlayerItem?
@@ -47,7 +50,61 @@ final class Player {
             let ended = note.object as? AVPlayerItem
             MainActor.assumeIsolated { self?.itemEnded(ended) }
         }
+        // A song that cannot play (refused, gone, the network) stops saying
+        // it plays; so does a pause the system made (Siri, another app), and
+        // an interruption that ends asking to resume resumes.
+        otherObservers.append(NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let failed = note.object as? AVPlayerItem
+            MainActor.assumeIsolated { self?.itemFailed(failed) }
+        })
+        otherObservers.append(NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let began = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
+            let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let resume = AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+            MainActor.assumeIsolated { self?.interrupted(began: began, resume: resume) }
+        })
+        statusObservation = player.observe(\.timeControlStatus) { [weak self] p, _ in
+            let paused = p.timeControlStatus == .paused
+            Task { @MainActor in self?.systemPaused(paused) }
+        }
         setUpRemoteCommands()
+    }
+
+    isolated deinit {
+        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        otherObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        statusObservation?.invalidate()
+        for (command, target) in remoteTargets { command.removeTarget(target) }
+    }
+
+    private func itemFailed(_ item: AVPlayerItem?) {
+        guard let item, item === playing else { return }
+        isPlaying = false
+        publish()
+    }
+
+    private func interrupted(began: Bool, resume: Bool) {
+        if began {
+            isPlaying = false
+            saveBook(force: true)
+            publish()
+        } else if resume, current != nil {
+            self.resume()
+        }
+    }
+
+    /// The player stopped by itself - an item that could not play, the
+    /// system: the screen must not go on saying it plays. Ours to pause is
+    /// already counted; waiting for the network is not a pause.
+    private func systemPaused(_ paused: Bool) {
+        guard paused, isPlaying, player.currentItem == nil || player.currentItem?.status == .failed else { return }
+        isPlaying = false
+        publish()
     }
 
     // MARK: Music
@@ -89,7 +146,8 @@ final class Player {
         tuning = true
         Task {
             defer { tuning = false }
-            guard let batch = try? await api.tune(station, exclude: queue.map(\.id), from: stationFrom),
+            // The server's song keys (source/id), and no more than it takes.
+            guard let batch = try? await api.tune(station, exclude: queue.suffix(1500).map(\.key), from: stationFrom),
                   self.station == station
             else { return }
             let known = Set(queue.map(\.key))
@@ -114,11 +172,13 @@ final class Player {
     private var files: [BookFile] = []
     private var fileIndex = 0
     private var lastSave = Date.distantPast
+    private var publishedChapter: Int?
 
     /// A book, from where this person got to (the server's record, shared
     /// with the page and Audiobookshelf's own apps) - or from the start, once
     /// finished.
     func play(book: Item, _ playback: API.BookPlayback, speed: Double) {
+        leaveBook() // the book playing until now keeps its place
         station = nil
         isBook = true
         queue = [book]
@@ -216,6 +276,11 @@ final class Player {
 
     func resume() {
         guard current != nil else { return }
+        // Played to the end, the player holds nothing: play this again.
+        if player.items().isEmpty {
+            if isBook { startBook(at: time >= duration - 1 ? 0 : time) } else { load(at: index) }
+            return
+        }
         if isBook { player.playImmediately(atRate: Float(speed)) } else { player.play() }
         isPlaying = true
         publish()
@@ -280,6 +345,22 @@ final class Player {
 
     func skip(by seconds: Double) { seek(to: time + seconds) }
 
+    /// Stopping before the account changes (switching person, signing out):
+    /// the book's place is saved first, and waited for, so it goes to the
+    /// person who was listening rather than whoever comes next.
+    func stopSaving() async {
+        if isBook, let book = current {
+            await api.saveBookPosition(book, seconds: time, duration: duration, finished: false)
+            isBook = false // saved: stop() need not save again
+            files = []
+            chapters = []
+            player.defaultRate = 1
+            player.volume = 1
+            updateRemoteCommands()
+        }
+        stop()
+    }
+
     func stop() {
         leaveBook()
         station = nil
@@ -311,7 +392,8 @@ final class Player {
     func sleepAtEndOfThis() {
         sleepAt = nil
         sleepAtEnd = true
-        sleepChapter = chapter?.index
+        // A book without chapter marks: the end of the file playing.
+        sleepChapter = chapter?.index ?? (isBook ? fileIndex : nil)
     }
 
     private func checkSleep() {
@@ -324,6 +406,10 @@ final class Player {
             sleepAtEnd = false
             pause()
             seek(to: chapters[now].startSeconds)
+        } else if sleepAtEnd, isBook, chapters.isEmpty, let then = sleepChapter, fileIndex != then {
+            sleepAtEnd = false
+            pause()
+            seek(to: files[fileIndex].start)
         }
     }
 
@@ -510,6 +596,11 @@ final class Player {
         if isBook {
             time = (files.indices.contains(fileIndex) ? files[fileIndex].start : 0) + seconds
             if isPlaying { saveBook(force: false) }
+            // The system's Now Playing names the chapter: told when it changes.
+            if let c = chapter?.index, c != publishedChapter {
+                publishedChapter = c
+                publish()
+            }
             return
         }
         time = seconds
@@ -562,21 +653,26 @@ final class Player {
 
     private func setUpRemoteCommands() {
         let c = MPRemoteCommandCenter.shared()
-        c.playCommand.addTarget { [weak self] _ in self?.resume(); return .success }
-        c.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
-        c.togglePlayPauseCommand.addTarget { [weak self] _ in self?.togglePlay(); return .success }
-        c.nextTrackCommand.addTarget { [weak self] _ in self?.next(); return .success }
-        c.previousTrackCommand.addTarget { [weak self] _ in self?.previous(); return .success }
+        keep(c.playCommand) { [weak self] _ in self?.resume(); return .success }
+        keep(c.pauseCommand) { [weak self] _ in self?.pause(); return .success }
+        keep(c.togglePlayPauseCommand) { [weak self] _ in self?.togglePlay(); return .success }
+        keep(c.nextTrackCommand) { [weak self] _ in self?.next(); return .success }
+        keep(c.previousTrackCommand) { [weak self] _ in self?.previous(); return .success }
         c.skipForwardCommand.preferredIntervals = [30]
         c.skipBackwardCommand.preferredIntervals = [30]
-        c.skipForwardCommand.addTarget { [weak self] _ in self?.skip(by: 30); return .success }
-        c.skipBackwardCommand.addTarget { [weak self] _ in self?.skip(by: -30); return .success }
-        c.changePlaybackPositionCommand.addTarget { [weak self] event in
+        keep(c.skipForwardCommand) { [weak self] _ in self?.skip(by: 30); return .success }
+        keep(c.skipBackwardCommand) { [weak self] _ in self?.skip(by: -30); return .success }
+        keep(c.changePlaybackPositionCommand) { [weak self] event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self?.seek(to: e.positionTime)
             return .success
         }
         updateRemoteCommands()
+    }
+
+    /// A command's target, kept so it can be taken away when this player goes.
+    private func keep(_ command: MPRemoteCommand, _ handler: @escaping (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
+        remoteTargets.append((command, command.addTarget(handler: handler)))
     }
 
     /// A book offers thirty-second skips where music offers songs.

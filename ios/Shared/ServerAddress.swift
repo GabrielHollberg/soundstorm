@@ -86,6 +86,9 @@ enum ServerAddress {
               let host = parts.host, !host.isEmpty
         else { return nil }
         parts.scheme = scheme
+        // Names are not case-sensitive; one spelling keeps one server once in
+        // the list and its cookies in one place.
+        parts.host = host.lowercased()
         parts.path = ""
         parts.query = nil
         parts.fragment = nil

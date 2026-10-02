@@ -257,7 +257,9 @@ final class SongListener {
         Task {
             defer { if working == item.key { working = nil } }
             var tempo = 0.0
-            if let sound = await api.sound(item), sound.tempo > 0 {
+            // Only while this is still the song being listened for: a slow
+            // answer for an earlier song must not set this one's beat.
+            if let sound = await api.sound(item), sound.tempo > 0, working == item.key {
                 // Very slow or fast tempos are felt at double or half.
                 var bpm = sound.tempo
                 while bpm < 70 { bpm *= 2 }

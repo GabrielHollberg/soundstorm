@@ -26,6 +26,10 @@ final class API {
 
     /// Set when the server refuses a request until a new password is chosen.
     private(set) var renewDemanded = false
+    /// Set when the server answers 401 to a request a signed-in TV made: the
+    /// session ended (signed out elsewhere, a new password). Signing in again
+    /// clears it.
+    private(set) var sessionEnded = false
     /// Whether this person must choose a new password before anything else.
     var mustRenew: Bool { renewDemanded || user?.mustRenew == true }
 
@@ -45,6 +49,7 @@ final class API {
     /// Whether new devices need approval (the owner's setting), known from
     /// the session answer; nil until asked.
     private(set) var approveNewDevices: Bool?
+    private var approvalAsked = Date.distantPast
 
     enum Failure: LocalizedError {
         case status(Int, String?)
@@ -64,6 +69,7 @@ final class API {
     func session() async throws -> Session {
         let s: Session = try await get("api/session")
         user = s.signedIn ? s.user : nil
+        if s.signedIn { sessionEnded = false }
         approveNewDevices = s.signedIn ? (s.approveNewDevices ?? false) : nil
         return s
     }
@@ -80,6 +86,7 @@ final class API {
             if let id = answer.pending { return .waiting(id: id, codeAllowed: answer.code ?? false) }
             user = answer.user
             renewDemanded = false
+            sessionEnded = false
             return .signedIn
         } catch Failure.status(401, _) {
             throw Failure.wrongPassword
@@ -102,6 +109,7 @@ final class API {
         guard answer.signedIn == true else { return false }
         user = answer.user
         renewDemanded = false
+        sessionEnded = false
         return true
     }
 
@@ -130,6 +138,7 @@ final class API {
                                             password: person.needs == "password" ? secret : nil))
         user = a.user
         renewDemanded = false
+        sessionEnded = false
     }
 
     /// A code for signing this TV in from a phone (the server's tvlink.go).
@@ -153,6 +162,7 @@ final class API {
         guard a.signedIn == true else { return false }
         user = a.user
         renewDemanded = false
+        sessionEnded = false
         return true
     }
 
@@ -170,7 +180,12 @@ final class API {
     /// the owner). Asked only while approval is turned on.
     func pendingDevices() async -> [PendingDevice] {
         struct Answer: Decodable { let pending: [PendingDevice] }
-        if approveNewDevices == nil { _ = try? await session() }
+        // Looked at again every few minutes: a TV left open when the owner
+        // turns approval on would otherwise never notice.
+        if approveNewDevices == nil || Date().timeIntervalSince(approvalAsked) > 180 {
+            approvalAsked = Date()
+            _ = try? await session()
+        }
         guard approveNewDevices == true else { return [] }
         let a: Answer? = try? await get("api/devices/pending")
         return a?.pending ?? []
@@ -862,6 +877,7 @@ final class API {
                 throw Failure.throttled(http?.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init))
             }
             let problem = try? JSONDecoder().decode(Problem.self, from: data)
+            if code == 401 && user != nil && request.url?.path != "/api/login" { sessionEnded = true }
             // Held to choosing a new password: nothing else answers until then.
             if code == 403 && problem?.mustRenew == true { renewDemanded = true }
             throw Failure.status(code, problem?.error)
