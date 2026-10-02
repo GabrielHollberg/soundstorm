@@ -299,6 +299,10 @@ const TV = (() => {
 // The Android app plays songs from the server with Android's own media
 // player (PageScript's stand-in for the audio element): see NativeAudio.
 const NATIVE_AUDIO = Boolean(window.soundstormApp && window.soundstormApp.nativeAudio);
+// Controlling a TV's music from this phone's Now Playing (remoteLayer, near
+// the end): declared here, as code that runs while the page loads asks it.
+const RA = { on: false, target: null, st: {}, stAt: 0, pwr: false, key: '', src: '', volume: 1, rate: 1,
+  seekTo: null, seekAt: 0, ticker: 0, poll: 0, lastPlaying: false };
 
 // A touch screen - not a TV, whose web view reports a coarse pointer too.
 const touchScreen = () => !TV && matchMedia('(pointer: coarse)').matches;
@@ -2948,7 +2952,7 @@ const SAVE_EVERY_MS = 10000;
 
 function playAudio(item, fromQueue) {
   audio.counted = false;
-  if (item && item.kind === 'music' && state.scrobbling && !state.offline) {
+  if (item && item.kind === 'music' && state.scrobbling && !state.offline && !RA.on) {
     // Their ListenBrainz profile shows what is playing; the play itself is
     // sent by the server once it counts.
     api('/api/scrobble/now', { method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }) });
@@ -7674,6 +7678,8 @@ function takePreloaded(item) {
 }
 
 async function preloadNext() {
+  // The TV fetches its own songs.
+  if (RA.on) return;
   const next = upcomingItem();
   // Where songs play natively (the Android app), the native player is handed
   // the next song instead, and moves into it by itself: gapless, and without
@@ -8106,6 +8112,8 @@ $('audio-player').addEventListener('timeupdate', () => {
   const player = $('audio-player');
   const item = audio.item;
   if (!item || item.kind !== 'music' || audio.counted || !Number.isFinite(player.duration)) return;
+  // Playing on a TV: the TV counts it.
+  if (RA.on) return;
   if (player.currentTime >= Math.min(240, player.duration / 2)) {
     audio.counted = true;
     api('/api/history', { method: 'POST', body: JSON.stringify({ source: item.sourceId, id: item.id }) });
@@ -8698,6 +8706,7 @@ const canSetVolume = (() => {
   return probe.volume === 0.5;
 })();
 function crossfadeSeconds() {
+  if (RA.on) return 0;
   // Not where songs play natively (the Android app): the fade-in is a second
   // audio element in the page, beside a native player it cannot blend with.
   if (NATIVE_AUDIO) return 0;
@@ -17249,6 +17258,224 @@ window.addEventListener('resize', () => {
 
 /* ------------------------------------------------------------- television */
 
+/* ------------------------- Now Playing as the remote, for music on a TV */
+
+// While this phone controls a TV's music, the page's own audio element
+// stands in for the TV, as it stands in for Android's native player in the
+// app (PageScript): play, pause, seek and the next song go to the TV, and
+// its clock and its playing or pausing come back from the TV's reports as
+// the element's own events. So the whole of Now Playing - lyrics in time,
+// the looks and visualizers on the beat (the server's analysis of the song),
+// Up next, swiping songs, the hold buttons, the lock screen - is the remote,
+// and the phone streams nothing. Music only: an audiobook's clock spans its
+// files, and films and photos have the compact remote.
+const raKey = (it) => (it ? `${it.sourceId}/${it.id}` : '');
+function raTime() {
+  if (RA.seekTo !== null && Date.now() - RA.seekAt < 3000) return RA.seekTo;
+  const st = RA.st;
+  const age = Math.max(0, Math.min(5000, Date.now() - RA.stAt));
+  const t = (st.position || 0) + (st.playing ? age / 1000 : 0);
+  return st.duration ? Math.min(t, st.duration) : t;
+}
+function raSend(cmd) {
+  if (!RA.target) return;
+  api(`/api/players/${RA.target.id}/command`, { method: 'POST', body: JSON.stringify(cmd) });
+}
+(function remoteLayer() {
+  const el = $('audio-player');
+  const proto = HTMLMediaElement.prototype;
+  const prev = (name) => Object.getOwnPropertyDescriptor(el, name) || Object.getOwnPropertyDescriptor(proto, name)
+    || Object.getOwnPropertyDescriptor(Element.prototype, name);
+  const fire = (type) => el.dispatchEvent(new Event(type));
+  RA.fire = fire;
+  RA.real = {};
+  const prop = (name, get, set) => {
+    const p = prev(name);
+    RA.real[name] = p;
+    Object.defineProperty(el, name, {
+      configurable: true,
+      get() { return RA.on ? get() : p.get.call(el); },
+      set(v) { if (RA.on) { if (set) set(v); } else if (p.set) p.set.call(el, v); },
+    });
+  };
+  const method = (name, remote) => {
+    const p = prev(name);
+    const f = p.value;
+    RA.real[name] = f;
+    Object.defineProperty(el, name, {
+      configurable: true, writable: true,
+      value(...args) { return RA.on ? remote(...args) : f.apply(el, args); },
+    });
+  };
+  const ranges = (end) => ({ length: end > 0 ? 1 : 0, start: () => 0, end: () => end });
+  prop('src', () => RA.src, (v) => raLoad(String(v)));
+  prop('currentSrc', () => RA.src);
+  prop('currentTime', raTime, (v) => {
+    const t = Math.max(0, Number(v) || 0);
+    RA.seekTo = t;
+    RA.seekAt = Date.now();
+    raSend({ type: 'control', action: 'seek', value: t });
+    fire('seeking');
+    setTimeout(() => { fire('seeked'); fire('timeupdate'); }, 0);
+  });
+  prop('duration', () => (RA.st.duration ? RA.st.duration : NaN));
+  prop('paused', () => !RA.pwr);
+  prop('ended', () => false);
+  prop('readyState', () => 4);
+  prop('networkState', () => 2);
+  prop('buffered', () => ranges(RA.st.duration || 0));
+  prop('seekable', () => ranges(RA.st.duration || 0));
+  prop('error', () => null);
+  // Leveling's volume is the TV's own business; kept here, not sent.
+  prop('volume', () => RA.volume, (v) => { RA.volume = Number(v); fire('volumechange'); });
+  prop('playbackRate', () => RA.rate, (v) => { RA.rate = Number(v) || 1; });
+  prop('defaultPlaybackRate', () => RA.rate, () => {});
+  method('play', () => {
+    RA.pwr = true;
+    fire('play');
+    if (!RA.st.playing) raSend({ type: 'control', action: 'play' });
+    if (RA.st.playing) fire('playing');
+    return Promise.resolve();
+  });
+  method('pause', () => {
+    if (RA.pwr) {
+      RA.pwr = false;
+      raSend({ type: 'control', action: 'pause' });
+      setTimeout(() => fire('pause'), 0);
+    }
+  });
+  method('load', () => {});
+  method('removeAttribute', (name) => {
+    // Stopping here lets the TV go: this phone stops being its remote.
+    if (String(name).toLowerCase() === 'src') exitMirror(false);
+    else RA.real.removeAttribute.call(el, name);
+  });
+})();
+
+// A song set on the element: the TV is told to play it, unless it already
+// is (it moved on by itself, or the song was sent with Play on).
+function raLoad(url) {
+  RA.src = url;
+  const item = audio.item;
+  const key = raKey(item);
+  if (key && key !== RA.key) {
+    RA.key = key;
+    if (raKey(RA.st.item) !== key) {
+      const q = audio.queue;
+      const cmd = { type: 'play', item };
+      if (q && q.items.length > 1) {
+        const at = q.index;
+        cmd.queue = q.items.slice(Math.max(0, at - 200), at + 300);
+        cmd.index = Math.min(at, 200);
+      }
+      raSend(cmd);
+      RA.st = { ...RA.st, position: 0, playing: false, item: { sourceId: item.sourceId, id: item.id } };
+      RA.stAt = Date.now();
+    }
+  }
+  RA.fire('emptied');
+  RA.fire('loadstart');
+  setTimeout(() => { RA.fire('durationchange'); RA.fire('loadedmetadata'); RA.fire('canplay'); }, 0);
+}
+
+async function raPoll() {
+  if (!RA.on || !RA.target) return;
+  const target = RA.target;
+  const { ok, status, body } = await api(`/api/players/${target.id}`);
+  if (!RA.on || RA.target !== target) return;
+  if (!ok) {
+    if (status === 404) {
+      exitMirror(false);
+      showToast(`${target.name} is not yours to control now.`);
+    }
+    return;
+  }
+  const st = body.state || {};
+  if (st.kind !== 'audio') return;
+  const was = RA.st;
+  RA.st = st;
+  RA.stAt = Date.now() - Math.max(0, Math.min(5000, st.at ? Date.now() - st.at : 0));
+  if (RA.seekTo !== null && Date.now() - RA.seekAt > 2500) RA.seekTo = null;
+  const tvKey = raKey(st.item);
+  // The TV moved on to the next song by itself: here too.
+  if (tvKey && tvKey !== RA.key) {
+    const q = audio.queue;
+    const next = q && q.items[q.index + 1];
+    if (next && raKey(next) === tvKey) {
+      RA.key = tvKey;
+      RA.fire('ended');
+      return;
+    }
+  }
+  if (st.duration !== was.duration) RA.fire('durationchange');
+  if (st.playing && !RA.lastPlaying) {
+    if (!RA.pwr) { RA.pwr = true; RA.fire('play'); }
+    RA.fire('playing');
+  } else if (!st.playing && RA.lastPlaying && RA.pwr) {
+    // Paused on the TV itself, or by its remote.
+    RA.pwr = false;
+    RA.fire('pause');
+  }
+  RA.lastPlaying = Boolean(st.playing);
+}
+
+// Into the mirror: the TV plays, this phone's Now Playing is its remote.
+function enterMirror(target, cmd) {
+  const el = $('audio-player');
+  // This phone's own player stops - it is the TV that plays now.
+  if (!RA.on) {
+    RA.real.pause.call(el);
+    RA.real.removeAttribute.call(el, 'src');
+    RA.real.load.call(el);
+  }
+  RA.on = true;
+  RA.target = target;
+  RA.key = raKey(cmd.item);
+  RA.st = { playing: true, position: Number(cmd.at) || 0, item: { sourceId: cmd.item.sourceId, id: cmd.item.id } };
+  RA.stAt = Date.now();
+  RA.pwr = true;
+  RA.lastPlaying = false;
+  clearInterval(RA.poll);
+  clearInterval(RA.ticker);
+  RA.poll = setInterval(raPoll, 1000);
+  RA.ticker = setInterval(() => { if (RA.on && RA.pwr) RA.fire('timeupdate'); }, 250);
+  if (raKey(audio.item) === RA.key) {
+    // Moved from here: the song and its queue are already this page's.
+    RA.src = 'remote:' + RA.key;
+    RA.fire('playing');
+  } else if (Array.isArray(cmd.queue) && cmd.queue.length) {
+    playQueue(cmd.queue, Math.max(0, Math.min(cmd.queue.length - 1, Number(cmd.index) || 0)));
+  } else {
+    play(cmd.item);
+  }
+  renderWhere();
+  raPoll();
+}
+
+// Out of it: this phone stops being the TV's remote (stop sends the TV
+// stop too). Play here plays the song on from the TV's moment.
+function exitMirror(stopTV) {
+  if (!RA.on) return;
+  if (stopTV) raSend({ type: 'stop' });
+  RA.on = false;
+  clearInterval(RA.poll);
+  clearInterval(RA.ticker);
+  RA.target = null;
+  RA.key = '';
+  RA.pwr = false;
+  renderWhere();
+}
+function renderWhere() {
+  const pill = $('np-where');
+  show(pill, RA.on);
+  if (RA.on) pill.textContent = `On ${RA.target.name}`;
+}
+// The label: the compact remote for the volume, Play here and Stop.
+$('np-where').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (RA.on) openRemote(RA.target);
+});
+
 /* --------------------------------- playing on another device, remotely */
 
 // Every open SoundStorm page is a player (players.go on the server): it says
@@ -17501,7 +17728,7 @@ async function renderPlayOnMenu(item, opts = {}) {
       if (opts.moving) savePosition();
       if (opts.video) saveWatchPosition(true);
       await sendPlayOn(p, cmd, note, () => {
-        if (opts.moving) stopAudio();
+        if (opts.moving && item.kind !== 'music') stopAudio();
         // A film's place is saved as it closes, and the TV carries on from it.
         if (opts.video) closeVideo();
       });
@@ -17538,6 +17765,13 @@ async function sendPlayOn(p, cmd, note, done) {
   }
   closeItemMenu();
   if (done) done();
+  // Music: this phone's own Now Playing becomes the remote - the lyrics, the
+  // looks, Up next and every button, all acting on the TV. Anything else
+  // gets the compact remote.
+  if (cmd.item && cmd.item.kind === 'music') {
+    enterMirror({ id: p.id, name: p.name }, cmd);
+    return;
+  }
   openRemote({ id: p.id, name: p.name });
 }
 
@@ -17684,7 +17918,11 @@ function sendVolume() {
 }
 $('rc-volume').addEventListener('input', sendVolume);
 $('rc-volume').addEventListener('change', sendVolume);
-$('rc-stop').addEventListener('click', () => { remoteSend({ type: 'stop' }); forgetRemote(); });
+$('rc-stop').addEventListener('click', () => {
+  remoteSend({ type: 'stop' });
+  forgetRemote();
+  if (RA.on) { exitMirror(false); stopAudio(); }
+});
 // Play here: what the device is playing comes to this phone, and stops there.
 $('rc-here').addEventListener('click', () => {
   const st = PLAYER.targetState;
@@ -17693,6 +17931,18 @@ $('rc-here').addEventListener('click', () => {
   const item = st.item;
   const at = (st.position || 0) + (st.playing && st.at ? (Date.now() - st.at) / 1000 : 0);
   forgetRemote();
+  // Controlling the TV from Now Playing: its queue is already here; the
+  // song carries on on this phone from the TV's moment.
+  if (RA.on) {
+    exitMirror(false);
+    const q = audio.queue;
+    if (q && raKey(q.items[q.index]) === raKey(item)) {
+      playQueueAt(q.index);
+      const a = $('audio-player');
+      if (at > 1) a.addEventListener('loadedmetadata', () => { a.currentTime = at; }, { once: true });
+      return;
+    }
+  }
   // A book's and a film's place were saved on the server as it stopped.
   setTimeout(() => {
     play(item);

@@ -1680,6 +1680,30 @@ invisible until a hold like the rest of that bar, so it shows and is chosen
 with them (`holdButtonList`); the film player has a visible "Play on..."
 beside its pickers (`#video-cast`), which saves the film's place first and
 closes it here once sent. Neither on a TV, offline, or for a downloaded film.
+**Then Now Playing itself became the remote, for music** (the owner's
+idea: "why not use the same Now Playing screen as the remote"). While a
+phone controls a TV's music, the page's audio element stands in for the TV
+(`remoteLayer`, `RA`, `enterMirror`), the way PageScript's stand-in hands
+songs to Android's native player - and on top of it, delegating to whatever
+the element was before when the mirror is off: setting a song tells the TV to
+play it with the queue (unless it already is), play, pause and seeking are
+sent, and the TV's reports (polled each second) come back as the element's
+own playing, pause, timeupdate and ended - "ended" when the TV has moved to
+the next song in the queue by itself, which the page then follows without
+sending anything. So lyrics, looks and visualizers (the server's analysis),
+Up next, swipes, the hold buttons and the lock screen all act on the TV, and
+the phone streams nothing. "On Living room TV" sits at Now Playing's top
+(`#np-where`), a tap opening the compact remote for the volume, Play here
+(the queue carries on on the phone from the TV's moment) and Stop. While
+mirroring nothing is counted, scrobbled, preloaded or crossfaded here: the TV
+does that. X or anything else that stops this phone's audio pauses the TV and
+lets it go. `RA` is declared near the top of app.js, as crossfade's setting
+reads it while the page loads. Music only - an audiobook's clock spans its
+files; films and photos keep the compact remote. Checked with a TV pretending
+to play (two browsers): Now Playing opened with the label, its clock followed,
+pause, seek, play and previous reached the TV, and the TV moving on by itself
+was followed with no command sent. Not checked: inside the Android app, where
+the layer sits over PageScript's stand-in.
 Not built: typing on the TV from the phone; the Apple
 TV's half (for the Mac: it would say hello, poll and obey the same
 commands).
