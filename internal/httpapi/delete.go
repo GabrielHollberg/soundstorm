@@ -27,12 +27,14 @@ const (
 	maxDeleteBody  = 128 << 10
 )
 
+type libraryItemRef struct {
+	Source string `json:"source"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+}
+
 type deleteRequest struct {
-	Items []struct {
-		Source string `json:"source"`
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-	} `json:"items"`
+	Items []libraryItemRef `json:"items"`
 }
 
 // resolveDeletion asks each item's shelf for its files and works out what goes
@@ -49,8 +51,15 @@ func (s *Server) resolveDeletion(w http.ResponseWriter, r *http.Request) ([]libr
 		writeError(w, http.StatusRequestEntityTooLarge, "that is too many items at once; delete fewer")
 		return nil, false
 	}
+	return s.resolveItemFiles(w, r, req.Items)
+}
+
+// resolveItemFiles asks each item's shelf for its files and works out what
+// goes with them (deleting, and moving to another shelf). It writes the error
+// response itself and reports false when it did.
+func (s *Server) resolveItemFiles(w http.ResponseWriter, r *http.Request, refs []libraryItemRef) ([]library.BinItem, bool) {
 	var items []library.BinItem
-	for _, it := range req.Items {
+	for _, it := range refs {
 		title := it.Title
 		if title == "" {
 			title = "that item"
@@ -65,7 +74,7 @@ func (s *Server) resolveDeletion(w http.ResponseWriter, r *http.Request) ([]libr
 		}
 		lister, ok := src.(source.FileLister)
 		if !ok {
-			writeError(w, http.StatusBadRequest, title+" cannot be deleted from SoundStorm")
+			writeError(w, http.StatusBadRequest, title+" cannot be deleted or moved from SoundStorm")
 			return nil, false
 		}
 		files, err := lister.ItemFiles(r.Context(), it.ID)
@@ -77,7 +86,7 @@ func (s *Server) resolveDeletion(w http.ResponseWriter, r *http.Request) ([]libr
 		paths, err := s.library.Resolve(src.Kind(), files)
 		if err != nil {
 			s.log.Warn("delete: refused a path", "source", it.Source, "id", it.ID, "err", err)
-			writeError(w, http.StatusConflict, "could not delete "+title+": its files are not where SoundStorm expected")
+			writeError(w, http.StatusConflict, title+": its files are not where SoundStorm expected")
 			return nil, false
 		}
 		items = append(items, library.BinItem{Title: title, Kind: src.Kind(), Paths: paths})

@@ -222,8 +222,9 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 		key, members := u.key, u.members
 
 		kind, options := decideGroup(cleaned, members)
+		chosen := false
 		if answer, ok := choices[key]; ok && permitted(answer, options, kind) {
-			kind, options = answer, nil
+			kind, options, chosen = answer, nil, true
 		}
 
 		if len(options) > 1 {
@@ -258,6 +259,13 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 				}
 			case len(options) > 1:
 				out[i] = Placement{Path: paths[i], Group: key, Waiting: true}
+			case chosen && !shelfTakes(kind, rel):
+				out[i] = Placement{
+					Path:    paths[i],
+					Group:   key,
+					Skipped: true,
+					Reason:  "that library does not keep " + ext + " files",
+				}
 			case kind == "":
 				out[i] = Placement{
 					Path:    paths[i],
@@ -288,13 +296,22 @@ func usable(rel string) bool {
 	return knownExtension(ext) || companionExtensions[ext]
 }
 
+// shelfTakes reports whether a shelf keeps a file: its own kinds of file, and
+// the companions that ride along with them.
+func shelfTakes(kind media.Kind, rel string) bool {
+	ext := strings.ToLower(path.Ext(rel))
+	return mediaExtensions[kind][ext] || companionExtensions[ext]
+}
+
 // permitted checks an answer against what was actually asked, so a client
 // cannot send a group to a shelf the question never offered.
 func permitted(answer media.Kind, options []media.Kind, current media.Kind) bool {
 	if len(options) == 0 {
-		// Nothing was asked; an answer is only meaningful if it changes a
-		// group that had no shelf of its own.
-		return current == ""
+		// Nothing was asked: the person changed where a part goes in the
+		// drop panel (its Change), which they may - for any shelf their
+		// account has, checked by the caller. Files that shelf does not take
+		// are skipped (shelfTakes).
+		return answer != ""
 	}
 	for _, o := range options {
 		if o == answer {

@@ -3554,6 +3554,8 @@ async function runIntake(dataTransfer) {
   show($('intake-bar'), false);
   $('intake-list').replaceChildren();
   $('intake-questions').replaceChildren();
+  $('intake-review').replaceChildren();
+  filesToggle(false);
   $('intake-title').textContent = 'Reading what you dropped…';
 
   let dropped = await collectFiles(dataTransfer);
@@ -3609,6 +3611,19 @@ async function runIntake(dataTransfer) {
 
     const questions = body.questions || [];
     if (!questions.length) {
+      // Where everything is going, a line per part, each with Change, and
+      // nothing moves until Add is pressed (the owner's asking: see a wrong
+      // guess before it lands, not after).
+      const decision = await reviewPlan(body.files || []);
+      if (decision === null) {
+        $('intake-title').textContent = 'Canceled — nothing was added.';
+        $('intake-review').replaceChildren();
+        return;
+      }
+      if (decision.change) {
+        choices[decision.change.group] = decision.change.kind;
+        continue;
+      }
       await sendFiles(body.files || [], dropped);
       return;
     }
@@ -3624,6 +3639,165 @@ async function runIntake(dataTransfer) {
     }
     choices[questions[0].group] = answer;
   }
+}
+
+// What a shelf is called in the drop panel.
+const shelfName = (kind) => (kind === 'picture' ? 'Photos' : LIBRARY_NAMES[kind] || kind);
+// The shelves this account may add to: the hidden chips say which it has.
+function shelvesAllowed() {
+  return Object.keys(LIBRARY_NAMES).filter((k) => {
+    const chip = document.querySelector(`#filters .chip[data-kind="${k}"]`);
+    return chip && !chip.classList.contains('hidden');
+  });
+}
+// A part's name: the folder, or the last few of a deep one.
+function partLabel(group) {
+  const segs = group.split('/');
+  return segs.length > 2 ? `…/${segs.slice(-2).join('/')}` : group;
+}
+
+// The plan in parts: each part of the drop (a folder decided on its own, or a
+// loose file), where it is going and how many files.
+function planParts(files) {
+  const parts = new Map();
+  let skipped = 0;
+  for (const p of files) {
+    if (p.skipped) { skipped++; continue; }
+    const key = p.group || p.path;
+    if (!parts.has(key)) parts.set(key, { group: key, kinds: {}, count: 0 });
+    const part = parts.get(key);
+    part.count++;
+    part.kinds[p.kind] = (part.kinds[p.kind] || 0) + 1;
+  }
+  for (const part of parts.values()) {
+    part.kind = Object.keys(part.kinds).sort((a, b) => part.kinds[b] - part.kinds[a])[0];
+  }
+  return { parts: [...parts.values()], skipped };
+}
+
+function filesToggle(on) {
+  const button = $('intake-files-toggle');
+  show(button, on);
+  show($('intake-list'), false);
+  button.textContent = 'Show every file';
+}
+$('intake-files-toggle').addEventListener('click', () => {
+  const list = $('intake-list');
+  const open = list.classList.contains('hidden');
+  show(list, open);
+  $('intake-files-toggle').textContent = open ? 'Hide the files' : 'Show every file';
+});
+
+function intakeLine(label, rest, extra) {
+  const li = document.createElement('li');
+  const name = document.createElement('strong');
+  name.textContent = label;
+  name.title = label;
+  const text = document.createElement('span');
+  text.className = 'intake-part-dest';
+  text.textContent = rest;
+  li.append(name, text);
+  if (extra) li.append(extra);
+  return li;
+}
+
+// reviewPlan shows where each part is going and waits: Add sends the files,
+// Change re-plans one part to another shelf, Cancel stops.
+function reviewPlan(files) {
+  return new Promise((resolve) => {
+    const host = $('intake-review');
+    host.replaceChildren();
+    $('intake-questions').replaceChildren();
+    $('intake-list').replaceChildren();
+    files.forEach(renderIntakeRow);
+    const { parts, skipped } = planParts(files);
+    const adding = parts.reduce((n, p) => n + p.count, 0);
+    $('intake-title').textContent = adding
+      ? `Ready to add ${adding} file${adding === 1 ? '' : 's'} — check where they go`
+      : 'Nothing here could be added.';
+    const list = document.createElement('ul');
+    list.className = 'intake-parts';
+    for (const part of parts) {
+      const change = document.createElement('button');
+      change.type = 'button';
+      change.className = 'ghost small';
+      change.textContent = 'Change';
+      const li = intakeLine(partLabel(part.group),
+        `→ ${shelfName(part.kind)} · ${part.count} file${part.count === 1 ? '' : 's'}`, change);
+      change.addEventListener('click', () => {
+        const options = document.createElement('span');
+        options.className = 'question-options';
+        for (const kind of shelvesAllowed().filter((k) => k !== part.kind)) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = shelfName(kind);
+          b.addEventListener('click', () => {
+            host.replaceChildren();
+            resolve({ change: { group: part.group, kind } });
+          });
+          options.append(b);
+        }
+        change.replaceWith(options);
+        options.querySelector('button')?.focus();
+      });
+      list.append(li);
+    }
+    if (skipped) {
+      list.append(intakeLine(`${skipped} skipped`, 'see every file for why'));
+    }
+    host.append(list);
+    const actions = document.createElement('div');
+    actions.className = 'intake-actions';
+    if (adding) {
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.textContent = `Add ${adding} file${adding === 1 ? '' : 's'}`;
+      add.addEventListener('click', () => { host.replaceChildren(); resolve('send'); });
+      actions.append(add);
+    }
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'ghost';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => resolve(null));
+    actions.append(cancel);
+    host.append(actions);
+    filesToggle(files.length > 0);
+    actions.querySelector('button')?.focus();
+  });
+}
+
+// After: where each part really landed - which can differ from the plan, as
+// a home video dropped with the films goes to the photos - and what did not.
+function renderLanded(results) {
+  const FOLDERS = { music: 'music', movies: 'video', tv: 'tv', audiobooks: 'audiobook', ebooks: 'ebook', documents: 'document', pictures: 'picture' };
+  const parts = new Map();
+  for (const { item, result } of results) {
+    const key = item.group || item.path;
+    if (!parts.has(key)) parts.set(key, { landed: {}, skipped: 0, failed: 0 });
+    const part = parts.get(key);
+    if (result.ok) {
+      const kind = FOLDERS[(result.dest || '').split('/')[0]] || item.kind;
+      part.landed[kind] = (part.landed[kind] || 0) + 1;
+    } else if (result.skipped) part.skipped++;
+    else part.failed++;
+  }
+  const list = document.createElement('ul');
+  list.className = 'intake-parts';
+  for (const [group, part] of parts) {
+    const bits = Object.entries(part.landed).map(([k, n]) => `${shelfName(k)} ${n}`);
+    if (part.skipped) bits.push(`${part.skipped} already there`);
+    if (part.failed) bits.push(`${part.failed} failed`);
+    const li = intakeLine(partLabel(group), `→ ${bits.join(' · ')}`);
+    if (part.failed) li.classList.add('intake-failed');
+    list.append(li);
+  }
+  const note = document.createElement('p');
+  note.className = 'muted small-print';
+  note.textContent = state.me && state.me.owner
+    ? 'Something in the wrong place? Hold it (or right-click it) and choose Move to.'
+    : 'Something in the wrong place? Whoever runs the server can move it.';
+  $('intake-review').replaceChildren(list, note);
 }
 
 // askQuestion shows one question and resolves with the chosen library, or null
@@ -3773,6 +3947,7 @@ async function sendFiles(plan, dropped) {
   let done = 0;
   let sent = 0;
   let declined = 0; // already there, or the same recording is
+  const results = [];
   for (const item of queue) {
     $('intake-title').textContent =
       `Adding ${done + 1} of ${queue.length} — ${item.file.name}`;
@@ -3784,7 +3959,9 @@ async function sendFiles(plan, dropped) {
     setIntakeProgress(total ? sent / total : 1);
     if (!result.ok && result.skipped) declined += 1;
     markIntakeRow(item.path, result);
+    results.push({ item, result });
   }
+  renderLanded(results);
 
   const failed = document.querySelectorAll('#intake-list .intake-failed').length;
   // Skipped at planning, and skipped by the server as already there.
@@ -3889,6 +4066,7 @@ function markIntakeRow(path, result) {
 $('intake-close').addEventListener('click', () => {
   show($('intake'), false);
   $('intake-questions').replaceChildren();
+  $('intake-review').replaceChildren();
 });
 
 /* ------------------------------------------------------------------- boot */
@@ -4426,6 +4604,7 @@ const ICONS = {
   image: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9.5" cy="10" r="1.6"/><path d="M5 17l4.5-4.5 3 3 2.5-2.5L19 17"/>',
   album: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/>',
   upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
+  move: '<path d="M4 7h6l2 2h8v9H4zM12 13.5h5M15 11l2.5 2.5L15 16"/>',
   radio: '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke-width="2.2"/>',
 };
 
@@ -4609,12 +4788,57 @@ function renderMainMenu(item, opts = {}) {
   if (state.me && state.me.owner && !state.offline && item.sourceId !== 'storyteller') {
     // Stopped here: the menu is redrawn at once, and a click reaching the
     // page from a button no longer in the menu reads as a click outside it.
+    entries.push(menuItem('move', 'Move to…', (event) => {
+      event.stopPropagation();
+      renderMoveMenu(item);
+    }, { chevron: true }));
     entries.push(menuItem('trash', 'Delete from library', (event) => {
       event.stopPropagation();
       renderDeleteMenu(item);
     }, { className: 'menu-danger' }));
   }
   menu.replaceChildren(...entries, note);
+}
+
+// Move to: another shelf for something filed in the wrong one - a film that
+// was a home video, a music folder that was an audiobook. The owner's, as
+// deleting is. The server files it by the new shelf's own rule.
+function renderMoveMenu(item) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const backLabel = document.createElement('span');
+  backLabel.textContent = 'Move to';
+  back.append(backLabel);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item, state.menuOpts);
+  });
+  const here = item.kind;
+  const rows = shelvesAllowed().filter((k) => k !== here).map((kind) => menuItem('move', shelfName(kind), async (event) => {
+    event.stopPropagation();
+    note.textContent = `Moving to ${shelfName(kind)}…`;
+    const { ok, body } = await api('/api/move', {
+      method: 'POST',
+      body: JSON.stringify({ items: [{ source: item.sourceId, id: item.id, title: item.title }], to: kind }),
+    });
+    if (!ok || !body) {
+      note.textContent = (body && body.error) || 'Could not move it.';
+      return;
+    }
+    closeItemMenu();
+    const key = selectionKey(item);
+    for (const el of document.querySelectorAll(`[data-key="${CSS.escape(key)}"]`)) {
+      (el.closest('.item-holder') || el.closest('li') || el).remove();
+    }
+    showToast(body.stayed
+      ? `Moved ${body.moved} file${body.moved === 1 ? '' : 's'} to ${shelfName(kind)}; ${body.stayed} stayed where ${body.stayed === 1 ? 'it was' : 'they were'}.`
+      : `"${item.title}" moved to ${shelfName(kind)}. It shows there once the shelf has looked.`);
+  }));
+  menu.replaceChildren(back, ...rows, note);
 }
 
 // renderPlaylistMenu is the second page: which playlist, or a new one.

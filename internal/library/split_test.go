@@ -79,3 +79,26 @@ func TestWhatBelongsTogetherIsNotSplit(t *testing.T) {
 		}
 	}
 }
+
+// Change in the drop panel sends a part to another shelf, and files that
+// shelf does not keep are skipped.
+func TestAChoiceChangesWhereAPartGoes(t *testing.T) {
+	l, err := Open(t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _ := l.Plan([]string{"Jack bday/Jack bday.mov", "Jack bday/notes.epub"},
+		map[string]media.Kind{"Jack bday": media.KindPicture})
+	for _, f := range files {
+		switch f.Path {
+		case "Jack bday/Jack bday.mov":
+			if f.Kind != media.KindPicture {
+				t.Errorf("the video went to %q, want pictures", f.Kind)
+			}
+		case "Jack bday/notes.epub":
+			if !f.Skipped {
+				t.Errorf("an epub sent to the photos should be skipped: %+v", f)
+			}
+		}
+	}
+}

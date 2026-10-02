@@ -662,7 +662,11 @@
       <div id="intake-bar" class="hidden"><div id="intake-fill"></div></div>
       <!-- One question per dropped folder, not per file. -->
       <ul id="intake-questions"></ul>
-      <ul id="intake-list"></ul>
+      <!-- Where each part of the drop goes, before and after (a line each,
+           with Change before anything moves); every file only when asked. -->
+      <div id="intake-review"></div>
+      <button id="intake-files-toggle" class="ghost small hidden" type="button">Show every file</button>
+      <ul id="intake-list" class="hidden"></ul>
       <button id="intake-close" class="ghost" type="button">Close</button>
     </section>
 

@@ -358,6 +358,28 @@ its scans, a film with its subtitles and poster, and an audiobook with its
 booklet stay whole (`split_test.go`). A split part's group is its folder
 ("Everything/Phone"), which is also what a question names.
 
+**Nothing moves until it has been seen** (the owner's asking, 2026-10-01).
+Once the questions are answered the drop panel shows a line per part of the
+drop - "Everything/Movies -> Films - 3 files" - each with **Change**, and an
+**Add** button (`reviewPlan`); every file is behind Show every file. Change
+sends the part's group back as a choice like a question's answer, which the
+plan now takes for any part (`permitted`), skipping the files the new shelf
+does not keep (`shelfTakes`: "that library does not keep .epub files").
+After uploading, the same lines say where each part really landed
+(`renderLanded`, from the destinations the uploads return - a home video
+moved to the photos shows there).
+
+**Move to, in any item's menu** (owner only, as deleting is;
+`POST /api/move`, `library.MoveItems`): for something filed in the wrong
+shelf after all. The item's files are found as deleting finds them, companions
+and folder included; every one is checked against the new shelf first, so a
+move it would refuse (a film to Music) moves nothing; each file is filed by
+the new shelf's own rule (tags for music and audiobooks, the book's own for
+ebooks, the owner's dated folder for photos) and moved, never over a file
+already there; emptied folders go; both shelves are told to look. Checked in
+Chrome on a throwaway server: a PDF moved from Documents to Ebooks landed
+under Unknown Author/Taxes, a move to Music was refused.
+
 **When it cannot tell, it asks.** One drop zone, no shelf targets: guessing
 wrong costs somebody moving files on disk, so the bar for guessing is "there is
 real evidence", not "one of them is more likely". A question is asked per
