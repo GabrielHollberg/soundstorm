@@ -123,7 +123,8 @@ function pickProfile(person) {
   // TV in instead (the owner's asking), with the same code and QR code as
   // the sign-in screen's.
   show($('profiles-phone'), TV);
-  input.focus();
+  if (TV) $('profiles-phone').focus();
+  else input.focus();
 }
 async function switchProfile(person, secret) {
   const { ok, status, body } = await api('/api/profiles/switch', {
@@ -483,7 +484,10 @@ function showGate(hasAccount, setupCodeRequired) {
   // account; ticked already on a TV, which is shared by its nature.
   show($('gate-keep-row'), hasAccount);
   $('gate-keep').checked = TV;
-  $('gate-username').focus();
+  // On a TV the phone is the easy way in, so it is where the remote starts
+  // (the owner's asking); elsewhere, typing.
+  if (TV && hasAccount) $('gate-phone').focus();
+  else $('gate-username').focus();
 }
 
 // Signing a TV in from a phone: the TV asks for a code and shows it, with a
@@ -540,7 +544,8 @@ function stopLink() {
 $('gate-phone').addEventListener('click', startLink);
 $('gate-link-cancel').addEventListener('click', () => {
   stopLink();
-  $('gate-username').focus();
+  if (TV) $('gate-phone').focus();
+  else $('gate-username').focus();
 });
 
 // On the phone: a TV's code, scanned (the QR opens /?link=CODE) or typed in
