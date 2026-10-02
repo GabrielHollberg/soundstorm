@@ -692,11 +692,13 @@ header {
   }
   #search-form {
     order: 3;
-    flex: 1 0 100%;
+    flex: 1 1 0;
+    min-width: 0;
   }
   #search-input { max-width: none; }
-  /* The name centered at the top, over the full-width search box. */
-  .wordmark.small { margin: 0 auto; }
+  /* The name centered at the top, alone on its row, over the search box -
+     and the device button to the search box's right (it sat over the box). */
+  .wordmark.small { margin: 0 auto; flex-basis: 100%; justify-content: center; }
 
   /* One row that scrolls sideways, rather than two rows of wrapped chips.
      Six filters wrapping cost 88px of a 844px screen before any result. */
@@ -3924,10 +3926,9 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 .ctl-btn span { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ctl-btn span:empty { display: none; }
 .ctl-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-@media (max-width: 700px) {
-  header { position: sticky; }
-  .ctl-btn { position: absolute; right: 14px; top: calc(var(--safe-top, 0px) + 8px); height: 34px; }
-  /* Clear of the name in the middle of the row. */
+@media (max-width: 620px) {
+  /* To the search box's right, as tall as it (it sat over the box). */
+  .ctl-btn { order: 4; align-self: stretch; height: auto; min-width: 46px; justify-content: center; }
   .ctl-btn span { max-width: 72px; }
 }
 .ctl-backdrop { position: fixed; inset: 0; z-index: 2147482990; background: rgba(0, 0, 0, 0.5); }
