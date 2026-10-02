@@ -5027,6 +5027,24 @@ else `Undated/`. A file already in the folder under any name is skipped as
 "already in your photos" (`photoIndex`, the folder's files by size with
 hashes worked out as needed, kept ten minutes and shared with downloads). The
 date is written beside it for Immich unless it came from inside the photo.
+**Home videos go to the photos, told by what is inside them** (the owner's
+choice, 2026-10-01): a video dropped where the plan said "film" - a renamed
+clip like "Jack's 5th birthday.mov" looks exactly like one - is looked inside
+once it has arrived (`tags.VideoCamera`, `homevideos.go`, through
+`library.SaveRouted`, which may change the shelf after the bytes land): a
+phone or camera writes its make and model (`com.apple.quicktime.make`,
+`com.android.version`, `©mak`/`©mod`), where it was filmed (`©xyz`), or a
+maker's own box (GoPro FIRM, Canon CNCV, Samsung smta), and a film never
+does - an encoder's `©too` (HandBrake, ffmpeg) does not count. Such a video
+goes to the person's photos by when it was filmed (the phone's own creation
+date with its zone, else the movie header's), which also dates every phone
+video dropped into Photos. Only with Pictures on the account; the drop panel
+shows where it really went. Camcorders' `.mts`/`.m2ts` are now kept at all
+(they were skipped), and more device names count as clips: Sony's
+`C0001.MP4`, Panasonic's `P1000123.MOV`, a camcorder's `00001.MTS` or
+anything in an `AVCHD` folder, and screen recordings (`RPReplay_Final`,
+"Screen Recording"). Checked with generated files through the upload route;
+not yet with a real phone's video.
 **A video named as a camera names it** (MVI_, VID_, PXL_, IMG_, GOPR, DJI_, a
 date and time, WhatsApp's) is a clip for the photo shelf even alone with no
 folder to say so (`looksLikeCameraClip`) - the first test filed MVI_0002.MOV

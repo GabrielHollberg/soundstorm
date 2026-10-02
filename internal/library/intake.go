@@ -293,9 +293,24 @@ func permitted(answer media.Kind, options []media.Kind, current media.Kind) bool
 
 // cameraClip is how cameras and phones name their videos: a maker's prefix
 // and a number, a date and time, or WhatsApp's VID-20190705-WA0001.
-var cameraClip = regexp.MustCompile(`(?i)^((mvi|vid|pxl|img|dsc|dscf|dscn|gopr|gh\d\d|gx\d\d|dji|mah|mov|trim|pano)[_-]?\d|\d{8}[_-]\d{6}|(vid|img)-\d{8}-wa\d)`)
+// Then the ones it missed: Sony's C0001.MP4, Panasonic's P1000123.MOV, a
+// camcorder's 00001.MTS, and screen recordings (an iPhone's RPReplay_Final,
+// Android's and a Mac's Screen Recording).
+var cameraClip = regexp.MustCompile(`(?i)^((mvi|vid|pxl|img|dsc|dscf|dscn|gopr|gh\d\d|gx\d\d|dji|mah|mov|trim|pano)[_-]?\d|\d{8}[_-]\d{6}|(vid|img)-\d{8}-wa\d|c\d{4}\.|p\d{7}\.|\d{5}\.m2?ts$|rpreplay|screen[ _-]?record)`)
 
-func looksLikeCameraClip(rel string) bool { return cameraClip.MatchString(path.Base(rel)) }
+// looksLikeCameraClip is a video named as a device names it, or inside a
+// camcorder's own AVCHD folder.
+func looksLikeCameraClip(rel string) bool {
+	if cameraClip.MatchString(path.Base(rel)) {
+		return true
+	}
+	for _, dir := range strings.Split(strings.ToLower(path.Dir(rel)), "/") {
+		if dir == "avchd" {
+			return true
+		}
+	}
+	return false
+}
 
 // decideGroup works out one shelf for everything dropped together, or returns
 // the choices worth offering when it genuinely cannot.
@@ -677,6 +692,23 @@ type Decide func(staged string) (string, error)
 // SaveDecided is Save with the destination decided after the bytes arrive.
 // With decide nil it is Save.
 func (l *Library) SaveDecided(kind media.Kind, rel string, r io.Reader, decide Decide) (string, error) {
+	if decide == nil {
+		return l.SaveRouted(kind, rel, r, nil)
+	}
+	return l.SaveRouted(kind, rel, r, func(staged string) (media.Kind, string, error) {
+		decided, err := decide(staged)
+		return kind, decided, err
+	})
+}
+
+// Route picks the shelf as well as the place once the bytes have arrived: a
+// video dropped as a film that a phone filmed belongs with the photos. A
+// place of "" is the shelf's own filing.
+type Route func(staged string) (media.Kind, string, error)
+
+// SaveRouted is Save with the shelf and place decided after the bytes arrive.
+// With route nil it is Save.
+func (l *Library) SaveRouted(kind media.Kind, rel string, r io.Reader, route Route) (string, error) {
 	rel, err := cleanRelPath(rel)
 	if err != nil {
 		return "", err
@@ -719,11 +751,21 @@ func (l *Library) SaveDecided(kind media.Kind, rel string, r io.Reader, decide D
 	// because for a loose track the answer is inside the file. Nothing has
 	// been written outside the staging directory yet, so a refusal here still
 	// leaves the library untouched.
-	if decide != nil {
-		decided, err := decide(tmpName)
+	decided := ""
+	if route != nil {
+		k, place, err := route(tmpName)
 		if err != nil {
 			return "", err
 		}
+		if k != kind {
+			kind = k
+			if folder = l.PathFor(kind); folder == "" {
+				return "", fmt.Errorf("there is no %s library", kind)
+			}
+		}
+		decided = place
+	}
+	if decided != "" {
 		if rel, err = cleanRelPath(decided); err != nil {
 			return "", err
 		}

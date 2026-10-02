@@ -117,10 +117,12 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 	media.KindVideo: {
 		".mkv": true, ".mp4": true, ".avi": true, ".mov": true, ".m4v": true,
 		".wmv": true, ".webm": true, ".mpg": true, ".mpeg": true, ".ts": true,
+		".mts": true, ".m2ts": true,
 	},
 	media.KindTV: {
 		".mkv": true, ".mp4": true, ".avi": true, ".mov": true, ".m4v": true,
 		".wmv": true, ".webm": true, ".mpg": true, ".mpeg": true, ".ts": true,
+		".mts": true, ".m2ts": true,
 	},
 	media.KindAudiobook: {
 		".m4b": true, ".mp3": true, ".m4a": true, ".aax": true, ".aaxc": true,
@@ -140,6 +142,7 @@ var mediaExtensions = map[media.Kind]map[string]bool{
 		".dng": true, ".cr2": true, ".cr3": true, ".nef": true, ".arw": true,
 		".raf": true, ".orf": true, ".rw2": true,
 		".mov": true, ".mp4": true, ".m4v": true, ".3gp": true,
+		".mts": true, ".m2ts": true, // a camcorder's (AVCHD)
 	},
 }
 

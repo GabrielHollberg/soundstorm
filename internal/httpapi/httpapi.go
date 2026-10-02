@@ -1513,10 +1513,20 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		// person's folder by when it was taken.
 		taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
 		dest, err = s.savePhoto(user, path, body, taken)
+	} else if kind == media.KindVideo && library.IsPictureFile(path) &&
+		source.AccessFrom(r.Context()).Permits(media.KindPicture) && s.library.PathFor(media.KindPicture) != "" {
+		// Dropped as a film, but a phone or a camera may have filmed it: a
+		// home video goes to the person's photos (homevideos.go).
+		taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
+		dest, kind, err = s.saveFilmOrHomeVideo(user, path, body, taken, r.ContentLength)
 	} else {
 		dest, err = s.library.Save(kind, path, body)
 	}
 	if err != nil {
+		if errors.Is(err, errPhotoLimit) {
+			writeError(w, http.StatusInsufficientStorage, err.Error())
+			return
+		}
 		if errors.Is(err, library.ErrDiskReserve) {
 			writeError(w, http.StatusInsufficientStorage, err.Error())
 			return

@@ -293,6 +293,10 @@ func (s *Server) datedPhoto(u state.User, staged, dropped string, hint int64) (*
 	name := path.Base(dropped)
 	if t, ok := photoimport.ExifTaken(head); ok {
 		pl.meta.Taken, pl.src, pl.exif = t, photoimport.SourceExif, true
+	} else if cam := videoFilmed(staged, name); !cam.Taken.IsZero() {
+		// A phone's or camera's video: when it was filmed, from inside it.
+		// Immich reads the same, so nothing is written beside it.
+		pl.meta.Taken, pl.src, pl.exif = cam.Taken, photoimport.SourceExif, true
 	} else if t, ok := photoimport.NameTaken(name); ok {
 		pl.meta.Taken, pl.src = t, photoimport.SourceName
 	} else if hint > 0 && time.UnixMilli(hint).Year() > 1990 {
@@ -336,6 +340,14 @@ func (s *Server) savePhoto(u state.User, dropped string, body io.Reader, hint in
 	if err != nil {
 		return "", err
 	}
+	s.photoSaved(u, dest, pl)
+	return dest, nil
+}
+
+// photoSaved is what follows a photo landing in a person's folder: it joins
+// their index, its date is written beside it for Immich when it did not come
+// from inside the file, and it counts against their space.
+func (s *Server) photoSaved(u state.User, dest string, pl *photoPlace) {
 	full := filepath.Join(s.library.Root(), filepath.FromSlash(dest))
 	pl.ix.add(full, pl.size, pl.sum)
 	if !pl.exif && !pl.meta.Taken.IsZero() {
@@ -344,7 +356,6 @@ func (s *Server) savePhoto(u state.User, dropped string, body io.Reader, hint in
 	if !u.IsOwner() {
 		s.addPhotoBytes(u, pl.size)
 	}
-	return dest, nil
 }
 
 // photoUsageJSON is a person's photo space as the app shows it.

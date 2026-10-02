@@ -3808,7 +3808,8 @@ function uploadOne(item, onProgress) {
     // A photo or video is sorted into the person's folder by when it was
     // taken; the file's own date (on a camera's card, when it was taken) is
     // what the server falls back on when the photo carries none inside it.
-    if (item.kind === 'picture' && item.file && item.file.lastModified) params.set('taken', String(item.file.lastModified));
+    // A film too: one a phone filmed goes to the photos by its date (homevideos.go).
+    if ((item.kind === 'picture' || item.kind === 'video') && item.file && item.file.lastModified) params.set('taken', String(item.file.lastModified));
     const request = new XMLHttpRequest();
     request.open('PUT', `/api/upload?${params}`);
     request.withCredentials = true;
