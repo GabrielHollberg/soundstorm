@@ -157,6 +157,40 @@ final class ConnectFlowTests: XCTestCase {
                       "the person who signed in was not asked about backing up photos")
     }
 
+    /// A TV's sign-in code reaching the app by link (soundstorm://link, what
+    /// the page offers in Safari): the app opens its server's page, which
+    /// asks "Sign in a TV?" for that code.
+    func testATVCodeLinkAsksToSignInTheTV() async throws {
+        // A TV asks the server for a code, as the TV app does.
+        var ask = URLRequest(url: URL(string: server + "/api/link")!)
+        ask.httpMethod = "POST"
+        ask.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        ask.httpBody = Data("{}".utf8)
+        let (data, _) = try await URLSession.shared.data(for: ask)
+        let code = ((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["code"] as? String ?? "")
+            .replacingOccurrences(of: "-", with: "")
+        XCTAssertEqual(code.count, 6)
+
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        focus(field)
+        field.typeText(server + "\n")
+        let web = app.webViews.firstMatch
+        let settings = web.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists)
+        if !settings.exists { signIn(web) }
+        XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
+        notNowToBackup(web)
+
+        let link = "soundstorm://link?server=" + server.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "&code=" + code
+        app.open(URL(string: link)!)
+        let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if open.waitForExistence(timeout: 5) { open.tap() }
+        XCTAssertTrue(web.staticTexts["Sign in a TV?"].waitForExistence(timeout: 15),
+                      "the page did not ask about the TV's code")
+        web.buttons["Don't allow"].tap()
+    }
+
     /// The page asks about photo backup after signing in, over everything,
     /// on a phone where this person has not answered; a test about something
     /// else says not now.

@@ -13,6 +13,20 @@
 	<array>
 		<string>dev.soundstorm.app.photobackup</string>
 	</array>
+	<!-- soundstorm://link?server=&code=: a TV's sign-in code, from the page in Safari. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.soundstorm.app.link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>soundstorm</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>SoundStorm scans a TV's sign-in code, so you can sign the TV in from this phone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SoundStorm backs up your photos and videos to your own server, when you turn on photo backup in Settings.</string>
 	<!-- Plain http only to the local network (IP addresses, .local names).

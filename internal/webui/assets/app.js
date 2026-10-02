@@ -607,11 +607,14 @@ window.__soundstormLink = (code) => {
 };
 
 // In a phone's browser, the camera's way in: the app is where this person is
-// signed in, so it is offered (Android; the iPhone app needs the link type
-// first). Not installed, the browser simply stays here.
-if (linkFromAddress && /Android/i.test(navigator.userAgent) && !window.soundstormApp) {
+// signed in, so it is offered - Android by an intent (not installed, the
+// browser simply stays here), an iPhone by the app's soundstorm:// link
+// (ios/ AppLinks.swift; iOS asks first, and offers nothing without the app).
+const phoneApp = /Android/i.test(navigator.userAgent) ? 'android' : /iPhone|iPad/.test(navigator.userAgent) ? 'ios' : '';
+if (linkFromAddress && phoneApp && !window.soundstormApp) {
   const code = linkFromAddress.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  const link = `intent://link?server=${encodeURIComponent(location.origin)}&code=${code}`
+  const plain = `soundstorm://link?server=${encodeURIComponent(location.origin)}&code=${code}`;
+  const link = phoneApp === 'ios' ? plain : `intent://link?server=${encodeURIComponent(location.origin)}&code=${code}`
     + `#Intent;scheme=soundstorm;package=dev.soundstorm.app;S.browser_fallback_url=${encodeURIComponent(location.href)};end`;
   const bar = document.createElement('a');
   bar.className = 'open-in-app';

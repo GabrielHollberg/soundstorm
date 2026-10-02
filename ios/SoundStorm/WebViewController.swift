@@ -15,10 +15,32 @@ final class WebViewController: UIViewController {
     private var webView: WKWebView!
     private let failure = FailureView()
 
-    init(server: URL) {
+    /// A TV's sign-in code to hand the page when it has loaded.
+    private var pendingLink: String?
+    private let scanner = CodeScanner()
+    private let volumeKeys = VolumeKeys()
+
+    init(server: URL, link: String? = nil) {
         self.server = server
         self.current = server
+        self.pendingLink = link
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// The server this shows, for a link that names one.
+    var serverURL: URL { server }
+
+    /// A TV's code, scanned or opened from a link: the page asks "Sign in a
+    /// TV?" at once if it can (music playing in it carries on); a page that
+    /// cannot - not signed in yet, or older - is loaded again with the code
+    /// in its address, asked once signed in.
+    func handLink(_ code: String) {
+        let js = "(typeof window.__soundstormLink === 'function' && window.__soundstormLink(\"\(code)\")) === true"
+        webView.evaluateJavaScript(js) { [weak self] took, _ in
+            guard (took as? Bool) != true, let self else { return }
+            self.pendingLink = code
+            self.load()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -75,11 +97,20 @@ final class WebViewController: UIViewController {
         load()
     }
 
+    /// The away twin has been tried since the last Try again.
+    private var triedTwin = false
+
     private func load() {
         failure.isHidden = true
+        triedTwin = false
         current = server
         AppChrome.shared.statusBarHidden = false
-        webView.load(URLRequest(url: server))
+        var address = server
+        if let code = pendingLink {
+            pendingLink = nil
+            address = server.appending(queryItems: [URLQueryItem(name: "link", value: code)])
+        }
+        webView.load(URLRequest(url: address))
     }
 
     /// Runs before the page's own scripts. It tells the page it is inside
@@ -92,6 +123,12 @@ final class WebViewController: UIViewController {
         // it is going, answered through window.__soundstormBackup - the same
         // messages as the Android app's, so the page has no iPhone code.
         window.soundstormApp.photoBackup = true;
+        // Scanning a TV's sign-in QR code, and the volume buttons turning a
+        // TV this phone controls (AppLinks.swift), as in the Android app.
+        window.soundstormApp.scanCode = () =>
+          window.webkit.messageHandlers.soundstorm.postMessage({ type: 'scanCode' });
+        window.soundstormApp.remoteVolume = (on) =>
+          window.webkit.messageHandlers.soundstorm.postMessage({ type: 'remoteVolume', on: Boolean(on) });
         window.soundstormApp.backup = (cmd, options) =>
           window.webkit.messageHandlers.soundstorm.postMessage({ type: 'backup', cmd, options: options || {} });
         (() => {
@@ -116,6 +153,22 @@ final class WebViewController: UIViewController {
         // not a failure anybody needs to see.
         if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
         if error.domain == WKError.errorDomain && error.code == 102 { return } // frame load interrupted
+        // A home name is not reached away from home: its away twin is tried
+        // once (followed, not saved), as the Android app does.
+        if error.domain == NSURLErrorDomain,
+           [NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost, NSURLErrorTimedOut,
+            NSURLErrorDNSLookupFailed, NSURLErrorNetworkConnectionLost].contains(error.code),
+           !triedTwin, let failed = (error.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? current as URL?,
+           let host = failed.host(), host.hasSuffix(".home.soundstorm.dev"),
+           var parts = URLComponents(url: failed, resolvingAgainstBaseURL: false) {
+            triedTwin = true
+            parts.host = String(host.dropLast(".home.soundstorm.dev".count)) + ".net.soundstorm.dev"
+            if let twin = parts.url {
+                current = twin
+                webView.load(URLRequest(url: twin))
+                return
+            }
+        }
         AppChrome.shared.statusBarHidden = false
         failure.show(host: server.host() ?? server.absoluteString, detail: error.localizedDescription)
     }
@@ -145,6 +198,23 @@ final class WebViewController: UIViewController {
             onChangeServer?()
         case "nowPlaying":
             AppChrome.shared.statusBarHidden = body["open"] as? Bool ?? false
+        case "scanCode":
+            let tell = { [weak self] (what: String) in
+                self?.webView.evaluateJavaScript("window.__soundstormScanned && window.__soundstormScanned(\"\(what)\")")
+            }
+            scanner.scan(over: self, failed: { tell("failed") }) { [weak self] text in
+                guard let text else { return } // cancelled
+                guard let code = TVLink.code(in: text) else {
+                    tell("not-ours")
+                    return
+                }
+                self?.handLink(code)
+            }
+        case "remoteVolume":
+            volumeKeys.onPress = { [weak self] dir in
+                self?.webView.evaluateJavaScript("window.__soundstormVolumeKey && window.__soundstormVolumeKey(\(dir))")
+            }
+            volumeKeys.set(body["on"] as? Bool ?? false, in: view.window)
         case "backup":
             PhotoBackup.shared.rememberServer(current, typed: server)
             let command = body["cmd"] as? String ?? ""
@@ -264,7 +334,7 @@ extension WebViewController: WKUIDelegate {
         await withCheckedContinuation { done in
             let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in done.resume() })
-            present(alert, animated: true)
+            show(alert) { done.resume() }
         }
     }
 
@@ -274,7 +344,7 @@ extension WebViewController: WKUIDelegate {
             let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in done.resume(returning: false) })
             alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in done.resume(returning: true) })
-            present(alert, animated: true)
+            show(alert) { done.resume(returning: false) }
         }
     }
 
@@ -287,8 +357,22 @@ extension WebViewController: WKUIDelegate {
             alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak alert] _ in
                 done.resume(returning: alert?.textFields?.first?.text ?? "")
             })
-            present(alert, animated: true)
+            show(alert) { done.resume(returning: nil) }
         }
+    }
+
+    /// Shows a dialog over whatever is on top. When it cannot be shown - the
+    /// app is not on screen, or another dialog is up - it answers at once as
+    /// Cancel would (`otherwise`): a question never shown never answered,
+    /// and the page's confirm() waited for ever.
+    private func show(_ alert: UIAlertController, otherwise: @escaping () -> Void) {
+        var top: UIViewController = self
+        while let next = top.presentedViewController { top = next }
+        guard view.window != nil, !(top is UIAlertController), !top.isBeingDismissed else {
+            otherwise()
+            return
+        }
+        top.present(alert, animated: true)
     }
 
     /// target="_blank" (the ListenBrainz and LRCLIB links in Account): Safari.

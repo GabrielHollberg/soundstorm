@@ -92,20 +92,26 @@ is described in full in its own section below; tick them off here:
    with the session cookie, Only on Wi-Fi / Only while charging.
 2. ~~**Photo backup when locked**~~ - *done 2026-10-02*: files are handed to
    iOS ahead (200 or 1GB waiting), counted as they arrive, see the note.
-3. **A TV's QR code opening the app** - Universal Links: the associated domain
-   `applinks:*.home.soundstorm.dev` and the `/link/<code>` path (`linkURL`).
-   Apple checks a wildcard at the domain itself (believed - check), so the
-   names service serves `/.well-known/apple-app-site-association` there as it
-   serves Android's `assetlinks.json` - the PC adds that route once it has the
-   Apple team id (appID `<team>.dev.soundstorm.app`). Then handle the link
-   like `soundstorm://link` (known servers only) and offer the page's "Open in
-   the app" button on an iPhone too.
-4. **Scan the TV's code in the app** - Android's Settings button
-   (`soundstormApp.scanCode`, the code handed to `window.__soundstormLink`);
-   on iPhone a VisionKit scanner.
-5. **Volume buttons turning the TV** while this phone controls it -
-   `soundstormApp.remoteVolume(on)` and `window.__soundstormVolumeKey(±1)`, as
-   `MainActivity.dispatchKeyEvent` does; on iPhone, observe the system volume.
+3. **A TV's QR code opening the app** - *half done 2026-10-02*: the app takes
+   `soundstorm://link?server=&code=` (CFBundleURLTypes; known servers only,
+   `TVLink` in `AppLinks.swift`; checked by `testATVCodeLinkAsksToSignInTheTV`)
+   and the page offers "Open in the SoundStorm app" on an iPhone too. The app
+   also already handles the QR's own `https://<name>/link/<code>` when it
+   arrives (`onContinueUserActivity`). **Left, for the PC then the Mac:**
+   Universal Links - the names service serves
+   `/.well-known/apple-app-site-association` at `home.soundstorm.dev` and
+   `net.soundstorm.dev` (as `assetlinks.json`):
+   `{"applinks":{"details":[{"appIDs":["LZA2K5LLDS.dev.soundstorm.app"],"components":[{"/":"/link/*"}]}]}}`
+   - the team id is LZA2K5LLDS. Then the Mac adds the Associated Domains
+   entitlement `applinks:*.home.soundstorm.dev` and `applinks:*.net.soundstorm.dev`.
+4. ~~**Scan the TV's code in the app**~~ - *done 2026-10-02*: VisionKit's
+   scanner (`CodeScanner`), the code as Android reads it. Not checkable in the
+   simulator (no camera): a real iPhone is the test.
+5. ~~**Volume buttons turning the TV**~~ - *done 2026-10-02* (`VolumeKeys`):
+   iOS gives no way to take the buttons, so the phone's own volume is watched
+   (a hidden `MPVolumeView`), each press told to the page and the volume put
+   back in the middle; the phone's level is restored when it ends. Not
+   checkable in the simulator.
 
 **Apple TV**
 1. ~~**Controlled from a phone**~~ - *done 2026-10-02* (`Remote.swift`,

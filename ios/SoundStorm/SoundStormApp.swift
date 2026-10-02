@@ -17,6 +17,13 @@ struct SoundStormApp: App {
         WindowGroup {
             RootView()
                 .ignoresSafeArea()
+                // A TV's sign-in code: soundstorm://link?server=&code= from
+                // the page in Safari, or the QR's own address once Universal
+                // Links are set up (TVLink).
+                .onOpenURL { url in NotificationCenter.default.post(name: .tvLink, object: url) }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    if let url = activity.webpageURL { NotificationCenter.default.post(name: .tvLink, object: url) }
+                }
                 .statusBarHidden(AppChrome.shared.statusBarHidden)
                 .animation(.easeInOut(duration: 0.25), value: AppChrome.shared.statusBarHidden)
                 // Light status bar text over the app's black background.
@@ -66,6 +73,10 @@ final class RootViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        NotificationCenter.default.addObserver(forName: .tvLink, object: nil, queue: .main) { [weak self] note in
+            guard let url = note.object as? URL else { return }
+            MainActor.assumeIsolated { self?.open(url) }
+        }
         if let server = ServerAddress.saved {
             showWeb(server)
         } else {
@@ -82,8 +93,21 @@ final class RootViewController: UIViewController {
         show(connect)
     }
 
-    private func showWeb(_ server: URL) {
-        let web = WebViewController(server: server)
+    /// A TV's code: to the page showing that server if it is open, else that
+    /// (known) server opened with the code - the app's own if the link named
+    /// one it does not know.
+    private func open(_ url: URL) {
+        guard let link = TVLink.parse(url), let server = link.server ?? ServerAddress.saved else { return }
+        if let web = current as? WebViewController, web.serverURL == server {
+            web.handLink(link.code)
+        } else {
+            ServerAddress.remember(server)
+            showWeb(server, link: link.code)
+        }
+    }
+
+    private func showWeb(_ server: URL, link: String? = nil) {
+        let web = WebViewController(server: server, link: link)
         web.onChangeServer = { [weak self] in
             self?.showConnect(prefill: server)
         }
@@ -104,4 +128,8 @@ final class RootViewController: UIViewController {
     }
 
     override var childForStatusBarStyle: UIViewController? { current }
+}
+
+extension Notification.Name {
+    static let tvLink = Notification.Name("soundstorm.tvLink")
 }
