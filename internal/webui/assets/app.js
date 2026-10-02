@@ -1911,7 +1911,7 @@ async function runSearch() {
     for (const id of ['results', 'music-view', 'playlists-view', 'home-view']) $(id).replaceChildren();
     $('status').textContent = '';
   }
-  show($('home-view'), home);
+  showHome(home);
   show($('results-bar'), !home);
   show($('results'), state.kind !== 'playlists' && !musicBrowse && !bookBrowse && !home);
   if (fresh) {
@@ -9065,7 +9065,8 @@ async function renderHome(seq) {
   // One tap to music, right as the app opens: shuffle everything, and the
   // other ways to just start something.
   const quick = homeQuickPlay(favs);
-  if (quick) view.append(quick);
+  $('home-quick').replaceChildren(...(quick ? [quick] : []));
+  showHome(true);
 
   // In three runs, each together: what you were just playing (under the
   // Continue row), what is new on every shelf, then your favorites. They
@@ -9193,7 +9194,7 @@ function albumCardFromHome(album) {
     state.kind = 'music';
     noteTabKind();
     renderSearchHint();
-    show($('home-view'), false);
+    showHome(false);
     show($('results-bar'), true);
     show($('results'), false);
     show($('music-tabs'), true);
@@ -10560,7 +10561,7 @@ async function showOfflineShelf(seq, query) {
   }
   show($('music-tabs'), music);
   show($('music-view'), false);
-  show($('home-view'), kind === '' && !words.length);
+  showHome(kind === '' && !words.length);
   show($('results-bar'), !(kind === '' && !words.length));
   show($('results'), !(kind === '' && !words.length));
   const kept = (k) => Object.values(state.downloads.items)
@@ -10568,6 +10569,9 @@ async function showOfflineShelf(seq, query) {
 
   // Home: the same strips as online, one for each kind that is downloaded.
   if (kind === '' && !words.length) {
+    // The quick buttons start music from the server, which is not there.
+    $('home-quick').replaceChildren();
+    showHome(true);
     const view = $('home-view');
     view.replaceChildren();
     const albums = state.downloads.groups.filter((g) => MUSIC_GROUPS.includes(g.type) && g.type !== 'song');
@@ -11493,10 +11497,17 @@ function startLoading(view) {
 // enterDetailPage: an album, artist, playlist, author or series page, opened
 // from a list - or from Home, where the Continue row was showing and used to
 // stay above the album. Such a page is only itself; the lists' extras go.
+// Home and its quick buttons, which sit above the Continue row rather than in
+// Home's own section: shown and hidden together.
+function showHome(on) {
+  show($('home-view'), on);
+  show($('home-quick'), on && $('home-quick').childElementCount > 0);
+}
+
 function enterDetailPage() {
   state.detailPage = true;
   show($('continue'), false);
-  show($('home-view'), false);
+  showHome(false);
   closeItemMenu();
   if (state.selecting) setSelecting(false);
 }
