@@ -217,13 +217,55 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 		}
 	}
 
+	// A single file given a shelf of its own (the review's Files list, for
+	// the rare file that does not belong with its folder): out of its part,
+	// with its companions - a film's subtitles, a book's PDF - so none is
+	// left behind on the other shelf. Keyed FileChoice(path).
+	var split []unit
+	for _, u := range units {
+		var rest []int
+		taken := map[int]bool{}
+		for _, i := range u.members {
+			if _, ok := choices[FileChoice(paths[i])]; !ok || taken[i] {
+				continue
+			}
+			own := []int{i}
+			taken[i] = true
+			stem := strings.TrimSuffix(cleaned[i], path.Ext(cleaned[i]))
+			for _, j := range u.members {
+				if taken[j] {
+					continue
+				}
+				if _, chose := choices[FileChoice(paths[j])]; chose {
+					continue
+				}
+				c := cleaned[j]
+				if companionExtensions[strings.ToLower(path.Ext(c))] && path.Dir(c) == path.Dir(cleaned[i]) &&
+					(strings.TrimSuffix(c, path.Ext(c)) == stem || strings.HasPrefix(c, stem+".")) {
+					own = append(own, j)
+					taken[j] = true
+				}
+			}
+			split = append(split, unit{FileChoice(paths[i]), own})
+		}
+		for _, i := range u.members {
+			if !taken[i] {
+				rest = append(rest, i)
+			}
+		}
+		if len(rest) > 0 {
+			split = append(split, unit{u.key, rest})
+		}
+	}
+	units = split
+
 	var questions []Question
 	for _, u := range units {
 		key, members := u.key, u.members
 
 		kind, options := decideGroup(cleaned, members)
 		chosen := false
-		if answer, ok := choices[key]; ok && permitted(answer, options, kind) {
+		if answer, ok := choices[key]; ok && (permitted(answer, options, kind) || strings.HasPrefix(key, fileChoicePrefix)) {
 			kind, options, chosen = answer, nil, true
 		}
 
@@ -289,6 +331,12 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 	}
 	return out, questions
 }
+
+// fileChoicePrefix marks a choice for one file rather than a part.
+const fileChoicePrefix = "file:"
+
+// FileChoice is the key a choice for one dropped file is made under.
+func FileChoice(path string) string { return fileChoicePrefix + path }
 
 // usable reports whether a file is something SoundStorm would ever store.
 func usable(rel string) bool {

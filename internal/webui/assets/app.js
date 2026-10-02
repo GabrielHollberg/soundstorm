@@ -3664,7 +3664,7 @@ async function runIntake(dataTransfer) {
   // What the review remembers between plans: the questions asked (they stay
   // on screen, answered, to change), what was left out, and the choices made
   // about names already taken.
-  const review = { choices, asked: new Map(), excluded: new Set(), open: new Set(), memo: new Map() };
+  const review = { choices, asked: new Map(), excluded: new Set(), open: new Set(), memo: new Map(), skipFiles: new Set() };
 
   // Ask until there is nothing left to ask. Each answer goes back to the
   // server, which re-plans - so the destination shown is always the one the
@@ -3715,7 +3715,7 @@ async function runIntake(dataTransfer) {
       continue;
     }
     // Left out: not sent.
-    for (const p of files) if (review.excluded.has(p.group || p.path)) { p.skipped = true; p.reason = 'not added'; }
+    for (const p of files) if (review.excluded.has(p.group || p.path) || review.skipFiles.has(p.path)) { p.skipped = true; p.reason = 'not added'; }
     await sendFiles(files, dropped);
     return;
   }
@@ -3732,6 +3732,8 @@ function shelvesAllowed() {
 }
 // A part's name: the folder, or the last few of a deep one.
 function partLabel(group) {
+  // One file given its own shelf: its name.
+  if (group.startsWith('file:')) return group.slice(5).split('/').pop();
   const segs = group.split('/');
   return segs.length > 2 ? `…/${segs.slice(-2).join('/')}` : group;
 }
@@ -3910,7 +3912,7 @@ function reviewPlan(files, review) {
     const asked = review.asked;
 
     // What will go: not skipped, not waiting on a choice, not left out.
-    const going = files.filter((p) => !p.skipped && !p.waiting && p.conflict !== 'skip' && !excluded.has(groupOf(p)));
+    const going = files.filter((p) => !p.skipped && !p.waiting && p.conflict !== 'skip' && !excluded.has(groupOf(p)) && !review.skipFiles.has(p.path));
     const adding = going.length;
     const outstanding = [...asked.keys()].filter((g) => !review.choices[g] && !excluded.has(g));
 
@@ -3943,6 +3945,14 @@ function reviewPlan(files, review) {
           b.addEventListener('click', () => done({ change: { group: part.group, kind } }));
           options.append(b);
         }
+        if (part.group.startsWith('file:')) {
+          const back = document.createElement('button');
+          back.type = 'button';
+          back.className = 'ghost';
+          back.textContent = 'Back with its folder';
+          back.addEventListener('click', () => { delete review.choices[part.group]; done({ replan: true }); });
+          options.append(back);
+        }
         const leave = document.createElement('button');
         leave.type = 'button';
         leave.className = 'ghost';
@@ -3952,6 +3962,12 @@ function reviewPlan(files, review) {
         change.replaceWith(options);
         options.querySelector('button')?.focus();
       });
+      // The files in it, each with a choice of its own - for the rare one
+      // that does not belong with the rest.
+      if (part.count > 1 || !part.group.startsWith('file:')) {
+        const [peek, names] = fileChoices(files.filter((p) => groupOf(p) === part.group), review, done);
+        li.append(peek, names);
+      }
       list.append(li);
     }
     // Copies already there (checkTaken) said as such; anything else skipped
@@ -3978,6 +3994,20 @@ function reviewPlan(files, review) {
         back.addEventListener('click', () => { excluded.delete(g); done(asked.has(g) ? { replan: true } : { redraw: true }); });
         const n = files.filter((p) => groupOf(p) === g).length;
         ul.append(intakeLine(partLabel(g), `${n} file${n === 1 ? '' : 's'} left out`, back));
+      }
+      host.append(ul);
+    }
+    if (review.skipFiles.size) {
+      if (!left.length) host.append(intakeHeading('Not adding'));
+      const ul = document.createElement('ul');
+      ul.className = 'intake-parts intake-left';
+      for (const path of review.skipFiles) {
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'ghost small';
+        back.textContent = 'Add back';
+        back.addEventListener('click', () => { review.skipFiles.delete(path); done({ redraw: true }); });
+        ul.append(intakeLine(path.split('/').pop(), 'left out', back));
       }
       host.append(ul);
     }
@@ -4125,24 +4155,7 @@ function askedBox(files, review, done) {
           setAsked(review, q.group, select.value);
           done({ replan: true });
         });
-        const peek = document.createElement('button');
-        peek.type = 'button';
-        peek.className = 'ghost small intake-peek';
-        peek.textContent = 'Files';
-        const names = document.createElement('ul');
-        names.className = 'intake-peek-list';
-        names.hidden = true;
-        for (const p of its.slice(0, 200)) {
-          const f = document.createElement('li');
-          f.textContent = p.path.split('/').slice(-2).join('/');
-          names.append(f);
-        }
-        if (its.length > 200) {
-          const more = document.createElement('li');
-          more.textContent = `\u2026and ${its.length - 200} more`;
-          names.append(more);
-        }
-        peek.addEventListener('click', () => { names.hidden = !names.hidden; });
+        const [peek, names] = fileChoices(its, review, done);
         // A question about one folder has its choice above: here only its files.
         if (qs.length === 1) li.append(peek, names);
         else li.append(name, select, peek, names);
@@ -4155,6 +4168,75 @@ function askedBox(files, review, done) {
   }
   return box;
 }
+// fileChoices is a part's Files button and its list: every file, each with
+// a choice of its own - with the folder (the usual), another shelf, or left
+// out. A file given another shelf leaves the folder (its companions with
+// it: library.Plan) and shows as its own line, with a way back.
+function fileChoices(its, review, done) {
+  const peek = document.createElement('button');
+  peek.type = 'button';
+  peek.className = 'ghost small intake-peek';
+  peek.textContent = `Files (${its.length})`;
+  const names = document.createElement('ul');
+  names.className = 'intake-peek-list';
+  names.hidden = !its.some((p) => review.peeked && review.peeked.has(p.group || p.path));
+  for (const p of its.slice(0, 200)) {
+    const f = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = p.path.split('/').slice(-2).join('/');
+    name.title = p.path;
+    f.append(name);
+    if (!p.skipped || review.skipFiles.has(p.path)) {
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', `Where ${p.path.split('/').pop()} goes`);
+      const add = (value, label) => {
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = label;
+        select.append(o);
+      };
+      add('', 'With the folder');
+      for (const kind of shelvesAllowed()) add(kind, shelfName(kind));
+      add('skip', "Don't add");
+      select.value = review.skipFiles.has(p.path) ? 'skip' : review.choices['file:' + p.path] || '';
+      select.addEventListener('change', () => {
+        review.peeked = review.peeked || new Set();
+        review.peeked.add(p.group || p.path);
+        const key = 'file:' + p.path;
+        if (select.value === 'skip') {
+          review.skipFiles.add(p.path);
+          done({ redraw: true });
+          return;
+        }
+        review.skipFiles.delete(p.path);
+        if (select.value) review.choices[key] = select.value;
+        else delete review.choices[key];
+        done({ replan: true });
+      });
+      f.append(select);
+    } else {
+      const why = document.createElement('span');
+      why.className = 'muted';
+      why.textContent = p.reason || 'skipped';
+      f.append(why);
+    }
+    names.append(f);
+  }
+  if (its.length > 200) {
+    const more = document.createElement('li');
+    more.textContent = `\u2026and ${its.length - 200} more`;
+    names.append(more);
+  }
+  peek.addEventListener('click', () => {
+    names.hidden = !names.hidden;
+    review.peeked = review.peeked || new Set();
+    const g = its[0] && (its[0].group || its[0].path);
+    if (names.hidden) review.peeked.delete(g);
+    else review.peeked.add(g);
+  });
+  return [peek, names];
+}
+
 // setAsked records one answer: a shelf, left out, or not chosen yet.
 function setAsked(review, group, value) {
   if (value === 'skip') {

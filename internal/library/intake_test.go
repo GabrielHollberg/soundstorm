@@ -716,3 +716,32 @@ func TestASkippedFileSaysWhyItWasSkipped(t *testing.T) {
 		}
 	}
 }
+
+// One file given its own shelf leaves its folder's part, and its companions
+// go with it: a video found in an album folder, sent to the films with its
+// subtitles, while the songs stay music.
+func TestOneFileCanGoItsOwnWay(t *testing.T) {
+	lib := newLibrary(t)
+	paths := []string{
+		"Band - Album/01 First.flac",
+		"Band - Album/02 Second.flac",
+		"Band - Album/Concert.mp4",
+		"Band - Album/Concert.en.srt",
+		"Band - Album/cover.jpg",
+	}
+	placed, _ := lib.Plan(paths, map[string]media.Kind{FileChoice("Band - Album/Concert.mp4"): media.KindVideo})
+	byPath := map[string]Placement{}
+	for _, p := range placed {
+		byPath[p.Path] = p
+	}
+	for _, p := range []string{"Band - Album/Concert.mp4", "Band - Album/Concert.en.srt"} {
+		if got := byPath[p]; got.Kind != media.KindVideo || got.Group != FileChoice("Band - Album/Concert.mp4") {
+			t.Errorf("%s should go to the films with the video: %+v", p, got)
+		}
+	}
+	for _, p := range []string{"Band - Album/01 First.flac", "Band - Album/cover.jpg"} {
+		if got := byPath[p]; got.Kind != media.KindMusic {
+			t.Errorf("%s should stay with the album: %+v", p, got)
+		}
+	}
+}

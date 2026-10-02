@@ -513,6 +513,16 @@ every question is answered. Checked in Chrome with a mixed folder: three MP3
 folders set to audiobooks, then one changed to music and one left out, a
 folder of videos to TV - exactly those were sent.
 
+**And a single file can go its own way** (the owner's safety net, for the
+rare file that does not belong with its folder): every part's **Files** list
+gives each file a choice - with the folder (the usual), another shelf, or
+Don't add. A file given another shelf (`library.FileChoice(path)` as the
+plan's choice key) leaves its part with its companions - a film's subtitles,
+a book's PDF, by name in the same folder - and shows as its own line, whose
+Change offers **Back with its folder**. Checked in Chrome: a concert video
+in an album folder sent to Films took its subtitles, the album stayed
+music, back with its folder rejoined it, and a song left out was not sent.
+
 **When it cannot tell, it asks.** One drop zone, no shelf targets: guessing
 wrong costs somebody moving files on disk, so the bar for guessing is "there is
 real evidence", not "one of them is more likely". A question is asked per
