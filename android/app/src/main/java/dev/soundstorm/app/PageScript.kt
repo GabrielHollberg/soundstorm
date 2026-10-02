@@ -39,6 +39,9 @@ object PageScript {
   // What the native player saw, for a playback report, answered through
   // window.__soundstormPlayerLog (PlayerLog).
   window.soundstormApp.playerLog = () => post({ type: 'playerLog' });
+  // Scanning a TV's sign-in QR code with the phone's camera, in the app: the
+  // code comes back to window.__soundstormLink (MainActivity.scanTvCode).
+  window.soundstormApp.scanCode = /SoundStormTV/.test(navigator.userAgent) ? undefined : () => post({ type: 'scanCode' });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };

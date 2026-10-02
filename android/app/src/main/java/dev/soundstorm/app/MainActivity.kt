@@ -509,6 +509,41 @@ class MainActivity : Activity() {
         load()
     }
 
+    /**
+     * Scans a TV's sign-in QR code with Google's own scanner (Play services:
+     * its screen, no camera permission for the app), and hands the code to
+     * the page, which asks "Sign in a TV?". The QR holds the TV's address
+     * with ?link=<code>; a code alone, or a soundstorm://link, also does.
+     */
+    private fun scanTvCode() {
+        val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+            .build()
+        val tell = { what: String ->
+            webView?.evaluateJavascript("window.__soundstormScanned && window.__soundstormScanned(" + JSONObject.quote(what) + ")", null)
+        }
+        com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { barcode ->
+                val code = scannedCode(barcode.rawValue)
+                if (code == null) {
+                    tell("not-ours")
+                    return@addOnSuccessListener
+                }
+                webView?.evaluateJavascript("window.__soundstormLink && window.__soundstormLink(" + JSONObject.quote(code) + ")", null)
+            }
+            .addOnFailureListener { tell("failed") }
+    }
+
+    private fun scannedCode(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val uri = runCatching { Uri.parse(raw.trim()) }.getOrNull()
+        val fromLink = uri?.let { u ->
+            if (u.isHierarchical) u.getQueryParameter("link") ?: u.getQueryParameter("code") else null
+        }
+        val code = (fromLink ?: raw).uppercase().filter { it.isLetterOrDigit() }
+        return code.takeIf { it.length == 6 && (fromLink != null || raw.trim().length <= 9) }
+    }
+
     /** A TV's sign-in code waiting for the page to load (soundstorm://link). */
     private var pendingLink: String? = null
 
@@ -601,6 +636,7 @@ class MainActivity : Activity() {
             "interrupted" -> MediaBridge.interruption(true)
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
+            "scanCode" -> scanTvCode()
             // A playback report: what the native player saw (PlayerLog).
             "playerLog" -> webView?.evaluateJavascript(
                 "window.__soundstormPlayerLog && window.__soundstormPlayerLog(" +

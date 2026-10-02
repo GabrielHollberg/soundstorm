@@ -11,8 +11,8 @@ android {
         applicationId = "dev.soundstorm.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.24"
+        versionCode = 25
+        versionName = "0.25"
     }
 
     buildTypes {
@@ -58,4 +58,8 @@ dependencies {
     // Phone photo backup (PhotoBackup): jobs Android runs when it suits -
     // on Wi-Fi, while charging - with the app closed.
     implementation("androidx.work:work-runtime-ktx:2.10.1")
+    // Scanning a TV's sign-in QR code from inside the app: Google's own
+    // scanner screen, from Play services - no camera permission, nothing of
+    // the camera's in the app.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

@@ -588,6 +588,16 @@ $('link-form').addEventListener('submit', async (event) => {
 // already open.
 // It says whether it took it: not signed in yet, the app loads the page with
 // the code in its address instead, asked once signed in.
+// Scanning the TV's code with the camera, in the Android app.
+if (window.soundstormApp && window.soundstormApp.scanCode && !TV) {
+  show($('link-scan'), true);
+  $('link-scan').addEventListener('click', () => window.soundstormApp.scanCode());
+}
+window.__soundstormScanned = (what) => {
+  showToast(what === 'not-ours'
+    ? "That is not a TV's sign-in code. Point the camera at the QR code on the TV."
+    : 'The scanner could not start. Type the code on the TV instead.');
+};
 window.__soundstormLink = (code) => {
   if (!state.me) return false;
   askLink(String(code));
