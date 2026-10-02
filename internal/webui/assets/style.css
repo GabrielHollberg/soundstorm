@@ -37,6 +37,10 @@
 }
 
 * { box-sizing: border-box; }
+/* No flash on a tap, anywhere (the owner's rule): Chrome and Android's web
+   view paint a translucent rectangle over whatever was tapped, square even
+   over something round. Each thing shows its own press instead. */
+*, *::before, *::after { -webkit-tap-highlight-color: transparent; }
 
 body {
   margin: 0;
@@ -181,7 +185,10 @@ header {
   border-bottom: 1px solid var(--border);
 }
 #search-form { flex: 1; }
-#search-input { max-width: 620px; }
+/* A block, so its row is exactly its height: inline, the line it sat on
+   added a few pixels under it, and the device button beside it (stretched
+   to the row) came out taller - "slightly off". */
+#search-input { max-width: 620px; display: block; width: 100%; }
 
 /* Filters --------------------------------------------------------------- */
 
