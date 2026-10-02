@@ -22,7 +22,7 @@ import (
 func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Items []libraryItemRef `json:"items"`
-		To    string    `json:"to"`
+		To    string           `json:"to"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxDeleteBody)).Decode(&req); err != nil || len(req.Items) == 0 {
 		writeError(w, http.StatusBadRequest, "expected a JSON body with the items to move and where to")
