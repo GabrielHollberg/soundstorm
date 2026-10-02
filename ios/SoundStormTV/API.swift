@@ -867,8 +867,16 @@ final class API {
     }
 
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let data = try await raw(request)
+        if data.isEmpty, let empty = EmptyAnswer() as? T { return empty }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// A request's answer as it came, its status checked as every request's
+    /// is. `timeout` is longer for the player's long poll (25 seconds).
+    private func raw(_ request: URLRequest, timeout: TimeInterval = 20) async throws -> Data {
         var request = request
-        request.timeoutInterval = 20
+        request.timeoutInterval = timeout
         let (data, response) = try await URLSession.shared.data(for: request)
         let http = response as? HTTPURLResponse
         let code = http?.statusCode ?? 0
@@ -882,8 +890,50 @@ final class API {
             if code == 403 && problem?.mustRenew == true { renewDemanded = true }
             throw Failure.status(code, problem?.error)
         }
-        if data.isEmpty, let empty = EmptyAnswer() as? T { return empty }
-        return try JSONDecoder().decode(T.self, from: data)
+        return data
+    }
+
+    // MARK: Played from a phone (the server's players.go)
+
+    /// This TV is a player: it may be chosen from a phone, and anybody in
+    /// the house may send something to it.
+    func playerHello(_ id: String, name: String) async throws {
+        struct Body: Encodable { let id: String; let name: String; let tv = true }
+        struct Answer: Decodable {}
+        let _: Answer = try await send("POST", "api/players/hello", Body(id: id, name: name))
+    }
+
+    /// The commands waiting for this TV, waiting up to 25 seconds for one.
+    func playerCommands(_ id: String) async throws -> [[String: Any]] {
+        let data = try await raw(URLRequest(url: url("api/players/" + Self.part(id) + "/next")), timeout: 40)
+        let answer = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return answer?["commands"] as? [[String: Any]] ?? []
+    }
+
+    /// What this TV is doing, for the phones controlling it.
+    func playerState(_ id: String, _ state: [String: Any]) async {
+        var request = URLRequest(url: url("api/players/" + Self.part(id) + "/state"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: state)
+        _ = try? await raw(request)
+    }
+
+    /// Taken over from somebody's phone: signed in as them with the code.
+    func playerSwitch(_ id: String, code: String) async throws {
+        struct Body: Encodable { let code: String; let id: String }
+        struct Answer: Decodable { let user: User? }
+        let a: Answer = try await send("POST", "api/players/switch", Body(code: code, id: id))
+        user = a.user
+        renewDemanded = false
+        sessionEnded = false
+    }
+
+    /// This TV's answer to somebody asking to take it over.
+    func answerTakeOver(_ id: String, ask: String, allow: Bool) async {
+        struct Body: Encodable { let allow: Bool }
+        struct Answer: Decodable {}
+        let _: Answer? = try? await send("POST", "api/players/" + Self.part(id) + "/ask/" + Self.part(ask), Body(allow: allow))
     }
 }
 

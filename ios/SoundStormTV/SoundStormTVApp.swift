@@ -292,6 +292,7 @@ struct RootView: View {
                 } else {
                     LibraryView()
                         .modifier(DeviceRequests())
+                        .modifier(RemoteControlled())
                         .environment(api)
                         .environment(player)
                 }

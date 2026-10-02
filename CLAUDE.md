@@ -108,11 +108,14 @@ is described in full in its own section below; tick them off here:
    `MainActivity.dispatchKeyEvent` does; on iPhone, observe the system volume.
 
 **Apple TV**
-1. **Controlled from a phone** - say hello, poll and obey `players.go`'s
-   commands as the page does (play, control incl. `rate` and `closephoto`,
-   volume, stop, claim, switch, ask); without it the device picker never
-   lists the Apple TV ("Playing on your phone, and controlling it" and "Then
-   one switch instead of Play on").
+1. ~~**Controlled from a phone**~~ - *done 2026-10-02* (`Remote.swift`,
+   `RemoteControlled`): hello as "Apple TV", the long poll, every command,
+   state every two seconds, the take-over question. Checked against a local
+   server with curl as the phones: listed as Mom's TV, play (a queue of two)
+   reported, next moved to the second, stop reported idle; Gabe sending
+   something asked on the TV, no answer in 15 seconds was a yes, and the TV
+   switched to Gabe with his song. Not checked: a real song playing (no
+   music server here) and a real phone's remote screen.
 2. **"Use your phone instead"** on Who's listening's PIN or password step.
 3. **Videos and Live photos** pills in Photos (`/api/photos/of?type=`).
 4. ~~The open bugs from both reviews~~ - *done 2026-10-02* (Apple TV and

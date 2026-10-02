@@ -188,7 +188,7 @@ final class Player {
         // Books are mastered loud and films keep dialogue quiet: at one volume
         // a book was far louder, so it plays 8dB down, as on the page
         // (bookGainDb).
-        player.volume = Float(pow(10, -8.0 / 20))
+        applyVolume()
         if let tracks = playback.tracks, tracks.count > 1 {
             files = tracks.compactMap { t in (try? api.absolute(t.url)).map { BookFile(url: $0, start: t.startSeconds) } }
         } else {
@@ -256,7 +256,7 @@ final class Player {
         files = []
         chapters = []
         player.defaultRate = 1
-        player.volume = 1
+        applyVolume()
         updateRemoteCommands()
     }
 
@@ -273,6 +273,22 @@ final class Player {
     // MARK: Control
 
     func togglePlay() { isPlaying ? pause() : resume() }
+
+    /// The volume a phone set, under the book's quieter level: books play
+    /// 8dB down, as mastered loud (bookGainDb on the page).
+    private(set) var userVolume: Float = 1
+
+    func setVolume(_ v: Float) {
+        userVolume = max(0, min(1, v))
+        applyVolume()
+    }
+
+    private func applyVolume() {
+        player.volume = (isBook ? Float(pow(10, -8.0 / 20)) : 1) * userVolume
+    }
+
+    /// For the phone's remote: what plays, and where in it.
+    var queuePosition: (index: Int, length: Int)? { isBook || queue.isEmpty ? nil : (index, queue.count) }
 
     func resume() {
         guard current != nil else { return }
@@ -355,7 +371,7 @@ final class Player {
             files = []
             chapters = []
             player.defaultRate = 1
-            player.volume = 1
+            applyVolume()
             updateRemoteCommands()
         }
         stop()
