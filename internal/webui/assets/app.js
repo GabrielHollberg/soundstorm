@@ -579,6 +579,24 @@ $('link-form').addEventListener('submit', async (event) => {
   if (await askLink($('link-code').value)) $('link-code').value = '';
 });
 // Scanned: asked once signed in here, and the code taken out of the address.
+// The Android app hands a TV's code from a soundstorm:// link to the page
+// already open.
+window.__soundstormLink = (code) => { if (state.me) askLink(String(code)); };
+
+// In a phone's browser, the camera's way in: the app is where this person is
+// signed in, so it is offered (Android; the iPhone app needs the link type
+// first). Not installed, the browser simply stays here.
+if (linkFromAddress && /Android/i.test(navigator.userAgent) && !window.soundstormApp) {
+  const code = linkFromAddress.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const link = `intent://link?server=${encodeURIComponent(location.origin)}&code=${code}`
+    + `#Intent;scheme=soundstorm;package=dev.soundstorm.app;S.browser_fallback_url=${encodeURIComponent(location.href)};end`;
+  const bar = document.createElement('a');
+  bar.className = 'open-in-app';
+  bar.href = link;
+  bar.textContent = 'Open in the SoundStorm app';
+  document.body.append(bar);
+}
+
 function askLinkFromAddress() {
   if (!linkFromAddress) return;
   const params = new URLSearchParams(location.search);

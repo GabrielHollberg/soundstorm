@@ -52,6 +52,16 @@
                 <!-- The TV's own row of apps. -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- soundstorm://link?server=<origin>&code=<TV's code>: a TV's
+                 sign-in code, opened in the app rather than the browser
+                 (the page offers it, as a camera opens the QR's web address
+                 in the browser). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="soundstorm" android:host="link" />
+            </intent-filter>
         </activity>
 
         <!-- Songs from the server, played by Android's own media player

@@ -6050,6 +6050,24 @@ iPhone's camera opens the address in Safari, not the app, so it is allowed
 there (signing in to Safari first if need be); typing the code in the app's
 Settings avoids that.
 
+**A TV's QR code opened the website, not the app** (the owner's report): a
+camera opens a web address in the browser, which is usually not signed in.
+Android App Links cannot help - each install has its own name, and verifying
+`*.home.soundstorm.dev` would ask the zone's apex. So the Android app (0.22)
+takes `soundstorm://link?server=<origin>&code=<code>` (an intent filter on
+MainActivity; `tvLink`): only a server it already knows - by origin, by the
+install's id in a soundstorm.dev name, or the secure name it moved to - else
+its own, where a strange code finds no TV; the page already open is handed
+the code (`window.__soundstormLink`), or the server's page loaded with
+`?link=`. And the page, opened by a QR in an Android phone's browser, offers
+**Open in the SoundStorm app** (an `intent://` link with the browser as the
+fallback, so without the app nothing changes). Checked: the link opens the
+app on the emulator, and the button shows in an Android browser.
+**For the Mac:** the iPhone app wants the same - `soundstorm` in
+CFBundleURLTypes, the same `link?server=&code=` handled (known servers
+only), and the page then offering the button on an iPhone too (it shows on
+Android only now; `/iPhone/` would be added once the app takes the link).
+
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several
 servers (their own, their parents'), and later several people on each. The

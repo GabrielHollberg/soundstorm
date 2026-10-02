@@ -2352,6 +2352,13 @@ body.photo-open { overflow: hidden; }
   background: var(--accent); color: #fff; font: inherit; font-size: 12px; font-weight: 700;
   white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis;
 }
+/* A TV's code opened in a phone's browser: the app is offered. */
+.open-in-app {
+  position: fixed; left: 50%; top: calc(var(--safe-top, 0px) + 10px); transform: translateX(-50%);
+  z-index: 95; padding: 12px 18px; border-radius: 999px;
+  background: var(--accent); color: #fff; font-weight: 700; text-decoration: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); white-space: nowrap;
+}
 .pv-count { font-size: 14px; font-weight: 600; color: rgba(255, 255, 255, 0.8); font-variant-numeric: tabular-nums; }
 .pv-top .np-icon { color: #fff; display: grid; place-items: center; }
 .pv-bottom {

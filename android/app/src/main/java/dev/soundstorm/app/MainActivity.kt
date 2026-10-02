@@ -134,7 +134,12 @@ class MainActivity : Activity() {
         // could have pointed SoundStorm at its own server - found by a
         // security review.)
         val saved = ServerAddress.saved(this)
-        if (saved != null) showWeb(saved) else showConnect(null)
+        // Opened from a TV's sign-in code: the server's page asks "Sign in a
+        // TV?" for it.
+        val link = tvLink(intent)
+        if (link != null) pendingLink = link.second
+        val start = link?.first ?: saved
+        if (start != null) showWeb(start) else showConnect(null)
         // Photo backup's jobs, if it is on: kept up to date with its options.
         if (!isTv) PhotoBackup.schedule(applicationContext)
     }
@@ -504,10 +509,56 @@ class MainActivity : Activity() {
         load()
     }
 
+    /** A TV's sign-in code waiting for the page to load (soundstorm://link). */
+    private var pendingLink: String? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val link = tvLink(intent) ?: return
+        val view = webView
+        if (view != null && server?.let(ServerAddress::origin) == ServerAddress.origin(link.first)) {
+            // The page is there: it asks at once, nothing reloaded (music
+            // playing in it carries on).
+            view.evaluateJavascript("window.__soundstormLink && window.__soundstormLink(" + JSONObject.quote(link.second) + ")", null)
+        } else {
+            pendingLink = link.second
+            showWeb(link.first)
+        }
+    }
+
+    /**
+     * A soundstorm://link?server=&code= link: the server it is for and the
+     * code. Only a server this app already knows - its saved ones, or the
+     * install's secure name it moved to - is opened: a link must never point
+     * the app somewhere new. Unknown, the app's own server is used, where a
+     * code from elsewhere simply finds no TV.
+     */
+    private fun tvLink(intent: Intent?): Pair<Uri, String>? {
+        val data = intent?.data ?: return null
+        if (data.scheme != "soundstorm" || data.host != "link") return null
+        val code = (data.getQueryParameter("code") ?: return null).uppercase().filter { it.isLetterOrDigit() }
+        if (code.length != 6) return null
+        val wanted = data.getQueryParameter("server")?.let(ServerAddress::parse)
+        val known = ServerAddress.all(this).map { it.url } + listOfNotNull(ServerAddress.saved(this))
+        val installId = { u: Uri -> u.host?.substringBefore('.')?.takeIf { u.host?.endsWith(".soundstorm.dev") == true } }
+        val match = wanted?.let { w ->
+            known.firstOrNull { ServerAddress.origin(it) == ServerAddress.origin(w) }
+                ?: known.firstOrNull { installId(it) != null && installId(it) == installId(w) }
+                ?: ServerAddress.current?.let(ServerAddress::parse)?.takeIf { ServerAddress.origin(it) == ServerAddress.origin(w) }
+        }
+        val server = match ?: ServerAddress.saved(this) ?: return null
+        return server to code
+    }
+
     private fun load() {
         failure?.let { content.removeView(it) }
         failure = null
-        server?.let { webView?.loadUrl(it.toString()) }
+        server?.let { s ->
+            val code = pendingLink
+            pendingLink = null
+            webView?.loadUrl(if (code != null) s.buildUpon().appendQueryParameter("link", code).build().toString() else s.toString())
+        }
     }
 
     private fun tearDownWeb(keepMusic: Boolean = false) {
