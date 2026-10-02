@@ -1674,6 +1674,12 @@ the finger lifted and the next report pulled the slider back: now sent as
 it slides (every 200 ms) and left alone for 2.5 s after a touch. The sheet
 is capped at the screen's height with a smaller cover; checked at 360x640
 with everything showing, the TV's level following the slider to 0.3.
+**And a Play on button on the playing screens** (the owner's asking):
+Now Playing's top bar has `#np-cast` (a cast icon), which a phone keeps
+invisible until a hold like the rest of that bar, so it shows and is chosen
+with them (`holdButtonList`); the film player has a visible "Play on..."
+beside its pickers (`#video-cast`), which saves the film's place first and
+closes it here once sent. Neither on a TV, offline, or for a downloaded film.
 Not built: typing on the TV from the phone; the Apple
 TV's half (for the Mac: it would say hello, poll and obey the same
 commands).

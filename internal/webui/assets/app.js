@@ -2712,6 +2712,7 @@ async function playVideo(item, options = {}) {
     .filter(Boolean)
     .join(' — ');
   show($('video-overlay'), true);
+  show($('video-cast'), !TV && !state.offline && !isDownloaded(item));
 
   // Downloaded: from the device, connection or not - a kept copy, with no
   // quality to choose.
@@ -4611,6 +4612,7 @@ const ICONS = {
   album: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/>',
   upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   move: '<path d="M4 7h6l2 2h8v9H4zM12 13.5h5M15 11l2.5 2.5L15 16"/>',
+  cast: '<path d="M3 17.5a3.5 3.5 0 0 1 3.5 3.5M3 13.5A7.5 7.5 0 0 1 10.5 21M3 9.5A11.5 11.5 0 0 1 14.5 21M7 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/>',
   radio: '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke-width="2.2"/>',
 };
 
@@ -7132,6 +7134,7 @@ function renderNowPlaying() {
   const item = audio.item;
   show($('np-speed-wrap'), item.kind === 'audiobook');
   show($('np-looks-btn'), item.kind === 'music');
+  show($('np-cast'), !TV && !state.offline);
   // An audiobook keeps the plain player it had before the looks: its buttons
   // and timeline showing, its cover, no visualizer. Everything that hides
   // until a hold is for music (np-music).
@@ -7304,6 +7307,25 @@ $('audio-meta').addEventListener('keydown', (event) => {
 $('np-close').addEventListener('click', closeNowPlaying);
 setIcon($('np-exit'), 'close');
 setIcon($('np-looks-btn'), 'sparkle');
+setIcon($('np-cast'), 'cast');
+// Play on another device, from Now Playing and the film player: the device
+// list beside the button, and what is playing here moves there.
+function openPlayOn(item, anchor, opts) {
+  if (!item) return;
+  state.menuFor = item;
+  state.menuAnchor = anchor;
+  state.menuOpts = { nowPlaying: true };
+  renderPlayOnMenu(item, opts);
+  placeMenu($('item-menu'), anchor);
+}
+$('np-cast').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openPlayOn(audio.item, $('np-cast'), { moving: true });
+});
+$('video-cast').addEventListener('click', (event) => {
+  event.stopPropagation();
+  openPlayOn(state.watching && state.watching.item, $('video-cast'), { video: true });
+});
 
 // The Looks sheet: every look, grouped, picked right in Now Playing. Choosing
 // one closes it; so does a tap anywhere else. Its taps and scrolls are its
@@ -13310,6 +13332,7 @@ function holdButtonList() {
     { id: 'np-close', label: 'Close Now Playing' },
     { id: 'np-chapters-btn', label: 'Chapters', icon: 'queue' },
     { id: 'np-speed', label: 'Playback speed' },
+    { id: 'np-cast', label: 'Play on another device', icon: 'cast' },
     { id: 'np-looks-btn', label: 'Cover looks' },
     { id: 'np-exit', label: 'Stop and close' },
     { id: 'np-prev', label: book ? 'Back 30 seconds' : 'Previous' },
@@ -17476,8 +17499,11 @@ async function renderPlayOnMenu(item, opts = {}) {
       // A book's place, and a film's, is kept on the server: saved here
       // first, so the TV carries on from it.
       if (opts.moving) savePosition();
+      if (opts.video) saveWatchPosition(true);
       await sendPlayOn(p, cmd, note, () => {
         if (opts.moving) stopAudio();
+        // A film's place is saved as it closes, and the TV carries on from it.
+        if (opts.video) closeVideo();
       });
     }, { detail });
   });

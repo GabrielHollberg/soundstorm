@@ -757,6 +757,7 @@
       <video id="video-player" controls playsinline></video>
       <figcaption>
         <span id="video-caption"></span>
+        <button id="video-cast" class="ghost small hidden" type="button">Play on&hellip;</button>
         <!-- An explicit picker rather than relying on the browser's own CC
              button, which is placed differently in every browser and hidden
              behind a menu in some. -->
@@ -963,6 +964,10 @@
              goes too. The arrow on the left only puts Now Playing away. -->
         <!-- The cover's looks, picked right here: the cover, a disc, a record,
              the visualizers and the full-screen ones. -->
+        <!-- Play on another device: on a phone, invisible until a hold, like
+             the rest of this bar (players.go). -->
+        <button id="np-cast" class="np-icon" type="button" aria-label="Play on another device"
+                title="Play on another device"></button>
         <button id="np-looks-btn" class="np-icon" type="button" aria-label="Cover looks"
                 aria-haspopup="dialog" title="Cover looks"></button>
         <button id="np-exit" class="np-icon" type="button" aria-label="Stop and close the player"
