@@ -63,6 +63,9 @@ object NativeAudio {
         player?.removeListener(listener)
         player = null
         main.removeCallbacks(tick)
+        // The page is told the player is gone, so it does not show a song
+        // playing in silence; the next play starts the service again.
+        send(state())
     }
 
     /** The player's side of a playback report (PlayerLog). */
@@ -90,6 +93,7 @@ object NativeAudio {
             // Refused from the background (Android 8 and later); kept, and
             // tried again with the next message rather than crashing.
             runCatching { context.startService(Intent(context, AudioService::class.java)) }
+                .onFailure { PlayerLog.add("service start refused: ${it.javaClass.simpleName}") }
             return
         }
         run(message)

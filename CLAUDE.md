@@ -4357,6 +4357,19 @@ checked before changing. Fixed on the PC:
   that one audio track, which a skip replaces; a report from 0.20/0.21 will
   show which. Dragging the timeline within the song when it happens is a
   cheap test (a seek also replaces the track).
+  **The first report found it** (2026-10-02, 0.28): a song moved on to the
+  next by itself, and 67 seconds later the system stopped seeing the app
+  play; the report showed `player=none` - the playing service destroyed,
+  the page still alive. That is Android stopping a background service about
+  a minute after the app leaves the screen, so the service was not in the
+  foreground then, and with it gone the next song could not start either
+  (the owner: "when the song ends nothing happens"). `AudioService` now asks
+  for the foreground whenever a song is meant to play (`onUpdateNotification`
+  with playWhenReady, buffering the next song included), not only when
+  Media3 asks, and the log records the foreground changing, the service made
+  and destroyed, a start refused, and the app coming and going. A destroyed
+  player now tells the page it is idle, rather than the page's clock running
+  on in silence. Not checked on a phone: the test server has no music.
 - Docs: README, docs/ and site/ brought up to date (profiles, approval, TV
   sign-in, saved servers, iPhone backup, streaming quality).
 

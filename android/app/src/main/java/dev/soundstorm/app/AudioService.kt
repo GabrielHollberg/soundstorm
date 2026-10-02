@@ -38,6 +38,7 @@ class AudioService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        PlayerLog.add("service created")
         // The songs are the server's, behind the page's sign-in: every request
         // carries the web view's own cookies for that address.
         // WebCookies gives each request its own address's cookies, a redirect
@@ -113,6 +114,35 @@ class AudioService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
+    /**
+     * In the foreground for as long as a song is meant to play. Reported as
+     * the sound stopping a minute after a song changed by itself, the screen
+     * off: the playback report showed this service destroyed 67 seconds after
+     * the change, with the page still alive - what Android does to an app's
+     * background service about a minute after it leaves the screen. Media3
+     * alone had let it drop out of the foreground at some point, and a service
+     * out of it cannot come back from the background. So playing - or meaning
+     * to, buffering the next song included - always asks for the foreground.
+     */
+    private var foregroundLogged: Boolean? = null
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val p = session.player
+        val meant = p.playWhenReady && p.mediaItemCount > 0 && p.playbackState != Player.STATE_ENDED &&
+            p.playbackState != Player.STATE_IDLE
+        val keep = startInForegroundRequired || meant
+        if (keep != foregroundLogged) {
+            foregroundLogged = keep
+            PlayerLog.add("service foreground=$keep (media3 asked $startInForegroundRequired)")
+        }
+        try {
+            super.onUpdateNotification(session, keep)
+        } catch (e: RuntimeException) {
+            // Android refuses the foreground from the background (12 and later).
+            PlayerLog.add("service foreground refused: ${e.javaClass.simpleName}")
+        }
+    }
+
     private companion object {
         val CONTROLLERS = setOf(
             "com.android.systemui", "com.android.bluetooth",
@@ -131,6 +161,8 @@ class AudioService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        val p = session?.player
+        PlayerLog.add("service destroyed (playWhenReady=${p?.playWhenReady} state=${p?.playbackState})")
         NativeAudio.detach()
         session?.run {
             player.release()

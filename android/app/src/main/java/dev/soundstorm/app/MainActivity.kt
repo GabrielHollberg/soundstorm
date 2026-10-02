@@ -198,6 +198,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        PlayerLog.add("app in front")
         resumed = true
         hideBars()
         // The page Android ended while the app was in the background, made
@@ -213,6 +214,7 @@ class MainActivity : Activity() {
     // open asked for the password again (the owner's report). Written the
     // moment the app is left.
     override fun onPause() {
+        PlayerLog.add("app left")
         resumed = false
         CookieManager.getInstance().flush()
         super.onPause()
