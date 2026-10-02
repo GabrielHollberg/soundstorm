@@ -4370,6 +4370,15 @@ checked before changing. Fixed on the PC:
   and destroyed, a start refused, and the app coming and going. A destroyed
   player now tells the page it is idle, rather than the page's clock running
   on in silence. Not checked on a phone: the test server has no music.
+  **And the second report found why** (0.29): "app left" at 12:07:47 and
+  "service destroyed" at 12:08:47, mid-song and playing, with no "service
+  foreground" line at all - the foreground override was never called. Media3
+  adds a session to its service, and so manages its notification and the
+  foreground, only when a controller connects (`onGetSession`), and nothing in
+  this app connects one: the page drives the player directly (NativeAudio).
+  So the service had never been in the foreground since songs went native,
+  and Android ended it a minute after the app was left, whenever that was.
+  `AudioService.onCreate` now calls `addSession`. Not checked on a phone.
 - Docs: README, docs/ and site/ brought up to date (profiles, approval, TV
   sign-in, saved servers, iPhone backup, streaming quality).
 

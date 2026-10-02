@@ -110,6 +110,14 @@ class AudioService : MediaSessionService() {
         setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this).build().apply {
             setSmallIcon(R.drawable.ic_stat_soundstorm)
         })
+        // The session joins the service now, not when a controller first
+        // connects: Media3 adds it only on onGetSession, and nothing in this
+        // app connects one - the page talks to the player directly
+        // (NativeAudio). Unadded, the service never posted its notification
+        // nor went into the foreground, and Android ended it a minute after
+        // the app was left, mid-song (the second playback report: "app left"
+        // 12:07:47, "service destroyed" 12:08:47, while playing).
+        session?.let { addSession(it) }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
