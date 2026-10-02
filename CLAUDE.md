@@ -6069,7 +6069,13 @@ the code went nowhere. The page now says whether it took the code
 not signed in - the app loads it again with `?link=`. Checked on the
 emulator end to end: signed in to a throwaway server, a TV (Chrome) showing a
 code, the link fired at the open app - "Sign in a TV?" with that code, Allow,
-and the TV signed in.
+and the TV signed in. **And then it still did not ask** (0.24): the server's log showed the TV
+polling and the phone never looking the code up. The app reloaded the page
+with `?link=`, the page moved itself to the install's secure name, and the
+app, following that move, reopened the name's root - without the code. The
+move now carries `link` across (`pendingLink`, in `shouldOverrideUrlLoading`).
+Not reproducible on the emulator (it needs a signed-in app on the real
+server's home address); the same address path checked in a browser.
 **For the Mac:** the iPhone app wants the same - `soundstorm` in
 CFBundleURLTypes, the same `link?server=&code=` handled (known servers
 only), and the page then offering the button on an iPhone too (it shows on

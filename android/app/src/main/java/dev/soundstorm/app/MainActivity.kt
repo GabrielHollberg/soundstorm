@@ -753,6 +753,11 @@ class MainActivity : Activity() {
             if (request.isForMainFrame && isOwnSecureName(url)) {
                 val target = ServerAddress.parse(url.toString())
                 val current = server
+                // A TV's code rides along: the page is reopened at the name's
+                // root, which dropped it, so "Sign in a TV?" never came (the
+                // owner's report).
+                url.getQueryParameter("link")?.uppercase()?.filter { it.isLetterOrDigit() }
+                    ?.takeIf { it.length == 6 }?.let { pendingLink = it }
                 if (target != null && current != null && !(current.host ?: "").endsWith(".soundstorm.dev")) {
                     // From a plain address the name cannot be told apart from
                     // another install's by its text, and the page that asked
