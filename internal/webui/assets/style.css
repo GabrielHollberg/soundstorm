@@ -158,6 +158,11 @@ button {
   border-color: transparent;
 }
 button:hover { filter: brightness(1.08); }
+/* Pressed: a gentle dim while the finger or mouse is down, on every button -
+   in place of the browser's tap rectangle, which is switched off. Cards keep
+   their own press (the cover settling). */
+button:not(:disabled):not(.item):active { opacity: 0.65; }
+.ctl-btn:active { transform: scale(0.94); }
 button:disabled { opacity: 0.55; cursor: default; filter: none; }
 #gate-submit { margin-top: 16px; }
 
@@ -3927,6 +3932,7 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
   height: 38px; min-width: 38px; padding: 0 9px; border-radius: 999px;
   background: none; border: 1px solid var(--border); color: var(--text); font: inherit;
   font-size: 13px; font-weight: 700;
+  transition: transform 0.1s ease-out, opacity 0.1s ease-out;
 }
 .ctl-btn.hidden { display: none; }
 .ctl-btn .icon { width: 20px; height: 20px; }
