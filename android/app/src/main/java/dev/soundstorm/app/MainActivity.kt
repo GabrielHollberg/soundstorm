@@ -221,6 +221,31 @@ class MainActivity : Activity() {
     private var resumed = false
     private var pageLost = false
 
+    /**
+     * True while the page controls a TV (Play on): the volume buttons then
+     * turn the TV's volume, not the phone's - the page sends it and shows the
+     * level. Only while the app is in front; with the screen off or another
+     * app open they are the phone's as always.
+     */
+    private var remoteVolume = false
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val dir = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> 1
+            KeyEvent.KEYCODE_VOLUME_DOWN -> -1
+            else -> 0
+        }
+        val view = webView
+        if (dir != 0 && remoteVolume && view != null) {
+            // Held down, the button repeats: each repeat is a step.
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                view.evaluateJavascript("window.__soundstormVolumeKey && window.__soundstormVolumeKey($dir)", null)
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onDestroy() {
         webView?.let {
             MediaBridge.detach(it)
@@ -645,6 +670,7 @@ class MainActivity : Activity() {
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
             "scanCode" -> scanTvCode()
+            "remoteVolume" -> remoteVolume = message.optBoolean("on")
             // A playback report: what the native player saw (PlayerLog).
             "playerLog" -> webView?.evaluateJavascript(
                 "window.__soundstormPlayerLog && window.__soundstormPlayerLog(" +
@@ -867,6 +893,8 @@ class MainActivity : Activity() {
         // starting in the app's own window is stopped, and the server shown
         // again (a security review).
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            // A new page controls nothing until it says so.
+            remoteVolume = false
             val u = url?.let { runCatching { Uri.parse(it) }.getOrNull() }
             if (u == null || url == "about:blank" || isServer(u)) return
             view.stopLoading()

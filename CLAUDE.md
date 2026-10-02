@@ -1709,6 +1709,25 @@ to play (two browsers): Now Playing opened with the label, its clock followed,
 pause, seek, play and previous reached the TV, and the TV moving on by itself
 was followed with no command sent. Not checked: inside the Android app, where
 the layer sits over PageScript's stand-in.
+**Then audiobooks, and the phone's volume buttons** (2026-10-02, the owner's
+asking). A book sent to a TV gets the same treatment: the element stands for
+the file of the book the TV is in, so the book's own player - chapters, the
+thirty-second jumps, the chapter timeline, swipes - works unchanged; a place
+is sent as the time in the whole book (what the TV's `goToBook` takes), the
+phone follows the TV into another file without telling it (`raPoll`), a
+book's speed is sent (`control` `rate`; the TV reports its `rate` so the
+clock runs at it), and the phone saves no place while mirroring - the TV
+does. A book sent from its card does not seek until the TV has said where it
+picked up (`RA.known`), or the phone's own resume would pull it back. In the
+Android app (0.27) the volume buttons turn the TV's volume while the phone
+controls it - mirrored or the compact remote - 5% a press, with the level
+shown at the top (`__soundstormVolumeKey`, `remoteVolume`,
+`MainActivity.dispatchKeyEvent`); only while the app is in front, and never
+in a browser, which cannot hear the buttons. Checked with a TV pretending to
+play a three-file book: skips arrived as 104 and 134 seconds (120 first, the
+next file's start), the phone followed the TV back into the first file,
+1.5x went across, and two presses took the TV to 90%. Not checked: on a real
+phone and TV.
 Not built: typing on the TV from the phone; the Apple
 TV's half (for the Mac: it would say hello, poll and obey the same
 commands).

@@ -3353,6 +3353,8 @@ window.soundstormListening = (sourceId, id) =>
 // most important one of the session and exactly the one a normal fetch drops.
 function savePosition(options = {}) {
   if (!audio.resumable || !audio.item || !audio.started) return;
+  // Playing on a TV: the TV keeps the place.
+  if (RA.on) return;
 
   const seconds = elapsed();
   if (!Number.isFinite(seconds)) return;
@@ -17318,12 +17320,27 @@ window.addEventListener('resize', () => {
 // and the phone streams nothing. Music only: an audiobook's clock spans its
 // files, and films and photos have the compact remote.
 const raKey = (it) => (it ? `${it.sourceId}/${it.id}` : '');
-function raTime() {
+const raBook = () => Boolean(audio.item && audio.item.kind === 'audiobook');
+// Where the TV is on the whole item's timeline (a book's, across its files).
+function raBookTime() {
   if (RA.seekTo !== null && Date.now() - RA.seekAt < 3000) return RA.seekTo;
   const st = RA.st;
   const age = Math.max(0, Math.min(5000, Date.now() - RA.stAt));
-  const t = (st.position || 0) + (st.playing ? age / 1000 : 0);
+  const t = (st.position || 0) + (st.playing ? (age / 1000) * (Number(st.rate) || 1) : 0);
   return st.duration ? Math.min(t, st.duration) : t;
+}
+// A book's file playing here starts where it does in the book: the element
+// stands for that one file, as it does when the book plays on the phone.
+const raTrackStart = () => (raBook() && audio.tracks.length > 1 ? (audio.tracks[audio.index].startSeconds || 0) : 0);
+function raTime() {
+  return Math.max(0, raBookTime() - raTrackStart());
+}
+function raDuration() {
+  if (raBook()) {
+    if (audio.tracks.length > 1) return audio.tracks[audio.index].durationSeconds || NaN;
+    return RA.st.duration || audio.duration || NaN;
+  }
+  return RA.st.duration ? RA.st.duration : NaN;
 }
 function raSend(cmd) {
   if (!RA.target) return;
@@ -17359,24 +17376,34 @@ function raSend(cmd) {
   prop('src', () => RA.src, (v) => raLoad(String(v)));
   prop('currentSrc', () => RA.src);
   prop('currentTime', raTime, (v) => {
-    const t = Math.max(0, Number(v) || 0);
+    if (!Number.isFinite(Number(v))) return;
+    // A book is sent its place in the whole book, which is what the TV's
+    // book player goes to - and only once the TV's place is known, or the
+    // phone's own resume would pull a book playing on the TV back.
+    if (raBook() && !RA.known) return;
+    const t = Math.max(0, Number(v)) + raTrackStart();
     RA.seekTo = t;
     RA.seekAt = Date.now();
     raSend({ type: 'control', action: 'seek', value: t });
     fire('seeking');
     setTimeout(() => { fire('seeked'); fire('timeupdate'); }, 0);
   });
-  prop('duration', () => (RA.st.duration ? RA.st.duration : NaN));
+  prop('duration', raDuration);
   prop('paused', () => !RA.pwr);
   prop('ended', () => false);
   prop('readyState', () => 4);
   prop('networkState', () => 2);
-  prop('buffered', () => ranges(RA.st.duration || 0));
-  prop('seekable', () => ranges(RA.st.duration || 0));
+  prop('buffered', () => ranges(raDuration() || 0));
+  prop('seekable', () => ranges(raDuration() || 0));
   prop('error', () => null);
   // Leveling's volume is the TV's own business; kept here, not sent.
   prop('volume', () => RA.volume, (v) => { RA.volume = Number(v); fire('volumechange'); });
-  prop('playbackRate', () => RA.rate, (v) => { RA.rate = Number(v) || 1; });
+  // A book's speed is the TV's to play at: a change here is sent.
+  prop('playbackRate', () => RA.rate, (v) => {
+    const rate = Number(v) || 1;
+    if (rate !== RA.rate && raBook()) raSend({ type: 'control', action: 'rate', value: rate });
+    RA.rate = rate;
+  });
   prop('defaultPlaybackRate', () => RA.rate, () => {});
   method('play', () => {
     RA.pwr = true;
@@ -17420,6 +17447,16 @@ function raLoad(url) {
       RA.st = { ...RA.st, position: 0, playing: false, item: { sourceId: item.sourceId, id: item.id } };
       RA.stAt = Date.now();
     }
+  } else if (key && raBook() && RA.known && audio.tracks.length > 1) {
+    // Another file of the book chosen here (a chapter, a skip across files):
+    // the TV goes to where it starts, unless it is already in it. A place
+    // inside it follows as the page sets the time.
+    if (trackContaining(raBookTime()) !== audio.index) {
+      const t = audio.tracks[audio.index].startSeconds || 0;
+      RA.seekTo = t;
+      RA.seekAt = Date.now();
+      raSend({ type: 'control', action: 'seek', value: t });
+    }
   }
   RA.fire('emptied');
   RA.fire('loadstart');
@@ -17444,6 +17481,19 @@ async function raPoll() {
   RA.st = st;
   RA.stAt = Date.now() - Math.max(0, Math.min(5000, st.at ? Date.now() - st.at : 0));
   if (RA.seekTo !== null && Date.now() - RA.seekAt > 2500) RA.seekTo = null;
+  if (raKey(st.item) === RA.key) RA.known = true;
+  // A book the TV has played on into its next file (or was sent elsewhere
+  // in): this page follows, without telling the TV anything.
+  if (raBook() && raKey(st.item) === RA.key && audio.tracks.length > 1 && RA.seekTo === null) {
+    const at = trackContaining(raBookTime());
+    if (at !== audio.index) {
+      audio.index = at;
+      RA.src = audio.tracks[at].url;
+      renderTracks();
+      updateMediaSession();
+      RA.fire('durationchange');
+    }
+  }
   const tvKey = raKey(st.item);
   // The TV moved on to the next song by itself: here too.
   if (tvKey && tvKey !== RA.key) {
@@ -17479,7 +17529,14 @@ function enterMirror(target, cmd) {
   RA.on = true;
   RA.target = target;
   RA.key = raKey(cmd.item);
+  const moved = raKey(audio.item) === RA.key;
   RA.st = { playing: true, position: Number(cmd.at) || 0, item: { sourceId: cmd.item.sourceId, id: cmd.item.id } };
+  // A book moved from here carries on from where it was here; one sent from
+  // its card waits to hear where the TV picked it up.
+  if (moved && raBook()) RA.st.position = elapsed();
+  RA.known = moved || cmd.item.kind !== 'audiobook';
+  const realRate = RA.real.playbackRate && RA.real.playbackRate.get ? RA.real.playbackRate.get.call(el) : 1;
+  RA.rate = moved && raBook() ? realRate || 1 : 1;
   RA.stAt = Date.now();
   RA.pwr = true;
   RA.lastPlaying = false;
@@ -17487,7 +17544,7 @@ function enterMirror(target, cmd) {
   clearInterval(RA.ticker);
   RA.poll = setInterval(raPoll, 1000);
   RA.ticker = setInterval(() => { if (RA.on && RA.pwr) RA.fire('timeupdate'); }, 250);
-  if (raKey(audio.item) === RA.key) {
+  if (moved) {
     // Moved from here: the song and its queue are already this page's.
     RA.src = 'remote:' + RA.key;
     RA.fire('playing');
@@ -17517,6 +17574,60 @@ function renderWhere() {
   const pill = $('np-where');
   show(pill, RA.on);
   if (RA.on) pill.textContent = `On ${RA.target.name}`;
+  tellRemoteVolume();
+}
+
+// The phone's volume buttons turn the TV's volume while this phone controls
+// it - in the Android app, which hears the buttons (a browser cannot).
+function remoteVolumeTarget() {
+  if (RA.on && RA.target) return { target: RA.target, st: RA.st };
+  if (PLAYER.target) return { target: PLAYER.target, st: PLAYER.targetState || {} };
+  return null;
+}
+let remoteVolumeOn = false;
+function tellRemoteVolume() {
+  const on = Boolean(remoteVolumeTarget());
+  if (on === remoteVolumeOn || !window.soundstormApp || !window.soundstormApp.remoteVolume) return;
+  remoteVolumeOn = on;
+  window.soundstormApp.remoteVolume(on);
+}
+const remoteVolumeKey = { value: null, at: 0 };
+window.__soundstormVolumeKey = (dir) => {
+  const t = remoteVolumeTarget();
+  if (!t) return false;
+  // Quick presses build on each other, not on a report a second old.
+  const reported = typeof t.st.volume === 'number' ? t.st.volume : 1;
+  const from = remoteVolumeKey.value !== null && Date.now() - remoteVolumeKey.at < 3000 ? remoteVolumeKey.value : reported;
+  const value = Math.round(Math.max(0, Math.min(1, from + (dir > 0 ? 0.05 : -0.05))) * 100) / 100;
+  remoteVolumeKey.value = value;
+  remoteVolumeKey.at = Date.now();
+  api(`/api/players/${t.target.id}/command`, { method: 'POST', body: JSON.stringify({ type: 'volume', value }) });
+  if (t.st === RA.st) RA.st = { ...RA.st, volume: value };
+  else if (PLAYER.targetState) { PLAYER.targetState = { ...PLAYER.targetState, volume: value }; holdRemote({ volume: value }); }
+  if (shown('rc')) $('rc-volume').value = String(Math.round(value * 100));
+  showVolumeBadge(t.target.name, value);
+  return true;
+};
+let volumeBadgeTimer = 0;
+function showVolumeBadge(name, value) {
+  let badge = $('tv-volume-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'tv-volume-badge';
+    badge.className = 'tv-volume-badge';
+    badge.setAttribute('role', 'status');
+    const label = document.createElement('span');
+    const bar = document.createElement('div');
+    bar.className = 'tv-volume-bar';
+    bar.append(document.createElement('i'));
+    badge.append(label, bar);
+    document.body.append(badge);
+  }
+  badge.firstChild.textContent = `${name} volume ${Math.round(value * 100)}%`;
+  badge.querySelector('i').style.width = `${Math.round(value * 100)}%`;
+  badge.classList.add('on');
+  clearTimeout(volumeBadgeTimer);
+  volumeBadgeTimer = setTimeout(() => badge.classList.remove('on'), 1500);
 }
 // The label: the compact remote for the volume, Play here and Stop.
 $('np-where').addEventListener('click', (event) => {
@@ -17604,7 +17715,8 @@ function playerState() {
       playing: !a.paused, kind: 'audio', item: card(audio.item),
       position: book ? elapsed() : a.currentTime || 0,
       duration: book ? audio.duration || 0 : (Number.isFinite(a.duration) ? a.duration : 0),
-      volume: audio.userVolume, queue: audio.queue ? { index: audio.queue.index, length: audio.queue.items.length } : null,
+      volume: audio.userVolume, rate: a.playbackRate || 1,
+      queue: audio.queue ? { index: audio.queue.index, length: audio.queue.items.length } : null,
     };
   }
   if (photoShown) return { playing: false, kind: 'photo', item: card(photoShown) };
@@ -17705,6 +17817,10 @@ function remoteControl(c) {
   else if (c.action === 'prev') mediaPrevious();
   else if (c.action === 'seek') { if (book) goToBook(value); else a.currentTime = value; }
   else if (c.action === 'skip') { if (book) bookSkip(value); else a.currentTime = Math.max(0, a.currentTime + value); }
+  else if (c.action === 'rate' && book && value >= 0.5 && value <= 3) {
+    a.playbackRate = value;
+    a.defaultPlaybackRate = value;
+  }
 }
 
 // On a TV in use, somebody else asks to play: OK, No, or nothing (which
@@ -17776,7 +17892,7 @@ async function renderPlayOnMenu(item, opts = {}) {
       if (opts.moving) savePosition();
       if (opts.video) saveWatchPosition(true);
       await sendPlayOn(p, cmd, note, () => {
-        if (opts.moving && item.kind !== 'music') stopAudio();
+        if (opts.moving && item.kind !== 'music' && item.kind !== 'audiobook') stopAudio();
         // A film's place is saved as it closes, and the TV carries on from it.
         if (opts.video) closeVideo();
       });
@@ -17816,7 +17932,7 @@ async function sendPlayOn(p, cmd, note, done) {
   // Music: this phone's own Now Playing becomes the remote - the lyrics, the
   // looks, Up next and every button, all acting on the TV. Anything else
   // gets the compact remote.
-  if (cmd.item && cmd.item.kind === 'music') {
+  if (cmd.item && (cmd.item.kind === 'music' || cmd.item.kind === 'audiobook')) {
     enterMirror({ id: p.id, name: p.name }, cmd);
     return;
   }
@@ -17826,6 +17942,7 @@ async function sendPlayOn(p, cmd, note, done) {
 // The remote: what the device is playing, and its buttons.
 function openRemote(target) {
   PLAYER.target = target;
+  setTimeout(tellRemoteVolume, 0);
   $('rc-device').textContent = `Playing on ${target.name}`;
   show($('rc'), true);
   show($('rc-chip'), false);
@@ -17845,6 +17962,7 @@ function closeRemote() {
 }
 function forgetRemote() {
   PLAYER.target = null;
+  setTimeout(tellRemoteVolume, 0);
   clearInterval(PLAYER.remoteTimer);
   show($('rc'), false);
   show($('rc-chip'), false);

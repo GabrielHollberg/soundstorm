@@ -42,6 +42,9 @@ object PageScript {
   // Scanning a TV's sign-in QR code with the phone's camera, in the app: the
   // code comes back to window.__soundstormLink (MainActivity.scanTvCode).
   window.soundstormApp.scanCode = /SoundStormTV/.test(navigator.userAgent) ? undefined : () => post({ type: 'scanCode' });
+  // While this phone controls a TV, its volume buttons turn the TV's volume:
+  // handed to window.__soundstormVolumeKey (MainActivity.dispatchKeyEvent).
+  window.soundstormApp.remoteVolume = (on) => post({ type: 'remoteVolume', on: Boolean(on) });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };
