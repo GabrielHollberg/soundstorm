@@ -73,6 +73,52 @@ Web changes for the phone apps always go to main, never into an app's folder.
 - Never print credentials. Commits end with the Co-Authored-By line the
   session is given; never put a model name in a commit.
 
+## Waiting on the Mac (written 2026-10-02, after two days on the PC)
+
+From 2026-10-01 to 10-02 the PC worked on the server, the web app and
+Android (0.19 to 0.31). Everything web reaches the iPhone app already, since
+it shows the same page. What only the Mac can do, most useful first - each
+is described in full in its own section below; tick them off here:
+
+**iPhone app**
+1. **Background uploads** - files added with Add media stop when the app is
+   left. Do what Android 0.30 does (`Uploads.kt`, "In the Android app the app
+   sends them, in the background"): answer `window.soundstormApp.uploads`
+   (add / status / stop / set / seen) through `window.__soundstormUploads`, the
+   page then hands the plan over and follows the app's status unchanged; files
+   picked in the web view's picker need to stay readable (copy them to the
+   app's own storage at pick time, as WKWebView gives no lasting URL), a
+   background `URLSession` sends each to `PUT /api/upload?path=&kind=&taken=&conflict=`
+   with the session cookie, Only on Wi-Fi / Only while charging.
+2. **Photo backup when locked** - "For the Mac: iPhone backup stops when the
+   phone is locked" (hand iOS the uploads ahead in the background session).
+3. **A TV's QR code opening the app** - Universal Links: the associated domain
+   `applinks:*.home.soundstorm.dev` and the `/link/<code>` path (`linkURL`).
+   Apple checks a wildcard at the domain itself (believed - check), so the
+   names service serves `/.well-known/apple-app-site-association` there as it
+   serves Android's `assetlinks.json` - the PC adds that route once it has the
+   Apple team id (appID `<team>.dev.soundstorm.app`). Then handle the link
+   like `soundstorm://link` (known servers only) and offer the page's "Open in
+   the app" button on an iPhone too.
+4. **Scan the TV's code in the app** - Android's Settings button
+   (`soundstormApp.scanCode`, the code handed to `window.__soundstormLink`);
+   on iPhone a VisionKit scanner.
+5. **Volume buttons turning the TV** while this phone controls it -
+   `soundstormApp.remoteVolume(on)` and `window.__soundstormVolumeKey(±1)`, as
+   `MainActivity.dispatchKeyEvent` does; on iPhone, observe the system volume.
+
+**Apple TV**
+1. **Controlled from a phone** - say hello, poll and obey `players.go`'s
+   commands as the page does (play, control incl. `rate` and `closephoto`,
+   volume, stop, claim, switch, ask); without it the device picker never
+   lists the Apple TV ("Playing on your phone, and controlling it" and "Then
+   one switch instead of Play on").
+2. **"Use your phone instead"** on Who's listening's PIN or password step.
+3. **Videos and Live photos** pills in Photos (`/api/photos/of?type=`).
+4. The open bugs already listed under "For the Mac, from this review" and "A
+   second bug review": switching person sends the last person's audiobook
+   place, radio top-ups exclude nothing, and the smaller ones.
+
 ## The decision that shapes everything
 
 That request sounds like "build a media server". It is not, and the difference
@@ -5144,7 +5190,11 @@ as for any shelf) and how much space their photos may take.
   these do you have - name, when taken, size - so a reinstall sends nothing
   twice) and `PUT /api/photos/backup?name=&taken=` (one file as the body, to
   `Personal/<name>/<year>/<month>/`, a different file of the same name that
-  month kept beside it).
+  month kept beside it as "Name (2)", the next free - it was the name plus
+  the moment it was taken, "IMG_0001 1790970939045.jpg", until 2026-10-02;
+  a photo sent again is found under any of those names by its size,
+  `freePersonalName`). Dropped and imported photos take the next free
+  "(2)" too, an identical one having been refused by its content first.
 
 **The phone's half, in the Android app (0.14, `PhotoBackup.kt`)**: WorkManager
 jobs, so Android decides when (Wi-Fi only unless turned off, while charging if

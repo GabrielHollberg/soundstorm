@@ -325,9 +325,7 @@ func (t *personTarget) Room(size int64) error {
 
 func (t *personTarget) Save(rel string, r io.Reader, size int64, sum [32]byte) (string, error) {
 	// A different photo of the same name taken the same month keeps both.
-	if t.s.library.PersonalHas(t.u.Name, rel, 0) {
-		rel = altName(rel, int64(sum[0])<<16|int64(sum[1])<<8|int64(sum[2]))
-	}
+	rel, _ = t.s.freePersonalName(t.u.Name, rel, 0)
 	dest, err := library.PersonalPath(t.u.Name, rel)
 	if err != nil {
 		return "", err

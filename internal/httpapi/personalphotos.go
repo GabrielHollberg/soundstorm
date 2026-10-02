@@ -314,10 +314,9 @@ func (s *Server) datedPhoto(u state.User, staged, dropped string, hint int64) (*
 	if !pl.meta.Taken.IsZero() {
 		rel = fmt.Sprintf("%04d/%02d/%s", pl.meta.Taken.Year(), int(pl.meta.Taken.Month()), name)
 	}
-	// Another file of the same name taken the same month keeps both.
-	if s.library.PersonalHas(u.Name, rel, 0) {
-		rel = altName(rel, int64(pl.sum[0])<<16|int64(pl.sum[1])<<8|int64(pl.sum[2]))
-	}
+	// Another file of the same name taken the same month keeps both: this
+	// one as "Name (2)" (an identical one was refused above, by content).
+	rel, _ = s.freePersonalName(u.Name, rel, 0)
 	if pl.rel, err = library.PersonalPath(u.Name, rel); err != nil {
 		return nil, err
 	}
@@ -432,7 +431,12 @@ func (s *Server) handleBackupCheck(w http.ResponseWriter, r *http.Request) {
 	have := make([]bool, len(body.Items))
 	for i, it := range body.Items {
 		if rel, err := backupPath(it); err == nil {
-			have[i] = s.library.PersonalHas(u.Name, rel, it.Size)
+			if it.Size > 0 {
+				// Under its own name, or kept beside another as "(2)".
+				_, have[i] = s.freePersonalName(u.Name, rel, it.Size)
+			} else {
+				have[i] = s.library.PersonalHas(u.Name, rel, 0)
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"have": have, "usage": s.photoUsageJSON(u)})
@@ -460,7 +464,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.library.PersonalHas(u.Name, rel, it.Size) {
+	// Sent before (under its name, or as "(2)" beside another): nothing to do.
+	free, there := s.freePersonalName(u.Name, rel, it.Size)
+	if there {
 		writeJSON(w, http.StatusOK, map[string]any{"already": true})
 		return
 	}
@@ -482,9 +488,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	// different phone, a camera that restarted its numbering) is kept beside
 	// it rather than refused: decided before a byte is read, as Save reads the
 	// whole body before it can say the name is taken.
-	if s.library.PersonalHas(u.Name, rel, 0) {
-		rel = altName(rel, it.Taken)
-	}
+	rel = free
 	dest, err := library.PersonalPath(u.Name, rel)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -529,11 +533,34 @@ func (s *Server) backupAccount(w http.ResponseWriter, r *http.Request, u state.U
 	return false
 }
 
-// altName is rel with the moment it was taken before the extension, for a
-// second, different photo of the same name taken the same month.
-func altName(rel string, taken int64) string {
+// numbered is rel as "Name (n).ext": how a different photo whose name is
+// taken that month is kept beside it, as a film or a song is.
+func numbered(rel string, n int) string {
 	ext := path.Ext(rel)
-	return strings.TrimSuffix(rel, ext) + " " + strconv.FormatInt(taken, 10) + ext
+	return strings.TrimSuffix(rel, ext) + " (" + strconv.Itoa(n) + ")" + ext
+}
+
+// freePersonalName is rel when nothing has the name in the person's folder,
+// else the first "Name (n)" free. With a size, a file of that size already
+// under one of those names is taken for this one, sent before: there is
+// true, and nothing is free.
+func (s *Server) freePersonalName(name, rel string, size int64) (free string, there bool) {
+	if !s.library.PersonalHas(name, rel, 0) {
+		return rel, false
+	}
+	if size > 0 && s.library.PersonalHas(name, rel, size) {
+		return "", true
+	}
+	for n := 2; n < 1000; n++ {
+		c := numbered(rel, n)
+		if !s.library.PersonalHas(name, c, 0) {
+			return c, false
+		}
+		if size > 0 && s.library.PersonalHas(name, c, size) {
+			return "", true
+		}
+	}
+	return "", true
 }
 
 // --- the owner's controls ------------------------------------------------------
@@ -673,7 +700,7 @@ func (s *Server) improvePhoto(u state.User, existing string, inc photoimport.Met
 			for i := 0; i < 20; i++ {
 				try := want
 				if i > 0 {
-					try = altName(want, merged.Taken.Unix()+int64(i-1))
+					try = numbered(want, i+1)
 				}
 				p := filepath.Join(folder, filepath.FromSlash(try))
 				if _, err := os.Lstat(p); os.IsNotExist(err) {
