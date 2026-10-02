@@ -734,6 +734,8 @@ if (window.soundstormApp) {
 
 async function showApp(me) {
   state.me = me || null;
+  // This page is a device to play on, from this person's phone (players.go).
+  setTimeout(playerLoop, 1500);
   // Shown again (a switch back to the same person): one setup poll, not two.
   if (state.setupTimer) { clearInterval(state.setupTimer); state.setupTimer = null; }
   if (me && me.mustRenew) {
@@ -4109,7 +4111,11 @@ async function moveToSecureName(name) {
     // A TV asks "Who's listening?" every time it opens, when anybody is kept
     // on it - the owner's choice: a shared screen should not just carry on as
     // whoever used it last.
-    if (TV && body.hasAccount) {
+    // Just taken over from somebody's phone (players.go): that person is
+    // who it is, with what they sent waiting - not asked who is listening.
+    let switched = false;
+    try { switched = sessionStorage.getItem('soundstorm-switched') === '1'; sessionStorage.removeItem('soundstorm-switched'); } catch { /* none */ }
+    if (TV && body.hasAccount && !(switched && body.signedIn)) {
       const p = await api('/api/profiles');
       if (p.ok && p.body && p.body.people.length) {
         showProfiles(p.body);
@@ -4770,6 +4776,12 @@ function renderMainMenu(item, opts = {}) {
     entries.push(menuItem('image', 'Change cover', (event) => {
       event.stopPropagation();
       renderCoverMenu({ song: item }, () => renderMainMenu(item, opts));
+    }, { chevron: true }));
+  }
+  if (playableElsewhere(item) && !state.offline) {
+    entries.push(menuItem('upload', 'Play on\u2026', (event) => {
+      event.stopPropagation();
+      renderPlayOnMenu(item, { queue: state.items.filter((it) => it.kind === item.kind) });
     }, { chevron: true }));
   }
   entries.push(menuItem('info', 'Info', (event) => {
@@ -12896,6 +12908,12 @@ function playerMenuItems(item, opts) {
     event.stopPropagation();
     renderSleepMenu(item, opts);
   }, { chevron: true, detail: left }));
+  if (!state.offline) {
+    out.push(menuItem('upload', 'Play on another device', (event) => {
+      event.stopPropagation();
+      renderPlayOnMenu(item, { moving: true });
+    }, { chevron: true }));
+  }
   if (item.kind === 'music') {
     out.push(menuItem('image', 'Cover look', () => {
       closeItemMenu();
@@ -17208,6 +17226,402 @@ window.addEventListener('resize', () => {
 
 /* ------------------------------------------------------------- television */
 
+/* --------------------------------- playing on another device, remotely */
+
+// Every open SoundStorm page is a player (players.go on the server): it says
+// hello, reports what it is playing, and waits for commands - a phone's Play
+// on, pause, skip. A TV is shared, so anybody in the house may send
+// something to it, which switches it to them (asking first when somebody
+// else is using it); everything else only its own person's phones control.
+const PLAYER = { id: '', polling: false, lastState: '', stateAt: 0, target: null, remoteTimer: 0 };
+try {
+  PLAYER.id = localStorage.getItem('soundstorm-player-id') || '';
+  if (!/^[a-f0-9]{32}$/.test(PLAYER.id)) {
+    PLAYER.id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem('soundstorm-player-id', PLAYER.id);
+  }
+} catch { /* no storage: not a player */ }
+
+function deviceName() {
+  try { return localStorage.getItem('soundstorm.deviceName') || ''; } catch { return ''; }
+}
+$('device-name').value = deviceName();
+$('device-name').addEventListener('change', () => {
+  try { localStorage.setItem('soundstorm.deviceName', $('device-name').value.trim()); } catch { /* full */ }
+  playerHello();
+});
+
+function playerHello() {
+  if (!PLAYER.id || !state.me) return Promise.resolve();
+  return api('/api/players/hello', {
+    method: 'POST', body: JSON.stringify({ id: PLAYER.id, name: deviceName() || (TV ? 'TV' : ''), tv: TV }),
+  });
+}
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+async function playerLoop() {
+  if (PLAYER.polling || !PLAYER.id) return;
+  PLAYER.polling = true;
+  try {
+    await playerHello();
+    // A phone in a pocket is not worth a connection; a TV always is.
+    while (state.me && !state.offline && !PLAYER.leaving && (TV || !document.hidden)) {
+      const r = await api(`/api/players/${PLAYER.id}/next`);
+      if (!r.ok) {
+        if (r.status === 404) await playerHello();
+        await pause(r.offline ? 8000 : 2000);
+        continue;
+      }
+      for (const c of (r.body && r.body.commands) || []) {
+        try { await runPlayerCommand(c); } catch { /* one bad command, not the loop */ }
+        if (PLAYER.leaving) return;
+      }
+    }
+  } finally {
+    PLAYER.polling = false;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) playerLoop(); });
+
+// What this device is playing, for the phones controlling it.
+function playerState() {
+  const a = $('audio-player');
+  const v = $('video-player');
+  const card = (it) => it && ({
+    sourceId: it.sourceId, id: it.id, title: it.title, subtitle: subtitleFor(it), kind: it.kind,
+    artId: it.artId, extra: it.extra && it.extra.type ? { type: it.extra.type } : undefined,
+  });
+  if (shown('video-overlay') && state.watching) {
+    return {
+      playing: !v.paused, kind: 'video', item: card(state.watching.item),
+      position: v.currentTime || 0, duration: Number.isFinite(v.duration) ? v.duration : 0, volume: v.volume,
+    };
+  }
+  if (audio.item) {
+    const book = audio.item.kind === 'audiobook';
+    return {
+      playing: !a.paused, kind: 'audio', item: card(audio.item),
+      position: book ? elapsed() : a.currentTime || 0,
+      duration: book ? audio.duration || 0 : (Number.isFinite(a.duration) ? a.duration : 0),
+      volume: audio.userVolume, queue: audio.queue ? { index: audio.queue.index, length: audio.queue.items.length } : null,
+    };
+  }
+  if (photoShown) return { playing: false, kind: 'photo', item: card(photoShown) };
+  return { playing: false, kind: null };
+}
+setInterval(() => {
+  if (!PLAYER.polling || !state.me) return;
+  const st = playerState();
+  const sig = JSON.stringify({ ...st, position: Math.round((st.position || 0) / 5) });
+  // On a change, and every half minute regardless: the phone's timeline
+  // runs from the last report.
+  if (sig === PLAYER.lastState && Date.now() - PLAYER.stateAt < 30000) return;
+  PLAYER.lastState = sig;
+  PLAYER.stateAt = Date.now();
+  api(`/api/players/${PLAYER.id}/state`, { method: 'POST', body: JSON.stringify({ ...st, at: Date.now() }) });
+}, 2000);
+
+async function runPlayerCommand(c) {
+  switch (c.type) {
+    case 'switch': {
+      // Taken over from somebody's phone: signed in as them, then made again.
+      const r = await api('/api/players/switch', { method: 'POST', body: JSON.stringify({ code: c.code, id: PLAYER.id }) });
+      if (r.ok) {
+        // Nothing more is taken by this page: what was sent waits for the
+        // page made again as the new person (it once took it and vanished).
+        PLAYER.leaving = true;
+        try { sessionStorage.setItem('soundstorm-switched', '1'); } catch { /* none */ }
+        location.reload();
+      }
+      return;
+    }
+    case 'ask':
+      askPlayerTakeOver(c);
+      return;
+    case 'play':
+      remotePlay(c);
+      return;
+    case 'control':
+      remoteControl(c);
+      return;
+    case 'volume': {
+      const v = Math.max(0, Math.min(1, Number(c.value)));
+      if (shown('video-overlay')) $('video-player').volume = v;
+      audio.userVolume = v;
+      if (audio.item) applyLevel(audio.item);
+      return;
+    }
+    case 'stop':
+      closeVideo();
+      if (audio.item) { savePosition(); stopAudio(); }
+      if (photoShown) closePhoto();
+      return;
+  }
+}
+
+function remotePlay(c) {
+  const item = c.item;
+  if (!item || !item.sourceId || !item.id) return;
+  if (c.from && state.me && c.from !== state.me.name) showToast(`Playing from ${c.from}'s phone`);
+  else if (c.from) showToast('Playing from your phone');
+  if (item.kind === 'music' && Array.isArray(c.queue) && c.queue.length) {
+    const at = Math.max(0, Math.min(c.queue.length - 1, Number(c.index) || 0));
+    playQueue(c.queue, at);
+  } else if (item.kind === 'picture' && !(item.extra && item.extra.type === 'video')) {
+    state.items = [item];
+    showPhoto(item);
+    return;
+  } else {
+    play(item);
+  }
+  // Moved from a phone mid-song: on from the same moment.
+  const from = Number(c.at) || 0;
+  if (from > 1 && item.kind === 'music') {
+    const a = $('audio-player');
+    a.addEventListener('loadedmetadata', () => { a.currentTime = from; }, { once: true });
+  }
+}
+
+function remoteControl(c) {
+  const v = $('video-player');
+  const a = $('audio-player');
+  const value = Number(c.value) || 0;
+  if (shown('video-overlay')) {
+    if (c.action === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
+    else if (c.action === 'pause') v.pause();
+    else if (c.action === 'play') v.play().catch(() => {});
+    else if (c.action === 'seek') v.currentTime = value;
+    else if (c.action === 'skip') v.currentTime = Math.max(0, v.currentTime + value);
+    return;
+  }
+  if (!audio.item) return;
+  const book = audio.item.kind === 'audiobook';
+  if (c.action === 'toggle') { if (a.paused) a.play().catch(() => {}); else a.pause(); }
+  else if (c.action === 'pause') a.pause();
+  else if (c.action === 'play') a.play().catch(() => {});
+  else if (c.action === 'next') mediaNext();
+  else if (c.action === 'prev') mediaPrevious();
+  else if (c.action === 'seek') { if (book) goToBook(value); else a.currentTime = value; }
+  else if (c.action === 'skip') { if (book) bookSkip(value); else a.currentTime = Math.max(0, a.currentTime + value); }
+}
+
+// On a TV in use, somebody else asks to play: OK, No, or nothing (which
+// the server takes for OK after fifteen seconds).
+let playerAsking = null;
+function askPlayerTakeOver(c) {
+  playerAsking = c.ask;
+  $('player-ask-title').textContent = `${c.from} wants to play something`;
+  $('player-ask-text').textContent = `Let ${c.from} take over this TV? What is playing now is saved, so it can carry on later.`;
+  show($('player-ask'), true);
+  $('player-ask-yes').focus();
+  setTimeout(() => { if (playerAsking === c.ask) { show($('player-ask'), false); playerAsking = null; } }, 15000);
+}
+async function answerPlayerAsk(allow) {
+  const ask = playerAsking;
+  playerAsking = null;
+  show($('player-ask'), false);
+  if (ask) await api(`/api/players/${PLAYER.id}/ask/${encodeURIComponent(ask)}`, { method: 'POST', body: JSON.stringify({ allow }) });
+}
+$('player-ask-yes').addEventListener('click', () => answerPlayerAsk(true));
+$('player-ask-no').addEventListener('click', () => answerPlayerAsk(false));
+
+// --- the phone's side: Play on, and the remote ---------------------------
+
+function playableElsewhere(item) {
+  if (!item) return false;
+  if (item.kind === 'tv') return !(item.extra && item.extra.type === 'Series');
+  return ['music', 'audiobook', 'video', 'picture'].includes(item.kind);
+}
+
+// Play on: the devices this person may play on - their own, and every TV.
+async function renderPlayOnMenu(item, opts = {}) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = 'Play on';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item, state.menuOpts);
+  });
+  note.textContent = 'Looking for devices\u2026';
+  menu.replaceChildren(back, note);
+  const { ok, body } = await api(`/api/players?self=${encodeURIComponent(PLAYER.id)}`);
+  if (state.menuFor !== item) return;
+  const list = (ok && body && body.players) || [];
+  if (!list.length) {
+    note.textContent = 'No other device is open. Open SoundStorm on the TV, or another computer, and it shows here.';
+    return;
+  }
+  note.textContent = '';
+  const rows = list.map((p) => {
+    const detail = p.mine ? '' : (p.busy ? `${p.person} is using it` : (p.person ? `${p.person}'s` : ''));
+    return menuItem(p.tv ? 'film' : 'headphones', p.name, async (event) => {
+      event.stopPropagation();
+      const cmd = { type: 'play', item };
+      const queue = opts.moving && audio.queue ? audio.queue.items : opts.queue;
+      if (item.kind === 'music' && queue && queue.length > 1) {
+        const at = queue.findIndex((it) => it.sourceId === item.sourceId && it.id === item.id);
+        if (at >= 0) Object.assign(cmd, { queue: queue.slice(Math.max(0, at - 200), at + 300), index: Math.min(at, 200) });
+      }
+      if (opts.moving && item.kind === 'music') cmd.at = $('audio-player').currentTime || 0;
+      // A book's place, and a film's, is kept on the server: saved here
+      // first, so the TV carries on from it.
+      if (opts.moving) savePosition();
+      await sendPlayOn(p, cmd, note, () => {
+        if (opts.moving) stopAudio();
+      });
+    }, { detail });
+  });
+  menu.replaceChildren(back, ...rows, note);
+}
+
+async function sendPlayOn(p, cmd, note, done) {
+  note.textContent = `Sending to ${p.name}\u2026`;
+  let r = await api(`/api/players/${p.id}/command`, { method: 'POST', body: JSON.stringify(cmd) });
+  if (r.status === 202 && r.body && r.body.asking) {
+    note.textContent = `Asking ${p.person || 'whoever is watching'} on ${p.name}\u2026`;
+    const ask = r.body.asking;
+    for (let i = 0; i < 30; i++) {
+      await pause(1000);
+      r = await api(`/api/players/${p.id}/ask/${encodeURIComponent(ask)}`);
+      if (!r.ok || !r.body || !r.body.waiting) break;
+    }
+    if (r.ok && r.body && r.body.denied) {
+      note.textContent = `${p.person || 'They'} said no. You can ask again in ${Math.round(r.body.retryIn / 60)} minutes.`;
+      return;
+    }
+    if (!(r.ok && r.body && r.body.allowed)) {
+      note.textContent = (r.body && r.body.error) || 'That did not go through.';
+      return;
+    }
+  } else if (r.status === 429 && r.body && r.body.retryIn) {
+    note.textContent = `${p.person || 'They'} said no. You can ask again in ${Math.max(1, Math.round(r.body.retryIn / 60))} minute${r.body.retryIn > 90 ? 's' : ''}.`;
+    return;
+  } else if (!r.ok) {
+    note.textContent = (r.body && r.body.error) || 'That did not go through.';
+    return;
+  }
+  closeItemMenu();
+  if (done) done();
+  openRemote({ id: p.id, name: p.name });
+}
+
+// The remote: what the device is playing, and its buttons.
+function openRemote(target) {
+  PLAYER.target = target;
+  $('rc-device').textContent = `Playing on ${target.name}`;
+  show($('rc'), true);
+  show($('rc-chip'), false);
+  $('rc-note').textContent = '';
+  refreshRemote();
+  clearInterval(PLAYER.remoteTimer);
+  PLAYER.remoteTimer = setInterval(refreshRemote, 1500);
+}
+function closeRemote() {
+  show($('rc'), false);
+  clearInterval(PLAYER.remoteTimer);
+  PLAYER.remoteTimer = setInterval(refreshRemote, 5000);
+  if (PLAYER.target) {
+    $('rc-chip').textContent = `On ${PLAYER.target.name}`;
+    show($('rc-chip'), true);
+  }
+}
+function forgetRemote() {
+  PLAYER.target = null;
+  clearInterval(PLAYER.remoteTimer);
+  show($('rc'), false);
+  show($('rc-chip'), false);
+}
+let remoteSeeking = false;
+const clock = (s) => {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+};
+async function refreshRemote() {
+  const target = PLAYER.target;
+  if (!target) return;
+  const { ok, status, body } = await api(`/api/players/${target.id}`);
+  if (PLAYER.target !== target) return;
+  if (!ok) {
+    // Taken over by somebody else, or closed: the remote goes.
+    if (status === 404) {
+      forgetRemote();
+      showToast(`${target.name} is not yours to control now.`);
+    }
+    return;
+  }
+  const st = body.state || {};
+  const item = st.item;
+  $('rc-title').textContent = item ? item.title : 'Nothing playing';
+  $('rc-sub').textContent = item ? item.subtitle || '' : '';
+  const art = $('rc-art');
+  if (item && item.artId) art.src = `/api/art/${encodeURIComponent(item.sourceId)}/${escapeId(item.artId)}`;
+  else art.src = NO_COVER;
+  // The time runs on from the report, as the device's own clock does.
+  const position = (st.position || 0) + (st.playing && st.at ? (Date.now() - st.at) / 1000 : 0);
+  if (!remoteSeeking) {
+    $('rc-seek').max = String(Math.max(1, Math.round(st.duration || 0)));
+    $('rc-seek').value = String(Math.round(position));
+  }
+  $('rc-at').textContent = clock(position);
+  $('rc-len').textContent = st.duration ? clock(st.duration) : '';
+  $('rc-toggle').replaceChildren(icon(st.playing ? 'pause' : 'play'));
+  if (typeof st.volume === 'number' && document.activeElement !== $('rc-volume')) $('rc-volume').value = String(Math.round(st.volume * 100));
+  const audioish = st.kind === 'audio';
+  show($('rc-prev'), audioish && !(item && item.kind === 'audiobook'));
+  show($('rc-next'), audioish && !(item && item.kind === 'audiobook'));
+  PLAYER.targetState = st;
+}
+function remoteSend(cmd) {
+  if (!PLAYER.target) return;
+  api(`/api/players/${PLAYER.target.id}/command`, { method: 'POST', body: JSON.stringify(cmd) }).then((r) => {
+    if (!r.ok) $('rc-note').textContent = (r.body && r.body.error) || 'That did not go through.';
+    setTimeout(refreshRemote, 400);
+  });
+}
+$('rc-prev').replaceChildren(icon('prev'));
+$('rc-next').replaceChildren(icon('skip'));
+$('rc-close').replaceChildren(icon('down'));
+$('rc-close').addEventListener('click', closeRemote);
+$('rc-chip').addEventListener('click', () => PLAYER.target && openRemote(PLAYER.target));
+$('rc-toggle').addEventListener('click', () => remoteSend({ type: 'control', action: 'toggle' }));
+$('rc-prev').addEventListener('click', () => remoteSend({ type: 'control', action: 'prev' }));
+$('rc-next').addEventListener('click', () => remoteSend({ type: 'control', action: 'next' }));
+$('rc-back10').addEventListener('click', () => remoteSend({ type: 'control', action: 'skip', value: -10 }));
+$('rc-fwd10').addEventListener('click', () => remoteSend({ type: 'control', action: 'skip', value: 10 }));
+$('rc-seek').addEventListener('input', () => { remoteSeeking = true; $('rc-at').textContent = clock(Number($('rc-seek').value)); });
+$('rc-seek').addEventListener('change', () => {
+  remoteSeeking = false;
+  remoteSend({ type: 'control', action: 'seek', value: Number($('rc-seek').value) });
+});
+$('rc-volume').addEventListener('change', () => remoteSend({ type: 'volume', value: Number($('rc-volume').value) / 100 }));
+$('rc-stop').addEventListener('click', () => { remoteSend({ type: 'stop' }); forgetRemote(); });
+// Play here: what the device is playing comes to this phone, and stops there.
+$('rc-here').addEventListener('click', () => {
+  const st = PLAYER.targetState;
+  if (!st || !st.item) return;
+  remoteSend({ type: 'stop' });
+  const item = st.item;
+  const at = (st.position || 0) + (st.playing && st.at ? (Date.now() - st.at) / 1000 : 0);
+  forgetRemote();
+  // A book's and a film's place were saved on the server as it stopped.
+  setTimeout(() => {
+    play(item);
+    if (item.kind === 'music' && at > 1) {
+      const a = $('audio-player');
+      a.addEventListener('loadedmetadata', () => { a.currentTime = at; }, { once: true });
+    }
+  }, item.kind === 'music' ? 0 : 1200);
+});
+
 if (TV) {
   document.documentElement.classList.add('tv');
   tvRemote();
@@ -17219,7 +17633,7 @@ function tvRemote() {
   // Playing, Now Playing over the library.
   // The questions over everything (a new device, a TV, phone backup) come
   // first: on a TV that may be the only device that can answer them.
-  const LAYERS = ['device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
+  const LAYERS = ['player-ask', 'rc', 'device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
   const layer = () => {
     for (const id of LAYERS) if (shown(id)) return $(id);
     return document.body;

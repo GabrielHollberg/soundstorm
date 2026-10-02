@@ -115,10 +115,13 @@ type Server struct {
 	// playback reports sent from the app (diagnostics.go)
 	reports allowance
 	// "keep me on this device" (profiles): each rewrites state.json
-	keeps       allowance
-	hlsSessions hlsSessions
-	lookingUpMu sync.Mutex
-	lookingUp   map[string]bool
+	keeps allowance
+	// the open SoundStorm pages, as devices to play on (players.go)
+	players        playerHub
+	playerCommands allowance
+	hlsSessions    hlsSessions
+	lookingUpMu    sync.Mutex
+	lookingUp      map[string]bool
 	// imports limits how often somebody may import playlists (a file, or
 	// from Plex): each can write thousands of songs to their collections.
 	imports          allowance
@@ -338,6 +341,9 @@ func (s *Server) Routes() http.Handler {
 	// asks "Who's listening?" before anybody is signed in (profiles.go).
 	mux.HandleFunc("GET /api/profiles", s.handleProfiles)
 	mux.HandleFunc("POST /api/profiles/switch", s.handleSwitchProfile)
+	// A TV taken over from a phone signs in as that person with a one-time
+	// code (players.go): open, as it is still the last person until then.
+	mux.HandleFunc("POST /api/players/switch", s.handlePlayerSwitch)
 	mux.HandleFunc("POST /api/link", s.handleNewLink)
 	mux.HandleFunc("GET /api/link/{id}", s.handleLinkStatus)
 	mux.HandleFunc("GET /api/link/{id}/qr.png", s.handleLinkQR)
@@ -398,6 +404,15 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/music/beats", s.handleSongBeats)
 	guarded.HandleFunc("GET /api/training/song", s.handleTrainingSong)
 	guarded.HandleFunc("PUT /api/training/song", s.handleSetTrainingSong)
+	// Playing on another device and controlling it (players.go).
+	guarded.HandleFunc("POST /api/players/hello", s.handlePlayerHello)
+	guarded.HandleFunc("GET /api/players", s.handlePlayers)
+	guarded.HandleFunc("GET /api/players/{id}", s.handlePlayers)
+	guarded.HandleFunc("GET /api/players/{id}/next", s.handlePlayerNext)
+	guarded.HandleFunc("POST /api/players/{id}/state", s.handlePlayerState)
+	guarded.HandleFunc("POST /api/players/{id}/command", s.limited(&s.playerCommands, 60, 200*time.Millisecond, s.handlePlayerCommand))
+	guarded.HandleFunc("GET /api/players/{id}/ask/{ask}", s.handlePlayerAsk)
+	guarded.HandleFunc("POST /api/players/{id}/ask/{ask}", s.handlePlayerAsk)
 	guarded.HandleFunc("POST /api/diagnostics/playback", s.limited(&s.reports, 5, time.Minute, s.handlePlaybackReport))
 	guarded.HandleFunc("GET /api/myart", s.handleMyArt)
 	guarded.HandleFunc("PUT /api/myart", s.handleSetMyArt)

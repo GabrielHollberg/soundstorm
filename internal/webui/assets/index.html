@@ -328,6 +328,11 @@
 
       <div class="account-section card" data-cat="account" data-words="profiles switch person people device pin who's listening shared">
         <h2>On this device</h2>
+        <label class="setting-row">
+          <span>This device's name</span>
+          <input id="device-name" type="text" maxlength="60" placeholder="Living room TV">
+        </label>
+        <p class="muted small-print">What your phone calls this device in Play on, to play something here from it.</p>
         <p id="device-people" class="muted"></p>
         <div class="account-actions">
           <button id="device-switch" type="button" class="ghost hidden">Switch person</button>
@@ -1015,6 +1020,43 @@
       <ol id="np-chapters-list" class="np-chapter-list"></ol>
     </div>
   </section>
+
+  <!-- Somebody wants to play on this TV while it is in use (players.go). -->
+  <div id="player-ask" class="backup-ask hidden" role="dialog" aria-labelledby="player-ask-title">
+    <h2 id="player-ask-title">Let them play?</h2>
+    <p id="player-ask-text" class="muted"></p>
+    <div class="backup-ask-buttons">
+      <button id="player-ask-no" type="button" class="ghost">No</button>
+      <button id="player-ask-yes" type="button">OK</button>
+    </div>
+  </div>
+
+  <!-- The phone as a remote for another device (players.go). -->
+  <div id="rc" class="rc-sheet hidden" role="dialog" aria-labelledby="rc-device">
+    <div class="rc-head">
+      <span id="rc-device" class="rc-device"></span>
+      <button id="rc-close" class="np-icon" type="button" aria-label="Close the remote"></button>
+    </div>
+    <img id="rc-art" class="rc-art" alt="">
+    <div id="rc-title" class="rc-title"></div>
+    <div id="rc-sub" class="rc-sub muted"></div>
+    <input id="rc-seek" type="range" min="0" max="100" step="1" value="0" aria-label="Where in it">
+    <div class="rc-times"><span id="rc-at"></span><span id="rc-len"></span></div>
+    <div class="rc-buttons">
+      <button id="rc-prev" type="button" aria-label="Previous"></button>
+      <button id="rc-back10" type="button" aria-label="Back 10 seconds">&minus;10</button>
+      <button id="rc-toggle" class="rc-main" type="button" aria-label="Play or pause"></button>
+      <button id="rc-fwd10" type="button" aria-label="On 10 seconds">+10</button>
+      <button id="rc-next" type="button" aria-label="Next"></button>
+    </div>
+    <label class="rc-volume"><span>Volume</span><input id="rc-volume" type="range" min="0" max="100" step="1" value="100"></label>
+    <div class="rc-actions">
+      <button id="rc-here" type="button" class="ghost">Play here</button>
+      <button id="rc-stop" type="button" class="ghost">Stop</button>
+    </div>
+    <p id="rc-note" class="muted small-print"></p>
+  </div>
+  <button id="rc-chip" class="rc-chip hidden" type="button"></button>
 
   <!-- A new device waiting to sign in to this account (devices.go). -->
   <!-- A TV asking to be signed in from this phone (its code typed, or its QR scanned). -->

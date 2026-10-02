@@ -1635,6 +1635,39 @@ keeps it with the page's view under the state dir's `diagnostics/`
 guarded meanwhile: the page sends its volume again whenever the player
 reports a different one. Waiting on a report to find the real cause.
 
+**Playing on another device from your phone, and controlling it**
+(`players.go`, the owner's design, 2026-10-02, worked out in conversation):
+every open page is a player - it says hello (`/api/players/hello`, an id kept
+in localStorage, a name set in Settings > On this device, "TV" on a TV),
+reports what it plays every few seconds (`/state`), and long-polls for
+commands (`/next`, 25 s); phones and TVs only ever talk to the server, so no
+pairing or same Wi-Fi. Any item's menu has **Play on...** and Now Playing's
+**Play on another device** (which moves what is playing, from the same
+moment for a song; a book's and a film's place go through the server's
+saved position); then a remote sheet (`#rc`, polling the device's state:
+play/pause, -10/+10, previous/next, seek, volume, **Play here**, Stop) and a
+chip to reopen it. The rule that keeps accounts apart, the owner's: **a
+device acts as one person, and only that person's phones control it** - so
+a phone or computer only by its own person, and a **TV**, being shared, by
+anyone in the house, but only by taking it over: sending something to it
+switches it to the sender first (a one-time code, `/api/players/switch`,
+open, 128 bits, used once; the TV signs in as them, keeps them on the device
+and reloads past "Who's listening?" - `soundstorm-switched` - with what was
+sent waiting behind the switch, never delivered with it). A TV that is free
+(not playing for three minutes) switches at once; one in use asks on screen
+("Nathan wants to play something. Let him?" `#player-ask`) - no answer in
+15 seconds is a yes, a No holds that person off 5 minutes, a second 30. What
+another person's TV plays is never shown to someone who has not taken it
+over. Two traps met building it: commands after a switch were taken by the
+page that was leaving (it polled once more before the reload) - the server
+now delivers up to a switch and no further, and the page stops listening
+once it switches; and `remote-toggle` was already remote access's switch -
+the remote sheet's ids are `rc-*`. Checked in Chrome as a TV (Gabe) and a
+phone (Nathan): asked, allowed, switched, and Nathan's photo open on the TV;
+the remote showing it. Not built: typing on the TV from the phone; the Apple
+TV's half (for the Mac: it would say hello, poll and obey the same
+commands).
+
 **Back on Android 16 needed the new API, on phones too.** An app built for
 API 36 no longer gets `onBackPressed`: the system closed the app on Back from
 inside a menu or Now Playing. `MainActivity` registers an
