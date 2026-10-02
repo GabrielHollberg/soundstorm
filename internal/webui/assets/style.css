@@ -3634,11 +3634,14 @@ html.tv #np-speed-menu { padding: 10px; scroll-padding-block: 14px; }
 
 /* An audiobook's whole-book progress, under the chapter timeline: a thin bar
    that only shows, and a line saying which chapter and how long is left. */
-.np-book { margin-top: 10px; pointer-events: none; }
+.np-book { margin-top: 10px; pointer-events: none; min-width: 0; }
 .np-book-bar { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
 .np-book-bar i { display: block; height: 100%; width: 0; background: rgba(255, 255, 255, 0.55); border-radius: 2px; }
 .np-book-text { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
-.np-book-text span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Takes what room is left and no more: sized by its text, a long chapter
+   name ("The Coddling of the American Mind - Track 001") made the whole of
+   Now Playing wider than the phone, the timeline running off the side. */
+.np-book-text span:first-child { flex: 1 1 0; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-book-text span:last-child { flex: none; font-variant-numeric: tabular-nums; }
 
 /* New playlist and Import: two small buttons above the playlists. */
