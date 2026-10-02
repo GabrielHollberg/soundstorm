@@ -3882,6 +3882,33 @@ html.tv:has(#video-overlay:not(.hidden)) body { overflow: hidden; }
   margin: 4px 0 16px;
 }
 
+/* On a TV the two steps before the library sit side by side, not stacked:
+   a projector's screen is 540 CSS pixels high, and the QR code and the
+   PIN step ran off its bottom. The code on the left, what to do beside it;
+   the person on the left, their PIN or password beside them. */
+html.tv #gate-form.linking { width: min(760px, 100%); }
+html.tv .gate-link {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  column-gap: 32px;
+  align-items: center;
+  text-align: left;
+}
+html.tv .gate-link-qr { grid-column: 1; grid-row: 1 / span 3; margin: 0; }
+html.tv .gate-link > p, html.tv .gate-link > button { grid-column: 2; }
+html.tv .gate-link > button { justify-self: start; }
+html.tv .gate-link-code { margin: 0; }
+html.tv .profiles-card:has(#profiles-secret:not(.hidden)) {
+  width: min(760px, 100%);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  column-gap: 32px;
+  align-items: center;
+}
+html.tv .profiles-card:has(#profiles-secret:not(.hidden)) > :not(#profiles-list):not(#profiles-secret) { grid-column: 1 / -1; justify-self: center; }
+html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-list { margin: 0; }
+html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { margin: 0; text-align: left; }
+
 /* Who's listening? */
 .profiles-card { text-align: center; }
 .profiles-title { margin: 8px 0 18px; font-size: 22px; }
