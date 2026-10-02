@@ -5084,6 +5084,30 @@ Immich): three photos filed by their kept dates, the chat photo left out. Not
 tried against a real download from any of them.
 Not built yet: albums kept as albums.
 
+**For the Mac: iPhone backup should send a Live Photo's moving part**
+(asked 2026-10-01). It sends the still only (`PhotoBackup.swift`, "a Live
+Photo's still only"), and the owner's library proved what that costs: of 160
+iPhone photos, the 10 marked as Live Photos (`livePhotoCID` in Immich's exif)
+have no clip on the server, so the Photos tab's Live photos pill is empty and
+LIVE never shows. Immich joins a still and its clip by Apple's
+ContentIdentifier inside both files, not by name or folder, so sending the
+clip is all it takes. What to build:
+- For a Live Photo, send the `.pairedVideo` resource too
+  (`PHAssetResourceManager`), named as the still with `.MOV`
+  (`IMG_0090.HEIC` and `IMG_0090.MOV`), same `taken`, so the server files it
+  in the same month folder.
+- Track the clip apart from the still in the sent list (say `<id>#live`), and
+  check it with the server separately: the server already has the still of
+  the ten (the check says so, by name and month), and a phone that marks the
+  whole asset sent would never send their clips. This is what makes the ten
+  arrive - so long as they are still on the phone as Live Photos.
+- Count a Live Photo as one in "N of M backed up".
+- Android needs nothing: a motion photo carries its clip inside the JPEG,
+  which Immich reads.
+Three of the ten sit in a hand-made `2022/` folder rather than the person's
+dated one, so backup will file their stills again by date (the managed-folder
+rule) beside the clips: those three show twice until the hand-made copies go.
+
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
 provisioned, sharing one pictures folder: a member saw nothing, backed up a
 photo (to `Personal/alice/2025/07/`), a second send was skipped, a dragged-in
