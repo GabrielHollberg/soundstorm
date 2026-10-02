@@ -5016,6 +5016,33 @@ signing out the page focuses the username and the keyboard covers the
 password field: a person uses the keyboard's next arrow, the test opens the
 app again.
 
+**For the Mac: iPhone backup stops when the phone is locked** (the owner's
+report, 2026-10-02). `PhotoBackup.backUp` sends one file at a time and awaits
+each (`try await send`), so when iOS suspends the app a few seconds after the
+screen locks, only the upload already in the background session finishes and
+nothing queues the next; backup then moves only while the app is open and
+when iOS grants the `BGProcessingTask` (usually overnight, charging). The fix
+is to hand iOS the uploads ahead, which a background session carries on with
+the app suspended or ended:
+- Export ahead and enqueue many: write the next files' originals
+  (`PHAssetResourceManager`) and give each to the background session at once
+  rather than awaiting it - say up to 200 files or 1 GB waiting on disk,
+  topped up as they finish. iOS uploads them while locked, on its own
+  schedule (discretionary for big ones; `isDiscretionary = false` for a
+  session started in the foreground helps them start promptly).
+- Mark a file sent when its task completes, in the session delegate - also
+  when the app is relaunched for `handleEventsForBackgroundURLSession` - and
+  delete its exported copy then; keep the queue's keys on disk so a relaunch
+  knows what each task was.
+- On going to the background, `beginBackgroundTask` for the ~30 seconds iOS
+  allows, to export and enqueue as many more as fit.
+- The check with the server stays before export (no point exporting what it
+  has); Wi-Fi only maps to `allowsExpensiveNetworkAccess = false` and
+  `allowsConstrainedNetworkAccess = false` on the session.
+A phone actually switched off runs nothing, of course; Settings could say
+"Backup carries on while the phone is locked; iOS decides the pace" once this
+lands.
+
 **Bringing a photo library in** (`internal/photoimport`, `httpapi/photoimport.go`):
 Google and Apple give no way for SoundStorm to pull photos out (Google's
 Photos API stopped reading a person's library in 2025; iCloud never had
