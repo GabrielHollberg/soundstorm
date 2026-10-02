@@ -204,9 +204,22 @@ func (l *Library) Plan(paths []string, choices map[string]media.Kind) ([]Placeme
 		}
 	}
 
-	var questions []Question
+	// A drop that mixes shelves - a folder of everything - is split where
+	// its subfolders clearly disagree, and each part decided on its own.
+	type unit struct {
+		key     string
+		members []int
+	}
+	var units []unit
 	for _, key := range order {
-		members := groups[key]
+		for _, part := range splitGroup(cleaned, key, groups[key], 1) {
+			units = append(units, unit{part.key, part.members})
+		}
+	}
+
+	var questions []Question
+	for _, u := range units {
+		key, members := u.key, u.members
 
 		kind, options := decideGroup(cleaned, members)
 		if answer, ok := choices[key]; ok && permitted(answer, options, kind) {
@@ -310,6 +323,118 @@ func looksLikeCameraClip(rel string) bool {
 		}
 	}
 	return false
+}
+
+// groupPart is a part of a drop decided on its own: its key (the folder, or
+// a loose file) and the files in it.
+type groupPart struct {
+	key     string
+	members []int
+}
+
+// splitDepth is as deep as a drop is ever split.
+const splitDepth = 8
+
+// splitGroup splits a dropped folder where it holds more than one shelf.
+//
+// Deciding one shelf per dropped folder is what keeps a subtitle with its
+// film and makes an audiobook of thirty chapters one question - and it sent a
+// folder of everything wholly to whichever shelf its first clear file named:
+// music, films, a show, books and phone photos all to Audiobooks, because one
+// subfolder was called that (found asking how a giant folder would go). So
+// the folder's own subfolders and loose files are each decided, and when two
+// clearly name different shelves the folder is split into them, each split
+// again the same way; when they agree, or only one says anything, it stays
+// whole. What never counts as saying anything (vote): a question, files that
+// name no shelf (a film's subtitles, a lone PDF that is asked about), and
+// pictures unless a folder of them plainly is photos - an album's cover or a
+// booklet's scans would otherwise send an album to pieces.
+func splitGroup(cleaned []string, key string, members []int, depth int) []groupPart {
+	whole := []groupPart{{key, members}}
+	if depth > splitDepth {
+		return whole
+	}
+	type sub struct {
+		key     string
+		members []int
+		folder  bool
+	}
+	var subs []*sub
+	byKey := map[string]*sub{}
+	for _, i := range members {
+		segs := strings.Split(cleaned[i], "/")
+		if len(segs) <= depth {
+			// Not inside this folder at this depth (a loose dropped file).
+			return whole
+		}
+		k, folder := strings.Join(segs[:depth+1], "/"), len(segs) > depth+1
+		sb, ok := byKey[k]
+		if !ok {
+			sb = &sub{key: k, folder: folder}
+			byKey[k] = sb
+			subs = append(subs, sb)
+		}
+		sb.members = append(sb.members, i)
+	}
+	if len(subs) < 2 {
+		if len(subs) == 1 && subs[0].folder {
+			// One folder inside another: look inside it.
+			return splitGroup(cleaned, key, members, depth+1)
+		}
+		return whole
+	}
+	said := map[media.Kind]bool{}
+	for _, sb := range subs {
+		if k, ok := vote(cleaned, sb.members, sb.folder); ok {
+			said[k] = true
+		}
+	}
+	if len(said) < 2 {
+		return whole
+	}
+	var out []groupPart
+	for _, sb := range subs {
+		if sb.folder {
+			out = append(out, splitGroup(cleaned, sb.key, sb.members, depth+1)...)
+		} else {
+			out = append(out, groupPart{sb.key, sb.members})
+		}
+	}
+	return out
+}
+
+// vote is the shelf a part of a drop clearly names, if it names one.
+func vote(cleaned []string, members []int, folder bool) (media.Kind, bool) {
+	kind, options := decideGroup(cleaned, members)
+	if kind == "" || len(options) > 1 {
+		return "", false
+	}
+	// A loose video beside other things is an album's bonus video or a
+	// book's trailer, not a film of its own; a folder of them still says so.
+	if !folder && (kind == media.KindVideo || kind == media.KindTV) {
+		return "", false
+	}
+	if kind == media.KindPicture {
+		// Only a folder that plainly is photos: named so, holding what a
+		// camera names, or a great many pictures.
+		if !folder {
+			return "", false
+		}
+		images := 0
+		for _, i := range members {
+			rel := cleaned[i]
+			if mentionsPictures(rel) || cameraClip.MatchString(path.Base(rel)) {
+				return kind, true
+			}
+			if stillImage[strings.ToLower(path.Ext(rel))] {
+				images++
+			}
+		}
+		if images < 50 {
+			return "", false
+		}
+	}
+	return kind, true
 }
 
 // decideGroup works out one shelf for everything dropped together, or returns

@@ -341,6 +341,23 @@ decides for all of them, and companions - subtitles, artwork, .nfo, .opf - get
 no vote and inherit the answer. A folder of nothing but companions names no
 shelf and is skipped, which is right: a lone .srt has no home.
 
+**A drop that mixes shelves is split where its subfolders disagree**
+(`splitGroup`, 2026-10-01). One shelf per dropped folder sent a folder of
+everything - music, a film, a show, an audiobook, an ebook, phone photos -
+wholly to Audiobooks, because one subfolder was called that and the first
+clear file decides; and an epub beside its m4b went with whichever came
+first (both found by asking how a giant folder would go). Now a folder's
+subfolders and loose files are each decided (`vote`), and where two clearly
+name different shelves it is split into them, each split again the same way
+down to eight levels; where they agree, or only one says anything, it stays
+whole and is decided as before. Not a vote: a question, files naming no
+shelf (subtitles, a lone PDF that would be asked about), a loose video beside
+other things (an album's bonus video), and pictures unless a folder of them
+plainly is photos (named so, camera names, or 50 or more) - so an album with
+its scans, a film with its subtitles and poster, and an audiobook with its
+booklet stay whole (`split_test.go`). A split part's group is its folder
+("Everything/Phone"), which is also what a question names.
+
 **When it cannot tell, it asks.** One drop zone, no shelf targets: guessing
 wrong costs somebody moving files on disk, so the bar for guessing is "there is
 real evidence", not "one of them is more likely". A question is asked per
