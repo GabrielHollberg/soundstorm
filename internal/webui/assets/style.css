@@ -2470,7 +2470,7 @@ body { overflow-x: clip; }
 .home-strip > * { flex: 0 0 150px; width: 150px; scroll-snap-align: start; }
 @media (min-width: 900px) { .home-strip > * { flex-basis: 180px; width: 180px; } }
 .home-empty { padding: 30px 20px; }
-#app.viewing-account #home-view { display: none; }
+#app.viewing-account #home-view, #app.viewing-account #home-quick { display: none; }
 
 /* Sign out, last on the Settings page. */
 .account-signout { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
