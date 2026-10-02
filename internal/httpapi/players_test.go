@@ -106,4 +106,26 @@ func TestPlayingOnSomebodyElsesTV(t *testing.T) {
 	if resp, _ := h.do(t, http.MethodPost, "/api/players/switch", `{"code":"`+code+`","id":"`+tv2+`"}`); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("a switch code used twice: %d", resp.StatusCode)
 	}
+
+	// Choosing a device in the picker (claim) plays nothing: his own TV is
+	// simply his to control, and a free TV of somebody else's switches to him
+	// with nothing waiting behind the switch but the claim itself.
+	if resp, body := phone.do(t, http.MethodPost, "/api/players/"+tv2+"/command", `{"type":"claim"}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("claiming his own TV: %d %s", resp.StatusCode, body)
+	}
+	// (The client that redeemed the switch is nathan now: gabe's TV is
+	// another client, signed in as him.)
+	den := h.another(t)
+	if code, _ := signInAs(t, den, "gabe", "correct horse"); code != http.StatusOK {
+		t.Fatalf("gabe signs in on the den TV: %d", code)
+	}
+	tv3 := "dddddddddddddddd4444"
+	den.do(t, http.MethodPost, "/api/players/hello", `{"id":"`+tv3+`","name":"Den TV","tv":true}`)
+	resp, body = phone.do(t, http.MethodPost, "/api/players/"+tv3+"/command", `{"type":"claim"}`)
+	if resp.StatusCode != http.StatusOK || playerJSON(t, body)["switched"] != true {
+		t.Fatalf("claiming a free TV should switch it: %d %s", resp.StatusCode, body)
+	}
+	if _, body := den.do(t, http.MethodGet, "/api/players/"+tv3+"/next", ""); !strings.Contains(string(body), `"switch"`) {
+		t.Fatalf("the claimed TV should be told to switch: %s", body)
+	}
 }

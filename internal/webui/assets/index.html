@@ -133,6 +133,10 @@
         <input id="search-input" type="search" placeholder="Search everything&hellip;"
                autocomplete="off" aria-label="Search your library">
       </form>
+      <!-- Which device what is played goes to: this one, or a TV this phone
+           then controls (players.go). -->
+      <button id="ctl-btn" class="ctl-btn hidden" type="button" aria-haspopup="dialog"
+              aria-controls="ctl-sheet" aria-label="Choose the device to play on"></button>
     </header>
 
     <nav id="filters" aria-label="Filter by kind">
@@ -1069,6 +1073,19 @@
     <p id="rc-note" class="muted small-print"></p>
   </div>
   <button id="rc-chip" class="rc-chip hidden" type="button"></button>
+
+  <!-- The device picker: this phone or a TV. Everything played goes to the
+       one picked; browsing always stays here. -->
+  <div id="ctl-backdrop" class="ctl-backdrop hidden"></div>
+  <div id="ctl-sheet" class="ctl-sheet hidden" role="dialog" aria-labelledby="ctl-title">
+    <h2 id="ctl-title" class="ctl-title">Play on</h2>
+    <div id="ctl-list" class="ctl-list"></div>
+    <div id="ctl-now" class="ctl-now hidden">
+      <label class="rc-volume"><span>Volume</span><input id="ctl-volume" type="range" min="0" max="100" step="1" value="100"></label>
+      <button id="ctl-stop" type="button" class="ghost">Stop on <span id="ctl-stop-name"></span></button>
+    </div>
+    <p id="ctl-note" class="muted small-print"></p>
+  </div>
 
   <!-- A new device waiting to sign in to this account (devices.go). -->
   <!-- A TV asking to be signed in from this phone (its code typed, or its QR scanned). -->

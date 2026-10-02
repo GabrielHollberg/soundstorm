@@ -311,6 +311,8 @@ const TV = (() => {
 const NATIVE_AUDIO = Boolean(window.soundstormApp && window.soundstormApp.nativeAudio);
 // Controlling a TV's music from this phone's Now Playing (remoteLayer, near
 // the end): declared here, as code that runs while the page loads asks it.
+// Which device what is played goes to (Controlling, near the end).
+const CONTROL = { target: null, away: null, st: null, timer: 0 };
 const RA = { on: false, target: null, st: {}, stAt: 0, pwr: false, key: '', src: '', volume: 1, rate: 1,
   seekTo: null, seekAt: 0, ticker: 0, poll: 0, lastPlaying: false };
 
@@ -2320,6 +2322,8 @@ function showPhoto(item) {
   // (the owner's asking); a clip is a film and stops it (playVideo).
   closeVideo();
   photoShown = item;
+  // Controlling a TV: the photo shows there too, and stepping here steps it.
+  if (CONTROL.target && !TV) controlSend({ type: 'play', item });
 
   const img = $('photo-image');
   img.src = photoPreview(item);
@@ -2415,6 +2419,7 @@ $('photo-live-video').addEventListener('ended', stopLive);
 
 function closePhoto() {
   stopLive();
+  if (photoShown && CONTROL.target && !TV) controlSend({ type: 'control', action: 'closephoto' });
   photoShown = null;
   show($('photo-overlay'), false);
   document.body.classList.remove('photo-open');
@@ -2745,6 +2750,13 @@ function detachHls() {
 }
 
 async function playVideo(item, options = {}) {
+  // Controlling a TV: the film plays there, and this phone is its remote.
+  if (CONTROL.target && !TV) {
+    if (RA.on) dropMirror();
+    controlSend({ type: 'play', item });
+    openRemote(CONTROL.target);
+    return;
+  }
   stopAudio();
   detachHls();
   hideUpNext();
@@ -2999,6 +3011,10 @@ const audio = {
 const SAVE_EVERY_MS = 10000;
 
 function playAudio(item, fromQueue) {
+  // Controlling a TV: the song or book plays there, this page its remote.
+  if (CONTROL.target && !RA.on && item && (item.kind === 'music' || item.kind === 'audiobook')) {
+    controlAttach(CONTROL.target);
+  }
   audio.counted = false;
   if (item && item.kind === 'music' && state.scrobbling && !state.offline && !RA.on) {
     // Their ListenBrainz profile shows what is playing; the play itself is
@@ -4666,6 +4682,7 @@ const ICONS = {
   album: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/>',
   upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   move: '<path d="M4 7h6l2 2h8v9H4zM12 13.5h5M15 11l2.5 2.5L15 16"/>',
+  device: '<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/>',
   cast: '<path d="M3 17.5a3.5 3.5 0 0 1 3.5 3.5M3 13.5A7.5 7.5 0 0 1 10.5 21M3 9.5A11.5 11.5 0 0 1 14.5 21M7 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/>',
   radio: '<path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" stroke-width="2.2"/>',
 };
@@ -4832,12 +4849,6 @@ function renderMainMenu(item, opts = {}) {
     entries.push(menuItem('image', 'Change cover', (event) => {
       event.stopPropagation();
       renderCoverMenu({ song: item }, () => renderMainMenu(item, opts));
-    }, { chevron: true }));
-  }
-  if (playableElsewhere(item) && !state.offline) {
-    entries.push(menuItem('upload', 'Play on\u2026', (event) => {
-      event.stopPropagation();
-      renderPlayOnMenu(item, { queue: state.items.filter((it) => it.kind === item.kind) });
     }, { chevron: true }));
   }
   entries.push(menuItem('info', 'Info', (event) => {
@@ -5810,6 +5821,10 @@ function mediaNext() {
   } else if (audio.index + 1 < audio.tracks.length) {
     selectTrack(audio.index + 1);
     updateMediaSession();
+  } else if (RA.on && !audio.queue && !raBook()) {
+    // A song the TV was playing when this phone picked it up: its queue is
+    // the TV's, so the TV moves on.
+    raSend({ type: 'control', action: 'next' });
   }
 }
 
@@ -5826,6 +5841,8 @@ function mediaPrevious() {
   } else if (audio.index > 0) {
     selectTrack(audio.index - 1);
     updateMediaSession();
+  } else if (RA.on && !audio.queue && !raBook()) {
+    raSend({ type: 'control', action: 'prev' });
   } else {
     player.currentTime = 0;
   }
@@ -7363,22 +7380,14 @@ setIcon($('np-exit'), 'close');
 setIcon($('np-looks-btn'), 'sparkle');
 setIcon($('np-cast'), 'cast');
 // Play on another device, from Now Playing and the film player: the device
-// list beside the button, and what is playing here moves there.
-function openPlayOn(item, anchor, opts) {
-  if (!item) return;
-  state.menuFor = item;
-  state.menuAnchor = anchor;
-  state.menuOpts = { nowPlaying: true };
-  renderPlayOnMenu(item, opts);
-  placeMenu($('item-menu'), anchor);
-}
+// picker, where choosing a TV moves what is playing here to it.
 $('np-cast').addEventListener('click', (event) => {
   event.stopPropagation();
-  openPlayOn(audio.item, $('np-cast'), { moving: true });
+  openControlSheet();
 });
 $('video-cast').addEventListener('click', (event) => {
   event.stopPropagation();
-  openPlayOn(state.watching && state.watching.item, $('video-cast'), { video: true });
+  openControlSheet();
 });
 
 // The Looks sheet: every look, grouped, picked right in Now Playing. Choosing
@@ -12990,9 +12999,10 @@ function playerMenuItems(item, opts) {
     renderSleepMenu(item, opts);
   }, { chevron: true, detail: left }));
   if (!state.offline) {
-    out.push(menuItem('upload', 'Play on another device', (event) => {
+    out.push(menuItem('cast', 'Play on another device', (event) => {
       event.stopPropagation();
-      renderPlayOnMenu(item, { moving: true });
+      closeItemMenu();
+      openControlSheet();
     }, { chevron: true }));
   }
   if (item.kind === 'music') {
@@ -17444,6 +17454,7 @@ function raLoad(url) {
         cmd.index = Math.min(at, 200);
       }
       raSend(cmd);
+      RA.sentAt = Date.now();
       RA.st = { ...RA.st, position: 0, playing: false, item: { sourceId: item.sourceId, id: item.id } };
       RA.stAt = Date.now();
     }
@@ -17476,7 +17487,13 @@ async function raPoll() {
     return;
   }
   const st = body.state || {};
-  if (st.kind !== 'audio') return;
+  const settled = Date.now() - (RA.sentAt || 0) > 5000;
+  if (st.kind !== 'audio') {
+    // The TV went on to a film or a photo, or stopped: this page lets go of
+    // the music - quietly, the TV is not told anything.
+    if (settled) dropMirror();
+    return;
+  }
   const was = RA.st;
   RA.st = st;
   RA.stAt = Date.now() - Math.max(0, Math.min(5000, st.at ? Date.now() - st.at : 0));
@@ -17502,6 +17519,12 @@ async function raPoll() {
     if (next && raKey(next) === tvKey) {
       RA.key = tvKey;
       RA.fire('ended');
+      return;
+    }
+    // Something this page did not send - the TV's own remote, or a queue it
+    // had before this phone picked it up: shown here as it is.
+    if (settled && st.item && st.item.id) {
+      raAdopt(st);
       return;
     }
   }
@@ -17539,6 +17562,7 @@ function enterMirror(target, cmd) {
   RA.rate = moved && raBook() ? realRate || 1 : 1;
   RA.stAt = Date.now();
   RA.pwr = true;
+  RA.sentAt = Date.now();
   RA.lastPlaying = false;
   clearInterval(RA.poll);
   clearInterval(RA.ticker);
@@ -17582,6 +17606,7 @@ function renderWhere() {
 function remoteVolumeTarget() {
   if (RA.on && RA.target) return { target: RA.target, st: RA.st };
   if (PLAYER.target) return { target: PLAYER.target, st: PLAYER.targetState || {} };
+  if (CONTROL.target) return { target: CONTROL.target, st: CONTROL.st || {} };
   return null;
 }
 let remoteVolumeOn = false;
@@ -17632,8 +17657,57 @@ function showVolumeBadge(name, value) {
 // The label: the compact remote for the volume, Play here and Stop.
 $('np-where').addEventListener('click', (event) => {
   event.stopPropagation();
-  if (RA.on) openRemote(RA.target);
+  openControlSheet();
 });
+
+// Picked up what the TV plays (a song the TV moved to by itself, or what
+// it was playing when this phone chose it): this page shows it, as a queue
+// of its own the TV holds, and sends nothing.
+function raAdopt(st) {
+  const item = { ...st.item };
+  RA.key = raKey(item);
+  RA.st = st;
+  RA.stAt = Date.now();
+  RA.known = item.kind !== 'audiobook';
+  audio.queue = null;
+  audio.radio = null;
+  playAudio(item, true);
+  renderNowPlaying();
+}
+
+// Letting go of the TV's music on this page: the phone's player cleared,
+// with no place saved (it would be this page's, not the TV's) and nothing
+// sent to the TV, which plays on.
+function dropMirror() {
+  if (!RA.on) return;
+  exitMirror(false);
+  audio.resumable = false;
+  stopAudio();
+}
+
+// Into the mirror without a song to send yet: what is played next goes to
+// the TV (playAudio, controlling a TV).
+function controlAttach(target) {
+  const el = $('audio-player');
+  RA.real.pause.call(el);
+  RA.real.removeAttribute.call(el, 'src');
+  RA.real.load.call(el);
+  RA.on = true;
+  RA.target = target;
+  RA.key = '';
+  RA.st = {};
+  RA.stAt = Date.now();
+  RA.known = false;
+  RA.rate = 1;
+  RA.pwr = true;
+  RA.sentAt = Date.now();
+  RA.lastPlaying = false;
+  clearInterval(RA.poll);
+  clearInterval(RA.ticker);
+  RA.poll = setInterval(raPoll, 1000);
+  RA.ticker = setInterval(() => { if (RA.on && RA.pwr) RA.fire('timeupdate'); }, 250);
+  renderWhere();
+}
 
 /* --------------------------------- playing on another device, remotely */
 
@@ -17673,6 +17747,7 @@ async function playerLoop() {
   PLAYER.polling = true;
   try {
     await playerHello();
+    if (!PLAYER.restored) { PLAYER.restored = true; restoreControl(); }
     // A phone in a pocket is not worth a connection; a TV always is.
     while (state.me && !state.offline && !PLAYER.leaving && (TV || !document.hidden)) {
       const r = await api(`/api/players/${PLAYER.id}/next`);
@@ -17701,7 +17776,8 @@ function playerState() {
   const v = $('video-player');
   const card = (it) => it && ({
     sourceId: it.sourceId, id: it.id, title: it.title, subtitle: subtitleFor(it), kind: it.kind,
-    artId: it.artId, extra: it.extra && it.extra.type ? { type: it.extra.type } : undefined,
+    artId: it.artId, durationSeconds: it.durationSeconds,
+    extra: it.extra && it.extra.type ? { type: it.extra.type } : undefined,
   });
   if (shown('video-overlay') && state.watching) {
     return {
@@ -17752,6 +17828,9 @@ async function runPlayerCommand(c) {
     case 'ask':
       askPlayerTakeOver(c);
       return;
+    case 'claim':
+      // A phone chose this device to control: nothing to do but be ready.
+      return;
     case 'play':
       remotePlay(c);
       return;
@@ -17800,6 +17879,10 @@ function remoteControl(c) {
   const v = $('video-player');
   const a = $('audio-player');
   const value = Number(c.value) || 0;
+  if (c.action === 'closephoto') {
+    if (photoShown) closePhoto();
+    return;
+  }
   if (shown('video-overlay')) {
     if (c.action === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
     else if (c.action === 'pause') v.pause();
@@ -17845,65 +17928,94 @@ $('player-ask-no').addEventListener('click', () => answerPlayerAsk(false));
 
 // --- the phone's side: Play on, and the remote ---------------------------
 
-function playableElsewhere(item) {
-  if (!item) return false;
-  if (item.kind === 'tv') return !(item.extra && item.extra.type === 'Series');
-  return ['music', 'audiobook', 'video', 'picture'].includes(item.kind);
+// --- Which device this phone plays on --------------------------------------
+//
+// The owner's design (2026-10-02): one choice, always in reach - this phone,
+// or a TV (or any other open device of this person's). With a TV chosen,
+// everything played goes there and this phone is its remote: Now Playing for
+// music and books, the remote sheet for a film, and a photo shows on both.
+// Browsing stays on the phone. Choosing the phone again leaves the TV
+// playing, and a chip says so, a tap choosing it again.
+const CONTROL_KEY = 'soundstorm-control';
+
+function renderControl() {
+  const btn = $('ctl-btn');
+  show(btn, !TV && !state.offline && Boolean(state.me));
+  btn.classList.toggle('on', Boolean(CONTROL.target));
+  const label = document.createElement('span');
+  label.textContent = CONTROL.target ? CONTROL.target.name : '';
+  btn.replaceChildren(icon('cast'), label);
+  btn.title = CONTROL.target ? `Playing on ${CONTROL.target.name}` : 'Playing on this device';
+  renderControlChip();
+  tellRemoteVolume();
 }
 
-// Play on: the devices this person may play on - their own, and every TV.
-async function renderPlayOnMenu(item, opts = {}) {
-  const menu = $('item-menu');
-  const note = menuNote();
-  const back = document.createElement('button');
-  back.type = 'button';
-  back.className = 'menu-back';
-  back.append(icon('back'));
-  const label = document.createElement('span');
-  label.textContent = 'Play on';
-  back.append(label);
-  back.addEventListener('click', (event) => {
-    event.stopPropagation();
-    renderMainMenu(item, state.menuOpts);
-  });
-  note.textContent = 'Looking for devices\u2026';
-  menu.replaceChildren(back, note);
-  const { ok, body } = await api(`/api/players?self=${encodeURIComponent(PLAYER.id)}`);
-  if (state.menuFor !== item) return;
-  const list = (ok && body && body.players) || [];
-  if (!list.length) {
-    note.textContent = 'No other device is open. Open SoundStorm on the TV, or another computer, and it shows here.';
+// What the device chosen (or the one left playing) is doing, every few
+// seconds: picked up when it plays music or a book, shown on the chip.
+async function watchControl() {
+  const t = CONTROL.target || CONTROL.away;
+  if (!t || !state.me || document.hidden) return;
+  const { ok, status, body } = await api(`/api/players/${t.id}`);
+  if (t !== (CONTROL.target || CONTROL.away)) return;
+  if (!ok) {
+    if (status === 404) {
+      if (CONTROL.target === t) {
+        showToast(`${t.name} is not open, or is not yours to control now.`);
+        setControl(null);
+        if (RA.on) dropMirror();
+      } else {
+        CONTROL.away = null;
+      }
+      renderControl();
+    }
     return;
   }
-  note.textContent = '';
-  const rows = list.map((p) => {
-    const detail = p.mine ? '' : (p.busy ? `${p.person} is using it` : (p.person ? `${p.person}'s` : ''));
-    return menuItem(p.tv ? 'film' : 'headphones', p.name, async (event) => {
-      event.stopPropagation();
-      const cmd = { type: 'play', item };
-      const queue = opts.moving && audio.queue ? audio.queue.items : opts.queue;
-      if (item.kind === 'music' && queue && queue.length > 1) {
-        const at = queue.findIndex((it) => it.sourceId === item.sourceId && it.id === item.id);
-        if (at >= 0) Object.assign(cmd, { queue: queue.slice(Math.max(0, at - 200), at + 300), index: Math.min(at, 200) });
-      }
-      if (opts.moving && item.kind === 'music') cmd.at = $('audio-player').currentTime || 0;
-      // A book's place, and a film's, is kept on the server: saved here
-      // first, so the TV carries on from it.
-      if (opts.moving) savePosition();
-      if (opts.video) saveWatchPosition(true);
-      await sendPlayOn(p, cmd, note, () => {
-        if (opts.moving && item.kind !== 'music' && item.kind !== 'audiobook') stopAudio();
-        // A film's place is saved as it closes, and the TV carries on from it.
-        if (opts.video) closeVideo();
-      });
-    }, { detail });
-  });
-  menu.replaceChildren(back, ...rows, note);
+  CONTROL.st = body.state || {};
+  const st = CONTROL.st;
+  if (CONTROL.target === t && !RA.on && st.kind === 'audio' && st.item && st.playing) {
+    controlAttach(t);
+    raAdopt(st);
+  }
+  renderControlChip();
 }
 
-async function sendPlayOn(p, cmd, note, done) {
-  note.textContent = `Sending to ${p.name}\u2026`;
-  let r = await api(`/api/players/${p.id}/command`, { method: 'POST', body: JSON.stringify(cmd) });
+function renderControlChip() {
+  const chip = $('rc-chip');
+  const st = CONTROL.st || {};
+  let text = '';
+  if (CONTROL.target && !RA.on && !shown('rc') && (st.kind === 'video' || st.kind === 'photo')) text = `On ${CONTROL.target.name}`;
+  else if (!CONTROL.target && CONTROL.away && st.kind) text = `Playing on ${CONTROL.away.name}`;
+  chip.textContent = text;
+  show(chip, Boolean(text));
+}
+
+function setControl(target) {
+  CONTROL.target = target;
+  try {
+    if (target) localStorage.setItem(CONTROL_KEY, JSON.stringify(target));
+    else localStorage.removeItem(CONTROL_KEY);
+  } catch { /* storage full */ }
+  clearInterval(CONTROL.timer);
+  if (target || CONTROL.away) CONTROL.timer = setInterval(watchControl, 3000);
+  renderControl();
+}
+
+function controlSend(cmd) {
+  const t = CONTROL.target;
+  if (!t) return Promise.resolve(null);
+  return api(`/api/players/${t.id}/command`, { method: 'POST', body: JSON.stringify(cmd) }).then((r) => {
+    if (r.status === 404 || r.status === 403) {
+      showToast(`${t.name} is not open, or is not yours to control now.`);
+      setControl(null);
+    }
+    return r;
+  });
+}
+
+// Taking a device: a TV somebody else is using asks them first (players.go).
+async function claimDevice(p, note) {
+  note.textContent = `Connecting to ${p.name}\u2026`;
+  let r = await api(`/api/players/${p.id}/command`, { method: 'POST', body: JSON.stringify({ type: 'claim' }) });
   if (r.status === 202 && r.body && r.body.asking) {
     note.textContent = `Asking ${p.person || 'whoever is watching'} on ${p.name}\u2026`;
     const ask = r.body.asking;
@@ -17914,29 +18026,156 @@ async function sendPlayOn(p, cmd, note, done) {
     }
     if (r.ok && r.body && r.body.denied) {
       note.textContent = `${p.person || 'They'} said no. You can ask again in ${Math.round(r.body.retryIn / 60)} minutes.`;
-      return;
+      return false;
     }
     if (!(r.ok && r.body && r.body.allowed)) {
       note.textContent = (r.body && r.body.error) || 'That did not go through.';
-      return;
+      return false;
     }
   } else if (r.status === 429 && r.body && r.body.retryIn) {
     note.textContent = `${p.person || 'They'} said no. You can ask again in ${Math.max(1, Math.round(r.body.retryIn / 60))} minute${r.body.retryIn > 90 ? 's' : ''}.`;
-    return;
+    return false;
   } else if (!r.ok) {
     note.textContent = (r.body && r.body.error) || 'That did not go through.';
+    return false;
+  }
+  return true;
+}
+
+// Choosing a device (null: this phone).
+async function chooseDevice(p) {
+  const note = $('ctl-note');
+  if (!p) {
+    const was = CONTROL.target;
+    if (RA.on) dropMirror();
+    forgetRemote();
+    CONTROL.away = was;
+    CONTROL.st = null;
+    setControl(null);
+    closeControlSheet();
+    if (was) watchControl();
     return;
   }
-  closeItemMenu();
-  if (done) done();
-  // Music: this phone's own Now Playing becomes the remote - the lyrics, the
-  // looks, Up next and every button, all acting on the TV. Anything else
-  // gets the compact remote.
-  if (cmd.item && (cmd.item.kind === 'music' || cmd.item.kind === 'audiobook')) {
-    enterMirror({ id: p.id, name: p.name }, cmd);
+  if (CONTROL.target && CONTROL.target.id === p.id) { closeControlSheet(); return; }
+  if (RA.on) dropMirror();
+  forgetRemote();
+  if (!(await claimDevice(p, note))) return;
+  const target = { id: p.id, name: p.name, tv: Boolean(p.tv) };
+  CONTROL.away = null;
+  CONTROL.st = null;
+  setControl(target);
+  closeControlSheet();
+  // What plays here moves there, from the same moment.
+  if (shown('video-overlay') && state.watching) {
+    const item = state.watching.item;
+    saveWatchPosition(true);
+    closeVideo();
+    controlSend({ type: 'play', item });
+    openRemote(target);
     return;
   }
-  openRemote({ id: p.id, name: p.name });
+  // Paused here: left here, not started on the TV unasked.
+  if (audio.item && $('audio-player').paused) stopAudio();
+  if (audio.item && (audio.item.kind === 'music' || audio.item.kind === 'audiobook')) {
+    const item = audio.item;
+    const cmd = { type: 'play', item };
+    const q = audio.queue;
+    if (item.kind === 'music' && q && q.items.length > 1) {
+      cmd.queue = q.items.slice(Math.max(0, q.index - 200), q.index + 300);
+      cmd.index = Math.min(q.index, 200);
+    }
+    if (item.kind === 'music') cmd.at = $('audio-player').currentTime || 0;
+    // A book's place is kept on the server: saved here, the TV carries on.
+    else savePosition();
+    await controlSend(cmd);
+    enterMirror(target, cmd);
+    return;
+  }
+  // Nothing playing here: whatever the TV plays shows here.
+  watchControl();
+}
+
+async function openControlSheet() {
+  const list = $('ctl-list');
+  const note = $('ctl-note');
+  note.textContent = 'Looking for devices\u2026';
+  show($('ctl-backdrop'), true);
+  show($('ctl-sheet'), true);
+  const here = { id: '', name: touchScreen() ? 'This phone' : 'This computer' };
+  const row = (p, icn, detail) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ctl-row';
+    const current = p.id ? Boolean(CONTROL.target && CONTROL.target.id === p.id) : !CONTROL.target;
+    b.classList.toggle('on', current);
+    const name = document.createElement('span');
+    name.className = 'ctl-name';
+    name.textContent = p.name;
+    const sub = document.createElement('span');
+    sub.className = 'ctl-detail muted';
+    sub.textContent = detail || '';
+    const text = document.createElement('span');
+    text.className = 'ctl-text';
+    text.append(name, sub);
+    b.append(icon(icn), text);
+    if (current) b.append(icon('check'));
+    b.addEventListener('click', () => chooseDevice(p.id ? p : null));
+    return b;
+  };
+  list.replaceChildren(row(here, 'device', ''));
+  renderControlNow();
+  const { ok, body } = await api(`/api/players?self=${encodeURIComponent(PLAYER.id)}`);
+  const players = (ok && body && body.players) || [];
+  list.replaceChildren(row(here, 'device', ''), ...players.map((p) => {
+    const detail = p.mine ? (p.state && p.state.playing ? 'Playing' : '') : (p.busy ? `${p.person} is using it` : (p.person ? `${p.person}'s` : ''));
+    return row(p, p.tv ? 'film' : 'headphones', detail);
+  }));
+  note.textContent = players.length ? 'What you play goes to the device chosen. Browsing stays on this phone.'
+    : 'No other device is open. Open SoundStorm on the TV, or another computer, and it shows here.';
+}
+function closeControlSheet() {
+  show($('ctl-sheet'), false);
+  show($('ctl-backdrop'), false);
+}
+function renderControlNow() {
+  show($('ctl-now'), Boolean(CONTROL.target));
+  if (!CONTROL.target) return;
+  $('ctl-stop-name').textContent = CONTROL.target.name;
+  const st = (RA.on ? RA.st : CONTROL.st) || {};
+  if (typeof st.volume === 'number') $('ctl-volume').value = String(Math.round(st.volume * 100));
+}
+$('ctl-btn').addEventListener('click', openControlSheet);
+$('ctl-backdrop').addEventListener('click', closeControlSheet);
+let ctlVolumeTimer = 0;
+$('ctl-volume').addEventListener('input', () => {
+  if (ctlVolumeTimer) return;
+  ctlVolumeTimer = setTimeout(() => {
+    ctlVolumeTimer = 0;
+    const value = Number($('ctl-volume').value) / 100;
+    if (RA.on) RA.st = { ...RA.st, volume: value };
+    controlSend({ type: 'volume', value });
+  }, 200);
+});
+$('ctl-stop').addEventListener('click', () => {
+  controlSend({ type: 'stop' });
+  forgetRemote();
+  if (RA.on) dropMirror();
+  closeControlSheet();
+});
+// The device chosen last time, if it is still open and still this
+// person's to control.
+async function restoreControl() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(CONTROL_KEY) || 'null'); } catch { /* none */ }
+  if (TV || !saved || !saved.id) { renderControl(); return; }
+  const { ok, body } = await api(`/api/players?self=${encodeURIComponent(PLAYER.id)}`);
+  const p = ok && body && (body.players || []).find((x) => x.id === saved.id);
+  if (p && (p.mine || !p.busy)) {
+    setControl({ id: p.id, name: p.name, tv: Boolean(p.tv) });
+    watchControl();
+  } else {
+    setControl(null);
+  }
 }
 
 // The remote: what the device is playing, and its buttons.
@@ -17954,11 +18193,9 @@ function openRemote(target) {
 function closeRemote() {
   show($('rc'), false);
   clearInterval(PLAYER.remoteTimer);
-  PLAYER.remoteTimer = setInterval(refreshRemote, 5000);
-  if (PLAYER.target) {
-    $('rc-chip').textContent = `On ${PLAYER.target.name}`;
-    show($('rc-chip'), true);
-  }
+  PLAYER.target = null;
+  setTimeout(tellRemoteVolume, 0);
+  renderControlChip();
 }
 function forgetRemote() {
   PLAYER.target = null;
@@ -18042,7 +18279,10 @@ $('rc-prev').replaceChildren(icon('prev'));
 $('rc-next').replaceChildren(icon('skip'));
 $('rc-close').replaceChildren(icon('down'));
 $('rc-close').addEventListener('click', closeRemote);
-$('rc-chip').addEventListener('click', () => PLAYER.target && openRemote(PLAYER.target));
+$('rc-chip').addEventListener('click', () => {
+  if (CONTROL.target) openRemote(CONTROL.target);
+  else if (CONTROL.away) chooseDevice(CONTROL.away);
+});
 $('rc-toggle').addEventListener('click', () => {
   const st = PLAYER.targetState || {};
   const playing = !st.playing;
@@ -18087,7 +18327,7 @@ $('rc-volume').addEventListener('change', sendVolume);
 $('rc-stop').addEventListener('click', () => {
   remoteSend({ type: 'stop' });
   forgetRemote();
-  if (RA.on) { exitMirror(false); stopAudio(); }
+  if (RA.on) dropMirror();
 });
 // Play here: what the device is playing comes to this phone, and stops there.
 $('rc-here').addEventListener('click', () => {

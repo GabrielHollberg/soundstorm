@@ -337,7 +337,10 @@ func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"players": list})
 }
 
-// POST /api/players/{id}/command {"type": "play"|"control"|"volume"|"stop", ...}
+// POST /api/players/{id}/command {"type": "play"|"control"|"volume"|"stop"|"claim", ...}
+//
+// "claim" is a phone choosing the device to control (the device picker): it
+// plays nothing, and on somebody else's TV it takes it over as "play" does.
 func (s *Server) handlePlayerCommand(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
@@ -353,7 +356,7 @@ func (s *Server) handlePlayerCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.Unmarshal(raw, &head)
 	switch head.Type {
-	case "play", "control", "volume", "stop":
+	case "play", "control", "volume", "stop", "claim":
 	default:
 		writeError(w, http.StatusBadRequest, "not a command a player takes")
 		return
@@ -369,12 +372,16 @@ func (s *Server) handlePlayerCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.UserID == user.ID {
+		if head.Type == "claim" {
+			writeJSON(w, http.StatusOK, map[string]any{"sent": true})
+			return
+		}
 		p.enqueueLocked(withFrom(raw, user.Name))
 		writeJSON(w, http.StatusOK, map[string]any{"sent": true})
 		return
 	}
 	// Somebody else's TV: only sending something to it, which takes it over.
-	if head.Type != "play" {
+	if head.Type != "play" && head.Type != "claim" {
 		writeError(w, http.StatusForbidden, "that TV is playing as someone else; send something to it to take it over")
 		return
 	}

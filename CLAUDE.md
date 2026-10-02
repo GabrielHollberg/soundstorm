@@ -1728,6 +1728,30 @@ play a three-file book: skips arrived as 104 and 134 seconds (120 first, the
 next file's start), the phone followed the TV back into the first file,
 1.5x went across, and two presses took the TV to 90%. Not checked: on a real
 phone and TV.
+**Then one switch instead of Play on** (2026-10-02, the owner's design:
+"between using my phone's screen for my phone and using it for the TV ...
+there's a lot of weird scenarios"). A device button in the header
+(`#ctl-btn`, `CONTROL`, `chooseDevice`) opens a picker of this phone and the
+person's open devices (every TV). Choosing a TV takes it (`claim`, a command
+that plays nothing; on somebody else's TV it asks or switches as "play"
+does) and from then on what is played goes there: music and books by the
+mirror (`playAudio` attaches it, `controlAttach`), a film to the TV with the
+remote sheet open (`playVideo`), a photo shown on both (`showPhoto`, and
+closing it closes the TV's). What is playing here when the TV is chosen moves
+there from the same moment; something paused here is left. **Browsing stays on
+the phone** - the owner's choice when asked, as the TV is often being watched.
+Choosing the phone again leaves the TV playing (`dropMirror`: cleared here, no
+place saved, nothing sent), and a chip says "Playing on TV", a tap choosing it
+again; whatever the TV plays then - or starts by its own remote - is picked up
+on the phone (`raAdopt`, `watchControl`), next and previous going to the TV's
+own queue when the phone does not hold it. The choice is kept on the device
+(`soundstorm-control`) while that TV stays this person's. The picker has the
+TV's volume and Stop. The old Play on menu entries are gone; Now Playing's
+cast button, its menu entry and the film player's Play on open the picker.
+Checked with a TV pretending to play: chose the TV, a queue played there and
+next moved it, back to the phone with the TV playing on and the chip showing,
+the chip brought the mirror back, and a film went to the TV with the remote.
+Not checked: on a real phone and TV.
 Not built: typing on the TV from the phone; the Apple
 TV's half (for the Mac: it would say hello, poll and obey the same
 commands).
