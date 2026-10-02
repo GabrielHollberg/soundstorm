@@ -519,8 +519,18 @@ class MainActivity : Activity() {
         val view = webView
         if (view != null && server?.let(ServerAddress::origin) == ServerAddress.origin(link.first)) {
             // The page is there: it asks at once, nothing reloaded (music
-            // playing in it carries on).
-            view.evaluateJavascript("window.__soundstormLink && window.__soundstormLink(" + JSONObject.quote(link.second) + ")", null)
+            // playing in it carries on). A page that cannot - not signed in,
+            // or loaded before it knew how (the owner's first try just
+            // brought the app forward) - is loaded again with the code.
+            val code = link.second
+            view.evaluateJavascript(
+                "(typeof window.__soundstormLink === 'function' && window.__soundstormLink(" + JSONObject.quote(code) + ")) === true",
+            ) { took ->
+                if (took != "true") {
+                    pendingLink = code
+                    load()
+                }
+            }
         } else {
             pendingLink = link.second
             showWeb(link.first)

@@ -581,7 +581,13 @@ $('link-form').addEventListener('submit', async (event) => {
 // Scanned: asked once signed in here, and the code taken out of the address.
 // The Android app hands a TV's code from a soundstorm:// link to the page
 // already open.
-window.__soundstormLink = (code) => { if (state.me) askLink(String(code)); };
+// It says whether it took it: not signed in yet, the app loads the page with
+// the code in its address instead, asked once signed in.
+window.__soundstormLink = (code) => {
+  if (!state.me) return false;
+  askLink(String(code));
+  return true;
+};
 
 // In a phone's browser, the camera's way in: the app is where this person is
 // signed in, so it is offered (Android; the iPhone app needs the link type

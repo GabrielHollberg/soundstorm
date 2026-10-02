@@ -6062,7 +6062,14 @@ the code (`window.__soundstormLink`), or the server's page loaded with
 `?link=`. And the page, opened by a QR in an Android phone's browser, offers
 **Open in the SoundStorm app** (an `intent://` link with the browser as the
 fallback, so without the app nothing changes). Checked: the link opens the
-app on the emulator, and the button shows in an Android browser.
+app on the emulator, and the button shows in an Android browser. **Then the app came forward and nothing asked** (0.23): with the app
+already open, the page in it had been loaded before it had the hand-off, so
+the code went nowhere. The page now says whether it took the code
+(`__soundstormLink` returns true), and when it does not - an older page, or
+not signed in - the app loads it again with `?link=`. Checked on the
+emulator end to end: signed in to a throwaway server, a TV (Chrome) showing a
+code, the link fired at the open app - "Sign in a TV?" with that code, Allow,
+and the TV signed in.
 **For the Mac:** the iPhone app wants the same - `soundstorm` in
 CFBundleURLTypes, the same `link?server=&code=` handled (known servers
 only), and the page then offering the button on an iPhone too (it shows on
