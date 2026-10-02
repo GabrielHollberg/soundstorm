@@ -6086,7 +6086,9 @@ and the person is taken off. **Sign out takes you off the device; Switch
 person keeps everybody** - on a friend's phone, staying switchable would be
 staying signed in. The page: the picker on a TV's every opening, Someone
 else to sign in kept, Settings' On this device (switch, keep, take off) and
-PIN. The Apple TV: the same, and Switch person in its Settings. Checked: Go
+PIN. The Apple TV: the same, and Switch person in its Settings. On a TV the PIN or password step offers **Use your phone instead**
+(`#profiles-phone`, the owner's asking), which opens the sign-in screen's
+code and QR code: typing a password with a remote was the chore. Checked: Go
 tests through the routes; Chrome as a TV with two people (password for the
 owner, none then a PIN for the other, a wrong PIN refused); the Apple TV
 simulator (`-profile <name> -profileSecret <s>`, debug only) - the picker on

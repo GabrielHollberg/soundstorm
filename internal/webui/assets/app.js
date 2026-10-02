@@ -119,6 +119,10 @@ function pickProfile(person) {
   input.value = '';
   $('profiles-secret-label').textContent = person.needs === 'pin' ? `${person.name}'s PIN` : `${person.name}'s password`;
   input.inputMode = person.needs === 'pin' ? 'numeric' : 'text';
+  // A password typed with a TV's remote is a chore: the phone can sign the
+  // TV in instead (the owner's asking), with the same code and QR code as
+  // the sign-in screen's.
+  show($('profiles-phone'), TV);
   input.focus();
 }
 async function switchProfile(person, secret) {
@@ -152,6 +156,11 @@ $('profiles-secret').addEventListener('submit', (event) => {
   switchProfile(profilePicked, profilePicked.needs === 'pin' ? { pin: value } : { password: value });
 });
 $('profiles-secret-back').addEventListener('click', () => showProfiles(profilesShown));
+$('profiles-phone').addEventListener('click', async () => {
+  show($('profiles'), false);
+  showGate(true, false);
+  startLink();
+});
 $('profiles-cancel').addEventListener('click', () => {
   show($('profiles'), false);
   show($('app'), true);
