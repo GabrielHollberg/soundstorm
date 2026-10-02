@@ -31,6 +31,11 @@ its own memory, which the other never sees, so what both must know is here.
   with `versionCode` raised each time so a phone installs over the last. They
   are published as GitHub pre-releases named `android-<version>`, never marked
   Latest, since Latest is the server's installer.
+  **Nothing updates an installed copy by itself**: the owner installs each
+  release on their phone, and the projector (XGIMI, Google TV) only gets one
+  by adb over the network - `adb connect 192.168.86.23:5555`, then
+  `adb install -r` (this PC's VPN off; it is on the Google Wifi subnet). It
+  sat on 0.7 until 0.26 (2026-10-02), so push each release to it too.
 
 **main is the only long-lived branch.** The apps are folders on it. They used
 to live on `android-app` and `ios-app`, and that is how a bug shipped: the
