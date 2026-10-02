@@ -150,6 +150,12 @@ struct SignInView: View {
                 .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
+        .onAppear {
+            if model.phoneFirst {
+                model.phoneFirst = false
+                linking = true
+            }
+        }
         #if DEBUG
         // For the simulator, which cannot type: -username <u> -password <p>
         .task {
@@ -446,6 +452,9 @@ struct ProfilesView: View {
                     }
                     Button(busy ? "Switching…" : "Continue") { go(picked) }
                         .disabled(busy || secret.isEmpty)
+                    // Typing with the remote is the chore: a phone signed in
+                    // can sign the TV in instead (the page's #profiles-phone).
+                    Button("Use your phone instead") { Task { await model.signInWithPhone() } }
                     Button("Back") { self.picked = nil; secret = ""; message = nil }
                 }
             } else {

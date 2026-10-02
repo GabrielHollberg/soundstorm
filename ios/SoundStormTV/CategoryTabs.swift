@@ -17,7 +17,8 @@ enum Categories {
         ("pairs", "Read Along"), ("document", "Documents"), ("fav-books", "Favorites"), ("genres-books", "Genres"),
     ]
     static let photos: [(value: String, label: String)] = [
-        ("picture", "Photos"), ("people", "People"), ("places", "Places"), ("fav-photos", "Favorites"),
+        ("picture", "Photos"), ("people", "People"), ("places", "Places"), ("photo-videos", "Videos"),
+        ("photo-live", "Live photos"), ("fav-photos", "Favorites"),
     ]
     static let hiddenAtFirst: [String: [String]] = [
         "music": ["genres"], "watch": ["genres-watch"], "books": ["genres-books"],
@@ -164,6 +165,8 @@ struct PhotosTab: View {
             case "picture": PhotosView()
             case "people": GroupsPage(round: true) { try await api.photoGroups("people") }
             case "places": GroupsPage(round: false) { try await api.photoGroups("places") }
+            case "photo-videos": ItemsPage { try await api.photos(ofType: "video") }
+            case "photo-live": ItemsPage { try await api.photos(ofType: "live") }
             case "fav-photos": ItemsPage { try await api.favorites().filter { $0.kind == "picture" } }
             default: EmptyView()
             }

@@ -150,6 +150,18 @@ final class AppModel {
         stage = .signIn(hasAccount: true)
     }
 
+    /// The sign-in screen opens on the phone's code (Use your phone instead).
+    var phoneFirst = false
+
+    /// Use your phone instead of typing a PIN or password with the remote:
+    /// the sign-in screen's code and QR code, the book saved first as the
+    /// person still signed in.
+    func signInWithPhone() async {
+        await player?.stopSaving()
+        phoneFirst = true
+        stage = .signIn(hasAccount: true)
+    }
+
     /// Back from the picker opened in Settings, to the person still here.
     func cancelSwitch() { stage = .library }
 

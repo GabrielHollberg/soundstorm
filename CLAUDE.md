@@ -116,8 +116,13 @@ is described in full in its own section below; tick them off here:
    something asked on the TV, no answer in 15 seconds was a yes, and the TV
    switched to Gabe with his song. Not checked: a real song playing (no
    music server here) and a real phone's remote screen.
-2. **"Use your phone instead"** on Who's listening's PIN or password step.
-3. **Videos and Live photos** pills in Photos (`/api/photos/of?type=`).
+2. ~~**"Use your phone instead"**~~ - *done 2026-10-02*: on the PIN or
+   password step, opens the sign-in screen on the phone's code
+   (`AppModel.signInWithPhone`, the book saved first).
+3. ~~**Videos and Live photos**~~ - *done 2026-10-02*: the two categories, and
+   in the viewer a LIVE badge and OK playing the moving part over the still
+   (`api.liveURL`, `<id>%40live` as the page's), muted while music plays.
+   Not tried: no Immich on the Mac to give a Live Photo.
 4. ~~The open bugs from both reviews~~ - *done 2026-10-02* (Apple TV and
    iPhone backup), except the iPhone's `.net` fallback and `confirm()` while
    something is presented.

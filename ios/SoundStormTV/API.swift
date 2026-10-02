@@ -498,6 +498,18 @@ final class API {
         return (a.series ?? []).flatMap { $0.books ?? [] } + (a.books ?? [])
     }
 
+    /// The Photos tab's Videos and Live photos, newest first.
+    func photos(ofType type: String) async throws -> [Item] {
+        struct Answer: Decodable { let items: [Item] }
+        let a: Answer = try await get("api/photos/of", query: ["type": type])
+        return a.items
+    }
+
+    /// A Live Photo's moving part ("<id>@live", the server's LiveSuffix).
+    func liveURL(_ item: Item) -> URL {
+        url("api/stream/\(Self.part(item.sourceId))/\(Self.path(item.id))%40live")
+    }
+
     func photoGroups(_ which: String) async throws -> [Group] {
         struct People: Decodable { let people: [Group]? ; let places: [Group]? }
         let a: People = try await get("api/photos/\(which)")

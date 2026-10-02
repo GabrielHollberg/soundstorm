@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Photos: this day in earlier years, then the camera roll, newest first,
@@ -96,7 +97,9 @@ struct PhotoViewing: Identifiable {
 
 /// One photo, the whole screen. Left and right step; down pauses or plays
 /// the music, which otherwise plays on (the owner's asking, as over a book);
-/// Back closes. The caption shows on opening and on each step, then fades.
+/// OK plays a Live Photo's moving part over it (LIVE on the page), quiet
+/// while music plays; Back closes. The caption shows on opening and on each
+/// step, then fades.
 struct PhotoViewer: View {
     @State var viewing: PhotoViewing
     @Environment(API.self) private var api
@@ -107,6 +110,8 @@ struct PhotoViewer: View {
     @State private var toast: String?
     @State private var fade: Task<Void, Never>?
     @FocusState private var focused: Bool
+    /// A Live Photo's moving part, while it plays.
+    @State private var live: AVPlayer?
 
     var body: some View {
         let photo = viewing.photos[viewing.index]
@@ -117,6 +122,9 @@ struct PhotoViewer: View {
             } else {
                 ProgressView()
             }
+            if let live {
+                LiveLayer(player: live).ignoresSafeArea()
+            }
             VStack {
                 if let toast {
                     Label(toast, systemImage: player.isPlaying ? "play.fill" : "pause.fill")
@@ -126,6 +134,11 @@ struct PhotoViewer: View {
                 }
                 Spacer()
                 HStack(alignment: .bottom) {
+                    if photo.extra?["live"] != nil {
+                        Text("LIVE").font(.caption.bold())
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(.ultraThinMaterial, in: Capsule())
+                    }
                     Text(caption(photo)).font(.headline).shadow(radius: 8)
                     Spacer()
                     Text("\(viewing.index + 1) of \(viewing.photos.count)")
@@ -151,6 +164,9 @@ struct PhotoViewer: View {
         }
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { toggleMusic() }
+        // OK on a Live Photo plays its moving part.
+        .onTapGesture { playLive(photo) }
+        .onChange(of: viewing.index) { live = nil }
         .task(id: viewing.index) { await load(around: viewing.index) }
         #if DEBUG
         // -autostep YES: a step right after three seconds, then down.
@@ -169,6 +185,22 @@ struct PhotoViewer: View {
         guard viewing.photos.indices.contains(next) else { return }
         viewing.index = next
         showCaption()
+    }
+
+    private func playLive(_ photo: Item) {
+        guard photo.extra?["live"] != nil, live == nil else { return }
+        let p = AVPlayer(playerItem: AVPlayerItem(asset: AVURLAsset(url: api.liveURL(photo),
+                                                                     options: [AVURLAssetHTTPCookiesKey: api.cookies])))
+        p.isMuted = player.isPlaying // quiet while the music plays
+        live = p
+        p.play()
+        Task {
+            // Gone when it ends, back to the still.
+            for await _ in NotificationCenter.default.notifications(named: AVPlayerItem.didPlayToEndTimeNotification, object: p.currentItem) {
+                if live === p { live = nil }
+                return
+            }
+        }
     }
 
     private func toggleMusic() {
@@ -213,5 +245,24 @@ struct PhotoViewer: View {
 
     private func caption(_ p: Item) -> String {
         [p.title, p.subtitle, p.extra?["place"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
+    }
+}
+
+/// A Live Photo's moving part, drawn over the still.
+private struct LiveLayer: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> LiveView {
+        let view = LiveView()
+        view.layer.player = player
+        view.layer.videoGravity = .resizeAspect
+        return view
+    }
+
+    func updateUIView(_ view: LiveView, context: Context) { view.layer.player = player }
+
+    final class LiveView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        override var layer: AVPlayerLayer { super.layer as! AVPlayerLayer }
     }
 }
