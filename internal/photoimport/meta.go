@@ -378,3 +378,61 @@ func xmpCoord(v float64, pos, neg string) string {
 	deg := math.Floor(v)
 	return fmt.Sprintf("%d,%.6f%s", int(deg), (v-deg)*60, letter)
 }
+
+// ExifCamera is the maker and model a photo's EXIF names ("Apple iPhone 15
+// Pro", said once: "iPhone 15 Pro" when the model already says the maker),
+// or "". Two photos of one name from different cameras are told apart by it
+// (library/distinct.go).
+func ExifCamera(head []byte) string {
+	at := bytes.Index(head, []byte("Exif\x00\x00"))
+	if at < 0 {
+		return ""
+	}
+	tiff := head[at+6:]
+	if len(tiff) < 8 {
+		return ""
+	}
+	var bo binary.ByteOrder
+	switch string(tiff[:2]) {
+	case "II":
+		bo = binary.LittleEndian
+	case "MM":
+		bo = binary.BigEndian
+	default:
+		return ""
+	}
+	off := bo.Uint32(tiff[4:])
+	if int(off)+2 > len(tiff) {
+		return ""
+	}
+	text := map[uint16]string{}
+	n := int(bo.Uint16(tiff[off:]))
+	for i := 0; i < n && i < 512; i++ {
+		e := int(off) + 2 + i*12
+		if e+12 > len(tiff) {
+			break
+		}
+		tag, typ, count := bo.Uint16(tiff[e:]), bo.Uint16(tiff[e+2:]), bo.Uint32(tiff[e+4:])
+		if (tag != 0x010F && tag != 0x0110) || typ != 2 || count == 0 || count > 64 {
+			continue
+		}
+		var raw []byte
+		if count <= 4 {
+			raw = tiff[e+8 : e+8+int(count)]
+		} else if p := bo.Uint32(tiff[e+8:]); int(p)+int(count) <= len(tiff) {
+			raw = tiff[p : p+count]
+		}
+		text[tag] = strings.TrimSpace(strings.TrimRight(string(raw), "\x00 "))
+	}
+	maker, model := text[0x010F], text[0x0110]
+	switch {
+	case model == "":
+		return maker
+	case maker == "" || strings.Contains(strings.ToLower(model), strings.ToLower(strings.Fields(maker)[0])):
+		return model
+	case strings.EqualFold(maker, "Apple"):
+		return model // "iPhone 15 Pro" says Apple already
+	default:
+		return strings.Fields(maker)[0] + " " + model
+	}
+}

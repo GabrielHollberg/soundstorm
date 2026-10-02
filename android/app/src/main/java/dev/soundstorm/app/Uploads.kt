@@ -130,6 +130,7 @@ object Uploads {
                     .put("path", j.optString("path")).put("kind", j.optString("kind"))
                     .put("group", j.optString("group"))
                     .put("conflict", j.optString("conflict"))
+                    .put("as", j.optString("as"))
                     .put("taken", j.optLong("taken", 0)).put("state", "waiting")
             }
         }
@@ -255,6 +256,8 @@ object Uploads {
         // A taken name, as the person chose before sending: keep both or replace.
         val conflict = job.optString("conflict")
         if (conflict == "keep" || conflict == "replace") q.append("&conflict=").append(conflict)
+        val asName = job.optString("as")
+        if (conflict == "keep" && asName.isNotBlank()) q.append("&as=").append(URLEncoder.encode(asName, "UTF-8"))
         WebCookies.install()
         val conn = URL(server.trimEnd('/') + "/api/upload" + q).openConnection() as HttpURLConnection
         conn.requestMethod = "PUT"

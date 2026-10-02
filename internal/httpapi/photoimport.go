@@ -324,13 +324,15 @@ func (t *personTarget) Room(size int64) error {
 }
 
 func (t *personTarget) Save(rel string, r io.Reader, size int64, sum [32]byte) (string, error) {
-	// A different photo of the same name taken the same month keeps both.
-	rel, _ = t.s.freePersonalName(t.u.Name, rel, 0)
+	// A different photo of the same name taken the same month keeps both,
+	// named once it has arrived for what makes it different.
 	dest, err := library.PersonalPath(t.u.Name, rel)
 	if err != nil {
 		return "", err
 	}
-	saved, err := t.s.library.Save(media.KindPicture, dest, r)
+	saved, err := t.s.library.SaveDecided(media.KindPicture, dest, r, func(staged string) (string, error) {
+		return library.PersonalPath(t.u.Name, t.s.personalDistinct(t.u.Name, rel, staged))
+	})
 	if err != nil {
 		return "", err
 	}

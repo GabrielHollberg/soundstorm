@@ -315,8 +315,9 @@ func (s *Server) datedPhoto(u state.User, staged, dropped string, hint int64) (*
 		rel = fmt.Sprintf("%04d/%02d/%s", pl.meta.Taken.Year(), int(pl.meta.Taken.Month()), name)
 	}
 	// Another file of the same name taken the same month keeps both: this
-	// one as "Name (2)" (an identical one was refused above, by content).
-	rel, _ = s.freePersonalName(u.Name, rel, 0)
+	// one named for what makes it different - the camera that took it, or
+	// when (an identical one was refused above, by content).
+	rel = s.personalDistinct(u.Name, rel, staged)
 	if pl.rel, err = library.PersonalPath(u.Name, rel); err != nil {
 		return nil, err
 	}
@@ -432,8 +433,8 @@ func (s *Server) handleBackupCheck(w http.ResponseWriter, r *http.Request) {
 	for i, it := range body.Items {
 		if rel, err := backupPath(it); err == nil {
 			if it.Size > 0 {
-				// Under its own name, or kept beside another as "(2)".
-				_, have[i] = s.freePersonalName(u.Name, rel, it.Size)
+				// Under its own name, or kept beside another under one of its own.
+				have[i] = s.personalSentBefore(u.Name, rel, it.Size)
 			} else {
 				have[i] = s.library.PersonalHas(u.Name, rel, 0)
 			}
@@ -464,9 +465,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Sent before (under its name, or as "(2)" beside another): nothing to do.
-	free, there := s.freePersonalName(u.Name, rel, it.Size)
-	if there {
+	// Sent before (under its name, or beside another under one of its own):
+	// nothing to do.
+	if s.personalSentBefore(u.Name, rel, it.Size) {
 		writeJSON(w, http.StatusOK, map[string]any{"already": true})
 		return
 	}
@@ -486,9 +487,8 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	// Another, different file of the same name taken the same month (a
 	// different phone, a camera that restarted its numbering) is kept beside
-	// it rather than refused: decided before a byte is read, as Save reads the
-	// whole body before it can say the name is taken.
-	rel = free
+	// it rather than refused, named once it has arrived for what makes it
+	// different (personalDistinct).
 	dest, err := library.PersonalPath(u.Name, rel)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -502,7 +502,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	body := &stallReader{r: r.Body, rc: http.NewResponseController(w)}
 	defer func() { _ = body.rc.SetReadDeadline(time.Time{}) }()
-	saved, err := s.library.Save(media.KindPicture, dest, body)
+	saved, err := s.library.SaveDecided(media.KindPicture, dest, body, func(staged string) (string, error) {
+		return library.PersonalPath(u.Name, s.personalDistinct(u.Name, rel, staged))
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, library.ErrDiskReserve):
@@ -533,34 +535,65 @@ func (s *Server) backupAccount(w http.ResponseWriter, r *http.Request, u state.U
 	return false
 }
 
-// numbered is rel as "Name (n).ext": how a different photo whose name is
-// taken that month is kept beside it, as a film or a song is.
-func numbered(rel string, n int) string {
-	ext := path.Ext(rel)
-	return strings.TrimSuffix(rel, ext) + " (" + strconv.Itoa(n) + ")" + ext
+// personalAbs is where rel in a person's folder is on disk, or "".
+func (s *Server) personalAbs(name, rel string) string {
+	p, err := library.PersonalPath(name, rel)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(p))
 }
 
-// freePersonalName is rel when nothing has the name in the person's folder,
-// else the first "Name (n)" free. With a size, a file of that size already
-// under one of those names is taken for this one, sent before: there is
-// true, and nothing is free.
-func (s *Server) freePersonalName(name, rel string, size int64) (free string, there bool) {
+// personalDistinct is rel when its name is free in the person's folder, else
+// the name a different photo of that name gets beside it: what makes it
+// different - "IMG_0001 - iPhone 15 Pro.jpg", or when it was taken
+// (library/distinct.go). staged is the photo itself.
+func (s *Server) personalDistinct(name, rel, staged string) string {
 	if !s.library.PersonalHas(name, rel, 0) {
-		return rel, false
+		return rel
 	}
-	if size > 0 && s.library.PersonalHas(name, rel, size) {
-		return "", true
+	abs := s.personalAbs(name, rel)
+	if abs == "" {
+		return rel
 	}
-	for n := 2; n < 1000; n++ {
-		c := numbered(rel, n)
-		if !s.library.PersonalHas(name, c, 0) {
-			return c, false
+	d := library.NameFor(media.KindPicture, staged, abs, "")
+	if d == "" {
+		return rel
+	}
+	return path.Join(path.Dir(rel), filepath.Base(d))
+}
+
+// personalSentBefore is whether a photo of this name and size is in the
+// person's folder already - under the name, or kept beside another photo of
+// the name under one of its own ("IMG_0001 - Pixel 8.jpg"): a phone sending
+// it again.
+func (s *Server) personalSentBefore(name, rel string, size int64) bool {
+	if size <= 0 {
+		return s.library.PersonalHas(name, rel, 0)
+	}
+	if s.library.PersonalHas(name, rel, size) {
+		return true
+	}
+	abs := s.personalAbs(name, rel)
+	if abs == "" {
+		return false
+	}
+	ext := filepath.Ext(abs)
+	stem := strings.TrimSuffix(filepath.Base(abs), ext) + " - "
+	entries, err := os.ReadDir(filepath.Dir(abs))
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		n := e.Name()
+		if !e.Type().IsRegular() || !strings.HasPrefix(n, stem) || !strings.EqualFold(filepath.Ext(n), ext) {
+			continue
 		}
-		if size > 0 && s.library.PersonalHas(name, c, size) {
-			return "", true
+		if info, err := e.Info(); err == nil && info.Size() == size {
+			return true
 		}
 	}
-	return "", true
+	return false
 }
 
 // --- the owner's controls ------------------------------------------------------
@@ -696,18 +729,15 @@ func (s *Server) improvePhoto(u state.User, existing string, inc photoimport.Met
 		if want != slash {
 			// Never over another photo: a name taken, then a free one beside it
 			// (a security review found the second name was not checked).
-			dest := ""
-			for i := 0; i < 20; i++ {
-				try := want
-				if i > 0 {
-					try = numbered(want, i+1)
-				}
-				p := filepath.Join(folder, filepath.FromSlash(try))
-				if _, err := os.Lstat(p); os.IsNotExist(err) {
-					if _, err := os.Lstat(p + ".xmp"); os.IsNotExist(err) {
-						dest = p
-						break
-					}
+			dest := filepath.Join(folder, filepath.FromSlash(want))
+			if _, err := os.Lstat(dest); !os.IsNotExist(err) {
+				// Taken by another photo: beside it, under a name for what
+				// makes this one different.
+				dest = library.NameFor(media.KindPicture, existing, dest, "")
+			}
+			if dest != "" {
+				if _, err := os.Lstat(dest + ".xmp"); !os.IsNotExist(err) {
+					dest = ""
 				}
 			}
 			if dest != "" && os.MkdirAll(filepath.Dir(dest), 0o777) == nil && library.MoveNoClobber(existing, dest) == nil {

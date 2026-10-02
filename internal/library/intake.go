@@ -935,7 +935,7 @@ func (l *Library) SaveWith(kind media.Kind, rel string, r io.Reader, route Route
 		case opts.Conflict == ConflictRefuse || sameFile(tmpName, dest):
 			return "", ErrAlreadyThere
 		case opts.Conflict == ConflictKeep:
-			free := freeName(dest)
+			free := NameFor(kind, tmpName, dest, opts.Name)
 			if free == "" {
 				return "", ErrAlreadyThere
 			}

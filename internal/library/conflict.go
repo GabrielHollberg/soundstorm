@@ -123,7 +123,8 @@ type Conflict string
 const (
 	// ConflictRefuse leaves what is there and refuses the new one.
 	ConflictRefuse Conflict = ""
-	// ConflictKeep keeps both: the new one is saved as "Name (2)".
+	// ConflictKeep keeps both: the new one is named for what makes it
+	// different (distinct.go), or as the person typed.
 	ConflictKeep Conflict = "keep"
 	// ConflictReplace puts what is there in the bin and saves the new one.
 	ConflictReplace Conflict = "replace"
@@ -133,23 +134,12 @@ const (
 // refused as already there, whatever was decided.
 type SaveOptions struct {
 	Conflict Conflict
+	// Name is the file name somebody chose for the new one, kept both; ""
+	// for one made from what makes it different.
+	Name string
 	// Replace puts the file at a library-relative path in the bin; needed
 	// for ConflictReplace (the caller decides who may).
 	Replace func(rel string) error
-}
-
-// freeName is "Name (2).ext", or the next number free, beside path.
-func freeName(path string) string {
-	dir, base := filepath.Split(path)
-	ext := filepath.Ext(base)
-	stem := strings.TrimSuffix(base, ext)
-	for i := 2; i < 10000; i++ {
-		p := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
-		if _, err := os.Lstat(p); err != nil {
-			return p
-		}
-	}
-	return ""
 }
 
 // sameFile is whether two files are the same by length and Sample.

@@ -3835,6 +3835,28 @@ async function checkTaken(files, dropped) {
       continue;
     }
     if (!p.conflict) p.conflict = 'keep';
+    if (p.asName === undefined) p.asName = await suggestName(p, file);
+  }
+}
+
+// The name a different file of a taken name would get - for what makes it
+// different: its picture size, quality, length or narrator - worked out by
+// the server from the file's two ends, shown in the question to keep or
+// change (library/distinct.go).
+async function suggestName(p, file) {
+  const MB = 1 << 20;
+  const head = file.slice(0, Math.min(file.size, MB));
+  const tail = file.slice(Math.max(head.size, file.size - MB));
+  const q = new URLSearchParams({ kind: p.kind, dest: p.dest || '', size: String(file.size), head: String(head.size) });
+  try {
+    const resp = await fetch(`/api/upload/describe?${q}`, {
+      method: 'POST', credentials: 'same-origin', body: new Blob([head, tail]),
+    });
+    if (!resp.ok) return '';
+    const body = await resp.json();
+    return (body && body.name) || '';
+  } catch {
+    return '';
   }
 }
 
@@ -3989,7 +4011,8 @@ function conflictChoice(conflicts, changed) {
   const note = document.createElement('p');
   note.className = 'muted small-print';
   note.textContent = all === 'replace' ? 'The ones there now go to the bin for 30 days.'
-    : all === 'keep' ? 'The new one is added with (2) after its name.' : all === 'skip' ? 'What you have stays as it is.' : 'Chosen file by file.';
+    : all === 'keep' ? 'The new one is named for what makes it different - its quality, length or narrator - which you can change under Choose for each file.'
+      : all === 'skip' ? 'What you have stays as it is.' : 'Chosen file by file.';
   const each = document.createElement('button');
   each.type = 'button';
   each.className = 'ghost small';
@@ -4019,6 +4042,17 @@ function conflictChoice(conflicts, changed) {
       changed();
     });
     li.append(name, select);
+    // Kept both: the new one's name, as suggested, to change if wanted.
+    if (p.conflict === 'keep') {
+      const as = document.createElement('input');
+      as.type = 'text';
+      as.className = 'intake-conflict-name';
+      as.value = p.asName || '';
+      as.placeholder = 'Name for the new one';
+      as.setAttribute('aria-label', 'Name for the new one');
+      as.addEventListener('input', () => { p.asName = as.value; });
+      li.append(as);
+    }
     list.append(li);
   }
   box.append(text, row, note, each, list);
@@ -4355,6 +4389,7 @@ async function sendFiles(plan, dropped) {
     const jobs = queue.map((item) => ({
       name: item.file.name, size: item.file.size, path: item.path, kind: item.kind, group: item.group || '',
       conflict: item.conflict === 'keep' || item.conflict === 'replace' ? item.conflict : '',
+      as: item.conflict === 'keep' && item.asName ? item.asName : '',
       taken: (item.kind === 'picture' || item.kind === 'video') && item.file.lastModified ? item.file.lastModified : 0,
     }));
     const r = await appUploads('add', { server: location.origin, jobs }, 'added');
@@ -4433,6 +4468,7 @@ function uploadOne(item, onProgress) {
     const params = new URLSearchParams({ path: item.path, kind: item.kind });
     // A taken name, as the person chose: keep both, or replace.
     if (item.conflict === 'keep' || item.conflict === 'replace') params.set('conflict', item.conflict);
+    if (item.conflict === 'keep' && item.asName) params.set('as', item.asName);
     // A photo or video is sorted into the person's folder by when it was
     // taken; the file's own date (on a camera's card, when it was taken) is
     // what the server falls back on when the photo carries none inside it.

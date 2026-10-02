@@ -367,6 +367,7 @@ func (s *Server) Routes() http.Handler {
 	// grouping needs to see the whole list, which a streamed upload does not.
 	guarded.HandleFunc("POST /api/upload/plan", s.handleUploadPlan)
 	guarded.HandleFunc("POST /api/upload/check", s.handleUploadCheck)
+	guarded.HandleFunc("POST /api/upload/describe", s.handleUploadDescribe)
 	guarded.HandleFunc("PUT /api/upload", s.handleUpload)
 	guarded.HandleFunc("GET /api/search", s.handleSearch)
 	// {id...} rather than {id}: an OPDS acquisition reference is a path with

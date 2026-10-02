@@ -2357,6 +2357,7 @@ body.photo-open { overflow: hidden; }
 .intake-conflict-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .intake-conflict-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13.5px; }
 .intake-conflict-list li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intake-conflict-name { grid-column: 1 / -1; padding: 7px 10px; font-size: 13.5px; }
 .intake-conflict-list select { padding: 6px 8px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font: inherit; }
 /* The phone as a remote (players.go): a sheet over everything. */
 .rc-sheet {

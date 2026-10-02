@@ -35,6 +35,10 @@ type Tags struct {
 	Artist      string
 	Album       string
 	Title       string
+	// Narrator is who reads an audiobook: its own field when the file has
+	// one, else the composer, where audiobook stores put the narrator. Used
+	// only to tell two editions of a book apart (library/distinct.go).
+	Narrator string
 }
 
 // Folder is the artist to file under: album artist when there is one, the
@@ -184,6 +188,10 @@ func readID3(r io.ReadSeeker, head []byte) (Tags, error) {
 			t.Album = decodeID3Text(payload)
 		case "TIT2":
 			t.Title = decodeID3Text(payload)
+		case "TCOM":
+			if t.Narrator == "" {
+				t.Narrator = decodeID3Text(payload)
+			}
 		}
 	}
 	return t, nil
@@ -215,6 +223,8 @@ func readID3v22(body []byte) Tags {
 			t.Album = decodeID3Text(payload)
 		case "TT2":
 			t.Title = decodeID3Text(payload)
+		case "TCM":
+			t.Narrator = decodeID3Text(payload)
 		}
 	}
 	return t
@@ -385,6 +395,12 @@ func parseVorbis(b []byte) Tags {
 			t.Album = clean(value)
 		case "TITLE":
 			t.Title = clean(value)
+		case "NARRATOR", "PERFORMER":
+			t.Narrator = clean(value)
+		case "COMPOSER":
+			if t.Narrator == "" {
+				t.Narrator = clean(value)
+			}
 		}
 	}
 	return t
@@ -485,6 +501,12 @@ func parseILST(b []byte) Tags {
 			t.Album = value
 		case "\xa9nam":
 			t.Title = value
+		case "\xa9nrt":
+			t.Narrator = value
+		case "\xa9wrt":
+			if t.Narrator == "" {
+				t.Narrator = value
+			}
 		}
 		b = b[size:]
 	}

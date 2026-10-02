@@ -457,9 +457,29 @@ for plain http, where browsers have no crypto.subtle). An exact copy is
 skipped there and never sent ("already in your library"); a photo counts as
 one when it matches any file of its size in the person's dated folders. A
 different file with the name is asked about once for all - **Keep both**
-(the default: saved as "Name (2)"), **Skip**, or **Replace** (the owner
-only, as deleting is: the old one to the bin) - with **Choose for each
-file** opening a choice per file (`conflictChoice`). The upload carries the
+(the default), **Skip**, or **Replace** (the owner only, as deleting is:
+the old one to the bin) - with **Choose for each file** opening a choice per
+file (`conflictChoice`).
+
+**Kept both, the new one is named for what makes it different - never
+"(2)"**, which reads as "a copy of" (the owner's point: it is a separate
+file). `library/distinct.go` reads the little that tells two files of one
+name apart (`Traits`) and names the new one "Name - <label>": a **photo** by
+its camera (EXIF maker and model, "IMG_0001 - iPhone 15 Pro.jpg"), else when
+it was taken; a **film or episode** by its picture size ("Dune (2021) -
+2160p.mkv", Jellyfin's own naming for a second version of a film, so it
+shows as one film with a version to choose), else its length; a **song** by
+its bitrate, else its length; an **audiobook** by its narrator ("read by
+...", the narrator tag or the composer, where audiobook stores put it), else
+its length; and anything else, or nothing telling them apart, by the day it
+was added ("added 2026-10-02"). Under Choose for each file the suggested
+name is in a box to change (`POST /api/upload/describe`, worked out from
+the file's first and last megabyte sent ahead; the upload carries the name
+as `?as=`, used when free). Photos name themselves on arrival the same way
+(`personalDistinct`), and a phone's backup finds a photo it sent before
+under any "Name - ..." of that size (`personalSentBefore`). Read correctly
+on real files: a Blu-ray rip 1920x1080 and 1h45m, songs' lengths and
+bitrates, the Coddling m4b's 10h6m (it names no narrator). The upload carries the
 choice (`?conflict=keep|replace`, `SaveWith`/`SaveOptions`), and the save
 still refuses an exact copy whatever was chosen; the app's background
 uploads pass it on (0.31). Names planned before the bytes arrive can differ
@@ -5190,11 +5210,12 @@ as for any shelf) and how much space their photos may take.
   these do you have - name, when taken, size - so a reinstall sends nothing
   twice) and `PUT /api/photos/backup?name=&taken=` (one file as the body, to
   `Personal/<name>/<year>/<month>/`, a different file of the same name that
-  month kept beside it as "Name (2)", the next free - it was the name plus
-  the moment it was taken, "IMG_0001 1790970939045.jpg", until 2026-10-02;
-  a photo sent again is found under any of those names by its size,
-  `freePersonalName`). Dropped and imported photos take the next free
-  "(2)" too, an identical one having been refused by its content first.
+  month kept beside it under a name for what makes it different, its camera
+  or when it was taken - it was the name plus the moment it was taken,
+  "IMG_0001 1790970939045.jpg", until 2026-10-02; a photo sent again is
+  found under any of those names by its size, `personalSentBefore`).
+  Dropped and imported photos are named the same way, an identical one
+  having been refused by its content first.
 
 **The phone's half, in the Android app (0.14, `PhotoBackup.kt`)**: WorkManager
 jobs, so Android decides when (Wi-Fi only unless turned off, while charging if

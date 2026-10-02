@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/binary"
 	"io"
 	"log/slog"
 	"os"
@@ -31,10 +32,11 @@ func TestOnlyDatedFoldersCountAsKept(t *testing.T) {
 	}
 }
 
-// A different photo whose name is taken that month is kept as "Name (2)",
-// the next free; and a photo sent again is found under any of those names
-// by its size, so a phone's backup does not file it twice.
-func TestATakenPhotoNameIsNumbered(t *testing.T) {
+// A different photo whose name is taken that month is kept beside it under
+// a name for what makes it different - its camera - and a photo sent again
+// is found under that name by its size, so a phone's backup does not file
+// it twice.
+func TestATakenPhotoNameSaysWhatDiffers(t *testing.T) {
 	lib, err := library.Open(t.TempDir(), "./library", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -48,18 +50,45 @@ func TestATakenPhotoNameIsNumbered(t *testing.T) {
 	if err := os.MkdirAll(month, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(month, "IMG_0001.jpg"), []byte("first"), 0o666)
-	if free, there := s.freePersonalName("bob", "2024/05/IMG_0001.jpg", 6); there || free != "2024/05/IMG_0001 (2).jpg" {
-		t.Fatalf("a different photo: %q %v", free, there)
+	os.WriteFile(filepath.Join(month, "IMG_0001.jpg"), exifJPEG("Google", "Pixel 8"), 0o666)
+	staged := filepath.Join(t.TempDir(), "part-1")
+	os.WriteFile(staged, exifJPEG("Apple", "iPhone 15 Pro"), 0o666)
+	got := s.personalDistinct("bob", "2024/05/IMG_0001.jpg", staged)
+	if got != "2024/05/IMG_0001 - iPhone 15 Pro.jpg" {
+		t.Fatalf("named for its camera: %q", got)
 	}
-	os.WriteFile(filepath.Join(month, "IMG_0001 (2).jpg"), []byte("second"), 0o666)
-	if _, there := s.freePersonalName("bob", "2024/05/IMG_0001.jpg", 6); !there {
-		t.Fatal("the second photo, sent again, should be found as (2)")
+	os.WriteFile(filepath.Join(month, "IMG_0001 - iPhone 15 Pro.jpg"), exifJPEG("Apple", "iPhone 15 Pro"), 0o666)
+	size := int64(len(exifJPEG("Apple", "iPhone 15 Pro")))
+	if !s.personalSentBefore("bob", "2024/05/IMG_0001.jpg", size) {
+		t.Fatal("the iPhone's photo, sent again, should be found")
 	}
-	if free, _ := s.freePersonalName("bob", "2024/05/IMG_0001.jpg", 0); free != "2024/05/IMG_0001 (3).jpg" {
-		t.Fatalf("the next free name: %q", free)
+	if s.personalSentBefore("bob", "2024/05/IMG_0001.jpg", 12345) {
+		t.Fatal("a photo of another size has not been sent")
 	}
-	if free, there := s.freePersonalName("bob", "2024/05/IMG_0002.jpg", 4); there || free != "2024/05/IMG_0002.jpg" {
-		t.Fatalf("a free name stays: %q %v", free, there)
+	if got := s.personalDistinct("bob", "2024/05/IMG_0002.jpg", staged); got != "2024/05/IMG_0002.jpg" {
+		t.Fatalf("a free name stays: %q", got)
 	}
+}
+
+// exifJPEG is the start of a JPEG whose EXIF names a camera.
+func exifJPEG(maker, model string) []byte {
+	le := binary.LittleEndian
+	strs := []string{maker + "\x00", model + "\x00"}
+	tiff := []byte("II*\x00\x08\x00\x00\x00")
+	tiff = le.AppendUint16(tiff, 2)
+	off := uint32(8 + 2 + 2*12 + 4)
+	for i, tag := range []uint16{0x010F, 0x0110} {
+		tiff = le.AppendUint16(tiff, tag)
+		tiff = le.AppendUint16(tiff, 2)
+		tiff = le.AppendUint32(tiff, uint32(len(strs[i])))
+		tiff = le.AppendUint32(tiff, off)
+		off += uint32(len(strs[i]))
+	}
+	tiff = le.AppendUint32(tiff, 0)
+	for _, s := range strs {
+		tiff = append(tiff, s...)
+	}
+	out := []byte{0xFF, 0xD8, 0xFF, 0xE1, 0, 0}
+	out = append(out, "Exif\x00\x00"...)
+	return append(out, tiff...)
 }

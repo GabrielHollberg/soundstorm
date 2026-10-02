@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 )
@@ -48,9 +49,15 @@ func TestATakenName(t *testing.T) {
 	if _, err := save("another film", SaveOptions{}); err != ErrAlreadyThere {
 		t.Fatalf("a different file is refused unless asked: %v", err)
 	}
+	// Nothing in these files tells them apart, so the new one is named for
+	// the day it came; a name somebody typed wins when it is free.
 	dest, err := save("another film", SaveOptions{Conflict: ConflictKeep})
-	if err != nil || dest != "movies/Dune (2021)/Dune (2021) (2).mkv" {
-		t.Fatalf("keep both should save it as (2): %q %v", dest, err)
+	if want := "movies/Dune (2021)/Dune (2021) - added " + time.Now().Format("2006-01-02") + ".mkv"; err != nil || dest != want {
+		t.Fatalf("keep both should name it for the day: %q %v", dest, err)
+	}
+	dest, err = save("a fourth film", SaveOptions{Conflict: ConflictKeep, Name: "Dune (2021) - extended"})
+	if err != nil || dest != "movies/Dune (2021)/Dune (2021) - extended.mkv" {
+		t.Fatalf("a typed name should be used, with its extension: %q %v", dest, err)
 	}
 	var binned string
 	dest, err = save("a third film", SaveOptions{Conflict: ConflictReplace, Replace: func(r string) error {
@@ -78,5 +85,30 @@ func TestASampleSeesTheLengthAndTheEnds(t *testing.T) {
 	sb, _ := Sample(b)
 	if sa == "" || sa == sb {
 		t.Fatal("a change in the last megabyte should change the sample")
+	}
+}
+
+// What tells two files of one name apart, as their names will say.
+func TestLabelsSayWhatDiffers(t *testing.T) {
+	day := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	taken := time.Date(2024, 5, 12, 14, 3, 22, 0, time.UTC)
+	cases := []struct {
+		kind      media.Kind
+		inc, have Traits
+		want      string
+	}{
+		{media.KindPicture, Traits{Camera: "iPhone 15 Pro", Taken: taken}, Traits{Camera: "Pixel 8"}, "iPhone 15 Pro"},
+		{media.KindPicture, Traits{Camera: "Pixel 8", Taken: taken}, Traits{Camera: "Pixel 8"}, "2024-05-12 14.03.22"},
+		{media.KindVideo, Traits{Width: 3840, Height: 1600}, Traits{Width: 1920, Height: 800}, "2160p"},
+		{media.KindVideo, Traits{Width: 1920, Height: 800, Seconds: 10260}, Traits{Width: 1920, Height: 800, Seconds: 9300}, "2h 51m"},
+		{media.KindMusic, Traits{Kbps: 320, Seconds: 225}, Traits{Kbps: 128, Seconds: 225}, "320 kbps"},
+		{media.KindMusic, Traits{Kbps: 256, Seconds: 300}, Traits{Kbps: 256, Seconds: 225}, "5m 00s"},
+		{media.KindAudiobook, Traits{Narrator: "Jonathan Haidt"}, Traits{Narrator: "Someone Else"}, "read by Jonathan Haidt"},
+		{media.KindEbook, Traits{}, Traits{}, "added 2026-10-02"},
+	}
+	for _, c := range cases {
+		if got := Label(c.kind, c.inc, c.have, day); got != c.want {
+			t.Errorf("%s: %q, want %q", c.kind, got, c.want)
+		}
 	}
 }

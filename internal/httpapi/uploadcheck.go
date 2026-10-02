@@ -3,8 +3,10 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"path"
+	"strconv"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
@@ -96,7 +98,8 @@ var errReplaceOwnerOnly = errors.New("only the owner can replace a file already 
 func (s *Server) uploadOptions(r *http.Request, kind media.Kind) (library.SaveOptions, error) {
 	switch library.Conflict(r.URL.Query().Get("conflict")) {
 	case library.ConflictKeep:
-		return library.SaveOptions{Conflict: library.ConflictKeep}, nil
+		// "as": the name the person gave the new one, used when it is free.
+		return library.SaveOptions{Conflict: library.ConflictKeep, Name: r.URL.Query().Get("as")}, nil
 	case library.ConflictReplace:
 		user, _ := auth.FromContext(r.Context())
 		if !user.IsOwner() {
@@ -108,4 +111,59 @@ func (s *Server) uploadOptions(r *http.Request, kind media.Kind) (library.SaveOp
 		}}, nil
 	}
 	return library.SaveOptions{}, nil
+}
+
+// POST /api/upload/describe?kind=&dest=&size=&head=: the name a different
+// file whose name dest is taken would be given - for what makes it
+// different (library/distinct.go) - shown in the question, where it can be
+// changed. The body is the file's first head bytes and its last, up to a
+// megabyte each: enough for its camera, picture size, length or narrator.
+func (s *Server) handleUploadDescribe(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	kind, ok := media.ParseKind(q.Get("kind"))
+	if !ok || !source.AccessFrom(r.Context()).Permits(kind) {
+		writeError(w, http.StatusBadRequest, "not a shelf you can add to")
+		return
+	}
+	size, _ := strconv.ParseInt(q.Get("size"), 10, 64)
+	head, _ := strconv.ParseInt(q.Get("head"), 10, 64)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 2<<20+1))
+	if err != nil || size <= 0 || head < 0 || head > int64(len(body)) || int64(len(body)) > size {
+		writeError(w, http.StatusBadRequest, "expected the two ends of the file")
+		return
+	}
+	ends := &fileEnds{head: body[:head], tail: body[head:], size: size}
+	name, err := s.library.TakenName(kind, q.Get("dest"), ends, size)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name})
+}
+
+// fileEnds reads a file from its two ends only; the middle is not there.
+type fileEnds struct {
+	head, tail []byte
+	size       int64
+}
+
+func (f *fileEnds) ReadAt(p []byte, off int64) (int, error) {
+	end := off + int64(len(p))
+	switch {
+	case off < 0 || off >= f.size:
+		return 0, io.EOF
+	case end <= int64(len(f.head)):
+		return copy(p, f.head[off:end]), nil
+	case off >= f.size-int64(len(f.tail)):
+		from := off - (f.size - int64(len(f.tail)))
+		n := copy(p, f.tail[from:])
+		if n < len(p) {
+			return n, io.EOF
+		}
+		return n, nil
+	case off < int64(len(f.head)):
+		// The start of a read the head ends inside: what it has, then stop.
+		return copy(p, f.head[off:]), io.ErrUnexpectedEOF
+	}
+	return 0, io.ErrUnexpectedEOF
 }
