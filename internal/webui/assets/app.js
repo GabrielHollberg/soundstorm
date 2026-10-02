@@ -4782,6 +4782,7 @@ function renderSearchHint() {
     ebook: 'ebooks', document: 'documents', picture: 'pictures',
     favorites: 'your favorites', playlists: 'your playlists', pairs: 'books to read along with',
     authors: 'authors', series: 'series', people: 'people', places: 'places',
+    'photo-videos': 'videos', 'photo-live': 'Live Photos',
     'genres-music': 'genres', 'genres-watch': 'genres', 'genres-books': 'genres',
     'fav-music': 'your favorites', 'fav-watch': 'your favorites',
     'fav-books': 'your favorites', 'fav-photos': 'your favorites',
