@@ -851,6 +851,11 @@ type Route func(staged string) (media.Kind, string, error)
 // SaveRouted is Save with the shelf and place decided after the bytes arrive.
 // With route nil it is Save.
 func (l *Library) SaveRouted(kind media.Kind, rel string, r io.Reader, route Route) (string, error) {
+	return l.SaveWith(kind, rel, r, route, SaveOptions{})
+}
+
+// SaveWith is SaveRouted with a decision about a taken name (conflict.go).
+func (l *Library) SaveWith(kind media.Kind, rel string, r io.Reader, route Route, opts SaveOptions) (string, error) {
 	rel, err := cleanRelPath(rel)
 	if err != nil {
 		return "", err
@@ -923,8 +928,28 @@ func (l *Library) SaveRouted(kind media.Kind, rel string, r io.Reader, route Rou
 	if !within(folder, dest) {
 		return "", fmt.Errorf("that path does not stay inside the library")
 	}
-	if _, err := os.Stat(dest); err == nil {
-		return "", ErrAlreadyThere
+	if _, err := os.Lstat(dest); err == nil {
+		// An exact copy is already there whatever was decided; a different
+		// file with the name is kept beside, replaced, or refused as asked.
+		switch {
+		case opts.Conflict == ConflictRefuse || sameFile(tmpName, dest):
+			return "", ErrAlreadyThere
+		case opts.Conflict == ConflictKeep:
+			free := freeName(dest)
+			if free == "" {
+				return "", ErrAlreadyThere
+			}
+			dest = free
+			if r, err := filepath.Rel(folder, dest); err == nil {
+				rel = filepath.ToSlash(r)
+			}
+		case opts.Conflict == ConflictReplace && opts.Replace != nil:
+			if err := opts.Replace(folderName(kind) + "/" + rel); err != nil {
+				return "", fmt.Errorf("put the old one in the bin: %w", err)
+			}
+		default:
+			return "", ErrAlreadyThere
+		}
 	}
 	// The same recording under another name - iTunes keeps "03 Heathens 1.m4a"
 	// beside "03 Heathens.m4a". Checked against this folder only, and only

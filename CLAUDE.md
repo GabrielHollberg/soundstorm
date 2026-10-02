@@ -401,6 +401,26 @@ waiting say what they wait for. Checked on the emulator: three films added
 while waiting to charge, the app swiped away (its process ended), the
 charger plugged in - all three arrived without the app open.
 
+**A taken name is decided before anything is sent** (2026-10-02, the owner's
+design, after Windows' copy dialog). Before the review, the page asks
+`POST /api/upload/check` which planned files would land on a name already
+used and what is there (`library.CheckDest`), and compares a **Sample** -
+SHA-256 over the length and the first, middle and last megabyte, the same in
+Go (`library.Sample`) and the page (`fileSample`, with a SHA-256 of its own
+for plain http, where browsers have no crypto.subtle). An exact copy is
+skipped there and never sent ("already in your library"); a photo counts as
+one when it matches any file of its size in the person's dated folders. A
+different file with the name is asked about once for all - **Keep both**
+(the default: saved as "Name (2)"), **Skip**, or **Replace** (the owner
+only, as deleting is: the old one to the bin) - with **Choose for each
+file** opening a choice per file (`conflictChoice`). The upload carries the
+choice (`?conflict=keep|replace`, `SaveWith`/`SaveOptions`), and the save
+still refuses an exact copy whatever was chosen; the app's background
+uploads pass it on (0.31). Names planned before the bytes arrive can differ
+from where a song lands by its tags, so the save keeps its own check.
+Checked in Chrome: an exact copy not sent, a different file kept as (2),
+then replaced with the old one in the bin.
+
 **Move to, in any item's menu** (owner only, as deleting is;
 `POST /api/move`, `library.MoveItems`): for something filed in the wrong
 shelf after all. The item's files are found as deleting finds them, companions

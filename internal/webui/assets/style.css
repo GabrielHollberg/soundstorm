@@ -2349,6 +2349,15 @@ body.photo-open { overflow: hidden; }
 .question-text { min-width: 0; flex-basis: 100%; }
 .intake-parts li.intake-failed .intake-part-dest { color: #ff6b6b; }
 .intake-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
+/* A taken name: one choice for all, or one each. */
+.intake-conflicts { margin: 6px 0 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--accent-dim); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.intake-conflicts p { margin: 0 0 10px; font-size: 14px; }
+.intake-conflict-choice { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.intake-conflict-choice button { padding: 7px 14px; font-size: 13.5px; }
+.intake-conflict-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.intake-conflict-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13.5px; }
+.intake-conflict-list li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intake-conflict-list select { padding: 6px 8px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font: inherit; }
 /* The phone as a remote (players.go): a sheet over everything. */
 .rc-sheet {
   position: fixed; inset: auto 0 0 0; z-index: 88;

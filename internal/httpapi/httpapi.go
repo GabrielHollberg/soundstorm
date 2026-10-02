@@ -366,6 +366,7 @@ func (s *Server) Routes() http.Handler {
 	// starts moving, and it is also what keeps a subtitle with its film: the
 	// grouping needs to see the whole list, which a streamed upload does not.
 	guarded.HandleFunc("POST /api/upload/plan", s.handleUploadPlan)
+	guarded.HandleFunc("POST /api/upload/check", s.handleUploadCheck)
 	guarded.HandleFunc("PUT /api/upload", s.handleUpload)
 	guarded.HandleFunc("GET /api/search", s.handleSearch)
 	// {id...} rather than {id}: an OPDS acquisition reference is a path with
@@ -1513,6 +1514,12 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, desensitizeFSError(err))
 		return
 	}
+	// A taken name: keep both or replace, as the person chose (uploadcheck.go).
+	opts, err := s.uploadOptions(r, kind)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	release, ok := s.takeUploadSlot(user.ID)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many uploads at once; wait for one to finish")
@@ -1536,9 +1543,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		// Dropped as a film, but a phone or a camera may have filmed it: a
 		// home video goes to the person's photos (homevideos.go).
 		taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
-		dest, kind, err = s.saveFilmOrHomeVideo(user, path, body, taken, r.ContentLength)
+		dest, kind, err = s.saveFilmOrHomeVideo(user, path, body, taken, r.ContentLength, opts)
 	} else {
-		dest, err = s.library.Save(kind, path, body)
+		dest, err = s.library.SaveWith(kind, path, body, nil, opts)
 	}
 	if err != nil {
 		if errors.Is(err, errPhotoLimit) {

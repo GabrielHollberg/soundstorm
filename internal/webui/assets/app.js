@@ -3687,6 +3687,8 @@ async function runIntake(dataTransfer) {
       // Where everything is going, a line per part, each with Change, and
       // nothing moves until Add is pressed (the owner's asking: see a wrong
       // guess before it lands, not after).
+      $('intake-title').textContent = 'Checking what is already there\u2026';
+      await checkTaken(body.files || [], dropped);
       const decision = await reviewPlan(body.files || []);
       if (decision === null) {
         $('intake-title').textContent = 'Canceled — nothing was added.';
@@ -3696,6 +3698,19 @@ async function runIntake(dataTransfer) {
       if (decision.change) {
         choices[decision.change.group] = decision.change.kind;
         continue;
+      }
+      if (decision.redraw) {
+        let next = decision;
+        while (next && next.redraw) next = await reviewPlan(body.files || []);
+        if (next === null) {
+          $('intake-title').textContent = 'Canceled \u2014 nothing was added.';
+          $('intake-review').replaceChildren();
+          return;
+        }
+        if (next.change) {
+          choices[next.change.group] = next.change.kind;
+          continue;
+        }
       }
       await sendFiles(body.files || [], dropped);
       return;
@@ -3731,11 +3746,103 @@ function partLabel(group) {
 
 // The plan in parts: each part of the drop (a folder decided on its own, or a
 // loose file), where it is going and how many files.
+// A taken name, before anything is sent (library/conflict.go): the server
+// says which planned files would land on a name already used, and what is
+// there; an exact copy (same length and Sample) is skipped here, never sent,
+// and a different file with the name is a conflict for the review to ask
+// about - keep both, skip, or (the owner) replace.
+const SAMPLE_CHUNK = 1 << 20;
+const sampleCache = new WeakMap();
+async function fileSample(file) {
+  if (sampleCache.has(file)) return sampleCache.get(file);
+  const size = file.size;
+  const head = new Uint8Array(8);
+  new DataView(head.buffer).setBigUint64(0, BigInt(size));
+  const parts = [head];
+  if (size <= 3 * SAMPLE_CHUNK) parts.push(file);
+  else for (const from of [0, Math.floor(size / 2) - SAMPLE_CHUNK / 2, size - SAMPLE_CHUNK]) parts.push(file.slice(from, from + SAMPLE_CHUNK));
+  const bytes = new Uint8Array(await new Blob(parts).arrayBuffer());
+  const digest = window.crypto && crypto.subtle ? new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)) : sha256(bytes);
+  const hex = [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+  sampleCache.set(file, hex);
+  return hex;
+}
+// SHA-256 for a page on plain http, where the browser offers no crypto.subtle.
+function sha256(data) {
+  const K = new Uint32Array([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb,
+    0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f,
+    0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const len = data.length;
+  const padded = new Uint8Array(((len + 9 + 63) >> 6) << 6);
+  padded.set(data);
+  padded[len] = 0x80;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 4, len * 8);
+  view.setUint32(padded.length - 8, Math.floor(len / 0x20000000));
+  const w = new Uint32Array(64);
+  const r = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] += a; H[1] += b; H[2] += c; H[3] += d; H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+  }
+  const out = new Uint8Array(32);
+  const ov = new DataView(out.buffer);
+  H.forEach((v, i) => ov.setUint32(i * 4, v));
+  return out;
+}
+async function checkTaken(files, dropped) {
+  const asked = [];
+  files.forEach((p, i) => {
+    if (!p.skipped && !p.waiting && p.kind && dropped[i]) asked.push({ p, file: dropped[i].file });
+  });
+  if (!asked.length) return;
+  const { ok, body } = await api('/api/upload/check', {
+    method: 'POST',
+    body: JSON.stringify({ files: asked.map(({ p, file }) => ({ dest: p.dest || '', kind: p.kind, size: file.size })) }),
+  });
+  if (!ok || !body || !Array.isArray(body.files)) return;
+  for (let i = 0; i < asked.length; i++) {
+    const { p, file } = asked[i];
+    const there = body.files[i] || {};
+    if (!there.taken) continue;
+    if (p.kind === 'picture') {
+      // A photo: only an exact copy anywhere in the person's folders counts.
+      if ((there.samples || []).length && there.samples.includes(await fileSample(file))) {
+        p.skipped = true;
+        p.reason = 'already in your photos';
+      }
+      continue;
+    }
+    if (there.size === file.size && there.sample && there.sample === (await fileSample(file))) {
+      p.skipped = true;
+      p.reason = 'already in your library';
+      continue;
+    }
+    if (!p.conflict) p.conflict = 'keep';
+  }
+}
+
 function planParts(files) {
   const parts = new Map();
   let skipped = 0;
   for (const p of files) {
-    if (p.skipped) { skipped++; continue; }
+    if (p.skipped || p.conflict === 'skip') { skipped++; continue; }
     const key = p.group || p.path;
     if (!parts.has(key)) parts.set(key, { group: key, kinds: {}, count: 0 });
     const part = parts.get(key);
@@ -3815,9 +3922,19 @@ function reviewPlan(files) {
       });
       list.append(li);
     }
-    if (skipped) {
-      list.append(intakeLine(`${skipped} skipped`, 'see every file for why'));
+    // Copies already there (checkTaken) said as such; anything else skipped
+    // keeps its reason under every file.
+    const there = files.filter((p) => p.skipped && /^already in your/.test(p.reason || '')).length;
+    if (there) list.append(intakeLine(`${there} already in your library`, 'not sent again'));
+    if (skipped - there > 0) {
+      list.append(intakeLine(`${skipped - there} skipped`, 'see every file for why'));
     }
+    const conflicts = files.filter((p) => p.conflict);
+    if (conflicts.length) host.append(conflictChoice(conflicts, () => {
+      // A choice changes what is added: the review drawn again with it.
+      host.replaceChildren();
+      resolve({ redraw: true });
+    }));
     host.append(list);
     const actions = document.createElement('div');
     actions.className = 'intake-actions';
@@ -3838,6 +3955,74 @@ function reviewPlan(files) {
     filesToggle(files.length > 0);
     actions.querySelector('button')?.focus();
   });
+}
+
+// The question for files whose name is taken by a different file: one
+// choice for all of them, or one each (the owner's design, after Windows'
+// copy dialog). Keep both is chosen until changed - nothing is lost.
+function conflictChoice(conflicts, changed) {
+  const box = document.createElement('div');
+  box.className = 'intake-conflicts';
+  const text = document.createElement('p');
+  const strong = document.createElement('strong');
+  strong.textContent = conflicts.length === 1
+    ? 'A file has the same name as something already in your library, but it is different.'
+    : `${conflicts.length} files have the same name as something already in your library, but they are different.`;
+  text.append(strong);
+  const options = [['keep', 'Keep both'], ['skip', 'Skip']];
+  if (state.me && state.me.owner) options.push(['replace', 'Replace']);
+  const all = conflicts.every((p) => p.conflict === conflicts[0].conflict) ? conflicts[0].conflict : '';
+  const row = document.createElement('div');
+  row.className = 'intake-conflict-choice';
+  for (const [value, label] of options) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = value === all ? '' : 'ghost';
+    b.textContent = label;
+    b.setAttribute('aria-pressed', String(value === all));
+    b.addEventListener('click', () => {
+      conflicts.forEach((p) => { p.conflict = value; });
+      changed();
+    });
+    row.append(b);
+  }
+  const note = document.createElement('p');
+  note.className = 'muted small-print';
+  note.textContent = all === 'replace' ? 'The ones there now go to the bin for 30 days.'
+    : all === 'keep' ? 'The new one is added with (2) after its name.' : all === 'skip' ? 'What you have stays as it is.' : 'Chosen file by file.';
+  const each = document.createElement('button');
+  each.type = 'button';
+  each.className = 'ghost small';
+  each.textContent = 'Choose for each file\u2026';
+  const list = document.createElement('ul');
+  list.className = 'intake-conflict-list';
+  list.hidden = !conflictChoice.open;
+  each.addEventListener('click', () => {
+    conflictChoice.open = !conflictChoice.open;
+    list.hidden = !conflictChoice.open;
+  });
+  for (const p of conflicts) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = (p.path || '').split('/').pop();
+    name.title = p.dest || p.path;
+    const select = document.createElement('select');
+    for (const [value, label] of options) {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      o.selected = p.conflict === value;
+      select.append(o);
+    }
+    select.addEventListener('change', () => {
+      p.conflict = select.value;
+      changed();
+    });
+    li.append(name, select);
+    list.append(li);
+  }
+  box.append(text, row, note, each, list);
+  return box;
 }
 
 // After: where each part really landed - which can differ from the plan, as
@@ -4150,7 +4335,7 @@ async function sendFiles(plan, dropped) {
   const queue = [];
   plan.forEach((placement, index) => {
     renderIntakeRow(placement);
-    if (!placement.skipped && !placement.waiting) {
+    if (!placement.skipped && !placement.waiting && placement.conflict !== 'skip') {
       queue.push({ ...placement, file: dropped[index].file });
     }
   });
@@ -4169,6 +4354,7 @@ async function sendFiles(plan, dropped) {
   if (APP_UPLOADS) {
     const jobs = queue.map((item) => ({
       name: item.file.name, size: item.file.size, path: item.path, kind: item.kind, group: item.group || '',
+      conflict: item.conflict === 'keep' || item.conflict === 'replace' ? item.conflict : '',
       taken: (item.kind === 'picture' || item.kind === 'video') && item.file.lastModified ? item.file.lastModified : 0,
     }));
     const r = await appUploads('add', { server: location.origin, jobs }, 'added');
@@ -4245,6 +4431,8 @@ function summary(added, skipped, failed, stopped = 0) {
 function uploadOne(item, onProgress) {
   return new Promise((resolve) => {
     const params = new URLSearchParams({ path: item.path, kind: item.kind });
+    // A taken name, as the person chose: keep both, or replace.
+    if (item.conflict === 'keep' || item.conflict === 'replace') params.set('conflict', item.conflict);
     // A photo or video is sorted into the person's folder by when it was
     // taken; the file's own date (on a camera's card, when it was taken) is
     // what the server falls back on when the photo carries none inside it.

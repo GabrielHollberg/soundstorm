@@ -129,6 +129,7 @@ object Uploads {
                     .put("uri", p.uri.toString()).put("name", name).put("size", size)
                     .put("path", j.optString("path")).put("kind", j.optString("kind"))
                     .put("group", j.optString("group"))
+                    .put("conflict", j.optString("conflict"))
                     .put("taken", j.optLong("taken", 0)).put("state", "waiting")
             }
         }
@@ -251,6 +252,9 @@ object Uploads {
             .append("&kind=").append(URLEncoder.encode(job.optString("kind"), "UTF-8"))
         val taken = job.optLong("taken", 0)
         if (taken > 0) q.append("&taken=").append(taken)
+        // A taken name, as the person chose before sending: keep both or replace.
+        val conflict = job.optString("conflict")
+        if (conflict == "keep" || conflict == "replace") q.append("&conflict=").append(conflict)
         WebCookies.install()
         val conn = URL(server.trimEnd('/') + "/api/upload" + q).openConnection() as HttpURLConnection
         conn.requestMethod = "PUT"

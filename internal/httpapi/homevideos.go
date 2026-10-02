@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 	"github.com/GabrielHollberg/soundstorm/internal/tags"
@@ -30,10 +31,10 @@ func videoFilmed(staged, name string) tags.Camera {
 
 // saveFilmOrHomeVideo saves a video dropped as a film: to Films, or, when a
 // phone or camera filmed it, to the person's photos. It says which.
-func (s *Server) saveFilmOrHomeVideo(u state.User, dropped string, body io.Reader, hint, size int64) (string, media.Kind, error) {
+func (s *Server) saveFilmOrHomeVideo(u state.User, dropped string, body io.Reader, hint, size int64, opts library.SaveOptions) (string, media.Kind, error) {
 	var pl *photoPlace
 	kind := media.KindVideo
-	dest, err := s.library.SaveRouted(media.KindVideo, dropped, body, func(staged string) (media.Kind, string, error) {
+	dest, err := s.library.SaveWith(media.KindVideo, dropped, body, func(staged string) (media.Kind, string, error) {
 		if !videoFilmed(staged, path.Base(dropped)).Filmed {
 			return media.KindVideo, "", nil
 		}
@@ -51,7 +52,7 @@ func (s *Server) saveFilmOrHomeVideo(u state.User, dropped string, body io.Reade
 		}
 		pl, kind = p, media.KindPicture
 		return media.KindPicture, p.rel, nil
-	})
+	}, opts)
 	if err != nil {
 		return "", kind, err
 	}
