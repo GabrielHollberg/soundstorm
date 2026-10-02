@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
-        guard identifier == Uploader.identifier else { return completionHandler() }
+        guard identifier == Uploader.identifier || identifier == Uploader.wifiIdentifier else { return completionHandler() }
         nonisolated(unsafe) let done = completionHandler
         Uploader.shared.whenFinished { DispatchQueue.main.async { done() } }
     }

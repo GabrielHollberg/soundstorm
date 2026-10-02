@@ -13,10 +13,14 @@ import WebKit
 /// the same messages and status as Android, so the page has no iPhone code.
 ///
 /// iOS decides when an app may work in the background, so it runs: while the
-/// app is open, when a photo is added while it is open, and as a background
-/// processing task iOS starts when it chooses - usually charging, on Wi-Fi,
-/// overnight. Each file goes up in a background URLSession, so one already
-/// sending finishes even if the app is put away. Newest first.
+/// app is open, when a photo is added while it is open, the half minute iOS
+/// allows after the phone locks, and as a background processing task iOS
+/// starts when it chooses - usually charging, on Wi-Fi, overnight. Newest
+/// first. Files are handed to iOS ahead - up to 200, or a gigabyte, waiting
+/// at once - in a background URLSession, which goes on sending them with the
+/// phone locked and the app suspended or ended; each is counted as sent when
+/// iOS says it arrived, whenever that is. (Sending one at a time and waiting
+/// for each, backup stopped a few seconds after the screen locked.)
 ///
 /// What was sent is remembered on the phone (each photo's local id), and the
 /// server is asked first which it already has, so reinstalling the app or a
@@ -69,7 +73,7 @@ final class PhotoBackup: NSObject {
             "permission": permitted,
             "done": defaults.integer(forKey: "backup.done"),
             "total": defaults.integer(forKey: "backup.total"),
-            "running": run != nil,
+            "running": run != nil || Uploader.shared.pending.count > 0,
             "problem": defaults.string(forKey: "backup.problem") ?? "",
             "sendingSize": defaults.integer(forKey: "backup.sendingSize"),
             "sendingSent": defaults.integer(forKey: "backup.sendingSent"),
@@ -83,6 +87,11 @@ final class PhotoBackup: NSObject {
     /// cross the Wi-Fi readable (as on Android).
     /// The address the app was opened with is kept too, the last resort.
     func rememberServer(_ url: URL, typed: URL) {
+        // Another server than before: its secure address is not this one's.
+        // Kept, photos went on going to the old server (and were refused).
+        if let origin = Self.origin(typed), origin.absoluteString != defaults.string(forKey: "backup.typed") {
+            set("server", nil)
+        }
         if url.scheme == "https", let origin = Self.origin(url) { set("server", origin.absoluteString) }
         if let origin = Self.origin(typed) { set("typed", origin.absoluteString) }
     }
@@ -130,7 +139,34 @@ final class PhotoBackup: NSObject {
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in PhotoBackup.shared.start() }
         }
+        // The phone locking (or the app put away): iOS allows about half a
+        // minute more, spent handing it as many files as fit; it sends those
+        // with the app suspended.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in PhotoBackup.shared.wentToBackground() }
+        }
         if enabled { start() }
+    }
+
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    private func wentToBackground() {
+        guard enabled, permitted else { return }
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Photo backup") {
+                Task { @MainActor in PhotoBackup.shared.endBackgroundTime() }
+            }
+        }
+        start()
+    }
+
+    private func endBackgroundTime() {
+        // Out of time: what is already with iOS goes on; the run stops here.
+        run?.cancel()
+        if backgroundTask != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
     }
 
     /// Starts a run, unless one is going or backup is off.
@@ -141,9 +177,14 @@ final class PhotoBackup: NSObject {
             watching = true
         }
         run = Task {
+            await Uploader.shared.restored()
             await backUp()
             run = nil
             schedule()
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
         }
     }
 
@@ -204,36 +245,47 @@ final class PhotoBackup: NSObject {
         sent.contains(asset.localIdentifier) && (!isLive(asset) || sent.contains(liveKey(asset)))
     }
 
+    /// Files waiting with iOS at once, at most: enough to go on for hours
+    /// with the phone locked, not so many that their copies fill the phone.
+    static let maxQueued = 200
+    static let maxQueuedBytes: Int64 = 1 << 30
+
+    /// Stops handing iOS more in this run: a refusal that will not mend by
+    /// itself (signed out, no Pictures, no room).
+    private var halted = false
+
     private func backUp() async {
         let servers = candidates()
         guard var server = servers.first else { return }
+        let list = sentList
         let roll = cameraRoll()
-        var sent = loadSent()
+        var sent = loadSent(list)
         // A Live Photo counts as one, still and clip together.
         let waiting = roll.filter { !Self.complete($0, sent) }
-        var done = roll.count - waiting.count
-        set("done", done)
+        set("done", roll.count - waiting.count)
         set("total", roll.count)
         set("problem", "")
-        defer {
-            set("sendingSize", 0)
-            set("sendingSent", 0)
-        }
+        halted = false
         do {
             var start = 0
             while start < waiting.count {
                 let assets = Array(waiting[start..<min(start + 60, waiting.count)])
-                let batch = assets.flatMap(items).filter { !sent.contains($0.key) }
                 start += 60
-                // Counted as each photo is wholly there.
-                let finished = { (key: String) in
-                    sent.insert(key)
-                    if let asset = assets.first(where: { key.hasPrefix($0.localIdentifier) }), Self.complete(asset, sent) {
-                        done += 1
-                        self.set("done", done)
+                // Nothing to send of something with no file at all (a photo
+                // shared to the phone but never downloaded): done, or it
+                // would count as waiting for ever.
+                var batch: [Item] = []
+                for asset in assets {
+                    let units = items(asset)
+                    if units.isEmpty {
+                        markSent([asset.localIdentifier], list)
+                        sent.insert(asset.localIdentifier)
+                        bumpDone()
                     }
+                    batch += units.filter { !sent.contains($0.key) && !Uploader.shared.pending.keys.contains($0.key) }
                 }
-                guard !Task.isCancelled, mayRun else { return }
+                guard !batch.isEmpty else { continue }
+                guard !Task.isCancelled, mayRun, !halted else { return }
                 // The first address that answers, for the rest of this run.
                 var have: [Bool]?
                 var lastError: Error = URLError(.cannotConnectToHost)
@@ -249,30 +301,72 @@ final class PhotoBackup: NSObject {
                     }
                 }
                 guard let have else { throw lastError }
-                let already = zip(batch, have).filter { $0.1 }.map { $0.0.key }
-                markSent(already)
-                already.forEach(finished)
+                for (item, had) in zip(batch, have) where had {
+                    markSent([item.key], list)
+                    sent.insert(item.key)
+                    if isLast(item, sent: sent) { bumpDone() }
+                }
                 for (item, had) in zip(batch, have) where !had {
-                    guard !Task.isCancelled, mayRun else { return }
-                    try await send(item, to: server)
-                    markSent([item.key])
-                    finished(item.key)
+                    // Room with iOS first: topped up as files arrive.
+                    while Uploader.shared.pending.count >= Self.maxQueued || Uploader.shared.pending.bytes >= Self.maxQueuedBytes {
+                        try await Task.sleep(for: .seconds(3))
+                    }
+                    guard !Task.isCancelled, mayRun, !halted else { return }
+                    let pendingOthers = batch.filter { $0.assetID == item.assetID && $0.key != item.key && !sent.contains($0.key) }
+                    try await enqueue(item, to: server, list: list, last: pendingOthers.allSatisfy { Uploader.shared.pending.keys.contains($0.key) })
                 }
             }
         } catch let e as Refused {
-            // Said plainly in Settings. A full photo space or disk, or a
-            // sign-in that has ended, will not mend itself in a minute.
-            let problem = switch e.code {
-                case 401: "Sign in to SoundStorm again to carry on backing up."
-                case 403: e.message.isEmpty ? "This account does not have Pictures." : e.message
-                case 507: e.message.isEmpty ? "There is no room left for photos." : e.message
-                default: e.message.isEmpty ? "The server refused a photo." : e.message
-            }
-            set("problem", problem)
+            stopFor(e)
         } catch is CancellationError {
-            // Put away or switched off; the next run carries on.
+            // Put away or switched off; what is with iOS goes on, and the next
+            // run carries on from there.
         } catch {
             if !Task.isCancelled { set("problem", "Could not reach the server; it will try again.") }
+        }
+    }
+
+    /// Whether this file completes its photo (a Live Photo's still and clip
+    /// both there).
+    private func isLast(_ item: Item, sent: Set<String>) -> Bool {
+        sent.contains(item.assetID) && (sent.contains(item.assetID + "#live") || !item.key.hasSuffix("#live") && !hasClip(item.assetID))
+    }
+
+    private func hasClip(_ id: String) -> Bool {
+        PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject.map(Self.isLive) ?? false
+    }
+
+    private func bumpDone() { set("done", defaults.integer(forKey: "backup.done") + 1) }
+
+    /// Said plainly in Settings. A full photo space or disk, or a sign-in
+    /// that has ended, will not mend itself in a minute: nothing more is
+    /// handed to iOS this run.
+    private func stopFor(_ e: Refused) {
+        halted = true
+        let problem = switch e.code {
+            case 401: "Sign in to SoundStorm again to carry on backing up."
+            case 403: e.message.isEmpty ? "This account does not have Pictures." : e.message
+            case 507: e.message.isEmpty ? "There is no room left for photos." : e.message
+            default: e.message.isEmpty ? "The server refused a photo." : e.message
+        }
+        set("problem", problem)
+    }
+
+    /// A file iOS says arrived (or the server had already): counted, even
+    /// when this is a relaunch after the app was ended.
+    func uploaded(_ meta: Uploader.Meta) {
+        markSent([meta.key], meta.list)
+        if meta.last { bumpDone() }
+    }
+
+    /// A file the server refused. Signed out, no Pictures or no room stop the
+    /// run; anything else is that one file, named and passed over - one bad
+    /// file used to stop backup for good (as Android 0.18 found).
+    func refused(_ meta: Uploader.Meta, code: Int, message: String) {
+        if [401, 403, 507].contains(code) {
+            stopFor(Refused(code: code, message: message))
+        } else {
+            set("problem", "Couldn't back up \(meta.name)\(message.isEmpty ? "" : ": " + message). The rest carry on.")
         }
     }
 
@@ -350,9 +444,11 @@ final class PhotoBackup: NSObject {
         return items.indices.map { $0 < have.count ? have[$0] : false }
     }
 
-    /// Sends one photo or video: the original written to a file, then that
-    /// file as the whole request body, in the background session.
-    private func send(_ item: Item, to server: URL) async throws {
+    /// Hands one photo or video to iOS: the original written to a file of
+    /// its own, then that file as the whole request body, in the background
+    /// session - not waited for. iOS sends it when it can, the phone locked
+    /// or not.
+    private func enqueue(_ item: Item, to server: URL, list: String, last: Bool) async throws {
         let file = try await export(item.resource)
         var query = account()
         query.insert(URLQueryItem(name: "taken", value: String(item.taken)), at: 0)
@@ -360,21 +456,23 @@ final class PhotoBackup: NSObject {
         var request = URLRequest(url: address(server, "/api/photos/backup", query: query))
         request.httpMethod = "PUT"
         request.setValue(item.video ? "video/*" : "image/*", forHTTPHeaderField: "Content-Type")
-        try await signIn(&request)
-        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
-        set("sendingSize", size)
-        set("sendingSent", 0)
-        set("sendingVideo", item.video)
-        let (code, body) = try await Uploader.shared.upload(request, file: file, key: item.key)
-        // 409: the server had it after all, under that name.
-        guard (200..<300).contains(code) || code == 409 else { throw Refused(code: code, message: Self.errorText(body)) }
+        do {
+            try await signIn(&request)
+        } catch {
+            try? FileManager.default.removeItem(at: file)
+            throw error
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64) ?? 0
+        Uploader.shared.enqueue(request, file: file, size: size, wifiOnly: wifiOnly,
+                                meta: Uploader.Meta(key: item.key, list: list, last: last, name: item.name, video: item.video))
     }
 
-    /// The original resource to a file of its own; from iCloud if that is
-    /// where it is.
+    /// The original resource to a file of its own, from iCloud if that is
+    /// where it is - kept with the app's own files rather than in temporary
+    /// ones, which iOS may clear while it still has them to send.
     private func export(_ resource: PHAssetResource) async throws -> URL {
         let ext = (resource.originalFilename as NSString).pathExtension
-        let file = FileManager.default.temporaryDirectory
+        let file = Uploader.queueFolder
             .appending(path: "backup-" + UUID().uuidString + (ext.isEmpty ? "" : "." + ext))
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
@@ -404,7 +502,16 @@ final class PhotoBackup: NSObject {
     /// keeps its own cookies, apart from URLSession's, so it is copied over.
     private func signIn(_ request: inout URLRequest) async throws {
         guard let url = request.url, let host = url.host()?.lowercased() else { return }
-        let all = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
+        // The web view's cookies are read from its store only once a web view
+        // exists in this process: at launch, before the page's own, and in a
+        // background run, which has none, the store answered empty and backup
+        // said "sign in again". One that is never shown loads it.
+        if Self.cookieLoader == nil { Self.cookieLoader = WKWebView(frame: .zero) }
+        var all = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
+        if all.isEmpty {
+            try await Task.sleep(for: .seconds(2))
+            all = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
+        }
         let now = Date()
         let mine = all.filter { c in
             let domain = c.domain.lowercased()
@@ -412,11 +519,16 @@ final class PhotoBackup: NSObject {
             return matches && url.path().hasPrefix(c.path) && (!c.isSecure || url.scheme == "https")
                 && (c.expiresDate.map { $0 > now } ?? true)
         }
+        // None at all: not known yet, rather than signed out - the run ends
+        // quietly and the next (the page asking, opening the app) tries again.
+        guard !all.isEmpty else { throw CancellationError() }
         guard !mine.isEmpty else { throw Refused(code: 401, message: "") }
         for (field, value) in HTTPCookie.requestHeaderFields(with: mine) {
             request.setValue(value, forHTTPHeaderField: field)
         }
     }
+
+    private static var cookieLoader: WKWebView?
 
     private static func errorText(_ data: Data) -> String {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? String ?? ""
@@ -433,25 +545,44 @@ final class PhotoBackup: NSObject {
 
     // MARK: What was sent
 
-    private var sentFile: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appending(path: "backup-sent.txt")
+    /// What was sent is remembered per account: sent to one person's (or one
+    /// server's) folder is not sent to another's. One list for the whole
+    /// phone showed a second server or person "all backed up" with nothing
+    /// sent. The account id is the server's own random id, so it tells
+    /// servers apart too.
+    private var sentList: String {
+        let account = defaults.string(forKey: "backup.account") ?? ""
+        let name = account.isEmpty ? "default" : String(account.filter { $0.isLetter || $0.isNumber }.prefix(40))
+        // A phone from before kept one list: it was this account's.
+        let old = Self.folder.appending(path: "backup-sent.txt")
+        if FileManager.default.fileExists(atPath: old.path) {
+            try? FileManager.default.moveItem(at: old, to: Self.sentFile(name))
+        }
+        return name
     }
 
-    private func loadSent() -> Set<String> {
-        guard let text = try? String(contentsOf: sentFile, encoding: .utf8) else { return [] }
+    private static var folder: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private static func sentFile(_ list: String) -> URL { folder.appending(path: "backup-sent-\(list).txt") }
+
+    private func loadSent(_ list: String) -> Set<String> {
+        guard let text = try? String(contentsOf: Self.sentFile(list), encoding: .utf8) else { return [] }
         return Set(text.split(separator: "\n").map(String.init))
     }
 
-    func markSent(_ keys: [String]) {
+    func markSent(_ keys: [String], _ list: String) {
         guard !keys.isEmpty, let line = (keys.joined(separator: "\n") + "\n").data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: sentFile) {
+        let file = Self.sentFile(list)
+        if let handle = try? FileHandle(forWritingTo: file) {
             _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: line)
             try? handle.close()
         } else {
-            try? line.write(to: sentFile)
+            try? line.write(to: file)
         }
     }
 }
@@ -479,49 +610,108 @@ nonisolated private final class NoRedirects: NSObject, URLSessionTaskDelegate, S
     }
 }
 
-/// The background session the files go up in: iOS carries an upload on with
-/// the app put away, and wakes the app to say how it ended. An upload that
-/// ends after the app was closed is still counted as sent.
+/// The background sessions the files go up in: iOS carries the uploads on
+/// with the phone locked and the app suspended or ended, and wakes the app to
+/// say how each ended. Two sessions, as a session's network rules are fixed
+/// when it is made: one that waits for Wi-Fi (not cellular, a hotspot or Low
+/// Data Mode), one that sends on anything.
+///
+/// What each upload is goes with its task (taskDescription), so a relaunch
+/// knows; `pending` is what iOS still has, by file, read back from the
+/// sessions at launch so nothing already waiting is handed over again.
 nonisolated final class Uploader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     static let shared = Uploader()
     static let identifier = "dev.soundstorm.app.backup"
+    static let wifiIdentifier = "dev.soundstorm.app.backup.wifi"
+
+    /// What an upload is: the sent-list key, which list, whether it completes
+    /// its photo, and its name for a message.
+    struct Meta: Codable, Sendable {
+        let key: String
+        let list: String
+        let last: Bool
+        let name: String
+        let video: Bool
+        var file = ""
+        var size: Int64 = 0
+    }
+
+    /// The exported copies waiting to go.
+    static var queueFolder: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "backup-queue")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
 
     private let lock = NSLock()
-    private var waiting: [Int: CheckedContinuation<(Int, Data), Error>] = [:]
+    private var waiting: [String: Meta] = [:] // by key
     private var bodies: [Int: Data] = [:]
     private var shown = Date.distantPast
-    /// iOS's handler for a session's events delivered with the app closed.
     private var finishedEvents: (@Sendable () -> Void)?
+    private var restoring: Task<Void, Never>?
+
+    private(set) var anyNetwork: URLSession!
+    private(set) var wifiOnly: URLSession!
+
+    /// Files with iOS now: how many, how many bytes, and their keys.
+    var pending: (count: Int, bytes: Int64, keys: Set<String>) {
+        lock.withLock { (waiting.count, waiting.values.reduce(0) { $0 + $1.size }, Set(waiting.keys)) }
+    }
 
     func whenFinished(_ handler: @escaping @Sendable () -> Void) {
-        // Uploader.shared made the session again, which its events need.
         lock.withLock { finishedEvents = handler }
     }
 
-    private(set) var session: URLSession!
-
     private override init() {
         super.init()
-        let config = URLSessionConfiguration.background(withIdentifier: Self.identifier)
+        anyNetwork = Self.session(Self.identifier, wifi: false, delegate: self)
+        wifiOnly = Self.session(Self.wifiIdentifier, wifi: true, delegate: self)
+        restoring = Task { await self.restore() }
+    }
+
+    private static func session(_ id: String, wifi: Bool, delegate: Uploader) -> URLSession {
+        let config = URLSessionConfiguration.background(withIdentifier: id)
         config.sessionSendsLaunchEvents = true
         config.isDiscretionary = false
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
-        session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        if wifi {
+            config.allowsExpensiveNetworkAccess = false
+            config.allowsConstrainedNetworkAccess = false
+        }
+        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
-    func upload(_ request: URLRequest, file: URL, key: String) async throws -> (Int, Data) {
-        let task = session.uploadTask(with: request, fromFile: file)
-        // What it is and which file, for an upload that outlives the app.
-        task.taskDescription = key + "\n" + file.path
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                lock.withLock { waiting[task.taskIdentifier] = continuation }
-                task.resume()
+    /// What iOS still has from before (a relaunch), and copies it no longer
+    /// has a task for cleared away.
+    private func restore() async {
+        var keep = Set<String>()
+        for session in [anyNetwork!, wifiOnly!] {
+            for task in await session.allTasks {
+                guard let meta = Self.meta(task), task.state == .running || task.state == .suspended else { continue }
+                lock.withLock { waiting[meta.key] = meta }
+                keep.insert(meta.file)
             }
-        } onCancel: {
-            task.cancel()
         }
+        let files = (try? FileManager.default.contentsOfDirectory(at: Self.queueFolder, includingPropertiesForKeys: nil)) ?? []
+        for file in files where !keep.contains(file.path) { try? FileManager.default.removeItem(at: file) }
+    }
+
+    func restored() async { await restoring?.value }
+
+    private static func meta(_ task: URLSessionTask) -> Meta? {
+        task.taskDescription.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(Meta.self, from: $0) }
+    }
+
+    func enqueue(_ request: URLRequest, file: URL, size: Int64, wifiOnly onWifi: Bool, meta: Meta) {
+        var meta = meta
+        meta.file = file.path
+        meta.size = size
+        let task = (onWifi ? wifiOnly! : anyNetwork!).uploadTask(with: request, fromFile: file)
+        task.taskDescription = (try? JSONEncoder().encode(meta)).flatMap { String(data: $0, encoding: .utf8) }
+        lock.withLock { waiting[meta.key] = meta }
+        task.resume()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
@@ -532,7 +722,11 @@ nonisolated final class Uploader: NSObject, URLSessionDataDelegate, @unchecked S
             shown = now
             return true
         }
-        if due { UserDefaults.standard.set(Int(totalBytesSent), forKey: "backup.sendingSent") }
+        guard due else { return }
+        // How far through the file sending now, for Settings.
+        UserDefaults.standard.set(Int(totalBytesSent), forKey: "backup.sendingSent")
+        UserDefaults.standard.set(Int(totalBytesExpectedToSend), forKey: "backup.sendingSize")
+        UserDefaults.standard.set(Self.meta(task)?.video ?? false, forKey: "backup.sendingVideo")
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
@@ -545,17 +739,27 @@ nonisolated final class Uploader: NSObject, URLSessionDataDelegate, @unchecked S
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let (continuation, body) = lock.withLock {
-            (waiting.removeValue(forKey: task.taskIdentifier), bodies.removeValue(forKey: task.taskIdentifier) ?? Data())
+        let body = lock.withLock { bodies.removeValue(forKey: task.taskIdentifier) ?? Data() }
+        guard let meta = Self.meta(task) else { return }
+        let remaining = lock.withLock { () -> Int in
+            waiting.removeValue(forKey: meta.key)
+            return waiting.count
+        }
+        try? FileManager.default.removeItem(atPath: meta.file)
+        if remaining == 0 {
+            UserDefaults.standard.set(0, forKey: "backup.sendingSent")
+            UserDefaults.standard.set(0, forKey: "backup.sendingSize")
         }
         let code = (task.response as? HTTPURLResponse)?.statusCode ?? 0
-        let parts = (task.taskDescription ?? "").split(separator: "\n", maxSplits: 1).map(String.init)
-        if parts.count == 2 { try? FileManager.default.removeItem(atPath: parts[1]) }
-        if let continuation {
-            if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: (code, body)) }
-        } else if error == nil, (200..<300).contains(code) || code == 409, let key = parts.first {
-            // Finished after the app that started it was closed.
-            Task { @MainActor in PhotoBackup.shared.markSent([key]) }
+        let message = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["error"] as? String ?? ""
+        Task { @MainActor in
+            if error == nil, (200..<300).contains(code) || code == 409 {
+                // 409: the server had it after all, under that name.
+                PhotoBackup.shared.uploaded(meta)
+            } else if code >= 400 {
+                PhotoBackup.shared.refused(meta, code: code, message: message)
+            }
+            // A network failure: not counted, so the next run sends it again.
         }
     }
 

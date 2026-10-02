@@ -152,6 +152,9 @@ final class WebViewController: UIViewController {
             Task {
                 await PhotoBackup.shared.handle(command, options: options)
                 reportBackup()
+                // The page is up and signed in: a run that found no sign-in
+                // at launch can go now.
+                PhotoBackup.shared.start()
             }
         default:
             break

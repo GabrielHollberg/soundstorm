@@ -90,8 +90,8 @@ is described in full in its own section below; tick them off here:
    app's own storage at pick time, as WKWebView gives no lasting URL), a
    background `URLSession` sends each to `PUT /api/upload?path=&kind=&taken=&conflict=`
    with the session cookie, Only on Wi-Fi / Only while charging.
-2. **Photo backup when locked** - "For the Mac: iPhone backup stops when the
-   phone is locked" (hand iOS the uploads ahead in the background session).
+2. ~~**Photo backup when locked**~~ - *done 2026-10-02*: files are handed to
+   iOS ahead (200 or 1GB waiting), counted as they arrive, see the note.
 3. **A TV's QR code opening the app** - Universal Links: the associated domain
    `applinks:*.home.soundstorm.dev` and the `/link/<code>` path (`linkURL`).
    Apple checks a wildcard at the domain itself (believed - check), so the
@@ -115,9 +115,9 @@ is described in full in its own section below; tick them off here:
    one switch instead of Play on").
 2. **"Use your phone instead"** on Who's listening's PIN or password step.
 3. **Videos and Live photos** pills in Photos (`/api/photos/of?type=`).
-4. The open bugs already listed under "For the Mac, from this review" and "A
-   second bug review": switching person sends the last person's audiobook
-   place, radio top-ups exclude nothing, and the smaller ones.
+4. ~~The open bugs from both reviews~~ - *done 2026-10-02* (Apple TV and
+   iPhone backup), except the iPhone's `.net` fallback and `confirm()` while
+   something is presented.
 
 ## The decision that shapes everything
 
@@ -4533,7 +4533,8 @@ Media3 is 1.5.1; **phone backup remembers what was sent per phone, not per
 server or account** (Android and iPhone: a second server or person shows "all
 backed up" with nothing sent).
 
-**For the Mac, from this review (Apple TV and iPhone):**
+**For the Mac, from this review (Apple TV and iPhone):** *(done on the Mac,
+2026-10-02, but for the iPhone's `.net` fallback and `confirm()`)*
 - **Switching person sends the last person's audiobook place to the new
   account** (`ProfilesView.go` switches before `player.stop()` saves; signing
   in as someone else never stops the player at all): save and stop first,
@@ -5328,6 +5329,31 @@ the app suspended or ended:
 A phone actually switched off runs nothing, of course; Settings could say
 "Backup carries on while the phone is locked; iOS decides the pace" once this
 lands.
+*(Done on the Mac, 2026-10-02.)* `PhotoBackup.backUp` checks with the server
+as before, then exports each file into `Application Support/backup-queue`
+(not temporary files, which iOS may clear while it still has them to send)
+and hands it to a background session without waiting - up to 200 files or
+1GB at once, topped up as they finish (`Uploader.pending`). Two sessions,
+since a session's network rules are fixed: one with expensive and
+constrained networks off (Wi-Fi only), one with them on. What each upload is
+rides in its `taskDescription` (key, sent list, whether it completes its
+photo, name), so `didCompleteWithError` counts it as sent and deletes its
+copy even after a relaunch, and at launch the sessions' tasks are read back
+(`restore`) so nothing waiting is handed over twice; copies without a task
+are cleared. Going to the background (the phone locking) begins a background
+task and runs, to hand over as much as fits in iOS's half minute. Also from
+the review: the sent list is per account (`backup-sent-<account id>.txt`; the
+old single list becomes the current account's), a new server clears the old
+secure address, a refused file is named and passed over (401, 403 and 507
+stop the run), and a photo with no file at all counts as done. **One more
+found testing it**: the web view's cookie store reads empty until a web view
+exists in the process - at launch backup ran first and said "sign in again";
+in a background run there is no page at all. An invisible `WKWebView` loads
+the store, and no cookies at all now ends the run quietly (the page's backup
+messages start another). Checked in the simulator: all six sample photos
+through the queue, the per-account list, the queue emptied. Not checkable
+there: uploads carrying on with the phone locked - the owner's phone is the
+test.
 
 **Bringing a photo library in** (`internal/photoimport`, `httpapi/photoimport.go`):
 Google and Apple give no way for SoundStorm to pull photos out (Google's
