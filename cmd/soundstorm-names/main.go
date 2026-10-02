@@ -57,6 +57,11 @@ func run(log *slog.Logger) error {
 		Label:          env("NAMES_LABEL", "home"),
 		ClientIPHeader: os.Getenv("NAMES_CLIENT_IP_HEADER"),
 		Log:            log,
+		// The Android app's signing key (the debug key it is published with
+		// until it has a store key); NAMES_ANDROID_CERTS, comma separated,
+		// adds or replaces.
+		AndroidCerts: strings.Split(env("NAMES_ANDROID_CERTS",
+			"C3:3E:B7:FA:E1:A6:6C:74:79:FC:D6:9C:5D:3D:79:BF:29:02:06:82:9D:C2:66:42:E8:62:86:71:23:75:27:FF"), ","),
 	}
 
 	if test := os.Getenv("NAMES_CHALLTESTSRV"); test != "" {

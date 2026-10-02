@@ -38,6 +38,14 @@ type Server struct {
 	// the domain is used for.
 	Zone, Label string
 
+	// AndroidCerts are the SHA-256 fingerprints of the keys the Android app
+	// is signed with ("C3:3E:..."), served as Digital Asset Links so a phone
+	// opens a TV's sign-in QR code (https://<id>.home.soundstorm.dev/link/...)
+	// in the app rather than the browser. Android verifies a wildcard host at
+	// its root - home.soundstorm.dev and net.soundstorm.dev - which is why
+	// this service answers it: those two names point here.
+	AndroidCerts []string
+
 	// PublicLabel is the level for remote-access names, which point at a home's
 	// public address rather than its LAN one: an install is
 	// <id>.<PublicLabel>.<Zone>. Separate from Label so a device on the LAN and
@@ -145,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 			"x-forwarded-for": r.Header.Get("X-Forwarded-For"),
 		})
 	})
+	mux.HandleFunc("GET /.well-known/assetlinks.json", s.handleAssetLinks)
 	mux.HandleFunc("POST /v1/register", s.handleRegister)
 	mux.HandleFunc("PUT /v1/address", s.authed(s.handleAddress))
 	mux.HandleFunc("PUT /v1/public", s.authed(s.handlePublic))
@@ -152,6 +161,30 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/challenge", s.authed(s.handleSetChallenge))
 	mux.HandleFunc("DELETE /v1/challenge", s.authed(s.handleClearChallenge))
 	return mux
+}
+
+// handleAssetLinks lets the Android app open links to installs' names. Only
+// ever the app's package and its public signing fingerprints: nothing about
+// any install.
+func (s *Server) handleAssetLinks(w http.ResponseWriter, r *http.Request) {
+	type target struct {
+		Namespace   string   `json:"namespace"`
+		PackageName string   `json:"package_name"`
+		Fingerprint []string `json:"sha256_cert_fingerprints"`
+	}
+	type statement struct {
+		Relation []string `json:"relation"`
+		Target   target   `json:"target"`
+	}
+	out := []statement{}
+	if len(s.AndroidCerts) > 0 {
+		out = append(out, statement{
+			Relation: []string{"delegate_permission/common.handle_all_urls"},
+			Target:   target{Namespace: "android_app", PackageName: "dev.soundstorm.app", Fingerprint: s.AndroidCerts},
+		})
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeJSON(w, http.StatusOK, out)
 }
 
 // NameFor is the full name an id answers to.

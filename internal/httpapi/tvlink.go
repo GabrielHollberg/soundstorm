@@ -99,13 +99,31 @@ func (s *Server) linkURL(r *http.Request, code string) string {
 			port = ":" + p
 		}
 		host = name + port
-		return "https://" + host + "/?link=" + code
+		return "https://" + host + "/link/" + code
 	}
 	scheme := "http"
 	if s.auth.OverTLS(r) {
 		scheme = "https"
 	}
-	return scheme + "://" + host + "/?link=" + code
+	return scheme + "://" + host + "/link/" + code
+}
+
+// handleLinkPage is the QR's address. A phone with the Android app opens it
+// in the app (an App Link on the install's soundstorm.dev name: the names
+// service vouches for the app); in a browser it becomes the page asking
+// "Sign in a TV?".
+func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) {
+	code := strings.Map(func(c rune) rune {
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			return c
+		}
+		return -1
+	}, r.PathValue("code"))
+	if len(code) > 16 {
+		code = code[:16]
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/?link="+strings.ToUpper(code), http.StatusFound)
 }
 
 // POST /api/link: a TV asks for a code. Not signed in, by definition, so it

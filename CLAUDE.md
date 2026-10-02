@@ -6080,6 +6080,31 @@ server's home address); the same address path checked in a browser.
 CFBundleURLTypes, the same `link?server=&code=` handled (known servers
 only), and the page then offering the button on an iPhone too (it shows on
 Android only now; `/iPhone/` would be added once the app takes the link).
+**Then the camera opens the app itself, and the app can scan** (2026-10-02,
+the owner asking why a web page had to come first). Two ways, both built:
+- **Scan the TV's code** in the app (0.25), beside the code box in Settings:
+  Google's code scanner from Play services (`play-services-code-scanner`,
+  its own screen, no camera permission), the code read from the QR's
+  address, `?link=`, or a bare six characters, and handed to
+  `__soundstormLink`. Checked on the emulator: the button shows and opens the
+  scanner.
+- **An App Link after all** (0.26). The reasoning above was half right:
+  Android verifies a wildcard host at its root, so `*.home.soundstorm.dev` is
+  checked at `https://home.soundstorm.dev/.well-known/assetlinks.json` - one
+  file, not one per install - and the names service now serves it
+  (`handleAssetLinks`: the package and the signing key's SHA-256,
+  `NAMES_ANDROID_CERTS` to change it; the debug key until there is a store
+  key, and a new key needs this list updated before it ships). The QR is now
+  `https://<name>/link/<code>` (`linkURL`); in a browser `/link/{code}`
+  redirects to `/?link=`. The app's filter (`autoVerify`, both labels,
+  `/link/`) goes to `tvLink`, which takes the code from the path and still
+  opens only a server it knows. **It works only once `home.soundstorm.dev`
+  and `net.soundstorm.dev` point at the names service** (Railway custom
+  domains and CNAMEs at Porkbun - the owner's to do; both answered a parked
+  address when this was built), and a phone checks when the app is
+  installed, so 0.26 must be installed after that. Checked on the emulator
+  with the link approved by hand (`pm set-app-links-user-selection`): the QR's
+  address opened the app. Not checked: real verification.
 
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several

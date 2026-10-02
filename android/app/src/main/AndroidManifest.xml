@@ -66,6 +66,19 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="soundstorm" android:host="link" />
             </intent-filter>
+            <!-- The TV's QR code itself, https://<id>.home.soundstorm.dev/link/<code>:
+                 an App Link, so the camera opens it here, not in the browser.
+                 Android checks home.soundstorm.dev and net.soundstorm.dev's
+                 /.well-known/assetlinks.json, which the names service serves. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="*.home.soundstorm.dev" />
+                <data android:host="*.net.soundstorm.dev" />
+                <data android:pathPrefix="/link/" />
+            </intent-filter>
         </activity>
 
         <!-- Songs from the server, played by Android's own media player

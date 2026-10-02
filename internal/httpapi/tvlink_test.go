@@ -31,8 +31,13 @@ func TestATVIsSignedInFromAPhone(t *testing.T) {
 
 	tv := h.another(t)
 	id, code, url := newLinkFor(t, tv)
-	if !strings.HasSuffix(url, "/?link="+strings.ReplaceAll(code, "-", "")) {
+	if !strings.HasSuffix(url, "/link/"+strings.ReplaceAll(code, "-", "")) {
 		t.Fatalf("the QR's address should carry the code: %s", url)
+	}
+	// In a browser, the QR's address becomes the page that asks.
+	if resp, _ := tv.do(t, http.MethodGet, "/link/"+strings.ToLower(strings.ReplaceAll(code, "-", ""))+"%2F..", ""); resp.StatusCode != http.StatusOK ||
+		resp.Request.URL.RequestURI() != "/?link="+strings.ReplaceAll(code, "-", "") {
+		t.Fatalf("the QR's address should lead to the page: %d %s", resp.StatusCode, resp.Request.URL)
 	}
 	if resp, body := tv.do(t, http.MethodGet, "/api/link/"+id, ""); !strings.Contains(string(body), "waiting") {
 		t.Fatalf("should be waiting: %d %s", resp.StatusCode, body)

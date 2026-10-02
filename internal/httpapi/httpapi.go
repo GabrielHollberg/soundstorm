@@ -311,6 +311,7 @@ func (s *Server) Routes() http.Handler {
 	// {$} anchors this to exactly "/". A bare "GET /" would be a catch-all that
 	// ServeMux refuses to combine with the method-less "/api/" guard below.
 	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /link/{code}", s.handleLinkPage)
 	// Both of these are served from the root rather than /static/, and the
 	// reason is scope, not tidiness: a service worker may only control paths
 	// at or below its own URL, so /static/sw.js could never intercept "/" -

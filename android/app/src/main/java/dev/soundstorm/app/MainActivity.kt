@@ -581,10 +581,18 @@ class MainActivity : Activity() {
      */
     private fun tvLink(intent: Intent?): Pair<Uri, String>? {
         val data = intent?.data ?: return null
-        if (data.scheme != "soundstorm" || data.host != "link") return null
-        val code = (data.getQueryParameter("code") ?: return null).uppercase().filter { it.isLetterOrDigit() }
+        val host = data.host?.lowercase() ?: return null
+        val (rawCode, wanted) = when {
+            data.scheme == "soundstorm" && host == "link" ->
+                (data.getQueryParameter("code") ?: return null) to data.getQueryParameter("server")?.let(ServerAddress::parse)
+            // The QR's own address, opened by the camera (an App Link).
+            data.scheme == "https" && (host.endsWith(".home.soundstorm.dev") || host.endsWith(".net.soundstorm.dev")) &&
+                data.pathSegments.size == 2 && data.pathSegments[0] == "link" ->
+                data.pathSegments[1] to data.buildUpon().path("/").clearQuery().fragment(null).build()
+            else -> return null
+        }
+        val code = rawCode.uppercase().filter { it.isLetterOrDigit() }
         if (code.length != 6) return null
-        val wanted = data.getQueryParameter("server")?.let(ServerAddress::parse)
         val known = ServerAddress.all(this).map { it.url } + listOfNotNull(ServerAddress.saved(this))
         val installId = { u: Uri -> u.host?.substringBefore('.')?.takeIf { u.host?.endsWith(".soundstorm.dev") == true } }
         val match = wanted?.let { w ->
