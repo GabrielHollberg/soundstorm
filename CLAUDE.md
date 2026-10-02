@@ -5107,6 +5107,14 @@ clip is all it takes. What to build:
 Three of the ten sit in a hand-made `2022/` folder rather than the person's
 dated one, so backup will file their stills again by date (the managed-folder
 rule) beside the clips: those three show twice until the hand-made copies go.
+*(Done on the Mac, 2026-10-01.)* `PhotoBackup.items` sends a Live Photo as
+two files - the still, and its `.pairedVideo` (or full-size paired video) as
+`<still's name>.MOV` with the same `taken` - each kept in the sent list on
+its own (`<id>` and `<id>#live`), checked with the server on its own, and the
+photo counted once, when both are there. The clip goes even with videos left
+out. Checked only that nothing else changed: the simulator's sample photos
+hold no Live Photo, and a rerun of the backup test sent nothing new and
+passed. The owner's phone, with its ten, is the test.
 
 Verified end to end on a throwaway Immich 3.2.2 that a test SoundStorm
 provisioned, sharing one pictures folder: a member saw nothing, backed up a

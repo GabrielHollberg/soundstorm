@@ -184,12 +184,24 @@ final class PhotoBackup: NSObject {
 
     struct Refused: Error { let code: Int; let message: String }
 
+    /// One file to send: a photo, a video, or a Live Photo's moving part -
+    /// which is kept track of apart from its still (`<id>#live`), so a phone
+    /// whose stills went up before clips were sent still sends the clips.
     private struct Item {
-        let asset: PHAsset
+        let key: String
+        let assetID: String
         let resource: PHAssetResource
         let name: String
         let taken: Int64
-        var video: Bool { asset.mediaType == .video }
+        let video: Bool
+    }
+
+    private static func isLive(_ asset: PHAsset) -> Bool { asset.mediaSubtypes.contains(.photoLive) }
+    private static func liveKey(_ asset: PHAsset) -> String { asset.localIdentifier + "#live" }
+
+    /// Everything of this photo or video is on the server.
+    private static func complete(_ asset: PHAsset, _ sent: Set<String>) -> Bool {
+        sent.contains(asset.localIdentifier) && (!isLive(asset) || sent.contains(liveKey(asset)))
     }
 
     private func backUp() async {
@@ -197,7 +209,8 @@ final class PhotoBackup: NSObject {
         guard var server = servers.first else { return }
         let roll = cameraRoll()
         var sent = loadSent()
-        let waiting = roll.filter { !sent.contains($0.localIdentifier) }
+        // A Live Photo counts as one, still and clip together.
+        let waiting = roll.filter { !Self.complete($0, sent) }
         var done = roll.count - waiting.count
         set("done", done)
         set("total", roll.count)
@@ -209,8 +222,17 @@ final class PhotoBackup: NSObject {
         do {
             var start = 0
             while start < waiting.count {
-                let batch = waiting[start..<min(start + 100, waiting.count)].compactMap(item)
-                start += 100
+                let assets = Array(waiting[start..<min(start + 60, waiting.count)])
+                let batch = assets.flatMap(items).filter { !sent.contains($0.key) }
+                start += 60
+                // Counted as each photo is wholly there.
+                let finished = { (key: String) in
+                    sent.insert(key)
+                    if let asset = assets.first(where: { key.hasPrefix($0.localIdentifier) }), Self.complete(asset, sent) {
+                        done += 1
+                        self.set("done", done)
+                    }
+                }
                 guard !Task.isCancelled, mayRun else { return }
                 // The first address that answers, for the rest of this run.
                 var have: [Bool]?
@@ -227,17 +249,14 @@ final class PhotoBackup: NSObject {
                     }
                 }
                 guard let have else { throw lastError }
-                let already = zip(batch, have).filter { $0.1 }.map { $0.0.asset.localIdentifier }
+                let already = zip(batch, have).filter { $0.1 }.map { $0.0.key }
                 markSent(already)
-                sent.formUnion(already)
-                done += already.count
-                set("done", done)
+                already.forEach(finished)
                 for (item, had) in zip(batch, have) where !had {
                     guard !Task.isCancelled, mayRun else { return }
                     try await send(item, to: server)
-                    markSent([item.asset.localIdentifier])
-                    done += 1
-                    set("done", done)
+                    markSent([item.key])
+                    finished(item.key)
                 }
             }
         } catch let e as Refused {
@@ -288,15 +307,27 @@ final class PhotoBackup: NSObject {
         return out
     }
 
-    /// The file a photo is: the original, its name as the camera gave it.
-    /// A Live Photo's still only, not its moving part.
-    private func item(_ asset: PHAsset) -> Item? {
+    /// The files a photo is: the original, its name as the camera gave it -
+    /// and for a Live Photo its moving part too, named as the still with .MOV
+    /// (IMG_0090.HEIC and IMG_0090.MOV) and taken at the same moment, so it
+    /// lands in the same month. The server's photo library joins the two by
+    /// the identifier Apple writes inside both files, not by name. The clip
+    /// goes even with videos left out: it is part of the photo.
+    private func items(_ asset: PHAsset) -> [Item] {
         let resources = PHAssetResource.assetResources(for: asset)
-        let wanted: [PHAssetResourceType] = asset.mediaType == .video ? [.video, .fullSizeVideo] : [.photo, .fullSizePhoto]
-        guard let resource = resources.first(where: { wanted.contains($0.type) }) else { return nil }
+        let video = asset.mediaType == .video
+        let wanted: [PHAssetResourceType] = video ? [.video, .fullSizeVideo] : [.photo, .fullSizePhoto]
+        guard let resource = resources.first(where: { wanted.contains($0.type) }) else { return [] }
         let when = asset.creationDate ?? asset.modificationDate ?? Date()
-        return Item(asset: asset, resource: resource, name: resource.originalFilename,
-                    taken: Int64(when.timeIntervalSince1970 * 1000))
+        let taken = Int64(when.timeIntervalSince1970 * 1000)
+        var out = [Item(key: asset.localIdentifier, assetID: asset.localIdentifier, resource: resource,
+                        name: resource.originalFilename, taken: taken, video: video)]
+        if Self.isLive(asset), let clip = resources.first(where: { $0.type == .pairedVideo || $0.type == .fullSizePairedVideo }) {
+            let base = (resource.originalFilename as NSString).deletingPathExtension
+            out.append(Item(key: Self.liveKey(asset), assetID: asset.localIdentifier, resource: clip,
+                            name: base + ".MOV", taken: taken, video: true))
+        }
+        return out
     }
 
     /// Which of these the server already has, by name and when taken.
@@ -334,7 +365,7 @@ final class PhotoBackup: NSObject {
         set("sendingSize", size)
         set("sendingSent", 0)
         set("sendingVideo", item.video)
-        let (code, body) = try await Uploader.shared.upload(request, file: file, key: item.asset.localIdentifier)
+        let (code, body) = try await Uploader.shared.upload(request, file: file, key: item.key)
         // 409: the server had it after all, under that name.
         guard (200..<300).contains(code) || code == 409 else { throw Refused(code: code, message: Self.errorText(body)) }
     }
