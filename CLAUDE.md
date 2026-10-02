@@ -498,6 +498,21 @@ already there; emptied folders go; both shelves are told to look. Checked in
 Chrome on a throwaway server: a PDF moved from Documents to Ebooks landed
 under Unknown Author/Taxes, a move to Music was refused.
 
+**Everything on one screen** (2026-10-02, the owner's design; it used to ask
+one folder at a time, then show the review). The plan's questions and its
+sorted parts are shown together (`reviewPlan`, `askedBox`): **Needs your
+choice** first, alike questions together - "3 folders of MP3s - music or
+audiobooks?" - with a choice for all of them, **Choose each** opening a line
+per folder with its own choice and its files to look at, and "Mixed" when
+they differ; an answer stays there to change until Add (the plan is made
+again with it, `review.asked` keeping the question on screen). **Ready** lists
+what SoundStorm sorted itself, each part with Change, which can also leave it
+out (**Don't add**); **Not adding** lists what was left out, each to add back.
+The names-already-taken question sits on the same screen. Add waits until
+every question is answered. Checked in Chrome with a mixed folder: three MP3
+folders set to audiobooks, then one changed to music and one left out, a
+folder of videos to TV - exactly those were sent.
+
 **When it cannot tell, it asks.** One drop zone, no shelf targets: guessing
 wrong costs somebody moving files on disk, so the bar for guessing is "there is
 real evidence", not "one of them is more likely". A question is asked per

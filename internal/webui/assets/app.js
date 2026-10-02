@@ -3661,6 +3661,10 @@ async function runIntake(dataTransfer) {
 
   const paths = dropped.map((d) => d.path);
   const choices = {};
+  // What the review remembers between plans: the questions asked (they stay
+  // on screen, answered, to change), what was left out, and the choices made
+  // about names already taken.
+  const review = { choices, asked: new Map(), excluded: new Set(), open: new Set(), memo: new Map() };
 
   // Ask until there is nothing left to ask. Each answer goes back to the
   // server, which re-plans - so the destination shown is always the one the
@@ -3682,50 +3686,38 @@ async function runIntake(dataTransfer) {
     $('intake-note').textContent = '';
     show($('intake-note'), false);
 
+    // One screen (the owner's design): what SoundStorm sorted itself, and
+    // what it could not tell - grouped where alike, answered for all or one
+    // by one, any part changed or left out - and nothing moves until Add.
     const questions = body.questions || [];
-    if (!questions.length) {
-      // Where everything is going, a line per part, each with Change, and
-      // nothing moves until Add is pressed (the owner's asking: see a wrong
-      // guess before it lands, not after).
-      $('intake-title').textContent = 'Checking what is already there\u2026';
-      await checkTaken(body.files || [], dropped);
-      const decision = await reviewPlan(body.files || []);
-      if (decision === null) {
-        $('intake-title').textContent = 'Canceled — nothing was added.';
-        $('intake-review').replaceChildren();
-        return;
-      }
-      if (decision.change) {
-        choices[decision.change.group] = decision.change.kind;
-        continue;
-      }
-      if (decision.redraw) {
-        let next = decision;
-        while (next && next.redraw) next = await reviewPlan(body.files || []);
-        if (next === null) {
-          $('intake-title').textContent = 'Canceled \u2014 nothing was added.';
-          $('intake-review').replaceChildren();
-          return;
-        }
-        if (next.change) {
-          choices[next.change.group] = next.change.kind;
-          continue;
-        }
-      }
-      await sendFiles(body.files || [], dropped);
+    for (const q of questions) if (!review.asked.has(q.group)) review.asked.set(q.group, q);
+    const files = body.files || [];
+    $('intake-title').textContent = 'Checking what is already there\u2026';
+    await checkTaken(files, dropped);
+    for (const p of files) {
+      const kept = review.memo.get(p.path);
+      if (kept && p.conflict) Object.assign(p, kept);
+    }
+    let decision;
+    do {
+      decision = await reviewPlan(files, review);
+      // Choices about names already taken outlive the plan made again.
+      if (decision) for (const p of files) if (p.conflict) review.memo.set(p.path, { conflict: p.conflict, asName: p.asName });
+    } while (decision && decision.redraw);
+    if (decision === null) {
+      $('intake-title').textContent = 'Canceled \u2014 nothing was added.';
+      $('intake-review').replaceChildren();
       return;
     }
-
-    $('intake-title').textContent = questions.length === 1
-      ? 'One thing SoundStorm cannot tell'
-      : `${questions.length} things SoundStorm cannot tell`;
-    const answer = await askQuestion(questions[0]);
-    if (answer === null) {
-      $('intake-title').textContent = 'Canceled — nothing was added.';
-      $('intake-questions').replaceChildren();
-      return;
+    if (decision.replan) continue;
+    if (decision.change) {
+      choices[decision.change.group] = decision.change.kind;
+      continue;
     }
-    choices[questions[0].group] = answer;
+    // Left out: not sent.
+    for (const p of files) if (review.excluded.has(p.group || p.path)) { p.skipped = true; p.reason = 'not added'; }
+    await sendFiles(files, dropped);
+    return;
   }
 }
 
@@ -3905,18 +3897,33 @@ function intakeLine(label, rest, extra) {
 
 // reviewPlan shows where each part is going and waits: Add sends the files,
 // Change re-plans one part to another shelf, Cancel stops.
-function reviewPlan(files) {
+function reviewPlan(files, review) {
   return new Promise((resolve) => {
     const host = $('intake-review');
     host.replaceChildren();
     $('intake-questions').replaceChildren();
     $('intake-list').replaceChildren();
     files.forEach(renderIntakeRow);
-    const { parts, skipped } = planParts(files);
-    const adding = parts.reduce((n, p) => n + p.count, 0);
-    $('intake-title').textContent = adding
-      ? `Ready to add ${adding} file${adding === 1 ? '' : 's'} — check where they go`
-      : 'Nothing here could be added.';
+    const done = (d) => { host.replaceChildren(); resolve(d); };
+    const groupOf = (p) => p.group || p.path;
+    const excluded = review.excluded;
+    const asked = review.asked;
+
+    // What will go: not skipped, not waiting on a choice, not left out.
+    const going = files.filter((p) => !p.skipped && !p.waiting && p.conflict !== 'skip' && !excluded.has(groupOf(p)));
+    const adding = going.length;
+    const outstanding = [...asked.keys()].filter((g) => !review.choices[g] && !excluded.has(g));
+
+    // Needs your choice: what SoundStorm could not tell, alike ones together.
+    if (asked.size) host.append(askedBox(files, review, done));
+
+    // What else name already taken.
+    const conflicts = files.filter((p) => p.conflict && !excluded.has(groupOf(p)));
+    if (conflicts.length) host.append(conflictChoice(conflicts, () => done({ redraw: true })));
+
+    // Ready: what SoundStorm sorted itself, each part to change or leave out.
+    const ready = files.filter((p) => !asked.has(groupOf(p)) && !excluded.has(groupOf(p)));
+    const { parts, skipped } = planParts(ready);
     const list = document.createElement('ul');
     list.className = 'intake-parts';
     for (const part of parts) {
@@ -3925,7 +3932,7 @@ function reviewPlan(files) {
       change.className = 'ghost small';
       change.textContent = 'Change';
       const li = intakeLine(partLabel(part.group),
-        `→ ${shelfName(part.kind)} · ${part.count} file${part.count === 1 ? '' : 's'}`, change);
+        `\u2192 ${shelfName(part.kind)} \u00B7 ${part.count} file${part.count === 1 ? '' : 's'}`, change);
       change.addEventListener('click', () => {
         const options = document.createElement('span');
         options.className = 'question-options';
@@ -3933,12 +3940,15 @@ function reviewPlan(files) {
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = shelfName(kind);
-          b.addEventListener('click', () => {
-            host.replaceChildren();
-            resolve({ change: { group: part.group, kind } });
-          });
+          b.addEventListener('click', () => done({ change: { group: part.group, kind } }));
           options.append(b);
         }
+        const leave = document.createElement('button');
+        leave.type = 'button';
+        leave.className = 'ghost';
+        leave.textContent = "Don't add";
+        leave.addEventListener('click', () => { excluded.add(part.group); done({ redraw: true }); });
+        options.append(leave);
         change.replaceWith(options);
         options.querySelector('button')?.focus();
       });
@@ -3946,27 +3956,46 @@ function reviewPlan(files) {
     }
     // Copies already there (checkTaken) said as such; anything else skipped
     // keeps its reason under every file.
-    const there = files.filter((p) => p.skipped && /^already in your/.test(p.reason || '')).length;
+    const there = ready.filter((p) => p.skipped && /^already in your/.test(p.reason || '')).length;
     if (there) list.append(intakeLine(`${there} already in your library`, 'not sent again'));
-    if (skipped - there > 0) {
-      list.append(intakeLine(`${skipped - there} skipped`, 'see every file for why'));
+    if (skipped - there > 0) list.append(intakeLine(`${skipped - there} skipped`, 'see every file for why'));
+    if (list.children.length) {
+      if (asked.size) host.append(intakeHeading('Ready'));
+      host.append(list);
     }
-    const conflicts = files.filter((p) => p.conflict);
-    if (conflicts.length) host.append(conflictChoice(conflicts, () => {
-      // A choice changes what is added: the review drawn again with it.
-      host.replaceChildren();
-      resolve({ redraw: true });
-    }));
-    host.append(list);
+
+    // Left out: each to put back.
+    const left = [...excluded];
+    if (left.length) {
+      host.append(intakeHeading('Not adding'));
+      const ul = document.createElement('ul');
+      ul.className = 'intake-parts intake-left';
+      for (const g of left) {
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'ghost small';
+        back.textContent = 'Add back';
+        back.addEventListener('click', () => { excluded.delete(g); done(asked.has(g) ? { replan: true } : { redraw: true }); });
+        const n = files.filter((p) => groupOf(p) === g).length;
+        ul.append(intakeLine(partLabel(g), `${n} file${n === 1 ? '' : 's'} left out`, back));
+      }
+      host.append(ul);
+    }
+
+    $('intake-title').textContent = outstanding.length
+      ? `${outstanding.length === 1 ? 'One thing needs' : `${outstanding.length} things need`} your choice before adding`
+      : adding ? `Ready to add ${adding} file${adding === 1 ? '' : 's'} \u2014 check where they go`
+        : 'Nothing here will be added.';
+
     const actions = document.createElement('div');
     actions.className = 'intake-actions';
-    if (adding) {
-      const add = document.createElement('button');
-      add.type = 'button';
-      add.textContent = `Add ${adding} file${adding === 1 ? '' : 's'}`;
-      add.addEventListener('click', () => { host.replaceChildren(); resolve('send'); });
-      actions.append(add);
-    }
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.textContent = outstanding.length ? `Choose for ${outstanding.length === 1 ? 'the one' : `the ${outstanding.length}`} above first`
+      : `Add ${adding} file${adding === 1 ? '' : 's'}`;
+    add.disabled = Boolean(outstanding.length) || !adding;
+    add.addEventListener('click', () => done('send'));
+    actions.append(add);
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'ghost';
@@ -3975,8 +4004,167 @@ function reviewPlan(files) {
     actions.append(cancel);
     host.append(actions);
     filesToggle(files.length > 0);
-    actions.querySelector('button')?.focus();
   });
+}
+
+function intakeHeading(text) {
+  const h = document.createElement('h3');
+  h.className = 'intake-heading';
+  h.textContent = text;
+  return h;
+}
+
+// What SoundStorm could not tell, alike questions together: a choice for all
+// of them, or Choose each opening a line per folder with its own choice and
+// its files to look at; a choice made stays here to change until Add.
+const ASK_TITLES = {
+  'audiobook,music': (n) => (n === 1 ? 'Music or an audiobook?' : `${n} folders of MP3s \u2014 music or audiobooks?`),
+  'tv,video': (n) => (n === 1 ? 'A film or TV?' : `${n} folders of videos without episode numbers \u2014 films or TV?`),
+  'document,ebook': (n) => (n === 1 ? 'A book or a document?' : `${n} PDFs \u2014 books or documents?`),
+};
+function askedBox(files, review, done) {
+  const box = document.createElement('div');
+  box.className = 'intake-asked';
+  box.append(intakeHeading('Needs your choice'));
+  const clusters = new Map();
+  for (const q of review.asked.values()) {
+    const key = [...q.options].sort().join(',');
+    if (!clusters.has(key)) clusters.set(key, []);
+    clusters.get(key).push(q);
+  }
+  const groupOf = (p) => p.group || p.path;
+  const filesOf = (g) => files.filter((p) => groupOf(p) === g);
+  const choiceOf = (g) => (review.excluded.has(g) ? 'skip' : review.choices[g] || '');
+  for (const [key, qs] of clusters) {
+    const options = qs[0].options;
+    const card = document.createElement('div');
+    card.className = 'intake-ask';
+    const title = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = (ASK_TITLES[key] || ((n) => `${n} to sort \u2014 ${options.map(shelfName).join(' or ')}?`))(qs.length);
+    title.append(strong);
+    if (qs.length === 1) {
+      const n = filesOf(qs[0].group).length || qs[0].count;
+      title.append(document.createTextNode(` ${partLabel(qs[0].group)} \u00B7 ${n} file${n === 1 ? '' : 's'}`));
+    } else {
+      title.append(document.createTextNode(' ' + qs.slice(0, 3).map((q) => partLabel(q.group).split('/').pop()).join(', ') + (qs.length > 3 ? ', \u2026' : '')));
+    }
+    card.append(title);
+    // The same choice for all of them; "mixed" when they differ.
+    const chosen = new Set(qs.map((q) => choiceOf(q.group)));
+    const all = chosen.size === 1 ? [...chosen][0] : 'mixed';
+    const row = document.createElement('div');
+    row.className = 'intake-conflict-choice';
+    const choose = (value) => {
+      for (const q of qs) setAsked(review, q.group, value);
+      done({ replan: true });
+    };
+    for (const kind of options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = all === kind ? '' : 'ghost';
+      b.setAttribute('aria-pressed', String(all === kind));
+      b.textContent = shelfName(kind);
+      b.addEventListener('click', () => choose(kind));
+      row.append(b);
+    }
+    const skip = document.createElement('button');
+    skip.type = 'button';
+    skip.className = all === 'skip' ? '' : 'ghost';
+    skip.textContent = qs.length === 1 ? "Don't add" : "Don't add these";
+    skip.addEventListener('click', () => choose('skip'));
+    row.append(skip);
+    card.append(row);
+    if (all === 'mixed') {
+      const note = document.createElement('p');
+      note.className = 'muted small-print';
+      note.textContent = 'Mixed \u2014 chosen folder by folder below.';
+      card.append(note);
+    }
+    // One by one, each with its files to look at.
+    const open = qs.length === 1 || review.open.has(key);
+    if (qs.length > 1) {
+      const each = document.createElement('button');
+      each.type = 'button';
+      each.className = 'ghost small';
+      each.textContent = open ? 'Hide the list' : 'Choose each\u2026';
+      each.addEventListener('click', () => {
+        if (review.open.has(key)) review.open.delete(key);
+        else review.open.add(key);
+        done({ redraw: true });
+      });
+      card.append(each);
+    }
+    if (open) {
+      const list = document.createElement('ul');
+      list.className = 'intake-ask-list';
+      for (const q of qs) {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        const its = filesOf(q.group);
+        // The folder's own name: a long path was cut off just where folders differ.
+        name.textContent = `${partLabel(q.group).split('/').pop()} \u00B7 ${its.length || q.count} file${(its.length || q.count) === 1 ? '' : 's'}`;
+        name.title = partLabel(q.group);
+        const select = document.createElement('select');
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'Choose\u2026';
+        select.append(none);
+        for (const kind of options) {
+          const o = document.createElement('option');
+          o.value = kind;
+          o.textContent = shelfName(kind);
+          select.append(o);
+        }
+        const skipOne = document.createElement('option');
+        skipOne.value = 'skip';
+        skipOne.textContent = "Don't add";
+        select.append(skipOne);
+        select.value = choiceOf(q.group);
+        select.addEventListener('change', () => {
+          setAsked(review, q.group, select.value);
+          done({ replan: true });
+        });
+        const peek = document.createElement('button');
+        peek.type = 'button';
+        peek.className = 'ghost small intake-peek';
+        peek.textContent = 'Files';
+        const names = document.createElement('ul');
+        names.className = 'intake-peek-list';
+        names.hidden = true;
+        for (const p of its.slice(0, 200)) {
+          const f = document.createElement('li');
+          f.textContent = p.path.split('/').slice(-2).join('/');
+          names.append(f);
+        }
+        if (its.length > 200) {
+          const more = document.createElement('li');
+          more.textContent = `\u2026and ${its.length - 200} more`;
+          names.append(more);
+        }
+        peek.addEventListener('click', () => { names.hidden = !names.hidden; });
+        // A question about one folder has its choice above: here only its files.
+        if (qs.length === 1) li.append(peek, names);
+        else li.append(name, select, peek, names);
+        if (qs.length === 1) li.className = 'intake-ask-one';
+        list.append(li);
+      }
+      card.append(list);
+    }
+    box.append(card);
+  }
+  return box;
+}
+// setAsked records one answer: a shelf, left out, or not chosen yet.
+function setAsked(review, group, value) {
+  if (value === 'skip') {
+    review.excluded.add(group);
+    delete review.choices[group];
+  } else {
+    review.excluded.delete(group);
+    if (value) review.choices[group] = value;
+    else delete review.choices[group];
+  }
 }
 
 // The question for files whose name is taken by a different file: one
