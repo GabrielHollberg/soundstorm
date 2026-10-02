@@ -3995,6 +3995,29 @@ function bytes(n) {
   return n + ' bytes';
 }
 
+// Files going up: Hide puts the sheet away with a chip saying how far it
+// has got (a tap brings it back); Stop lets the file being sent go and sends
+// no more - what has arrived stays.
+const INTAKE = { sending: false, stop: false, xhr: null, chipTimer: 0 };
+function intakeChip(text, linger) {
+  const chip = $('intake-chip');
+  chip.textContent = text;
+  clearTimeout(INTAKE.chipTimer);
+  const on = Boolean(text) && !shown('intake');
+  show(chip, on);
+  if (on && linger) INTAKE.chipTimer = setTimeout(() => show(chip, false), linger);
+}
+$('intake-chip').addEventListener('click', () => {
+  show($('intake'), true);
+  show($('intake-chip'), false);
+});
+$('intake-stop').addEventListener('click', () => {
+  INTAKE.stop = true;
+  $('intake-stop').disabled = true;
+  $('intake-stop').textContent = 'Stopping\u2026';
+  if (INTAKE.xhr) INTAKE.xhr.abort();
+});
+
 async function sendFiles(plan, dropped) {
   $('intake-list').replaceChildren();
 
@@ -4016,40 +4039,64 @@ async function sendFiles(plan, dropped) {
   const total = queue.reduce((sum, item) => sum + item.file.size, 0);
   if (!enoughRoom(total)) return;
   show($('intake-bar'), true);
+  INTAKE.sending = true;
+  INTAKE.stop = false;
+  $('intake-close').textContent = 'Hide';
+  $('intake-stop').disabled = false;
+  $('intake-stop').textContent = 'Stop';
+  show($('intake-sending'), true);
 
   let done = 0;
   let sent = 0;
   let declined = 0; // already there, or the same recording is
+  let stopped = 0;
   const results = [];
-  for (const item of queue) {
-    $('intake-title').textContent =
-      `Adding ${done + 1} of ${queue.length} — ${item.file.name}`;
-    const result = await uploadOne(item, (loaded) => {
-      setIntakeProgress(total ? (sent + loaded) / total : 0);
-    });
-    sent += item.file.size;
-    done += 1;
-    setIntakeProgress(total ? sent / total : 1);
-    if (!result.ok && result.skipped) declined += 1;
-    markIntakeRow(item.path, result);
-    results.push({ item, result });
+  try {
+    for (const item of queue) {
+      if (INTAKE.stop) { stopped += 1; markIntakeRow(item.path, { ok: false, stopped: true }); continue; }
+      $('intake-title').textContent =
+        `Adding ${done + 1} of ${queue.length} — ${item.file.name}`;
+      intakeChip(`Adding ${done + 1} of ${queue.length}\u2026`);
+      const result = await uploadOne(item, (loaded) => {
+        setIntakeProgress(total ? (sent + loaded) / total : 0);
+      });
+      if (INTAKE.stop && !result.ok && !result.skipped) {
+        // The one going up when Stop was pressed: let go, not failed.
+        stopped += 1;
+        markIntakeRow(item.path, { ok: false, stopped: true });
+        continue;
+      }
+      sent += item.file.size;
+      done += 1;
+      setIntakeProgress(total ? sent / total : 1);
+      if (!result.ok && result.skipped) declined += 1;
+      markIntakeRow(item.path, result);
+      results.push({ item, result });
+    }
+  } finally {
+    INTAKE.sending = false;
+    INTAKE.xhr = null;
+    $('intake-close').textContent = 'Close';
+    show($('intake-sending'), false);
   }
   renderLanded(results);
 
   const failed = document.querySelectorAll('#intake-list .intake-failed').length;
   // Skipped at planning, and skipped by the server as already there.
   const skipped = plan.filter((p) => p.skipped).length + declined;
-  $('intake-title').textContent = summary(done - failed - declined, skipped, failed);
+  $('intake-title').textContent = summary(done - failed - declined, skipped, failed, stopped);
+  intakeChip(summary(done - failed - declined, skipped, failed, stopped).split('.')[0], 8000);
   show($('intake-bar'), false);
 
   // Counts on the folder guide have moved, and a scan is probably running.
   loadLibrary();
 }
 
-function summary(added, skipped, failed) {
+function summary(added, skipped, failed, stopped = 0) {
   const parts = [`Added ${added} file${added === 1 ? '' : 's'}`];
   if (skipped) parts.push(`${skipped} skipped`);
   if (failed) parts.push(`${failed} failed`);
+  if (stopped) parts.push(`${stopped} not sent (stopped)`);
   return parts.join(' · ') + '. It may take a minute to appear in search.';
 }
 
@@ -4065,6 +4112,7 @@ function uploadOne(item, onProgress) {
     // A film too: one a phone filmed goes to the photos by its date (homevideos.go).
     if ((item.kind === 'picture' || item.kind === 'video') && item.file && item.file.lastModified) params.set('taken', String(item.file.lastModified));
     const request = new XMLHttpRequest();
+    INTAKE.xhr = request;
     request.open('PUT', `/api/upload?${params}`);
     request.withCredentials = true;
 
@@ -4132,12 +4180,18 @@ function markIntakeRow(path, result) {
     dest.textContent = `${result.dest || dest.textContent} ✓`;
     return;
   }
-  li.classList.add(result.skipped ? 'intake-skipped' : 'intake-failed');
-  dest.textContent = result.error;
+  li.classList.add(result.skipped || result.stopped ? 'intake-skipped' : 'intake-failed');
+  dest.textContent = result.stopped ? 'not sent - stopped' : result.error;
 }
 
 $('intake-close').addEventListener('click', () => {
   show($('intake'), false);
+  // While files go up this is Hide: they carry on, and a chip says how far.
+  if (INTAKE.sending) {
+    intakeChip($('intake-chip').textContent || 'Adding files\u2026');
+    return;
+  }
+  show($('intake-chip'), false);
   $('intake-questions').replaceChildren();
   $('intake-review').replaceChildren();
 });

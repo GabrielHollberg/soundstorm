@@ -2379,6 +2379,18 @@ body.photo-open { overflow: hidden; }
 .rc-volume input { flex: 1; min-width: 0; height: 32px; }
 #rc-seek { height: 32px; }
 .rc-actions { display: flex; gap: 10px; }
+/* Files going up with their sheet hidden: how far, a tap brings it back. */
+.intake-chip {
+  position: fixed; left: 14px; bottom: calc(84px + var(--safe-bottom)); z-index: 86;
+  padding: 10px 14px; border-radius: 999px; border: 0;
+  background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); max-width: calc(100vw - 28px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.intake-chip.hidden { display: none; }
+.intake-sending { display: inline-flex; gap: 10px; margin: 0 8px 0 0; vertical-align: middle; }
+#intake-close, #intake-files-toggle { vertical-align: middle; }
+.intake-sending.hidden { display: none; }
 .rc-chip {
   position: fixed; right: 14px; bottom: calc(84px + var(--safe-bottom)); z-index: 86;
   padding: 10px 14px; border-radius: 999px; border: 0;

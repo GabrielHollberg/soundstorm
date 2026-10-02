@@ -680,8 +680,13 @@
       <div id="intake-review"></div>
       <button id="intake-files-toggle" class="ghost small hidden" type="button">Show every file</button>
       <ul id="intake-list" class="hidden"></ul>
+      <div class="intake-sending hidden" id="intake-sending">
+        <button id="intake-stop" class="ghost" type="button">Stop</button>
+      </div>
       <button id="intake-close" class="ghost" type="button">Close</button>
     </section>
+    <!-- The sheet hidden while files go up: how far it has got, a tap brings it back. -->
+    <button id="intake-chip" class="intake-chip hidden" type="button"></button>
 
     <p id="degraded" class="banner hidden" role="status"></p>
     <!-- The count, and for the owner a Select button: deleting is theirs

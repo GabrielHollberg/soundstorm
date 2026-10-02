@@ -374,6 +374,15 @@ After uploading, the same lines say where each part really landed
 (`renderLanded`, from the destinations the uploads return - a home video
 moved to the photos shows there).
 
+**The sheet, and stopping** (2026-10-02, the owner's asking): the drop panel
+is a sheet over any page (`#intake`, fixed; Settings used to hide it, and it
+sat unseen at the top of a scrolled page), a part per row with Change at its
+right. While files go up, Close reads **Hide** - they carry on, and a chip
+says "Adding 12 of 40..." until tapped (`intakeChip`) - and **Stop** lets the
+file going up go (the request aborted; the server keeps nothing of it) and
+sends no more; what arrived stays, and the summary counts the rest as not
+sent. Checked at phone size with three files on a slowed upload.
+
 **Move to, in any item's menu** (owner only, as deleting is;
 `POST /api/move`, `library.MoveItems`): for something filed in the wrong
 shelf after all. The item's files are found as deleting finds them, companions
