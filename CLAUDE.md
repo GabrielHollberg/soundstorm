@@ -515,7 +515,7 @@ folder of videos to TV - exactly those were sent.
 
 **And a single file can go its own way** (the owner's safety net, for the
 rare file that does not belong with its folder): every part's **Files** list
-gives each file a choice - with the folder (the usual), another shelf, or
+gives each file a choice - the same shelf as the rest of the folder (the usual, named in the list as "Same as the rest (Music)"), another shelf, or
 Don't add. A file given another shelf (`library.FileChoice(path)` as the
 plan's choice key) leaves its part with its companions - a film's subtitles,
 a book's PDF, by name in the same folder - and shows as its own line, whose

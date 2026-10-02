@@ -3965,7 +3965,7 @@ function reviewPlan(files, review) {
       // The files in it, each with a choice of its own - for the rare one
       // that does not belong with the rest.
       if (part.count > 1 || !part.group.startsWith('file:')) {
-        const [peek, names] = fileChoices(files.filter((p) => groupOf(p) === part.group), review, done);
+        const [peek, names] = fileChoices(files.filter((p) => groupOf(p) === part.group), review, done, part.kind);
         li.append(peek, names);
       }
       list.append(li);
@@ -4155,7 +4155,7 @@ function askedBox(files, review, done) {
           setAsked(review, q.group, select.value);
           done({ replan: true });
         });
-        const [peek, names] = fileChoices(its, review, done);
+        const [peek, names] = fileChoices(its, review, done, review.choices[q.group]);
         // A question about one folder has its choice above: here only its files.
         if (qs.length === 1) li.append(peek, names);
         else li.append(name, select, peek, names);
@@ -4169,10 +4169,10 @@ function askedBox(files, review, done) {
   return box;
 }
 // fileChoices is a part's Files button and its list: every file, each with
-// a choice of its own - with the folder (the usual), another shelf, or left
-// out. A file given another shelf leaves the folder (its companions with
+// a choice of its own - the shelf the rest of the folder goes to (the
+// usual), another shelf, or left out. A file given another shelf leaves the folder (its companions with
 // it: library.Plan) and shows as its own line, with a way back.
-function fileChoices(its, review, done) {
+function fileChoices(its, review, done, restKind) {
   const peek = document.createElement('button');
   peek.type = 'button';
   peek.className = 'ghost small intake-peek';
@@ -4195,8 +4195,10 @@ function fileChoices(its, review, done) {
         o.textContent = label;
         select.append(o);
       };
-      add('', 'With the folder');
-      for (const kind of shelvesAllowed()) add(kind, shelfName(kind));
+      // Said as the shelf the rest of the folder goes to: "with the folder"
+      // read as staying in that folder in the library (the owner's point).
+      add('', restKind ? `Same as the rest (${shelfName(restKind)})` : 'Same as the rest');
+      for (const kind of shelvesAllowed()) if (kind !== restKind) add(kind, shelfName(kind));
       add('skip', "Don't add");
       select.value = review.skipFiles.has(p.path) ? 'skip' : review.choices['file:' + p.path] || '';
       select.addEventListener('change', () => {
