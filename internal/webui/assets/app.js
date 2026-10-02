@@ -17276,6 +17276,9 @@ async function playerLoop() {
         try { await runPlayerCommand(c); } catch { /* one bad command, not the loop */ }
         if (PLAYER.leaving) return;
       }
+      // What it did, straight away, so the phone's remote is not left
+      // showing the old state (and flipping back) until the next report.
+      setTimeout(() => reportPlayerState(true), 300);
     }
   } finally {
     PLAYER.polling = false;
@@ -17309,17 +17312,18 @@ function playerState() {
   if (photoShown) return { playing: false, kind: 'photo', item: card(photoShown) };
   return { playing: false, kind: null };
 }
-setInterval(() => {
+function reportPlayerState(force) {
   if (!PLAYER.polling || !state.me) return;
   const st = playerState();
   const sig = JSON.stringify({ ...st, position: Math.round((st.position || 0) / 5) });
   // On a change, and every half minute regardless: the phone's timeline
   // runs from the last report.
-  if (sig === PLAYER.lastState && Date.now() - PLAYER.stateAt < 30000) return;
+  if (!force && sig === PLAYER.lastState && Date.now() - PLAYER.stateAt < 30000) return;
   PLAYER.lastState = sig;
   PLAYER.stateAt = Date.now();
   api(`/api/players/${PLAYER.id}/state`, { method: 'POST', body: JSON.stringify({ ...st, at: Date.now() }) });
-}, 2000);
+}
+setInterval(() => reportPlayerState(false), 2000);
 
 async function runPlayerCommand(c) {
   switch (c.type) {
@@ -17538,6 +17542,12 @@ function forgetRemote() {
   show($('rc-chip'), false);
 }
 let remoteSeeking = false;
+// What a tap just did, shown at once and kept for a few seconds against the
+// reports still on their way (they flipped the button back - "finicky").
+const remoteHeld = { playing: null, position: null, volume: null, until: 0 };
+function holdRemote(what) {
+  Object.assign(remoteHeld, what, { until: Date.now() + 3000 });
+}
 const clock = (s) => {
   s = Math.max(0, Math.floor(s || 0));
   const h = Math.floor(s / 3600);
@@ -17558,7 +17568,14 @@ async function refreshRemote() {
     }
     return;
   }
-  const st = body.state || {};
+  const st = { ...(body.state || {}) };
+  if (Date.now() < remoteHeld.until) {
+    if (remoteHeld.playing !== null) st.playing = remoteHeld.playing;
+    if (remoteHeld.position !== null) { st.position = remoteHeld.position; st.at = remoteHeld.at; }
+    if (remoteHeld.volume !== null) st.volume = remoteHeld.volume;
+  } else {
+    Object.assign(remoteHeld, { playing: null, position: null, volume: null });
+  }
   const item = st.item;
   $('rc-title').textContent = item ? item.title : 'Nothing playing';
   $('rc-sub').textContent = item ? item.subtitle || '' : '';
@@ -17574,7 +17591,7 @@ async function refreshRemote() {
   $('rc-at').textContent = clock(position);
   $('rc-len').textContent = st.duration ? clock(st.duration) : '';
   $('rc-toggle').replaceChildren(icon(st.playing ? 'pause' : 'play'));
-  if (typeof st.volume === 'number' && document.activeElement !== $('rc-volume')) $('rc-volume').value = String(Math.round(st.volume * 100));
+  if (typeof st.volume === 'number' && !remoteVolumeTouched()) $('rc-volume').value = String(Math.round(st.volume * 100));
   const audioish = st.kind === 'audio';
   show($('rc-prev'), audioish && !(item && item.kind === 'audiobook'));
   show($('rc-next'), audioish && !(item && item.kind === 'audiobook'));
@@ -17582,27 +17599,65 @@ async function refreshRemote() {
 }
 function remoteSend(cmd) {
   if (!PLAYER.target) return;
+  $('rc-note').textContent = '';
   api(`/api/players/${PLAYER.target.id}/command`, { method: 'POST', body: JSON.stringify(cmd) }).then((r) => {
     if (!r.ok) $('rc-note').textContent = (r.body && r.body.error) || 'That did not go through.';
-    setTimeout(refreshRemote, 400);
+    setTimeout(refreshRemote, 900);
   });
 }
+// The position the remote shows, run on from the last report.
+function remotePosition() {
+  const st = PLAYER.targetState || {};
+  return (st.position || 0) + (st.playing && st.at ? (Date.now() - st.at) / 1000 : 0);
+}
+let volumeTouchedAt = 0;
+const remoteVolumeTouched = () => Date.now() - volumeTouchedAt < 2500;
 $('rc-prev').replaceChildren(icon('prev'));
 $('rc-next').replaceChildren(icon('skip'));
 $('rc-close').replaceChildren(icon('down'));
 $('rc-close').addEventListener('click', closeRemote);
 $('rc-chip').addEventListener('click', () => PLAYER.target && openRemote(PLAYER.target));
-$('rc-toggle').addEventListener('click', () => remoteSend({ type: 'control', action: 'toggle' }));
+$('rc-toggle').addEventListener('click', () => {
+  const st = PLAYER.targetState || {};
+  const playing = !st.playing;
+  holdRemote({ playing, position: remotePosition(), at: Date.now() });
+  $('rc-toggle').replaceChildren(icon(playing ? 'pause' : 'play'));
+  PLAYER.targetState = { ...st, playing, position: remotePosition(), at: Date.now() };
+  remoteSend({ type: 'control', action: playing ? 'play' : 'pause' });
+});
 $('rc-prev').addEventListener('click', () => remoteSend({ type: 'control', action: 'prev' }));
 $('rc-next').addEventListener('click', () => remoteSend({ type: 'control', action: 'next' }));
-$('rc-back10').addEventListener('click', () => remoteSend({ type: 'control', action: 'skip', value: -10 }));
-$('rc-fwd10').addEventListener('click', () => remoteSend({ type: 'control', action: 'skip', value: 10 }));
+for (const [id, by] of [['rc-back10', -10], ['rc-fwd10', 10]]) {
+  $(id).addEventListener('click', () => {
+    const to = Math.max(0, remotePosition() + by);
+    holdRemote({ position: to, at: Date.now() });
+    $('rc-seek').value = String(Math.round(to));
+    $('rc-at').textContent = clock(to);
+    remoteSend({ type: 'control', action: 'skip', value: by });
+  });
+}
 $('rc-seek').addEventListener('input', () => { remoteSeeking = true; $('rc-at').textContent = clock(Number($('rc-seek').value)); });
 $('rc-seek').addEventListener('change', () => {
   remoteSeeking = false;
-  remoteSend({ type: 'control', action: 'seek', value: Number($('rc-seek').value) });
+  const to = Number($('rc-seek').value);
+  holdRemote({ position: to, at: Date.now() });
+  remoteSend({ type: 'control', action: 'seek', value: to });
 });
-$('rc-volume').addEventListener('change', () => remoteSend({ type: 'volume', value: Number($('rc-volume').value) / 100 }));
+// Volume as it is slid, a few times a second - it waited for the finger to
+// lift, and a report arriving meanwhile pulled the slider back.
+let volumeSendTimer = 0;
+function sendVolume() {
+  volumeTouchedAt = Date.now();
+  const value = Number($('rc-volume').value) / 100;
+  holdRemote({ volume: value });
+  if (volumeSendTimer) return;
+  volumeSendTimer = setTimeout(() => {
+    volumeSendTimer = 0;
+    remoteSend({ type: 'volume', value: Number($('rc-volume').value) / 100 });
+  }, 200);
+}
+$('rc-volume').addEventListener('input', sendVolume);
+$('rc-volume').addEventListener('change', sendVolume);
 $('rc-stop').addEventListener('click', () => { remoteSend({ type: 'stop' }); forgetRemote(); });
 // Play here: what the device is playing comes to this phone, and stops there.
 $('rc-here').addEventListener('click', () => {

@@ -1664,7 +1664,17 @@ now delivers up to a switch and no further, and the page stops listening
 once it switches; and `remote-toggle` was already remote access's switch -
 the remote sheet's ids are `rc-*`. Checked in Chrome as a TV (Gabe) and a
 phone (Nathan): asked, allowed, switched, and Nathan's photo open on the TV;
-the remote showing it. Not built: typing on the TV from the phone; the Apple
+the remote showing it. **Then reported as finicky, the volume glitching, the controls off a
+phone's screen.** The remote redrew from the device's last report every
+1.5 s, so a tap flipped back until the next one (up to 2 s): now what a tap
+does shows at once and is held for 3 s against reports still on their way
+(`holdRemote`), the device reports straight after each command, and play
+and pause are sent as such, not as a toggle. The volume was sent only when
+the finger lifted and the next report pulled the slider back: now sent as
+it slides (every 200 ms) and left alone for 2.5 s after a touch. The sheet
+is capped at the screen's height with a smaller cover; checked at 360x640
+with everything showing, the TV's level following the slider to 0.3.
+Not built: typing on the TV from the phone; the Apple
 TV's half (for the Mac: it would say hello, poll and obey the same
 commands).
 
