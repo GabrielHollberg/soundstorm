@@ -3636,6 +3636,9 @@ html.tv #video-player:focus { outline: none; }
    whatever pokes out of them - reported from the projector as the ring cut
    off along the top and the side. The padding is taken back with a negative
    margin, so the rows sit where they always did. */
+/* The quick buttons at the top of Home: their ring reaches 6px past them,
+   and the pinned header painted over its top. */
+html.tv .home-quick { margin-top: 14px; }
 html.tv .continue-row, html.tv .home-strip, html.tv .show-seasons {
   padding-top: 14px;
   padding-bottom: 14px;
