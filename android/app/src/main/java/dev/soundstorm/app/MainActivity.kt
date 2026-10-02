@@ -672,6 +672,7 @@ class MainActivity : Activity() {
             "resumed" -> MediaBridge.interruption(false)
             "themeColor" -> setStatusColor(runCatching { Color.parseColor(message.optString("color")) }.getOrDefault(Color.BLACK))
             "scanCode" -> scanTvCode()
+            "uploads" -> uploads(message.optString("cmd"), message.optJSONObject("data") ?: JSONObject())
             "remoteVolume" -> remoteVolume = message.optBoolean("on")
             // A playback report: what the native player saw (PlayerLog).
             "playerLog" -> webView?.evaluateJavascript(
@@ -705,6 +706,20 @@ class MainActivity : Activity() {
     }
 
     private var pendingBackup: JSONObject? = null
+
+    /** Adding files in the background (Uploads), as the page asks. */
+    private fun uploads(cmd: String, data: JSONObject) {
+        if (isTv) return
+        val c = applicationContext
+        val answer = when (cmd) {
+            "add" -> Uploads.add(c, data.optString("server"), data.optJSONArray("jobs") ?: org.json.JSONArray()).put("ev", "added")
+            "stop" -> { Uploads.stop(c); Uploads.status(c).put("ev", "status") }
+            "set" -> { Uploads.configure(c, data); Uploads.status(c).put("ev", "status") }
+            "seen" -> { Uploads.markSeen(c); return }
+            else -> Uploads.status(c).put("ev", "status")
+        }
+        webView?.evaluateJavascript("window.__soundstormUploads && window.__soundstormUploads($answer)", null)
+    }
 
     private fun reportBackup() {
         val view = webView ?: return
@@ -990,12 +1005,29 @@ class MainActivity : Activity() {
         override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
             fileCallback?.onReceiveValue(null)
             fileCallback = callback
+            // The documents picker, so the app may go on reading what was
+            // picked after it is left: files added from this phone are sent
+            // by the app in the background (Uploads).
+            val types = params.acceptTypes.filter { it.isNotBlank() }
+            val open = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = if (types.size == 1 && !types[0].startsWith(".")) types[0] else "*/*"
+                val mimes = types.filter { it.contains('/') }
+                if (mimes.size > 1) putExtra(Intent.EXTRA_MIME_TYPES, mimes.toTypedArray())
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
             return try {
-                startActivityForResult(params.createIntent(), PICK_FILES)
+                startActivityForResult(open, PICK_FILES)
                 true
             } catch (_: ActivityNotFoundException) {
-                fileCallback = null
-                false
+                try {
+                    startActivityForResult(params.createIntent(), PICK_FILES)
+                    true
+                } catch (_: ActivityNotFoundException) {
+                    fileCallback = null
+                    false
+                }
             }
         }
 
@@ -1022,7 +1054,14 @@ class MainActivity : Activity() {
     @Deprecated("The platform Activity's result API, which is all this needs.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == PICK_FILES) {
-            fileCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
+            var uris = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+            // Several picked: parseResult may give only the first.
+            val clip = data?.clipData
+            if (resultCode == RESULT_OK && clip != null && clip.itemCount > (uris?.size ?: 0)) {
+                uris = Array(clip.itemCount) { clip.getItemAt(it).uri }
+            }
+            Uploads.rememberPicked(applicationContext, uris)
+            fileCallback?.onReceiveValue(uris)
             fileCallback = null
             return
         }

@@ -4012,11 +4012,137 @@ $('intake-chip').addEventListener('click', () => {
   show($('intake-chip'), false);
 });
 $('intake-stop').addEventListener('click', () => {
+  if (INTAKE.native) {
+    $('intake-stop').disabled = true;
+    $('intake-stop').textContent = 'Stopping\u2026';
+    appUploads('stop', {});
+    return;
+  }
   INTAKE.stop = true;
   $('intake-stop').disabled = true;
   $('intake-stop').textContent = 'Stopping\u2026';
   if (INTAKE.xhr) INTAKE.xhr.abort();
 });
+
+// In the Android app, files added are sent by the app, in the background
+// (Uploads.kt): the page plans, hands over the list, and shows how it goes.
+const APP_UPLOADS = Boolean(window.soundstormApp && window.soundstormApp.uploads) && !TV;
+const appUploadWaiters = {};
+function appUploads(cmd, data, ev) {
+  return new Promise((resolve) => {
+    if (ev) (appUploadWaiters[ev] = appUploadWaiters[ev] || []).push(resolve);
+    window.soundstormApp.uploads(cmd, data);
+    if (!ev) resolve(null);
+    else setTimeout(() => resolve(null), 4000);
+  });
+}
+window.__soundstormUploads = (msg) => {
+  if (!msg) return;
+  if (msg.ev === 'status' && msg.options) renderUploadOptions(msg.options);
+  const list = appUploadWaiters[msg.ev] || [];
+  appUploadWaiters[msg.ev] = [];
+  list.forEach((r) => r(msg));
+};
+function renderUploadOptions(o) {
+  $('uploads-wifi').checked = Boolean(o.wifiOnly);
+  $('uploads-charging').checked = Boolean(o.charging);
+}
+if (APP_UPLOADS) {
+  show($('uploads-options'), true);
+  for (const id of ['uploads-wifi', 'uploads-charging']) {
+    $(id).addEventListener('change', () => {
+      appUploads('set', { wifiOnly: $('uploads-wifi').checked, charging: $('uploads-charging').checked });
+    });
+  }
+}
+
+// Following the app's uploads: the sheet and its chip from the app's status,
+// once a second, until nothing is waiting - then where each part landed.
+let appFollowing = false;
+async function followAppUploads() {
+  if (appFollowing) return;
+  appFollowing = true;
+  INTAKE.sending = true;
+  INTAKE.native = true;
+  INTAKE.stop = false;
+  $('intake-close').textContent = 'Hide';
+  $('intake-stop').disabled = false;
+  $('intake-stop').textContent = 'Stop';
+  show($('intake-sending'), true);
+  show($('intake-bar'), true);
+  let st = null;
+  try {
+    for (;;) {
+      st = await appUploads('status', {}, 'status');
+      if (!st) { await pause(1500); continue; }
+      if (!st.waiting) break;
+      const name = st.current || '';
+      const of = `${Math.min(st.done + 1, st.total)} of ${st.total}`;
+      const opts = st.options || {};
+      let title = `Adding ${of}${name ? ` — ${name}` : ''}`;
+      if (!st.running) {
+        title = opts.wifiOnly && opts.charging ? `Waiting for Wi-Fi and charging — ${st.waiting} to add`
+          : opts.wifiOnly ? `Waiting for Wi-Fi — ${st.waiting} to add`
+            : opts.charging ? `Waiting to charge — ${st.waiting} to add`
+              : `Waiting to send — ${st.waiting} to add`;
+      }
+      $('intake-title').textContent = title;
+      const note = $('intake-note');
+      note.textContent = st.problem ? st.problem : 'This keeps going if you leave the app.';
+      show(note, true);
+      intakeChip(st.running ? `Adding ${of}\u2026` : `Waiting \u2014 ${st.waiting} to add`);
+      const bytes = st.totalBytes || 0;
+      setIntakeProgress(bytes ? (st.doneBytes + (st.currentSent || 0)) / bytes : st.done / Math.max(1, st.total));
+      await pause(document.hidden ? 5000 : 1000);
+    }
+  } finally {
+    appFollowing = false;
+    INTAKE.sending = false;
+    INTAKE.native = false;
+    $('intake-close').textContent = 'Close';
+    show($('intake-sending'), false);
+    show($('intake-bar'), false);
+    show($('intake-note'), false);
+  }
+  const jobs = (st && st.jobs) || [];
+  const results = jobs.map((j) => ({
+    item: { path: j.path, group: j.group || j.path, kind: j.kind },
+    result: j.state === 'done' ? { ok: true, dest: j.dest }
+      : j.state === 'skipped' ? { ok: false, skipped: true, error: j.error }
+        : j.state === 'stopped' ? { ok: false, stopped: true }
+          : { ok: false, error: j.error || 'failed' },
+  }));
+  results.forEach(({ item, result }) => markIntakeRow(item.path, result));
+  renderLanded(results.filter((r) => !r.result.stopped));
+  const added = results.filter((r) => r.result.ok).length;
+  const skipped = results.filter((r) => r.result.skipped).length;
+  const stopped = results.filter((r) => r.result.stopped).length;
+  const failed = results.length - added - skipped - stopped;
+  const text = summary(added, skipped, failed, stopped);
+  $('intake-title').textContent = text;
+  intakeChip(text.split('.')[0], 8000);
+  appUploads('seen', {});
+  loadLibrary();
+}
+// Opened again while the app is still sending (or finished unseen): the
+// chip, and the sheet behind it.
+function resumeAppUploads() {
+  if (!APP_UPLOADS) return;
+  appUploads('status', {}, 'status').then((st) => {
+    if (!st || !st.total) return;
+    if (st.waiting) {
+      $('intake-list').replaceChildren();
+      $('intake-questions').replaceChildren();
+      $('intake-review').replaceChildren();
+      filesToggle(false);
+      followAppUploads();
+    } else if (!st.seen) {
+      const added = st.jobs.filter((j) => j.state === 'done').length;
+      intakeChip(`Added ${added} file${added === 1 ? '' : 's'}`, 8000);
+      appUploads('seen', {});
+    }
+  });
+}
 
 async function sendFiles(plan, dropped) {
   $('intake-list').replaceChildren();
@@ -4038,6 +4164,19 @@ async function sendFiles(plan, dropped) {
 
   const total = queue.reduce((sum, item) => sum + item.file.size, 0);
   if (!enoughRoom(total)) return;
+  // In the app: sent by the app, carrying on after it is left. Files it
+  // cannot read (not from its own picker) are sent here, as before.
+  if (APP_UPLOADS) {
+    const jobs = queue.map((item) => ({
+      name: item.file.name, size: item.file.size, path: item.path, kind: item.kind, group: item.group || '',
+      taken: (item.kind === 'picture' || item.kind === 'video') && item.file.lastModified ? item.file.lastModified : 0,
+    }));
+    const r = await appUploads('add', { server: location.origin, jobs }, 'added');
+    if (r && r.added) {
+      followAppUploads();
+      return;
+    }
+  }
   show($('intake-bar'), true);
   INTAKE.sending = true;
   INTAKE.stop = false;
@@ -17801,7 +17940,7 @@ async function playerLoop() {
   PLAYER.polling = true;
   try {
     await playerHello();
-    if (!PLAYER.restored) { PLAYER.restored = true; restoreControl(); }
+    if (!PLAYER.restored) { PLAYER.restored = true; restoreControl(); resumeAppUploads(); }
     // A phone in a pocket is not worth a connection; a TV always is.
     while (state.me && !state.offline && !PLAYER.leaving && (TV || !document.hidden)) {
       const r = await api(`/api/players/${PLAYER.id}/next`);

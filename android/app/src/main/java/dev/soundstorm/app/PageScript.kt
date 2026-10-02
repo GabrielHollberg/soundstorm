@@ -45,6 +45,9 @@ object PageScript {
   // While this phone controls a TV, its volume buttons turn the TV's volume:
   // handed to window.__soundstormVolumeKey (MainActivity.dispatchKeyEvent).
   window.soundstormApp.remoteVolume = (on) => post({ type: 'remoteVolume', on: Boolean(on) });
+  // Files added from this phone, sent by the app in the background: answered
+  // through window.__soundstormUploads (Uploads).
+  window.soundstormApp.uploads = /SoundStormTV/.test(navigator.userAgent) ? undefined : (cmd, data) => post({ type: 'uploads', cmd, data: data || {} });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };

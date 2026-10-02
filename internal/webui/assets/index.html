@@ -237,6 +237,13 @@
         </div>
         <p class="muted small-print">Check for new files is for anything copied into
           the library folder some other way. Files added here appear by themselves.</p>
+        <!-- In the Android app: files added here are sent in the background,
+             carrying on after the app is left (Uploads.kt). -->
+        <div id="uploads-options" class="hidden">
+          <p class="muted small-print">Files you add from this phone keep going after you leave the app, with a notification you can stop them from.</p>
+          <label class="remote-switch"><input id="uploads-wifi" type="checkbox"><span>Only on Wi-Fi</span></label>
+          <label class="remote-switch"><input id="uploads-charging" type="checkbox"><span>Only while charging</span></label>
+        </div>
         <p id="rescan-note" class="muted hidden" role="status"></p>
       </div>
 

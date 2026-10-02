@@ -94,6 +94,9 @@
             </intent-filter>
         </service>
 
+        <!-- The Stop on the notification of files being added (Uploads). -->
+        <receiver android:name=".UploadStopReceiver" android:exported="false" />
+
         <service
             android:name=".PlaybackService"
             android:exported="false"

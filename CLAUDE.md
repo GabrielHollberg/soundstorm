@@ -383,6 +383,24 @@ file going up go (the request aborted; the server keeps nothing of it) and
 sends no more; what arrived stays, and the summary counts the rest as not
 sent. Checked at phone size with three files on a slowed upload.
 
+**In the Android app the app sends them, in the background** (0.30,
+`Uploads.kt`, the owner's asking: files stopped when the app was left). The
+file picker is now the documents picker (`ACTION_OPEN_DOCUMENT`), whose
+files the app may keep reading (a persistable permission), and the app
+remembers each picked file by name and size. At Add, the page hands the app
+the plan (`soundstormApp.uploads('add')`: name, size, path, kind, taken);
+every file matched, a WorkManager job sends them one at a time to the page's
+own server with the web view's cookie, in the foreground with a notification
+("Adding 3 of 12", a Stop), and the page shows its progress from the app's
+status (`followAppUploads`) - and picks it up again when reopened
+(`resumeAppUploads`). Anything not matched is sent by the page as before. A
+dropped connection or a busy server retries the file from its start; signed
+out stops with a reason. **Only on Wi-Fi** and **Only while charging** sit
+in Add media (both off by default: files added are wanted now), and files
+waiting say what they wait for. Checked on the emulator: three films added
+while waiting to charge, the app swiped away (its process ended), the
+charger plugged in - all three arrived without the app open.
+
 **Move to, in any item's menu** (owner only, as deleting is;
 `POST /api/move`, `library.MoveItems`): for something filed in the wrong
 shelf after all. The item's files are found as deleting finds them, companions
