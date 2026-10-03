@@ -5165,8 +5165,9 @@ function uploadOne(item, onProgress) {
     if (item.conflict === 'keep' || item.conflict === 'replace') params.set('conflict', item.conflict);
     if (item.conflict === 'keep' && item.asName) params.set('as', item.asName);
     // A photo or video is sorted into the person's folder by when it was
-    // taken; the file's own date (on a camera's card, when it was taken) is
-    // what the server falls back on when the photo carries none inside it.
+    // taken; for a video, the file's own date (on a camera's card, when it
+    // was filmed) is what the server falls back on when it carries none
+    // inside it. A still with no date of its own goes to Undated.
     // A film too: one a phone filmed goes to the photos by its date (homevideos.go).
     if ((item.kind === 'picture' || item.kind === 'video') && item.file && item.file.lastModified) params.set('taken', String(item.file.lastModified));
     const request = new XMLHttpRequest();

@@ -741,6 +741,10 @@ func mentionsAudiobooks(rel string) bool {
 	return strings.Contains(lower, "audiobook") || strings.Contains(lower, "audio book")
 }
 
+// IsStillImage reports whether a file is a photo rather than a video, by its
+// name.
+func IsStillImage(name string) bool { return stillImage[strings.ToLower(path.Ext(name))] }
+
 // IsMediaFile reports whether a file is one some shelf keeps, by its name:
 // whether a drive plugged into the box holds anything to bring in.
 func IsMediaFile(name string) bool { return knownExtension(strings.ToLower(path.Ext(name))) }

@@ -6,10 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // Only the folders SoundStorm sorts photos into count as already kept: a
@@ -91,4 +94,30 @@ func exifJPEG(maker, model string) []byte {
 	out := []byte{0xFF, 0xD8, 0xFF, 0xE1, 0, 0}
 	out = append(out, "Exif\x00\x00"...)
 	return append(out, tiff...)
+}
+
+// The file's own date dates a video (on a camera's card it is when the clip
+// was filmed) but not a still: a picture with no date inside it or in its
+// name was saved from a chat, an email or the web, and its file date is when
+// it was saved - so it goes to Undated rather than the wrong month.
+func TestAFileDateDatesOnlyVideos(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	u := state.User{Name: "gabe"}
+	dir := t.TempDir()
+	saved := time.Date(2015, 8, 9, 10, 0, 0, 0, time.UTC).UnixMilli()
+
+	still := filepath.Join(dir, "still")
+	os.WriteFile(still, []byte("\x89PNG\r\n\x1a\n not a dated picture"), 0o644)
+	pl, err := h.api.datedPhoto(u, still, "funny.png", saved)
+	if err != nil || !strings.HasSuffix(pl.rel, "Undated/funny.png") {
+		t.Fatalf("a still with only a file date went to %v (%v)", pl, err)
+	}
+
+	clip := filepath.Join(dir, "clip")
+	os.WriteFile(clip, []byte("not a readable video"), 0o644)
+	pl, err = h.api.datedPhoto(u, clip, "00012.MTS", saved)
+	if err != nil || !strings.HasSuffix(pl.rel, "2015/08/00012.MTS") {
+		t.Fatalf("a clip with only a file date went to %v (%v)", pl, err)
+	}
 }

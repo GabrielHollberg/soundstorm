@@ -5694,9 +5694,13 @@ asking): every upload to the picture shelf - a dropped SD card, an old drive's
 folder, files chosen on a phone - goes into the person's folder (the owner's
 too, now) by when it was taken (`savePhoto`, `datedPhoto`, through
 `library.SaveDecided`, which places a file once its bytes have arrived): the
-date inside it, else one in its name, else the file's own date the browser
-sends (`taken`, `File.lastModified` - on a camera's card, when it was taken),
-else `Undated/`. A file already in the folder under any name is skipped as
+date inside it, else one in its name, else, for a video only, the file's own
+date the browser sends (`taken`, `File.lastModified` - on a camera's card,
+when it was filmed), else `Undated/`. **Not a still's file date** (the
+owner's call, 2026-10-03): a picture with no date inside it or in its name
+was saved from a chat, an email or the web, or scanned, and its file date is
+when that happened - it used to be filed in that month without a word;
+Undated says its date is not known. A file already in the folder under any name is skipped as
 "already in your photos" (`photoIndex`, the folder's files by size with
 hashes worked out as needed, kept ten minutes and shared with downloads). The
 date is written beside it for Immich unless it came from inside the photo.
