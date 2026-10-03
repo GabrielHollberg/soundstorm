@@ -10,6 +10,9 @@
 # SoundStorm answers at http://localhost:8399, SSH (a DEV_SSH build) at
 # localhost port 2222, and the console is written to box/out/vm/console.log.
 #
+# OFFLINE=1 cuts the VM off from the internet (the forwarded ports still
+# work): a box built with its images must start with no downloads at all.
+#
 # MEM is the VM's memory in MB. The VM shares this PC's memory with the live
 # server's containers, so it is kept small by default.
 set -eu
@@ -19,6 +22,8 @@ out="${OUT:-$here/out}"
 vm="$out/vm"
 mkdir -p "$vm"
 MEM=${MEM:-4608}
+restrict=""
+[ "${OFFLINE:-}" = 1 ] && restrict=",restrict=on"
 
 stop() {
 	if [ -f "$vm/qemu.pid" ] && kill -0 "$(cat "$vm/qemu.pid")" 2>/dev/null; then
@@ -53,7 +58,7 @@ qemu-system-x86_64 \
 	-drive file="$vm/system.qcow2",if=virtio,format=qcow2 \
 	-drive file="$vm/data.qcow2",if=none,id=data,format=qcow2 \
 	-device nvme,drive=data,serial=SSDATA0001 \
-	-nic user,model=virtio-net-pci,hostfwd=tcp::8399-:8099,hostfwd=tcp::2222-:22 \
+	-nic user,model=virtio-net-pci$restrict,hostfwd=tcp::8399-:8099,hostfwd=tcp::2222-:22 \
 	-display none -serial file:"$vm/console.log" \
 	-daemonize -pidfile "$vm/qemu.pid"
 echo "Started. Console: box/out/vm/console.log  SoundStorm: http://localhost:8399"

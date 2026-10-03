@@ -1,18 +1,18 @@
 [Unit]
 Description=SoundStorm
-After=docker.service network-online.target soundstorm-storage.service
+After=docker.service network-online.target soundstorm-storage.service soundstorm-images.service
 Wants=network-online.target
 Requires=docker.service soundstorm-storage.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# The first start downloads every image; that takes as long as it takes.
+# A box built without its images downloads them on the first start, which
+# takes as long as it takes.
 TimeoutStartSec=0
 ExecStartPre=/usr/local/lib/soundstorm/prepare.sh
 ExecStart=/usr/local/lib/soundstorm/up.sh
-# stop, never down -v: the volumes are people's accounts and settings.
-ExecStop=/usr/bin/docker compose -f /opt/soundstorm/compose.yml -f /opt/soundstorm/compose.box.yml stop
+ExecStop=/usr/local/lib/soundstorm/up.sh stop
 Restart=on-failure
 RestartSec=30
 

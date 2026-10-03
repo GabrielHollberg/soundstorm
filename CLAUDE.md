@@ -178,9 +178,12 @@ decided past the first test unit.
   0777); the installer now opens the library and its shelves 0777 (not
   their contents). The installer itself was not run end to end. And 3GB was
   too little for a first start's every backend setting up at once (4.5GB
-  did; the box has 16GB). Images are still downloaded on first start.
-- **Software it would still need:** the images shipped in the disk, writing
-  it to a real box, and a script that turns a new unit into a finished one
+  did; the box has 16GB). **The images ship in the disk** (fetched by
+  skopeo at build under names of the box's own, since a digest-pinned name
+  does not survive save/load; loaded on first boot): a fresh VM with no
+  internet at all had every source up in 2.5 minutes. 12GB of images, a 6GB
+  compressed disk, 14GB used of the 64GB eMMC.
+- **Software it would still need:** writing it to a real box, and a script that turns a new unit into a finished one
   with its own name, setup code and QR sticker; a
   small caretaker beside SoundStorm - never inside it, as SoundStorm must not
   hold the Docker socket - for updates overnight and on request (Update now,

@@ -1,0 +1,16 @@
+[Unit]
+Description=Load the container images built into the box
+After=docker.service
+Requires=docker.service
+Before=soundstorm.service
+# Only while there is something left to load.
+ConditionDirectoryNotEmpty=/var/lib/soundstorm-images
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=0
+ExecStart=/usr/local/lib/soundstorm/images.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -12,7 +12,9 @@
 # Settings, all optional:
 #   DEV_SSH=1        let root in over SSH with this machine's key (development
 #                    only - a box that is sold has no SSH)
-#   SIZE=12G         the system disk's size; it grows to fill the real disk
+#   NO_IMAGES=1      leave the container images out (a quick build; the box
+#                    downloads them on first start instead)
+#   SIZE=28G         the system disk's size; it grows to fill the real disk
 #                    (the ME Mini's 64GB eMMC) on first boot
 set -eu
 
@@ -22,7 +24,7 @@ out="${OUT:-$here/out}"
 work="$out/work"
 mkdir -p "$out" "$work"
 
-SIZE=${SIZE:-12G}
+SIZE=${SIZE:-28G}
 # A dated release directory would pin the base exactly; "latest" is the
 # newest point release, checked against its own SHA512SUMS.
 RELEASE=${DEBIAN_RELEASE:-latest}
@@ -36,7 +38,7 @@ say() { printf '\n== %s\n' "$*"; }
 
 say "Tools"
 need=""
-for pkg in libguestfs-tools qemu-utils qemu-system-x86 ovmf curl linux-image-amd64; do
+for pkg in libguestfs-tools qemu-utils qemu-system-x86 ovmf curl skopeo linux-image-amd64; do
 	dpkg -s "$pkg" >/dev/null 2>&1 || need="$need $pkg"
 done
 if [ -n "$need" ]; then
@@ -68,7 +70,52 @@ cp -r "$here/rootfs/." "$stage/"
 mkdir -p "$stage/opt/soundstorm"
 cp "$repo/docker-compose.yml" "$stage/opt/soundstorm/compose.yml"
 cp "$here/compose.box.yml" "$stage/opt/soundstorm/compose.box.yml"
-find "$stage" -type f -exec sed -i 's/\r$//' {} +
+say "Container images"
+# Every image the stack runs goes into the disk, so a box starts with no
+# downloads - on a slow line the first start would otherwise be hours. Each is
+# fetched by skopeo (no Docker needed here) into a docker-archive under a
+# name of the box's own, soundstorm-box/<service>:built, and compose.images.yml
+# points each service at it: a digest-pinned reference cannot survive
+# docker save/load, a plain name can, and the box then runs exactly what it
+# was built with. They are loaded on first boot (soundstorm-images.service).
+# Tailscale, a profile nobody has switched on, is left out.
+images="$stage/var/lib/soundstorm-images"
+mkdir -p "$images"
+overrides="$stage/opt/soundstorm/compose.images.yml"
+echo "# Made by box/build.sh: each service runs the image built into this box." > "$overrides"
+echo "services:" >> "$overrides"
+awk '/^services:/{s=1;next} s&&/^[a-z]/{s=0}
+	s&&/^  [a-z0-9-]+:$/{svc=$1; sub(":","",svc)}
+	s&&/^    profiles:/{skip[svc]=1}
+	s&&/^    image: /{img[svc]=$2; order[++n]=svc}
+	END{for(i=1;i<=n;i++){v=order[i]; if(!skip[v]) print v, img[v]}}' "$repo/docker-compose.yml" |
+	while read -r svc ref; do
+		# ${VAR:-default} -> default
+		ref=$(printf '%s' "$ref" | sed 's/^\${[A-Z_]*:-\(.*\)}$/\1/')
+		# Two services on one image share one archive and one name.
+		key=$(printf '%s' "$ref" | sha256sum | cut -c1-12)
+		name="soundstorm-box/$svc:built"
+		if [ -f "$images/$key.name" ]; then
+			name=$(cat "$images/$key.name")
+		else
+			echo "  $ref"
+			if [ "${NO_IMAGES:-}" != 1 ]; then
+				skopeo copy -q --override-os linux --override-arch amd64 \
+					"docker://$ref" "docker-archive:$images/$key.tar:$name"
+			fi
+			echo "$name" > "$images/$key.name"
+		fi
+		printf '  %s:\n    image: %s\n' "$svc" "$name" >> "$overrides"
+	done
+rm -f "$images"/*.name
+if [ "${NO_IMAGES:-}" = 1 ]; then
+	# A quick development build: the box pulls as before.
+	rm -f "$overrides"
+	rmdir "$images"
+fi
+du -sh "$images" 2>/dev/null || true
+
+find "$stage" -type f ! -name '*.tar' -exec sed -i 's/\r$//' {} +
 # Each top folder is copied in whole; copying merges into what is there.
 copy_args=""
 for top in "$stage"/*; do
@@ -94,7 +141,7 @@ virt-customize -a "$disk" \
 	--run-command 'chmod 755 /usr/local/lib/soundstorm/*.sh' \
 	--run-command 'chmod 644 /etc/systemd/system/soundstorm*.service /etc/systemd/system/ssh-hostkeys.service' \
 	--run-command 'docker compose version' \
-	--run-command 'systemctl enable docker soundstorm-grow soundstorm-storage soundstorm ssh-hostkeys avahi-daemon' \
+	--run-command 'systemctl enable docker soundstorm-grow soundstorm-storage soundstorm-images soundstorm ssh-hostkeys avahi-daemon' \
 	--run-command 'rm -f /etc/ssh/ssh_host_*' \
 	$ssh_args \
 	--truncate /etc/machine-id

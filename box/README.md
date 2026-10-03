@@ -15,7 +15,8 @@ Desktop's own does not, and Hyper-V is off):
     wsl -d Debian -u root -- sh -c 'cd /mnt/h/dev/soundstorm && OUT=/root/box-out DEV_SSH=1 sh box/build.sh'
     wsl -d Debian -u root -- sh -c 'cd /mnt/h/dev/soundstorm && OUT=/root/box-out sh box/run-vm.sh'
 
-`OUT` keeps the disks on WSL's own filesystem: the Windows drive is slow
+`NO_IMAGES=1` makes a quick build without the images (about 12GB of them);
+`OFFLINE=1` on `run-vm.sh` cuts the VM off the internet. `OUT` keeps the disks on WSL's own filesystem: the Windows drive is slow
 through `/mnt`.
 
 ## How a box starts
@@ -27,12 +28,15 @@ through `/mnt`.
    `library`, `volumes` (every container volume that holds data) and `cache`.
    With no data drive the box runs on the system disk and leaves
    `/run/soundstorm/no-data-drive`.
-3. `soundstorm` writes `/opt/soundstorm/.env` (setup code once; the box's
+3. `soundstorm-images` loads the container images built into the disk
+   (`/var/lib/soundstorm-images`, deleted once loaded), so a box starts with
+   no downloads; `compose.images.yml` points each service at its built-in
+   image, `soundstorm-box/<service>:built`.
+4. `soundstorm` writes `/opt/soundstorm/.env` (setup code once; the box's
    address and router every start) and runs `docker compose up -d`.
 
 ## Not built yet
 
-The images are downloaded on first start rather than shipped in the disk;
-writing the disk to a real box (a USB installer); a unit's sticker and
+Writing the disk to a real box (a USB installer); a unit's sticker and
 pre-made setup code; the caretaker (updates, drive health, factory reset);
 backups; snapshots.
