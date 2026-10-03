@@ -105,7 +105,8 @@ function showProfiles(list) {
 function paintAvatar(el, person) {
   let hash = 0;
   for (const c of person.name || '') hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
-  el.style.background = `hsl(${AVATAR_HUES[hash % AVATAR_HUES.length]} 55% 42%)`;
+  // The colour only: a shorthand would also undo the circle's background-clip.
+  el.style.backgroundColor = `hsl(${AVATAR_HUES[hash % AVATAR_HUES.length]} 55% 42%)`;
   el.replaceChildren();
   if (person.picture) {
     const img = document.createElement('img');
