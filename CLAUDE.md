@@ -178,7 +178,10 @@ decided past the first test unit.
   customer plugs in will do): offered at setup, backed up to every night
   automatically once plugged in, the app reminding plainly whenever it is
   missing or a backup has not run, and saying "not protected" while there is
-  no backup at all. Encrypted cloud backup (and box-to-box) stays an opt-in extra,
+  no backup at all. **USB first; cloud later** - it means accounts, billing
+  and terms of service, so it waits until customers ask, but the backup is
+  built with where it goes as a setting so cloud is mostly that work then.
+  Encrypted cloud backup (and box-to-box) stays an opt-in extra,
   like everything else that sends anything out of the house; its key stays
   with the customer (a recovery code), never with the seller. Backups are
   the caretaker's job, likely with restic, never SoundStorm's; restoring is a
