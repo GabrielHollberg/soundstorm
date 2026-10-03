@@ -5668,7 +5668,12 @@ under way - "i/o timeout", 98 to 40 photos. Received at once or refused at
 once. **For the Mac:** a run should not start while the
 last one's uploads are still with iOS (it re-checked everything every few
 seconds), and a 429 should wait for the next run rather than count as passed
-over.
+over. *(Done on the Mac, 2026-10-03: `PhotoBackup.start` starts no run
+while files are still with iOS - it starts by itself once they are through
+(`sentSome`) - and a 429 or 503 hands iOS nothing more for a minute and is
+sent again by the next run, not passed over. Checked against a fresh server
+on the Mac: six photos, six sends, no refusals, one check a run. A 429 itself
+was not produced.)*
 
 **A backed-up picture with no date inside it keeps the phone's date**
 (2026-10-03, `backupDated`): screenshots and pictures saved from messages

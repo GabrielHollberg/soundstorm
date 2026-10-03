@@ -171,9 +171,28 @@ final class PhotoBackup: NSObject {
         }
     }
 
-    /// Starts a run, unless one is going or backup is off.
+    /// A run asked for while the last one's files were still with iOS: it
+    /// starts once they are through.
+    private var startWhenSent = false
+    /// The server said it was busy (429): nothing new until then.
+    private var busyUntil = Date.distantPast
+
+    /// Starts a run, unless one is going, backup is off, or files from the
+    /// last run are still with iOS - a run then would ask the server about
+    /// every photo again while those are on their way, which the iPhone's
+    /// first full backup did every few seconds (885 checks in fifteen
+    /// minutes). It starts by itself once they are through.
     func start() {
         guard enabled, permitted, run == nil else { return }
+        if Uploader.shared.pending.count > 0 || Date() < busyUntil {
+            startWhenSent = true
+            if Date() < busyUntil {
+                let wait = busyUntil.timeIntervalSinceNow
+                Task { try? await Task.sleep(for: .seconds(wait + 1)); PhotoBackup.shared.sentSome() }
+            }
+            return
+        }
+        startWhenSent = false
         if !watching {
             PHPhotoLibrary.shared().register(self)
             watching = true
@@ -359,12 +378,29 @@ final class PhotoBackup: NSObject {
     func uploaded(_ meta: Uploader.Meta) {
         markSent([meta.key], meta.list)
         if meta.last { bumpDone() }
+        sentSome()
+    }
+
+    /// One of the files with iOS is through: the run that waited for them
+    /// starts once all are.
+    func sentSome() {
+        if startWhenSent, Uploader.shared.pending.count == 0, Date() >= busyUntil { start() }
     }
 
     /// A file the server refused. Signed out, no Pictures or no room stop the
     /// run; anything else is that one file, named and passed over - one bad
     /// file used to stop backup for good (as Android 0.18 found).
     func refused(_ meta: Uploader.Meta, code: Int, message: String) {
+        defer { sentSome() }
+        // The server busy: not this photo's fault. Nothing more is handed to
+        // iOS for a minute, and the next run sends it again (it was counted
+        // as passed over, and 898 were, in the first full backup).
+        if code == 429 || code == 503 {
+            halted = true
+            busyUntil = Date().addingTimeInterval(60)
+            startWhenSent = true
+            return
+        }
         if [401, 403, 507].contains(code) {
             stopFor(Refused(code: code, message: message))
         } else {
@@ -727,8 +763,10 @@ nonisolated final class Uploader: NSObject, URLSessionDataDelegate, @unchecked S
                 PhotoBackup.shared.uploaded(meta)
             } else if code >= 400 {
                 PhotoBackup.shared.refused(meta, code: code, message: message)
+            } else {
+                // A network failure: not counted, so the next run sends it again.
+                PhotoBackup.shared.sentSome()
             }
-            // A network failure: not counted, so the next run sends it again.
         }
     }
 
