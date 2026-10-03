@@ -2675,20 +2675,31 @@ func (s *stallReader) Read(p []byte) (int, error) {
 // takeUploadSlot reserves one of an account's in-flight uploads, reporting
 // false when it already has maxUploadsPerUser. The returned func gives it back.
 func (s *Server) takeUploadSlot(userID string) (func(), bool) {
+	return s.takeSlot(userID, maxUploadsPerUser)
+}
+
+// maxBackupsPerUser is a phone's backup's own allowance: iOS sends dozens of
+// a background session's files at once over one connection, and at four the
+// rest queued and were refused - 898 refusals to 33 photos in fifteen minutes
+// (2026-10-03). The stall rule (uploadMinProgress) still cuts off any upload
+// that trickles, so the allowance holds nothing open for long.
+const maxBackupsPerUser = 24
+
+func (s *Server) takeSlot(key string, limit int) (func(), bool) {
 	s.uploadsMu.Lock()
 	defer s.uploadsMu.Unlock()
 	if s.uploads == nil {
 		s.uploads = map[string]int{}
 	}
-	if s.uploads[userID] >= maxUploadsPerUser {
+	if s.uploads[key] >= limit {
 		return nil, false
 	}
-	s.uploads[userID]++
+	s.uploads[key]++
 	return func() {
 		s.uploadsMu.Lock()
 		defer s.uploadsMu.Unlock()
-		if s.uploads[userID]--; s.uploads[userID] <= 0 {
-			delete(s.uploads, userID)
+		if s.uploads[key]--; s.uploads[key] <= 0 {
+			delete(s.uploads, key)
 		}
 	}, true
 }
@@ -2702,7 +2713,7 @@ func (s *Server) takeUploadSlot(userID string) (func(), bool) {
 func (s *Server) waitUploadSlot(ctx context.Context, userID string) (func(), bool) {
 	deadline := time.Now().Add(3 * time.Minute)
 	for {
-		if release, ok := s.takeUploadSlot(userID); ok {
+		if release, ok := s.takeSlot("backup/"+userID, maxBackupsPerUser); ok {
 			return release, true
 		}
 		if time.Now().After(deadline) {
