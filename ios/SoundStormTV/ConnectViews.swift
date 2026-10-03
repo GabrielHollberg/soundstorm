@@ -22,17 +22,28 @@ struct ConnectView: View {
             // somebody who just plugged the server in gets started.
             if !nearby.isEmpty {
                 VStack(spacing: 16) {
-                    Text(nearby.count == 1 ? "We found SoundStorm on your network" : "We found SoundStorm on your network - which one?")
+                    Text(nearby.count == 1 ? "We found \(nearby[0].label) on your network" : "We found SoundStorm on your network - which one?")
                         .font(.title3.bold())
                     ForEach(nearby) { found in
                         Button {
-                            model.use(found.url)
+                            if found.setUp {
+                                ServerAddress.serverCalls(found.url, found.name)
+                                model.use(found.url)
+                            } else {
+                                message = "That SoundStorm isn't set up yet. Set it up with the SoundStorm app on your phone first - then choose it here."
+                            }
                         } label: {
-                            Text(nearby.count == 1 ? "Use it" : found.label).frame(width: 600)
+                            VStack {
+                                Text(nearby.count == 1 ? (found.setUp ? "Use it" : "Not set up yet") : found.label)
+                                if nearby.count > 1 && !found.setUp {
+                                    Text("Not set up yet").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: 600)
                         }
                     }
-                    if nearby.count == 1 {
-                        Text(found(nearby[0]))
+                    if nearby.count == 1 && !nearby[0].setUp {
+                        Text("Set it up with the SoundStorm app on your phone first.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -161,6 +172,9 @@ struct SignInView: View {
             } else if linking {
                 LinkView(done: { linking = false })
             } else if hasAccount {
+                if let name = ServerAddress.all.first(where: { $0.url == model.api?.server })?.name {
+                    Text("Sign in to \(name)").font(.title3.bold())
+                }
                 // The easy way first: no typing with a remote.
                 Button("Sign in with your phone") { linking = true }
                 TextField("Username", text: $username)
@@ -177,7 +191,7 @@ struct SignInView: View {
             } else {
                 // Creating the owner needs the setup code, which is on the
                 // computer SoundStorm runs on: easier there than on a TV.
-                Text("This SoundStorm has no account yet. Open it in a browser to create one, then sign in here.")
+                Text("This SoundStorm isn't set up yet. Set it up with the SoundStorm app on your phone, then sign in here.")
                     .frame(width: 900)
                 Button("Try again") { Task { await model.refreshSession() } }
             }

@@ -5,11 +5,14 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
@@ -218,6 +221,34 @@ func (s *Server) handleSetApproveDevices(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": body.Enabled})
+}
+
+// handleSetServerName sets what devices call this server; empty goes back to
+// "<owner>'s SoundStorm". Owner only.
+func (s *Server) handleSetServerName(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected a JSON body with name")
+		return
+	}
+	name := strings.Join(strings.Fields(body.Name), " ")
+	if utf8.RuneCountInString(name) > state.MaxServerNameLength {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Keep it to %d characters.", state.MaxServerNameLength))
+		return
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			writeError(w, http.StatusBadRequest, "That name has characters a name cannot.")
+			return
+		}
+	}
+	if err := s.store.SetServerName(name); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save the name")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": s.store.ServerName()})
 }
 
 // needsApproval reports whether a sign-in with the right password must wait.

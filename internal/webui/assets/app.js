@@ -589,6 +589,14 @@ function showGate(hasAccount, setupCodeRequired) {
     ? 'Sign in to your library.'
     : 'Create the account for this server: you will be its owner. Choose a password of at least 12 characters - a few unrelated words make a good one.';
   $('gate-submit').textContent = hasAccount ? 'Sign in' : 'Create account';
+  // Which server this is, by the name its devices show (the owner's choice).
+  if (hasAccount) {
+    api('/api/session').then(({ ok, body }) => {
+      if (ok && body && body.serverName && $('gate-form').dataset.mode === 'login') {
+        $('gate-blurb').textContent = `Sign in to ${body.serverName}.`;
+      }
+    });
+  }
   $('gate-form').dataset.mode = hasAccount ? 'login' : 'signup';
   // Asked for only when the address did not carry it, which is the unusual
   // case: somebody opened the page by hand instead of from setup.
@@ -774,6 +782,9 @@ $('gate-form').addEventListener('submit', async (event) => {
   if (!ok) {
     errorEl.textContent = (body && body.error) || 'Something went wrong.';
     show(errorEl, true);
+    // A code that came in the address (scanned off the box by the app) and
+    // was wrong: the box for it shows, to fix it.
+    if (mode === 'signup' && body && /setup code/i.test(body.error || '')) show($('gate-setup'), true);
     return;
   }
   $('gate-password').value = '';
@@ -983,7 +994,23 @@ function renderAccount() {
     show($('lyrics-block'), false);
     show($('readalong-block'), false);
   }
+  show($('server-name-block'), Boolean(me.owner));
 }
+
+// The server's name, which devices show before anybody signs in. Empty puts
+// back "<owner>'s SoundStorm".
+$('server-name-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const { ok, body } = await api('/api/settings/server-name', {
+    method: 'PUT', body: JSON.stringify({ name: $('server-name-input').value }),
+  });
+  if (ok) {
+    $('server-name-input').value = body.name;
+    note($('server-name-note'), 'Saved. Phones and TVs show it the next time they connect.');
+  } else {
+    note($('server-name-note'), (body && body.error) || 'Could not save it.', true);
+  }
+});
 
 // The lyrics setting is on the owner's session only, and only when the server
 // can look lyrics up at all.
@@ -992,6 +1019,7 @@ async function refreshLyricsSetting() {
   const has = ok && body && typeof body.onlineLyrics === 'boolean';
   show($('lyrics-block'), has);
   if (has) $('lyrics-toggle').checked = body.onlineLyrics;
+  if (ok && body && typeof body.serverName === 'string') $('server-name-input').value = body.serverName;
   if (ok && body && typeof body.approveNewDevices === 'boolean') {
     state.approveNewDevices = body.approveNewDevices;
     $('new-devices-toggle').checked = body.approveNewDevices;

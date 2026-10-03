@@ -363,6 +363,9 @@ type data struct {
 	// ApproveNewDevices is the owner asking that the right password on a
 	// device an account has never signed in on waits for approval.
 	ApproveNewDevices bool `json:"approveNewDevices,omitempty"`
+	// ServerName is what the owner called the server; empty is the
+	// default, "<owner>'s SoundStorm" (see ServerName).
+	ServerName string `json:"serverName,omitempty"`
 	// Kept is who each shared device may switch between ("Who's
 	// listening?"), keyed by a hash of the device's own id cookie, as sessions
 	// are keyed by a hash of theirs: this file alone names no device.
@@ -1307,6 +1310,38 @@ func (s *Store) SetApproveNewDevices(on bool) error {
 		return nil
 	}
 	s.d.ApproveNewDevices = on
+	return s.save()
+}
+
+// MaxServerNameLength bounds a server's name, in characters.
+const MaxServerNameLength = 60
+
+// ServerName is the name devices show for this server - in a search of the
+// network, a list of servers, and its sign-in - before anybody signs in:
+// the owner's choice, else "<owner>'s SoundStorm", else "" while it is not
+// set up.
+func (s *Store) ServerName() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.ServerName != "" {
+		return s.d.ServerName
+	}
+	for _, u := range s.d.Users {
+		if u.IsOwner() {
+			return u.Name + "'s SoundStorm"
+		}
+	}
+	return ""
+}
+
+// SetServerName sets the server's name; empty goes back to the default.
+func (s *Store) SetServerName(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.ServerName == name {
+		return nil
+	}
+	s.d.ServerName = name
 	return s.save()
 }
 

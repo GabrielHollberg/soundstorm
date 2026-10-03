@@ -17,6 +17,7 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
     private var found: [ServerDiscovery.Found] = []
     private var searched = false
     private var searching: Task<Void, Never>?
+    private let scanner = CodeScanner()
     private let button = UIButton(configuration: .filled())
     private let hint = UILabel()
     private let message = UILabel()
@@ -171,16 +172,25 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         nearby.arrangedSubviews.forEach { $0.removeFromSuperview() }
         nearbyTitle.isHidden = found.isEmpty
         nearby.isHidden = found.isEmpty
-        nearbyTitle.text = found.count == 1 ? "We found SoundStorm on your network" : "We found SoundStorm on your network - which one?"
+        let fresh = found.count == 1 && !found[0].setUp
+        nearbyTitle.text = fresh ? "We found your new SoundStorm"
+            : found.count == 1 ? "We found \(found[0].label) on your network"
+            : "We found SoundStorm on your network - which one?"
         for server in found {
             var config = UIButton.Configuration.filled()
             config.baseBackgroundColor = Self.accent
             config.baseForegroundColor = .black
             config.cornerStyle = .large
-            config.title = found.count == 1 ? "Use it" : server.label
-            config.subtitle = found.count == 1 ? server.label : nil
+            if found.count == 1 {
+                config.title = server.setUp ? "Use it" : "Set it up"
+            } else {
+                config.title = server.label
+                config.subtitle = server.setUp ? nil : "Not set up yet"
+            }
             let row = UIButton(configuration: config)
-            row.addAction(UIAction { [weak self] _ in self?.use(server) }, for: .primaryActionTriggered)
+            row.addAction(UIAction { [weak self] _ in
+                if server.setUp { self?.use(server) } else { self?.setUp(server) }
+            }, for: .primaryActionTriggered)
             nearby.addArrangedSubview(row)
         }
         if ServerAddress.all.isEmpty {
@@ -190,16 +200,69 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         }
     }
 
+    /// A new box: its setup code, scanned off the sticker or typed, then the
+    /// page's sign-up for the owner's name and password (with the code
+    /// already in, from the address).
+    private func setUp(_ server: ServerDiscovery.Found) {
+        let ask = UIAlertController(title: "Set up your new SoundStorm",
+                                    message: "The setup code is on the sticker on the bottom of the box.",
+                                    preferredStyle: .alert)
+        ask.addAction(UIAlertAction(title: "Scan the code", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.scanner.scan(over: self, failed: { [weak self] in self?.typeCode(server, note: "The camera couldn't be used. Type the code instead.") }) { [weak self] text in
+                guard let text else { return }
+                self?.begin(server, code: Self.setupCode(in: text))
+            }
+        })
+        ask.addAction(UIAlertAction(title: "Type the code", style: .default) { [weak self] _ in self?.typeCode(server, note: nil) })
+        ask.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(ask, animated: true)
+    }
+
+    private func typeCode(_ server: ServerDiscovery.Found, note: String?) {
+        let ask = UIAlertController(title: "Setup code", message: note ?? "As printed on the sticker. Capitals and dashes do not matter.",
+                                    preferredStyle: .alert)
+        ask.addTextField { field in
+            field.autocapitalizationType = .allCharacters
+            field.autocorrectionType = .no
+            field.placeholder = "ABCD-EFGH-..."
+        }
+        ask.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        ask.addAction(UIAlertAction(title: "Continue", style: .default) { [weak self, weak ask] _ in
+            self?.begin(server, code: Self.setupCode(in: ask?.textFields?.first?.text ?? ""))
+        })
+        present(ask, animated: true)
+    }
+
+    private func begin(_ server: ServerDiscovery.Found, code: String) {
+        guard !code.isEmpty else { return }
+        ServerAddress.pendingSetup = code
+        onConnected?(server.url)
+    }
+
+    /// The code in what was scanned: an address carrying `?setup=`, or the
+    /// code itself.
+    static func setupCode(in text: String) -> String {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parts = URLComponents(string: text), parts.scheme != nil,
+           let code = parts.queryItems?.first(where: { $0.name == "setup" })?.value {
+            return code
+        }
+        return text
+    }
+
     /// A found server: a phone leaves the house, so its away name is kept
     /// when it answers (the page moves home by itself when it can).
     private func use(_ server: ServerDiscovery.Found) {
         guard checking == nil else { return }
         let host = server.url.host() ?? ""
+        ServerAddress.serverCalls(server.url, server.name)
         guard host.hasSuffix(".home.soundstorm.dev") else { onConnected?(server.url); return }
         setBusy(true)
         checking = Task { [weak self] in
             let code = String(host.dropLast(".home.soundstorm.dev".count))
             let url = (try? await ServerAddress.find(code, preferAway: true)) ?? server.url
+            ServerAddress.serverCalls(url, server.name)
             self?.setBusy(false)
             self?.checking = nil
             self?.onConnected?(url)

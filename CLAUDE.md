@@ -6542,6 +6542,31 @@ private addresses too. Checked on the emulator, a fresh install: it found
 the PC's server within ten seconds, "Use it - 6lm2ahm6pn", and opened its
 sign-in page.)*
 
+**The server's name, and setting up a new box from the phone (2026-10-03)**,
+the owner's design. A server has a name devices show before anybody signs
+in - in the network search, the list of servers, and the sign-in ("Sign in
+to Gabriel's SoundStorm"): none while it is not set up, then "<owner>'s
+SoundStorm", or what the owner sets in Settings, Devices, **Server name**
+(`state.ServerName`, `PUT /api/settings/server-name`, owner only, 60
+characters, empty back to the default). It is in `/healthz` (`name`, and
+`setUp` - whether it has an owner) and `/api/session` (`serverName`), so
+anyone on the network sees it, as a Wi-Fi network's name; the card says so.
+The apps keep a saved server's name in step with the server's
+(`ServerAddress.serverCalls`, from `check`, the TV's session, and the
+iPhone's page loading) unless renamed on that device (`custom`).
+A found server with no owner is a new box: the phone app says **"We found
+your new SoundStorm" - Set it up**, then the setup code - scanned off the
+sticker (an address with `?setup=`, or the code alone) or typed - and opens
+the page with it in the address, so its sign-up asks only a name and
+password. A wrong code there now shows the code box to fix it (it was hidden
+for a code from the address). The Apple TV shows such a box as "Not set up
+yet - set it up with the SoundStorm app on your phone first". Checked:
+`TestTheServerHasAName`, and `testSetUpANewBoxFromThePhone` (a brand-new
+server on :8099 found, Set it up, the code typed, an account made, and the
+server then "tester's SoundStorm"); all seven iPhone UI tests pass. The
+circle at the top opens a menu, so iOS reports it as a pop-up, not a
+button: tests find it by its label. Not checked: scanning a real sticker.
+
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several
 servers (their own, their parents'), and later several people on each. The

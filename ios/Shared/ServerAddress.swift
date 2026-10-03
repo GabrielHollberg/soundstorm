@@ -23,7 +23,28 @@ enum ServerAddress {
     struct Server: Codable, Hashable, Identifiable {
         var url: URL
         var name: String
+        /// Named on this device by somebody (Rename): the server's own name,
+        /// and any change to it, no longer replaces it.
+        var custom: Bool? = nil
         var id: URL { url }
+    }
+
+    /// A new server's setup code, scanned or typed in the phone app's "Set
+    /// up your new SoundStorm": the page is opened with it (`?setup=`), so the
+    /// sign-up asks only for a name and password.
+    static var pendingSetup: String?
+
+    /// What servers call themselves (`/healthz`'s `name`), as last heard -
+    /// "Gabriel's SoundStorm", or what the owner renamed it.
+    private static var heard: [URL: String] = [:]
+
+    /// A server's own name, heard: kept for it unless renamed on this device.
+    static func serverCalls(_ url: URL, _ name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        heard[url] = name
+        guard all.contains(where: { $0.url == url && $0.custom != true && $0.name != name }) else { return }
+        all = all.map { $0.url == url && $0.custom != true ? Server(url: $0.url, name: name) : $0 }
     }
 
     /// Every server this app knows, the latest used first. An app from before
@@ -45,7 +66,7 @@ enum ServerAddress {
     /// the one the app opens with.
     static func remember(_ url: URL) {
         var list = all
-        let entry = list.first(where: { $0.url == url }) ?? Server(url: url, name: defaultName(for: url))
+        let entry = list.first(where: { $0.url == url }) ?? Server(url: url, name: heard[url] ?? defaultName(for: url))
         list.removeAll { $0.url == url }
         list.insert(entry, at: 0)
         all = list
@@ -60,7 +81,12 @@ enum ServerAddress {
 
     static func rename(_ url: URL, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        all = all.map { $0.url == url ? Server(url: $0.url, name: name.isEmpty ? defaultName(for: $0.url) : name) : $0 }
+        all = all.map {
+            guard $0.url == url else { return $0 }
+            // Emptied: back to the server's own name.
+            return name.isEmpty ? Server(url: url, name: heard[url] ?? defaultName(for: url))
+                : Server(url: url, name: name, custom: true)
+        }
     }
 
     /// A first name for a server, until somebody gives it one: its address
@@ -185,11 +211,12 @@ enum ServerAddress {
         } catch let error as URLError {
             throw CheckError.unreachable(explain(error, server))
         }
-        struct Health: Decodable { let status: String; let sources: Int }
+        struct Health: Decodable { let status: String; let sources: Int; let name: String? }
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let health = try? JSONDecoder().decode(Health.self, from: data),
               health.status == "ok"
         else { throw CheckError.notSoundStorm }
+        if let name = health.name { serverCalls(server, name) }
     }
 
     private static func explain(_ error: URLError, _ server: URL) -> String {
