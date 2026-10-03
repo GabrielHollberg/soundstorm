@@ -2687,6 +2687,29 @@ func (s *Server) takeUploadSlot(userID string) (func(), bool) {
 	}, true
 }
 
+// waitUploadSlot is takeUploadSlot for a sender that hands over many files at
+// once - a phone's backup, whose background session sends several together -
+// waiting its turn up to a few minutes rather than being refused: refused, the
+// iPhone passed the photos over (164 of a re-backup's sends were, on
+// 2026-10-03). The limit still holds; the waiting costs nothing but the
+// connection.
+func (s *Server) waitUploadSlot(ctx context.Context, userID string) (func(), bool) {
+	deadline := time.Now().Add(3 * time.Minute)
+	for {
+		if release, ok := s.takeUploadSlot(userID); ok {
+			return release, true
+		}
+		if time.Now().After(deadline) {
+			return nil, false
+		}
+		select {
+		case <-ctx.Done():
+			return nil, false
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
 // sameOrigin refuses a state-changing request that another site's page sent.
 //
 // The session cookie is SameSite=Lax, and that is not enough on its own:
