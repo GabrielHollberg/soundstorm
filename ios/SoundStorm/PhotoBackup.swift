@@ -22,9 +22,11 @@ import WebKit
 /// iOS says it arrived, whenever that is. (Sending one at a time and waiting
 /// for each, backup stopped a few seconds after the screen locked.)
 ///
-/// What was sent is remembered on the phone (each photo's local id), and the
-/// server is asked first which it already has, so reinstalling the app or a
-/// new phone sends nothing twice. It signs in with the web view's own cookie.
+/// The phone keeps no list of what it sent (2026-10-03, as Android 0.37): each
+/// run asks the server about every photo and sends what it lacks, so the
+/// server is the one record - what it lost is sent again, and what somebody
+/// deleted there it remembers and answers "have it" for. It signs in with the
+/// web view's own cookie.
 final class PhotoBackup: NSObject {
     static let shared = PhotoBackup()
     static let taskID = "dev.soundstorm.app.photobackup"
@@ -240,10 +242,6 @@ final class PhotoBackup: NSObject {
     private static func isLive(_ asset: PHAsset) -> Bool { asset.mediaSubtypes.contains(.photoLive) }
     private static func liveKey(_ asset: PHAsset) -> String { asset.localIdentifier + "#live" }
 
-    /// Everything of this photo or video is on the server.
-    private static func complete(_ asset: PHAsset, _ sent: Set<String>) -> Bool {
-        sent.contains(asset.localIdentifier) && (!isLive(asset) || sent.contains(liveKey(asset)))
-    }
 
     /// Files waiting with iOS at once, at most: enough to go on for hours
     /// with the phone locked, not so many that their copies fill the phone.
@@ -253,16 +251,20 @@ final class PhotoBackup: NSObject {
     /// Stops handing iOS more in this run: a refusal that will not mend by
     /// itself (signed out, no Pictures, no room).
     private var halted = false
+    /// What is on the server, as far as this run has learnt.
+    private var known: Set<String> = []
 
     private func backUp() async {
         let servers = candidates()
         guard var server = servers.first else { return }
         let list = sentList
         let roll = cameraRoll()
-        var sent = loadSent(list)
+        // Only what this run has learnt: the server answers for the rest.
+        known = []
+        var sent = known
         // A Live Photo counts as one, still and clip together.
-        let waiting = roll.filter { !Self.complete($0, sent) }
-        set("done", roll.count - waiting.count)
+        let waiting = roll
+        set("done", 0)
         set("total", roll.count)
         set("problem", "")
         halted = false
@@ -521,20 +523,24 @@ final class PhotoBackup: NSObject {
 
     // MARK: What was sent
 
-    /// What was sent is remembered per account: sent to one person's (or one
-    /// server's) folder is not sent to another's. One list for the whole
-    /// phone showed a second server or person "all backed up" with nothing
-    /// sent. The account id is the server's own random id, so it tells
-    /// servers apart too.
+    /// Whose backup an upload belongs to (the server's own random id for the
+    /// account), carried with each file handed to iOS.
     private var sentList: String {
         let account = defaults.string(forKey: "backup.account") ?? ""
-        let name = account.isEmpty ? "default" : String(account.filter { $0.isLetter || $0.isNumber }.prefix(40))
-        // A phone from before kept one list: it was this account's.
-        let old = Self.folder.appending(path: "backup-sent.txt")
-        if FileManager.default.fileExists(atPath: old.path) {
-            try? FileManager.default.moveItem(at: old, to: Self.sentFile(name))
+        forgetOldLists()
+        return account.isEmpty ? "default" : String(account.filter { $0.isLetter || $0.isNumber }.prefix(40))
+    }
+
+    /// The lists phones used to keep of what they sent: gone. Each said
+    /// "done" for pictures the server had lost, and only a reinstall sent
+    /// them again.
+    private func forgetOldLists() {
+        guard !defaults.bool(forKey: "backup.listsForgotten") else { return }
+        let files = (try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: nil)) ?? []
+        for f in files where f.lastPathComponent.hasPrefix("backup-sent") && f.pathExtension == "txt" {
+            try? FileManager.default.removeItem(at: f)
         }
-        return name
+        defaults.set(true, forKey: "backup.listsForgotten")
     }
 
     private static var folder: URL {
@@ -543,23 +549,10 @@ final class PhotoBackup: NSObject {
         return dir
     }
 
-    private static func sentFile(_ list: String) -> URL { folder.appending(path: "backup-sent-\(list).txt") }
-
-    private func loadSent(_ list: String) -> Set<String> {
-        guard let text = try? String(contentsOf: Self.sentFile(list), encoding: .utf8) else { return [] }
-        return Set(text.split(separator: "\n").map(String.init))
-    }
-
+    /// What this run knows is on the server: answered by its check, or
+    /// arrived. Kept only for the run.
     func markSent(_ keys: [String], _ list: String) {
-        guard !keys.isEmpty, let line = (keys.joined(separator: "\n") + "\n").data(using: .utf8) else { return }
-        let file = Self.sentFile(list)
-        if let handle = try? FileHandle(forWritingTo: file) {
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: line)
-            try? handle.close()
-        } else {
-            try? line.write(to: file)
-        }
+        known.formUnion(keys)
     }
 }
 

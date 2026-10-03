@@ -5647,7 +5647,14 @@ size 0). A backup waits up to three minutes for an upload slot rather than a
 re-backup's sends were refused). Android 0.37 dropped its list; **for the
 Mac:** the iPhone's `PhotoBackup` should drop its sent list the same way (ask
 the server about every asset each run; the per-account list file can go), and
-until then it still needs a reinstall to send what the server lost.
+until then it still needs a reinstall to send what the server lost. *(Done on the Mac,
+2026-10-03: `PhotoBackup` keeps only what one run has learnt, asks the server
+about every asset each run, 60 at a time, and deletes the old
+`backup-sent-*.txt` lists. Checked against a fresh server on the Mac: six
+sample photos sent, then two removed from the server's disk one at a time,
+each sent again on the next run. The UI test's second-run path - finding the
+backup switch in Settings when it is already on - fails to tap the switch
+now that Settings has more cards above it; the first-run path passes.)*
 `TestADeletedBackupIsNotSentBack`.
 
 **A backed-up picture with no date inside it keeps the phone's date**

@@ -146,7 +146,7 @@ final class ConnectFlowTests: XCTestCase {
         } else {
             openSettings(web)
             let toggle = web.descendants(matching: .any)["Back up this phone's photos and videos"].firstMatch
-            for _ in 0..<8 where !toggle.isHittable { web.swipeUp() }
+            for _ in 0..<16 where !toggle.isHittable { web.swipeUp() }
             XCTAssertTrue(toggle.isHittable, "no backup switch in Settings")
             // On already from an earlier run, it stays on.
             let on = (toggle.value as? String) == "1" || (toggle.value as? NSNumber)?.boolValue == true
