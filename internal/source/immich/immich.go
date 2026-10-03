@@ -630,3 +630,84 @@ func (s *Source) photos(ctx context.Context, filter map[string]any, limit int) (
 	}
 	return items, nil
 }
+
+// PhotoMonths is the asker's photos counted by month, newest first: Immich's
+// own timeline buckets (checked against 3.2.2), so it is their own library
+// alone, as everything else here is.
+func (s *Source) PhotoMonths(ctx context.Context) ([]source.PhotoMonth, error) {
+	var buckets []struct {
+		TimeBucket string `json:"timeBucket"`
+		Count      int    `json:"count"`
+	}
+	if err := s.getJSON(ctx, "/api/timeline/buckets", nil, &buckets); err != nil {
+		return nil, err
+	}
+	out := make([]source.PhotoMonth, 0, len(buckets))
+	for _, b := range buckets {
+		if len(b.TimeBucket) >= 7 && b.Count > 0 {
+			out = append(out, source.PhotoMonth{Month: b.TimeBucket[:7], Count: b.Count})
+		}
+	}
+	return out, nil
+}
+
+// MonthPhotos is one month's photos, newest first. Immich answers a bucket in
+// columns, one list per field.
+func (s *Source) MonthPhotos(ctx context.Context, month string) ([]media.Item, error) {
+	var b struct {
+		ID               []string   `json:"id"`
+		IsImage          []bool     `json:"isImage"`
+		IsTrashed        []bool     `json:"isTrashed"`
+		LivePhotoVideoID []*string  `json:"livePhotoVideoId"`
+		FileCreatedAt    []string   `json:"fileCreatedAt"`
+		Ratio            []float64  `json:"ratio"`
+		Duration         []*float64 `json:"duration"`
+		City             []*string  `json:"city"`
+		Country          []*string  `json:"country"`
+	}
+	params := url.Values{"timeBucket": {month + "-01T00:00:00.000Z"}}
+	if err := s.getJSON(ctx, "/api/timeline/bucket", params, &b); err != nil {
+		return nil, err
+	}
+	out := make([]media.Item, 0, len(b.ID))
+	for i, id := range b.ID {
+		if i < len(b.IsTrashed) && b.IsTrashed[i] {
+			continue
+		}
+		it := media.Item{ID: id, SourceID: s.id, Kind: media.KindPicture, ArtID: id, Extra: map[string]string{"type": "image"}}
+		if i < len(b.IsImage) && !b.IsImage[i] {
+			it.Extra["type"] = "video"
+		}
+		if i < len(b.LivePhotoVideoID) && b.LivePhotoVideoID[i] != nil && *b.LivePhotoVideoID[i] != "" && it.Extra["type"] == "image" {
+			it.Extra["live"] = "1"
+		}
+		if i < len(b.FileCreatedAt) && len(b.FileCreatedAt[i]) >= 19 {
+			taken := b.FileCreatedAt[i][:19]
+			it.Extra["taken"] = taken
+			if t, err := time.Parse("2006-01-02T15:04:05", taken); err == nil {
+				it.Year = t.Year()
+				it.Subtitle = t.Format("2 Jan 2006")
+				it.Title = t.Format("2 Jan 2006, 15:04")
+			}
+		}
+		if i < len(b.Ratio) && b.Ratio[i] > 0 {
+			it.Extra["ratio"] = fmt.Sprintf("%.3f", b.Ratio[i])
+		}
+		if i < len(b.Duration) && b.Duration[i] != nil && *b.Duration[i] > 0 {
+			it.DurationSeconds = *b.Duration[i] / 1000
+		}
+		var place []string
+		if i < len(b.City) && b.City[i] != nil && *b.City[i] != "" {
+			place = append(place, *b.City[i])
+		}
+		if i < len(b.Country) && b.Country[i] != nil && *b.Country[i] != "" {
+			place = append(place, *b.Country[i])
+		}
+		if len(place) > 0 {
+			it.Extra["place"] = strings.Join(place, ", ")
+		}
+		out = append(out, it)
+	}
+	sort.SliceStable(out, func(a, c int) bool { return out[a].Extra["taken"] > out[c].Extra["taken"] })
+	return out, nil
+}

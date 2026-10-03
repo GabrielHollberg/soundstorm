@@ -5573,6 +5573,24 @@ earlier year, 25 years back, in parallel, cached an hour; 29 February only
 asks leap years. Albums are left out for now: the library had none, and
 checking them would have meant creating one on it.
 
+**The Photos pill is a timeline, Google Photos' way** (2026-10-03, the
+owner's asking): every month under its heading and every day within it,
+newest first (`showPhotoTimeline`); each month filled in only as it comes
+within 1200px, so thousands open at once; a handle down the right edge that
+shows while scrolling, the years marked where they begin, and dragging it (or
+a tap on the edge) goes to that place with the month in a bubble beside the
+finger (`tlScrubber`); and pinch to zoom, a step a pinch, 2-12 to a row, kept
+as `soundstorm-photo-columns` (`tlPinch`, the photo under the fingers kept in
+view). The server answers from Immich's own timeline (`source.PhotoTimeline`:
+`GET /api/photos/months`, `GET /api/photos/month?m=2024-01`, over Immich's
+`/api/timeline/buckets` and `/bucket`, a month's photos in columns), each
+person through their own key. Months not yet loaded are guessed at from their
+count, so the handle lands near the month and the page settles as they load.
+Typing in the search box still searches; on a TV the old grid stays. Checked
+against a throwaway Immich 3.2.2 with 304 generated photos over 2019-2026, in
+Chrome at phone size: months and days headed, a drag to the foot showing
+"April 2019" and landing in spring 2019, a pinch from four to three a row.
+
 **Videos and Live photos** are pills in Photos too (the owner's asking,
 2026-10-01): `GET /api/photos/of?type=video|live` (`PhotosOfType`), Immich's
 metadata search with `type: VIDEO`, or `isMotion: true` - which its search

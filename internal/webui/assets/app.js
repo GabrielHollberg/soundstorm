@@ -2395,7 +2395,10 @@ async function runSearch() {
     && !(state.musicView === 'mixes' && state.query);
   show($('music-tabs'), ['music', 'playlists', 'fav-music', 'genres-music'].includes(state.kind));
   markMusicTabs();
-  const bookBrowse = BOOK_BROWSE.has(state.kind);
+  // Photos with nothing typed is the timeline (showPhotoTimeline), laid out
+  // in music-view like the other browse pages.
+  const timeline = state.kind === 'picture' && !query && !TV;
+  const bookBrowse = BOOK_BROWSE.has(state.kind) || timeline;
   show($('music-view'), musicBrowse || bookBrowse);
   show($('playlists-view'), state.kind === 'playlists');
   const home = state.kind === '' && !query;
@@ -2431,6 +2434,11 @@ async function runSearch() {
   }
   if (state.kind === 'favorites' || FAV_KINDS[state.kind]) {
     await showFavorites(seq, FAV_KINDS[state.kind]);
+    return;
+  }
+  if (timeline) {
+    state.hasMore = false;
+    await showPhotoTimeline(seq);
     return;
   }
   if (bookBrowse) {
@@ -20504,4 +20512,252 @@ function tvRemote() {
     enterAt = 0;
     if (!held && !typing(event.target)) event.target.click();
   });
+}
+
+/* ------------------------------------------------------------ the photo timeline */
+
+// Photos the way Google Photos lays them out (the owner's asking): every month
+// under its heading and every day within it, newest first; months filled in
+// as they come near, so a library of thousands opens at once; a handle on the
+// right edge that drags to any month, the month and year showing beside the
+// finger and the years marked down the edge; and pinch to zoom - fewer, bigger
+// photos to a row, or more, smaller ones (kept on the device). The server
+// answers each month from Immich's own timeline (/api/photos/months and
+// /api/photos/month), each person's own photos only. The tiles are the shelf's
+// own cards, so holding selects and the viewer steps through what is loaded.
+const TL = { months: [], loaded: new Map(), io: null, root: null };
+const TL_COLS_KEY = 'soundstorm-photo-columns';
+const tlCols = () => {
+  const kept = Number(localStorage.getItem(TL_COLS_KEY));
+  if (kept >= 2 && kept <= 12) return kept;
+  return innerWidth < 620 ? 4 : Math.max(5, Math.round(innerWidth / 170));
+};
+
+function tlMonthName(month) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+function tlDayName(day) {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// About how tall a month is before its photos arrive: its rows, and a guess
+// at its day headings - close, so the handle lands near the month asked for.
+function tlGuessHeight(count, width) {
+  const cols = tlCols();
+  const tile = width / cols;
+  const days = Math.min(count, Math.ceil(count / 5) + 1);
+  return Math.ceil(count / cols) * tile + days * (tile * 0.35 + 34);
+}
+
+async function showPhotoTimeline(seq) {
+  const view = $('music-view');
+  $('status').textContent = '';
+  const { ok, body } = await api('/api/photos/months');
+  if (seq !== state.searchSeq) return;
+  if (!ok || !body) {
+    view.replaceChildren();
+    $('status').textContent = 'Could not load your photos.';
+    return;
+  }
+  const months = body.months || [];
+  if (TL.io) TL.io.disconnect();
+  TL.months = months;
+  TL.loaded = new Map();
+  state.items = [];
+  if (!months.length) {
+    view.replaceChildren();
+    $('status').textContent = 'No photos yet. Add some from Settings, or turn on this phone\u2019s backup.';
+    return;
+  }
+  const root = document.createElement('div');
+  root.className = 'photo-timeline';
+  root.style.setProperty('--tl-cols', tlCols());
+  TL.root = root;
+  view.replaceChildren(root);
+  const width = root.clientWidth || view.clientWidth || innerWidth;
+  for (const { month, count } of months) {
+    const sec = document.createElement('section');
+    sec.className = 'tl-month';
+    sec.dataset.month = month;
+    const h = document.createElement('h2');
+    h.className = 'tl-month-head';
+    h.textContent = tlMonthName(month);
+    const body = document.createElement('div');
+    body.className = 'tl-body';
+    body.style.height = `${Math.round(tlGuessHeight(count, width))}px`;
+    sec.append(h, body);
+    root.append(sec);
+  }
+  root.append(tlScrubber(root));
+  TL.io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) tlLoad(e.target, seq);
+  }, { rootMargin: '1200px 0px' });
+  for (const sec of root.querySelectorAll('.tl-month')) TL.io.observe(sec);
+  tlPinch(root);
+}
+
+async function tlLoad(sec, seq) {
+  const month = sec.dataset.month;
+  if (TL.loaded.has(month) || sec.dataset.loading) return;
+  sec.dataset.loading = '1';
+  const { ok, body } = await api(`/api/photos/month?${new URLSearchParams({ m: month })}`);
+  if (seq !== state.searchSeq || !sec.isConnected) return;
+  delete sec.dataset.loading;
+  if (!ok || !body) return;
+  const items = body.items || [];
+  TL.loaded.set(month, items);
+  TL.io.unobserve(sec);
+  // Days, newest first, each a heading and a grid.
+  const frag = document.createDocumentFragment();
+  let day = '';
+  let grid = null;
+  for (const it of items) {
+    const d = ((it.extra && it.extra.taken) || '').slice(0, 10);
+    if (d !== day || !grid) {
+      day = d;
+      const h = document.createElement('h3');
+      h.className = 'tl-day-head';
+      h.textContent = d ? tlDayName(d) : '';
+      grid = document.createElement('div');
+      grid.className = 'tl-grid';
+      frag.append(h, grid);
+    }
+    grid.append(renderItem(it));
+  }
+  const tlBody = sec.querySelector('.tl-body');
+  tlBody.style.height = '';
+  tlBody.replaceChildren(frag);
+  // What the viewer steps through: everything loaded, in order.
+  state.items = TL.months.flatMap((m) => TL.loaded.get(m.month) || []);
+  markDownloads();
+  if (TL.root) TL.root.dispatchEvent(new Event('tl-layout'));
+}
+
+// The handle down the right edge: the years marked where they begin, a thumb
+// showing where the page is, and dragging it - or a tap anywhere on the edge -
+// goes there, the month showing in a bubble beside the finger. It shows while
+// the page scrolls and fades a moment after.
+function tlScrubber(root) {
+  const bar = document.createElement('div');
+  bar.className = 'tl-scrub';
+  const thumb = document.createElement('div');
+  thumb.className = 'tl-thumb';
+  const bubble = document.createElement('div');
+  bubble.className = 'tl-bubble';
+  const years = document.createElement('div');
+  years.className = 'tl-years';
+  bar.append(years, thumb, bubble);
+  let dragging = false;
+  let fade = 0;
+  const range = () => Math.max(1, document.documentElement.scrollHeight - innerHeight);
+  const rootTop = () => root.getBoundingClientRect().top + scrollY;
+  const monthAt = (y) => {
+    let found = null;
+    for (const sec of root.querySelectorAll('.tl-month')) {
+      if (sec.getBoundingClientRect().top + scrollY - 120 <= y) found = sec; else break;
+    }
+    return found || root.querySelector('.tl-month');
+  };
+  const place = () => {
+    if (!bar.isConnected) return;
+    const h = bar.clientHeight;
+    const share = Math.min(1, Math.max(0, (scrollY - rootTop() + 80) / Math.max(1, range() - rootTop() + 80)));
+    thumb.style.transform = `translateY(${Math.round(share * (h - thumb.offsetHeight))}px)`;
+  };
+  const marks = () => {
+    if (!bar.isConnected) return;
+    const h = bar.clientHeight;
+    const top = rootTop();
+    const span = Math.max(1, range() - top + 80);
+    years.replaceChildren();
+    let last = '';
+    let lastY = -100;
+    for (const sec of root.querySelectorAll('.tl-month')) {
+      const year = sec.dataset.month.slice(0, 4);
+      if (year === last) continue;
+      last = year;
+      const y = Math.round(((sec.getBoundingClientRect().top + scrollY - top) / span) * h);
+      if (y - lastY < 22) continue; // labels kept apart
+      lastY = y;
+      const label = document.createElement('span');
+      label.textContent = year;
+      label.style.top = `${y}px`;
+      years.append(label);
+    }
+  };
+  const wake = () => {
+    bar.classList.add('shown');
+    clearTimeout(fade);
+    if (!dragging) fade = setTimeout(() => bar.classList.remove('shown'), 1500);
+  };
+  const go = (clientY) => {
+    const r = bar.getBoundingClientRect();
+    const share = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    const top = rootTop();
+    const target = top - 80 + share * Math.max(1, range() - top + 80);
+    scrollTo(0, target);
+    const sec = monthAt(target + 1);
+    bubble.textContent = sec ? tlMonthName(sec.dataset.month) : '';
+    bubble.style.top = `${Math.round(clientY - r.top)}px`;
+    place();
+  };
+  bar.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    bar.classList.add('dragging');
+    bar.setPointerCapture(event.pointerId);
+    wake();
+    go(event.clientY);
+    event.preventDefault();
+  });
+  bar.addEventListener('pointermove', (event) => { if (dragging) go(event.clientY); });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    bar.classList.remove('dragging');
+    wake();
+  };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+  const onScroll = () => {
+    if (!bar.isConnected) { removeEventListener('scroll', onScroll); return; }
+    place();
+    wake();
+  };
+  addEventListener('scroll', onScroll, { passive: true });
+  root.addEventListener('tl-layout', () => { marks(); place(); });
+  requestAnimationFrame(() => { marks(); place(); });
+  return bar;
+}
+
+// Pinch to zoom: spreading two fingers makes the photos bigger (fewer to a
+// row), pinching smaller (more), one step per pinch, kept on the device.
+function tlPinch(root) {
+  let start = 0;
+  let done = false;
+  const gap = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  root.addEventListener('touchstart', (event) => {
+    if (event.touches.length === 2) { start = gap(event.touches); done = false; }
+  }, { passive: true });
+  root.addEventListener('touchmove', (event) => {
+    if (event.touches.length !== 2 || !start) return;
+    event.preventDefault();
+    if (done) return;
+    const ratio = gap(event.touches) / start;
+    if (ratio > 1.3 || ratio < 0.77) {
+      done = true;
+      const cols = Math.min(12, Math.max(2, tlCols() + (ratio > 1 ? -1 : 1)));
+      // The photo under the fingers stays in view.
+      const anchor = document.elementFromPoint((event.touches[0].clientX + event.touches[1].clientX) / 2,
+        (event.touches[0].clientY + event.touches[1].clientY) / 2);
+      const before = anchor && anchor.getBoundingClientRect().top;
+      localStorage.setItem(TL_COLS_KEY, String(cols));
+      root.style.setProperty('--tl-cols', cols);
+      if (anchor && anchor.isConnected) scrollBy(0, anchor.getBoundingClientRect().top - before);
+      root.dispatchEvent(new Event('tl-layout'));
+    }
+  }, { passive: false });
+  root.addEventListener('touchend', (event) => { if (event.touches.length < 2) start = 0; });
 }

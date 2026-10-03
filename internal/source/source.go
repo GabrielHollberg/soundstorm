@@ -803,3 +803,19 @@ type ShowBrowser interface {
 	// NextEpisode is the episode after this one, if there is one.
 	NextEpisode(ctx context.Context, episodeID string) (media.Item, bool, error)
 }
+
+// PhotoMonth is one month of a photo library and how many it holds.
+type PhotoMonth struct {
+	Month string `json:"month"` // "2024-01"
+	Count int    `json:"count"`
+}
+
+// PhotoTimeline is an optional interface for a photo source that can lay its
+// photos out by month - what a timeline needs to jump to any month at once,
+// as Google Photos does, rather than scrolling page after page to get there.
+type PhotoTimeline interface {
+	// PhotoMonths is every month with photos, newest first.
+	PhotoMonths(ctx context.Context) ([]PhotoMonth, error)
+	// MonthPhotos is one month's photos, newest first.
+	MonthPhotos(ctx context.Context, month string) ([]media.Item, error)
+}

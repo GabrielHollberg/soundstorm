@@ -4296,3 +4296,43 @@ html, body { overscroll-behavior-y: none; }
 .reader-free-bar .reader-free-play { background: #fff; color: #14181f; font-size: 14px; }
 .reader-free-speed { min-width: 9.5em; padding: 0 4px; text-align: center; font-size: 14px; font-weight: 600; color: #dfe3ea; white-space: nowrap; }
 .reader-line.free .reader-line-hint { bottom: 80px; }
+
+/* The photo timeline: month and day headings over tight square grids, a
+   handle down the right edge, pinch to zoom (--tl-cols). */
+.photo-timeline { padding: 0 2px 40px; touch-action: pan-y; }
+.tl-month-head { margin: 22px 12px 6px; font-size: 20px; font-weight: 700; }
+.tl-day-head { margin: 12px 12px 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.tl-grid { display: grid; grid-template-columns: repeat(var(--tl-cols, 4), minmax(0, 1fr)); gap: 2px; }
+.tl-grid .item-holder { min-width: 0; }
+.tl-grid .item { padding: 0; border-radius: 0; background: none; }
+.tl-grid .art-wrap { aspect-ratio: 1; border-radius: 0; margin: 0; }
+.tl-grid .art-wrap img { width: 100%; height: 100%; object-fit: cover; border-radius: 0; }
+.tl-grid .meta, .tl-grid .item-more { display: none; }
+.tl-scrub {
+  position: fixed; z-index: 12; right: 0; width: 46px;
+  top: calc(var(--header-h, 120px) + 60px); bottom: calc(var(--tabbar, 0px) + 24px);
+  opacity: 0; transition: opacity 0.3s; touch-action: none; cursor: grab;
+}
+.tl-scrub.shown, .tl-scrub.dragging { opacity: 1; }
+.tl-thumb {
+  position: absolute; right: 6px; top: 0; width: 34px; height: 46px; border-radius: 23px 6px 6px 23px;
+  background: var(--surface-2); border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.tl-thumb::after {
+  content: ''; position: absolute; left: 11px; top: 15px; width: 12px; height: 16px;
+  border-top: 2px solid #dfe3ea; border-bottom: 2px solid #dfe3ea;
+}
+.tl-years span {
+  position: absolute; right: 48px; transform: translateY(-50%);
+  padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: rgba(20, 24, 31, 0.85); color: #dfe3ea; white-space: nowrap; pointer-events: none;
+}
+.tl-scrub:not(.dragging) .tl-years { opacity: 0.85; }
+.tl-bubble {
+  position: absolute; right: 52px; transform: translateY(-50%); display: none;
+  padding: 8px 14px; border-radius: 999px; font-size: 15px; font-weight: 700;
+  background: var(--accent); color: #fff; white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.tl-scrub.dragging .tl-bubble { display: block; }
+.tl-scrub.dragging .tl-years { opacity: 0; }

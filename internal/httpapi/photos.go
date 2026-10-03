@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -213,4 +214,59 @@ func (s *Server) handleOnThisDay(w http.ResponseWriter, r *http.Request) {
 func (s *Server) photosError(w http.ResponseWriter, err error) {
 	s.log.Warn("photos", "err", err)
 	writeError(w, http.StatusBadGateway, "the photo library did not answer")
+}
+
+var photoMonthRE = regexp.MustCompile(`^[12][0-9]{3}-(0[1-9]|1[0-2])$`)
+
+// photoTimeline is the picture source as a timeline, when it can be one.
+func (s *Server) photoTimeline(ctx context.Context) (source.PhotoTimeline, bool) {
+	b, _, ok := s.photoBrowser(ctx)
+	if !ok {
+		return nil, false
+	}
+	t, ok := b.(source.PhotoTimeline)
+	return t, ok
+}
+
+// GET /api/photos/months: every month of the asker's photos and how many,
+// newest first - the timeline's outline and its scroll handle's years.
+func (s *Server) handlePhotoMonths(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), photosDeadline)
+	defer cancel()
+	t, ok := s.photoTimeline(ctx)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"months": []any{}})
+		return
+	}
+	months, err := t.PhotoMonths(ctx)
+	if err != nil {
+		s.photosError(w, err)
+		return
+	}
+	if months == nil {
+		months = []source.PhotoMonth{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"months": months})
+}
+
+// GET /api/photos/month?m=2024-01: that month's photos, newest first.
+func (s *Server) handlePhotoMonth(w http.ResponseWriter, r *http.Request) {
+	m := r.URL.Query().Get("m")
+	if !photoMonthRE.MatchString(m) {
+		writeError(w, http.StatusBadRequest, "expected m=YYYY-MM")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), photosDeadline)
+	defer cancel()
+	t, ok := s.photoTimeline(ctx)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		return
+	}
+	items, err := t.MonthPhotos(ctx, m)
+	if err != nil {
+		s.photosError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNil(items)})
 }

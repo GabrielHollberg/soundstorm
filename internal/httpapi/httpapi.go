@@ -501,6 +501,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/photos/places", s.handlePlaces)
 	guarded.HandleFunc("GET /api/photos/on-this-day", s.handleOnThisDay)
 	guarded.HandleFunc("GET /api/photos/of", s.handlePhotosOfType)
+	guarded.HandleFunc("GET /api/photos/months", s.handlePhotoMonths)
+	guarded.HandleFunc("GET /api/photos/month", s.handlePhotoMonth)
 	// Everyone's own photos: their space, and their phone's backup.
 	guarded.HandleFunc("GET /api/photos/usage", s.handlePhotoUsage)
 	guarded.HandleFunc("POST /api/photos/backup/check", s.handleBackupCheck)
