@@ -97,3 +97,84 @@ extension Theme {
     /// The page's margin between the side bar and what is on it.
     static let page: CGFloat = 40
 }
+
+/// The page's buttons: the main one filled with the accent and dark text,
+/// the rest dark with a thin border and grey text; a white ring on focus.
+struct WebButton: ButtonStyle {
+    var primary = false
+    var wide = true
+
+    func makeBody(configuration: Configuration) -> some View {
+        WebButtonBody(primary: primary, wide: wide, pressed: configuration.isPressed) { configuration.label }
+    }
+}
+
+private struct WebButtonBody<Label: View>: View {
+    let primary: Bool
+    let wide: Bool
+    let pressed: Bool
+    @ViewBuilder let label: Label
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        label
+            .font(.system(size: 32, weight: .semibold))
+            .foregroundStyle(primary ? Color(red: 11 / 255, green: 13 / 255, blue: 16 / 255) : Theme.text.opacity(0.85))
+            .lineLimit(1)
+            .padding(.horizontal, 34)
+            .frame(maxWidth: wide ? .infinity : nil, minHeight: 84)
+            .background(RoundedRectangle(cornerRadius: 16).fill(primary ? Theme.accent : Theme.surface2))
+            .overlay {
+                if !primary { RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.border, lineWidth: 2) }
+            }
+            .ring(radius: 22, width: 6, inset: -6)
+            .opacity(enabled ? (pressed ? 0.85 : 1) : 0.5)
+    }
+}
+
+/// A text box with its name above, as the page has it. The box itself is
+/// tvOS's own (grey, white while the remote is on it): a TextField on tvOS
+/// always draws its own platter, and one drawn inside a second box looked
+/// broken.
+struct WebField: View {
+    let label: String
+    @Binding var text: String
+    var secure = false
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(label)
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(Theme.muted)
+            Group {
+                if secure { SecureField("", text: $text) } else { TextField("", text: $text) }
+            }
+            .onSubmit(onSubmit)
+        }
+    }
+}
+
+/// The page's sign-in card: a dark panel with a thin border, centred on black.
+struct Panel: ViewModifier {
+    var width: CGFloat = 760
+    var centred = false
+
+    func body(content: Content) -> some View {
+        content
+            .multilineTextAlignment(centred ? .center : .leading)
+            .frame(width: width - 100, alignment: centred ? .center : .leading)
+            .padding(50)
+            .background(RoundedRectangle(cornerRadius: 20).fill(Theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Theme.border, lineWidth: 2))
+            .buttonStyle(WebButton())
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bg.ignoresSafeArea())
+    }
+}
+
+extension View {
+    func panel(width: CGFloat = 760, centred: Bool = false) -> some View { modifier(Panel(width: width, centred: centred)) }
+    /// Grey explaining text, the page's `.muted`.
+    func muted() -> some View { font(.system(size: 30)).foregroundStyle(Theme.muted) }
+}

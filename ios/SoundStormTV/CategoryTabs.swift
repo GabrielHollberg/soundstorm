@@ -435,7 +435,11 @@ struct ItemCard: View {
 
 struct Nothing: View {
     var body: some View {
-        Text("Nothing here yet.").foregroundStyle(.secondary).padding(40)
+        Text("Nothing on this shelf yet.")
+            .muted()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.page)
+            .padding(.vertical, 30)
     }
 }
 

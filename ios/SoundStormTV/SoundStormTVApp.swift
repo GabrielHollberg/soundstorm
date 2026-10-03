@@ -362,9 +362,16 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        Group { stage }
+            .background(Theme.bg.ignoresSafeArea())
+            .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var stage: some View {
         switch model.stage {
         case .checking:
-            ProgressView()
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unreachable(let host):
             UnreachableView(host: host)
         case .connect:

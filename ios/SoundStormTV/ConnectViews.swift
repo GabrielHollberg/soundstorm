@@ -16,14 +16,15 @@ struct ConnectView: View {
     @State private var searched = false
 
     var body: some View {
-        VStack(spacing: 40) {
-            Logo()
+        VStack(alignment: .leading, spacing: 34) {
+            WordMark(size: 64)
             // Found on the network: one press, nothing to type - the way
             // somebody who just plugged the server in gets started.
             if !nearby.isEmpty {
-                VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 20) {
                     Text(nearby.count == 1 ? "We found \(nearby[0].label) on your network" : "We found SoundStorm on your network - which one?")
-                        .font(.title3.bold())
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundStyle(Theme.text)
                     ForEach(nearby) { found in
                         Button {
                             if found.setUp {
@@ -36,32 +37,32 @@ struct ConnectView: View {
                             VStack {
                                 Text(nearby.count == 1 ? (found.setUp ? "Use it" : "Not set up yet") : found.label)
                                 if nearby.count > 1 && !found.setUp {
-                                    Text("Not set up yet").font(.caption).foregroundStyle(.secondary)
+                                    Text("Not set up yet").font(.system(size: 24)).foregroundStyle(Theme.muted)
                                 }
                             }
-                            .frame(width: 600)
                         }
+                        .buttonStyle(WebButton(primary: found.setUp))
                     }
                     if nearby.count == 1 && !nearby[0].setUp {
                         Text("Set it up with the SoundStorm app on your phone first.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 26))
+                            .foregroundStyle(Theme.muted)
                     }
                 }
             } else if searched && list.isEmpty {
                 // Why nothing was found, and that it keeps looking.
                 Text(ServerDiscovery.nothingFound(tv: true))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 1100)
+                    .muted()
+                    .fixedSize(horizontal: false, vertical: true)
             } else if !searched && list.isEmpty {
                 HStack(spacing: 16) {
                     ProgressView()
-                    Text("Looking for SoundStorm on your network…").foregroundStyle(.secondary)
+                    Text("Looking for SoundStorm on your network…").muted()
                 }
             }
             if !list.isEmpty {
-                VStack(spacing: 16) {
-                    Text("Your servers").font(.headline)
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Your servers").font(.system(size: 36, weight: .bold)).foregroundStyle(Theme.text)
                     ForEach(list) { server in
                         Button {
                             model.use(server.url)
@@ -71,16 +72,16 @@ struct ConnectView: View {
                                     Text(server.name)
                                     if server.name != (server.url.host() ?? "") {
                                         Text(server.url.host() ?? server.url.absoluteString)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 24))
+                                            .foregroundStyle(Theme.muted)
                                     }
                                 }
                                 Spacer()
                                 if server.url == ServerAddress.saved {
-                                    Image(systemName: "checkmark")
+                                    Image(systemName: "checkmark").foregroundStyle(Theme.accent)
                                 }
                             }
-                            .frame(width: 800)
+                            .padding(.vertical, 12)
                         }
                         .contextMenu {
                             Button("Rename") {
@@ -98,22 +99,21 @@ struct ConnectView: View {
             Text(list.isEmpty && nearby.isEmpty
                  ? "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
                  : list.isEmpty ? "Or type its address, or just the code at its start." : "Or add another - its address, or just the code at its start.")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            TextField("abc123.home.soundstorm.dev", text: $address)
+                .muted()
+                .fixedSize(horizontal: false, vertical: true)
+            WebField(label: "Server address", text: $address, onSubmit: connect)
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-                .frame(width: 900)
-                .onSubmit(connect)
             Button(checking ? "Connecting…" : "Connect", action: connect)
+                .buttonStyle(WebButton(primary: nearby.isEmpty && list.isEmpty))
                 .disabled(checking)
             if let message {
-                Text(message).foregroundStyle(.red).frame(width: 900)
+                Text(message).font(.system(size: 28)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .multilineTextAlignment(.center)
+        .panel(width: 1100)
         // Looked for at once, and again while nothing is found: the server
         // may still be starting, or the TV just joined the network.
         .task {
@@ -170,44 +170,44 @@ struct SignInView: View {
     @State private var linking = false
 
     var body: some View {
-        VStack(spacing: 40) {
-            Logo()
+        VStack(alignment: .leading, spacing: 34) {
+            WordMark(size: 64)
             if let waiting {
                 waitingView(waiting)
             } else if linking {
                 LinkView(done: { linking = false })
             } else if hasAccount {
-                if let name = ServerAddress.all.first(where: { $0.url == model.api?.server })?.name {
-                    Text("Sign in to \(name)").font(.title3.bold())
-                }
-                // The easy way first: no typing with a remote.
-                Button("Sign in with your phone") { linking = true }
-                TextField("Username", text: $username)
+                let name = ServerAddress.all.first(where: { $0.url == model.api?.server })?.name ?? "SoundStorm"
+                Text("Sign in to \(name).").muted()
+                WebField(label: "Username", text: $username)
                     .textContentType(.username)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                    .frame(width: 700)
-                SecureField("Password", text: $password)
+                WebField(label: "Password", text: $password, secure: true, onSubmit: signIn)
                     .textContentType(.password)
-                    .frame(width: 700)
-                    .onSubmit(signIn)
-                Button(busy ? "Signing in…" : "Sign in", action: signIn)
-                    .disabled(busy || username.isEmpty || password.isEmpty)
+                VStack(spacing: 20) {
+                    Button(busy ? "Signing in…" : "Sign in", action: signIn)
+                        .buttonStyle(WebButton(primary: true))
+                        .disabled(busy || username.isEmpty || password.isEmpty)
+                    // No typing with a remote: a phone signs the TV in.
+                    Button("Sign in with your phone") { linking = true }
+                }
+                .padding(.top, 16)
             } else {
                 // Creating the owner needs the setup code, which is on the
                 // computer SoundStorm runs on: easier there than on a TV.
                 Text("This SoundStorm isn't set up yet. Set it up with the SoundStorm app on your phone, then sign in here.")
-                    .frame(width: 900)
+                    .muted()
+                    .fixedSize(horizontal: false, vertical: true)
                 Button("Try again") { Task { await model.refreshSession() } }
+                    .buttonStyle(WebButton(primary: true))
             }
             if let message {
-                Text(message).foregroundStyle(.red).frame(width: 900)
+                Text(message).font(.system(size: 28)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
             Button("Change server") { model.changeServer() }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
         }
-        .multilineTextAlignment(.center)
+        .panel(width: linking || waiting != nil ? 1200 : 760)
         .onAppear {
             if model.phoneFirst {
                 model.phoneFirst = false
@@ -256,19 +256,17 @@ struct SignInView: View {
     @ViewBuilder
     private func waitingView(_ w: (id: String, codeAllowed: Bool)) -> some View {
         Text("Waiting for approval")
-            .font(.title2.bold())
+            .font(.system(size: 44, weight: .bold))
         Text("This Apple TV hasn't signed in to this account before. Approve it on a phone or computer that is already signed in, or ask whoever looks after the server.")
+            .muted()
             .fixedSize(horizontal: false, vertical: true)
-            .frame(width: 1100)
         if w.codeAllowed {
             Text("Nothing else signed in? The setup code from the server's .env file approves it too.")
-                .foregroundStyle(.secondary)
+                .muted()
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 1100)
-            TextField("Setup code", text: $setupCode)
+            WebField(label: "Setup code", text: $setupCode)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-                .frame(width: 700)
             Button("Approve with the code") {
                 Task { await ask(w.id, code: setupCode) }
             }
@@ -324,30 +322,26 @@ struct RenewPasswordView: View {
     @State private var message: String?
 
     var body: some View {
-        VStack(spacing: 36) {
-            Logo()
-            Text("Please choose a new password to carry on.")
-                .font(.title3)
-            SecureField("Your current password", text: $current)
+        VStack(alignment: .leading, spacing: 34) {
+            WordMark(size: 64)
+            Text("Please choose a new password to carry on.").muted()
+            WebField(label: "Your current password", text: $current, secure: true)
                 .textContentType(.password)
-                .frame(width: 700)
-            SecureField("New password", text: $new)
+            WebField(label: "New password", text: $new, secure: true, onSubmit: save)
                 .textContentType(.newPassword)
-                .frame(width: 700)
-                .onSubmit(save)
             Text("At least 12 characters, and not a common one. A few unrelated words make a good password.")
-                .foregroundStyle(.secondary)
-                .frame(width: 1000)
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
             if let message {
-                Text(message).foregroundStyle(.red).frame(width: 1000)
+                Text(message).font(.system(size: 28)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
             Button(busy ? "Saving…" : "Save and carry on", action: save)
+                .buttonStyle(WebButton(primary: true))
                 .disabled(busy || current.isEmpty || new.count < 12)
             Button("Sign out") { Task { await model.signOut() } }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
         }
-        .multilineTextAlignment(.center)
+        .panel()
         #if DEBUG
         // For the simulator, which cannot type: -password <old> -newPassword <new>
         .task {
@@ -423,8 +417,8 @@ struct LinkView: View {
     var body: some View {
         VStack(spacing: 30) {
             Text("On a phone signed in to SoundStorm, scan this - or open SoundStorm on it and enter the code under Settings, Sign in a TV.")
+                .muted()
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 1100)
             if let link, let api = model.api {
                 SafeImage(url: api.linkQR(link.id), maxPixels: 1000) { image in
                     image.interpolation(.none).resizable().scaledToFit()
@@ -440,10 +434,11 @@ struct LinkView: View {
                 ProgressView()
             }
             if let message {
-                Text(message).foregroundStyle(.red).frame(width: 900)
+                Text(message).font(.system(size: 28)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
             Button("Use a password instead", action: done)
         }
+        .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
         .task { await run() }
     }
@@ -493,25 +488,30 @@ struct ProfilesView: View {
     @State private var message: String?
 
     var body: some View {
-        VStack(spacing: 50) {
-            Logo()
-            Text("Who's listening?").font(.title2.bold())
+        VStack(spacing: 40) {
+            WordMark(size: 64)
+            Text("Who's listening?").font(.system(size: 44, weight: .bold)).foregroundStyle(Theme.text)
             if let picked {
-                VStack(spacing: 30) {
+                // On a TV the page puts the person beside the form.
+                HStack(alignment: .center, spacing: 70) {
                     tile(picked).disabled(true)
-                    SecureField(picked.needs == "pin" ? "\(picked.name)'s PIN" : "\(picked.name)'s password", text: $secret)
+                    VStack(alignment: .leading, spacing: 24) {
+                    WebField(label: picked.needs == "pin" ? "\(picked.name)'s PIN" : "\(picked.name)'s password",
+                             text: $secret, secure: true, onSubmit: { go(picked) })
                         .keyboardType(picked.needs == "pin" ? .numberPad : .default)
-                        .frame(width: 600)
-                        .onSubmit { go(picked) }
+                        .multilineTextAlignment(.leading)
                     if let message {
-                        Text(message).foregroundStyle(.red)
+                        Text(message).font(.system(size: 28)).foregroundStyle(.red)
                     }
                     Button(busy ? "Switching…" : "Continue") { go(picked) }
+                        .buttonStyle(WebButton(primary: true))
                         .disabled(busy || secret.isEmpty)
                     // Typing with the remote is the chore: a phone signed in
                     // can sign the TV in instead (the page's #profiles-phone).
                     Button("Use your phone instead") { Task { await model.signInWithPhone() } }
                     Button("Back") { self.picked = nil; secret = ""; message = nil }
+                    }
+                    .frame(width: 700)
                 }
             } else {
                 HStack(spacing: 60) {
@@ -521,16 +521,19 @@ struct ProfilesView: View {
                     }
                 }
                 if let message {
-                    Text(message).foregroundStyle(.red)
+                    Text(message).font(.system(size: 28)).foregroundStyle(.red)
                 }
-                Button("Someone else") { Task { await model.signInSomeoneElse() } }
-                // Opened from Settings: Back keeps the person signed in.
-                if canGoBack {
-                    Button("Back") { model.cancelSwitch() }
+                VStack(spacing: 20) {
+                    Button("Someone else") { Task { await model.signInSomeoneElse() } }
+                    // Opened from Settings: Back keeps the person signed in.
+                    if canGoBack {
+                        Button("Back") { model.cancelSwitch() }
+                    }
                 }
+                .frame(width: 600)
             }
         }
-        .multilineTextAlignment(.center)
+        .panel(width: picked != nil ? 1200 : max(760, CGFloat(people.count) * 260 + 160), centred: true)
         #if DEBUG
         // For the simulator, which cannot press: -profile <name> -profileSecret <pin or password>
         .task {
@@ -551,9 +554,11 @@ struct ProfilesView: View {
             Avatar(name: person.name, picture: person.picture, size: 180)
                 .ring(radius: 98, width: 8, inset: -8)
             Text(person.name)
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(Theme.text)
             Text(person.needs == "pin" ? "PIN" : person.needs == "password" ? "Password" : " ")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 24))
+                .foregroundStyle(Theme.muted)
         }
     }
 
@@ -661,18 +666,19 @@ struct UnreachableView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 40) {
-            Logo()
+        VStack(alignment: .leading, spacing: 34) {
+            WordMark(size: 64)
             Text("Can't reach \(host)")
-                .font(.title2.bold())
+                .font(.system(size: 44, weight: .bold))
+                .foregroundStyle(Theme.text)
             Text("Is the computer SoundStorm runs on switched on, and this TV on a network that reaches it? Trying again by itself.")
-                .foregroundStyle(.secondary)
+                .muted()
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 1100)
             Button("Try again") { Task { await model.refreshSession() } }
+                .buttonStyle(WebButton(primary: true))
             Button("Change server") { model.changeServer() }
         }
-        .multilineTextAlignment(.center)
+        .panel(width: 1000)
         .task {
             while true {
                 try? await Task.sleep(for: .seconds(10))

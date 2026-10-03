@@ -378,16 +378,51 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(API.self) private var api
 
+    /// The page's Settings, as much of it as a TV has: the heading, who is
+    /// signed in, and a card for this TV.
     var body: some View {
-        VStack(spacing: 40) {
-            Text(api.user.map { "Signed in as \($0.name)" } ?? "")
-            Text(api.server.host() ?? "").foregroundStyle(.secondary)
-            Button("Switch person") { Task { await model.showProfiles() } }
-            Button("Change server") { model.changeServer() }
-            // Signing out takes this person off the TV; Switch person keeps
-            // everybody on it.
-            Button("Sign out") { Task { await model.signOut() } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Settings")
+                    .font(.system(size: 52, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                if let user = api.user {
+                    Text("Signed in as \(user.name)\(user.owner == true ? ", the owner of this server" : "").")
+                        .muted()
+                }
+                VStack(alignment: .leading, spacing: 24) {
+                    Text("On this TV")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text(ServerAddress.all.first(where: { $0.url == api.server })?.name ?? (api.server.host() ?? ""))
+                        .muted()
+                    HStack(spacing: 20) {
+                        Button("Switch person") { Task { await model.showProfiles() } }
+                            .buttonStyle(WebButton(primary: true, wide: false))
+                            .pageStartsHere()
+                        Button("Change server") { model.changeServer() }
+                            .buttonStyle(WebButton(wide: false))
+                        // Signing out takes this person off the TV; Switch
+                        // person keeps everybody on it.
+                        Button("Sign out") { Task { await model.signOut() } }
+                            .buttonStyle(WebButton(wide: false))
+                    }
+                    Text("Switch person keeps everybody on this TV. Sign out takes you off it.")
+                        .font(.system(size: 26))
+                        .foregroundStyle(Theme.muted)
+                }
+                .padding(50)
+                .frame(maxWidth: 1440, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 20).fill(Theme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Theme.border, lineWidth: 2))
+                .padding(.top, 24)
+                .focusSection()
+            }
+            .padding(.horizontal, 156)
+            .padding(.top, 30)
+            .padding(.bottom, 60)
         }
+        .scrollClipDisabled()
     }
 }
 
@@ -628,7 +663,7 @@ struct BooksView: View {
     var body: some View {
         ScrollView {
             if loaded && books.isEmpty {
-                Text("No audiobooks yet.").foregroundStyle(.secondary).padding(40)
+                Nothing()
             }
             LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(books, id: \.key) { book in
