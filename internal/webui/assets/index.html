@@ -959,7 +959,8 @@
            voice, the sentence being read lit (reader.js, a double tap). -->
       <div id="reader-line" class="reader-line hidden" aria-live="off">
         <div class="reader-line-track"></div>
-        <p class="reader-line-hint">Double tap for pages</p>
+        <div class="reader-word"><span class="reader-word-prev"></span><span class="reader-word-now"></span><span class="reader-word-next"></span></div>
+        <p class="reader-line-hint"></p>
       </div>
       <!-- PDFs go to the browser's own viewer. foliate-js cannot lay them out
            without pdf.js, and every browser already ships something better

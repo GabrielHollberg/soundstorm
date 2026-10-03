@@ -6121,6 +6121,16 @@ size on a made book: a finger's double tap into the line, the lit sentence
 moving with the voice into chapter two and to the book's last sentence, a
 double tap back to the pages. **For the Mac:** the Apple TV's reader could
 offer the same as a look (its timeline and sentence text are already there).
+**And a word at a time** (`drawWord`), the third view the double tap goes
+round to (pages, line, word, pages), tried after the owner found the moving
+line tricky to read - moving text gives the eye nothing still to land on.
+Nothing moves: the word being said large and bright in the middle, the one
+before and after faint either side. The timeline knows only sentences, so the
+word is the voice's share of the sentence's time, words weighted by their
+letters plus two; between sentences the last word holds. Checked on a made
+book in Chrome at phone size: the words stepped with the voice about every
+0.2s ("He had a kettle, a chair and a window..."), held through the pause,
+and a double tap went on to the pages.
 
 The reader's **Highlight** button, shown only while reading along, turns
 the lit sentence off and on; off, the page still turns with the voice. The

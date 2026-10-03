@@ -428,7 +428,8 @@ function startFollowing(view, timeline, audiobook) {
   };
   view.addEventListener('relocate', follow.onRelocate);
   follow.timer = setInterval(() => tick(follow), FOLLOW_EVERY_MS);
-  if (localStorage.getItem(LINE_KEY) === 'line') startLine(follow);
+  const chosen = localStorage.getItem(LINE_KEY);
+  if (chosen === 'line' || chosen === 'word') startLine(follow, chosen);
   // The first page shown is wherever the voice is, not the saved place.
   follow.handsOffUntil = 0;
   keepAwake(true);
@@ -762,23 +763,28 @@ const LINE_AFTER = 14;
 const LINE_AT = 0.5; // where on the screen the voice is: the middle, the brightest
 const line = { follow: null, raf: 0, texts: new Map(), docs: new Map(), first: -1, last: -1, spans: [], loading: false, lit: null };
 
+// A double tap goes round the three: the pages, the moving line, and a word
+// at a time.
 function toggleLine() {
   const follow = session.follow;
   if (!follow) return;
-  if (line.follow) {
+  const next = !line.follow ? 'line' : line.mode === 'line' ? 'word' : 'pages';
+  localStorage.setItem(LINE_KEY, next);
+  if (next === 'pages') {
     stopLine();
-    localStorage.setItem(LINE_KEY, 'pages');
     follow.index = -1; // turn to the sentence being read at once
     follow.handsOffUntil = 0;
   } else {
-    localStorage.setItem(LINE_KEY, 'line');
-    startLine(follow);
+    startLine(follow, next);
   }
 }
 
-function startLine(follow) {
+function startLine(follow, mode = 'line') {
   stopLine();
   line.follow = follow;
+  line.mode = mode;
+  line.shown = '';
+  line.words = new Map();
   line.texts = new Map();
   line.docs = new Map();
   line.first = line.last = -1;
@@ -787,14 +793,18 @@ function startLine(follow) {
   line.clock = null;
   const box = $('reader-line');
   box.querySelector('.reader-line-track').replaceChildren();
+  box.querySelectorAll('.reader-word span').forEach((s) => { s.textContent = ''; });
+  box.classList.toggle('word-mode', mode === 'word');
   box.classList.remove('hidden');
   const hint = box.querySelector('.reader-line-hint');
+  hint.textContent = mode === 'word' ? 'Double tap for pages' : 'Double tap for a word at a time';
   hint.classList.remove('gone');
   clearTimeout(line.hintTimer);
   line.hintTimer = setTimeout(() => hint.classList.add('gone'), 3000);
   const frame = () => {
     if (line.follow !== follow) return;
-    drawLine(follow);
+    if (line.mode === 'word') drawWord(follow);
+    else drawLine(follow);
     line.raf = requestAnimationFrame(frame);
   };
   line.raf = requestAnimationFrame(frame);
@@ -966,3 +976,62 @@ function onDoubleTap(target, action) {
   });
 }
 onDoubleTap($('reader-line'), toggleLine);
+
+/* ------------------------------------------------- read along a word at a time */
+
+// The third way (the owner chose it to try, after the moving line proved
+// tricky to read): nothing moves. The word being said stands large and
+// bright in the middle, the one before and the one after faint either side.
+// The timeline knows only when each sentence starts and ends, so the word is
+// where the voice is through the sentence's time, words weighted by their
+// letters (and a little each, for the gap between them); between sentences
+// the last word holds.
+function sentenceWords(i) {
+  const text = line.texts.get(i);
+  if (text === undefined) return null;
+  if (!line.words) line.words = new Map();
+  if (!line.words.has(i)) line.words.set(i, text ? text.split(' ') : []);
+  return line.words.get(i);
+}
+
+function drawWord(follow) {
+  const t = lineClock(follow);
+  if (t === null) return;
+  const tl = follow.timeline;
+  let i = sentenceAt(tl, t);
+  let share = 0;
+  if (i < 0) i = 0;
+  else {
+    const m = tl[i];
+    const end = m.e > m.t ? m.e : (tl[i + 1] ? tl[i + 1].t : m.t + 3);
+    share = Math.min(1, Math.max(0, (t - m.t) / Math.max(0.1, end - m.t)));
+  }
+  // The sentence, the one before and the two after, read ahead.
+  for (const k of [i, i + 1, i - 1, i + 2]) {
+    if (k >= 0 && k < tl.length && !line.texts.has(k) && !line.asking?.has(k)) {
+      (line.asking ||= new Set()).add(k);
+      lineText(follow, k).finally(() => line.asking.delete(k));
+    }
+  }
+  const words = sentenceWords(i);
+  if (!words) return;
+  let k = 0;
+  if (words.length) {
+    const weight = (w) => w.length + 2;
+    const total = words.reduce((n, w) => n + weight(w), 0);
+    let want = share * total;
+    for (k = 0; k < words.length - 1; k++) {
+      want -= weight(words[k]);
+      if (want < 0) break;
+    }
+  }
+  const key = `${i}:${k}`;
+  if (key === line.shown) return;
+  line.shown = key;
+  const before = sentenceWords(i - 1) || [];
+  const after = sentenceWords(i + 1) || [];
+  const box = $('reader-line');
+  box.querySelector('.reader-word-now').textContent = words[k] || '';
+  box.querySelector('.reader-word-prev').textContent = k > 0 ? words[k - 1] : (before[before.length - 1] || '');
+  box.querySelector('.reader-word-next').textContent = k < words.length - 1 ? words[k + 1] : (after[0] || '');
+}
