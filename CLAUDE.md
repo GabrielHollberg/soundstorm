@@ -139,6 +139,37 @@ is described in full in its own section below; tick them off here:
    iPhone backup), except the iPhone's `.net` fallback and `confirm()` while
    something is presented.
 
+## Selling it on a box (an idea being tried, 2026-10-02)
+
+The owner is weighing selling SoundStorm preinstalled on a small computer,
+for people leaving the cloud: plug it into power and the router, scan the QR
+code on the sticker, create an account - as easy as an Alexa. Nothing is
+decided past the first test unit.
+
+- **First test unit, ordered by the owner:** a Beelink ME Mini (N95, 16GB
+  soldered, 64GB eMMC for the system, six M.2 slots, power supply inside, no
+  Wi-Fi or Bluetooth on this version - it goes on a cable, which is the setup
+  path anyway) from bee-link.com ($329; Amazon only had 12GB ones), and two
+  WD Black SN7100 1TB (TLC, 600 TBW) mirrored. About $730. Its slots run at
+  about 1GB/s, so a faster drive buys nothing.
+- **Considered for later:** two 2TB drives as the base model; the Beelink ME
+  Pro (N150 16GB, 3 M.2 + 2 hard drive bays) with 4-8TB hard drives as a
+  "Plus" - hard drives only save money at 4TB and up (a 2TB one was $155 in
+  October 2026). 12GB versions were turned down: Immich alone wants 6-8GB.
+  The GMKtec G9 overheats with drives in.
+- **Software it would need, none built yet:** a ready-made system image
+  (Debian, Docker, the images already pulled) and a script that turns a new
+  unit into a finished one with its own name, setup code and QR sticker; a
+  small caretaker beside SoundStorm - never inside it, as SoundStorm must not
+  hold the Docker socket - for updates overnight and on request (Update now,
+  owner only, with a way back if the new version is unhealthy), drive health,
+  factory reset and shutdown; the drives mirrored with checksums and
+  snapshots; Add storage; Jellyfin's conversions on the Intel graphics chip;
+  heavy background jobs taking turns at night in 16GB.
+- **Not decided:** the license (MIT now; AGPL or a source-available one such
+  as FSL were discussed, keeping the repo public), and reselling Beelink
+  boxes as they are versus their OEM program.
+
 ## The decision that shapes everything
 
 That request sounds like "build a media server". It is not, and the difference
