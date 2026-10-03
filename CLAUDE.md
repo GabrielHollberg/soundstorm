@@ -166,6 +166,11 @@ decided past the first test unit.
   factory reset and shutdown; the drives mirrored with checksums and
   snapshots; Add storage; Jellyfin's conversions on the Intel graphics chip;
   heavy background jobs taking turns at night in 16GB.
+- **Two sizes, the owner's call:** 1TB and 2TB, one internal WD Blue SN5000
+  each ($194 and $258 in October 2026; the 2TB Black was $62 more for
+  nothing this box can use). Suggested $699 and $799 - parts about $523 and
+  $587, and shipping, packing, card fees and a returns reserve add roughly
+  $100 a box.
 - **Protection, the owner's call:** one internal drive rather than a mirror,
   to keep the price down, and **a USB backup drive as an optional extra**
   (a 2TB portable hard drive was $130-150 in October 2026; any drive the
