@@ -4219,14 +4219,14 @@ html, body { overscroll-behavior-y: none; }
   position: absolute; top: 46%; left: 0; white-space: nowrap; will-change: transform;
   font-size: clamp(26px, 6vw, 44px); line-height: 1.3; color: #fff;
 }
-/* One colour, dimmed by where it is: brightest at the middle, falling off
-   evenly to nothing at both edges - a smooth curve, not sentence by sentence. */
+/* One colour, at full brightness across most of the screen, fading smoothly
+   to nothing only near the edges (the owner: more of it bright). */
 .reader-line::before {
   content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: linear-gradient(to right,
-    #14181f 0%, rgba(20, 24, 31, 0.86) 12%, rgba(20, 24, 31, 0.62) 25%, rgba(20, 24, 31, 0.3) 38%,
-    rgba(20, 24, 31, 0) 50%,
-    rgba(20, 24, 31, 0.3) 62%, rgba(20, 24, 31, 0.62) 75%, rgba(20, 24, 31, 0.86) 88%, #14181f 100%);
+    #14181f 0%, rgba(20, 24, 31, 0.75) 6%, rgba(20, 24, 31, 0.35) 12%, rgba(20, 24, 31, 0.08) 18%,
+    rgba(20, 24, 31, 0) 22%, rgba(20, 24, 31, 0) 78%,
+    rgba(20, 24, 31, 0.08) 82%, rgba(20, 24, 31, 0.35) 88%, rgba(20, 24, 31, 0.75) 94%, #14181f 100%);
 }
 .reader-line-track span { margin-right: 0.35em; }
 .reader-line-hint {

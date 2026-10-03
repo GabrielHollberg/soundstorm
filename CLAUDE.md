@@ -6101,9 +6101,9 @@ reachable only on the compose network.
 
 **Read along as one line** (2026-10-03, the owner's design): a double tap
 on the book while it reads along switches to the book as one endless line of
-big text moving right to left with the voice - one colour, brightest at the
-middle where the voice is and fading evenly to both edges (a sentence lit at
-a time jumped, the owner said) - and a double tap goes back to the pages (`toggleLine`, `drawLine` in
+big text moving right to left with the voice - one colour, full brightness
+across most of the screen and fading only in the outer fifth either side (a
+sentence lit at a time jumped; then more of it bright, the owner said) - and a double tap goes back to the pages (`toggleLine`, `drawLine` in
 reader.js; kept on the device as `soundstorm-readalong-view`). **It is a
 stream, never stopping** (the owner, after it stopped between sentences):
 each frame its place is a monotone cubic through every sentence's start (time,
