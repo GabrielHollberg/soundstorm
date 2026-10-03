@@ -5656,6 +5656,15 @@ each sent again on the next run. The UI test's second-run path - finding the
 backup switch in Settings when it is already on - fails to tap the switch
 now that Settings has more cards above it; the first-run path passes.)*
 `TestADeletedBackupIsNotSentBack`.
+**Then the iPhone's first full run flooded the server**: iOS sent dozens of
+the background session's files at once over one connection, the server took
+four per person, and the rest waited three minutes and got 429 - 898 refusals
+to 33 photos in fifteen minutes, with a check of all 1,570 photos about every
+16 seconds (885 checks). Backups now have an allowance of their own, 24 at
+once (`maxBackupsPerUser`). **For the Mac:** a run should not start while the
+last one's uploads are still with iOS (it re-checked everything every few
+seconds), and a 429 should wait for the next run rather than count as passed
+over.
 
 **A backed-up picture with no date inside it keeps the phone's date**
 (2026-10-03, `backupDated`): screenshots and pictures saved from messages
