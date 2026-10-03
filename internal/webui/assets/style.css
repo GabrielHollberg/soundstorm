@@ -4011,9 +4011,7 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 .ctl-btn span:empty { display: none; }
 .ctl-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (max-width: 620px) {
-  /* The circle left of the search box, the device button right of it, both
-     as tall as the box. */
-  .ctl-btn { order: 4; }
+  /* The circle left of the search box, as tall as it. */
   .ctl-btn span { max-width: 72px; }
   .me-btn { order: 2; }
 }
@@ -4166,17 +4164,44 @@ html.tv .tv-me-tab.hidden { display: none; }
 .invites-list { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 6px; }
 .invites-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 
-/* The two buttons either side of the search box: true circles of the box's
-   height (they were 38x40 and 46x44, slightly oval), each with the same
-   light ring, so a dark picture still stands out from the black header. */
+/* The circle beside the search box: a true circle of the box's height (it
+   was 38x40, slightly oval), with a light ring, so a dark picture still
+   stands out from the black header. */
 header { --head-btn: 42px; }
-.me-btn, .ctl-btn {
+.me-btn {
   box-sizing: border-box; width: var(--head-btn); height: var(--head-btn);
   min-width: var(--head-btn); align-self: center; padding: 0;
   justify-content: center; border: 1.5px solid rgba(255, 255, 255, 0.32);
   /* The person's colour stops inside the ring, or it tints the ring. */
   background-clip: padding-box;
 }
+/* Play on floats over the page in the bottom right corner, on every page
+   (the owner's asking): above the tab bar and the mini player, under any
+   menu, sheet or player that opens over the page. */
+.ctl-btn {
+  position: fixed; z-index: 30;
+  right: calc(16px + var(--safe-right, 0px)); bottom: calc(var(--tabbar) + 16px);
+  box-sizing: border-box; width: 52px; height: 52px; min-width: 52px; padding: 0;
+  justify-content: center; border-radius: 999px;
+  background: var(--surface-2); border: 1.5px solid rgba(255, 255, 255, 0.32);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+}
+.ctl-btn .icon { width: 22px; height: 22px; }
+body.dock-open .ctl-btn { bottom: calc(var(--dock-space) + var(--tabbar) + 4px); }
 /* Playing on a TV, the button names it, and grows into a pill to fit. */
-.ctl-btn:has(span:not(:empty)) { width: auto; padding: 0 12px; }
+.ctl-btn:has(span:not(:empty)) { width: auto; padding: 0 16px; }
+/* "Playing on TV" sits beside it rather than under it. */
+.rc-chip { right: calc(80px + var(--safe-right, 0px)); bottom: calc(var(--tabbar) + 22px); }
+body.dock-open .rc-chip { bottom: calc(var(--dock-space) + var(--tabbar) + 10px); }
 @media (max-width: 620px) { header { --head-btn: 44px; } }
+/* On a phone the messages and the first-visit tip span the screen, so they
+   sit above Play on rather than over it. */
+@media (max-width: 620px) {
+  body:not(.dock-open) .toast { bottom: calc(var(--tabbar) + 80px); }
+  body.dock-open .toast { bottom: calc(var(--dock-space) + var(--tabbar) + 68px); }
+  .hold-tip { bottom: calc(var(--tabbar) + 80px); }
+  body.dock-open .hold-tip { bottom: calc(var(--dock-space) + var(--tabbar) + 68px); }
+}
+/* Room at the foot of every page, so the last cards scroll clear of it. */
+#app { padding-bottom: 76px; }
+html.tv #app { padding-bottom: 0; }
