@@ -5624,6 +5624,16 @@ as for any shelf) and how much space their photos may take.
   Dropped and imported photos are named the same way, an identical one
   having been refused by its content first.
 
+**A backed-up picture with no date inside it keeps the phone's date**
+(2026-10-03, `backupDated`): screenshots and pictures saved from messages
+showed in Immich as the day they were backed up - the backup filed them in the
+right month folder by the phone's date but wrote it nowhere, and Immich dated
+them by the file. Now that date goes beside the picture (an XMP sidecar,
+ranked as a download's record) and onto the file. Videos carry their own.
+`TestABackedUpPictureKeepsThePhonesDate`. The 222 already backed up so (in the
+right folders, the wrong month in Immich) were left as they are, the owner's
+choice; their exact day was never kept.
+
 **The phone's half, in the Android app (0.14, `PhotoBackup.kt`)**: WorkManager
 jobs, so Android decides when (Wi-Fi only unless turned off, while charging if
 asked) and it carries on with the app closed - one when a photo or video is
