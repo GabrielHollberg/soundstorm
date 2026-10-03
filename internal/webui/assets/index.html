@@ -607,6 +607,28 @@
         </label>
         <ul id="people-list"></ul>
 
+        <!-- Inviting: a name, then a QR code and a link the person opens to
+             choose their own password (invites.go). -->
+        <h3>Invite someone</h3>
+        <p class="muted small-print">They scan the code with their phone's camera, or open the link,
+          and choose their own password. It works once, for seven days.</p>
+        <form id="invite-form" class="address-row">
+          <input id="invite-name" autocomplete="off" placeholder="Their name" aria-label="Their name">
+          <button type="submit">Invite</button>
+        </form>
+        <div id="invite-made" class="invite-made hidden">
+          <img id="invite-qr" alt="The invitation's QR code">
+          <div class="address-row">
+            <a id="invite-url" class="address" href="#"></a>
+            <button class="ghost small copy" type="button" data-copy="invite-url">Copy</button>
+            <button id="invite-share" class="ghost small hidden" type="button">Share</button>
+          </div>
+          <p id="invite-for" class="muted small-print"></p>
+        </div>
+        <ul id="invites-list" class="invites-list"></ul>
+        <p id="invite-note" class="muted hidden" role="status"></p>
+
+        <h3>Or add someone with a password you choose</h3>
         <form id="add-person-form" class="stack-form">
           <label>
             <span>Name</span>

@@ -589,6 +589,8 @@ function showGate(hasAccount, setupCodeRequired) {
     ? 'Sign in to your library.'
     : 'Create the account for this server: you will be its owner. Choose a password of at least 12 characters - a few unrelated words make a good one.';
   $('gate-submit').textContent = hasAccount ? 'Sign in' : 'Create account';
+  // Opened from an invitation: making the account it invites to.
+  if (hasAccount && inviteFromAddress) showInvite();
   // A box: the power button is the way back in for a forgotten password.
   show($('gate-button'), false);
   show($('gate-button-hint'), false);
@@ -689,6 +691,15 @@ $('gate-link-cancel').addEventListener('click', () => {
 // Settings, is looked up and shown - what is asking, and that it will be
 // signed in as this person - before it is allowed.
 const linkFromAddress = new URLSearchParams(location.search).get('link') || '';
+// An invitation's token, from its QR code's address (invites.go).
+const inviteFromAddress = (new URLSearchParams(location.search).get('invite') || '').replace(/[^A-Za-z0-9_-]/g, '');
+function forgetInviteInAddress() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('invite')) return;
+  params.delete('invite');
+  const rest = params.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+}
 let linkAsking = '';
 async function askLink(code) {
   const { ok, body } = await api(`/api/link/code/${encodeURIComponent(code)}`);
@@ -776,16 +787,17 @@ $('gate-form').addEventListener('submit', async (event) => {
 
   const mode = $('gate-form').dataset.mode;
   const original = submit.textContent;
-  submit.textContent = mode === 'signup' ? 'Creating…' : 'Signing in…';
+  submit.textContent = mode === 'signup' || mode === 'invite' ? 'Creating…' : 'Signing in…';
 
-  const { ok, body } = await api(`/api/${mode}`, {
+  const path = mode === 'invite' ? `/api/invite/${encodeURIComponent(inviteFromAddress)}` : `/api/${mode}`;
+  const { ok, body } = await api(path, {
     method: 'POST',
     body: JSON.stringify({
       username: $('gate-username').value,
       password: $('gate-password').value,
       ...(mode === 'signup' ? { setupCode: $('gate-setup-code').value } : {}),
       // Profiles: "keep me on this device", to be switched to later.
-      ...(mode === 'login' && $('gate-keep').checked ? { keep: true } : {}),
+      ...((mode === 'login' || mode === 'invite') && $('gate-keep').checked ? { keep: true } : {}),
     }),
   });
 
@@ -801,12 +813,30 @@ $('gate-form').addEventListener('submit', async (event) => {
     return;
   }
   $('gate-password').value = '';
+  if (mode === 'invite') forgetInviteInAddress();
   if (body && body.pending) {
     waitForApproval(body.pending, Boolean(body.code));
     return;
   }
   showApp(body && body.user);
 });
+
+// An invitation opened: who it is from, and the person's own password to
+// choose. Their name is filled in from it, and can be changed.
+async function showInvite() {
+  const { ok, body } = await api(`/api/invite/${encodeURIComponent(inviteFromAddress)}`);
+  if (!ok || !body) {
+    $('gate-blurb').textContent = (body && body.error) || 'This invitation does not work any more. Ask for a new one.';
+    forgetInviteInAddress();
+    return;
+  }
+  $('gate-form').dataset.mode = 'invite';
+  $('gate-blurb').textContent = `${body.by} invited you to ${body.server || 'SoundStorm'}. Choose a password to make your account - at least 12 characters, a few unrelated words make a good one.`;
+  $('gate-username').value = body.name;
+  $('gate-submit').textContent = 'Make my account';
+  show($('gate-phone'), false);
+  $('gate-password').focus();
+}
 
 // The owner's new password, after the box's button was pressed five times.
 $('gate-button-save').addEventListener('click', async () => {
@@ -948,6 +978,11 @@ if (window.soundstormApp) {
 
 async function showApp(me) {
   state.me = me || null;
+  // An invitation opened while signed in: it is for somebody else.
+  if (me && inviteFromAddress && new URLSearchParams(location.search).has('invite')) {
+    forgetInviteInAddress();
+    setTimeout(() => showToast(`You are signed in as ${me.name}. To use the invitation, sign out first and open it again.`, '', null, 10000), 1500);
+  }
   if (me && !me.mustRenew) setTimeout(refreshVoices, 2000);
   // This page is a device to play on, from this person's phone (players.go).
   setTimeout(playerLoop, 1500);
@@ -1020,6 +1055,7 @@ function renderAccount() {
   if (BACKUP_APP) window.soundstormApp.backup('status');
   if (me.owner) {
     loadPeople();
+    loadInvites();
     refreshRemote();
     refreshLyricsSetting();
   }
@@ -1090,6 +1126,51 @@ $('box-reset-form').addEventListener('submit', async (event) => {
     } catch { /* still starting */ }
     await pause(5000);
   }
+});
+
+// Inviting someone (invites.go): a name, then the code and the link, shown
+// here once; what is still waiting, with Cancel.
+async function loadInvites() {
+  const { ok, body } = await api('/api/invites');
+  const list = $('invites-list');
+  list.replaceChildren();
+  for (const inv of (ok && body && body.invites) || []) {
+    const li = document.createElement('li');
+    const what = document.createElement('span');
+    const days = Math.max(1, Math.round((new Date(inv.expires) - Date.now()) / 86400000));
+    what.textContent = `${inv.name} - invited, works for ${days} more day${days === 1 ? '' : 's'}`;
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'ghost small';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', async () => {
+      await api(`/api/invites/${encodeURIComponent(inv.id)}`, { method: 'DELETE' });
+      show($('invite-made'), false);
+      loadInvites();
+    });
+    li.append(what, cancel);
+    list.append(li);
+  }
+}
+$('invite-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const name = $('invite-name').value.trim();
+  if (!name) return;
+  const { ok, body } = await api('/api/invites', { method: 'POST', body: JSON.stringify({ name }) });
+  if (!ok) {
+    note($('invite-note'), (body && body.error) || 'Could not make the invitation.', true);
+    return;
+  }
+  show($('invite-note'), false);
+  $('invite-name').value = '';
+  $('invite-qr').src = body.qr;
+  $('invite-url').textContent = body.url;
+  $('invite-url').href = body.url;
+  $('invite-for').textContent = `For ${body.name}. Show them this code to scan with their phone's camera, or send them the link.`;
+  show($('invite-share'), Boolean(navigator.share));
+  $('invite-share').onclick = () => navigator.share({ title: 'SoundStorm', text: `You're invited to SoundStorm`, url: body.url }).catch(() => {});
+  show($('invite-made'), true);
+  loadInvites();
 });
 
 // The server's name, which devices show before anybody signs in. Empty puts

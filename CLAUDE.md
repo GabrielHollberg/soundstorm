@@ -4932,6 +4932,24 @@ cookie from its 200 (`{"signedIn": true}`); a 403 is refused, a 404 expired.
 Until it does, an install with approval on cannot sign the TV in. And a 403 with `mustRenew` from any route means the account is held to a new password: say "Choose a new password on your phone or computer, then sign in again here" (changing it signs the TV out). The iPhone
 and Android apps use the page and need nothing.
 
+**Inviting the family by QR code (2026-10-03).** Rather than the owner
+making up a password for each person and telling it to them, Settings,
+People has **Invite someone**: a name, then a QR code and a link (Copy,
+Share) shown once, and a list of invitations still waiting, each with Cancel
+(`httpapi/invites.go`). The person scans it with their phone's camera, or
+opens the link: "Gabriel invited you to Gabriel's SoundStorm", their name
+filled in (changeable), a password of their own (today's rules) - and they
+are signed in, with no device approval, as the owner vouched. An invitation
+works once, for seven days, at most twenty waiting; its token (128 bits) is
+in the code alone, the state keeping a hash (`state.Invites`); lookups are
+limited per address. The code points at the away-from-home name when remote
+access is on, so it works wherever the person is, else the home name. Opened
+while signed in, it says to sign out first. Adding with a password chosen by
+the owner stays, below it. Checked: `TestAnInvitationMakesAnAccount`, and in
+Chrome as the owner and as Mom. Not checked: a phone's camera on the code,
+and the apps (the code opens a browser; the person then finds the server in
+the app and signs in).
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.

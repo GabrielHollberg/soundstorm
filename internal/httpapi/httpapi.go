@@ -157,6 +157,8 @@ type Server struct {
 	trainingDir      string
 	// drivesDir is where the box's system mounts a USB drive plugged into
 	// it, read-only (drives.go); empty everywhere but a box.
+	// inviteTries limits invitation lookups per address (invites.go).
+	inviteTries  allowance
 	drivesDir    string
 	driveImports driveImports
 	// caretakerSocket is the box caretaker's socket (reset.go); empty off a
@@ -344,6 +346,10 @@ func (s *Server) Routes() http.Handler {
 	// ServeMux refuses to combine with the method-less "/api/" guard below.
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /link/{code}", s.handleLinkPage)
+	// An invitation's QR code, and the invitee's two calls (invites.go).
+	mux.HandleFunc("GET /invite/{token}", s.handleInvitePage)
+	mux.HandleFunc("GET /api/invite/{token}", s.handleInviteLookup)
+	mux.HandleFunc("POST /api/invite/{token}", s.handleInviteAccept)
 	// Both of these are served from the root rather than /static/, and the
 	// reason is scope, not tidiness: a service worker may only control paths
 	// at or below its own URL, so /static/sw.js could never intercept "/" -
@@ -543,6 +549,9 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/settings/new-devices", s.handleSetApproveDevices)
 	owner.HandleFunc("PUT /api/settings/server-name", s.handleSetServerName)
 	// USB drives plugged into the box (drives.go).
+	owner.HandleFunc("GET /api/invites", s.handleInvites)
+	owner.HandleFunc("POST /api/invites", s.handleNewInvite)
+	owner.HandleFunc("DELETE /api/invites/{id}", s.handleCancelInvite)
 	owner.HandleFunc("GET /api/reset/summary", s.handleResetSummary)
 	owner.HandleFunc("POST /api/reset", s.handleReset)
 	owner.HandleFunc("GET /api/drives", s.handleDrives)
@@ -570,6 +579,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/new-devices", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/server-name", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/invites", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/invites/", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/reset", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/reset/summary", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/drives", s.auth.RequireOwner(owner))
@@ -1015,19 +1026,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// The photo folder is made from the name with unsafe characters
-	// replaced, so two names can come to one folder ("alice" and "alice."),
-	// or to a removed person's kept folder - and share each other's photos
-	// (a security review).
-	folder := library.PersonalFolder(creds.Username)
-	for _, other := range s.store.Users() {
-		if strings.EqualFold(library.PersonalFolder(other.Name), folder) {
-			writeError(w, http.StatusConflict, "that name is too like "+other.Name+"'s; choose another")
-			return
-		}
-	}
-	if _, err := os.Stat(filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(folder))); err == nil {
-		writeError(w, http.StatusConflict, "photos of a person by that name are still kept; choose another name")
+	if err := s.nameFree(creds.Username); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 	created, err := s.auth.CreateUser(actor, creds.Username, creds.Password, state.RoleMember)
@@ -1037,6 +1037,24 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("account created", "username", created.Name, "by", actor.Name)
 	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(created)})
+}
+
+// nameFree refuses a new account's name whose photo folder another person
+// has, or a removed person left. The folder is made from the name with unsafe
+// characters replaced, so two names can come to one folder ("alice" and
+// "alice."), or to a removed person's kept folder - and share each other's
+// photos (a security review).
+func (s *Server) nameFree(name string) error {
+	folder := library.PersonalFolder(name)
+	for _, other := range s.store.Users() {
+		if strings.EqualFold(library.PersonalFolder(other.Name), folder) {
+			return fmt.Errorf("that name is too like %s's; choose another", other.Name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(s.library.PathFor(media.KindPicture), filepath.FromSlash(folder))); err == nil {
+		return errors.New("photos of a person by that name are still kept; choose another name")
+	}
+	return nil
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
