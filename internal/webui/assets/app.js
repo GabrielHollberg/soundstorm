@@ -19579,7 +19579,7 @@ function renderControl() {
   show(btn, !TV && !state.offline && Boolean(state.me));
   btn.classList.toggle('on', Boolean(CONTROL.target));
   const label = document.createElement('span');
-  label.textContent = CONTROL.target ? CONTROL.target.name : '';
+  label.textContent = CONTROL.target ? CONTROL.target.name : 'Play on';
   btn.replaceChildren(icon('cast'), label);
   btn.title = CONTROL.target ? `Playing on ${CONTROL.target.name}` : 'Playing on this device';
   renderControlChip();
