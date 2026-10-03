@@ -166,6 +166,15 @@ decided past the first test unit.
   factory reset and shutdown; the drives mirrored with checksums and
   snapshots; Add storage; Jellyfin's conversions on the Intel graphics chip;
   heavy background jobs taking turns at night in 16GB.
+- **Protection, leaning (the owner's calls):** one drive rather than a
+  mirror, to keep the price down (about $799 with 2TB), and an encrypted
+  cloud backup that is **opt-in**, like everything else that sends anything
+  out of the house - asked once at setup beside the other choices (a second
+  drive to mirror, a USB drive, another box), with a plain "not protected"
+  shown while none is chosen. A USB drive alone was judged too easy for an
+  average person to let lapse. The key stays with the customer (a recovery
+  code, printed and in the app), never with the seller. Backups would be the
+  caretaker's job, likely with restic, never SoundStorm's.
 - **Not decided:** the license (MIT now; AGPL or a source-available one such
   as FSL were discussed, keeping the repo public), and reselling Beelink
   boxes as they are versus their OEM program.
