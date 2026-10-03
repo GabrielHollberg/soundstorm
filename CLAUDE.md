@@ -143,7 +143,8 @@ is described in full in its own section below; tick them off here:
    page's reader now does it (`followWithinSentence` in reader.js): within a
    sentence over two seconds, the voice's place is the same share of the
    sentence's letters as of its time (`t` to `e`), and the page goes to the
-   one holding that letter. The TV's `Reader.swift` turns to a sentence's
+   one holding that letter, aimed 0.8s ahead of the voice (aimed at the
+   voice it was still a little late). The TV's `Reader.swift` turns to a sentence's
    start only; it wants the same, on the lit range's own text.
 
 ## Selling it on a box (an idea being tried, 2026-10-02)
