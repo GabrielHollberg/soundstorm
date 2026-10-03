@@ -371,11 +371,12 @@ func run(log *slog.Logger) error {
 		BeatsDir: filepath.Join(stateDir, "beats"),
 		// Making audiobooks from ebooks: the voice backend, and the queue and
 		// chapters in progress beside the state.
-		VoicesURL:   env("SOUNDSTORM_VOICES_URL", "http://kokoro:8880"),
-		VoicesDir:   filepath.Join(stateDir, "voices"),
-		WhisperURL:  env("SOUNDSTORM_WHISPER_URL", "http://whisper:9000"),
-		TrainingDir: trainingDir,
-		DrivesDir:   os.Getenv("SOUNDSTORM_DRIVES_DIR"),
+		VoicesURL:       env("SOUNDSTORM_VOICES_URL", "http://kokoro:8880"),
+		VoicesDir:       filepath.Join(stateDir, "voices"),
+		WhisperURL:      env("SOUNDSTORM_WHISPER_URL", "http://whisper:9000"),
+		TrainingDir:     trainingDir,
+		DrivesDir:       os.Getenv("SOUNDSTORM_DRIVES_DIR"),
+		CaretakerSocket: os.Getenv("SOUNDSTORM_CARETAKER"),
 	})
 
 	// Books with both an ebook and an audiobook are synced for read-along by

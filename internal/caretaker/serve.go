@@ -41,6 +41,9 @@ func (u *Updater) saveSettings(s Settings) error {
 //	POST /update            install the available update now (Update now)
 //	GET  /settings          {"auto": true}
 //	PUT  /settings          change it
+//	POST /reset             {"mode": "start-over"|"erase"} (reset.go)
+//	GET  /button            {"open": true, "until": ...} after five presses
+//	POST /button/used       the owner's password was set: closed again
 //
 // SoundStorm decides who may press these (the owner); the caretaker trusts
 // whoever reaches the socket, which is why nothing else is ever given it.
@@ -88,8 +91,48 @@ func (u *Updater) Handler() http.Handler {
 		}
 		reply(w, s)
 	})
+	mux.HandleFunc("POST /reset", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Mode ResetMode `json:"mode"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil ||
+			(body.Mode != ResetStartOver && body.Mode != ResetErase) {
+			http.Error(w, ErrBadMode.Error(), http.StatusBadRequest)
+			return
+		}
+		if !u.busy.TryLock() {
+			http.Error(w, ErrBusy.Error(), http.StatusConflict)
+			return
+		}
+		u.busy.Unlock()
+		// It outlives the request, and SoundStorm with it: the stack stops.
+		go func() {
+			time.Sleep(2 * time.Second) // the answer reaches the page first
+			if err := u.Reset(context.Background(), body.Mode); err != nil {
+				u.log.Error("reset", "err", err)
+			}
+		}()
+		w.WriteHeader(http.StatusAccepted)
+		reply(w, map[string]any{"mode": body.Mode})
+	})
+	mux.HandleFunc("GET /button", func(w http.ResponseWriter, r *http.Request) {
+		open, until := u.buttonOpen()
+		out := map[string]any{"open": open}
+		if open {
+			out["until"] = until
+		}
+		reply(w, out)
+	})
+	mux.HandleFunc("POST /button/used", func(w http.ResponseWriter, r *http.Request) {
+		u.closeButton()
+		reply(w, map[string]any{"open": false})
+	})
 	return mux
 }
+
+// soundstormGID is the group of SoundStorm's container user (its Dockerfile),
+// which the socket is shared with.
+const soundstormGID = 10001
 
 // Serve answers on the socket and checks for updates in the background:
 // shortly after start, then every six hours, installing one at night (2 to 5
@@ -103,14 +146,17 @@ func (u *Updater) Serve(ctx context.Context, socket string) error {
 	if err != nil {
 		return err
 	}
-	// Only root, and the group the socket is shared with, may open it.
+	// Only root, and the group the socket is shared with - SoundStorm's
+	// container user's (10001) - may open it.
 	_ = os.Chmod(socket, 0o660)
+	_ = os.Chown(socket, 0, soundstormGID)
 	srv := &http.Server{Handler: u.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		_ = srv.Close()
 	}()
 	go u.schedule(ctx)
+	go u.watchButton(ctx)
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

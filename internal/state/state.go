@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,6 +140,87 @@ const (
 func passwordPrint(u User) string {
 	sum := sha256.Sum256(u.Salt)
 	return hex.EncodeToString(sum[:8])
+}
+
+// Invite is an invitation to make an account: the name it was made out to
+// (the person may change it), who made it, and until when it works.
+type Invite struct {
+	Name    string    `json:"name"`
+	By      string    `json:"by"`
+	Created time.Time `json:"created"`
+	Expires time.Time `json:"expires"`
+}
+
+// MaxInvites is how many invitations may wait at once.
+const MaxInvites = 20
+
+// ErrTooManyInvites is one invitation more than may wait.
+var ErrTooManyInvites = errors.New("too many invitations are waiting; cancel some first")
+
+// HashInvite is what an invitation's token is kept under.
+func HashInvite(token string) string {
+	sum := sha256.Sum256([]byte("invite:" + token))
+	return hex.EncodeToString(sum[:])
+}
+
+// AddInvite keeps an invitation, dropping any that ran out.
+func (s *Store) AddInvite(hash string, inv Invite) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneInvitesLocked()
+	if len(s.d.Invites) >= MaxInvites {
+		return ErrTooManyInvites
+	}
+	if s.d.Invites == nil {
+		s.d.Invites = map[string]Invite{}
+	}
+	s.d.Invites[hash] = inv
+	return s.save()
+}
+
+// InviteFor is the invitation a token's hash names, if it still works.
+func (s *Store) InviteFor(hash string) (Invite, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	inv, ok := s.d.Invites[hash]
+	if !ok || time.Now().After(inv.Expires) {
+		return Invite{}, false
+	}
+	return inv, true
+}
+
+// Invites are the invitations still waiting, by hash.
+func (s *Store) Invites() map[string]Invite {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]Invite{}
+	now := time.Now()
+	for h, inv := range s.d.Invites {
+		if now.Before(inv.Expires) {
+			out[h] = inv
+		}
+	}
+	return out
+}
+
+// DeleteInvite takes an invitation away: used, or cancelled.
+func (s *Store) DeleteInvite(hash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.d.Invites[hash]; !ok {
+		return nil
+	}
+	delete(s.d.Invites, hash)
+	return s.save()
+}
+
+func (s *Store) pruneInvitesLocked() {
+	now := time.Now()
+	for h, inv := range s.d.Invites {
+		if now.After(inv.Expires) {
+			delete(s.d.Invites, h)
+		}
+	}
 }
 
 // HashDevice is how a device's id cookie is kept: hashed, as session tokens
@@ -375,6 +457,10 @@ type data struct {
 	// listening?"), keyed by a hash of the device's own id cookie, as sessions
 	// are keyed by a hash of theirs: this file alone names no device.
 	Kept map[string]KeptDevice `json:"kept,omitempty"`
+	// Invites are the owner's invitations waiting to be taken up, keyed by a
+	// hash of their token (httpapi/invites.go): the token itself is in the
+	// QR code and nowhere else.
+	Invites map[string]Invite `json:"invites,omitempty"`
 	// NotPairs are Read & listen matches the owner has said are wrong, each
 	// "ebookSource/id|audiobookSource/id". A decision somebody made, like
 	// StarterInstalled - not a fact read off the media, so nothing here can

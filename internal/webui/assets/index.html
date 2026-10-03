@@ -24,6 +24,7 @@
        asks /api/session, so there is no flash of the wrong screen. -->
   <div id="boot" class="centered">
     <div class="spinner" aria-label="Loading"></div>
+    <p id="boot-text" class="muted"></p>
   </div>
 
   <!-- Signup / login ---------------------------------------------------- -->
@@ -97,6 +98,17 @@
       </div>
 
       <p id="gate-error" class="error hidden" role="alert"></p>
+      <!-- A box: the way back in when the owner's password is forgotten - the
+           power button pressed five times (reset.go). -->
+      <p id="gate-button-hint" class="muted small-print hidden">Forgot the owner's password, or lost the sticker? Press the
+        power button on the box five times quickly, then come back here.</p>
+      <div id="gate-button" class="hidden">
+        <p id="gate-button-text"></p>
+        <label for="gate-button-password">New password</label>
+        <input id="gate-button-password" type="password" autocomplete="new-password">
+        <p class="muted small-print">At least 12 characters, and not a common one.</p>
+        <button id="gate-button-save" type="button">Save the new password</button>
+      </div>
 
       <button id="gate-submit" type="submit">Continue</button>
       <!-- On a TV: signed in from a phone instead of typing with a remote. -->
@@ -597,6 +609,28 @@
         </label>
         <ul id="people-list"></ul>
 
+        <!-- Inviting: a name, then a QR code and a link the person opens to
+             choose their own password (invites.go). -->
+        <h3>Invite someone</h3>
+        <p class="muted small-print">They scan the code with their phone's camera, or open the link,
+          and choose their own password. It works once, for seven days.</p>
+        <form id="invite-form" class="address-row">
+          <input id="invite-name" autocomplete="off" placeholder="Their name" aria-label="Their name">
+          <button type="submit">Invite</button>
+        </form>
+        <div id="invite-made" class="invite-made hidden">
+          <img id="invite-qr" alt="The invitation's QR code">
+          <div class="address-row">
+            <a id="invite-url" class="address" href="#"></a>
+            <button class="ghost small copy" type="button" data-copy="invite-url">Copy</button>
+            <button id="invite-share" class="ghost small hidden" type="button">Share</button>
+          </div>
+          <p id="invite-for" class="muted small-print"></p>
+        </div>
+        <ul id="invites-list" class="invites-list"></ul>
+        <p id="invite-note" class="muted hidden" role="status"></p>
+
+        <h3>Or add someone with a password you choose</h3>
         <form id="add-person-form" class="stack-form">
           <label>
             <span>Name</span>
@@ -712,6 +746,31 @@
           <label class="button-like">Choose zip files<input id="import-files" type="file" accept=".zip,application/zip" multiple hidden></label>
           <ul id="import-list"></ul>
         </div>
+      </div>
+
+      <!-- A box: starting over or erasing it, for good (reset.go). -->
+      <div id="box-reset-block" class="account-section card hidden" data-cat="account" data-words="reset factory erase start over sell wipe delete everything">
+        <h2>Start over or erase this box</h2>
+        <p class="muted"><b>Start over</b> deletes every account, sign-in, playlist, favorite and
+          setting, and keeps your music, films, books and photos - the box sets itself up again
+          and reads them all back in, which can take hours. <b>Erase everything</b> deletes those
+          too, as when the box is sold or given away. Neither can be undone.</p>
+        <div class="account-actions">
+          <button id="box-start-over" type="button" class="ghost">Start over</button>
+          <button id="box-erase" type="button" class="ghost danger">Erase everything</button>
+        </div>
+        <form id="box-reset-form" class="hidden">
+          <p id="box-reset-what"></p>
+          <label for="box-reset-password">Your password</label>
+          <input id="box-reset-password" type="password" autocomplete="current-password">
+          <label id="box-reset-confirm-label" for="box-reset-confirm"></label>
+          <input id="box-reset-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <p id="box-reset-note" class="error hidden" role="alert"></p>
+          <div class="account-actions">
+            <button id="box-reset-go" type="submit" class="danger"></button>
+            <button id="box-reset-cancel" type="button" class="ghost">Cancel</button>
+          </div>
+        </form>
       </div>
 
       <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout change server">

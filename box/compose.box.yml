@@ -64,15 +64,26 @@ volumes:
 # offers to bring their media in (httpapi/drives.go). rslave, so a drive
 # plugged in after the container started still appears inside it.
 #
+# The caretaker's socket (internal/caretaker), for starting over, erasing and
+# the power button (httpapi/reset.go): the folder, as the socket is made
+# again when the caretaker restarts; shared with group 10001, which the
+# container's user is put in here whatever its image says.
+#
 # And port 80 beside SoundStorm's own, so a laptop with no app can open
 # http://soundstorm.local (avahi announces the box's name) with no port to type.
 services:
   soundstorm:
     ports:
       - "80:8080"
+    group_add:
+      - "10001"
     environment:
       SOUNDSTORM_DRIVES_DIR: /drives
+      SOUNDSTORM_CARETAKER: /run/soundstorm-caretaker/caretaker.sock
     volumes:
+      - type: bind
+        source: /run/soundstorm-caretaker
+        target: /run/soundstorm-caretaker
       - type: bind
         source: /run/soundstorm/drives
         target: /drives

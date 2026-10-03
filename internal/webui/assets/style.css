@@ -4153,3 +4153,15 @@ html.tv .tv-me-tab.hidden { display: none; }
 .welcome-steps li.done .tick { background: var(--accent); border-color: var(--accent); color: #000; }
 .welcome-steps li.done .what b { text-decoration: line-through; opacity: 0.6; }
 .welcome-steps .what span { display: block; color: var(--muted); font-size: 13px; }
+
+#gate-button { display: grid; gap: 8px; margin: 8px 0; }
+#gate-button.hidden { display: none; }
+#box-reset-form { display: grid; gap: 8px; margin-top: 12px; }
+#box-reset-form.hidden { display: none; }
+
+/* An invitation's QR code, big enough to scan off another phone. */
+.invite-made { display: grid; gap: 8px; justify-items: start; margin: 8px 0; }
+.invite-made.hidden { display: none; }
+.invite-made img { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 12px; }
+.invites-list { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 6px; }
+.invites-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }

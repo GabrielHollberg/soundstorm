@@ -86,6 +86,15 @@ final class AppModel {
         guard let api else { return }
         do {
             let s = try await api.session()
+            // Kept by a bare address (found before the server had its secure
+            // name, or typed): moved to the secure name once it has one and
+            // it answers here, still signed in. A new address from the router
+            // after a power cut would otherwise lose the server, and plain
+            // http is not encrypted.
+            if let better = await secureAddress(for: api.server, offered: s.secureName) {
+                moveServer(from: api.server, to: better)
+                return
+            }
             // "Who's listening?" every time the TV opens, when anybody is
             // kept on it - the owner's choice for a shared screen.
             if s.hasAccount {
@@ -107,6 +116,34 @@ final class AppModel {
             // wrong.
             stage = .unreachable(api.server.host() ?? api.server.absoluteString)
         }
+    }
+
+    /// The secure name a server offers, if this is not already it and it
+    /// answers from this TV.
+    private func secureAddress(for server: URL, offered: String?) async -> URL? {
+        guard let name = offered?.lowercased(), name.hasSuffix(".soundstorm.dev"),
+              server.host()?.lowercased() != name,
+              var parts = URLComponents(url: server, resolvingAgainstBaseURL: false) else { return nil }
+        parts.scheme = "https"
+        parts.host = name
+        guard let url = parts.url, (try? await ServerAddress.check(url)) != nil else { return nil }
+        return url
+    }
+
+    /// The same server at its secure name: the sign-in (its cookies) carried
+    /// across, the saved address replaced, and the app opened there.
+    private func moveServer(from old: URL, to new: URL) {
+        let store = HTTPCookieStorage.shared
+        for cookie in store.cookies(for: old) ?? [] {
+            var props: [HTTPCookiePropertyKey: Any] = [
+                .name: cookie.name, .value: cookie.value, .domain: new.host() ?? "",
+                .path: "/", .secure: "TRUE",
+            ]
+            if let expires = cookie.expiresDate { props[.expires] = expires }
+            if let moved = HTTPCookie(properties: props) { store.setCookie(moved) }
+        }
+        ServerAddress.moved(old, to: new)
+        use(new)
     }
 
     /// Whose things are on screen, to tell when somebody else signs in.

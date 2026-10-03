@@ -128,3 +128,26 @@ func (m *Manager) Revoke(r *http.Request) {
 		_ = m.store.DeleteSession(tok)
 	}
 }
+
+// VerifyOwnPassword checks a signed-in person's password through the same
+// throttle as signing in - for what must be confirmed with it, such as
+// starting a box over.
+func (m *Manager) VerifyOwnPassword(ctx context.Context, client string, actor state.User, password string) error {
+	return m.throttle.guarded(ctx, client, actor.Name, func() error { return m.verify(actor.ID, password) })
+}
+
+// SetOwnerPassword sets the owner's password without the old one - only for
+// the box's power button pressed five times (httpapi/reset.go), which proves
+// somebody is at the box - and signs the owner out everywhere.
+func (m *Manager) SetOwnerPassword(password string) (state.User, error) {
+	for _, u := range m.store.Users() {
+		if !u.IsOwner() {
+			continue
+		}
+		if err := m.SetPassword(u, u.ID, password); err != nil {
+			return u, err
+		}
+		return u, m.store.DeleteSessionsFor(u.ID, "")
+	}
+	return state.User{}, ErrInvalidCredentials
+}

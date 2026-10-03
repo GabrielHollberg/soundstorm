@@ -340,6 +340,45 @@ the secure name then goes to its https on port 80, which SoundStorm answers.
 A drive's top folder named "Music" deciding its MP3s was suggested and
 declined, with the audiobook rule above: names ask, they do not decide.
 
+### Starting over, erasing, and the way back in (2026-10-03)
+
+Three situations, the owner's design, none of them erasing by accident:
+
+- **A forgotten owner password, or a lost sticker:** the box's power button
+  pressed five times quickly opens, for fifteen minutes, setting the owner's
+  password without the old one, from the sign-in screen on any device on the
+  home network ("The power button on the box was pressed. Choose a new
+  password for Gabriel") - once, never through the away-from-home name, with
+  today's password rules, and signing the owner out everywhere. Nothing is
+  erased. On a box the sign-in screen says how ("press the power button on
+  the box five times quickly"). Pressed once, the button shuts the box down
+  properly; held, the hardware still switches it off.
+- **Start over** (Settings, Account; the owner's password and START OVER
+  typed): every account, sign-in, list and setting, and what the backends
+  learnt, go - the data volumes and caches emptied, their folders kept, the
+  snapshots from before updates deleted; the media stays, and the box sets
+  itself up again (the setup code in `.env`, the sticker's, still works) and
+  reads it all back in.
+- **Erase everything** (ERASE typed): that and the library's every file, the
+  shelves kept empty - for a box sold or given away. What goes is said first
+  ("1 account and 1.4 TB of media - 3,200 songs, 140 films...").
+
+The caretaker does it (`internal/caretaker/reset.go`: `Reset`, the button
+watch reading the power button's input device - logind told to leave the key
+alone, `logind.conf.d/soundstorm-button.conf` - and `POST /reset`,
+`GET /button`, `POST /button/used` on its socket, now `chown`ed to group
+10001). SoundStorm reaches it at last: `compose.box.yml` binds
+`/run/soundstorm-caretaker` and sets `SOUNDSTORM_CARETAKER` and `group_add`;
+`httpapi/reset.go` decides who may ask. Checked: the caretaker's tests (a
+reset of each kind against folders, the runs of presses, finding the button
+in `/proc/bus/input/devices`), SoundStorm's against a stand-in caretaker
+(the button's window, once; the word and the password), and in Chrome with a
+stand-in caretaker: the hint, five presses, the new password, signing in with
+it, and the erase card down to "Erasing the box". **Not checked: on the box**
+- the wipe for real, the power button on the Beelink (does it report
+`KEY_POWER` through "Power Button"? does logind let go?), the socket's group
+inside the container: **for the PC**, in the VM and then on the test unit.
+
 ## The decision that shapes everything
 
 That request sounds like "build a media server". It is not, and the difference
@@ -4893,6 +4932,24 @@ cookie from its 200 (`{"signedIn": true}`); a 403 is refused, a 404 expired.
 Until it does, an install with approval on cannot sign the TV in. And a 403 with `mustRenew` from any route means the account is held to a new password: say "Choose a new password on your phone or computer, then sign in again here" (changing it signs the TV out). The iPhone
 and Android apps use the page and need nothing.
 
+**Inviting the family by QR code (2026-10-03).** Rather than the owner
+making up a password for each person and telling it to them, Settings,
+People has **Invite someone**: a name, then a QR code and a link (Copy,
+Share) shown once, and a list of invitations still waiting, each with Cancel
+(`httpapi/invites.go`). The person scans it with their phone's camera, or
+opens the link: "Gabriel invited you to Gabriel's SoundStorm", their name
+filled in (changeable), a password of their own (today's rules) - and they
+are signed in, with no device approval, as the owner vouched. An invitation
+works once, for seven days, at most twenty waiting; its token (128 bits) is
+in the code alone, the state keeping a hash (`state.Invites`); lookups are
+limited per address. The code points at the away-from-home name when remote
+access is on, so it works wherever the person is, else the home name. Opened
+while signed in, it says to sign out first. Adding with a password chosen by
+the owner stays, below it. Checked: `TestAnInvitationMakesAnAccount`, and in
+Chrome as the owner and as Mom. Not checked: a phone's camera on the code,
+and the apps (the code opens a browser; the person then finds the server in
+the app and signs in).
+
 ## Tailscale, and why it is a profile rather than a service
 
 Reaching SoundStorm away from home is the one thing the LAN address cannot do.
@@ -6845,6 +6902,19 @@ closes it on every device (`prefs.welcomeDone`); all ticked closes it too.
 Checked in Chrome: the steps, Add people opening People, Done kept after a
 reload. Not checked: the nothing-found words on a phone (this Mac's network
 always finds the owner's server).
+
+**The Apple TV moves to the secure name by itself (2026-10-03).** Kept by a
+bare address - found before a new box had its secure name, or typed - the TV
+stayed on plain http at a number the router may change after a power cut,
+where a phone's page moves itself (`moveToSecureName`). Now, each time the
+TV checks its session (`AppModel.refreshSession`), a `secureName` offered
+that answers from the TV replaces the saved address (`ServerAddress.moved`:
+same place and name in the list), the session's cookies are copied to it,
+and the app opens there. Checked in the simulator against the owner's real
+server, read only: opened at `http://192.168.0.19:8099`, it saved
+`https://6lm2ahm6pn.home.soundstorm.dev:8099`. Not checked: staying signed
+in across the move (not signed in to the real server; the server takes the
+plain cookie's name over TLS, which is what the copy relies on).
 
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several

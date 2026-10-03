@@ -29,6 +29,9 @@ type Config struct {
 	// Volumes is the data drive's subvolume holding every data volume -
 	// what is snapshotted before an update and put back after a failed one.
 	Volumes string
+	// Cache holds what can be made again; Library the media (reset.go).
+	Cache   string
+	Library string
 	// ManifestURL is where releases are published; ".sig" beside it.
 	ManifestURL string
 	// Key is the release key built into the box.
@@ -50,6 +53,8 @@ func (c Config) Defaults() Config {
 	set(&c.Up, "/usr/local/lib/soundstorm/up.sh")
 	set(&c.StateDir, "/var/lib/soundstorm-caretaker")
 	set(&c.Volumes, "/srv/soundstorm/volumes")
+	set(&c.Cache, "/srv/soundstorm/cache")
+	set(&c.Library, "/srv/soundstorm/library")
 	set(&c.ManifestURL, "https://github.com/GabrielHollberg/soundstorm/releases/download/box-channel/manifest.json")
 	set(&c.HealthURL, "http://localhost:8099/healthz")
 	if c.HealthWait == 0 {
@@ -99,6 +104,7 @@ type Updater struct {
 	mu     sync.Mutex
 	busy   sync.Mutex
 	status Status
+	button presses
 }
 
 // New makes an Updater for the box.
