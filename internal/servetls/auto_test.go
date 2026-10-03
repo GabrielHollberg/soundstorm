@@ -78,6 +78,20 @@ type stubAuthority struct {
 	lifetime time.Duration
 	issued   atomic.Int32
 	fail     error
+	// window, when set, is the renewal window it gives (ACME Renewal
+	// Information); unset, it offers none. replaced is what each order said
+	// it replaces.
+	window   func(leaf *x509.Certificate) (time.Time, time.Time)
+	mu       sync.Mutex
+	replaced []string
+}
+
+func (a *stubAuthority) RenewalWindow(_ context.Context, leaf *x509.Certificate) (time.Time, time.Time, time.Duration, error) {
+	if a.window == nil {
+		return time.Time{}, time.Time{}, 0, acme.ErrNoRenewalInfo
+	}
+	start, end := a.window(leaf)
+	return start, end, 6 * time.Hour, nil
 }
 
 func newStubAuthority(t *testing.T) *stubAuthority {
@@ -93,7 +107,10 @@ func newStubAuthority(t *testing.T) *stubAuthority {
 	return &stubAuthority{ca: ca, caKey: key, lifetime: 90 * 24 * time.Hour}
 }
 
-func (a *stubAuthority) Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver acme.Solver) ([]byte, error) {
+func (a *stubAuthority) Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver acme.Solver, replaces string) ([]byte, error) {
+	a.mu.Lock()
+	a.replaced = append(a.replaced, replaces)
+	a.mu.Unlock()
 	if a.fail != nil {
 		return nil, a.fail
 	}
@@ -729,5 +746,47 @@ func TestRemoteAccessOffAfterARestartTakesThePublicNameDown(t *testing.T) {
 	}
 	if clears.Load() != 1 {
 		t.Errorf("the public name was taken down again on a later step (%d removals)", clears.Load())
+	}
+}
+
+// The authority says when to renew (ACME Renewal Information): not before its
+// window, and inside it - long before a third of the life is left - the renewal names
+// the certificate it replaces - which is what makes it exempt from Let's
+// Encrypt's limits, ordinary renewals counting against soundstorm.dev's 50 a
+// week.
+func TestRenewalFollowsTheAuthoritysWindow(t *testing.T) {
+	namesURL, _, _ := nameService(t, "a-secret-that-is-long-enough-to-use")
+	authority := newStubAuthority(t)
+	authority.lifetime = 30 * 24 * time.Hour // nowhere near due by its age
+	var opens time.Time
+	authority.window = func(*x509.Certificate) (time.Time, time.Time) { return opens, opens.Add(time.Second) }
+	s := loadAutoForTest(t, t.TempDir(), namesURL, authority)
+	if err := s.auto.step(context.Background()); err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	first := s.auto.cert.Leaf
+	firstID, err := acme.CertID(first)
+	if err != nil {
+		t.Fatalf("the certificate has no id to be replaced by: %v", err)
+	}
+
+	opens = time.Now().Add(48 * time.Hour)
+	if err := s.auto.step(context.Background()); err != nil || authority.issued.Load() != 1 {
+		t.Fatalf("renewed before the authority's window: issued %d, %v", authority.issued.Load(), err)
+	}
+
+	// The window opens: asked again (as told, after a while), and renewed.
+	opens = time.Now().Add(-time.Second)
+	s.auto.mu.Lock()
+	s.auto.renewAskAt = time.Now()
+	s.auto.mu.Unlock()
+	if err := s.auto.step(context.Background()); err != nil || authority.issued.Load() != 2 {
+		t.Fatalf("not renewed inside the window: issued %d, %v", authority.issued.Load(), err)
+	}
+	authority.mu.Lock()
+	replaced := append([]string(nil), authority.replaced...)
+	authority.mu.Unlock()
+	if len(replaced) != 2 || replaced[0] != "" || replaced[1] != firstID {
+		t.Fatalf("orders said they replace %q; want nothing, then %q", replaced, firstID)
 	}
 }

@@ -5101,6 +5101,29 @@ Phones away from home then got the local authority's certificate for
 the remote name is now read from the certificate on disk, and an unanswered
 check is retried after five minutes rather than twelve hours.
 
+**Renewals say what they replace (ACME Renewal Information, RFC 9773;
+2026-10-03).** Let's Encrypt's 50 certificates a week per registered domain
+counts ordinary renewals too ("ARI renewals" alone are exempt), and every
+install shares soundstorm.dev: renewing every two months, the whole domain
+would have topped out around 430 installs. So `acme.Client.RenewalWindow` asks
+the authority when to renew (its directory's `renewalInfo`, by `CertID`: the
+authority key id and serial, base64url, checked against the RFC's own
+example), the install renews at a moment in that window chosen from the
+certificate's id (spread out, the same each time; asked again as Retry-After
+says), and the new order carries `replaces` - refused, it is asked again
+without. With no answer, a third of the life left still decides, and a week
+left always does. Only new installs now count against the 50 a week. Checked:
+the unit tests and a stand-in authority's window; the Pebble rehearsal in CI
+asks for a window and renews with `replaces`. **The Public Suffix List** was
+looked at the same day and is not for now: it declines projects "serving fewer
+than thousands of users", refuses rate limits as a reason ("we do not accept
+entries whose sole purpose is to circumvent rate limits"), and wants the
+domain registered more than two years ahead (soundstorm.dev ran to 2027-08-30).
+When sales near 40 new boxes a week, Let's Encrypt's rate limit adjustment
+form (weeks); the PSL once there are thousands, led by keeping installs'
+cookies and sign-ins apart. And the 2,500-record ceiling below means moving
+the zone's DNS (not the registration) to a host with more, around 1,500.
+
 **Porkbun's limits, from its OpenAPI spec rather than its docs page, which
 states none:** a general budget of 20 requests per 2 seconds per key, measured
 but not yet enforced; and **2,500 records per domain**, which is the ceiling

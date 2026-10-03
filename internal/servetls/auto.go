@@ -6,8 +6,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -61,7 +63,8 @@ const (
 
 // issuer is what gets a certificate: acme.Client in life, a stub in tests.
 type issuer interface {
-	Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver acme.Solver) ([]byte, error)
+	Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver acme.Solver, replaces string) ([]byte, error)
+	RenewalWindow(ctx context.Context, leaf *x509.Certificate) (start, end time.Time, askAgain time.Duration, err error)
 }
 
 // Retry pacing. A failure is nearly always the service or the authority being
@@ -112,6 +115,12 @@ type autoCert struct {
 	// and half a day is too long to leave that unanswered.
 	recheckSoon bool
 	cert        *tls.Certificate
+	// What the authority last said about renewing cert (ACME Renewal
+	// Information): for which certificate, the moment chosen in its window,
+	// and when to ask again.
+	renewFor   string
+	renewAt    time.Time
+	renewAskAt time.Time
 	// upstream is what stands between the home router and the internet, from
 	// the router's own WAN address: carrier-grade NAT or a second router mean
 	// no forward on this router can work, and the account panel says so
@@ -449,13 +458,19 @@ func (a *autoCert) step(ctx context.Context) error {
 	}
 	a.mu.Unlock()
 
-	if cert != nil && certCovers(cert.Leaf, domains) && !dueForRenewal(cert.Leaf, time.Now()) {
-		return nil
-	}
-
 	key, err := a.accountKey()
 	if err != nil {
 		return err
+	}
+	if cert != nil && certCovers(cert.Leaf, domains) && !a.renewalDue(ctx, a.newACME(key), cert.Leaf, time.Now()) {
+		return nil
+	}
+	// The certificate this one renews, named to the authority: a renewal
+	// saying what it replaces is exempt from Let's Encrypt's rate limits (a
+	// certificate on disk is always from this authority - see issuerFile).
+	replaces := ""
+	if cert != nil {
+		replaces, _ = acme.CertID(cert.Leaf)
 	}
 	certKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -466,7 +481,7 @@ func (a *autoCert) step(ctx context.Context) error {
 	// ever - it also carries remote access being turned off.
 	obtainCtx, cancelObtain := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancelObtain()
-	chain, err := a.newACME(key).Obtain(obtainCtx, domains, certKey, namesSolver{a.names, reg, publicName})
+	chain, err := a.newACME(key).Obtain(obtainCtx, domains, certKey, namesSolver{a.names, reg, publicName}, replaces)
 	if err != nil {
 		return fmt.Errorf("certificate for %s: %w", strings.Join(domains, ","), err)
 	}
@@ -583,6 +598,44 @@ func (a *autoCert) accountKey() (*ecdsa.PrivateKey, error) {
 		return nil, err
 	}
 	return key, nil
+}
+
+// renewalDue decides whether to renew leaf now. The authority says when
+// (ACME Renewal Information): a moment is chosen within its window - the same
+// one every time for a certificate, so installs spread out rather than all
+// renewing at the window's start - and renewing then is what makes the
+// renewal exempt from rate limits. Without an answer (an authority without
+// it, or not reachable) a third of the life left still decides, and so does
+// a week left whatever was said.
+func (a *autoCert) renewalDue(ctx context.Context, authority issuer, leaf *x509.Certificate, now time.Time) bool {
+	if now.After(leaf.NotAfter.Add(-7 * 24 * time.Hour)) {
+		return true
+	}
+	id, err := acme.CertID(leaf)
+	if err != nil {
+		return dueForRenewal(leaf, now)
+	}
+	a.mu.RLock()
+	known, at, askAt := a.renewFor == id, a.renewAt, a.renewAskAt
+	a.mu.RUnlock()
+	if !known || !now.Before(askAt) {
+		askCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		start, end, again, err := authority.RenewalWindow(askCtx, leaf)
+		cancel()
+		if err != nil {
+			if !errors.Is(err, acme.ErrNoRenewalInfo) {
+				a.log.Debug("could not ask when to renew; going by the certificate's age", "err", err)
+			}
+			return dueForRenewal(leaf, now)
+		}
+		sum := sha256.Sum256([]byte(id))
+		span := end.Sub(start)
+		at = start.Add(time.Duration(binary.BigEndian.Uint64(sum[:8]) % uint64(span)))
+		a.mu.Lock()
+		a.renewFor, a.renewAt, a.renewAskAt = id, at, now.Add(again)
+		a.mu.Unlock()
+	}
+	return !now.Before(at)
 }
 
 // dueForRenewal is true once a third of the certificate's life is left:

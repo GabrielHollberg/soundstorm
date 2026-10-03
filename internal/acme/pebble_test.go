@@ -80,7 +80,7 @@ func TestPebbleIssuesACertificateForARegisteredName(t *testing.T) {
 	certKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 
 	client := &Client{Directory: directory, Key: accountKey, HTTP: pebbleHTTP}
-	chainPEM, err := client.Obtain(ctx, []string{reg.Name}, certKey, namesSolver{nc, reg})
+	chainPEM, err := client.Obtain(ctx, []string{reg.Name}, certKey, namesSolver{nc, reg}, "")
 	if err != nil {
 		t.Fatalf("obtain: %v", err)
 	}
@@ -103,9 +103,19 @@ func TestPebbleIssuesACertificateForARegisteredName(t *testing.T) {
 
 	// A renewal is a new process with the same account key: registering again
 	// has to find the existing account, not fail or make another.
+	// And it says when to renew it, and the renewal names what it replaces
+	// (RFC 9773) - what exempts a renewal from Let's Encrypt's limits.
 	again := &Client{Directory: directory, Key: accountKey, HTTP: pebbleHTTP}
-	if _, err := again.Obtain(ctx, []string{reg.Name}, certKey, namesSolver{nc, reg}); err != nil {
-		t.Fatalf("renewal with the same account key: %v", err)
+	start, end, _, err := again.RenewalWindow(ctx, leaf)
+	if err != nil || !end.After(start) || end.After(leaf.NotAfter) {
+		t.Fatalf("renewal window %v to %v for a certificate ending %v: %v", start, end, leaf.NotAfter, err)
+	}
+	id, err := CertID(leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := again.Obtain(ctx, []string{reg.Name}, certKey, namesSolver{nc, reg}, id); err != nil {
+		t.Fatalf("renewal with the same account key, replacing the first: %v", err)
 	}
 }
 

@@ -67,6 +67,9 @@ type directory struct {
 	NewNonce   string `json:"newNonce"`
 	NewAccount string `json:"newAccount"`
 	NewOrder   string `json:"newOrder"`
+	// RenewalInfo is ACME Renewal Information (RFC 9773), where an authority
+	// says when to renew. Empty where it does not offer it.
+	RenewalInfo string `json:"renewalInfo"`
 }
 
 // Problem is an error document from the authority (RFC 7807), which is where
@@ -110,7 +113,24 @@ func RateLimited(err error) bool {
 // install that answers to both its LAN name and its remote name needs both,
 // and a single multi-name certificate is one order and one renewal against the
 // shared per-domain Let's Encrypt allowance rather than two.
-func (c *Client) Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver Solver) ([]byte, error) {
+//
+// replaces, when not empty, is the CertID of the certificate this one renews
+// (RFC 9773): Let's Encrypt exempts such a renewal from every rate limit,
+// which matters because ordinary renewals count against the shared 50 a week
+// for soundstorm.dev - every install renewing every two months would have
+// capped the whole domain at a few hundred installs. An authority that
+// refuses it (the old one already replaced, say) is asked again without it.
+func (c *Client) Obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver Solver, replaces string) ([]byte, error) {
+	chain, err := c.obtain(ctx, domains, certKey, solver, replaces)
+	var p *Problem
+	if replaces != "" && err != nil && errors.As(err, &p) && !RateLimited(err) &&
+		(strings.HasSuffix(p.Type, ":alreadyReplaced") || strings.HasSuffix(p.Type, ":malformed") || strings.HasSuffix(p.Type, ":conflict")) {
+		return c.obtain(ctx, domains, certKey, solver, "")
+	}
+	return chain, err
+}
+
+func (c *Client) obtain(ctx context.Context, domains []string, certKey crypto.Signer, solver Solver, replaces string) ([]byte, error) {
 	if len(domains) == 0 {
 		return nil, errors.New("no domains to certify")
 	}
@@ -130,9 +150,11 @@ func (c *Client) Obtain(ctx context.Context, domains []string, certKey crypto.Si
 		Certificate    string   `json:"certificate"`
 		Error          *Problem `json:"error"`
 	}
-	resp, err := c.post(ctx, c.dir.NewOrder, map[string]any{
-		"identifiers": identifiers,
-	}, &order)
+	newOrder := map[string]any{"identifiers": identifiers}
+	if replaces != "" && c.dir.RenewalInfo != "" {
+		newOrder["replaces"] = replaces
+	}
+	resp, err := c.post(ctx, c.dir.NewOrder, newOrder, &order)
 	if err != nil {
 		return nil, fmt.Errorf("new order: %w", err)
 	}
@@ -180,6 +202,81 @@ func (c *Client) Obtain(ctx context.Context, domains []string, certKey crypto.Si
 		return nil, fmt.Errorf("download certificate: %w", err)
 	}
 	return chain, nil
+}
+
+// --- renewal information (RFC 9773) ---------------------------------------------
+
+// ErrNoRenewalInfo is an authority that does not say when to renew.
+var ErrNoRenewalInfo = errors.New("acme: the authority offers no renewal information")
+
+// CertID names a certificate to its authority for renewal information and
+// "replaces": its Authority Key Identifier and its serial number, each
+// base64url, joined by a dot.
+func CertID(leaf *x509.Certificate) (string, error) {
+	if len(leaf.AuthorityKeyId) == 0 {
+		return "", errors.New("acme: certificate has no authority key identifier")
+	}
+	if leaf.SerialNumber == nil || leaf.SerialNumber.Sign() <= 0 {
+		return "", errors.New("acme: certificate has no serial number")
+	}
+	// The serial as DER writes an INTEGER's value: big-endian, with a zero
+	// byte in front when the top bit is set, so it does not read as negative.
+	serial := leaf.SerialNumber.Bytes()
+	if serial[0]&0x80 != 0 {
+		serial = append([]byte{0}, serial...)
+	}
+	return b64(leaf.AuthorityKeyId) + "." + b64(serial), nil
+}
+
+// RenewalWindow is when the authority wants leaf renewed: start and end of
+// the window, and how long until it is worth asking again. A window already
+// begun (or past) means now - which is also how an authority asks for an
+// early renewal, ahead of revoking a certificate.
+func (c *Client) RenewalWindow(ctx context.Context, leaf *x509.Certificate) (start, end time.Time, askAgain time.Duration, err error) {
+	if err := c.discover(ctx); err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	if c.dir.RenewalInfo == "" {
+		return time.Time{}, time.Time{}, 0, ErrNoRenewalInfo
+	}
+	id, err := CertID(leaf)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.dir.RenewalInfo, "/")+"/"+id, nil)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("acme: renewal information: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return time.Time{}, time.Time{}, 0, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("acme: renewal information answered %d", resp.StatusCode)
+	}
+	var info struct {
+		SuggestedWindow struct {
+			Start time.Time `json:"start"`
+			End   time.Time `json:"end"`
+		} `json:"suggestedWindow"`
+	}
+	if err := json.Unmarshal(body, &info); err != nil {
+		return time.Time{}, time.Time{}, 0, fmt.Errorf("acme: renewal information: %w", err)
+	}
+	start, end = info.SuggestedWindow.Start, info.SuggestedWindow.End
+	if start.IsZero() || end.IsZero() || !end.After(start) {
+		return time.Time{}, time.Time{}, 0, errors.New("acme: renewal information has no usable window")
+	}
+	askAgain = 6 * time.Hour
+	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 {
+		askAgain = time.Duration(secs) * time.Second
+	}
+	return start, end, askAgain, nil
 }
 
 // authorize proves control of one identifier.
@@ -278,21 +375,8 @@ func (c *Client) account(ctx context.Context) error {
 		return nil
 	}
 
-	if c.dir == nil {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Directory, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := c.client().Do(req)
-		if err != nil {
-			return fmt.Errorf("acme directory: %w", err)
-		}
-		defer resp.Body.Close()
-		var dir directory
-		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&dir); err != nil || dir.NewOrder == "" {
-			return fmt.Errorf("acme directory at %s is unreadable", c.Directory)
-		}
-		c.dir = &dir
+	if err := c.discover(ctx); err != nil {
+		return err
 	}
 
 	resp, err := c.post(ctx, c.dir.NewAccount, map[string]any{"termsOfServiceAgreed": true}, nil)
@@ -306,6 +390,28 @@ func (c *Client) account(ctx context.Context) error {
 	c.mu.Lock()
 	c.kid = kid
 	c.mu.Unlock()
+	return nil
+}
+
+// discover reads the authority's directory, once.
+func (c *Client) discover(ctx context.Context) error {
+	if c.dir != nil {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Directory, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return fmt.Errorf("acme directory: %w", err)
+	}
+	defer resp.Body.Close()
+	var dir directory
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&dir); err != nil || dir.NewOrder == "" {
+		return fmt.Errorf("acme directory at %s is unreadable", c.Directory)
+	}
+	c.dir = &dir
 	return nil
 }
 
