@@ -96,11 +96,14 @@ enum ServerAddress {
     }
 
     enum CheckError: LocalizedError {
+        case notAnAddress
         case notSoundStorm
         case unreachable(String)
 
         var errorDescription: String? {
             switch self {
+            case .notAnAddress:
+                "That doesn't look like a web address."
             case .notSoundStorm:
                 "Something answered at that address, but it isn't SoundStorm."
             case .unreachable(let why):
@@ -112,23 +115,62 @@ enum ServerAddress {
     /// Asks the server's /healthz, which every SoundStorm answers with
     /// {"status":"ok","sources":n}, so a typo that lands on some other web
     /// server is caught here rather than as a strange page later.
-    /// The server at a typed address, checked: as typed, and for a
-    /// soundstorm.dev name typed without its port, on SoundStorm's own port
-    /// too - the away-from-home name is "<id>.net.soundstorm.dev:8099", and
-    /// typed without ":8099" on a TV it found nothing (reported), where a
-    /// phone opens the whole address from a link.
-    static func find(_ server: URL) async throws -> URL {
-        do {
-            try await check(server)
-            return server
-        } catch {
-            guard server.port == nil, server.scheme == "https",
-                  server.host()?.hasSuffix(".soundstorm.dev") == true,
-                  var parts = URLComponents(url: server, resolvingAgainstBaseURL: false)
-            else { throw error }
-            parts.port = 8099
-            guard let withPort = parts.url, (try? await check(withPort)) != nil else { throw error }
-            return withPort
+    /// The addresses worth trying for what was typed, best first. Just the
+    /// install's code ("abc123", or "abc123.soundstorm.dev") is its home and
+    /// away names; a soundstorm.dev name typed without its port is tried on
+    /// SoundStorm's own port too (the away name is "<id>.net.soundstorm.dev:8099",
+    /// and typed on a TV without ":8099" it found nothing - reported). A phone
+    /// prefers the away name, which works anywhere, and the page moves itself
+    /// to the home name when it can; a TV, which stays put, the home name.
+    static func candidates(_ text: String, preferAway: Bool) -> [URL]? {
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let bare = typed.hasSuffix(".soundstorm.dev") ? String(typed.dropLast(".soundstorm.dev".count)) : typed
+        if !typed.contains("://"), bare.range(of: "^[a-z0-9][a-z0-9-]{2,62}$", options: .regularExpression) != nil,
+           bare != "localhost", !bare.allSatisfy(\.isNumber) {
+            let levels = preferAway ? ["net", "home"] : ["home", "net"]
+            return levels.flatMap { level in
+                ["https://\(bare).\(level).soundstorm.dev:8099", "https://\(bare).\(level).soundstorm.dev"].compactMap(URL.init(string:))
+            }
+        }
+        guard let url = parse(text) else { return nil }
+        guard url.port == nil, url.scheme == "https", url.host()?.hasSuffix(".soundstorm.dev") == true,
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return [url] }
+        parts.port = 8099
+        return [parts.url, url].compactMap { $0 }
+    }
+
+    /// The first of the candidates, best first, that answers like SoundStorm.
+    /// All are tried at once, so a home name that cannot be reached from
+    /// where the device is costs no extra wait beyond the slowest.
+    static func find(_ text: String, preferAway: Bool) async throws -> URL {
+        guard let list = candidates(text, preferAway: preferAway) else { throw CheckError.notAnAddress }
+        if list.count == 1 {
+            try await check(list[0])
+            return list[0]
+        }
+        var results = [Int: Result<Void, Error>]()
+        return try await withThrowingTaskGroup(of: (Int, Result<Void, Error>).self) { group in
+            for (i, url) in list.enumerated() {
+                group.addTask {
+                    do { try await check(url); return (i, .success(())) } catch { return (i, .failure(error)) }
+                }
+            }
+            for try await (i, result) in group {
+                results[i] = result
+                // The best one that answered, once nothing better can.
+                for j in list.indices {
+                    guard let r = results[j] else { break }
+                    if case .success = r {
+                        group.cancelAll()
+                        return list[j]
+                    }
+                }
+            }
+            if list.count > 2, !text.contains(".") {
+                throw CheckError.unreachable("Couldn't reach a server with the code \(text.trimmingCharacters(in: .whitespacesAndNewlines)), at home or away. Check the code - it is in SoundStorm's Settings, Use on your phone or TV - and, away from home, that remote access is on.")
+            }
+            if case .failure(let error) = results[list.count - 1] { throw error }
+            throw CheckError.notSoundStorm
         }
     }
 

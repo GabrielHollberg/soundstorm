@@ -52,11 +52,11 @@ struct ConnectView: View {
                 }
             }
             Text(list.isEmpty
-                 ? "Enter your server's address - the one you open in a browser."
-                 : "Or add another - its address, the one you open in a browser.")
+                 ? "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
+                 : "Or add another - its address, or just the code at its start.")
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            TextField("yourname.home.soundstorm.dev", text: $address)
+            TextField("abc123.home.soundstorm.dev", text: $address)
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .autocorrectionDisabled()
@@ -83,15 +83,12 @@ struct ConnectView: View {
 
     private func connect() {
         guard !checking else { return }
-        guard let server = ServerAddress.parse(address) else {
-            message = "That doesn't look like a web address."
-            return
-        }
         message = nil
         checking = true
         Task {
             do {
-                model.use(try await ServerAddress.find(server))
+                // A TV stays put: its home name first.
+                model.use(try await ServerAddress.find(address, preferAway: false))
             } catch {
                 message = error.localizedDescription
             }

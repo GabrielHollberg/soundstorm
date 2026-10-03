@@ -56,7 +56,7 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         hint.numberOfLines = 0
         hint.textAlignment = .center
 
-        field.placeholder = "yourname.home.soundstorm.dev"
+        field.placeholder = "abc123.home.soundstorm.dev"
         field.keyboardType = .URL
         field.textContentType = .URL
         field.autocapitalizationType = .none
@@ -137,8 +137,8 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         serversTitle.isHidden = list.isEmpty
         servers.isHidden = list.isEmpty
         hint.text = list.isEmpty
-            ? "Enter your server's address - the one you open in a browser."
-            : "Or add another - its address, the one you open in a browser."
+            ? "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
+            : "Or add another - its address, or just the code at its start."
         for server in list {
             var config = UIButton.Configuration.filled()
             config.baseBackgroundColor = Self.surface
@@ -185,15 +185,13 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
 
     private func connect() {
         guard checking == nil else { return }
-        guard let server = ServerAddress.parse(field.text ?? "") else {
-            message.text = "That doesn't look like a web address."
-            return
-        }
+        let typed = field.text ?? ""
         message.text = nil
         setBusy(true)
         checking = Task { [weak self] in
             do {
-                let found = try await ServerAddress.find(server)
+                // A phone leaves the house: its away name first.
+                let found = try await ServerAddress.find(typed, preferAway: true)
                 self?.onConnected?(found)
             } catch {
                 self?.message.text = error.localizedDescription

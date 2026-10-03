@@ -6490,6 +6490,18 @@ the owner asking why a web page had to come first). Two ways, both built:
   with the link approved by hand (`pm set-app-links-user-selection`): the QR's
   address opened the app. Not checked: real verification.
 
+**An address can be just the code at its start (2026-10-02).** Typed on an
+Apple TV at another house, the away name without its port (`:8099`) found
+nothing, and "yourname.home.soundstorm.dev" read as if a name were wanted.
+Both apps' connect screens now say "abc123.home.soundstorm.dev at home or
+abc123.net.soundstorm.dev away - or just the abc123 at its start", and
+`ServerAddress.find` tries every address that could mean (`candidates`): the
+code alone is its home and away names, each with `:8099` and without; a
+soundstorm.dev name without a port is tried with `:8099` too. All at once,
+the best that answers kept - a TV the home name first, a phone the away one
+(the page moves it home when it can). Checked: the list for nine ways of
+typing it. Not checked against a real server from another house.
+
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several
 servers (their own, their parents'), and later several people on each. The
