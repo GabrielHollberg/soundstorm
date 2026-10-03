@@ -4194,3 +4194,7 @@ header { --head-btn: 42px; }
   font-size: 14px; font-weight: 700;
 }
 .ctl-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* Your circle beside Play on, in its look: the same dark fill and ring, the
+   initial in white (the person's colour was loud beside it). A picture still
+   fills it. Elsewhere - Who's listening, the menu - the colours stay. */
+header .me-btn { background-color: var(--surface-2) !important; color: var(--text); font-weight: 700; }
