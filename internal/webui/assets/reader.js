@@ -1109,7 +1109,9 @@ async function freeSection(index) {
       const weight = 1 + (/[.!?]["'\u201d\u2019)\]]*$/.test(w) ? 1.2 : /[,;:\u2014]$/.test(w) ? 0.4 : 0) + (w.length > 8 ? 0.3 : 0);
       cum.push(cum[cum.length - 1] + weight);
     }
-    const out = { words, cum, mean: words.length ? cum[cum.length - 1] / words.length : 1 };
+    const lastWord = words[words.length - 1];
+    const letters = words.length ? lastWord.start + lastWord.w.length + 1 - words[0].start : 0;
+    const out = { words, cum, mean: words.length ? cum[cum.length - 1] / words.length : 1, perWord: words.length ? letters / words.length : 6 };
     free.ready.set(index, out);
     return out;
   })().catch(() => { free.ready.set(index, null); return null; });
@@ -1153,6 +1155,7 @@ async function startFree(mode) {
     let k = 0;
     if (sec) while (k < sec.words.length - 1 && sec.words[k].start < offset) k++;
     free.unit = sec ? sec.cum[k] : 0;
+    free.letters = null;
     free.on = true;
     free.playing = true;
     renderFreeBar();
@@ -1192,6 +1195,30 @@ async function freeToPages() {
   }
 }
 
+// Letters into the chapter, and the word timing's units, each to the other:
+// the same word, the same share of the way through it.
+function lettersToUnit(sec, letters) {
+  const w = sec.words;
+  if (letters <= w[0].start) return 0;
+  let lo = 0;
+  let hi = w.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (w[mid].start <= letters) lo = mid; else hi = mid - 1;
+  }
+  const next = lo + 1 < w.length ? w[lo + 1].start : w[lo].start + w[lo].w.length + 1;
+  const share = Math.min(1, (letters - w[lo].start) / Math.max(1, next - w[lo].start));
+  return sec.cum[lo] + share * (sec.cum[lo + 1] - sec.cum[lo]);
+}
+
+function unitToLetters(sec, unit) {
+  const w = sec.words;
+  const k = freeWordAt(sec, unit);
+  const share = Math.min(1, Math.max(0, (unit - sec.cum[k]) / (sec.cum[k + 1] - sec.cum[k])));
+  const next = k + 1 < w.length ? w[k + 1].start : w[k].start + w[k].w.length + 1;
+  return w[k].start + share * (next - w[k].start);
+}
+
 function freeWordAt(sec, unit) {
   let lo = 0;
   let hi = sec.words.length - 1;
@@ -1209,15 +1236,27 @@ function drawFree(now) {
   const sec = free.ready.get(free.sec);
   if (!sec || !sec.words.length) {
     // A chapter with no words (a cover, a picture): on to the next.
-    if (session.view && free.sec < session.view.book.sections.length - 1) { free.sec++; free.unit = 0; free.first = -1; }
+    if (session.view && free.sec < session.view.book.sections.length - 1) { free.sec++; free.unit = 0; free.letters = null; free.first = -1; }
     return;
   }
-  if (free.playing) free.unit += dt * (freeSpeed() / 60) * sec.mean;
+  // The line glides at a steady pace - so many letters a second, the speed's
+  // average - where a word at a time keeps its pauses at full stops and
+  // commas (the owner: the line should flow at a constant rate). Both keep
+  // the place as the word timing's units, so switching keeps the place.
+  if (free.mode === 'line') {
+    if (free.letters == null) free.letters = unitToLetters(sec, free.unit);
+    if (free.playing) free.letters += dt * (freeSpeed() / 60) * sec.perWord;
+    free.unit = lettersToUnit(sec, free.letters);
+  } else {
+    free.letters = null;
+    if (free.playing) free.unit += dt * (freeSpeed() / 60) * sec.mean;
+  }
   const total = sec.cum[sec.cum.length - 1];
   if (free.unit >= total) {
     if (session.view && free.sec < session.view.book.sections.length - 1) {
       free.sec++;
       free.unit = 0;
+      free.letters = null;
       free.first = -1;
       free.shown = '';
     } else {

@@ -6139,8 +6139,12 @@ at the first letter on the page (the view's `lastLocation.range`, counted in
 the chapter's text nodes, styles and scripts left out - the same walk for the
 page shown and for the chapter loaded on its own) and going back to the pages
 turns to the word reached (`renderer.goTo` with an anchor so many letters in).
-A word ending a sentence gets 1.2 more units, a comma 0.4, a word over eight
-letters 0.3; the speed is the chapter's average. Chapters with no words are
+A word at a time gives a word ending a sentence 1.2 more units, a comma 0.4,
+a word over eight letters 0.3, the speed the chapter's average; **the line
+glides at a constant rate** instead - so many letters a second, the same
+average (the owner) - measured 240-290px a second every half second, the
+spread being letter widths. Both keep the place in the word timing's units, so
+switching views keeps it. Chapters with no words are
 skipped; at a chapter's end it carries on into the next. Checked on the
 starter ebook in Chrome at phone size: a finger's double tap into the line,
 350 a minute gave 19 words in 3s at a word at a time, pause held, and after
