@@ -125,6 +125,14 @@ and Android's Set it up (`soundstorm.local` and port 80 are in the box's
 files now). And "Bringing media in from a USB drive": the box's half
 (`usb.sh` and its udev rule) wants a run in the VM with a USB disk.
 
+6. **No bounce at a page's ends** (2026-10-03): the page now sets
+   `overscroll-behavior-y: none` on html and body, and Android 0.36 turned
+   its web view's stretch off - pulling down at the top moved the tab bar.
+   iOS 16+ should honour the CSS; to be sure, and for older iOS, set
+   `webView.scrollView.bounces = false` in `WebViewController` (lists that
+   scroll inside the page keep their own scrolling either way). Check by
+   pulling down at the top of Home: the header and tabs stay put.
+
 **Apple TV**
 1. ~~**Controlled from a phone**~~ - *done 2026-10-02* (`Remote.swift`,
    `RemoteControlled`): hello as "Apple TV", the long poll, every command,
