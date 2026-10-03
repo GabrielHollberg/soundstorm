@@ -126,12 +126,6 @@ struct PhotoViewer: View {
                 LiveLayer(player: live).ignoresSafeArea()
             }
             VStack {
-                if let toast {
-                    Label(toast, systemImage: player.isPlaying ? "play.fill" : "pause.fill")
-                        .padding(.horizontal, 30).padding(.vertical, 16)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .transition(.opacity)
-                }
                 Spacer()
                 HStack(alignment: .bottom) {
                     if photo.extra?["live"] != nil {
@@ -149,6 +143,9 @@ struct PhotoViewer: View {
             .padding(60)
         }
         .animation(.easeInOut(duration: 0.5), value: captionShown)
+        .overlay(alignment: .bottom) {
+            if let toast { Toast(text: toast).padding(.bottom, 36) }
+        }
         .animation(.easeInOut(duration: 0.3), value: toast)
         .focusable()
         .focused($focused)

@@ -178,3 +178,21 @@ extension View {
     /// Grey explaining text, the page's `.muted`.
     func muted() -> some View { font(.system(size: 30)).foregroundStyle(Theme.muted) }
 }
+
+/// The page's message at the foot of the screen (`.toast`): a dark rounded
+/// box, its text in the page's white.
+struct Toast: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 28, weight: .medium))
+            .foregroundStyle(Theme.text)
+            .lineLimit(1)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 20)
+            .background(RoundedRectangle(cornerRadius: 24).fill(Color(red: 36 / 255, green: 42 / 255, blue: 53 / 255)))
+            .shadow(color: .black.opacity(0.5), radius: 30, y: 24)
+            .transition(.opacity)
+    }
+}

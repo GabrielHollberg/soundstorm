@@ -409,11 +409,10 @@ struct ReaderView: View {
             }
             if let toast {
                 VStack {
-                    Text(toast).padding(.horizontal, 30).padding(.vertical, 14)
-                        .background(.ultraThinMaterial, in: Capsule())
                     Spacer()
+                    Toast(text: toast)
                 }
-                .padding(.top, 30)
+                .padding(.bottom, 36)
             }
         }
         .focusable()

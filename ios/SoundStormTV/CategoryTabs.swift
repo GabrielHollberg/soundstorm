@@ -411,6 +411,18 @@ struct ItemCard: View {
         let size = poster ? CGSize(width: 240, height: 360) : CGSize(width: Theme.card, height: Theme.card)
         let art = Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500), kind: item.kind)
             .frame(width: size.width, height: size.height)
+            .overlay(alignment: .bottom) {
+                // How far through, along the cover's foot, as the page's
+                // Continue row has it.
+                if let p = item.progress, p > 0.005, p < 0.985 {
+                    ZStack(alignment: .leading) {
+                        Color(red: 6 / 255, green: 9 / 255, blue: 14 / 255).opacity(0.7)
+                        Theme.accent.frame(width: size.width * p)
+                    }
+                    .frame(height: 10)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
         Group {
             if item.kind == "tv" && !item.isVideo {
                 NavigationLink(value: item) { art }

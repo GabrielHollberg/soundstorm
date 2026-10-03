@@ -237,10 +237,11 @@ struct QuickPlay: View {
                 Text(label)
                     .font(.system(size: 32, weight: .semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 36)
-            .frame(width: 404, height: 102, alignment: .leading)
+            .frame(maxWidth: 404, minHeight: 102, maxHeight: 102, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 28).fill(primary ? Theme.accent : Theme.quick))
             .ring(radius: 36, width: 8, inset: -8)
         }
