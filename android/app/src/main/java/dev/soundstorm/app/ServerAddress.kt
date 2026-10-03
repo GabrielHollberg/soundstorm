@@ -176,4 +176,58 @@ object ServerAddress {
             conn.disconnect()
         }
     }
+
+    /**
+     * The addresses worth trying for what was typed, best first - as the
+     * iPhone and Apple TV apps try them (ServerAddress.candidates). Just the
+     * install's code ("abc123", or "abc123.soundstorm.dev") is its home and
+     * away names, with and without :8099; a soundstorm.dev name typed without
+     * its port is tried on SoundStorm's own port first (the away name is
+     * "<id>.net.soundstorm.dev:8099", and typed without the port it found
+     * nothing). A phone prefers the away name, which works anywhere (the page
+     * moves itself to the home name when it can); a TV, which stays put, the
+     * home name. Null when it is not an address at all.
+     */
+    fun candidates(typed: String, preferAway: Boolean): List<Uri>? {
+        val text = typed.trim().lowercase()
+        val bare = text.removeSuffix(".soundstorm.dev")
+        if (!text.contains("://") && Regex("^[a-z0-9][a-z0-9-]{2,62}$").matches(bare) &&
+            bare != "localhost" && !bare.all { it.isDigit() }) {
+            val levels = if (preferAway) listOf("net", "home") else listOf("home", "net")
+            return levels.flatMap { level ->
+                listOf("https://$bare.$level.soundstorm.dev:8099", "https://$bare.$level.soundstorm.dev").mapNotNull(::parse)
+            }
+        }
+        val url = parse(typed) ?: return null
+        if (url.port != -1 || url.scheme != "https" || url.host?.endsWith(".soundstorm.dev") != true) return listOf(url)
+        val withPort = parse("https://${url.host}:8099") ?: return listOf(url)
+        return listOf(withPort, url)
+    }
+
+    /**
+     * The best of the candidates that answers like SoundStorm. All are asked
+     * at once, so a home name that cannot be reached from here costs no wait
+     * beyond the slowest. Blocking: call it off the main thread.
+     */
+    fun find(typed: String, preferAway: Boolean): Uri {
+        val list = candidates(typed, preferAway) ?: throw CheckFailed("That doesn't look like a web address.")
+        if (list.size == 1) {
+            check(list[0])
+            return list[0]
+        }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(list.size)
+        try {
+            val results = list.map { url -> pool.submit<String?> { try { check(url); null } catch (e: CheckFailed) { e.message } } }
+            // The best that answered, once nothing better can.
+            for ((i, f) in results.withIndex()) {
+                if (runCatching { f.get() }.getOrDefault("") == null) return list[i]
+            }
+            if (list.size > 2 && !typed.contains('.')) {
+                throw CheckFailed("Couldn't reach a server with the code ${typed.trim()}, at home or away. Check the code - it is in SoundStorm's Settings, Use on your phone or TV - and, away from home, that remote access is on.")
+            }
+            throw CheckFailed(runCatching { results.last().get() }.getOrNull() ?: "Something answered at that address, but it isn't SoundStorm.")
+        } finally {
+            pool.shutdownNow()
+        }
+    }
 }

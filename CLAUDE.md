@@ -6522,6 +6522,11 @@ this Mac and the owner's real server (by its home name) both found. Not
 checked: the permission prompt on a real iPhone, and a real Apple TV.
 **For the PC:** the Android app's connect screen (and so Google TV) wants
 the same - the same addresses, `/healthz` then `/api/session`.
+*(Done in Android 0.34, 2026-10-03: `ServerAddress.candidates`/`find` and
+`ServerDiscovery.kt`, Wi-Fi and wired networks only - mobile data has
+private addresses too. Checked on the emulator, a fresh install: it found
+the PC's server within ten seconds, "Use it - 6lm2ahm6pn", and opened its
+sign-in page.)*
 
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several

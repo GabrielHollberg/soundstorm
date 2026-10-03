@@ -265,6 +265,9 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- connect
 
+    /** Counts connect screens shown, so a search finishing late finds it gone. */
+    private var connectScreen = 0
+
     private fun showConnect(prefill: Uri?) {
         tearDownWeb()
         setStatusColor(Color.BLACK)
@@ -288,6 +291,10 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 32f)
             setTypeface(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
         }, wrap(bottom = 16))
+        // Servers found on this network that are not saved yet: one tap,
+        // nothing to type (ServerDiscovery), filled in as the search answers.
+        val nearby = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        column.addView(nearby, fill(bottom = 16))
         // Your servers: the latest used first, the one in use ticked; a tap
         // switches, a hold offers Rename and Remove.
         val servers = ServerAddress.all(this)
@@ -302,15 +309,15 @@ class MainActivity : Activity() {
             for (s in servers) column.addView(serverRow(s, ServerAddress.origin(s.url) == inUse, surface, accent), fill(bottom = 8))
         }
         column.addView(TextView(this).apply {
-            text = if (servers.isEmpty()) "Enter your server's address - the one you open in a browser."
-                else "Or add another - the address you open in a browser."
+            text = if (servers.isEmpty()) "Enter your server's address - the one you open in a browser - or just the code at its start (abc123)."
+                else "Or add another - its address, or just the code at its start."
             setTextColor(Color.argb(0x99, 0xeb, 0xeb, 0xf5))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             gravity = Gravity.CENTER
         }, fill(top = if (servers.isEmpty()) 0 else 16, bottom = 28))
         val known = prefill != null && servers.any { ServerAddress.origin(it.url) == ServerAddress.origin(prefill) }
         val field = EditText(this).apply {
-            hint = "yourname.home.soundstorm.dev"
+            hint = "abc123.home.soundstorm.dev"
             // Without the scheme for https (the default when none is typed),
             // with it for plain http, which would otherwise be read as https.
             // A server already in the list is not typed out again.
@@ -357,10 +364,14 @@ class MainActivity : Activity() {
         content.addView(scroller, FrameLayout.LayoutParams(MATCH, MATCH))
 
         var checking = false
+        // A phone leaves the house, so it keeps the away name when there is
+        // one (the page moves to the home name when it can); a TV stays put
+        // and keeps the home name.
+        val preferAway = !isTv
         fun connect() {
             if (checking) return
-            val parsed = ServerAddress.parse(field.text.toString())
-            if (parsed == null) {
+            val typed = field.text.toString()
+            if (ServerAddress.candidates(typed, preferAway) == null) {
                 message.text = "That doesn't look like a web address."
                 return
             }
@@ -370,8 +381,9 @@ class MainActivity : Activity() {
             button.text = "Connecting"
             busy.visibility = View.VISIBLE
             background.execute {
+                var found: Uri? = null
                 val problem = try {
-                    ServerAddress.check(parsed)
+                    found = ServerAddress.find(typed, preferAway)
                     null
                 } catch (e: ServerAddress.CheckFailed) {
                     e.message
@@ -381,16 +393,82 @@ class MainActivity : Activity() {
                     field.isEnabled = true
                     button.text = "Connect"
                     busy.visibility = View.GONE
-                    if (problem == null) {
-                        ServerAddress.remember(this, parsed)
+                    val url = found
+                    if (url != null) {
+                        ServerAddress.remember(this, url)
                         hideKeyboard(field)
-                        showWeb(parsed)
+                        showWeb(url)
                     } else {
                         message.text = problem
                     }
                 }
             }
         }
+        // The network search: again after a while, as the server may still be
+        // starting - every 10 seconds while nothing is found, 30 once
+        // something is - for as long as this screen is the one showing.
+        val screen = ++connectScreen
+        val savedHosts = servers.mapNotNull { it.url.host }.toSet()
+        fun use(server: ServerDiscovery.Found) {
+            if (checking) return
+            checking = true
+            busy.visibility = View.VISIBLE
+            background.execute {
+                // A home name's code finds the away name too, which a phone keeps.
+                val code = server.url.host?.takeIf { it.endsWith(".home.soundstorm.dev") }?.removeSuffix(".home.soundstorm.dev")
+                val url = code?.let { runCatching { ServerAddress.find(it, preferAway) }.getOrNull() } ?: server.url
+                runOnUiThread {
+                    checking = false
+                    busy.visibility = View.GONE
+                    if (screen != connectScreen) return@runOnUiThread
+                    ServerAddress.remember(this, url)
+                    hideKeyboard(field)
+                    showWeb(url)
+                }
+            }
+        }
+        fun showFound(found: List<ServerDiscovery.Found>) {
+            nearby.removeAllViews()
+            nearby.visibility = if (found.isEmpty()) View.GONE else View.VISIBLE
+            if (found.isEmpty()) return
+            nearby.addView(TextView(this).apply {
+                text = if (found.size == 1) "We found SoundStorm on your network" else "We found SoundStorm on your network - which one?"
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+                setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+                gravity = Gravity.CENTER
+            }, fill(bottom = 10))
+            for (f in found) {
+                nearby.addView(Button(this).apply {
+                    text = if (found.size == 1) "Use it - ${f.label}" else f.label
+                    isAllCaps = false
+                    setTextColor(Color.BLACK)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    setTypeface(typeface, Typeface.BOLD)
+                    background = android.graphics.drawable.StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply {
+                            cornerRadius = dp(14).toFloat(); setColor(accent); setStroke(dp(3), Color.WHITE)
+                        })
+                        addState(intArrayOf(), GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(accent) })
+                    }
+                    stateListAnimator = null
+                    setOnClickListener { use(f) }
+                }, fill(height = 52, bottom = 8))
+            }
+            // On a TV the remote lands on it first.
+            if (isTv && servers.isEmpty()) nearby.getChildAt(1)?.requestFocus()
+        }
+        fun search() {
+            background.execute {
+                val found = ServerDiscovery.search().filter { it.url.host !in savedHosts }
+                runOnUiThread {
+                    if (screen != connectScreen) return@runOnUiThread
+                    showFound(found)
+                    content.postDelayed({ if (screen == connectScreen) search() }, if (found.isEmpty()) 10_000L else 30_000L)
+                }
+            }
+        }
+        search()
         button.setOnClickListener { connect() }
         field.setOnEditorActionListener { _, action, event ->
             if (action == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
@@ -496,6 +574,7 @@ class MainActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun showWeb(target: Uri, keepMusic: Boolean = false) {
+        connectScreen++ // the connect screen's network search stops
         tearDownWeb(keepMusic)
         server = target
         content.removeAllViews()
