@@ -3250,6 +3250,7 @@ function playAudio(item, fromQueue) {
   audio.chapters = [];
   audio.captionChapter = -1;
   audio.urlMap = null;
+  audio.hlsURL = '';
   audio.index = 0;
   audio.resumable = false;
   audio.duration = item.durationSeconds || 0;
@@ -3350,6 +3351,14 @@ async function loadPlayback(item) {
 
   const info = (ok && body) || {};
 
+  // A long book in one file is played in pieces (the server's /api/bookhls),
+  // or it would fetch its whole index - tens of megabytes - before a word. A
+  // downloaded book plays its kept files, so it keeps their addresses.
+  audio.hlsURL = item.kind === 'audiobook' && info.mode === 'hls' && info.url && !isDownloaded(item) ? info.url : '';
+  if (Array.isArray(info.tracks) && item.kind === 'audiobook' && isDownloaded(item)) {
+    info.tracks = info.tracks.map((t) => ({ ...t, url: t.file || t.url }));
+  }
+
   // A downloaded audiobook plays from the device whether or not the server
   // answered, from the file list kept with it, and from the place it was last
   // listened to here if that never reached the server.
@@ -3414,7 +3423,7 @@ function seekTo(seconds, item) {
     startAt(audio.tracks[index].url, seconds - audio.tracks[index].startSeconds);
     return;
   }
-  startAt(playPath(item), seconds);
+  startAt(audio.hlsURL || playPath(item), seconds);
 }
 
 function trackContaining(seconds) {
@@ -3436,7 +3445,7 @@ function startAt(url, offset) {
   audio.savedAt = Date.now();
   // A downloaded audiobook plays from the device: its files' server
   // addresses map to copies kept here.
-  player.src = (audio.urlMap && audio.urlMap[url]) || url;
+  setAudioSource(player, (audio.urlMap && audio.urlMap[url]) || url);
 
   // Taking over a song the app's player has paused leaves it paused.
   const begin = () => {
@@ -3459,6 +3468,30 @@ function startAt(url, offset) {
   } else {
     begin();
   }
+}
+
+// setAudioSource hands the player a file, or a book's pieces (a playlist,
+// .m3u8). Safari, Chrome on Android and recent desktop Chrome play the pieces
+// themselves, as does the Android app's own player; elsewhere hls.js, fetched
+// the first time, feeds them to the same element.
+function setAudioSource(player, url) {
+  if (audio.hlsPlayer) {
+    audio.hlsPlayer.destroy();
+    audio.hlsPlayer = null;
+  }
+  const pieces = /\.m3u8(\?|$)/.test(url);
+  if (!pieces || NATIVE_AUDIO || player.canPlayType('application/vnd.apple.mpegurl')) {
+    player.src = url;
+    return;
+  }
+  player.removeAttribute('src');
+  loadHls().then((Hls) => {
+    if (!Hls || !Hls.isSupported() || audio.hlsPlayer) return;
+    const h = new Hls({ enableWorker: true });
+    audio.hlsPlayer = h;
+    h.loadSource(url);
+    h.attachMedia(player);
+  }).catch(() => showToast('This browser cannot play this book.'));
 }
 
 function renderTracks() {
@@ -3682,6 +3715,8 @@ function stopAudio() {
   audio.tracks = [];
   audio.chapters = [];
   audio.index = 0;
+  audio.hlsURL = '';
+  if (audio.hlsPlayer) { audio.hlsPlayer.destroy(); audio.hlsPlayer = null; }
   audio.resumable = false;
   audio.started = false;
 
@@ -11334,6 +11369,8 @@ async function downloadBook(item, onProgress = () => {}, shouldStop, opts = {}) 
     const { ok, body } = await api(`/api/playback/${encodeURIComponent(item.sourceId)}/${escapeId(item.id)}`);
     if (!ok) throw new Error('could not read the audiobook');
     tracks = body && Array.isArray(body.tracks) && body.tracks.length > 1 ? body.tracks : null;
+    // A long file's own address, not its pieces (bookhls): a download is the file.
+    if (tracks) tracks = tracks.map((t) => ({ ...t, url: t.file || t.url }));
     const urls = tracks ? tracks.map((t) => t.url) : [streamPath(item)];
     for (let i = 0; i < urls.length; i++) {
       await keepURL(cache, urls[i], (got, total) => onProgress((i + (total ? got / total : 0)) / urls.length));

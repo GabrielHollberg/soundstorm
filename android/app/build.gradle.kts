@@ -11,8 +11,8 @@ android {
         applicationId = "dev.soundstorm.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "0.34"
+        versionCode = 35
+        versionName = "0.35"
     }
 
     buildTypes {
@@ -54,6 +54,8 @@ dependencies {
     // Android's own media player, for songs from the server (AudioService):
     // screen-off playback, audio focus, gapless.
     implementation("androidx.media3:media3-exoplayer:1.5.1")
+    // A long audiobook in one .m4b is played in pieces (the server's /api/bookhls).
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
     // Phone photo backup (PhotoBackup): jobs Android runs when it suits -
     // on Wi-Fi, while charging - with the app closed.

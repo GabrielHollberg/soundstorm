@@ -2533,6 +2533,36 @@ belongs to its own evening; a local year reads the UTC files either side.
 All time comes from History's counts, so it says something from the first
 day; the year starts counting the day this shipped, and says so.
 
+**A long audiobook in one file plays in pieces** (`internal/mp4hls`,
+`httpapi/bookhls.go`, 2026-10-03). Reported as read-along books taking for
+ever to start; measured from the server's log, away from home: the page was
+ready in a second, and the sound took 33 seconds - the player fetching the
+book's index before a word. Every Audible .m4b keeps its index (moov) at the
+end, and a long one's is big: 33.5MB for the 52.7-hour Count of Monte Cristo,
+3-6MB for the others. So a file whose index is 2MB or more is offered as HLS
+made from the file itself: the playback answer says `mode: hls` with
+`/api/bookhls/<source>/<item>/<track>/index.m3u8` (a multi-file book, each
+such track's `url`, the file's own kept as `file`), and the server reads the
+index (0.1s on the 52-hour book) and serves an init segment and ten-second
+fragments - a moof of the samples' sizes and durations and an mdat of the
+original bytes, byte for byte: a remux like slim.go, nothing transcoded.
+Only the sound track is kept (the chapter text track and cover are not
+needed), the edit list dropped (AAC priming, ~50ms). The playlist (0.5MB for
+the 52-hour book) is sent gzipped. Three books are kept open, their index in
+memory. Downloads keep the file (`t.file || t.url`), and a downloaded book
+plays its file. The page plays the pieces with the browser's own HLS where
+there is one, else hls.js (`setAudioSource`); Android 0.35 adds Media3's HLS
+module for its native player. Checked: ffmpeg read the pieces of a generated
+book with exactly the original's audio (identical ADTS); the routes through
+`Routes()` (`TestALongBookPlaysInPieces`); and Chrome playing the real
+52-hour book from the pieces - sound in 0.7s (was 33s), a jump to hour 50 in
+0.6s, with Chrome's own HLS and with hls.js. Not checked: the Android app's
+and the Apple apps' players on a real book. **For the Mac:** the iPhone's
+native player and the Apple TV are handed the playlist as the book's url (a
+multi-file book's tracks too); AVPlayer plays HLS, but check the cookie goes
+with every fragment (`AVURLAssetHTTPCookiesKey`) and that a book's clock and
+seeking behave as with a file.
+
 ## Read Along keeps the screen on
 
 While a book follows its audiobook, nobody touches the phone, so it used to

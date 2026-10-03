@@ -120,6 +120,7 @@ type Server struct {
 	players        playerHub
 	playerCommands allowance
 	hlsSessions    hlsSessions
+	bookHLS        bookHLS
 	lookingUpMu    sync.Mutex
 	lookingUp      map[string]bool
 	// imports limits how often somebody may import playlists (a file, or
@@ -388,6 +389,7 @@ func (s *Server) Routes() http.Handler {
 	// you left off, PUT says where you are now.
 	guarded.HandleFunc("PUT /api/playback/{source}/{id...}", s.limited(&s.otherWrites, 60, time.Second, s.handleSetPosition))
 	guarded.HandleFunc("GET /api/hls/{source}/{path...}", s.handleHLS)
+	guarded.HandleFunc("GET /api/bookhls/{source}/{id}/{track}/{file}", s.handleBookHLS)
 	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)
 
 	// The reader's endpoints take source/id/path as query parameters rather
@@ -1898,6 +1900,10 @@ func (s *Server) handlePlayback(w http.ResponseWriter, r *http.Request) {
 			answer["tracks"] = trackList(sourceID, tracks)
 		}
 	}
+
+	// A long book in one MP4 is played in pieces, not made to fetch its whole
+	// index first (bookhls.go).
+	s.bookHLSAnswer(r.Context(), src, sourceID, itemID, answer)
 
 	// The book's chapters, for its table of contents: marks inside one file as
 	// well as one file per chapter. Only when there is more than one.

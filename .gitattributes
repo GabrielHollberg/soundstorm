@@ -35,3 +35,4 @@ Dockerfile text eol=lf
 
 # The box's files are copied into a Linux system disk.
 box/rootfs/** text eol=lf
+*.m4b binary
