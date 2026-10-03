@@ -119,6 +119,10 @@ is described in full in its own section below; tick them off here:
    back in the middle; the phone's level is restored when it ends. Not
    checkable in the simulator.
 
+**For the PC, newest (2026-10-03):** see "Setting up a new box" under
+"Selling it on a box" - the setup code made in advance and on the sticker,
+`soundstorm.local` over mDNS and port 80 on the box, and Android's Set it up.
+
 **Apple TV**
 1. ~~**Controlled from a phone**~~ - *done 2026-10-02* (`Remote.swift`,
    `RemoteControlled`): hello as "Apple TV", the long poll, every command,
@@ -231,6 +235,58 @@ decided past the first test unit.
 - **Not decided:** the license (MIT now; AGPL or a source-available one such
   as FSL were discussed, keeping the repo public), and reselling Beelink
   boxes as they are versus their OEM program.
+
+### Setting up a new box - decided with the owner, 2026-10-03
+
+**For the PC: what the box's setup needs, none of it built yet.** The aim is
+"some rando buys it, plugs it in" with no address ever typed. The order a
+buyer goes through:
+
+1. **Plug in** power and the router's cable (no Wi-Fi on this box).
+2. **With a phone (most people):** get the app (a QR on the sticker or card),
+   open it - it finds the box on the network (built: iPhone and Apple TV
+   `ServerDiscovery`; Android 0.3x) and, as the box has no owner yet
+   (`/healthz` `setUp: false`), says **"We found your new SoundStorm" - Set it
+   up** (built on iPhone: scan or type the setup code, then the page's sign-up
+   asks only a name and password). The server then calls itself
+   "<owner>'s SoundStorm" (built, `state.ServerName`).
+3. **With only a laptop:** the sticker says **"On a computer, open
+   soundstorm.local"** - the web sign-up, with the setup code from the sticker.
+4. **TVs and the family's phones** find "<owner>'s SoundStorm" by name and
+   sign in (TVs from a phone, built).
+
+What the PC builds for it:
+
+- **The setup code made when the box is prepared, and printed on the
+  sticker** - today `soundstorm` writes one into `.env` at first start, which
+  no sticker can know. As a QR code too: the iPhone app's scanner takes the
+  code alone or any address carrying `?setup=` (`ConnectViewController.setupCode`).
+- **The sticker is just three things:** the setup code (printed and QR), a QR
+  to get the app, and "On a computer, open soundstorm.local". **No
+  pre-printed home address** - it was considered (a box's id can be made in
+  advance, as the name service holds no state) and set aside: the app never
+  needs it, it fails until the box is up, some routers refuse such names, and
+  the name service allows 30 new ids a day per network. Revisit only if
+  `soundstorm.local` proves not enough.
+- **`soundstorm.local` on the box:** the box's own system announces it over
+  mDNS (avahi-daemon on the host, hostname `soundstorm`; a second box on one
+  network becomes `soundstorm-2.local` by itself). This is the Bonjour that
+  does not work for Docker installs - the box owns its host, so it does here.
+  Macs, Windows 10 and later, Linux and iPhones resolve `.local`; Windows
+  before 10 and networks blocking multicast do not (rare at home; the
+  router's device list is the fallback).
+- **The box answers on port 80 as well as 8099**, so `soundstorm.local` needs
+  no port (compose.box.yml: publish 80 to SoundStorm's port too). After
+  sign-up the page moves itself to the secure home name as it already does.
+- **Android's Set it up:** the Android app's search should read `/healthz`'s
+  `name` and `setUp` as the iPhone's does - show servers by name, and a box
+  with no owner as "We found your new SoundStorm - Set it up" with the code
+  scanned (the app has Google's scanner) or typed, opening the page with
+  `?setup=`.
+- Later, from the same walkthrough (not yet decided to build): "still
+  getting ready" when a box is found mid-start, "is your phone on the home
+  Wi-Fi?" when nothing is found, a welcome after the first sign-in (add media,
+  away from home, family, TV), and inviting family by QR.
 
 ## The decision that shapes everything
 
