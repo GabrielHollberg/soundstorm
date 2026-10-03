@@ -11,10 +11,38 @@ struct ConnectView: View {
     @State private var list = ServerAddress.all
     @State private var renaming: ServerAddress.Server?
     @State private var newName = ""
+    /// Servers found on this TV's network that it does not know yet.
+    @State private var nearby: [ServerDiscovery.Found] = []
+    @State private var searched = false
 
     var body: some View {
         VStack(spacing: 40) {
             Logo()
+            // Found on the network: one press, nothing to type - the way
+            // somebody who just plugged the server in gets started.
+            if !nearby.isEmpty {
+                VStack(spacing: 16) {
+                    Text(nearby.count == 1 ? "We found SoundStorm on your network" : "We found SoundStorm on your network - which one?")
+                        .font(.title3.bold())
+                    ForEach(nearby) { found in
+                        Button {
+                            model.use(found.url)
+                        } label: {
+                            Text(nearby.count == 1 ? "Use it" : found.label).frame(width: 600)
+                        }
+                    }
+                    if nearby.count == 1 {
+                        Text(found(nearby[0]))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if !searched && list.isEmpty {
+                HStack(spacing: 16) {
+                    ProgressView()
+                    Text("Looking for SoundStorm on your network…").foregroundStyle(.secondary)
+                }
+            }
             if !list.isEmpty {
                 VStack(spacing: 16) {
                     Text("Your servers").font(.headline)
@@ -51,9 +79,9 @@ struct ConnectView: View {
                     }
                 }
             }
-            Text(list.isEmpty
-                 ? "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
-                 : "Or add another - its address, or just the code at its start.")
+            Text(list.isEmpty && nearby.isEmpty
+                 ? (searched ? "None found on this network. " : "") + "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
+                 : list.isEmpty ? "Or type its address, or just the code at its start." : "Or add another - its address, or just the code at its start.")
                 .font(.headline)
                 .foregroundStyle(.secondary)
             TextField("abc123.home.soundstorm.dev", text: $address)
@@ -70,6 +98,17 @@ struct ConnectView: View {
             }
         }
         .multilineTextAlignment(.center)
+        // Looked for at once, and again while nothing is found: the server
+        // may still be starting, or the TV just joined the network.
+        .task {
+            while !Task.isCancelled {
+                let known = Set(list.map { $0.url.host() ?? "" })
+                let all = await ServerDiscovery.search()
+                nearby = all.filter { !known.contains($0.url.host() ?? "") }
+                searched = true
+                try? await Task.sleep(for: .seconds(nearby.isEmpty ? 10 : 30))
+            }
+        }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
             Button("Save") {
@@ -79,6 +118,10 @@ struct ConnectView: View {
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
+    }
+
+    private func found(_ f: ServerDiscovery.Found) -> String {
+        f.url.host() ?? f.url.absoluteString
     }
 
     private func connect() {

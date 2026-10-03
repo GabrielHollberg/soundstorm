@@ -6502,6 +6502,27 @@ the best that answers kept - a TV the home name first, a phone the away one
 (the page moves it home when it can). Checked: the list for nine ways of
 typing it. Not checked against a real server from another house.
 
+**Found on the network (2026-10-02)**, the owner's asking: somebody who
+buys a box, plugs it in and opens the TV app should be told "We found
+SoundStorm on your network", not asked for an address. Bonjour cannot do it
+- Docker on Windows and macOS keeps a container's announcements off the
+home network - so the apps look (`ios/Shared/ServerDiscovery.swift`): every
+address on the device's own /24, and on 192.168.0.x and 192.168.1.x, asked
+`/healthz` on port 8099 at once (two seconds at most each), and any that
+answers asked its secure home name (`/api/session`'s `secureName`), kept
+when it answers too. The second pair is not a guess for its own sake: a
+mesh or second router inside the first puts the TV on one network and the
+server on the one outside it - the owner's house, 192.168.86.x inside
+192.168.0.x, where only that found the real server. Shown above Your servers
+on both apps' first screens, one tap; searched again every ten seconds while
+nothing is found (the server may be starting, and iOS asks for local network
+permission the first time). A phone keeps the away name when a found home
+name has one that answers. Checked in both simulators: the test server on
+this Mac and the owner's real server (by its home name) both found. Not
+checked: the permission prompt on a real iPhone, and a real Apple TV.
+**For the PC:** the Android app's connect screen (and so Google TV) wants
+the same - the same addresses, `/healthz` then `/api/session`.
+
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several
 servers (their own, their parents'), and later several people on each. The

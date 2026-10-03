@@ -11,6 +11,12 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
     private let field = UITextField()
     private let serversTitle = UILabel()
     private let servers = UIStackView()
+    /// Servers found on the phone's network that it does not know yet.
+    private let nearbyTitle = UILabel()
+    private let nearby = UIStackView()
+    private var found: [ServerDiscovery.Found] = []
+    private var searched = false
+    private var searching: Task<Void, Never>?
     private let button = UIButton(configuration: .filled())
     private let hint = UILabel()
     private let message = UILabel()
@@ -84,7 +90,16 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         message.numberOfLines = 0
         message.textAlignment = .center
 
-        let stack = UIStackView(arrangedSubviews: [logo, title, serversTitle, servers, hint, field, button, message])
+        nearbyTitle.font = .preferredFont(forTextStyle: .headline)
+        nearbyTitle.textColor = .white
+        nearbyTitle.numberOfLines = 0
+        nearbyTitle.textAlignment = .center
+        nearbyTitle.isHidden = true
+        nearby.axis = .vertical
+        nearby.spacing = 8
+        nearby.isHidden = true
+
+        let stack = UIStackView(arrangedSubviews: [logo, title, nearbyTitle, nearby, serversTitle, servers, hint, field, button, message])
         stack.axis = .vertical
         stack.alignment = .center
         stack.spacing = 16
@@ -93,7 +108,8 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         stack.setCustomSpacing(16, after: hint)
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
-        for wide in [field, button, hint, message, servers] {
+        stack.setCustomSpacing(28, after: nearby)
+        for wide in [field, button, hint, message, servers, nearby, nearbyTitle] {
             wide.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         // Centered in whatever the keyboard leaves, and no wider than 420
@@ -117,7 +133,7 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         super.viewDidLayoutSubviews()
         // A centered stack measures a label as one line unless told its
         // width, which it only has once laid out.
-        for label in [hint, message] where label.preferredMaxLayoutWidth != label.bounds.width {
+        for label in [hint, message, nearbyTitle] where label.preferredMaxLayoutWidth != label.bounds.width {
             label.preferredMaxLayoutWidth = label.bounds.width
             view.setNeedsLayout()
         }
@@ -125,9 +141,72 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Straight to typing only when there is nothing to pick.
-        if ServerAddress.all.isEmpty { field.becomeFirstResponder() }
+        // Looked for on the network at once, and again while nothing is
+        // found (the server may still be starting; iOS asks permission to
+        // look on the local network the first time).
+        searching?.cancel()
+        searching = Task { [weak self] in
+            while !Task.isCancelled {
+                let all = await ServerDiscovery.search()
+                guard let self, !Task.isCancelled else { return }
+                let known = Set(ServerAddress.all.map { $0.url.host() ?? "" })
+                self.found = all.filter { !known.contains($0.url.host() ?? "") }
+                let first = !self.searched
+                self.searched = true
+                self.showNearby()
+                // Straight to typing only when there is nothing to pick.
+                if first, self.found.isEmpty, ServerAddress.all.isEmpty { self.field.becomeFirstResponder() }
+                try? await Task.sleep(for: .seconds(self.found.isEmpty ? 10 : 30))
+            }
+        }
     }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        searching?.cancel()
+    }
+
+    /// What the network search found: one tap, nothing to type.
+    private func showNearby() {
+        nearby.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        nearbyTitle.isHidden = found.isEmpty
+        nearby.isHidden = found.isEmpty
+        nearbyTitle.text = found.count == 1 ? "We found SoundStorm on your network" : "We found SoundStorm on your network - which one?"
+        for server in found {
+            var config = UIButton.Configuration.filled()
+            config.baseBackgroundColor = Self.accent
+            config.baseForegroundColor = .black
+            config.cornerStyle = .large
+            config.title = found.count == 1 ? "Use it" : server.label
+            config.subtitle = found.count == 1 ? server.label : nil
+            let row = UIButton(configuration: config)
+            row.addAction(UIAction { [weak self] _ in self?.use(server) }, for: .primaryActionTriggered)
+            nearby.addArrangedSubview(row)
+        }
+        if ServerAddress.all.isEmpty {
+            hint.text = found.isEmpty
+                ? (searched ? "None found on this network. " : "") + Self.firstHint
+                : "Or type its address, or just the code at its start."
+        }
+    }
+
+    /// A found server: a phone leaves the house, so its away name is kept
+    /// when it answers (the page moves home by itself when it can).
+    private func use(_ server: ServerDiscovery.Found) {
+        guard checking == nil else { return }
+        let host = server.url.host() ?? ""
+        guard host.hasSuffix(".home.soundstorm.dev") else { onConnected?(server.url); return }
+        setBusy(true)
+        checking = Task { [weak self] in
+            let code = String(host.dropLast(".home.soundstorm.dev".count))
+            let url = (try? await ServerAddress.find(code, preferAway: true)) ?? server.url
+            self?.setBusy(false)
+            self?.checking = nil
+            self?.onConnected?(url)
+        }
+    }
+
+    private static let firstHint = "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
 
     /// The list, as it is now: a button each, the one in use ticked; held,
     /// Rename and Remove.
@@ -137,7 +216,7 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         serversTitle.isHidden = list.isEmpty
         servers.isHidden = list.isEmpty
         hint.text = list.isEmpty
-            ? "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
+            ? (found.isEmpty ? Self.firstHint : "Or type its address, or just the code at its start.")
             : "Or add another - its address, or just the code at its start."
         for server in list {
             var config = UIButton.Configuration.filled()
