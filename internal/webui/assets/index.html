@@ -961,6 +961,14 @@
         <div class="reader-line-track"></div>
         <div class="reader-word"><span class="reader-word-prev"></span><span class="reader-word-now"></span><span class="reader-word-next"></span></div>
         <p class="reader-line-hint"></p>
+        <!-- A book read without its audiobook: the reading speed is the
+             reader's own. -->
+        <div class="reader-free-bar">
+          <button type="button" class="reader-free-play" aria-label="Pause"></button>
+          <button type="button" class="reader-free-slower" aria-label="Slower">&minus;</button>
+          <span class="reader-free-speed"></span>
+          <button type="button" class="reader-free-faster" aria-label="Faster">+</button>
+        </div>
       </div>
       <!-- PDFs go to the browser's own viewer. foliate-js cannot lay them out
            without pdf.js, and every browser already ships something better

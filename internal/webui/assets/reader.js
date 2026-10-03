@@ -626,6 +626,7 @@ function followWithinSentence(follow, t) {
 export async function close() {
   opening++;
   stopFollowing();
+  stopFree();
   await flushProgress();
 
   const frame = $('reader-pdf');
@@ -767,7 +768,7 @@ const line = { follow: null, raf: 0, texts: new Map(), docs: new Map(), first: -
 // at a time.
 function toggleLine() {
   const follow = session.follow;
-  if (!follow) return;
+  if (!follow) { toggleFree(); return; }
   const next = !line.follow ? 'line' : line.mode === 'line' ? 'word' : 'pages';
   localStorage.setItem(LINE_KEY, next);
   if (next === 'pages') {
@@ -1034,4 +1035,257 @@ function drawWord(follow) {
   box.querySelector('.reader-word-now').textContent = words[k] || '';
   box.querySelector('.reader-word-prev').textContent = k > 0 ? words[k - 1] : (before[before.length - 1] || '');
   box.querySelector('.reader-word-next').textContent = k < words.length - 1 ? words[k + 1] : (after[0] || '');
+}
+
+/* ------------------------------------------ the line and a word at a time, alone */
+
+// The two read-along views for a book with no audiobook (the owner's asking):
+// the same double tap goes round pages, the moving line and a word at a
+// time, and with no voice to set the pace they move at the reader's own speed
+// - words a minute, chosen on a bar at the foot, kept on the device. They
+// start where the page is, and going back to the pages turns to where the
+// reading got to. A word ending a sentence is given a little more time, a
+// comma a little, a long word a little; the speed is the average.
+const FREE_SPEED_KEY = 'soundstorm-read-speed';
+const free = { on: false, mode: 'line', secs: new Map(), ready: new Map(), sec: -1, unit: 0, playing: false, raf: 0, last: 0, shown: '', first: -1, spans: [] };
+const freeSpeed = () => Math.min(800, Math.max(100, Number(localStorage.getItem(FREE_SPEED_KEY)) || 250));
+
+// A chapter's text nodes, leaving out what is never read (styles, scripts):
+// the same walk for the page shown and for the chapter loaded on its own, so
+// a place in one is the same place in the other.
+function textNodes(doc) {
+  const out = [];
+  if (!doc || !doc.body) return out;
+  const walk = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement && n.parentElement.closest('style, script, head') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) out.push(n);
+  return out;
+}
+
+// How many letters into the chapter a point is.
+function letterOffset(doc, node, off) {
+  let at = 0;
+  for (const n of textNodes(doc)) {
+    if (n === node) return at + off;
+    if (node.contains && node.contains(n)) return at;
+    at += n.data.length;
+  }
+  return 0;
+}
+
+// A collapsed range so many letters into a chapter.
+function rangeAtOffset(doc, offset) {
+  let left = offset;
+  const nodes = textNodes(doc);
+  for (const n of nodes) {
+    if (left <= n.data.length) {
+      const r = doc.createRange();
+      r.setStart(n, left);
+      r.collapse(true);
+      return r;
+    }
+    left -= n.data.length;
+  }
+  return nodes.length ? rangeAtOffset(doc, 0) : null;
+}
+
+// A chapter's words, where each starts, and the time each is given.
+async function freeSection(index) {
+  if (free.secs.has(index)) return free.secs.get(index);
+  const p = (async () => {
+    const section = session.view && session.view.book.sections[index];
+    if (!section || !section.createDocument) return null;
+    const doc = await section.createDocument();
+    const words = [];
+    let at = 0;
+    for (const n of textNodes(doc)) {
+      const re = /\S+/g;
+      for (let m = re.exec(n.data); m; m = re.exec(n.data)) words.push({ w: m[0], start: at + m.index });
+      at += n.data.length;
+    }
+    const cum = [0];
+    for (const { w } of words) {
+      const weight = 1 + (/[.!?]["'\u201d\u2019)\]]*$/.test(w) ? 1.2 : /[,;:\u2014]$/.test(w) ? 0.4 : 0) + (w.length > 8 ? 0.3 : 0);
+      cum.push(cum[cum.length - 1] + weight);
+    }
+    const out = { words, cum, mean: words.length ? cum[cum.length - 1] / words.length : 1 };
+    free.ready.set(index, out);
+    return out;
+  })().catch(() => { free.ready.set(index, null); return null; });
+  free.secs.set(index, p);
+  return p;
+}
+
+function toggleFree() {
+  if (!session.view || isPDF(session.item || {})) return;
+  const next = !free.on ? 'line' : free.mode === 'line' ? 'word' : 'pages';
+  if (next === 'pages') { freeToPages(); return; }
+  startFree(next);
+}
+
+async function startFree(mode) {
+  const view = session.view;
+  const first = !free.on;
+  free.mode = mode;
+  free.shown = '';
+  free.first = -1;
+  free.spans = [];
+  const box = $('reader-line');
+  box.querySelector('.reader-line-track').replaceChildren();
+  box.querySelectorAll('.reader-word span').forEach((s) => { s.textContent = ''; });
+  box.classList.toggle('word-mode', mode === 'word');
+  box.classList.add('free');
+  box.classList.remove('hidden');
+  const hint = box.querySelector('.reader-line-hint');
+  hint.textContent = mode === 'word' ? 'Double tap for pages' : 'Double tap for a word at a time';
+  hint.classList.remove('gone');
+  clearTimeout(free.hintTimer);
+  free.hintTimer = setTimeout(() => hint.classList.add('gone'), 3000);
+  renderFreeBar();
+  if (first) {
+    // Where the page is: its chapter, and the first letter on it.
+    const shown = (view.renderer.getContents?.() || [])[0];
+    const range = view.lastLocation && view.lastLocation.range;
+    free.sec = shown ? shown.index : 0;
+    const offset = shown && range ? letterOffset(shown.doc, range.startContainer, range.startOffset) : 0;
+    const sec = await freeSection(free.sec);
+    let k = 0;
+    if (sec) while (k < sec.words.length - 1 && sec.words[k].start < offset) k++;
+    free.unit = sec ? sec.cum[k] : 0;
+    free.on = true;
+    free.playing = true;
+    renderFreeBar();
+  }
+  cancelAnimationFrame(free.raf);
+  free.last = performance.now();
+  const frame = (now) => {
+    if (!free.on) return;
+    drawFree(now);
+    free.raf = requestAnimationFrame(frame);
+  };
+  free.raf = requestAnimationFrame(frame);
+}
+
+function stopFree() {
+  cancelAnimationFrame(free.raf);
+  free.on = false;
+  free.playing = false;
+  free.secs = new Map();
+  free.ready = new Map();
+  const box = $('reader-line');
+  box.classList.remove('free');
+  if (!session.follow) box.classList.add('hidden');
+}
+
+// Back to the pages, turned to where the reading got to.
+async function freeToPages() {
+  const sec = await freeSection(free.sec);
+  const index = free.sec;
+  const k = sec ? freeWordAt(sec, free.unit) : 0;
+  const offset = sec && sec.words[k] ? sec.words[k].start : 0;
+  stopFree();
+  try {
+    await session.view.renderer.goTo({ index, anchor: (doc) => rangeAtOffset(doc, offset) });
+  } catch {
+    // The page stays where it was.
+  }
+}
+
+function freeWordAt(sec, unit) {
+  let lo = 0;
+  let hi = sec.words.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (sec.cum[mid] <= unit) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+
+function drawFree(now) {
+  const dt = Math.min(0.25, (now - free.last) / 1000);
+  free.last = now;
+  if (!free.ready.has(free.sec)) { freeSection(free.sec); return; }
+  const sec = free.ready.get(free.sec);
+  if (!sec || !sec.words.length) {
+    // A chapter with no words (a cover, a picture): on to the next.
+    if (session.view && free.sec < session.view.book.sections.length - 1) { free.sec++; free.unit = 0; free.first = -1; }
+    return;
+  }
+  if (free.playing) free.unit += dt * (freeSpeed() / 60) * sec.mean;
+  const total = sec.cum[sec.cum.length - 1];
+  if (free.unit >= total) {
+    if (session.view && free.sec < session.view.book.sections.length - 1) {
+      free.sec++;
+      free.unit = 0;
+      free.first = -1;
+      free.shown = '';
+    } else {
+      free.unit = total - 0.001;
+      free.playing = false;
+      renderFreeBar();
+    }
+    return;
+  }
+  const k = freeWordAt(sec, free.unit);
+  const frac = (free.unit - sec.cum[k]) / (sec.cum[k + 1] - sec.cum[k]);
+  for (let ahead = free.sec + 1; ahead <= free.sec + 1; ahead++) freeSection(ahead);
+  const box = $('reader-line');
+  if (free.mode === 'word') {
+    const key = `${free.sec}:${k}`;
+    if (key === free.shown) return;
+    free.shown = key;
+    box.querySelector('.reader-word-now').textContent = sec.words[k].w;
+    box.querySelector('.reader-word-prev').textContent = k > 0 ? sec.words[k - 1].w : '';
+    box.querySelector('.reader-word-next').textContent = k < sec.words.length - 1 ? sec.words[k + 1].w : '';
+    return;
+  }
+  // The line: the words around the one being read, laid out once and moved.
+  const BEFORE = 30;
+  const AFTER = 70;
+  if (free.first < 0 || k < free.first + 5 || k > free.first + BEFORE + AFTER - 25) {
+    free.first = Math.max(0, k - BEFORE);
+    const last = Math.min(sec.words.length, k + AFTER);
+    free.spans = sec.words.slice(free.first, last).map(({ w }) => {
+      const span = document.createElement('span');
+      span.textContent = w;
+      return span;
+    });
+    box.querySelector('.reader-line-track').replaceChildren(...free.spans);
+  }
+  const span = free.spans[k - free.first];
+  if (!span) return;
+  const nextSpan = free.spans[k - free.first + 1];
+  const step = nextSpan ? nextSpan.offsetLeft - span.offsetLeft : span.offsetWidth;
+  const x = span.offsetLeft + frac * step;
+  box.querySelector('.reader-line-track').style.transform = `translate3d(${(box.clientWidth * LINE_AT - x).toFixed(1)}px, -50%, 0)`;
+}
+
+function renderFreeBar() {
+  const box = $('reader-line');
+  const play = box.querySelector('.reader-free-play');
+  play.replaceChildren(document.createTextNode(free.playing ? '\u275a\u275a' : '\u25b6'));
+  play.setAttribute('aria-label', free.playing ? 'Pause' : 'Play');
+  box.querySelector('.reader-free-speed').textContent = `${freeSpeed()} words a minute`;
+}
+
+{
+  const box = $('reader-line');
+  const stop = (event) => { event.stopPropagation(); };
+  for (const sel of ['.reader-free-play', '.reader-free-slower', '.reader-free-faster']) {
+    const b = box.querySelector(sel);
+    b.addEventListener('touchend', stop);
+    b.addEventListener('dblclick', stop);
+  }
+  box.querySelector('.reader-free-play').addEventListener('click', () => {
+    free.playing = !free.playing;
+    free.last = performance.now();
+    renderFreeBar();
+  });
+  const change = (by) => {
+    localStorage.setItem(FREE_SPEED_KEY, String(Math.min(800, Math.max(100, freeSpeed() + by))));
+    renderFreeBar();
+  };
+  box.querySelector('.reader-free-slower').addEventListener('click', () => change(-25));
+  box.querySelector('.reader-free-faster').addEventListener('click', () => change(25));
 }

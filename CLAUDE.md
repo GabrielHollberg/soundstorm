@@ -6131,6 +6131,22 @@ letters plus two; between sentences the last word holds. Checked on a made
 book in Chrome at phone size: the words stepped with the voice about every
 0.2s ("He had a kettle, a chair and a window..."), held through the pause,
 and a double tap went on to the pages.
+**Both views for any ebook, at your own speed** (the owner's asking): with no
+audiobook the same double tap goes round pages, line and word at a time, and
+the pace is words a minute on a bar at the foot (play or pause, minus and
+plus by 25, 100-800, 250 to start, kept as `soundstorm-read-speed`). It starts
+at the first letter on the page (the view's `lastLocation.range`, counted in
+the chapter's text nodes, styles and scripts left out - the same walk for the
+page shown and for the chapter loaded on its own) and going back to the pages
+turns to the word reached (`renderer.goTo` with an anchor so many letters in).
+A word ending a sentence gets 1.2 more units, a comma 0.4, a word over eight
+letters 0.3; the speed is the chapter's average. Chapters with no words are
+skipped; at a chapter's end it carries on into the next. Checked on the
+starter ebook in Chrome at phone size: a finger's double tap into the line,
+350 a minute gave 19 words in 3s at a word at a time, pause held, and after
+15s at 800 the pages turned to exactly the words reached
+("...an elaborate salute. "Yet,"). Not built: the line running on across a
+chapter break without a jump; a PDF has neither (it is the browser's viewer).
 
 The reader's **Highlight** button, shown only while reading along, turns
 the lit sentence off and on; off, the page still turns with the voice. The

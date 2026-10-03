@@ -4280,3 +4280,19 @@ html, body { overscroll-behavior-y: none; }
 .reader-word-prev, .reader-word-next { color: rgba(255, 255, 255, 0.28); overflow: hidden; font-size: 0.7em; }
 .reader-word-prev { text-align: right; }
 .reader-word-next { text-align: left; }
+
+/* A book read alone at the reader's own speed: play or pause, slower and
+   faster, at the foot (not while a voice sets the pace). */
+.reader-free-bar { display: none; }
+.reader-line.free .reader-free-bar {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3;
+  display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.reader-free-bar button {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0;
+  background: rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 18px; line-height: 1;
+}
+.reader-free-bar .reader-free-play { background: #fff; color: #14181f; font-size: 14px; }
+.reader-free-speed { min-width: 9.5em; padding: 0 4px; text-align: center; font-size: 14px; font-weight: 600; color: #dfe3ea; white-space: nowrap; }
+.reader-line.free .reader-line-hint { bottom: 80px; }
