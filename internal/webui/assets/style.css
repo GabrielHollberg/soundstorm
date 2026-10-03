@@ -4011,11 +4011,11 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 .ctl-btn span:empty { display: none; }
 .ctl-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (max-width: 620px) {
-  /* To the search box's right, as tall as it (it sat over the box). */
-  .ctl-btn { order: 4; align-self: stretch; height: auto; min-width: 46px; justify-content: center; }
+  /* The circle left of the search box, the device button right of it, both
+     as tall as the box. */
+  .ctl-btn { order: 4; }
   .ctl-btn span { max-width: 72px; }
-  /* The circle left of the search box, the device button right of it. */
-  .me-btn { order: 2; align-self: center; }
+  .me-btn { order: 2; }
 }
 .ctl-backdrop { position: fixed; inset: 0; z-index: 2147482990; background: rgba(0, 0, 0, 0.5); }
 .ctl-sheet {
@@ -4165,3 +4165,16 @@ html.tv .tv-me-tab.hidden { display: none; }
 .invite-made img { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 12px; }
 .invites-list { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 6px; }
 .invites-list li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+
+/* The two buttons either side of the search box: true circles of the box's
+   height (they were 38x40 and 46x44, slightly oval), each with the same
+   light ring, so a dark picture still stands out from the black header. */
+header { --head-btn: 42px; }
+.me-btn, .ctl-btn {
+  box-sizing: border-box; width: var(--head-btn); height: var(--head-btn);
+  min-width: var(--head-btn); align-self: center; padding: 0;
+  justify-content: center; border: 1.5px solid rgba(255, 255, 255, 0.32);
+}
+/* Playing on a TV, the button names it, and grows into a pill to fit. */
+.ctl-btn:has(span:not(:empty)) { width: auto; padding: 0 12px; }
+@media (max-width: 620px) { header { --head-btn: 44px; } }
