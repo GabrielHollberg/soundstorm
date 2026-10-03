@@ -1,0 +1,16 @@
+[Unit]
+Description=SoundStorm data drive
+# Before Docker: the volumes are folders on the drive, and a container
+# started without them would write to the system disk underneath.
+Before=docker.service soundstorm.service
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/soundstorm/storage.sh
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=docker.service

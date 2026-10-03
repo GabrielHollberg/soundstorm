@@ -158,9 +158,25 @@ decided past the first test unit.
   "Plus" - hard drives only save money at 4TB and up (a 2TB one was $155 in
   October 2026). 12GB versions were turned down: Immich alone wants 6-8GB.
   The GMKtec G9 overheats with drives in.
-- **Software it would need, none built yet:** a ready-made system image
-  (Debian, Docker, the images already pulled) and a script that turns a new
-  unit into a finished one with its own name, setup code and QR sticker; a
+- **The system image is begun: `box/`** (2026-10-02, see its README). Debian
+  13's cloud image with Docker, built by `box/build.sh` in the Debian WSL
+  distro (it has KVM; Docker Desktop's VM does not, and Hyper-V is off, so
+  no reboot of the live server was needed), booted by `box/run-vm.sh` as a
+  pretend ME Mini - UEFI, the image as the eMMC, a blank NVMe data drive.
+  The data drive is formatted btrfs only when blank (never USB) and holds the
+  library, every data volume and the caches (`compose.box.yml`); `.env` gets
+  the setup code once and the box's address every start. Checked in the VM:
+  the drive prepared, the stack up with all 9 sources at
+  `localhost:8399`. Two things it met: Docker makes any missing folder a
+  backend mounts as root 0755 before SoundStorm runs, so SoundStorm could not
+  write the shelves and the starter song and audiobook were lost - the box
+  makes the seven shelves 0777 itself (**`install.sh` may have the same
+  bug: it makes `library/` but not the shelves; unchecked**); and 3GB was
+  too little for a first start's every backend setting up at once (4.5GB
+  did; the box has 16GB). Images are still downloaded on first start.
+- **Software it would still need:** the images shipped in the disk, writing
+  it to a real box, and a script that turns a new unit into a finished one
+  with its own name, setup code and QR sticker; a
   small caretaker beside SoundStorm - never inside it, as SoundStorm must not
   hold the Docker socket - for updates overnight and on request (Update now,
   owner only, with a way back if the new version is unhealthy), drive health,

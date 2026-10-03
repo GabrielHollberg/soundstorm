@@ -1,0 +1,58 @@
+# The box's additions to compose.yml (the repository's docker-compose.yml).
+#
+# On a box the system disk is small (the ME Mini's 64GB eMMC) and holds only
+# Debian, Docker and the images; everything that is somebody's lives on the
+# data drive, mounted at /srv/soundstorm. So every volume that holds data is a
+# folder there, under volumes/ - what a backup takes - and every one that can
+# be made again is under cache/, which a backup leaves out. The library is
+# /srv/soundstorm/library, set in .env by prepare.sh.
+#
+# storage.sh makes these folders before Docker starts; a bind-type local
+# volume needs its folder to exist. The list of folders is read from this
+# file, so a volume added here needs nothing else.
+
+x-data: &data
+  driver: local
+x-cache: &cache
+  driver: local
+
+volumes:
+  soundstorm-state:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/soundstorm-state }
+  navidrome-data:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/navidrome-data }
+  jellyfin-config:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/jellyfin-config }
+  abs-config:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/abs-config }
+  abs-metadata:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/abs-metadata }
+  immich-data:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/immich-data }
+  immich-db:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/immich-db }
+  storyteller-data:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/storyteller-data }
+  audiomuse-db:
+    <<: *data
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/volumes/audiomuse-db }
+  jellyfin-cache:
+    <<: *cache
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/cache/jellyfin-cache }
+  immich-models:
+    <<: *cache
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/cache/immich-models }
+  storyteller-models:
+    <<: *cache
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/cache/storyteller-models }
+  audiomuse-temp:
+    <<: *cache
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/cache/audiomuse-temp }

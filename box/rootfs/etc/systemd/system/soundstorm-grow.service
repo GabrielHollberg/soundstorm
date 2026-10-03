@@ -1,0 +1,11 @@
+[Unit]
+Description=Grow the system partition to fill its disk
+After=local-fs.target
+Before=soundstorm-storage.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/soundstorm/grow.sh
+
+[Install]
+WantedBy=multi-user.target

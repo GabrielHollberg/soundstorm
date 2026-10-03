@@ -32,3 +32,6 @@ Dockerfile text eol=lf
 *.pdf binary
 *.flac binary
 *.raw binary
+
+# The box's files are copied into a Linux system disk.
+box/rootfs/** text eol=lf
