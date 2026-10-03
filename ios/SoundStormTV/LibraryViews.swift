@@ -482,6 +482,10 @@ struct Cover: View {
                 .overlay(Image(systemName: "music.note").font(plain ? .largeTitle : .system(size: 64))
                     .foregroundStyle(plain ? Color.secondary : Theme.muted))
         }
+        // Filled to whatever frame it is given and cut there: a picture not of
+        // that shape (a poster, a wide still) spilled past it.
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: radius))
         .overlay {
             if !plain {

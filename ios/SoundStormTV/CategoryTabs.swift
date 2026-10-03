@@ -199,6 +199,9 @@ struct PagedItems: View {
             }
         }
         .task { await more() }
+        #if DEBUG
+        .modifier(DebugOpenFirst(items: kinds == ["tv"] ? items : []) { ShowView(series: $0) })
+        #endif
     }
 
     private func more() async {
