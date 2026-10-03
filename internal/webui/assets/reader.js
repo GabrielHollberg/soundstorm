@@ -580,12 +580,17 @@ async function tick(follow) {
 // letter: it turns as the voice reaches the first words over the page. Only
 // for sentences over two seconds, and only once the estimate has moved on by
 // a few letters; scrolling to the page already showing changes nothing.
+// Aimed a little ahead of the voice: a reader has finished the last line a
+// moment before the narrator reaches the first word over the page, and the
+// estimate drifts with the narrator's pace - aimed at the voice itself it was
+// "better, but still a little late, sometimes perfect" (the owner).
+const WITHIN_LEAD_S = 0.8;
 function followWithinSentence(follow, t) {
   const w = follow.within;
   if (!w || follow.busy || Date.now() < follow.handsOffUntil) return;
   const el = w.el.deref();
   if (!el || !el.isConnected) { follow.within = null; return; }
-  const share = Math.min(1, Math.max(0, (t - w.start) / (w.end - w.start)));
+  const share = Math.min(1, Math.max(0, (t + WITHIN_LEAD_S - w.start) / (w.end - w.start)));
   const texts = [];
   let total = 0;
   const walk = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
