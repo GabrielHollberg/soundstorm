@@ -751,10 +751,9 @@ swipeToClose($('reader-overlay'));
 // right edge, out at the left - with the sentence being read lit. A double
 // tap on the book switches between it and the pages; the choice is kept on
 // the device. The pages carry on following behind it, so switching back
-// lands on the right page. Each frame the voice's place is worked out as in
-// followWithinSentence - the same share of the sentence's letters as of its
-// time - and the line is moved to keep that place a little left of the
-// middle. Sentence text is read from the book's own chapters (loaded on
+// lands on the right page. Each frame the line is moved so the voice's place
+// (linePlace: a smooth stream through the sentences' starts) sits a little
+// left of the middle. Sentence text is read from the book's own chapters (loaded on
 // their own, never shown), around the one being read.
 const LINE_KEY = 'soundstorm-readalong-view';
 const LINE_BEFORE = 4;
@@ -784,6 +783,7 @@ function startLine(follow) {
   line.first = line.last = -1;
   line.spans = [];
   line.lit = null;
+  line.clock = null;
   const box = $('reader-line');
   box.querySelector('.reader-line-track').replaceChildren();
   box.classList.remove('hidden');
@@ -851,18 +851,72 @@ async function fillLine(follow, i) {
   }
 }
 
-function drawLine(follow) {
+// The player's clock, carried on between its updates: a phone's player may
+// report its time only a few times a second, and the line would move in
+// steps. While the clock has moved in the last moment, the time between
+// reports is added; paused, it holds.
+function lineClock(follow) {
   const t = window.soundstormListening?.(follow.audiobook.sourceId, follow.audiobook.id);
-  if (typeof t !== 'number' || !Number.isFinite(t)) return;
+  if (typeof t !== 'number' || !Number.isFinite(t)) return null;
+  const now = performance.now();
+  const c = line.clock;
+  if (!c || t !== c.t) {
+    const moving = c && t > c.t && t - c.t < 2;
+    line.clock = { t, at: now, moving: moving || (c && c.moving && t === c.t) };
+    return t;
+  }
+  const since = (now - c.at) / 1000;
+  return c.moving && since < 0.6 ? t + since : t;
+}
+
+// Where the line is at time t: a smooth curve through each sentence's start
+// (time, place on the line) - a monotone cubic, so it never runs backwards,
+// with its speed eased from one sentence to the next and the pauses between
+// them crossed rather than waited out (the owner: as close to a continuous
+// stream as possible).
+function linePlace(tl, t) {
+  const knots = [];
+  for (let k = line.first; k <= line.last; k++) {
+    const span = line.spans[k - line.first];
+    const at = tl[k].t;
+    if (span && (!knots.length || at > knots[knots.length - 1][0] + 0.01)) knots.push([at, span.offsetLeft]);
+  }
+  if (line.last === tl.length - 1) {
+    const m = tl[line.last];
+    const span = line.spans[line.last - line.first];
+    const end = m.e > m.t ? m.e : m.t + 3;
+    if (span && end > knots[knots.length - 1][0] + 0.01) knots.push([end, span.offsetLeft + span.offsetWidth]);
+  }
+  if (!knots.length) return null;
+  if (t <= knots[0][0] || knots.length === 1) return knots[0][1];
+  const n = knots.length - 1;
+  if (t >= knots[n][0]) return knots[n][1];
+  let j = 0;
+  while (j < n - 1 && t >= knots[j + 1][0]) j++;
+  const slope = (k) => (knots[k + 1][1] - knots[k][1]) / (knots[k + 1][0] - knots[k][0]);
+  const tangent = (k) => {
+    if (k === 0) return slope(0);
+    if (k === n) return slope(n - 1);
+    const a = slope(k - 1);
+    const b = slope(k);
+    return a > 0 && b > 0 ? 2 / (1 / a + 1 / b) : 0;
+  };
+  const [t0, x0] = knots[j];
+  const [t1, x1] = knots[j + 1];
+  const h = t1 - t0;
+  const u = (t - t0) / h;
+  const u2 = u * u;
+  const u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * x0 + (u3 - 2 * u2 + u) * h * tangent(j)
+    + (-2 * u3 + 3 * u2) * x1 + (u3 - u2) * h * tangent(j + 1);
+}
+
+function drawLine(follow) {
+  const t = lineClock(follow);
+  if (t === null) return;
   const tl = follow.timeline;
   let i = sentenceAt(tl, t);
-  let share = 0;
   if (i < 0) i = 0;
-  else {
-    const m = tl[i];
-    const end = m.e > m.t ? m.e : (tl[i + 1] ? tl[i + 1].t : m.t + 3);
-    share = Math.min(1, Math.max(0, (t - m.t) / Math.max(0.1, end - m.t)));
-  }
   // Keep a few sentences either side laid out, refilling ahead of the edge.
   // (Never at the book's ends, where there is nothing more to lay out.)
   const ahead = i > line.last - 6 && line.last < tl.length - 1;
@@ -872,11 +926,11 @@ function drawLine(follow) {
     if (line.first < 0 || i < line.first || i > line.last) return;
   }
   const span = line.spans[i - line.first];
-  if (!span) return;
+  const x = linePlace(tl, t);
+  if (!span || x === null) return;
   const box = $('reader-line');
   const track = box.querySelector('.reader-line-track');
-  const x = span.offsetLeft + share * span.offsetWidth;
-  track.style.transform = `translate3d(${Math.round(box.clientWidth * LINE_AT - x)}px, -50%, 0)`;
+  track.style.transform = `translate3d(${(box.clientWidth * LINE_AT - x).toFixed(1)}px, -50%, 0)`;
   if (line.lit !== span) {
     line.spans.forEach((s, k) => {
       s.classList.toggle('said', k < i - line.first);
