@@ -8821,6 +8821,7 @@ function renderLooks() {
         state.prefs.coverStyle = style;
         applyCoverStyle();
         savePrefs({ coverStyle: style });
+        tellLook(style);
         closeLooks();
       });
       return b;
@@ -10581,6 +10582,7 @@ $('now-playing').addEventListener('click', (event) => {
   applyCoverStyle();
   showToast(COVER_STYLE_NAMES[next], '', null, 1400);
   savePrefs({ coverStyle: next });
+  tellLook(next);
 });
 // It spins only while the music plays, and stops where it is on pause.
 for (const type of ['play', 'pause', 'ended']) {
@@ -18992,6 +18994,12 @@ function raSend(cmd) {
   if (!RA.target) return;
   api(`/api/players/${RA.target.id}/command`, { method: 'POST', body: JSON.stringify(cmd) });
 }
+// The look chosen on a phone playing on a TV is the TV's look too (the
+// owner's report: changing it on the phone left the TV as it was). Sent when
+// it changes, and when the phone starts controlling the TV.
+function tellLook(style) {
+  if (RA.on && RA.target && style) raSend({ type: 'control', action: 'look', style });
+}
 (function remoteLayer() {
   const el = $('audio-player');
   const proto = HTMLMediaElement.prototype;
@@ -19185,8 +19193,10 @@ function enterMirror(target, cmd) {
     RA.real.removeAttribute.call(el, 'src');
     RA.real.load.call(el);
   }
+  const wasOn = RA.on && RA.target === target;
   RA.on = true;
   RA.target = target;
+  if (!wasOn && state.prefs && state.prefs.coverStyle) tellLook(state.prefs.coverStyle);
   RA.key = raKey(cmd.item);
   const moved = raKey(audio.item) === RA.key;
   RA.st = { playing: true, position: Number(cmd.at) || 0, item: { sourceId: cmd.item.sourceId, id: cmd.item.id } };
@@ -19517,6 +19527,15 @@ function remoteControl(c) {
   const value = Number(c.value) || 0;
   if (c.action === 'closephoto') {
     if (photoShown) closePhoto();
+    return;
+  }
+  // The phone controlling this TV chose a look.
+  if (c.action === 'look') {
+    if (COVER_STYLES.includes(c.style) || c.style === 'lyrics') {
+      state.prefs = state.prefs || {};
+      state.prefs.coverStyle = c.style;
+      applyCoverStyle();
+    }
     return;
   }
   if (shown('video-overlay')) {

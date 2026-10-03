@@ -2150,6 +2150,13 @@ to play (two browsers): Now Playing opened with the label, its clock followed,
 pause, seek, play and previous reached the TV, and the TV moving on by itself
 was followed with no command sent. Not checked: inside the Android app, where
 the layer sits over PageScript's stand-in.
+**And the look goes across** (2026-10-03, the owner's report: changing the
+look on a phone controlling a TV left the TV as it was): a look chosen while
+mirroring is sent to the TV as `control` `look` (`tellLook`), and the current
+one when the phone starts controlling it; the TV applies it (it is the same
+person's, so the account's choice was already saved by the phone). Checked
+with two browsers: the look sent, the other screen on Storm. **For the Mac:**
+the Apple TV's `RemoteControlled` should obey `look` too.
 **Then audiobooks, and the phone's volume buttons** (2026-10-02, the owner's
 asking). A book sent to a TV gets the same treatment: the element stands for
 the file of the book the TV is in, so the book's own player - chapters, the
