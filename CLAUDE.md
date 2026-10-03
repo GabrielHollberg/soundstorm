@@ -149,8 +149,9 @@ decided past the first test unit.
 - **First test unit, ordered by the owner:** a Beelink ME Mini (N95, 16GB
   soldered, 64GB eMMC for the system, six M.2 slots, power supply inside, no
   Wi-Fi or Bluetooth on this version - it goes on a cable, which is the setup
-  path anyway) from bee-link.com ($329; Amazon only had 12GB ones), and two
-  WD Black SN7100 1TB (TLC, 600 TBW) mirrored. About $730. Its slots run at
+  path anyway) from bee-link.com ($329; Amazon only had 12GB ones), and one
+  WD Blue SN5000 1TB (TLC, 600 TBW), exactly as the 1TB box would be sold.
+  About $523. Its slots run at
   about 1GB/s, so a faster drive buys nothing.
 - **Considered for later:** two 2TB drives as the base model; the Beelink ME
   Pro (N150 16GB, 3 M.2 + 2 hard drive bays) with 4-8TB hard drives as a
