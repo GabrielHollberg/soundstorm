@@ -954,6 +954,7 @@ async function showApp(me) {
   checkDrives();
   await loadFavoriteKeys();
   await Promise.all([loadPrefs(), loadMyArt()]);
+  renderWelcome();
   setTimeout(prepareDownloads, 20000);
   if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
@@ -10200,6 +10201,87 @@ async function loadPrefs() {
   applySpeed();
 }
 
+// The welcome after the owner's first sign-in, on Home: what makes a new
+// server useful - its media, away from home, the family, the TV - each ticked
+// once done, with a button to do it. Closed with Done (kept on the account),
+// or by itself once everything is ticked.
+async function renderWelcome() {
+  const me = state.me;
+  state.welcomeShown = false;
+  show($('welcome'), false);
+  if (!me || !me.owner || TV || state.offline || (state.prefs && state.prefs.welcomeDone)) return;
+  const [session, users, players, library, drives] = await Promise.all([
+    api('/api/session'), api('/api/users'), api('/api/players'), api('/api/library'), api('/api/drives'),
+  ]);
+  const box = drives.ok && drives.body && drives.body.available;
+  const remote = session.ok && session.body && session.body.remote;
+  const steps = [];
+  steps.push({
+    done: library.ok && library.body && !library.body.empty,
+    what: 'Add your music, films, books and photos',
+    how: box ? 'From this device, or from a USB drive plugged into the box.' : 'From this device, or by copying them into the library folder.',
+    label: 'Add media', act: () => { selectTab('settings'); selectSettingsCat('library'); },
+  });
+  if (remote && remote.available) {
+    steps.push({
+      done: Boolean(remote.enabled),
+      what: 'Use it away from home',
+      how: 'So the app works at work, on holiday, or at a friend\u2019s.',
+      label: 'Turn on', act: () => { selectTab('settings'); selectSettingsCat('devices'); setTimeout(() => $('remote-block').scrollIntoView({ block: 'center' }), 100); },
+    });
+  }
+  steps.push({
+    done: users.ok && users.body && (users.body.users || []).length > 1,
+    what: 'Add your family',
+    how: 'Each person gets their own sign-in, favorites and photos.',
+    label: 'Add people', act: () => { selectTab('settings'); selectSettingsCat('people'); },
+  });
+  steps.push({
+    done: players.ok && players.body && (players.body.players || []).some((p) => p.tv),
+    what: 'Set up your TV',
+    how: 'Get the SoundStorm app on your Apple TV or Google TV: it finds this server by itself, and you sign in with your phone.',
+  });
+  if (steps.every((st) => st.done)) {
+    savePrefs({ welcomeDone: true });
+    return;
+  }
+  const list = $('welcome-steps');
+  list.replaceChildren();
+  for (const st of steps) {
+    const li = document.createElement('li');
+    if (st.done) li.className = 'done';
+    const tick = document.createElement('span');
+    tick.className = 'tick';
+    tick.textContent = st.done ? '\u2713' : '';
+    const what = document.createElement('div');
+    what.className = 'what';
+    const b = document.createElement('b');
+    b.textContent = st.what;
+    const how = document.createElement('span');
+    how.textContent = st.how;
+    what.append(b, how);
+    li.append(tick, what);
+    if (!st.done && st.act) {
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'small';
+      go.textContent = st.label;
+      go.addEventListener('click', st.act);
+      li.append(go);
+    } else {
+      li.append(document.createElement('span'));
+    }
+    list.append(li);
+  }
+  state.welcomeShown = true;
+  show($('welcome'), state.tab === 'home' && !$('home-view').classList.contains('hidden'));
+}
+$('welcome-done').addEventListener('click', () => {
+  state.welcomeShown = false;
+  show($('welcome'), false);
+  savePrefs({ welcomeDone: true });
+});
+
 async function savePrefs(change) {
   const { ok, body } = await api('/api/prefs', { method: 'PATCH', body: JSON.stringify(change) });
   if (ok && body) state.prefs = body;
@@ -12947,6 +13029,7 @@ function startLoading(view) {
 // Home's own section: shown and hidden together.
 function showHome(on) {
   show($('home-view'), on);
+  show($('welcome'), on && state.welcomeShown);
   show($('home-quick'), on && $('home-quick').childElementCount > 0);
 }
 

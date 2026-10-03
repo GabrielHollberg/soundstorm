@@ -741,6 +741,15 @@
          audiobooks and books - see continue.go for where each is kept. -->
     <!-- Home's one-tap music, first of all - above Continue, at the owner's
          asking. Shown and hidden with Home (showHome). -->
+    <!-- After the owner's first sign-in: the few things that make a new
+         server useful, ticked off as they are done (renderWelcome). -->
+    <section id="welcome" class="welcome hidden" aria-labelledby="welcome-title">
+      <h2 id="welcome-title">Welcome to SoundStorm</h2>
+      <ol id="welcome-steps" class="welcome-steps"></ol>
+      <p class="muted small-print">After a lot is added, SoundStorm spends a while getting to know it -
+        listening to your music and finding faces in your photos - so it may be slower for a day or so.</p>
+      <button id="welcome-done" type="button" class="ghost small">Done</button>
+    </section>
     <div id="home-quick" class="home-quick-holder hidden"></div>
     <section id="continue" class="continue hidden" aria-labelledby="continue-title">
       <h2 id="continue-title">Continue</h2>

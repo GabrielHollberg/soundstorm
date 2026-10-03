@@ -36,6 +36,29 @@ nonisolated enum ServerDiscovery {
     static let port = 8099
 
     /// The servers on this device's network, best address each.
+    /// Whether the device is on a home network at all (a private address on
+    /// Wi-Fi or a cable) - not, when nothing is found, because it is on
+    /// mobile data, which the first screen then says.
+    static var onHomeNetwork: Bool { !neighbours().isEmpty }
+
+    /// What to say when nothing was found, for both apps' first screens: the
+    /// likely reasons, in the order they are likely, and that it keeps
+    /// looking. A new box takes a few minutes to start the first time, with
+    /// nothing answering meanwhile, which looks exactly like "not there".
+    static func nothingFound(tv: Bool) -> String {
+        if !onHomeNetwork {
+            return tv ? "This TV isn't on a home network. Connect it to the Wi-Fi or a cable SoundStorm is on - it keeps looking."
+                : "This phone isn't on Wi-Fi. Join the Wi-Fi SoundStorm is on - not mobile data - and it keeps looking."
+        }
+        let device = tv ? "this TV" : "this phone"
+        var text = "No SoundStorm found yet - still looking. If it was just plugged in, it takes a few minutes to start the first time. "
+            + "Check \(device) is on the same Wi-Fi as SoundStorm, not a guest network."
+        if !tv {
+            text += " If you tapped Don't Allow when asked about devices on your network, turn on Local Network for SoundStorm in the iPhone's Settings."
+        }
+        return text
+    }
+
     static func search() async -> [Found] {
         let hosts = neighbours()
         guard !hosts.isEmpty else { return [] }

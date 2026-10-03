@@ -6777,6 +6777,25 @@ server then "tester's SoundStorm"); all seven iPhone UI tests pass. The
 circle at the top opens a menu, so iOS reports it as a pop-up, not a
 button: tests find it by its label. Not checked: scanning a real sticker.
 
+**Nothing found, said plainly; a welcome after the first sign-in
+(2026-10-03).** When the apps' search finds nothing and no server is known,
+the first screen says why rather than offering only an address box
+(`ServerDiscovery.nothingFound`): not on Wi-Fi at all (no private address -
+mobile data), else a new box takes a few minutes to start the first time,
+check the same Wi-Fi and not a guest one, and on an iPhone that Don't Allow
+on the local network question is undone in Settings - and that it keeps
+looking. The iPhone no longer jumps to the keyboard, which covered it. On
+the web, the owner's Home opens with **Welcome to SoundStorm**
+(`renderWelcome`): add your media (from a USB drive too, on a box), use it
+away from home (where remote access is possible), add your family, set up
+your TV - each ticked when done (the library not empty, remote access on,
+more than one account, a TV among the players), a button to the place that
+does it, and a line that the first day after a lot is added is busy. Done
+closes it on every device (`prefs.welcomeDone`); all ticked closes it too.
+Checked in Chrome: the steps, Add people opening People, Done kept after a
+reload. Not checked: the nothing-found words on a phone (this Mac's network
+always finds the owner's server).
+
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several
 servers (their own, their parents'), and later several people on each. The

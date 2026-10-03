@@ -4132,3 +4132,14 @@ html.tv .tv-me-tab.hidden { display: none; }
 .drive-ask-buttons { display: grid; gap: 8px; margin-top: 12px; }
 .drive-ask-buttons button { width: 100%; }
 .drive-ask-buttons .soon { opacity: 0.55; }
+
+/* The welcome after the owner's first sign-in. */
+.welcome { margin: 12px 16px 4px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.welcome.hidden { display: none; }
+.welcome h2 { margin: 0 0 8px; font-size: 18px; }
+.welcome-steps { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 10px; }
+.welcome-steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.welcome-steps .tick { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border); display: grid; place-items: center; font-size: 14px; }
+.welcome-steps li.done .tick { background: var(--accent); border-color: var(--accent); color: #000; }
+.welcome-steps li.done .what b { text-decoration: line-through; opacity: 0.6; }
+.welcome-steps .what span { display: block; color: var(--muted); font-size: 13px; }
