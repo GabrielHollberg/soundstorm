@@ -41,6 +41,9 @@ final class BookReader {
     private weak var listening: Player?
     private var followTask: Task<Void, Never>?
     private var sentence = -1
+    /// A long sentence being read: its letters and its time, so the page can
+    /// turn part way through it (the page's `followWithinSentence`).
+    private var within: (start: Int, end: Int, t0: Double, t1: Double)?
     /// Turning by hand stops the following this long, as on the page.
     private var handsOffUntil = Date.distantPast
     /// The sentence being read, lit - unless the account has it off.
@@ -243,8 +246,10 @@ final class BookReader {
     private func tick() async {
         guard let book, let player = listening, player.isBook, !loading else { return }
         let i = Self.sentence(at: player.time, in: timeline)
-        guard i >= 0, i != sentence else { return }
+        guard i >= 0 else { return }
+        guard i != sentence else { followWithin(player.time); return }
         sentence = i
+        within = nil
         let parts = timeline[i].h.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let first = parts.first, let c = book.chapters.firstIndex(where: { $0.path == first }) else { return }
         let fragment = parts.count > 1 ? parts[1] : nil
@@ -261,6 +266,22 @@ final class BookReader {
         while end > start, [10, 32].contains(chars.character(at: end - 1)) { end -= 1 }
         page = pages.lastIndex { $0.location <= start } ?? page
         if highlight { light(NSRange(location: start, length: max(0, end - start))) }
+        // Over two seconds long: the page turns as the voice crosses it.
+        let m = timeline[i]
+        let ends = m.e > m.t ? m.e : (timeline.indices.contains(i + 1) ? timeline[i + 1].t : m.t)
+        if ends - m.t > 2, end > start { within = (start, end, m.t, ends) }
+    }
+
+    /// The page's rule inside a long sentence: the voice's place is the same
+    /// share of the sentence's letters as of its time, aimed a second ahead
+    /// of the voice (the owner's choice: aimed at the voice it was late), and
+    /// the page holding that letter is shown. Only ever forward.
+    private func followWithin(_ t: Double) {
+        guard let w = within, Date() >= handsOffUntil else { return }
+        let share = min(1, max(0, (t + 1.0 - w.t0) / (w.t1 - w.t0)))
+        let letter = w.start + Int(Double(w.end - w.start) * share)
+        guard let p = pages.lastIndex(where: { $0.location <= letter }), p > page else { return }
+        page = p
     }
 
     /// The last sentence begun by then; -1 before the first.
