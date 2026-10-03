@@ -584,7 +584,7 @@ async function tick(follow) {
 // moment before the narrator reaches the first word over the page, and the
 // estimate drifts with the narrator's pace - aimed at the voice itself it was
 // "better, but still a little late, sometimes perfect" (the owner).
-const WITHIN_LEAD_S = 1.2;
+const WITHIN_LEAD_S = 1.0;
 function followWithinSentence(follow, t) {
   const w = follow.within;
   if (!w || follow.busy || Date.now() < follow.handsOffUntil) return;
