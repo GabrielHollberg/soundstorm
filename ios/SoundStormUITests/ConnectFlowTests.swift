@@ -191,6 +191,35 @@ final class ConnectFlowTests: XCTestCase {
         web.buttons["Don't allow"].tap()
     }
 
+    /// Files added in the iPhone app: the app picks (here a generated photo,
+    /// `-pickTest`, as Photos runs outside the app), the page plans and asks
+    /// to add, and the app sends it - "Added" when it is in.
+    func testAddMediaIsSentByTheApp() {
+        app.terminate()
+        app.launchArguments = ["-serverURL", "", "-pickTest", "YES"]
+        app.launch()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        focus(field)
+        field.typeText(server + "\n")
+        let web = app.webViews.firstMatch
+        let settings = web.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists)
+        if !settings.exists { signIn(web) }
+        XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
+        notNowToBackup(web)
+        settings.tap()
+        let addMedia = web.buttons["Add media"]
+        for _ in 0..<8 where !addMedia.isHittable { web.swipeUp() }
+        XCTAssertTrue(addMedia.isHittable, "no Add media in Settings")
+        addMedia.tap()
+        let add = web.buttons["Add 1 file"]
+        XCTAssertTrue(add.waitForExistence(timeout: 20), "the page did not plan the picked file")
+        add.tap()
+        let added = web.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "Added")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 60), "the app never said the file was added")
+    }
+
     /// The page asks about photo backup after signing in, over everything,
     /// on a phone where this person has not answered; a test about something
     /// else says not now.

@@ -39,11 +39,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         PhotoBackup.shared.launched()
+        // Files added that were still waiting carry on.
+        FileUploads.shared.resume()
         return true
     }
 
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
+        if FileUploads.identifiers.contains(identifier) {
+            // Files added, ended with the app closed: the sessions made again
+            // to hear about them.
+            nonisolated(unsafe) let done = completionHandler
+            FileUploads.shared.finishedEvents = { done() }
+            FileUploads.shared.resume()
+            return
+        }
         guard identifier == Uploader.identifier || identifier == Uploader.wifiIdentifier else { return completionHandler() }
         nonisolated(unsafe) let done = completionHandler
         Uploader.shared.whenFinished { DispatchQueue.main.async { done() } }

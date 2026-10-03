@@ -81,15 +81,21 @@ it shows the same page. What only the Mac can do, most useful first - each
 is described in full in its own section below; tick them off here:
 
 **iPhone app**
-1. **Background uploads** - files added with Add media stop when the app is
-   left. Do what Android 0.30 does (`Uploads.kt`, "In the Android app the app
-   sends them, in the background"): answer `window.soundstormApp.uploads`
-   (add / status / stop / set / seen) through `window.__soundstormUploads`, the
-   page then hands the plan over and follows the app's status unchanged; files
-   picked in the web view's picker need to stay readable (copy them to the
-   app's own storage at pick time, as WKWebView gives no lasting URL), a
-   background `URLSession` sends each to `PUT /api/upload?path=&kind=&taken=&conflict=`
-   with the session cookie, Only on Wi-Fi / Only while charging.
+1. ~~**Background uploads**~~ - *done 2026-10-02, the owner's choice of the
+   app picking*: an iPhone's web view keeps its own picker's files to itself,
+   so in the app Add media asks the app (`soundstormApp.pickFiles`): Photos and
+   videos (PHPicker, the originals) or Files, copied into the app's storage
+   (`FileUploads.swift`) and handed to the page as `AppFile`s - name, size,
+   date, and pieces read through the app (`readFile`, `blobOf` where a real
+   Blob is needed: the copy sample, a different file's ends, a zip's tail, an
+   import's piece). The page plans and asks as ever, then `uploads('add')`
+   with each file's `id`; the app sends them in a background URLSession (two,
+   Wi-Fi only or not; only while charging waits for the plug), with the
+   Android app's status, so the page's progress, chip and Stop are unchanged.
+   Checked by `testAddMediaIsSentByTheApp` (`-pickTest`, debug only: a
+   generated photo, since Photos runs outside the app): planned, checked
+   against what is there, sent by the app, "Added", filed by date. Not
+   checked: Photos and Files themselves, and big videos.
 2. ~~**Photo backup when locked**~~ - *done 2026-10-02*: files are handed to
    iOS ahead (200 or 1GB waiting), counted as they arrive, see the note.
 3. **A TV's QR code opening the app** - *half done 2026-10-02*: the app takes

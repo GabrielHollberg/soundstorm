@@ -127,6 +127,16 @@ final class WebViewController: UIViewController {
         // TV this phone controls (AppLinks.swift), as in the Android app.
         window.soundstormApp.scanCode = () =>
           window.webkit.messageHandlers.soundstorm.postMessage({ type: 'scanCode' });
+        // Files added: the app picks (an iPhone's web view keeps its own
+        // picker's files to itself), the page plans, reading the little it
+        // needs through the app, and the app sends them in the background
+        // (FileUploads.swift) - the Android app's uploads, answered the same.
+        window.soundstormApp.pickFiles = () =>
+          window.webkit.messageHandlers.soundstorm.postMessage({ type: 'pickFiles' });
+        window.soundstormApp.readFile = (req, id, from, to) =>
+          window.webkit.messageHandlers.soundstorm.postMessage({ type: 'readFile', req, id, from, to });
+        window.soundstormApp.uploads = (cmd, data) =>
+          window.webkit.messageHandlers.soundstorm.postMessage({ type: 'uploads', cmd, data: data || {} });
         window.soundstormApp.remoteVolume = (on) =>
           window.webkit.messageHandlers.soundstorm.postMessage({ type: 'remoteVolume', on: Boolean(on) });
         window.soundstormApp.backup = (cmd, options) =>
@@ -173,6 +183,13 @@ final class WebViewController: UIViewController {
         failure.show(host: server.host() ?? server.absoluteString, detail: error.localizedDescription)
     }
 
+    /// Calls a page function with a JSON argument.
+    private func callPage(_ function: String, _ value: Any) {
+        guard let data = try? JSONSerialization.data(withJSONObject: value),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.\(function) && window.\(function)(\(json))")
+    }
+
     /// How photo backup is going, to the page's Settings.
     private func reportBackup() {
         guard let data = try? JSONSerialization.data(withJSONObject: PhotoBackup.shared.status()),
@@ -209,6 +226,28 @@ final class WebViewController: UIViewController {
                     return
                 }
                 self?.handLink(code)
+            }
+        case "pickFiles":
+            FileUploads.shared.pick(over: self) { [weak self] files in
+                let list = files.map { ["id": $0.id, "name": $0.name, "size": $0.size, "lastModified": $0.modified] as [String: Any] }
+                self?.callPage("__soundstormPicked", list)
+            }
+        case "readFile":
+            let req = body["req"] as? Int ?? 0
+            let from = (body["from"] as? NSNumber)?.int64Value ?? 0
+            let to = (body["to"] as? NSNumber)?.int64Value ?? 0
+            let data = FileUploads.shared.read(body["id"] as? String ?? "", from: from, to: to)
+            let b64 = data.map { "\"" + $0.base64EncodedString() + "\"" } ?? "null"
+            webView.evaluateJavaScript("window.__soundstormFileData && window.__soundstormFileData(\(req), \(b64))")
+        case "uploads":
+            let command = body["cmd"] as? String ?? ""
+            let data = body["data"] as? [String: Any] ?? [:]
+            let origin = URL(string: message.frameInfo.securityOrigin.protocol + "://" + message.frameInfo.securityOrigin.host
+                             + (message.frameInfo.securityOrigin.port == 0 ? "" : ":\(message.frameInfo.securityOrigin.port)"))
+            Task {
+                if let answer = await FileUploads.shared.handle(command, data: data, pageOrigin: origin) {
+                    callPage("__soundstormUploads", answer)
+                }
             }
         case "remoteVolume":
             volumeKeys.onPress = { [weak self] dir in

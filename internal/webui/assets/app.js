@@ -1413,7 +1413,7 @@ async function sendImport(file) {
   importSending.set(id, { sent: offset, size: file.size });
   refreshImports();
   while (offset < file.size) {
-    const piece = file.slice(offset, Math.min(file.size, offset + IMPORT_CHUNK));
+    const piece = await blobOf([file.slice(offset, Math.min(file.size, offset + IMPORT_CHUNK))]);
     let answer = null;
     try {
       const resp = await fetch(`/api/photos/import/${id}?offset=${offset}`, {
@@ -1785,7 +1785,69 @@ $('rescan').addEventListener('click', async () => {
 // follow - and it is the first line of the app. Asked of the pointer rather
 // than the width, because a narrow desktop window still has a mouse.
 
-$('choose-files').addEventListener('click', () => $('file-picker').click());
+// In the iPhone app the app picks (FileUploads.swift): an iPhone's web view
+// keeps the files its own picker gives to itself, and the app has to have
+// them to send after it is left. What it picked comes back as AppFiles,
+// read through the app.
+$('choose-files').addEventListener('click', () => {
+  if (window.soundstormApp && window.soundstormApp.pickFiles) window.soundstormApp.pickFiles();
+  else $('file-picker').click();
+});
+window.__soundstormPicked = (list) => {
+  const files = (list || []).map((f) => new AppFile(f));
+  if (files.length) intake({ items: [], files });
+};
+
+// A file the iPhone app holds: name, size and date as a File's, and pieces
+// of it read through the app - what the page reads is a few megabytes at
+// most (a sample to spot a copy, the ends to name a different one, a zip's
+// table of contents, an import's piece). blobOf turns them into real Blobs
+// where one is needed.
+const appReads = new Map();
+let appReadNext = 1;
+window.__soundstormFileData = (req, b64) => {
+  const done = appReads.get(req);
+  appReads.delete(req);
+  if (!done) return;
+  if (b64 === null) { done(null); return; }
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  done(bytes.buffer);
+};
+function appRead(id, from, to) {
+  return new Promise((resolve, reject) => {
+    const req = appReadNext++;
+    appReads.set(req, (buf) => (buf ? resolve(buf) : reject(new Error('the app could not read the file'))));
+    window.soundstormApp.readFile(req, id, from, to);
+  });
+}
+class AppSlice {
+  constructor(id, from, to) { this.appId = id; this.from = from; this.to = to; this.size = Math.max(0, to - from); }
+  async arrayBuffer() {
+    const out = new Uint8Array(this.size);
+    for (let at = this.from; at < this.to; at += 8 << 20) {
+      out.set(new Uint8Array(await appRead(this.appId, at, Math.min(this.to, at + (8 << 20)))), at - this.from);
+    }
+    return out.buffer;
+  }
+  slice(a = 0, b = this.size) {
+    const from = this.from + Math.max(0, a < 0 ? this.size + a : a);
+    const to = this.from + Math.min(this.size, b < 0 ? this.size + b : b);
+    return new AppSlice(this.appId, from, Math.max(from, to));
+  }
+}
+class AppFile extends AppSlice {
+  constructor(f) {
+    super(f.id, 0, Number(f.size) || 0);
+    this.name = f.name;
+    this.lastModified = Number(f.lastModified) || Date.now();
+    this.type = '';
+  }
+}
+async function blobOf(parts) {
+  return new Blob(await Promise.all(parts.map((p) => (p instanceof AppSlice ? p.arrayBuffer() : p))));
+}
 
 $('file-picker').addEventListener('change', (event) => {
   const files = [...(event.target.files || [])];
@@ -3758,7 +3820,7 @@ async function fileSample(file) {
   const parts = [head];
   if (size <= 3 * SAMPLE_CHUNK) parts.push(file);
   else for (const from of [0, Math.floor(size / 2) - SAMPLE_CHUNK / 2, size - SAMPLE_CHUNK]) parts.push(file.slice(from, from + SAMPLE_CHUNK));
-  const bytes = new Uint8Array(await new Blob(parts).arrayBuffer());
+  const bytes = new Uint8Array(await (await blobOf(parts)).arrayBuffer());
   const digest = window.crypto && crypto.subtle ? new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)) : sha256(bytes);
   const hex = [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
   sampleCache.set(file, hex);
@@ -3847,7 +3909,7 @@ async function suggestName(p, file) {
   const q = new URLSearchParams({ kind: p.kind, dest: p.dest || '', size: String(file.size), head: String(head.size) });
   try {
     const resp = await fetch(`/api/upload/describe?${q}`, {
-      method: 'POST', credentials: 'same-origin', body: new Blob([head, tail]),
+      method: 'POST', credentials: 'same-origin', body: await blobOf([head, tail]),
     });
     if (!resp.ok) return '';
     const body = await resp.json();
@@ -4662,6 +4724,8 @@ async function sendFiles(plan, dropped) {
   // cannot read (not from its own picker) are sent here, as before.
   if (APP_UPLOADS) {
     const jobs = queue.map((item) => ({
+      // id: a file the iPhone app picked and holds (FileUploads.swift).
+      id: item.file.appId || '',
       name: item.file.name, size: item.file.size, path: item.path, kind: item.kind, group: item.group || '',
       conflict: item.conflict === 'keep' || item.conflict === 'replace' ? item.conflict : '',
       as: item.conflict === 'keep' && item.asName ? item.asName : '',

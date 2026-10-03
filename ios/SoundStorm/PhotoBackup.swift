@@ -501,34 +501,10 @@ final class PhotoBackup: NSObject {
     /// The web view's session cookie, for this server only. The web view
     /// keeps its own cookies, apart from URLSession's, so it is copied over.
     private func signIn(_ request: inout URLRequest) async throws {
-        guard let url = request.url, let host = url.host()?.lowercased() else { return }
-        // The web view's cookies are read from its store only once a web view
-        // exists in this process: at launch, before the page's own, and in a
-        // background run, which has none, the store answered empty and backup
-        // said "sign in again". One that is never shown loads it.
-        if Self.cookieLoader == nil { Self.cookieLoader = WKWebView(frame: .zero) }
-        var all = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
-        if all.isEmpty {
-            try await Task.sleep(for: .seconds(2))
-            all = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
-        }
-        let now = Date()
-        let mine = all.filter { c in
-            let domain = c.domain.lowercased()
-            let matches = domain.hasPrefix(".") ? (host == String(domain.dropFirst()) || host.hasSuffix(domain)) : host == domain
-            return matches && url.path().hasPrefix(c.path) && (!c.isSecure || url.scheme == "https")
-                && (c.expiresDate.map { $0 > now } ?? true)
-        }
-        // None at all: not known yet, rather than signed out - the run ends
-        // quietly and the next (the page asking, opening the app) tries again.
-        guard !all.isEmpty else { throw CancellationError() }
-        guard !mine.isEmpty else { throw Refused(code: 401, message: "") }
-        for (field, value) in HTTPCookie.requestHeaderFields(with: mine) {
-            request.setValue(value, forHTTPHeaderField: field)
-        }
+        // None for this server: signed out (no cookies at all is "not known
+        // yet", thrown by WebCookies as a cancellation, and the run ends quietly).
+        guard try await WebCookies.apply(to: &request) else { throw Refused(code: 401, message: "") }
     }
-
-    private static var cookieLoader: WKWebView?
 
     private static func errorText(_ data: Data) -> String {
         ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? String ?? ""
