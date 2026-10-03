@@ -4011,9 +4011,9 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 .ctl-btn span:empty { display: none; }
 .ctl-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (max-width: 620px) {
-  /* The circle left of the search box, as tall as it. */
+  /* The circle right of the search box, as tall as it. */
   .ctl-btn span { max-width: 72px; }
-  .me-btn { order: 2; }
+  .me-btn { order: 4; }
 }
 .ctl-backdrop { position: fixed; inset: 0; z-index: 2147482990; background: rgba(0, 0, 0, 0.5); }
 .ctl-sheet {
@@ -4097,7 +4097,7 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 html:not(.tv) #tabs [data-tab="settings"] { display: none; }
 .me-menu {
   position: fixed; z-index: 40;
-  top: calc(var(--header-h, 66px) + 4px); left: calc(12px + var(--safe-left, 0px));
+  top: calc(var(--header-h, 66px) + 4px); right: calc(12px + var(--safe-right, 0px));
   min-width: 220px; max-width: calc(100vw - 24px);
   padding: 8px; border-radius: 14px;
   background: var(--surface); border: 1px solid var(--border);
