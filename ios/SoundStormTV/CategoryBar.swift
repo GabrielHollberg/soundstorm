@@ -9,6 +9,10 @@ struct CategoryBar<Value: Hashable>: View {
     let items: [(value: Value, label: String)]
     @Binding var selection: Value
     @FocusState private var focused: Value?
+    /// Whether the focus has reached the chosen pill yet. tvOS's first focus
+    /// can land on whichever pill sits where the page starts, and taking that
+    /// for a choice changed the category by itself at launch.
+    @State private var settled = false
 
     // The page's pills (#subtabs on a TV): 39px tall, 16px either side of the
     // name, 14px semibold; the chosen one light with dark text, the others the
@@ -38,7 +42,12 @@ struct CategoryBar<Value: Hashable>: View {
         }
         .frame(height: 110)
         .onChange(of: focused) { _, value in
-            if let value, value != selection { selection = value }
+            guard let value else { return }
+            if !settled {
+                if value == selection { settled = true } else { focused = selection }
+                return
+            }
+            if value != selection { selection = value }
         }
         // Coming up from below lands on the chosen category, not the first.
         .defaultFocus($focused, selection)

@@ -253,19 +253,55 @@ struct QuickPlay: View {
 struct ArtistView: View {
     let artist: API.Artist
     @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
     @State private var albums: [Album] = []
 
+    /// The page's artist page: their picture round, "N albums", Play, Shuffle
+    /// and Artist radio, then their albums.
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 40) {
-                Text(artist.name).font(.title2).padding(.leading, 20)
-                LazyVGrid(columns: Theme.grid, spacing: 70) {
+            VStack(alignment: .leading, spacing: 0) {
+                BackLink(label: "Artists")
+                DetailHead(art: api.artURL(source: artist.sourceId, artId: artist.artId, size: 800), round: true,
+                           kind: "Artist", title: artist.name, subtitle: nil,
+                           facts: "\(albums.count) album\(albums.count == 1 ? "" : "s")") {
+                    Button("\u{25B6}  Play") { Task { await playAll(shuffle: false) } }
+                        .buttonStyle(RoundButton(primary: true))
+                        .pageStartsHere()
+                    Button("Shuffle") { Task { await playAll(shuffle: true) } }
+                        .buttonStyle(RoundButton())
+                    Button("Artist radio") {
+                        Task { await model.tune(API.Station(mode: "artist", seed: artist.name, title: artist.name,
+                                                            subtitle: nil, covers: nil, sourceId: artist.sourceId)) }
+                    }
+                    .buttonStyle(RoundButton())
+                }
+                .padding(.top, 24)
+                .padding(.bottom, 44)
+                Text("Albums")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                LazyVGrid(columns: Theme.grid, alignment: .leading, spacing: 70) {
                     ForEach(albums) { AlbumCard(album: $0) }
                 }
+                .padding(.top, 28)
+                .focusSection()
             }
-            .padding(60)
+            .padding(.horizontal, Theme.page)
+            .padding(.top, 12)
+            .padding(.bottom, 60)
         }
+        .scrollClipDisabled()
+        .toolbar(.hidden, for: .navigationBar)
         .task { albums = (try? await api.albums(of: artist)) ?? [] }
+    }
+
+    /// Every song of theirs, album by album, as the page's Play does.
+    private func playAll(shuffle: Bool) async {
+        var songs: [Item] = []
+        for album in albums { songs += (try? await api.album(album)) ?? [] }
+        guard !songs.isEmpty else { return }
+        model.play(shuffle ? songs.shuffled() : songs)
     }
 }
 
@@ -275,8 +311,11 @@ struct AlbumView: View {
     @State private var songs: [Item] = []
 
     var body: some View {
-        SongList(title: album.title, subtitle: album.artist,
-                 art: api.artURL(source: album.sourceId, artId: album.artId, size: 800), songs: songs)
+        SongList(back: "Albums", kind: "Album", title: album.title, subtitle: album.artist,
+                 art: api.artURL(source: album.sourceId, artId: album.artId, size: 800), songs: songs,
+                 year: album.year,
+                 radio: songs.first.map { API.Station(mode: "album", seed: $0.id, title: album.title,
+                                                       subtitle: nil, covers: nil, sourceId: $0.sourceId) })
             .task { songs = (try? await api.album(album)) ?? [] }
     }
 }
@@ -288,55 +327,12 @@ struct PlaylistView: View {
 
     var body: some View {
         let cover = playlist.covers?.first
-        SongList(title: playlist.name, subtitle: "\(playlist.count) songs",
+        SongList(back: "Playlists", kind: "Playlist", title: playlist.name, subtitle: "",
                  art: cover.flatMap { api.artURL(source: $0.sourceId, artId: $0.artId, size: 800) }, songs: songs)
             .task { songs = (try? await api.playlist(playlist)) ?? [] }
     }
 }
 
-/// An album's or a playlist's songs beside its cover: Play, Shuffle, and
-/// any song to start from it.
-struct SongList: View {
-    let title: String
-    let subtitle: String
-    let art: URL?
-    let songs: [Item]
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 80) {
-            VStack(alignment: .leading, spacing: 24) {
-                Cover(url: art).frame(width: 500, height: 500)
-                Text(title).font(.title2).lineLimit(2)
-                Text(subtitle).foregroundStyle(.secondary)
-                HStack {
-                    Button { model.play(songs) } label: { Label("Play", systemImage: "play.fill") }
-                    Button { model.play(songs.shuffled()) } label: { Label("Shuffle", systemImage: "shuffle") }
-                }
-                .disabled(songs.isEmpty)
-            }
-            .frame(width: 500)
-            List {
-                ForEach(Array(songs.enumerated()), id: \.element.key) { i, song in
-                    Button { model.play(songs, from: i) } label: {
-                        HStack {
-                            Text("\(i + 1)").foregroundStyle(.secondary).frame(width: 60, alignment: .leading)
-                            VStack(alignment: .leading) {
-                                Text(song.title)
-                                if !song.artist.isEmpty {
-                                    Text(song.artist).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if let d = song.durationSeconds { Text(clock(d)).foregroundStyle(.secondary) }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(60)
-    }
-}
 
 // MARK: Search
 

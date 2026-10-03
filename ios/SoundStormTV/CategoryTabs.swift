@@ -350,6 +350,9 @@ struct AlbumsPage: View {
             .padding(.vertical, 40)
         }
         .task { albums = (try? await api.albums(order: "name")) ?? [] }
+        #if DEBUG
+        .modifier(DebugOpenFirst(items: albums) { AlbumView(album: $0) })
+        #endif
     }
 }
 
@@ -364,6 +367,9 @@ struct ArtistsPage: View {
             }
             .padding(.vertical, 40)
         }
+        #if DEBUG
+        .modifier(DebugOpenFirst(items: artists) { ArtistView(artist: $0) })
+        #endif
         .task { artists = (try? await api.artists()) ?? [] }
     }
 }
@@ -454,6 +460,22 @@ extension Array where Element == API.Group {
 }
 
 #if DEBUG
+/// For the simulator, which has no remote: -openFirst YES opens the first
+/// album or artist of the list showing.
+struct DebugOpenFirst<T: Hashable, Page: View>: ViewModifier {
+    let items: [T]
+    @ViewBuilder let page: (T) -> Page
+    @State private var opened: T?
+
+    func body(content: Content) -> some View {
+        content
+            .navigationDestination(item: $opened) { page($0) }
+            .onChange(of: items) { _, all in
+                if opened == nil, UserDefaults.standard.bool(forKey: "openFirst") { opened = all.first }
+            }
+    }
+}
+
 /// For the simulator, which has no remote: -autovideo <film or episode id>.
 struct DebugAutovideo: ViewModifier {
     @Environment(API.self) private var api
