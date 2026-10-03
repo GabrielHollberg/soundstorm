@@ -747,8 +747,9 @@ swipeToClose($('reader-overlay'));
 /* ------------------------------------------------------- read along as a line */
 
 // The second way to read along (the owner's design): the book as one endless
-// line of big text moving right to left with the voice - fading in at the
-// right edge, out at the left - with the sentence being read lit. A double
+// line of big text moving right to left with the voice, brightest at the
+// middle where the voice is and fading evenly to both edges - nothing lit
+// sentence by sentence, which jumped (the owner). A double
 // tap on the book switches between it and the pages; the choice is kept on
 // the device. The pages carry on following behind it, so switching back
 // lands on the right page. Each frame the line is moved so the voice's place
@@ -758,7 +759,7 @@ swipeToClose($('reader-overlay'));
 const LINE_KEY = 'soundstorm-readalong-view';
 const LINE_BEFORE = 4;
 const LINE_AFTER = 14;
-const LINE_AT = 0.42; // where on the screen the voice is
+const LINE_AT = 0.5; // where on the screen the voice is: the middle, the brightest
 const line = { follow: null, raf: 0, texts: new Map(), docs: new Map(), first: -1, last: -1, spans: [], loading: false, lit: null };
 
 function toggleLine() {
@@ -931,13 +932,6 @@ function drawLine(follow) {
   const box = $('reader-line');
   const track = box.querySelector('.reader-line-track');
   track.style.transform = `translate3d(${(box.clientWidth * LINE_AT - x).toFixed(1)}px, -50%, 0)`;
-  if (line.lit !== span) {
-    line.spans.forEach((s, k) => {
-      s.classList.toggle('said', k < i - line.first);
-      s.classList.toggle('now', s === span);
-    });
-    line.lit = span;
-  }
 }
 
 // A double tap: two taps in 300ms, close together, without moving. Each
