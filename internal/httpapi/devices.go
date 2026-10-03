@@ -149,7 +149,7 @@ func (s *Server) handlePendingSignIn(w http.ResponseWriter, r *http.Request) {
 	if err := s.auth.SetDeviceCookie(w, r, user); err != nil {
 		s.log.Warn("could not mark this device as trusted", "err", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": publicUser(user)})
+	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": s.withPicture(publicUser(user), user.ID)})
 }
 
 // GET /api/devices/pending: sign-ins waiting for this person's approval - their

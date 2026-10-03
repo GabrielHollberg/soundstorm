@@ -4014,6 +4014,8 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
   /* To the search box's right, as tall as it (it sat over the box). */
   .ctl-btn { order: 4; align-self: stretch; height: auto; min-width: 46px; justify-content: center; }
   .ctl-btn span { max-width: 72px; }
+  /* The circle at the far right, after the box and the device button. */
+  .me-btn { order: 5; align-self: center; }
 }
 .ctl-backdrop { position: fixed; inset: 0; z-index: 2147482990; background: rgba(0, 0, 0, 0.5); }
 .ctl-sheet {
@@ -4081,6 +4083,47 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
   font-weight: 800;
   color: #fff;
 }
+.profile-avatar { overflow: hidden; flex: none; }
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* The circle at the top right: who is signed in, opening switching and
+   Settings - which is why Settings is no longer a tab, except on a TV, where
+   the side bar is where the remote goes. */
+.me-btn {
+  width: 38px; height: 38px; padding: 0; border: none;
+  font-size: 16px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.me-btn.hidden { display: none; }
+.me-btn:active { transform: scale(0.94); }
+html:not(.tv) #tabs [data-tab="settings"] { display: none; }
+.me-menu {
+  position: fixed; z-index: 40;
+  top: calc(var(--header-h, 66px) + 4px); right: calc(12px + var(--safe-right, 0px));
+  min-width: 220px; max-width: calc(100vw - 24px);
+  padding: 8px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  display: grid; gap: 2px;
+}
+.me-menu.hidden { display: none; }
+.me-menu .me-head { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; }
+.me-menu .profile-avatar { width: 32px; height: 32px; font-size: 14px; }
+.me-menu > button, .me-person {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 40px; padding: 6px 8px; border: none; border-radius: 8px;
+  background: none; color: var(--text); font: inherit; text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.me-menu > button.hidden { display: none; }
+@media (hover: hover) { .me-menu > button:hover, .me-person:hover { background: rgba(255, 255, 255, 0.08); filter: none; } }
+.me-menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; width: 100%; }
+@media (pointer: coarse) { .me-menu > button, .me-person { min-height: 48px; } }
+/* On a TV the circle heads the side bar, opening "Who's listening?". */
+html.tv .tabs .tv-me-tab { color: var(--text); }
+html.tv .tv-me-tab .profile-avatar { width: 40px; height: 40px; font-size: 18px; }
+html.tv .tv-me-tab.hidden { display: none; }
+
 .profile-tile .profile-lock { font-size: 12px; color: var(--muted); min-height: 1em; }
 #profiles-secret { display: grid; gap: 10px; margin-bottom: 12px; }
 #profiles-secret.hidden { display: none; }

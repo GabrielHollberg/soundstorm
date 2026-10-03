@@ -88,10 +88,7 @@ function showProfiles(list) {
     tile.dataset.id = person.id;
     const avatar = document.createElement('span');
     avatar.className = 'profile-avatar';
-    let hash = 0;
-    for (const c of person.name) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
-    avatar.style.background = `hsl(${AVATAR_HUES[hash % AVATAR_HUES.length]} 55% 42%)`;
-    avatar.textContent = person.name.slice(0, 1).toUpperCase();
+    paintAvatar(avatar, person);
     const name = document.createElement('span');
     name.textContent = person.name;
     const lock = document.createElement('span');
@@ -103,6 +100,123 @@ function showProfiles(list) {
   }
   holder.firstChild?.focus();
 }
+// paintAvatar draws a person's circle into el: their own picture, or their
+// initial on a colour of their own (the same one on every device).
+function paintAvatar(el, person) {
+  let hash = 0;
+  for (const c of person.name || '') hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  el.style.background = `hsl(${AVATAR_HUES[hash % AVATAR_HUES.length]} 55% 42%)`;
+  el.replaceChildren();
+  if (person.picture) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = person.picture;
+    // A picture that will not load leaves the initial.
+    img.addEventListener('error', () => { img.remove(); el.textContent = (person.name || '?').slice(0, 1).toUpperCase(); });
+    el.append(img);
+  } else {
+    el.textContent = (person.name || '?').slice(0, 1).toUpperCase();
+  }
+}
+
+// The circle at the top of the screen: who is signed in, and a menu of the
+// others kept on this device to switch to in one tap (their PIN or password
+// asked where needed), someone else, their picture, and Settings.
+function renderMe() {
+  const me = state.me;
+  show($('me-btn'), Boolean(me) && !TV && !state.offline);
+  const tvTab = $('tv-me-tab');
+  if (tvTab) show(tvTab, Boolean(me) && !state.offline);
+  if (!me) return;
+  if (tvTab) {
+    const circle = document.createElement('span');
+    circle.className = 'profile-avatar';
+    paintAvatar(circle, me);
+    const label = document.createElement('span');
+    label.textContent = me.name;
+    tvTab.replaceChildren(circle, label);
+  }
+  paintAvatar($('me-btn'), me);
+  $('me-btn').setAttribute('aria-label', `${me.name}: switch person, or Settings`);
+}
+async function openMeMenu() {
+  const me = state.me;
+  if (!me) return;
+  const menu = $('me-menu');
+  paintAvatar($('me-menu-avatar'), me);
+  $('me-menu-name').textContent = me.name;
+  show($('me-picture-remove'), Boolean(me.picture));
+  $('me-picture').textContent = me.picture ? 'Change picture' : 'Add a picture';
+  const holder = $('me-menu-people');
+  holder.replaceChildren();
+  show(menu, true);
+  $('me-btn').setAttribute('aria-expanded', 'true');
+  const { ok, body } = await api('/api/profiles');
+  const people = ((ok && body && body.people) || []).filter((p) => p.id !== me.id);
+  for (const person of people) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.setAttribute('role', 'menuitem');
+    row.className = 'me-person';
+    const avatar = document.createElement('span');
+    avatar.className = 'profile-avatar';
+    paintAvatar(avatar, person);
+    const name = document.createElement('span');
+    name.textContent = person.name;
+    row.append(avatar, name);
+    row.addEventListener('click', () => {
+      closeMeMenu();
+      if (!person.needs) { switchProfile(person, {}); return; }
+      showProfiles(body);
+      pickProfile(person);
+    });
+    holder.append(row);
+  }
+}
+function closeMeMenu() {
+  show($('me-menu'), false);
+  $('me-btn').setAttribute('aria-expanded', 'false');
+}
+$('me-btn').addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (shown('me-menu')) closeMeMenu();
+  else openMeMenu();
+});
+document.addEventListener('click', (event) => {
+  if (shown('me-menu') && !$('me-menu').contains(event.target)) closeMeMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && shown('me-menu')) closeMeMenu();
+});
+$('me-other').addEventListener('click', async () => {
+  closeMeMenu();
+  for (const id of ['app', 'tabs']) show($(id), false);
+  const { body } = await api('/api/session');
+  showGate(true, body && body.setupCodeRequired);
+  $('gate-keep').checked = true;
+});
+$('me-settings').addEventListener('click', () => {
+  closeMeMenu();
+  selectTab('settings');
+});
+$('me-picture').addEventListener('click', async () => {
+  closeMeMenu();
+  const blob = await pickCoverImage();
+  if (!blob) return;
+  const { ok, body } = await api('/api/account/picture', { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+  if (!ok) { showToast((body && body.error) || 'Could not save that picture.'); return; }
+  state.me.picture = body.picture;
+  renderMe();
+  showToast('Picture saved.');
+});
+$('me-picture-remove').addEventListener('click', async () => {
+  closeMeMenu();
+  const { ok } = await api('/api/account/picture', { method: 'DELETE' });
+  if (!ok) { showToast('Could not remove it.'); return; }
+  delete state.me.picture;
+  renderMe();
+});
+
 let profilePicked = null;
 function pickProfile(person) {
   profilePicked = person;
@@ -825,6 +939,7 @@ async function showApp(me) {
   applyLibraryTabs();
   renderTabs();
   renderAccount();
+  renderMe();
   await loadFavoriteKeys();
   await Promise.all([loadPrefs(), loadMyArt()]);
   setTimeout(prepareDownloads, 20000);
@@ -2142,7 +2257,7 @@ function renderResults(result, append) {
     // to carry it is gone. It has to say what to do, not just what happened.
     // A phone cannot drag anything, so it is pointed at the button instead.
     $('status').textContent = matchMedia('(pointer: coarse)').matches
-      ? 'Nothing here yet. Open Settings and choose Add media to add music, films, books, documents or photos.'
+      ? (TV ? 'Nothing here yet. Open Settings and choose Add media' : 'Nothing here yet. Tap your circle at the top, then Settings, Add media') + ' to add music, films, books, documents or photos.'
       : 'Nothing here yet. Drag music, films, books, documents or photos anywhere on this window, or use Add media in Settings.';
   } else if (browsing) {
     // Empty shelf, full library: they filtered to a kind they have none of,
@@ -10202,7 +10317,7 @@ async function renderHome(seq) {
     const empty = document.createElement('p');
     empty.className = 'muted home-empty';
     empty.textContent = state.libraryEmpty
-      ? 'Nothing here yet. Open Settings and choose Add media to add music, films, books or photos.'
+      ? (TV ? 'Nothing here yet. Open Settings and choose Add media' : 'Nothing here yet. Tap your circle at the top, then Settings, Add media') + ' to add music, films, books or photos.'
       : 'Nothing new lately.';
     view.append(empty);
   }
@@ -19576,6 +19691,17 @@ function tvRemote() {
   npTab.append(npArt, npLabel);
   npTab.addEventListener('click', () => { if (audio.item) openNowPlaying(); });
   $('tabs').prepend(npTab);
+  // Who is watching, at the head of the side bar: OK opens "Who's
+  // listening?" to switch, as the Apple TV's does.
+  const meTab = document.createElement('button');
+  meTab.type = 'button';
+  meTab.id = 'tv-me-tab';
+  meTab.className = 'tv-me-tab hidden';
+  meTab.addEventListener('click', async () => {
+    const { ok, body } = await api('/api/profiles');
+    if (ok && body) showProfiles(body);
+  });
+  $('tabs').prepend(meTab);
   const syncNpTab = () => {
     show(npTab, Boolean(audio.item) && document.body.classList.contains('dock-open'));
     const src = $('audio-art').getAttribute('src') || NO_COVER;

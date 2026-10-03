@@ -205,7 +205,7 @@ func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("could not mark this device as trusted", "err", err)
 	}
 	s.log.Info("a TV was signed in from a phone", "for", user.Name, "device", t.Device)
-	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": publicUser(user)})
+	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": s.withPicture(publicUser(user), user.ID)})
 }
 
 // GET /api/link/{id}/qr.png: the code's address as a QR code, for a TV

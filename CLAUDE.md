@@ -6477,6 +6477,31 @@ simulator (`-profile <name> -profileSecret <s>`, debug only) - the picker on
 opening, a wrong PIN refused, the right one into the library; the iPhone UI
 tests still pass. Not checked: a remote's presses on the TV picker.
 
+**Your circle, top right, and pictures of your own (2026-10-02)**, asked for
+as switching being too buried in Settings, "like most apps, in the top
+corner". The page's header ends in the signed-in person's circle (`me-btn`,
+`renderMe`, `paintAvatar` - their picture, or their initial on the colour the
+picker already gave them). It opens a menu: the others kept on this device
+(one tap, their PIN or password asked where needed), Someone else, Add or
+Change picture, Remove picture, and **Settings, which left the tab bar** -
+except on a TV, where the side bar is where the remote goes and the circle
+heads it (`tv-me-tab`, opening "Who's listening?"). The Apple TV's side bar
+starts with the circle too (tvOS has no side bar header, so it is drawn into
+an image, `AvatarImage`), and its picker tiles show pictures (`Avatar`).
+
+The picture is kept like a cover of one's own, under the key `me`
+(`collections.ProfileArtKey`): `PUT`/`DELETE /api/account/picture`, cropped
+square on the device by the same `pickCoverImage`. It goes out as `picture`
+on the person (session, sign-in answers, people list, `/api/profiles`), an
+address that changes with the picture. `GET /api/profiles/{id}/picture` is
+open, because "Who's listening?" shows before anybody is signed in - but only
+for somebody kept on this device, or to anyone signed in to the server.
+Checked: Go test through the routes, Chrome at phone, desktop and TV sizes
+(menu, switching, a picture added and shown on the other device's picker),
+and the Apple TV simulator's picker. Not checked: the Apple TV side bar's
+circle itself (the simulator cannot open the side bar), and Android back
+closing the menu (Escape and a tap outside do).
+
 ## The Android app (`android/`)
 
 The same shape as the iPhone app, and the same stage: a native shell around

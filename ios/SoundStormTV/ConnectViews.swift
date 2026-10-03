@@ -434,8 +434,6 @@ struct ProfilesView: View {
     @State private var busy = false
     @State private var message: String?
 
-    private static let hues: [Double] = [210, 340, 28, 140, 265, 190, 5, 95]
-
     var body: some View {
         VStack(spacing: 50) {
             Logo()
@@ -491,13 +489,8 @@ struct ProfilesView: View {
     }
 
     private func tile(_ person: API.Profile) -> some View {
-        let hash = person.name.unicodeScalars.reduce(UInt32(0)) { $0 &* 31 &+ $1.value }
-        return VStack(spacing: 14) {
-            Text(person.name.prefix(1).uppercased())
-                .font(.system(size: 80, weight: .heavy))
-                .foregroundStyle(.white)
-                .frame(width: 180, height: 180)
-                .background(Circle().fill(Color(hue: Self.hues[Int(hash) % Self.hues.count] / 360, saturation: 0.55, brightness: 0.62)))
+        VStack(spacing: 14) {
+            Avatar(name: person.name, picture: person.picture, size: 180)
             Text(person.name)
             Text(person.needs == "pin" ? "PIN" : person.needs == "password" ? "Password" : " ")
                 .font(.caption)
@@ -532,6 +525,72 @@ struct ProfilesView: View {
                 message = error.localizedDescription
             }
             busy = false
+        }
+    }
+}
+
+/// A person's circle: their own picture, or their initial on a colour of
+/// their own - the same colour the page gives them (app.js `paintAvatar`).
+struct Avatar: View {
+    let name: String
+    let picture: String?
+    var size: CGFloat = 60
+    @Environment(AppModel.self) private var model
+
+    private static let hues: [Double] = [210, 340, 28, 140, 265, 190, 5, 95]
+
+    var body: some View {
+        let hash = name.unicodeScalars.reduce(UInt32(0)) { $0 &* 31 &+ $1.value }
+        let initial = Text(name.prefix(1).uppercased())
+            .font(.system(size: size * 0.44, weight: .heavy))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+        ZStack {
+            Circle().fill(Color(hue: Self.hues[Int(hash % UInt32(Self.hues.count))] / 360, saturation: 0.55, brightness: 0.62))
+            if let picture, let url = try? model.api?.absolute(picture) {
+                SafeImage(url: url, maxPixels: Int(size * 2)) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { initial }
+            } else {
+                initial
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
+}
+
+/// The signed-in person's circle as an image, for a place that takes only
+/// an image (the side bar's entry): their picture cropped round, or their
+/// initial on their colour.
+enum AvatarImage {
+    static let hues: [Double] = [210, 340, 28, 140, 265, 190, 5, 95]
+
+    static func make(api: API, size: CGFloat) async -> UIImage? {
+        guard let user = api.user else { return nil }
+        var picture: UIImage?
+        if let path = user.picture, let url = try? api.absolute(path),
+           let (data, _) = try? await SafeLoad.data(from: url, limit: SafeLoad.picture) {
+            picture = await Task.detached(priority: .utility) { SafeLoad.image(data, maxPixels: Int(size * 3)) }.value
+        }
+        let hash = user.name.unicodeScalars.reduce(UInt32(0)) { $0 &* 31 &+ $1.value }
+        let colour = UIColor(hue: hues[Int(hash % UInt32(hues.count))] / 360, saturation: 0.55, brightness: 0.62, alpha: 1)
+        let rect = CGRect(x: 0, y: 0, width: size, height: size)
+        return UIGraphicsImageRenderer(size: rect.size).image { _ in
+            UIBezierPath(ovalIn: rect).addClip()
+            colour.setFill()
+            UIRectFill(rect)
+            if let picture {
+                let scale = max(size / picture.size.width, size / picture.size.height)
+                let w = picture.size.width * scale, h = picture.size.height * scale
+                picture.draw(in: CGRect(x: (size - w) / 2, y: (size - h) / 2, width: w, height: h))
+            } else {
+                let text = NSAttributedString(string: user.name.prefix(1).uppercased(), attributes: [
+                    .font: UIFont.systemFont(ofSize: size * 0.46, weight: .heavy), .foregroundColor: UIColor.white,
+                ])
+                let t = text.size()
+                text.draw(at: CGPoint(x: (size - t.width) / 2, y: (size - t.height) / 2))
+            }
         }
     }
 }

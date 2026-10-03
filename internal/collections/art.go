@@ -34,10 +34,28 @@ var ErrBadArt = errors.New("that is not a JPEG, PNG or WebP picture")
 
 // artKey is what a key may look like: which kind, a source, and an id - or
 // one of this person's playlists, whose picture replaces its collage.
-var artKey = regexp.MustCompile(`^(?:(song|art):[A-Za-z0-9_-]{1,64}/[^\x00-\x1f]{1,300}|playlist:[0-9a-f]{1,64})$`)
+var artKey = regexp.MustCompile(`^(?:(song|art):[A-Za-z0-9_-]{1,64}/[^\x00-\x1f]{1,300}|playlist:[0-9a-f]{1,64}|me)$`)
 
 // PlaylistArtKey is the key a playlist's own picture is kept under.
 func PlaylistArtKey(id string) string { return "playlist:" + id }
+
+// ProfileArtKey is the key a person's own picture - the one in their circle
+// at the top of the screen and on "Who's listening?" - is kept under.
+const ProfileArtKey = "me"
+
+// ProfilePicture is where userID's own picture is on disk and its file name
+// (which changes with the picture), or false without one.
+func (s *Store) ProfilePicture(userID string) (path, name string, ok bool) {
+	art, err := s.Art(userID)
+	if err != nil || art[ProfileArtKey] == "" {
+		return "", "", false
+	}
+	dir, err := s.artDir(userID)
+	if err != nil {
+		return "", "", false
+	}
+	return filepath.Join(dir, art[ProfileArtKey]), art[ProfileArtKey], true
+}
 
 // artFile is what a stored file's name may look like.
 var artFile = regexp.MustCompile(`^[0-9a-f]{64}\.(jpg|png|webp)$`)

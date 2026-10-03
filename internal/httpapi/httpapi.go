@@ -342,6 +342,7 @@ func (s *Server) Routes() http.Handler {
 	// asks "Who's listening?" before anybody is signed in (profiles.go).
 	mux.HandleFunc("GET /api/profiles", s.handleProfiles)
 	mux.HandleFunc("POST /api/profiles/switch", s.handleSwitchProfile)
+	mux.HandleFunc("GET /api/profiles/{id}/picture", s.handleProfilePicture)
 	// A TV taken over from a phone signs in as that person with a one-time
 	// code (players.go): open, as it is still the last person until then.
 	mux.HandleFunc("POST /api/players/switch", s.handlePlayerSwitch)
@@ -355,6 +356,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("POST /api/account/password", s.handleChangeOwnPassword)
 	guarded.HandleFunc("POST /api/profiles/keep", s.limited(&s.keeps, 10, time.Minute, s.handleKeepProfile))
 	guarded.HandleFunc("DELETE /api/profiles/{id}", s.handleUnkeepProfile)
+	guarded.HandleFunc("PUT /api/account/picture", s.handleSetProfilePicture)
+	guarded.HandleFunc("DELETE /api/account/picture", s.handleSetProfilePicture)
 	guarded.HandleFunc("PUT /api/account/pin", s.handleSetPIN)
 	guarded.HandleFunc("GET /api/link/code/{code}", s.handleLinkLookup)
 	guarded.HandleFunc("POST /api/link/code/{code}", s.handleLinkAnswer)
@@ -630,7 +633,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if user, ok := s.auth.UserFor(r); ok {
 		answer["signedIn"] = true
-		answer["user"] = publicUser(user)
+		answer["user"] = s.withPicture(publicUser(user), user.ID)
 		// Remote-access state, for the account panel: whether it can be offered
 		// at all, whether it is on, and the address to reach the server by from
 		// away once it is up. Only to a signed-in account - it is config, not
@@ -875,7 +878,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"signedIn": true,
-		"user":     publicUser(user),
+		"user":     s.withPicture(publicUser(user), user.ID),
 	})
 }
 
@@ -923,7 +926,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(users))
 	for _, u := range users {
-		m := publicUser(u)
+		m := s.withPicture(publicUser(u), u.ID)
 		s.photoFieldsFor(u, m)
 		out = append(out, m)
 	}

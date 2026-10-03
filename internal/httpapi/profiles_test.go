@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -164,5 +165,46 @@ func TestPeopleLeaveADevice(t *testing.T) {
 	}
 	if list := profilesOn(t, tv); len(list.People) != 0 {
 		t.Fatalf("nobody should be kept now: %+v", list)
+	}
+}
+
+// A person's own picture: set by them, shown on "Who's listening?" of a
+// device that keeps them before anybody is signed in there, and to nobody
+// else signed out.
+func TestAProfilePictureShowsWhereThePersonIsKept(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	png := "\x89PNG\r\n\x1a\n" + strings.Repeat("x", 64)
+	if resp, body := h.do(t, http.MethodPut, "/api/account/picture", png); resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "/picture?v=") {
+		t.Fatalf("setting a picture: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := h.do(t, http.MethodPut, "/api/account/picture", "<svg onload=alert(1)>"); resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("an SVG was taken as a picture: %d", resp.StatusCode)
+	}
+
+	h.do(t, http.MethodPost, "/api/users", `{"username":"sam","password":"violet tractor glacier"}`)
+	tv := h.another(t)
+	tv.do(t, http.MethodPost, "/api/login", `{"username":"gabe","password":"correct horse","keep":true}`)
+	tv.do(t, http.MethodPost, "/api/login", `{"username":"sam","password":"violet tractor glacier","keep":true}`)
+	tv.do(t, http.MethodPost, "/api/logout", "") // sam leaves; gabe is still kept, nobody signed in
+	_, body := tv.do(t, http.MethodGet, "/api/profiles", "")
+	var list struct {
+		People []struct{ ID, Picture string }
+	}
+	json.Unmarshal(body, &list)
+	if len(list.People) != 1 || list.People[0].Picture == "" {
+		t.Fatalf("the kept person should carry their picture: %s", body)
+	}
+	pic := list.People[0].Picture
+	if resp, got := tv.do(t, http.MethodGet, pic, ""); resp.StatusCode != http.StatusOK || string(got) != png || resp.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("the device keeping them should get the picture: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if resp, _ := h.another(t).do(t, http.MethodGet, pic, ""); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a stranger got the picture: %d", resp.StatusCode)
+	}
+
+	h.do(t, http.MethodDelete, "/api/account/picture", "")
+	if _, body := tv.do(t, http.MethodGet, "/api/profiles", ""); strings.Contains(string(body), "picture") {
+		t.Fatalf("taken away, the picture should be gone: %s", body)
 	}
 }

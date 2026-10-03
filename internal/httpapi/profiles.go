@@ -3,11 +3,14 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
+	"github.com/GabrielHollberg/soundstorm/internal/collections"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
@@ -58,7 +61,7 @@ func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
 	people := []map[string]any{}
 	if device := s.auth.ProfileDevice(r); device != "" {
 		for _, u := range s.store.KeptOn(device) {
-			people = append(people, profileJSON(u))
+			people = append(people, s.withPicture(profileJSON(u), u.ID))
 		}
 	}
 	current := ""
@@ -154,7 +157,7 @@ func (s *Server) handleSwitchProfile(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("could not mark this device as trusted", "err", err)
 	}
 	_ = s.store.Keep(device, user.ID) // the latest first
-	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": publicUser(user)})
+	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": s.withPicture(publicUser(user), user.ID)})
 }
 
 // keepOnDevice is "keep me on this device", after a sign-in that asked for
@@ -221,4 +224,76 @@ func (s *Server) handleSetPIN(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{"pin": body.PIN != ""})
 	}
+}
+
+// withPicture adds where a person's own picture is to m, when they have one.
+// The address changes with the picture, so it can be kept for good.
+func (s *Server) withPicture(m map[string]any, userID string) map[string]any {
+	if _, name, ok := s.collections.ProfilePicture(userID); ok {
+		m["picture"] = "/api/profiles/" + userID + "/picture?v=" + name[:12]
+	}
+	return m
+}
+
+// GET /api/profiles/{id}/picture: a person's own picture, for the circle at
+// the top of the screen and "Who's listening?". Open, because that screen
+// is shown before anybody is signed in - but only for a person kept on this
+// device, or to somebody signed in to this server (the household sees each
+// other's circles).
+func (s *Server) handleProfilePicture(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	allowed := false
+	if _, ok := s.auth.UserFor(r); ok {
+		allowed = true
+	} else if device := s.auth.ProfileDevice(r); device != "" {
+		for _, u := range s.store.KeptOn(device) {
+			allowed = allowed || u.ID == id
+		}
+	}
+	path, name, ok := s.collections.ProfilePicture(id)
+	if !allowed || !ok {
+		http.NotFound(w, r)
+		return
+	}
+	types := map[string]string{"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+	w.Header().Set("Content-Type", types[name[strings.LastIndex(name, ".")+1:]])
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	http.ServeFile(w, r, path)
+}
+
+// PUT /api/account/picture (the body an image) sets this person's own
+// picture; DELETE takes it away, back to their initial.
+func (s *Server) handleSetProfilePicture(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if r.Method == http.MethodDelete {
+		if err := s.collections.RemoveArt(user.ID, []string{collections.ProfileArtKey}); err != nil {
+			s.collectionsError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{})
+		return
+	}
+	if !s.artUploads.allow(user.ID, time.Now(), 20, 3*time.Second) {
+		writeError(w, http.StatusTooManyRequests, "Too many at once; wait a moment.")
+		return
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, collections.MaxArtBytes+1))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "That picture is too big.")
+		return
+	}
+	switch err := s.collections.SetArt(user.ID, []string{collections.ProfileArtKey}, data); {
+	case errors.Is(err, collections.ErrBadArt):
+		writeError(w, http.StatusUnsupportedMediaType, "Choose a JPEG, PNG or WebP picture.")
+		return
+	case err != nil:
+		s.collectionsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.withPicture(map[string]any{}, user.ID))
 }
