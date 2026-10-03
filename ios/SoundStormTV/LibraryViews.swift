@@ -8,6 +8,7 @@ struct LibraryView: View {
     @Environment(API.self) private var api
     @Environment(Player.self) private var player
     @State private var tab = Self.firstTab
+    @State private var meIcon: UIImage?
 
     private static var firstTab: String {
         #if DEBUG
@@ -22,6 +23,24 @@ struct LibraryView: View {
     var body: some View {
         @Bindable var model = model
         TabView(selection: $tab) {
+            // Who is watching, at the head of the side bar: their circle,
+            // opening "Who's listening?" to switch (the page's circle at the
+            // top right). A side bar entry shows only an image, so the circle
+            // is drawn into one.
+            if let user = api.user {
+                Tab(value: "me") {
+                    Color.clear.onAppear {
+                        tab = "home"
+                        Task { await model.showProfiles() }
+                    }
+                } label: {
+                    Label {
+                        Text(user.name)
+                    } icon: {
+                        if let meIcon { Image(uiImage: meIcon).renderingMode(.original) }
+                    }
+                }
+            }
             if let song = player.current {
                 Tab(value: "playing") {
                     // Choosing it opens Now Playing; the side bar keeps the
@@ -43,6 +62,7 @@ struct LibraryView: View {
             Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .task(id: api.user?.picture) { meIcon = await AvatarImage.make(api: api, size: 44) }
         .task { await model.loadFavorites() }
         .task { model.pills = await api.pills() }
         .task { await model.loadLook() }

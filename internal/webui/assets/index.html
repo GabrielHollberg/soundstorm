@@ -137,7 +137,20 @@
            then controls (players.go). -->
       <button id="ctl-btn" class="ctl-btn hidden" type="button" aria-haspopup="dialog"
               aria-controls="ctl-sheet" aria-label="Choose the device to play on"></button>
+      <!-- Who is signed in, as a circle: their picture or initial. It opens
+           switching to the others kept on this device, and Settings. -->
+      <button id="me-btn" class="me-btn profile-avatar hidden" type="button" aria-haspopup="menu"
+              aria-controls="me-menu" aria-label="You, and switching person"></button>
     </header>
+    <div id="me-menu" class="me-menu hidden" role="menu" aria-label="You">
+      <div class="me-head"><span id="me-menu-avatar" class="profile-avatar"></span><b id="me-menu-name"></b></div>
+      <div id="me-menu-people"></div>
+      <button type="button" role="menuitem" id="me-other">Someone else</button>
+      <hr>
+      <button type="button" role="menuitem" id="me-picture">Change picture</button>
+      <button type="button" role="menuitem" id="me-picture-remove" class="hidden">Remove picture</button>
+      <button type="button" role="menuitem" id="me-settings">Settings</button>
+    </div>
 
     <nav id="filters" aria-label="Filter by kind">
       <button class="chip active" data-kind="">Everything</button>

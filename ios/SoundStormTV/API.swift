@@ -22,6 +22,8 @@ final class API {
         /// Asked to choose a new password before anything else (the owner
         /// asked everybody, or this one no longer meets the rules).
         let mustRenew: Bool?
+        /// Their own picture, for their circle; nil shows their initial.
+        let picture: String?
     }
 
     /// Set when the server refuses a request until a new password is chosen.
@@ -120,6 +122,8 @@ final class API {
         let name: String
         let owner: Bool
         let needs: String
+        /// Their own picture (the server's address for it), or nil.
+        let picture: String?
     }
 
     /// Who this TV may switch between (the server's profiles.go).

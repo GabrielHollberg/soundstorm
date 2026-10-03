@@ -562,5 +562,5 @@ func (s *Server) handlePlayerSwitch(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("could not mark this device as trusted", "err", err)
 	}
 	s.log.Info("a TV was taken over from a phone", "for", user.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": publicUser(user)})
+	writeJSON(w, http.StatusOK, map[string]any{"signedIn": true, "user": s.withPicture(publicUser(user), user.ID)})
 }
