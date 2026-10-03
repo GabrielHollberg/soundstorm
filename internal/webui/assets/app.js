@@ -8400,7 +8400,7 @@ $('audio-player').addEventListener('volumechange', () => {
   let startT = 0;
   let busy = false;
   dock.addEventListener('touchstart', (event) => {
-    if (busy || event.touches.length !== 1 || !matchMedia('(max-width: 760px)').matches) return;
+    if (busy || event.touches.length !== 1 || !matchMedia('(max-width: 760px), (pointer: coarse) and (max-height: 520px)').matches) return;
     active = true;
     axis = null;
     dy = 0;
