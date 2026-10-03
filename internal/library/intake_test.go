@@ -228,9 +228,14 @@ func TestUnambiguousAudioIsNotAskedAbout(t *testing.T) {
 	if got := plan(l, "book.m4b")[0]; got.Kind != media.KindAudiobook {
 		t.Errorf("m4b -> %q", got.Kind)
 	}
-	// A path that says audiobooks is believed without asking.
-	if got := ask(l, "Audiobooks/James Allen/chapter01.mp3"); len(got) != 0 {
-		t.Errorf("a folder saying audiobooks still raised a question: %+v", got)
+	// A name saying audiobooks raises the question rather than answering it
+	// (2026-10-03): "Audiobook soundtracks" is music. An MP3 asks either way,
+	// and a FLAC there asks too, where it was decided unasked.
+	if got := ask(l, "Audiobooks/James Allen/chapter01.mp3"); len(got) != 1 {
+		t.Errorf("an MP3 under Audiobooks was not asked about: %+v", got)
+	}
+	if got := ask(l, "Audiobook Soundtracks/01 Theme.flac"); len(got) != 1 {
+		t.Errorf("a FLAC in a folder named for audiobooks was not asked about: %+v", got)
 	}
 }
 

@@ -4127,3 +4127,8 @@ html.tv .tv-me-tab.hidden { display: none; }
 .profile-tile .profile-lock { font-size: 12px; color: var(--muted); min-height: 1em; }
 #profiles-secret { display: grid; gap: 10px; margin-bottom: 12px; }
 #profiles-secret.hidden { display: none; }
+
+/* What a USB drive plugged into the box is for: one choice a row. */
+.drive-ask-buttons { display: grid; gap: 8px; margin-top: 12px; }
+.drive-ask-buttons button { width: 100%; }
+.drive-ask-buttons .soon { opacity: 0.55; }

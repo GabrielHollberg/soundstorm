@@ -265,9 +265,9 @@
            in by the box itself, sorted as files added here are. -->
       <div id="drives-block" class="account-section card hidden" data-cat="library" data-words="usb drive disk external hard drive plug import copy">
         <h2>USB drives</h2>
-        <p class="muted">Plug a drive with music, films, books or photos into the box, and bring
-          them in here. The box copies them straight from the drive, sorted onto the right
-          shelves, and never changes anything on the drive.</p>
+        <p class="muted">Plug a drive into the box to bring in what is on it - the box copies
+          music, films, books and photos straight from the drive, sorted onto the right
+          shelves, and never changes anything on it. Backing up to a drive is coming soon.</p>
         <div id="drives-list"></div>
       </div>
 
@@ -1146,6 +1146,13 @@
       <button id="link-ask-no" type="button" class="ghost">Don't allow</button>
       <button id="link-ask-yes" type="button">Allow</button>
     </div>
+  </div>
+
+  <!-- A USB drive plugged into the box: what it is for (drives.go). -->
+  <div id="drive-ask" class="backup-ask hidden" role="dialog" aria-labelledby="drive-ask-title">
+    <h2 id="drive-ask-title">A drive was plugged in</h2>
+    <p id="drive-ask-text" class="muted"></p>
+    <div id="drive-ask-buttons" class="drive-ask-buttons"></div>
   </div>
 
   <div id="device-ask" class="backup-ask hidden" role="dialog" aria-labelledby="device-ask-title">

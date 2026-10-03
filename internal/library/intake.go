@@ -511,6 +511,7 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		hasVideo   bool
 		hasAudio   bool
 		hasMP3     bool
+		namedBook  bool // "audiobook" somewhere in a name
 		episodes   bool
 		hasPDF     bool
 		hasOPF     bool
@@ -558,9 +559,13 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		if unambiguousAudiobook[ext] {
 			return media.KindAudiobook, nil
 		}
-		if mentionsAudiobooks(rel) && (mediaExtensions[media.KindMusic][ext] ||
-			mediaExtensions[media.KindAudiobook][ext]) {
-			return media.KindAudiobook, nil
+		// "Audiobook" in a name raises the question, never answers it (the
+		// owner's call, 2026-10-03): it used to send every song in the drop
+		// to Audiobooks unasked, and "Audiobook soundtracks" or a narrator's
+		// album is music. A question costs a tap on the review; a wrong shelf
+		// costs moving files.
+		if mentionsAudiobooks(rel) {
+			namedBook = true
 		}
 
 		if mediaExtensions[media.KindVideo][ext] {
@@ -609,7 +614,7 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		return media.KindPicture, nil
 	case hasVideo && episodes && !audioLed:
 		return media.KindTV, nil
-	case audioLed && hasMP3:
+	case audioLed && (hasMP3 || namedBook):
 		return "", []media.Kind{media.KindMusic, media.KindAudiobook}
 	case audioLed:
 		return media.KindMusic, nil
@@ -617,7 +622,7 @@ func decideGroup(cleaned []string, members []int) (media.Kind, []media.Kind) {
 		return "", []media.Kind{media.KindVideo, media.KindTV}
 	case hasVideo:
 		return media.KindVideo, nil
-	case hasAudio && hasMP3:
+	case hasAudio && (hasMP3 || namedBook):
 		return "", []media.Kind{media.KindMusic, media.KindAudiobook}
 	case hasAudio:
 		// flac, wav, m4a and the rest are music in practice.
@@ -735,6 +740,10 @@ func mentionsAudiobooks(rel string) bool {
 	lower := strings.ToLower(rel)
 	return strings.Contains(lower, "audiobook") || strings.Contains(lower, "audio book")
 }
+
+// IsMediaFile reports whether a file is one some shelf keeps, by its name:
+// whether a drive plugged into the box holds anything to bring in.
+func IsMediaFile(name string) bool { return knownExtension(strings.ToLower(path.Ext(name))) }
 
 // knownExtension reports whether any shelf claims this extension.
 func knownExtension(ext string) bool {

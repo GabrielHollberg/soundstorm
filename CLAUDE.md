@@ -315,9 +315,18 @@ a member's photos, dated photo folders, home videos among films, duplicates).
 One import at a time, carrying on with the page closed; the page follows it
 with the Android app's upload status (`DRIVE_SENDER` beside `APP_SENDER` in
 `followAppUploads`), Stop included, and ends with "You can unplug the drive."
-The owner's page looks every ten seconds: a new drive is a message, **"A drive
-was plugged in: SanDisk (1.2 TB) - Bring it in"**, and Settings, Library has
-a USB drives card (only on an install with drives, `available`). Checked:
+The owner's page looks every ten seconds, and a new drive is a question,
+**"A drive was plugged in: SanDisk (1.2 TB). What should SoundStorm do with
+it?"** (`askAboutDrive`): **Bring in what is on it**, **Use it for backups**,
+**Nothing** - the likely one first: a drive with media on it (`hasMedia`, one
+file some shelf keeps, looked for among its first 20,000) to bring in, an
+empty one for backups, which is then the only other choice. Backups are the
+box helper's and not built, so that choice shows "(coming soon)" and cannot
+be taken yet; once a drive is chosen for backups it is marked and known again
+(`backups` in `/api/drives`, false for now), never asked about nor offered for
+import, and nothing on it is erased - backups go in a folder beside what is
+there. Settings, Library has a USB drives card (only on an install with
+drives, `available`). Checked:
 `TestADriveIsBroughtIn` (listing, a piece, a copy where the plan said with
 the drive untouched, paths off the drive refused, a member refused), and in
 Chrome with a folder copied in as a drive: the message, the review (the MP3
@@ -328,9 +337,8 @@ propagation need the VM with a USB disk attached (`run-vm.sh`; QEMU's
 port 80 published beside SoundStorm's own, so `http://soundstorm.local`
 needs no port (avahi already announces the hostname); the page's move to
 the secure name then goes to its https on port 80, which SoundStorm answers.
-An idea from the test, not built: a drive's top folder named "Music" could
-count as evidence (as "Audiobooks" does), saving the question for a drive's
-MP3s.
+A drive's top folder named "Music" deciding its MP3s was suggested and
+declined, with the audiobook rule above: names ask, they do not decide.
 
 ## The decision that shapes everything
 
@@ -770,9 +778,13 @@ on every album drop would be worse than the occasional wrong guess:
   unnumbered .mkv files is a film and its extras; six is a series somebody named
   badly, and six episodes in the film library is worth a question.
 
-Everything else stays decisive: `.epub` is a book, `.m4b` is an audiobook, a
-path mentioning audiobooks is believed, and `S01E01`, `1x02` or a `Season 01`
-folder is television. A question only offers libraries the account actually
+Everything else stays decisive: `.epub` is a book, `.m4b` is an audiobook,
+and `S01E01`, `1x02` or a `Season 01` folder is television. **A name saying
+"audiobook" raises the question, never answers it** (the owner's call,
+2026-10-03): it used to send every audio file in the drop to Audiobooks
+unasked, FLAC and all, and "Audiobook soundtracks" or a narrator's album is
+music. Now any audio in such a drop asks, as an MP3 always does. The rule
+behind it: a file's own type may decide; a name may only ask. A question only offers libraries the account actually
 has, and with one option left it stops being a question.
 
 **Nothing appears at its destination until all of it is there.** Navidrome and

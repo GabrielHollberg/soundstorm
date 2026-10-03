@@ -4932,16 +4932,44 @@ async function checkDrives() {
   // The first look only learns what is there; a drive that appears after it
   // was just plugged in.
   if (drivesKnown) {
-    const fresh = drives.find((d) => !drivesKnown.has(d.id));
-    if (fresh && !body.importing) {
-      showToast(`A drive was plugged in: ${driveName(fresh)}.`, 'Bring it in', () => bringInDrive(fresh.id), 60000);
-    }
+    const fresh = drives.find((d) => !drivesKnown.has(d.id) && !d.backups);
+    if (fresh && !body.importing) askAboutDrive(fresh);
   }
   drivesKnown = ids;
 }
 function driveName(d) {
   return d.size ? `${d.label} (${formatBytes(d.used || 0)} of ${formatBytes(d.size)})` : d.label;
 }
+// What a drive just plugged in is for: bringing in what is on it, backups
+// (the box helper's job, coming), or nothing. The likely one first: a drive
+// with media on it is to bring in, an empty one was most likely bought for
+// backups. A backup drive, once chosen, is known again and never asked about.
+function askAboutDrive(d) {
+  if (shown('drive-ask')) return;
+  const text = $('drive-ask-text');
+  text.textContent = d.hasMedia
+    ? `${driveName(d)}. What should SoundStorm do with it?`
+    : `${driveName(d)}. It has no music, films, books or photos on it. What should SoundStorm do with it?`;
+  const holder = $('drive-ask-buttons');
+  holder.replaceChildren();
+  const button = (label, ghost, act, soon) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (ghost) b.className = 'ghost';
+    if (soon) { b.classList.add('soon'); b.disabled = true; }
+    b.addEventListener('click', () => { show($('drive-ask'), false); if (act) act(); });
+    return b;
+  };
+  const bring = button('Bring in what is on it', !d.hasMedia, () => bringInDrive(d.id));
+  const backups = button('Use it for backups (coming soon)', d.hasMedia, null, true);
+  const nothing = button('Nothing', true, null);
+  if (d.hasMedia) holder.append(bring, backups, nothing);
+  else holder.append(backups, nothing);
+  show($('drive-ask'), true);
+  holder.querySelector('button:not([disabled])').focus();
+}
+
 function renderDrives(drives) {
   show($('drives-block'), true);
   const list = $('drives-list');
@@ -4960,7 +4988,8 @@ function renderDrives(drives) {
     name.textContent = driveName(d);
     const go = document.createElement('button');
     go.type = 'button';
-    go.textContent = 'Bring it in';
+    go.textContent = d.hasMedia ? 'Bring in what is on it' : 'Nothing to bring in';
+    go.disabled = !d.hasMedia;
     go.addEventListener('click', () => bringInDrive(d.id));
     row.append(name, go);
     list.append(row);
@@ -19455,7 +19484,7 @@ function tvRemote() {
   // Playing, Now Playing over the library.
   // The questions over everything (a new device, a TV, phone backup) come
   // first: on a TV that may be the only device that can answer them.
-  const LAYERS = ['player-ask', 'rc', 'device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
+  const LAYERS = ['player-ask', 'rc', 'drive-ask', 'device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
   const layer = () => {
     for (const id of LAYERS) if (shown(id)) return $(id);
     return document.body;
