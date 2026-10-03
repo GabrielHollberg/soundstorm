@@ -183,14 +183,24 @@ decided past the first test unit.
   does not survive save/load; loaded on first boot): a fresh VM with no
   internet at all had every source up in 2.5 minutes. 12GB of images, a 6GB
   compressed disk, 14GB used of the 64GB eMMC.
-- **Software it would still need:** writing it to a real box, and a script that turns a new unit into a finished one
-  with its own name, setup code and QR sticker; a
-  small caretaker beside SoundStorm - never inside it, as SoundStorm must not
-  hold the Docker socket - for updates overnight and on request (Update now,
-  owner only, with a way back if the new version is unhealthy), drive health,
-  factory reset and shutdown; the drives mirrored with checksums and
-  snapshots; Add storage; Jellyfin's conversions on the Intel graphics chip;
-  heavy background jobs taking turns at night in 16GB.
+- **The caretaker's updates work** (`soundstorm-caretaker`, see
+  `box/README.md`): signed manifests of digest-pinned images, a higher serial
+  only, images downloaded before anything stops, the volumes snapshotted,
+  and everything put back if SoundStorm is not healthy within ten minutes.
+  Checked in the VM against a test channel with a development key: a good
+  release installed in 30s; a broken one (SoundStorm's image swapped for
+  another) was undone after its ten minutes - the snapshot put back as the
+  volumes, the old images running, all 9 sources again. **The real release
+  key is not made yet**: whoever holds it can update every box, and losing it
+  means no box can be updated again - it must live off this repository, and
+  be backed up, before the first box ships. Not built: Settings > Updates in
+  the app (the caretaker's socket mounted into SoundStorm), the caretaker
+  updating itself.
+- **Software it would still need:** writing the image to a real box; a
+  script that turns a new unit into a finished one with its own name, setup
+  code and QR sticker; the caretaker's drive health, factory reset and
+  shutdown; the USB backup; Add storage; Jellyfin's conversions on the Intel
+  graphics chip; heavy background jobs taking turns at night in 16GB.
 - **Two sizes, the owner's call:** 1TB and 2TB, one internal WD Blue SN5000
   each ($194 and $258 in October 2026; the 2TB Black was $62 more for
   nothing this box can use). Suggested $699 and $799 - parts about $523 and

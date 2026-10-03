@@ -14,6 +14,10 @@
 #                    only - a box that is sold has no SSH)
 #   NO_IMAGES=1      leave the container images out (a quick build; the box
 #                    downloads them on first start instead)
+#   RELEASE_KEY=F    the release key's public half that updates must be
+#                    signed with (default box/release.pub)
+#   RELEASES=URL     where this box looks for updates (a development box's
+#                    own test channel; the default is the published one)
 #   SIZE=28G         the system disk's size; it grows to fill the real disk
 #                    (the ME Mini's 64GB eMMC) on first boot
 set -eu
@@ -38,7 +42,7 @@ say() { printf '\n== %s\n' "$*"; }
 
 say "Tools"
 need=""
-for pkg in libguestfs-tools qemu-utils qemu-system-x86 ovmf curl skopeo linux-image-amd64; do
+for pkg in libguestfs-tools qemu-utils qemu-system-x86 ovmf curl skopeo golang-go linux-image-amd64; do
 	dpkg -s "$pkg" >/dev/null 2>&1 || need="$need $pkg"
 done
 if [ -n "$need" ]; then
@@ -70,6 +74,19 @@ cp -r "$here/rootfs/." "$stage/"
 mkdir -p "$stage/opt/soundstorm"
 cp "$repo/docker-compose.yml" "$stage/opt/soundstorm/compose.yml"
 cp "$here/compose.box.yml" "$stage/opt/soundstorm/compose.box.yml"
+say "The caretaker"
+# Debian's Go fetches the toolchain go.mod names (GOTOOLCHAIN=auto, checked
+# against Go's checksum database).
+mkdir -p "$stage/usr/local/bin" "$stage/etc/soundstorm"
+(cd "$repo" && CGO_ENABLED=0 GOTOOLCHAIN=auto GOFLAGS=-trimpath \
+	go build -ldflags=-s -o "$stage/usr/local/bin/soundstorm-caretaker" ./cmd/soundstorm-caretaker)
+key=${RELEASE_KEY:-$here/release.pub}
+[ -f "$key" ] || { echo "No release key at $key (soundstorm-caretaker keygen makes one)." >&2; exit 1; }
+cp "$key" "$stage/etc/soundstorm/release.pub"
+if [ -n "${RELEASES:-}" ]; then
+	echo "SOUNDSTORM_RELEASES=$RELEASES" > "$stage/etc/soundstorm/caretaker.env"
+fi
+
 say "Container images"
 # Every image the stack runs goes into the disk, so a box starts with no
 # downloads - on a slow line the first start would otherwise be hours. Each is
@@ -115,7 +132,7 @@ if [ "${NO_IMAGES:-}" = 1 ]; then
 fi
 du -sh "$images" 2>/dev/null || true
 
-find "$stage" -type f ! -name '*.tar' -exec sed -i 's/\r$//' {} +
+find "$stage" -type f ! -name '*.tar' ! -name soundstorm-caretaker -exec sed -i 's/\r$//' {} +
 # Each top folder is copied in whole; copying merges into what is there.
 copy_args=""
 for top in "$stage"/*; do
@@ -138,10 +155,10 @@ virt-customize -a "$disk" \
 	--install docker.io,docker-compose,btrfs-progs,cloud-guest-utils,avahi-daemon,openssh-server,curl \
 	--run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1' \
 	$copy_args \
-	--run-command 'chmod 755 /usr/local/lib/soundstorm/*.sh' \
+	--run-command 'chmod 755 /usr/local/lib/soundstorm/*.sh /usr/local/bin/soundstorm-caretaker' \
 	--run-command 'chmod 644 /etc/systemd/system/soundstorm*.service /etc/systemd/system/ssh-hostkeys.service' \
 	--run-command 'docker compose version' \
-	--run-command 'systemctl enable docker soundstorm-grow soundstorm-storage soundstorm-images soundstorm ssh-hostkeys avahi-daemon' \
+	--run-command 'systemctl enable docker soundstorm-grow soundstorm-storage soundstorm-images soundstorm soundstorm-caretaker ssh-hostkeys avahi-daemon' \
 	--run-command 'rm -f /etc/ssh/ssh_host_*' \
 	$ssh_args \
 	--truncate /etc/machine-id

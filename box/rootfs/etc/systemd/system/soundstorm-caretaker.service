@@ -1,0 +1,14 @@
+[Unit]
+Description=SoundStorm caretaker (updates)
+After=docker.service soundstorm.service
+Requires=docker.service
+
+[Service]
+# caretaker.env may point at another release channel (a development box).
+EnvironmentFile=-/etc/soundstorm/caretaker.env
+ExecStart=/usr/local/bin/soundstorm-caretaker serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
