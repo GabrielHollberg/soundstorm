@@ -1062,9 +1062,21 @@ LIBRARY_DIR=$(library_path)
 # The library folders are made here rather than left to Docker. A bind mount to
 # a path that does not exist is created by the daemon as root, which on Linux
 # leaves somebody unable to copy files into their own media folder.
+#
+# And they are opened to everyone (0777, the folder and its shelves only, not
+# what is in them): SoundStorm runs as its own user, 10001, so a folder made by
+# whoever ran this, 0755, is one it cannot add to - every upload, the starter
+# library and a new shelf of its own all failed on Linux. Docker Desktop on a
+# Mac or Windows maps ownership away, which is why it never showed there.
+# Measured on a native Docker host: 10001 could not write a 0755 folder owned
+# by uid 1000, and could once it was 0777. See the note on 0777 library
+# folders in CLAUDE.md.
 for shelf in music movies tv audiobooks ebooks documents pictures; do
 	mkdir -p "$LIBRARY_DIR/$shelf"
+	chmod 0777 "$LIBRARY_DIR/$shelf" 2>/dev/null ||
+		note "could not open $LIBRARY_DIR/$shelf to SoundStorm; adding files there may fail"
 done
+chmod 0777 "$LIBRARY_DIR" 2>/dev/null || true
 
 # A move: the media first, then the data, and only then does anything start -
 # a backend started on empty volumes would set itself up afresh.

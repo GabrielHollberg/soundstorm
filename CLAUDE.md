@@ -170,8 +170,13 @@ decided past the first test unit.
   `localhost:8399`. Two things it met: Docker makes any missing folder a
   backend mounts as root 0755 before SoundStorm runs, so SoundStorm could not
   write the shelves and the starter song and audiobook were lost - the box
-  makes the seven shelves 0777 itself (**`install.sh` may have the same
-  bug: it makes `library/` but not the shelves; unchecked**); and 3GB was
+  makes the seven shelves 0777 itself. **`install.sh` had a worse form of
+  it on Linux**: it made the shelves as whoever ran it, 0755, and SoundStorm
+  (uid 10001) could add nothing to any of them - uploads, the starter library
+  - which Docker Desktop's ownership mapping hid on Windows and Mac. Shown in
+  the VM's native Docker (10001 refused a 0755 folder of uid 1000, allowed at
+  0777); the installer now opens the library and its shelves 0777 (not
+  their contents). The installer itself was not run end to end. And 3GB was
   too little for a first start's every backend setting up at once (4.5GB
   did; the box has 16GB). Images are still downloaded on first start.
 - **Software it would still need:** the images shipped in the disk, writing
