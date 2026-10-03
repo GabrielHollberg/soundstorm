@@ -5899,6 +5899,29 @@ gapless preloads into a Blob, leveling sets `volume`, audiobooks set
 `playbackRate`, and downloads play from the Cache API through `urlMap`. The
 bridge has to answer for all of those.
 
+**Stage two, for songs and books: the app's own player (2026-10-02).**
+Reported from a real iPhone: paused on the lock screen, the music could not
+be started again there. The page played it in the web view, and iOS
+suspends an app playing nothing a few seconds after a pause - the web view
+with it - so the lock screen's play had nothing awake to answer. So the
+iPhone app does what the Android app did in 0.9: `NativeAudio.swift`, an
+AVQueuePlayer behind the same stand-in on `<audio id="audio-player">` (the
+Android page script's, copied into `WebViewController.pageScript`) and the
+same "audio" messages, so the page needed no change - it already speaks to
+a native player when `soundstormApp.nativeAudio` is set. Play, pause and
+the seek bar on the lock screen are the player's own (`MPRemoteCommandCenter`),
+answered with the page asleep; next, previous and a book's jumps go to the
+page's media session handlers, which the page script now also passes to the
+app (`media` messages) for the lock screen's title, artist and cover. The
+songs ahead are handed over (`upcoming`), so the player moves into them by
+itself. A downloaded song (blob:) still plays in the page, through the web
+view's own media session. The session cookies are given to each item, as on
+the Apple TV. Checked in the simulator with `-audioTest <path>` (debug
+only): a song played through the app's player, paused, and the lock
+screen's play started it again from the same moment, the page following.
+Not checked: a real lock screen, the cover there, a call or alarm, a
+downloaded song.
+
 **The page moving itself was sent to Safari** (first TestFlight build,
 2026-09-30). Opened by its away-from-home name at home, the page moves to
 the install's home name (`moveToSecureName`: the server offers it to any
