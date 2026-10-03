@@ -409,7 +409,7 @@ struct ItemCard: View {
 
     var body: some View {
         let size = poster ? CGSize(width: 240, height: 360) : CGSize(width: Theme.card, height: Theme.card)
-        let art = Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500))
+        let art = Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500), kind: item.kind)
             .frame(width: size.width, height: size.height)
         Group {
             if item.kind == "tv" && !item.isVideo {

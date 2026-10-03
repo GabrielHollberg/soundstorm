@@ -338,32 +338,36 @@ struct PlaylistView: View {
 
 struct SearchView: View {
     @Environment(API.self) private var api
-    @Environment(AppModel.self) private var model
     @State private var query = ""
-    @State private var songs: [Item] = []
+    @State private var found: [Item] = []
+    @State private var searched = false
 
+    /// The page's search: every shelf at once, as cards. The box and its
+    /// keyboard are tvOS's own - typing on a TV is only ever its keyboard.
     var body: some View {
-        List {
-            ForEach(Array(songs.enumerated()), id: \.element.key) { i, song in
-                Button { model.play(songs, from: i) } label: {
-                    HStack(spacing: 30) {
-                        Cover(url: api.artURL(source: song.sourceId, artId: song.artId, size: 200))
-                            .frame(width: 100, height: 100)
-                        VStack(alignment: .leading) {
-                            Text(song.title)
-                            Text(song.artist).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if searched && found.isEmpty {
+                    Text("Nothing found for \u{201C}\(query)\u{201D}.").muted().padding(.top, 30)
                 }
+                if !found.isEmpty { ItemGrid(items: found) }
             }
+            .padding(.horizontal, Theme.page)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .searchable(text: $query, prompt: "Songs, albums, artists")
+        .scrollClipDisabled()
+        .searchable(text: $query, prompt: "Search everything\u{2026}")
+        #if DEBUG
+        // For the simulator, which cannot type: -search <words>
+        .onAppear { if query.isEmpty, let q = UserDefaults.standard.string(forKey: "search") { query = q } }
+        #endif
         .task(id: query) {
             let q = query.trimmingCharacters(in: .whitespaces)
-            guard !q.isEmpty else { songs = []; return }
+            guard !q.isEmpty else { found = []; searched = false; return }
             try? await Task.sleep(for: .milliseconds(300)) // typing on a TV is slow; wait for a pause
             guard !Task.isCancelled else { return }
-            songs = (try? await api.search(q)) ?? []
+            found = (try? await api.search(q, kind: "")) ?? []
+            searched = true
         }
     }
 }
@@ -472,6 +476,8 @@ struct Cover: View {
     /// Now Playing's covers keep the look they had (the owner: keep the
     /// animations as they are); everywhere else a card is the page's.
     var plain = false
+    /// What stands in for a missing picture: the page's icon for the kind.
+    var kind = "music"
 
     var body: some View {
         let radius: CGFloat = plain ? 12 : Theme.cardRadius
@@ -479,8 +485,14 @@ struct Cover: View {
             image.resizable().scaledToFill()
         } placeholder: {
             Rectangle().fill(plain ? Color.white.opacity(0.06) : Theme.surface2)
-                .overlay(Image(systemName: "music.note").font(plain ? .largeTitle : .system(size: 64))
-                    .foregroundStyle(plain ? Color.secondary : Theme.muted))
+                .overlay {
+                    if plain {
+                        Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary)
+                    } else {
+                        Image("Icons/" + Self.icon(kind)).resizable().frame(width: 72, height: 72)
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
         }
         // Filled to whatever frame it is given and cut there: a picture not of
         // that shape (a poster, a wide still) spilled past it.
@@ -491,6 +503,18 @@ struct Cover: View {
             if !plain {
                 RoundedRectangle(cornerRadius: radius).strokeBorder(Theme.border, lineWidth: 2)
             }
+        }
+    }
+}
+
+extension Cover {
+    static func icon(_ kind: String) -> String {
+        switch kind {
+        case "ebook", "document": "book"
+        case "audiobook": "headphones"
+        case "video", "tv": "film"
+        case "picture": "photo"
+        default: "note"
         }
     }
 }
@@ -668,7 +692,7 @@ struct BooksView: View {
             LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(books, id: \.key) { book in
                     Button { Task { await model.playBook(book) } } label: {
-                        Cover(url: api.artURL(source: book.sourceId, artId: book.artId))
+                        Cover(url: api.artURL(source: book.sourceId, artId: book.artId), kind: "audiobook")
                             .frame(width: Theme.card, height: Theme.card)
                     }
                     .buttonStyle(CardButton())

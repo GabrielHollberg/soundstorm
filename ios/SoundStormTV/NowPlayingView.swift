@@ -32,6 +32,8 @@ struct NowPlayingView: View {
     @State private var idle: Task<Void, Never>?
     @FocusState private var focused: Bool
 
+    /// The page's menu, while a held OK has it open.
+    @State private var heldMenu: MenuPage?
     var body: some View {
         let song = player.current
         let art = song.flatMap { api.artURL(source: $0.sourceId, artId: $0.artId, size: 1200) }
@@ -120,7 +122,7 @@ struct NowPlayingView: View {
         .onPlayPauseCommand { player.togglePlay() } // a media key acts, and wakes nothing
         .onExitCommand { dismiss() }
         // Holding OK opens the menu, as a held OK does on the page's TV mode.
-        .contextMenu { menu(for: song) }
+        .onLongPressGesture(minimumDuration: 0.45) { heldMenu = menuPage(for: song) }
         .task(id: song?.key) {
             lyrics = nil
             guard let song, !player.isBook else { return }
@@ -138,6 +140,12 @@ struct NowPlayingView: View {
             // Heard only for a visualizer: hearing is a whole song's decoding.
             if let song, Looks.isVisualizer(model.look), !player.isBook { model.listener?.listen(to: song) }
         }
+        .webMenu($heldMenu)
+        #if DEBUG
+        // For the simulator, which cannot hold OK: -openMenu YES.
+        .task { if UserDefaults.standard.bool(forKey: "openMenu") {
+            try? await Task.sleep(for: .seconds(2)); heldMenu = menuPage(for: song) } }
+        #endif
         .sheet(item: $sheet) { which in
             switch which {
             case .queue: QueueSheet()
@@ -166,54 +174,61 @@ struct NowPlayingView: View {
         .frame(maxWidth: 1400)
     }
 
-    @ViewBuilder
-    private func menu(for song: Item?) -> some View {
+    /// The page's Now Playing menu: a song's favorite, playlist, look, Up
+    /// next and sleep timer; a book's chapters, speed and sleep timer.
+    private func menuPage(for song: Item?) -> MenuPage {
+        guard let song else { return MenuPage(title: "Now Playing", entries: []) }
+        var entries: [MenuEntry] = []
         if player.isBook {
             if !player.chapters.isEmpty {
-                Button { sheet = .chapters } label: { Label("Chapters", systemImage: "list.bullet") }
+                entries.append(MenuEntry(icon: "queue", label: "Chapters", action: .run { sheet = .chapters }))
             }
-            Menu {
-                ForEach([0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3], id: \.self) { v in
-                    Button { player.setSpeed(v) } label: {
-                        if v == player.speed { Label(speedName(v), systemImage: "checkmark") } else { Text(speedName(v)) }
-                    }
-                }
-            } label: { Label("Speed: \(speedName(player.speed))", systemImage: "gauge.with.dots.needle.50percent") }
-            sleepMenu
-        } else if let song {
+            entries.append(MenuEntry(icon: "fwd30", label: "Speed", detail: speedName(player.speed), action: .page { speedPage }))
+        } else {
             let fav = model.favorites.contains(song.key)
-            Button { Task { await model.toggleFavorite(song) } } label: {
-                Label(fav ? "Remove from favorites" : "Add to favorites", systemImage: fav ? "heart.slash" : "heart")
-            }
-            Button { sheet = .playlists } label: { Label("Add to playlist", systemImage: "plus") }
-            Menu {
-                Section("Lyrics and covers") { lookButtons(Looks.covers) }
-                Section("Visualizers") { lookButtons(Looks.visualizers) }
-            } label: { Label("Look", systemImage: "sparkles") }
-            Button { sheet = .queue } label: { Label("Up next", systemImage: "list.bullet") }
-            sleepMenu
+            entries.append(MenuEntry(icon: "heart", label: fav ? "Remove from favorites" : "Add to favorites",
+                                     favorite: fav, action: .run { Task { await model.toggleFavorite(song) } }))
+            entries.append(MenuEntry(icon: "plus", label: "Add to playlist", action: .run { sheet = .playlists }))
+            entries.append(MenuEntry(icon: "sparkle", label: "Look", detail: lookName, action: .page { looksPage }))
+            entries.append(MenuEntry(icon: "queue", label: "Up next", action: .run { sheet = .queue }))
         }
+        entries.append(MenuEntry(icon: "moon", label: "Sleep timer", detail: sleepDetail, checked: false, action: .page { sleepPage }))
+        return MenuPage(title: song.title, subtitle: player.chapter?.title ?? song.artist, entries: entries)
     }
 
-    private func lookButtons(_ looks: [(key: String, label: String)]) -> some View {
-        ForEach(looks, id: \.key) { l in
-            Button { model.setLook(l.key) } label: {
-                if model.look == l.key { Label(l.label, systemImage: "checkmark") } else { Text(l.label) }
-            }
-        }
+    private var lookName: String {
+        (Looks.covers + Looks.visualizers).first { $0.key == model.look }?.label ?? ""
+    }
+
+    private var looksPage: MenuPage {
+        MenuPage(title: "Look", entries: (Looks.covers + Looks.visualizers).map { l in
+            MenuEntry(icon: Looks.isVisualizer(l.key) ? "sparkle" : (l.key == "lyrics" ? "lyrics" : "album"),
+                      label: l.label, checked: model.look == l.key, action: .run { model.setLook(l.key) })
+        })
+    }
+
+    private var speedPage: MenuPage {
+        MenuPage(title: "Speed", entries: [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3].map { v in
+            MenuEntry(icon: "fwd30", label: speedName(v), checked: v == player.speed, action: .run { player.setSpeed(v) })
+        })
+    }
+
+    private var sleepDetail: String? {
+        if let at = player.sleepAt { return at.formatted(date: .omitted, time: .shortened) }
+        return player.sleepAtEnd ? (player.isBook ? "End of chapter" : "End of song") : nil
     }
 
     /// The page's sleep timer: a time, or the end of what is playing.
-    private var sleepMenu: some View {
-        Menu {
-            ForEach([15, 30, 45, 60, 90], id: \.self) { m in
-                Button("\(m) minutes") { player.sleep(minutes: m) }
-            }
-            Button(player.isBook ? "End of chapter" : "End of song") { player.sleepAtEndOfThis() }
-            if player.sleepAt != nil || player.sleepAtEnd {
-                Button("Off", role: .destructive) { player.sleep(minutes: nil) }
-            }
-        } label: { Label("Sleep timer", systemImage: "moon.zzz") }
+    private var sleepPage: MenuPage {
+        var entries = [15, 30, 45, 60, 90].map { m in
+            MenuEntry(icon: "moon", label: "\(m) minutes", action: .run { player.sleep(minutes: m) })
+        }
+        entries.append(MenuEntry(icon: "moon", label: player.isBook ? "End of chapter" : "End of song",
+                                 checked: player.sleepAtEnd, action: .run { player.sleepAtEndOfThis() }))
+        if player.sleepAt != nil || player.sleepAtEnd {
+            entries.append(MenuEntry(icon: "close", label: "Turn off", action: .run { player.sleep(minutes: nil) }))
+        }
+        return MenuPage(title: "Sleep timer", entries: entries)
     }
 
     private func move(_ direction: MoveCommandDirection) {

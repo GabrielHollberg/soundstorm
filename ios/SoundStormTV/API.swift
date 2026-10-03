@@ -280,7 +280,10 @@ final class API {
 
     func search(_ q: String, kind: String = "music", limit: Int = 60) async throws -> [Item] {
         struct Answer: Decodable { let items: [Item] }
-        let a: Answer = try await get("api/search", query: ["q": q, "kind": kind, "limit": String(limit)])
+        // No kind is every shelf this person may see, as the page's search.
+        var query = ["q": q, "limit": String(limit)]
+        if !kind.isEmpty { query["kind"] = kind }
+        let a: Answer = try await get("api/search", query: query)
         return a.items
     }
 

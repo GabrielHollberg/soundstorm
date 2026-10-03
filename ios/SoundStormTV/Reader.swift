@@ -357,7 +357,7 @@ struct ReaderView: View {
     let reader: BookReader
     @Environment(Player.self) private var player
     @Environment(\.dismiss) private var dismiss
-    @State private var contents = false
+    @State private var heldMenu: MenuPage?
     @State private var toast: String?
     @FocusState private var focused: Bool
 
@@ -415,35 +415,33 @@ struct ReaderView: View {
             dismiss()
         }
         .onDisappear { reader.stopFollowing() }
-        .contextMenu {
-            if reader.following {
-                Button { reader.setHighlight(!reader.highlight) } label: {
-                    Label(reader.highlight ? "Stop lighting the sentence" : "Light the sentence being read",
-                          systemImage: "highlighter")
-                }
-            }
-            if let book = reader.book, !book.contents.isEmpty {
-                Button { contents = true } label: { Label("Contents", systemImage: "list.bullet") }
-            }
-            Menu {
-                ForEach([("Small", 30.0), ("Medium", 38.0), ("Large", 46.0), ("Largest", 56.0)], id: \.1) { name, v in
-                    Button { Task { await reader.setSize(CGFloat(v)) } } label: {
-                        if CGFloat(v) == reader.size { Label(name, systemImage: "checkmark") } else { Text(name) }
-                    }
-                }
-            } label: { Label("Text size", systemImage: "textformat.size") }
+        // Holding OK opens the page's menu, as on the page's TV mode.
+        .onLongPressGesture(minimumDuration: 0.45) { heldMenu = menuPage }
+        .webMenu($heldMenu)
+    }
+
+    /// The reader's menu: lighting the sentence (reading along), the
+    /// contents and the text size.
+    private var menuPage: MenuPage {
+        var entries: [MenuEntry] = []
+        if reader.following {
+            entries.append(MenuEntry(icon: "lyrics", label: reader.highlight ? "Stop lighting the sentence" : "Light the sentence being read",
+                                     action: .run { reader.setHighlight(!reader.highlight) }))
         }
-        .sheet(isPresented: $contents) {
-            NavigationStack {
-                List(reader.book?.contents ?? []) { entry in
-                    Button(entry.title) {
-                        contents = false
-                        Task { await reader.go(to: entry) }
-                    }
-                }
-                .navigationTitle("Contents")
-            }
+        if let book = reader.book, !book.contents.isEmpty {
+            entries.append(MenuEntry(icon: "queue", label: "Contents", action: .page {
+                MenuPage(title: "Contents", entries: book.contents.map { entry in
+                    MenuEntry(icon: "book", label: entry.title, action: .run { Task { await reader.go(to: entry) } })
+                })
+            }))
         }
+        let sizes: [(String, CGFloat)] = [("Small", 30), ("Medium", 38), ("Large", 46), ("Largest", 56)]
+        entries.append(MenuEntry(icon: "more", label: "Text size", detail: sizes.first { $0.1 == reader.size }?.0, action: .page {
+            MenuPage(title: "Text size", entries: sizes.map { name, v in
+                MenuEntry(icon: "more", label: name, checked: v == reader.size, action: .run { Task { await reader.setSize(v) } })
+            })
+        }))
+        return MenuPage(title: reader.item.title, entries: entries)
     }
 
     private func toggleMusic() {

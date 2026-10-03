@@ -22,7 +22,7 @@ struct PosterCard: View {
     }
 
     private var poster: some View {
-        Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500))
+        Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500), kind: item.kind)
             .frame(width: 240, height: 360)
     }
 }
