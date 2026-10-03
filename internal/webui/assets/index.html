@@ -265,9 +265,9 @@
            in by the box itself, sorted as files added here are. -->
       <div id="drives-block" class="account-section card hidden" data-cat="library" data-words="usb drive disk external hard drive plug import copy">
         <h2>USB drives</h2>
-        <p class="muted">Plug a drive with music, films, books or photos into the box, and bring
-          them in here. The box copies them straight from the drive, sorted onto the right
-          shelves, and never changes anything on the drive.</p>
+        <p class="muted">Plug a drive into the box to bring in what is on it - the box copies
+          music, films, books and photos straight from the drive, sorted onto the right
+          shelves, and never changes anything on it. Backing up to a drive is coming soon.</p>
         <div id="drives-list"></div>
       </div>
 
@@ -751,6 +751,15 @@
          audiobooks and books - see continue.go for where each is kept. -->
     <!-- Home's one-tap music, first of all - above Continue, at the owner's
          asking. Shown and hidden with Home (showHome). -->
+    <!-- After the owner's first sign-in: the few things that make a new
+         server useful, ticked off as they are done (renderWelcome). -->
+    <section id="welcome" class="welcome hidden" aria-labelledby="welcome-title">
+      <h2 id="welcome-title">Welcome to SoundStorm</h2>
+      <ol id="welcome-steps" class="welcome-steps"></ol>
+      <p class="muted small-print">After a lot is added, SoundStorm spends a while getting to know it -
+        listening to your music and finding faces in your photos - so it may be slower for a day or so.</p>
+      <button id="welcome-done" type="button" class="ghost small">Done</button>
+    </section>
     <div id="home-quick" class="home-quick-holder hidden"></div>
     <section id="continue" class="continue hidden" aria-labelledby="continue-title">
       <h2 id="continue-title">Continue</h2>
@@ -1156,6 +1165,13 @@
       <button id="link-ask-no" type="button" class="ghost">Don't allow</button>
       <button id="link-ask-yes" type="button">Allow</button>
     </div>
+  </div>
+
+  <!-- A USB drive plugged into the box: what it is for (drives.go). -->
+  <div id="drive-ask" class="backup-ask hidden" role="dialog" aria-labelledby="drive-ask-title">
+    <h2 id="drive-ask-title">A drive was plugged in</h2>
+    <p id="drive-ask-text" class="muted"></p>
+    <div id="drive-ask-buttons" class="drive-ask-buttons"></div>
   </div>
 
   <div id="device-ask" class="backup-ask hidden" role="dialog" aria-labelledby="device-ask-title">

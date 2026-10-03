@@ -68,7 +68,9 @@ func (s *Server) handleDrives(w http.ResponseWriter, r *http.Request) {
 			if inside, err := os.ReadDir(dir); err != nil || len(inside) == 0 {
 				continue
 			}
-			d := map[string]any{"id": e.Name(), "label": e.Name()}
+			// hasMedia: whether there is anything on it to bring in - an
+			// empty drive was most likely bought for backups.
+			d := map[string]any{"id": e.Name(), "label": e.Name(), "hasMedia": driveHasMedia(dir), "backups": false}
 			if free, total, ok := library.DiskSize(dir); ok {
 				d["size"], d["used"] = total, total-free
 			}
@@ -78,6 +80,33 @@ func (s *Server) handleDrives(w http.ResponseWriter, r *http.Request) {
 	// available: whether this install takes drives at all (a box), so others
 	// show no USB card.
 	writeJSON(w, http.StatusOK, map[string]any{"available": s.drivesDir != "", "drives": out, "importing": s.driveImports.busy()})
+}
+
+// driveHasMedia looks for one file some shelf keeps, giving up after 20,000
+// entries (a drive of nothing but other files is not worth longer).
+func driveHasMedia(root string) bool {
+	seen, found := 0, false
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if seen++; seen > 20_000 {
+			return fs.SkipAll
+		}
+		name := d.Name()
+		if p != root && (strings.HasPrefix(name, ".") || driveSystemDirs[strings.ToLower(name)]) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type().IsRegular() && library.IsMediaFile(name) {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // driveRoot is a plugged-in drive's folder, or false.

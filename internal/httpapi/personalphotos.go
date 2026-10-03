@@ -257,9 +257,9 @@ var errPhotoDuplicate = fmt.Errorf("%w: it is already in your photos", library.E
 
 // datedPhoto decides where a dropped photo or video goes in its owner's
 // folder, once it has arrived: by the year and month it was taken - the date
-// inside it, else one in its name, else the date the file itself carries
-// (hint, from the device: on a camera's card that is when it was taken),
-// else Undated/ - and not at all if the same file is already there. A whole
+// inside it, else one in its name, else for a video the date the file itself
+// carries (hint, from the device: on a camera's card that is when it was
+// filmed), else Undated/ - and not at all if the same file is already there. A whole
 // SD card or folder of old photos is sorted this way, like a download.
 type photoPlace struct {
 	rel     string // relative to pictures/
@@ -299,7 +299,14 @@ func (s *Server) datedPhoto(u state.User, staged, dropped string, hint int64) (*
 		pl.meta.Taken, pl.src, pl.exif = cam.Taken, photoimport.SourceExif, true
 	} else if t, ok := photoimport.NameTaken(name); ok {
 		pl.meta.Taken, pl.src = t, photoimport.SourceName
-	} else if hint > 0 && time.UnixMilli(hint).Year() > 1990 {
+	} else if hint > 0 && time.UnixMilli(hint).Year() > 1990 && !library.IsStillImage(name) {
+		// The file's own date, for a video only (the owner's call,
+		// 2026-10-03): on a camera's card it is when a clip was filmed, and
+		// some camcorders' files hold no date SoundStorm reads. A still
+		// with no date inside it or in its name is one saved from a chat, an
+		// email or the web, or a scan, and its file date is when it was
+		// saved - filed by that, it sat in the wrong month unremarked, where
+		// Undated/ says plainly that its date is not known.
 		pl.meta.Taken, pl.src = time.UnixMilli(hint).UTC(), photoimport.SourceFile
 	}
 	// Already kept: not saved again, but what this copy knows (a date from

@@ -662,6 +662,9 @@ type Prefs struct {
 	// "vinyl", or one of the visualizers ("pulse" is the orb). Empty falls
 	// back to CoverSpin, which came first.
 	CoverStyle string `json:"coverStyle,omitempty"`
+	// WelcomeDone is whether the welcome after the first sign-in (add your
+	// media, away from home, family, TV) was closed.
+	WelcomeDone bool `json:"welcomeDone,omitempty"`
 }
 
 // CoverStyles are the ways Now Playing can fill the screen under the title:
@@ -701,6 +704,7 @@ type PrefsChange struct {
 	BookSpeed   *float64            `json:"audiobookSpeed"`
 	CoverSpin   *bool               `json:"coverSpin"`
 	CoverStyle  *string             `json:"coverStyle"`
+	WelcomeDone *bool               `json:"welcomeDone"`
 }
 
 // ErrBadPrefs is a preference outside what is allowed.
@@ -773,6 +777,9 @@ func (s *Store) ChangePrefs(userID string, ch PrefsChange) (Prefs, error) {
 	}
 	if ch.BookSpeed != nil {
 		p.BookSpeed = *ch.BookSpeed
+	}
+	if ch.WelcomeDone != nil {
+		p.WelcomeDone = *ch.WelcomeDone
 	}
 	if err := s.save(userID, c); err != nil {
 		return Prefs{}, err

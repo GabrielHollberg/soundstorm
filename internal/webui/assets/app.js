@@ -955,6 +955,7 @@ async function showApp(me) {
   checkDrives();
   await loadFavoriteKeys();
   await Promise.all([loadPrefs(), loadMyArt()]);
+  renderWelcome();
   setTimeout(prepareDownloads, 20000);
   if (/\.soundstorm\.dev$/.test(location.hostname)) keepShell();
   refreshPairs();
@@ -4956,16 +4957,44 @@ async function checkDrives() {
   // The first look only learns what is there; a drive that appears after it
   // was just plugged in.
   if (drivesKnown) {
-    const fresh = drives.find((d) => !drivesKnown.has(d.id));
-    if (fresh && !body.importing) {
-      showToast(`A drive was plugged in: ${driveName(fresh)}.`, 'Bring it in', () => bringInDrive(fresh.id), 60000);
-    }
+    const fresh = drives.find((d) => !drivesKnown.has(d.id) && !d.backups);
+    if (fresh && !body.importing) askAboutDrive(fresh);
   }
   drivesKnown = ids;
 }
 function driveName(d) {
   return d.size ? `${d.label} (${formatBytes(d.used || 0)} of ${formatBytes(d.size)})` : d.label;
 }
+// What a drive just plugged in is for: bringing in what is on it, backups
+// (the box helper's job, coming), or nothing. The likely one first: a drive
+// with media on it is to bring in, an empty one was most likely bought for
+// backups. A backup drive, once chosen, is known again and never asked about.
+function askAboutDrive(d) {
+  if (shown('drive-ask')) return;
+  const text = $('drive-ask-text');
+  text.textContent = d.hasMedia
+    ? `${driveName(d)}. What should SoundStorm do with it?`
+    : `${driveName(d)}. It has no music, films, books or photos on it. What should SoundStorm do with it?`;
+  const holder = $('drive-ask-buttons');
+  holder.replaceChildren();
+  const button = (label, ghost, act, soon) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (ghost) b.className = 'ghost';
+    if (soon) { b.classList.add('soon'); b.disabled = true; }
+    b.addEventListener('click', () => { show($('drive-ask'), false); if (act) act(); });
+    return b;
+  };
+  const bring = button('Bring in what is on it', !d.hasMedia, () => bringInDrive(d.id));
+  const backups = button('Use it for backups (coming soon)', d.hasMedia, null, true);
+  const nothing = button('Nothing', true, null);
+  if (d.hasMedia) holder.append(bring, backups, nothing);
+  else holder.append(backups, nothing);
+  show($('drive-ask'), true);
+  holder.querySelector('button:not([disabled])').focus();
+}
+
 function renderDrives(drives) {
   show($('drives-block'), true);
   const list = $('drives-list');
@@ -4984,7 +5013,8 @@ function renderDrives(drives) {
     name.textContent = driveName(d);
     const go = document.createElement('button');
     go.type = 'button';
-    go.textContent = 'Bring it in';
+    go.textContent = d.hasMedia ? 'Bring in what is on it' : 'Nothing to bring in';
+    go.disabled = !d.hasMedia;
     go.addEventListener('click', () => bringInDrive(d.id));
     row.append(name, go);
     list.append(row);
@@ -5160,8 +5190,9 @@ function uploadOne(item, onProgress) {
     if (item.conflict === 'keep' || item.conflict === 'replace') params.set('conflict', item.conflict);
     if (item.conflict === 'keep' && item.asName) params.set('as', item.asName);
     // A photo or video is sorted into the person's folder by when it was
-    // taken; the file's own date (on a camera's card, when it was taken) is
-    // what the server falls back on when the photo carries none inside it.
+    // taken; for a video, the file's own date (on a camera's card, when it
+    // was filmed) is what the server falls back on when it carries none
+    // inside it. A still with no date of its own goes to Undated.
     // A film too: one a phone filmed goes to the photos by its date (homevideos.go).
     if ((item.kind === 'picture' || item.kind === 'video') && item.file && item.file.lastModified) params.set('taken', String(item.file.lastModified));
     const request = new XMLHttpRequest();
@@ -10204,6 +10235,87 @@ async function loadPrefs() {
   applySpeed();
 }
 
+// The welcome after the owner's first sign-in, on Home: what makes a new
+// server useful - its media, away from home, the family, the TV - each ticked
+// once done, with a button to do it. Closed with Done (kept on the account),
+// or by itself once everything is ticked.
+async function renderWelcome() {
+  const me = state.me;
+  state.welcomeShown = false;
+  show($('welcome'), false);
+  if (!me || !me.owner || TV || state.offline || (state.prefs && state.prefs.welcomeDone)) return;
+  const [session, users, players, library, drives] = await Promise.all([
+    api('/api/session'), api('/api/users'), api('/api/players'), api('/api/library'), api('/api/drives'),
+  ]);
+  const box = drives.ok && drives.body && drives.body.available;
+  const remote = session.ok && session.body && session.body.remote;
+  const steps = [];
+  steps.push({
+    done: library.ok && library.body && !library.body.empty,
+    what: 'Add your music, films, books and photos',
+    how: box ? 'From this device, or from a USB drive plugged into the box.' : 'From this device, or by copying them into the library folder.',
+    label: 'Add media', act: () => { selectTab('settings'); selectSettingsCat('library'); },
+  });
+  if (remote && remote.available) {
+    steps.push({
+      done: Boolean(remote.enabled),
+      what: 'Use it away from home',
+      how: 'So the app works at work, on holiday, or at a friend\u2019s.',
+      label: 'Turn on', act: () => { selectTab('settings'); selectSettingsCat('devices'); setTimeout(() => $('remote-block').scrollIntoView({ block: 'center' }), 100); },
+    });
+  }
+  steps.push({
+    done: users.ok && users.body && (users.body.users || []).length > 1,
+    what: 'Add your family',
+    how: 'Each person gets their own sign-in, favorites and photos.',
+    label: 'Add people', act: () => { selectTab('settings'); selectSettingsCat('people'); },
+  });
+  steps.push({
+    done: players.ok && players.body && (players.body.players || []).some((p) => p.tv),
+    what: 'Set up your TV',
+    how: 'Get the SoundStorm app on your Apple TV or Google TV: it finds this server by itself, and you sign in with your phone.',
+  });
+  if (steps.every((st) => st.done)) {
+    savePrefs({ welcomeDone: true });
+    return;
+  }
+  const list = $('welcome-steps');
+  list.replaceChildren();
+  for (const st of steps) {
+    const li = document.createElement('li');
+    if (st.done) li.className = 'done';
+    const tick = document.createElement('span');
+    tick.className = 'tick';
+    tick.textContent = st.done ? '\u2713' : '';
+    const what = document.createElement('div');
+    what.className = 'what';
+    const b = document.createElement('b');
+    b.textContent = st.what;
+    const how = document.createElement('span');
+    how.textContent = st.how;
+    what.append(b, how);
+    li.append(tick, what);
+    if (!st.done && st.act) {
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'small';
+      go.textContent = st.label;
+      go.addEventListener('click', st.act);
+      li.append(go);
+    } else {
+      li.append(document.createElement('span'));
+    }
+    list.append(li);
+  }
+  state.welcomeShown = true;
+  show($('welcome'), state.tab === 'home' && !$('home-view').classList.contains('hidden'));
+}
+$('welcome-done').addEventListener('click', () => {
+  state.welcomeShown = false;
+  show($('welcome'), false);
+  savePrefs({ welcomeDone: true });
+});
+
 async function savePrefs(change) {
   const { ok, body } = await api('/api/prefs', { method: 'PATCH', body: JSON.stringify(change) });
   if (ok && body) state.prefs = body;
@@ -13097,6 +13209,7 @@ function startLoading(view) {
 // Home's own section: shown and hidden together.
 function showHome(on) {
   show($('home-view'), on);
+  show($('welcome'), on && state.welcomeShown);
   show($('home-quick'), on && $('home-quick').childElementCount > 0);
 }
 
@@ -19635,7 +19748,7 @@ function tvRemote() {
   // Playing, Now Playing over the library.
   // The questions over everything (a new device, a TV, phone backup) come
   // first: on a TV that may be the only device that can answer them.
-  const LAYERS = ['player-ask', 'rc', 'device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
+  const LAYERS = ['player-ask', 'rc', 'drive-ask', 'device-ask', 'link-ask', 'backup-ask', 'item-menu', 'recap-overlay', 'video-overlay', 'reader-overlay', 'np-looks', 'now-playing'];
   const layer = () => {
     for (const id of LAYERS) if (shown(id)) return $(id);
     return document.body;

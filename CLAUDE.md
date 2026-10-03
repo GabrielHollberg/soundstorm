@@ -315,9 +315,18 @@ a member's photos, dated photo folders, home videos among films, duplicates).
 One import at a time, carrying on with the page closed; the page follows it
 with the Android app's upload status (`DRIVE_SENDER` beside `APP_SENDER` in
 `followAppUploads`), Stop included, and ends with "You can unplug the drive."
-The owner's page looks every ten seconds: a new drive is a message, **"A drive
-was plugged in: SanDisk (1.2 TB) - Bring it in"**, and Settings, Library has
-a USB drives card (only on an install with drives, `available`). Checked:
+The owner's page looks every ten seconds, and a new drive is a question,
+**"A drive was plugged in: SanDisk (1.2 TB). What should SoundStorm do with
+it?"** (`askAboutDrive`): **Bring in what is on it**, **Use it for backups**,
+**Nothing** - the likely one first: a drive with media on it (`hasMedia`, one
+file some shelf keeps, looked for among its first 20,000) to bring in, an
+empty one for backups, which is then the only other choice. Backups are the
+box helper's and not built, so that choice shows "(coming soon)" and cannot
+be taken yet; once a drive is chosen for backups it is marked and known again
+(`backups` in `/api/drives`, false for now), never asked about nor offered for
+import, and nothing on it is erased - backups go in a folder beside what is
+there. Settings, Library has a USB drives card (only on an install with
+drives, `available`). Checked:
 `TestADriveIsBroughtIn` (listing, a piece, a copy where the plan said with
 the drive untouched, paths off the drive refused, a member refused), and in
 Chrome with a folder copied in as a drive: the message, the review (the MP3
@@ -328,9 +337,8 @@ propagation need the VM with a USB disk attached (`run-vm.sh`; QEMU's
 port 80 published beside SoundStorm's own, so `http://soundstorm.local`
 needs no port (avahi already announces the hostname); the page's move to
 the secure name then goes to its https on port 80, which SoundStorm answers.
-An idea from the test, not built: a drive's top folder named "Music" could
-count as evidence (as "Audiobooks" does), saving the question for a drive's
-MP3s.
+A drive's top folder named "Music" deciding its MP3s was suggested and
+declined, with the audiobook rule above: names ask, they do not decide.
 
 ## The decision that shapes everything
 
@@ -770,9 +778,13 @@ on every album drop would be worse than the occasional wrong guess:
   unnumbered .mkv files is a film and its extras; six is a series somebody named
   badly, and six episodes in the film library is worth a question.
 
-Everything else stays decisive: `.epub` is a book, `.m4b` is an audiobook, a
-path mentioning audiobooks is believed, and `S01E01`, `1x02` or a `Season 01`
-folder is television. A question only offers libraries the account actually
+Everything else stays decisive: `.epub` is a book, `.m4b` is an audiobook,
+and `S01E01`, `1x02` or a `Season 01` folder is television. **A name saying
+"audiobook" raises the question, never answers it** (the owner's call,
+2026-10-03): it used to send every audio file in the drop to Audiobooks
+unasked, FLAC and all, and "Audiobook soundtracks" or a narrator's album is
+music. Now any audio in such a drop asks, as an MP3 always does. The rule
+behind it: a file's own type may decide; a name may only ask. A question only offers libraries the account actually
 has, and with one option left it stops being a question.
 
 **Nothing appears at its destination until all of it is there.** Navidrome and
@@ -5682,9 +5694,13 @@ asking): every upload to the picture shelf - a dropped SD card, an old drive's
 folder, files chosen on a phone - goes into the person's folder (the owner's
 too, now) by when it was taken (`savePhoto`, `datedPhoto`, through
 `library.SaveDecided`, which places a file once its bytes have arrived): the
-date inside it, else one in its name, else the file's own date the browser
-sends (`taken`, `File.lastModified` - on a camera's card, when it was taken),
-else `Undated/`. A file already in the folder under any name is skipped as
+date inside it, else one in its name, else, for a video only, the file's own
+date the browser sends (`taken`, `File.lastModified` - on a camera's card,
+when it was filmed), else `Undated/`. **Not a still's file date** (the
+owner's call, 2026-10-03): a picture with no date inside it or in its name
+was saved from a chat, an email or the web, or scanned, and its file date is
+when that happened - it used to be filed in that month without a word;
+Undated says its date is not known. A file already in the folder under any name is skipped as
 "already in your photos" (`photoIndex`, the folder's files by size with
 hashes worked out as needed, kept ten minutes and shared with downloads). The
 date is written beside it for Immich unless it came from inside the photo.
@@ -6760,6 +6776,25 @@ server on :8099 found, Set it up, the code typed, an account made, and the
 server then "tester's SoundStorm"); all seven iPhone UI tests pass. The
 circle at the top opens a menu, so iOS reports it as a pop-up, not a
 button: tests find it by its label. Not checked: scanning a real sticker.
+
+**Nothing found, said plainly; a welcome after the first sign-in
+(2026-10-03).** When the apps' search finds nothing and no server is known,
+the first screen says why rather than offering only an address box
+(`ServerDiscovery.nothingFound`): not on Wi-Fi at all (no private address -
+mobile data), else a new box takes a few minutes to start the first time,
+check the same Wi-Fi and not a guest one, and on an iPhone that Don't Allow
+on the local network question is undone in Settings - and that it keeps
+looking. The iPhone no longer jumps to the keyboard, which covered it. On
+the web, the owner's Home opens with **Welcome to SoundStorm**
+(`renderWelcome`): add your media (from a USB drive too, on a box), use it
+away from home (where remote access is possible), add your family, set up
+your TV - each ticked when done (the library not empty, remote access on,
+more than one account, a TV among the players), a button to the place that
+does it, and a line that the first day after a lot is added is busy. Done
+closes it on every device (`prefs.welcomeDone`); all ticked closes it too.
+Checked in Chrome: the steps, Add people opening People, Done kept after a
+reload. Not checked: the nothing-found words on a phone (this Mac's network
+always finds the owner's server).
 
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several

@@ -48,6 +48,11 @@ struct ConnectView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            } else if searched && list.isEmpty {
+                // Why nothing was found, and that it keeps looking.
+                Text(ServerDiscovery.nothingFound(tv: true))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 1100)
             } else if !searched && list.isEmpty {
                 HStack(spacing: 16) {
                     ProgressView()
@@ -91,7 +96,7 @@ struct ConnectView: View {
                 }
             }
             Text(list.isEmpty && nearby.isEmpty
-                 ? (searched ? "None found on this network. " : "") + "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
+                 ? "Enter your server's address, like abc123.home.soundstorm.dev at home or abc123.net.soundstorm.dev away - or just the abc123 at its start. It is in SoundStorm's Settings, under Use on your phone or TV."
                  : list.isEmpty ? "Or type its address, or just the code at its start." : "Or add another - its address, or just the code at its start.")
                 .font(.headline)
                 .foregroundStyle(.secondary)

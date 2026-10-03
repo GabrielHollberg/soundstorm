@@ -152,11 +152,10 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
                 guard let self, !Task.isCancelled else { return }
                 let known = Set(ServerAddress.all.map { $0.url.host() ?? "" })
                 self.found = all.filter { !known.contains($0.url.host() ?? "") }
-                let first = !self.searched
                 self.searched = true
                 self.showNearby()
-                // Straight to typing only when there is nothing to pick.
-                if first, self.found.isEmpty, ServerAddress.all.isEmpty { self.field.becomeFirstResponder() }
+                // Not straight to typing when nothing is found: the keyboard
+                // would cover why, and a new box is usually just still starting.
                 try? await Task.sleep(for: .seconds(self.found.isEmpty ? 10 : 30))
             }
         }
@@ -170,10 +169,15 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
     /// What the network search found: one tap, nothing to type.
     private func showNearby() {
         nearby.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        nearbyTitle.isHidden = found.isEmpty
+        // Nothing found, and no server known: why, and that it keeps looking.
+        let explain = found.isEmpty && searched && ServerAddress.all.isEmpty
+        nearbyTitle.isHidden = found.isEmpty && !explain
+        nearbyTitle.textColor = explain ? .secondaryLabel : .white
+        nearbyTitle.font = .preferredFont(forTextStyle: explain ? .subheadline : .headline)
         nearby.isHidden = found.isEmpty
         let fresh = found.count == 1 && !found[0].setUp
-        nearbyTitle.text = fresh ? "We found your new SoundStorm"
+        nearbyTitle.text = explain ? ServerDiscovery.nothingFound(tv: false)
+            : fresh ? "We found your new SoundStorm"
             : found.count == 1 ? "We found \(found[0].label) on your network"
             : "We found SoundStorm on your network - which one?"
         for server in found {
@@ -195,7 +199,7 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         }
         if ServerAddress.all.isEmpty {
             hint.text = found.isEmpty
-                ? (searched ? "None found on this network. " : "") + Self.firstHint
+                ? Self.firstHint
                 : "Or type its address, or just the code at its start."
         }
     }
