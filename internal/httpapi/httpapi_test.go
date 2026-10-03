@@ -79,6 +79,10 @@ func (h *harness) libraryRoot(t *testing.T) string {
 	return h.root
 }
 
+// testDrivesDir, when a test sets it, is where its server finds USB drives
+// (drives.go).
+var testDrivesDir string
+
 func newHarness(t *testing.T, sources ...source.Source) *harness {
 	t.Helper()
 
@@ -111,6 +115,7 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 		Log:              log,
 		SetupCode:        testSetupCode,
 		Collections:      testCollections(t),
+		DrivesDir:        testDrivesDir,
 	})
 
 	srv := httptest.NewServer(api.Routes())

@@ -1,0 +1,11 @@
+[Unit]
+Description=SoundStorm USB drive %I
+# Stopped - and so unmounted - when the drive is pulled out.
+BindsTo=dev-%i.device
+After=dev-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/soundstorm/usb.sh mount %I
+ExecStop=/usr/local/lib/soundstorm/usb.sh unmount %I

@@ -28,3 +28,7 @@ func diskSize(dir string) (free, total uint64, ok bool) {
 	}
 	return uint64(st.Bavail) * uint64(st.Bsize), uint64(st.Blocks) * uint64(st.Bsize), true
 }
+
+// DiskSize is diskSize for a folder outside the library: a drive plugged
+// into the box (httpapi/drives.go).
+func DiskSize(dir string) (free, total uint64, ok bool) { return diskSize(dir) }

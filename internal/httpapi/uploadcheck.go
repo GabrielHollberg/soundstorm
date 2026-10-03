@@ -12,6 +12,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/library"
 	"github.com/GabrielHollberg/soundstorm/internal/media"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
+	"github.com/GabrielHollberg/soundstorm/internal/state"
 )
 
 // POST /api/upload/check {"files": [{"dest", "kind", "size"}]}: before a byte
@@ -96,12 +97,17 @@ func (ix *photoIndex) samplesOfSize(size int64) []string {
 var errReplaceOwnerOnly = errors.New("only the owner can replace a file already in the library")
 
 func (s *Server) uploadOptions(r *http.Request, kind media.Kind) (library.SaveOptions, error) {
-	switch library.Conflict(r.URL.Query().Get("conflict")) {
+	user, _ := auth.FromContext(r.Context())
+	return s.saveOptions(user, kind, r.URL.Query().Get("conflict"), r.URL.Query().Get("as"))
+}
+
+// saveOptions is what to do about a taken name: keep both (under as, when it
+// is free), or - the owner only, as deleting is - put the old one in the bin.
+func (s *Server) saveOptions(user state.User, kind media.Kind, conflict, as string) (library.SaveOptions, error) {
+	switch library.Conflict(conflict) {
 	case library.ConflictKeep:
-		// "as": the name the person gave the new one, used when it is free.
-		return library.SaveOptions{Conflict: library.ConflictKeep, Name: r.URL.Query().Get("as")}, nil
+		return library.SaveOptions{Conflict: library.ConflictKeep, Name: as}, nil
 	case library.ConflictReplace:
-		user, _ := auth.FromContext(r.Context())
 		if !user.IsOwner() {
 			return library.SaveOptions{}, errReplaceOwnerOnly
 		}

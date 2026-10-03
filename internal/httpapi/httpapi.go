@@ -152,6 +152,10 @@ type Server struct {
 	scrobbling       sync.Map // account id -> a send in progress
 	beats            *beatStore
 	trainingDir      string
+	// drivesDir is where the box's system mounts a USB drive plugged into
+	// it, read-only (drives.go); empty everywhere but a box.
+	drivesDir    string
+	driveImports driveImports
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -237,6 +241,11 @@ type Config struct {
 	// developer's own install only (SOUNDSTORM_TRAINING; see training.go).
 	// Empty, as everywhere else, means there is no training at all.
 	TrainingDir string
+
+	// DrivesDir is where the box mounts USB drives plugged into it, read-only
+	// (SOUNDSTORM_DRIVES_DIR; drives.go). Empty: no drives to bring media in
+	// from - every install but a box.
+	DrivesDir string
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -295,6 +304,7 @@ func New(cfg Config) *Server {
 		scrobble:         cfg.Scrobble,
 		beats:            newBeatStore(cfg.BeatsDir),
 		trainingDir:      cfg.TrainingDir,
+		drivesDir:        cfg.DrivesDir,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -500,6 +510,14 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/settings/readalong", s.handleSetAutoReadAlong)
 	owner.HandleFunc("PUT /api/settings/new-devices", s.handleSetApproveDevices)
 	owner.HandleFunc("PUT /api/settings/server-name", s.handleSetServerName)
+	// USB drives plugged into the box (drives.go).
+	owner.HandleFunc("GET /api/drives", s.handleDrives)
+	owner.HandleFunc("GET /api/drives/import", s.handleDriveImportStatus)
+	owner.HandleFunc("POST /api/drives/import/stop", s.handleDriveImportStop)
+	owner.HandleFunc("POST /api/drives/import/seen", s.handleDriveImportSeen)
+	owner.HandleFunc("GET /api/drives/{id}/files", s.handleDriveFiles)
+	owner.HandleFunc("GET /api/drives/{id}/read", s.handleDriveRead)
+	owner.HandleFunc("POST /api/drives/{id}/import", s.handleDriveImport)
 	owner.HandleFunc("POST /api/books/pairs/not-same", s.handleNotSameBook)
 	owner.HandleFunc("POST /api/books/pairs/by-hand", s.handlePairByHand)
 	owner.HandleFunc("POST /api/delete/preview", s.handleDeletePreview)
@@ -518,6 +536,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/new-devices", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/server-name", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/drives", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/drives/", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/by-hand", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/photos/limit-default", s.auth.RequireOwner(owner))
@@ -1511,29 +1531,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refused before a byte moves when the size is known and would leave the
-	// disk under its reserve; Save checks again as the bytes arrive.
-	if !s.library.Room(r.ContentLength) {
-		writeError(w, http.StatusInsufficientStorage, "the library disk is nearly full")
-		return
-	}
 	user, _ := auth.FromContext(r.Context())
-	// A member's pictures go to their own folder, within their limit.
-	path, err = s.personalUpload(user, kind, path, r.ContentLength)
-	if err != nil {
-		if errors.Is(err, errPhotoLimit) {
-			writeError(w, http.StatusInsufficientStorage, err.Error())
-			return
-		}
-		writeError(w, http.StatusBadRequest, desensitizeFSError(err))
-		return
-	}
-	// A taken name: keep both or replace, as the person chose (uploadcheck.go).
-	opts, err := s.uploadOptions(r, kind)
-	if err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
-		return
-	}
+	q := r.URL.Query()
+	taken, _ := strconv.ParseInt(q.Get("taken"), 10, 64)
 	release, ok := s.takeUploadSlot(user.ID)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many uploads at once; wait for one to finish")
@@ -1546,53 +1546,114 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	body := &stallReader{r: r.Body, rc: http.NewResponseController(w)}
 	defer func() { _ = body.rc.SetReadDeadline(time.Time{}) }()
 
+	dest, err := s.addFile(addRequest{
+		User: user, Access: source.AccessFrom(r.Context()), Kind: kind, Path: path,
+		Size: r.ContentLength, Taken: taken, Conflict: q.Get("conflict"), As: q.Get("as"),
+	}, body)
+	if err != nil {
+		writeAddError(w, err, path)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"dest": dest})
+}
+
+// addRequest is one file to add to the library, from an upload or a drive
+// plugged into the box (drives.go): who adds it, which shelf, where the plan
+// said it goes, and what to do about a taken name.
+type addRequest struct {
+	User     state.User
+	Access   source.Access
+	Kind     media.Kind
+	Path     string
+	Size     int64 // -1 when not known
+	Taken    int64 // the file's own date, ms, for photos
+	Conflict string
+	As       string
+}
+
+// addFile files one file's bytes where they belong - the shelf's layout, a
+// person's dated photo folder, a home video found among films - and asks the
+// shelf to look. Its errors are what writeAddError tells the person.
+func (s *Server) addFile(a addRequest, body io.Reader) (string, error) {
+	kind, path := a.Kind, a.Path
+	// Refused before a byte moves when the size is known and would leave the
+	// disk under its reserve; Save checks again as the bytes arrive.
+	if !s.library.Room(a.Size) {
+		return "", errLibraryFull
+	}
+	// A member's pictures go to their own folder, within their limit.
+	path, err := s.personalUpload(a.User, kind, path, a.Size)
+	if err != nil {
+		return "", err
+	}
+	// A taken name: keep both or replace, as the person chose (uploadcheck.go).
+	opts, err := s.saveOptions(a.User, kind, a.Conflict, a.As)
+	if err != nil {
+		return "", err
+	}
+
 	var dest string
 	if kind == media.KindPicture {
 		// A photo or video, from a card, a folder or wherever: into the
 		// person's folder by when it was taken.
-		taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
-		dest, err = s.savePhoto(user, path, body, taken)
+		dest, err = s.savePhoto(a.User, path, body, a.Taken)
 	} else if kind == media.KindVideo && library.IsPictureFile(path) &&
-		source.AccessFrom(r.Context()).Permits(media.KindPicture) && s.library.PathFor(media.KindPicture) != "" {
+		a.Access.Permits(media.KindPicture) && s.library.PathFor(media.KindPicture) != "" {
 		// Dropped as a film, but a phone or a camera may have filmed it: a
 		// home video goes to the person's photos (homevideos.go).
-		taken, _ := strconv.ParseInt(r.URL.Query().Get("taken"), 10, 64)
-		dest, kind, err = s.saveFilmOrHomeVideo(user, path, body, taken, r.ContentLength, opts)
+		dest, kind, err = s.saveFilmOrHomeVideo(a.User, path, body, a.Taken, a.Size, opts)
 	} else {
 		dest, err = s.library.SaveWith(kind, path, body, nil, opts)
 	}
 	if err != nil {
-		if errors.Is(err, errPhotoLimit) {
-			writeError(w, http.StatusInsufficientStorage, err.Error())
-			return
+		if !errors.Is(err, errPhotoLimit) && !errors.Is(err, library.ErrDiskReserve) &&
+			!errors.Is(err, library.ErrAlreadyThere) && !library.IsDuplicate(err) {
+			s.log.Warn("could not add a file", "path", path, "kind", kind, "err", err)
 		}
-		if errors.Is(err, library.ErrDiskReserve) {
-			writeError(w, http.StatusInsufficientStorage, err.Error())
-			return
-		}
-		if errors.Is(err, library.ErrAlreadyThere) || library.IsDuplicate(err) {
-			// Not an error worth a stack trace in the log: re-dropping an
-			// album somebody already added is an ordinary thing to do, and so
-			// is importing a library that bought one song twice. A 409 is a
-			// skip, not a failure, and the client shows it as one.
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error": err.Error(),
-				"path":  path,
-			})
-			return
-		}
-		s.log.Warn("upload failed", "path", path, "kind", kind, "err", err)
-		writeError(w, http.StatusBadRequest, desensitizeFSError(err))
-		return
+		return "", err
 	}
 
-	s.log.Info("file added to the library", "dest", dest, "by", user.Name)
+	s.log.Info("file added to the library", "dest", dest, "by", a.User.Name)
 
 	// Ask whoever indexes that shelf to look, rather than leaving the file
 	// sitting there unsearchable until their next sweep.
 	s.scheduleRescan(kind)
+	return dest, nil
+}
 
-	writeJSON(w, http.StatusOK, map[string]any{"dest": dest})
+// errLibraryFull is a file that would leave the library disk under its reserve.
+var errLibraryFull = errors.New("the library disk is nearly full")
+
+// addSkipped reports whether addFile declined on purpose - the file, or the
+// same recording, is already there - which is a skip, not a failure.
+func addSkipped(err error) bool {
+	return errors.Is(err, library.ErrAlreadyThere) || library.IsDuplicate(err)
+}
+
+// addMessage is what a person is told about a file addFile refused.
+func addMessage(err error) string {
+	if errors.Is(err, errPhotoLimit) || errors.Is(err, library.ErrDiskReserve) || errors.Is(err, errLibraryFull) ||
+		errors.Is(err, errReplaceOwnerOnly) || addSkipped(err) {
+		return err.Error()
+	}
+	return desensitizeFSError(err)
+}
+
+func writeAddError(w http.ResponseWriter, err error, path string) {
+	switch {
+	case errors.Is(err, errPhotoLimit), errors.Is(err, library.ErrDiskReserve), errors.Is(err, errLibraryFull):
+		writeError(w, http.StatusInsufficientStorage, err.Error())
+	case errors.Is(err, errReplaceOwnerOnly):
+		writeError(w, http.StatusForbidden, err.Error())
+	case addSkipped(err):
+		// Not an error worth a stack trace in the log: re-dropping an album
+		// somebody already added is an ordinary thing to do, and so is
+		// importing a library that bought one song twice. A 409 is a skip,
+		// not a failure, and the client shows it as one.
+		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "path": path})
+	default:
+		writeError(w, http.StatusBadRequest, desensitizeFSError(err))
+	}
 }
 
 // rescanDelay is how long to wait for more files before asking a backend to

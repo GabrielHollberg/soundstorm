@@ -370,6 +370,7 @@ func run(log *slog.Logger) error {
 		// state, never in the music folders.
 		BeatsDir:    filepath.Join(stateDir, "beats"),
 		TrainingDir: trainingDir,
+		DrivesDir:   os.Getenv("SOUNDSTORM_DRIVES_DIR"),
 	})
 
 	// Books with both an ebook and an audiobook are synced for read-along by

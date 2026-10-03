@@ -951,6 +951,7 @@ async function showApp(me) {
   renderTabs();
   renderAccount();
   renderMe();
+  checkDrives();
   await loadFavoriteKeys();
   await Promise.all([loadPrefs(), loadMyArt()]);
   setTimeout(prepareDownloads, 20000);
@@ -1974,18 +1975,37 @@ function appRead(id, from, to) {
   });
 }
 class AppSlice {
-  constructor(id, from, to) { this.appId = id; this.from = from; this.to = to; this.size = Math.max(0, to - from); }
+  // drive: a file on a USB drive plugged into the box, read from the server
+  // (drives.go) rather than from the app.
+  constructor(id, from, to, drive = '') { this.appId = id; this.from = from; this.to = to; this.size = Math.max(0, to - from); this.drive = drive; }
   async arrayBuffer() {
     const out = new Uint8Array(this.size);
     for (let at = this.from; at < this.to; at += 8 << 20) {
-      out.set(new Uint8Array(await appRead(this.appId, at, Math.min(this.to, at + (8 << 20)))), at - this.from);
+      const end = Math.min(this.to, at + (8 << 20));
+      out.set(new Uint8Array(this.drive ? await driveRead(this.drive, this.appId, at, end) : await appRead(this.appId, at, end)), at - this.from);
     }
     return out.buffer;
   }
   slice(a = 0, b = this.size) {
     const from = this.from + Math.max(0, a < 0 ? this.size + a : a);
     const to = this.from + Math.min(this.size, b < 0 ? this.size + b : b);
-    return new AppSlice(this.appId, from, Math.max(from, to));
+    return new AppSlice(this.appId, from, Math.max(from, to), this.drive);
+  }
+}
+async function driveRead(drive, path, from, to) {
+  const resp = await fetch(`/api/drives/${encodeURIComponent(drive)}/read?path=${encodeURIComponent(path)}&from=${from}&to=${to}`,
+    { credentials: 'same-origin' });
+  if (!resp.ok) throw new Error('could not read the file on the drive');
+  return resp.arrayBuffer();
+}
+// A file on a USB drive plugged into the box: planned like a dropped one,
+// and copied in by the box itself.
+class DriveFile extends AppSlice {
+  constructor(drive, f) {
+    super(f.path, 0, Number(f.size) || 0, drive);
+    this.name = f.path.split('/').pop();
+    this.lastModified = Number(f.lastModified) || Date.now();
+    this.type = '';
   }
 }
 class AppFile extends AppSlice {
@@ -3816,6 +3836,8 @@ window.addEventListener('drop', (event) => {
 // collectFiles turns a drop into a flat list of {file, path}, walking into any
 // folders. The relative path is what preserves an album or a film folder.
 async function collectFiles(dataTransfer) {
+  // Already listed, with their paths: a USB drive's files (bringInDrive).
+  if (dataTransfer.dropped) return dataTransfer.dropped;
   const entries = [...(dataTransfer.items || [])]
     .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
     .filter(Boolean);
@@ -4757,7 +4779,7 @@ $('intake-stop').addEventListener('click', () => {
   if (INTAKE.native) {
     $('intake-stop').disabled = true;
     $('intake-stop').textContent = 'Stopping\u2026';
-    appUploads('stop', {});
+    INTAKE.native.stop();
     return;
   }
   INTAKE.stop = true;
@@ -4798,14 +4820,31 @@ if (APP_UPLOADS) {
   }
 }
 
+// Who sends the files when the page does not: the phone app (Uploads.kt,
+// FileUploads.swift), or the box itself copying from a USB drive (drives.go).
+// Both report the same status.
+const APP_SENDER = {
+  status: () => appUploads('status', {}, 'status'),
+  seen: () => appUploads('seen', {}),
+  stop: () => appUploads('stop', {}),
+  note: 'This keeps going if you leave the app.',
+};
+const DRIVE_SENDER = {
+  status: async () => { const r = await api('/api/drives/import'); return r.ok ? r.body : null; },
+  seen: () => api('/api/drives/import/seen', { method: 'POST', body: '{}' }),
+  stop: () => api('/api/drives/import/stop', { method: 'POST', body: '{}' }),
+  note: 'The box copies them straight from the drive, and carries on if you close SoundStorm. Leave the drive plugged in until it is done.',
+  done: 'You can unplug the drive.',
+};
+
 // Following the app's uploads: the sheet and its chip from the app's status,
 // once a second, until nothing is waiting - then where each part landed.
 let appFollowing = false;
-async function followAppUploads() {
+async function followAppUploads(sender = APP_SENDER) {
   if (appFollowing) return;
   appFollowing = true;
   INTAKE.sending = true;
-  INTAKE.native = true;
+  INTAKE.native = sender;
   INTAKE.stop = false;
   $('intake-close').textContent = 'Hide';
   $('intake-stop').disabled = false;
@@ -4815,7 +4854,7 @@ async function followAppUploads() {
   let st = null;
   try {
     for (;;) {
-      st = await appUploads('status', {}, 'status');
+      st = await sender.status();
       if (!st) { await pause(1500); continue; }
       if (!st.waiting) break;
       const name = st.current || '';
@@ -4830,7 +4869,7 @@ async function followAppUploads() {
       }
       $('intake-title').textContent = title;
       const note = $('intake-note');
-      note.textContent = st.problem ? st.problem : 'This keeps going if you leave the app.';
+      note.textContent = st.problem ? st.problem : sender.note;
       show(note, true);
       intakeChip(st.running ? `Adding ${of}\u2026` : `Waiting \u2014 ${st.waiting} to add`);
       const bytes = st.totalBytes || 0;
@@ -4840,7 +4879,7 @@ async function followAppUploads() {
   } finally {
     appFollowing = false;
     INTAKE.sending = false;
-    INTAKE.native = false;
+    INTAKE.native = null;
     $('intake-close').textContent = 'Close';
     show($('intake-sending'), false);
     show($('intake-bar'), false);
@@ -4863,9 +4902,97 @@ async function followAppUploads() {
   const text = summary(added, skipped, failed, stopped);
   $('intake-title').textContent = text;
   intakeChip(text.split('.')[0], 8000);
-  appUploads('seen', {});
+  if (sender.done) {
+    const note = $('intake-note');
+    note.textContent = (st && st.problem ? st.problem + ' ' : '') + sender.done;
+    show(note, true);
+  }
+  sender.seen();
   loadLibrary();
 }
+// USB drives plugged into the box (drives.go), for the owner: noticed when
+// one is plugged in ("A drive was plugged in - Bring it in"), listed in
+// Settings, and an import already running picked up when the page opens.
+let drivesKnown = null;
+async function checkDrives() {
+  if (!state.me || !state.me.owner || TV || state.offline) return;
+  const { ok, body } = await api('/api/drives');
+  if (!ok || !body || !body.available) return;
+  const drives = body.drives || [];
+  renderDrives(drives);
+  if (body.importing && !appFollowing) {
+    show($('intake'), true);
+    $('intake-list').replaceChildren();
+    $('intake-questions').replaceChildren();
+    $('intake-review').replaceChildren();
+    filesToggle(false);
+    followAppUploads(DRIVE_SENDER);
+  }
+  const ids = new Set(drives.map((d) => d.id));
+  // The first look only learns what is there; a drive that appears after it
+  // was just plugged in.
+  if (drivesKnown) {
+    const fresh = drives.find((d) => !drivesKnown.has(d.id));
+    if (fresh && !body.importing) {
+      showToast(`A drive was plugged in: ${driveName(fresh)}.`, 'Bring it in', () => bringInDrive(fresh.id), 60000);
+    }
+  }
+  drivesKnown = ids;
+}
+function driveName(d) {
+  return d.size ? `${d.label} (${formatBytes(d.used || 0)} of ${formatBytes(d.size)})` : d.label;
+}
+function renderDrives(drives) {
+  show($('drives-block'), true);
+  const list = $('drives-list');
+  list.replaceChildren();
+  if (!drives.length) {
+    const none = document.createElement('p');
+    none.className = 'muted small-print';
+    none.textContent = 'No drive plugged in.';
+    list.append(none);
+    return;
+  }
+  for (const d of drives) {
+    const row = document.createElement('div');
+    row.className = 'account-actions';
+    const name = document.createElement('span');
+    name.textContent = driveName(d);
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.textContent = 'Bring it in';
+    go.addEventListener('click', () => bringInDrive(d.id));
+    row.append(name, go);
+    list.append(row);
+  }
+}
+async function bringInDrive(id) {
+  if (intakeBusy || INTAKE.sending) {
+    showToast('Wait for the files being added to finish first.');
+    return;
+  }
+  show($('intake'), true);
+  show($('intake-bar'), false);
+  $('intake-list').replaceChildren();
+  $('intake-questions').replaceChildren();
+  $('intake-review').replaceChildren();
+  $('intake-title').textContent = 'Looking through the drive\u2026';
+  const { ok, body } = await api(`/api/drives/${encodeURIComponent(id)}/files`);
+  if (!ok || !body) {
+    $('intake-title').textContent = (body && body.error) || 'Could not read the drive.';
+    return;
+  }
+  const dropped = (body.files || []).map((f) => ({ file: new DriveFile(id, f), path: f.path }));
+  if (!dropped.length) {
+    $('intake-title').textContent = 'Nothing on that drive to bring in.';
+    return;
+  }
+  if (body.truncated) showToast('That drive holds more files than can be looked through at once: the first 200,000 are here.');
+  intake({ items: [], files: [], dropped });
+}
+setInterval(() => { if (!document.hidden) checkDrives(); }, 10000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDrives(); });
+
 // Opened again while the app is still sending (or finished unseen): the
 // chip, and the sheet behind it.
 function resumeAppUploads() {
@@ -4906,6 +5033,20 @@ async function sendFiles(plan, dropped) {
 
   const total = queue.reduce((sum, item) => sum + item.file.size, 0);
   if (!enoughRoom(total)) return;
+  // From a USB drive plugged into the box: the box copies them itself.
+  const drive = queue[0].file.drive;
+  if (drive && queue.every((item) => item.file.drive === drive)) {
+    const jobs = queue.map((item) => ({
+      id: item.file.appId, name: item.file.name, path: item.path, kind: item.kind, group: item.group || '',
+      conflict: item.conflict === 'keep' || item.conflict === 'replace' ? item.conflict : '',
+      as: item.conflict === 'keep' && item.asName ? item.asName : '',
+      taken: (item.kind === 'picture' || item.kind === 'video') && item.file.lastModified ? item.file.lastModified : 0,
+    }));
+    const { ok, body } = await api(`/api/drives/${encodeURIComponent(drive)}/import`, { method: 'POST', body: JSON.stringify({ jobs }) });
+    if (ok) followAppUploads(DRIVE_SENDER);
+    else $('intake-title').textContent = (body && body.error) || 'Could not start bringing them in.';
+    return;
+  }
   // In the app: sent by the app, carrying on after it is left. Files it
   // cannot read (not from its own picker) are sent here, as before.
   if (APP_UPLOADS) {

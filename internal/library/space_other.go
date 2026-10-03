@@ -10,3 +10,6 @@ package library
 func freeSpace(string) (uint64, bool) { return 0, false }
 
 func diskSize(string) (uint64, uint64, bool) { return 0, 0, false }
+
+// DiskSize is diskSize for a folder outside the library.
+func DiskSize(dir string) (free, total uint64, ok bool) { return diskSize(dir) }

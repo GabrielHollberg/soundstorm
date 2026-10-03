@@ -121,7 +121,9 @@ is described in full in its own section below; tick them off here:
 
 **For the PC, newest (2026-10-03):** see "Setting up a new box" under
 "Selling it on a box" - the setup code made in advance and on the sticker,
-`soundstorm.local` over mDNS and port 80 on the box, and Android's Set it up.
+and Android's Set it up (`soundstorm.local` and port 80 are in the box's
+files now). And "Bringing media in from a USB drive": the box's half
+(`usb.sh` and its udev rule) wants a run in the VM with a USB disk.
 
 **Apple TV**
 1. ~~**Controlled from a phone**~~ - *done 2026-10-02* (`Remote.swift`,
@@ -287,6 +289,48 @@ What the PC builds for it:
   getting ready" when a box is found mid-start, "is your phone on the home
   Wi-Fi?" when nothing is found, a welcome after the first sign-in (add media,
   away from home, family, TV), and inviting family by QR.
+
+### Bringing media in from a USB drive (2026-10-03)
+
+Most buyers' films and music are on a drive or a laptop, and a browser over
+Wi-Fi is no way to move a terabyte. On the box, a USB drive plugged in is
+opened **read-only** by the box's own system (`usb.sh`, from a udev rule and
+`soundstorm-usb@.service`, which goes when the drive does) as a folder under
+`/run/soundstorm/drives` named after its label; SoundStorm sees it as
+`/drives` (`compose.box.yml`, `rslave` so a drive plugged in later appears,
+`SOUNDSTORM_DRIVES_DIR`). Nothing on a drive is written: ext journals are not
+replayed (`noload`), xfs and btrfs likewise; vfat, exFAT, NTFS (ntfs3),
+ext2-4, xfs, btrfs and HFS+ are opened, anything else is not. `SSDATA` and
+`SSBACKUP` (kept for the backup drive) are never opened.
+
+SoundStorm (`httpapi/drives.go`, the owner's alone: a drive may hold
+anybody's files) lists drives, a drive's files (hidden and system folders
+left out, links not followed, 200,000 at most), and pieces of a file (8MB,
+never outside the drive). **The page plans as for a drop** - `DriveFile`
+reads its pieces from the server as `AppFile` reads through the iPhone app -
+so the same review, questions and taken names apply, and then hands the plan
+back: `POST /api/drives/{id}/import`, and the server copies each file through
+the same filing as an upload (`addFile`, split out of `handleUpload` for it:
+a member's photos, dated photo folders, home videos among films, duplicates).
+One import at a time, carrying on with the page closed; the page follows it
+with the Android app's upload status (`DRIVE_SENDER` beside `APP_SENDER` in
+`followAppUploads`), Stop included, and ends with "You can unplug the drive."
+The owner's page looks every ten seconds: a new drive is a message, **"A drive
+was plugged in: SanDisk (1.2 TB) - Bring it in"**, and Settings, Library has
+a USB drives card (only on an install with drives, `available`). Checked:
+`TestADriveIsBroughtIn` (listing, a piece, a copy where the plan said with
+the drive untouched, paths off the drive refused, a member refused), and in
+Chrome with a folder copied in as a drive: the message, the review (the MP3
+asked music or audiobook, as for any drop), Add 3 files, each on its shelf.
+**Not checked: the box half** - the udev rule, `usb.sh` and the bind's
+propagation need the VM with a USB disk attached (`run-vm.sh`; QEMU's
+`-device usb-storage`) or a real box: **for the PC**. Also on the box now:
+port 80 published beside SoundStorm's own, so `http://soundstorm.local`
+needs no port (avahi already announces the hostname); the page's move to
+the secure name then goes to its https on port 80, which SoundStorm answers.
+An idea from the test, not built: a drive's top folder named "Music" could
+count as evidence (as "Audiobooks" does), saving the question for a drive's
+MP3s.
 
 ## The decision that shapes everything
 
