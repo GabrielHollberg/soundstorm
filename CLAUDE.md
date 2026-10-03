@@ -2231,8 +2231,9 @@ albums; endless, and never repeating until the library has been through
 at a hundred - then Favorite songs (shuffled, only with
 some), Music radio (Library radio) and New music. Every name says music
 (Shuffle all music), since Home holds every shelf and "Shuffle all" alone
-did not say what it would play. On a phone the three sit in one row,
-the icon over the name.
+did not say what it would play. They are a row of slim pills (38px,
+the icon beside the name), Shuffle all in the accent, scrolling sideways on
+a phone - big tiles read as clunky (the owner, 2026-10-03).
 
 **The pills can be put in any order**: hold one (450ms, as a card) and slide
 it; the others move aside as it passes their middles (a FLIP animation), and
