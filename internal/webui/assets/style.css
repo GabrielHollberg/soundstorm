@@ -4200,3 +4200,7 @@ header { --head-btn: 42px; }
 header .me-btn { background-color: var(--surface-2) !important; color: var(--text); font-weight: 700; }
 /* A rounded square, the corners Play on's, so the two read as a pair. */
 header .me-btn { border-radius: 12px; }
+/* The page never stretches or bounces past its ends: the tab bar and the
+   header stay put (the owner's report - pulling down at the top pushed the
+   tabs off the screen and back). Lists inside keep their own scrolling. */
+html, body { overscroll-behavior-y: none; }

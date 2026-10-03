@@ -580,6 +580,9 @@ class MainActivity : Activity() {
         content.removeAllViews()
         val view = WebView(this)
         view.setBackgroundColor(Color.BLACK)
+        // No stretch at the end of a page: the whole page is this one view,
+        // so Android's stretch moved the tab bar and the header with it.
+        view.overScrollMode = View.OVER_SCROLL_NEVER
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
