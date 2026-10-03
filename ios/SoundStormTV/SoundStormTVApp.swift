@@ -60,6 +60,46 @@ final class AppModel {
     /// The order of each tab's categories and the ones put away, from the
     /// account (set on the page).
     var pills: API.Pills?
+    /// Files on each shelf this person may see; nil until asked.
+    var shelfFiles: [String: Int]?
+    /// A See all on Home: the tab to show, and the category it opens on.
+    var requestedTab: String?
+    var openCategory: [String: String] = [:]
+
+    func open(tab: String, category: String) {
+        openCategory[tab] = category
+        requestedTab = tab
+    }
+
+    /// Whether a shelf is there for this person, the page's shelfAvailable:
+    /// allowed, and holding files (or not yet known).
+    func has(_ kind: String) -> Bool {
+        guard let shelfFiles else { return true }
+        return (shelfFiles[kind] ?? 0) > 0
+    }
+
+    /// Whether a category in a tab's row has anything to show.
+    func has(category: String) -> Bool {
+        switch category {
+        case "", "favorites", "playlists", "mixes", "radio", "songs", "albums", "artists", "genres": return has("music")
+        case "video", "tv", "audiobook", "ebook", "document", "picture": return has(category)
+        case "fav-watch", "genres-watch": return has("video") || has("tv")
+        case "authors", "series", "fav-books", "genres-books": return has("audiobook") || has("ebook") || has("document")
+        case "pairs": return has("audiobook") && has("ebook")
+        default: return has("picture") // people, places, videos, live photos, fav-photos
+        }
+    }
+
+    /// Whether a tab of the side bar has any shelf.
+    func has(tab: String) -> Bool {
+        switch tab {
+        case "music": has("music")
+        case "watch": has("video") || has("tv")
+        case "books": has("audiobook") || has("ebook") || has("document")
+        case "photos": has("picture")
+        default: true
+        }
+    }
     /// This person's favorites, by item key, for Now Playing's heart.
     private(set) var favorites: Set<String> = []
 
@@ -170,6 +210,7 @@ final class AppModel {
         showingNowPlaying = false
         favorites = []
         pills = nil
+        shelfFiles = nil
         look = "lyrics"
     }
 
@@ -321,9 +362,16 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        Group { stage }
+            .background(Theme.bg.ignoresSafeArea())
+            .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var stage: some View {
         switch model.stage {
         case .checking:
-            ProgressView()
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .unreachable(let host):
             UnreachableView(host: host)
         case .connect:

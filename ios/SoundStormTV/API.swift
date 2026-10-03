@@ -237,6 +237,17 @@ final class API {
 
     func home() async throws -> Home { try await get("api/home") }
 
+    /// How many files each shelf this person may see holds (/api/library's
+    /// folders list only those): the page hides a shelf with none.
+    func shelfFiles() async throws -> [String: Int] {
+        struct Folder: Decodable { let kind: String; let files: Int? }
+        struct Answer: Decodable { let folders: [Folder]? }
+        let a: Answer = try await get("api/library")
+        var out: [String: Int] = [:]
+        for f in a.folders ?? [] { out[f.kind, default: 0] += f.files ?? 1 }
+        return out
+    }
+
     func recentlyPlayed() async throws -> [Item] {
         struct Answer: Decodable { let songs: [Item] }
         let a: Answer = try await get("api/music/mixes/recently-played")
@@ -987,6 +998,10 @@ struct Item: Decodable, Identifiable, Hashable {
     var isClip: Bool { kind == "picture" && extra?["type"] == "video" }
     var isPhoto: Bool { kind == "picture" && !isClip }
     var isVideo: Bool { kind == "video" || (kind == "tv" && episodeCode != nil) || isClip }
+    /// The grey line under a card, as the page writes it: who, then the year.
+    var cardLine: String {
+        [artist, extra?["year"] ?? ""].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+    }
 }
 
 struct Album: Decodable, Identifiable, Hashable {

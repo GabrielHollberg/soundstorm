@@ -16,11 +16,9 @@ struct PosterCard: View {
                 NavigationLink(value: item) { poster }
             }
         }
-        .buttonStyle(.borderless)
-        .overlay(alignment: .bottom) {
-            Text(item.title).lineLimit(1).frame(width: 240).offset(y: 50)
-        }
-        .padding(.bottom, 50)
+        .buttonStyle(CardButton())
+        .overlay(alignment: .bottom) { CardTitle(title: item.title, subtitle: item.cardLine, width: 240) }
+        .padding(.bottom, CardTitle.room)
     }
 
     private var poster: some View {

@@ -339,10 +339,10 @@ struct TurningCover: View {
                     ForEach(0..<14, id: \.self) { i in
                         Circle().stroke(Color.white.opacity(0.05), lineWidth: 1).padding(CGFloat(18 + i * 13))
                     }
-                    Cover(url: url).clipShape(Circle()).padding(560 * 0.26)
+                    Cover(url: url, plain: true).clipShape(Circle()).padding(560 * 0.26)
                     Circle().fill(Color.black).frame(width: 560 * 0.044)
                 } else {
-                    Cover(url: url).clipShape(Circle())
+                    Cover(url: url, plain: true).clipShape(Circle())
                 }
             }
             .rotationEffect(.radians(turn))
