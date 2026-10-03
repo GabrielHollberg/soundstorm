@@ -5717,6 +5717,13 @@ the reader finds the sentence at `elapsed()`, turns to it with foliate's own
 `resolveNavigation` + `renderer.goTo` (the same calls its read-aloud uses),
 and lights it with a class. Turning the page by hand stops the turning for
 twelve seconds.
+**A long sentence turns the page as the voice crosses it** (2026-10-03, the
+owner's report: run-on sentences turned late, the page waiting for the next
+sentence to begin): within a sentence over two seconds, the voice's place is
+estimated as the same share of its letters as of its time, and the page
+scrolls to the one holding that letter (`followWithinSentence`, foliate's
+`scrollToAnchor` with a collapsed range). Not checked against a synced
+book here - none on a test server; the owner's phone is the check.
 
 **The timing conversion rests on how Storyteller cuts audio**, read from its
 source and then checked end to end: files are numbered in name order

@@ -531,8 +531,12 @@ async function tick(follow) {
     follow.primed = true;
     index = 0;
   }
-  if (index === follow.index) return;
+  if (index === follow.index) {
+    followWithinSentence(follow, t);
+    return;
+  }
   follow.index = index;
+  follow.within = null;
   follow.busy = true;
   try {
     const { view } = follow;
@@ -556,10 +560,55 @@ async function tick(follow) {
       el.classList.add('ss-reading');
       follow.lit = new WeakRef(el);
     }
+    if (!early && el) {
+      const m = follow.timeline[index];
+      const end = m.e > m.t ? m.e : follow.timeline[index + 1]?.t;
+      if (end - m.t > 2) follow.within = { el: new WeakRef(el), start: m.t, end, at: 0 };
+    }
   } catch {
     // A sentence that cannot be found is skipped; the next one may be.
   } finally {
     follow.busy = false;
+  }
+}
+
+// A long sentence runs over the page, and the page used to wait for the next
+// sentence to begin before turning - reported as run-on sentences turning
+// late. So within a sentence the voice's place is estimated from how far
+// through its time it is, as a share of its letters (a narrator's pace is
+// near even within a sentence), and the page goes to the one holding that
+// letter: it turns as the voice reaches the first words over the page. Only
+// for sentences over two seconds, and only once the estimate has moved on by
+// a few letters; scrolling to the page already showing changes nothing.
+function followWithinSentence(follow, t) {
+  const w = follow.within;
+  if (!w || follow.busy || Date.now() < follow.handsOffUntil) return;
+  const el = w.el.deref();
+  if (!el || !el.isConnected) { follow.within = null; return; }
+  const share = Math.min(1, Math.max(0, (t - w.start) / (w.end - w.start)));
+  const texts = [];
+  let total = 0;
+  const walk = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    texts.push(n);
+    total += n.data.length;
+  }
+  if (!total) return;
+  let want = Math.floor(share * total);
+  if (want - w.at < 12) return;
+  w.at = want;
+  for (const n of texts) {
+    if (want <= n.data.length) {
+      const range = el.ownerDocument.createRange();
+      range.setStart(n, Math.min(want, n.data.length));
+      range.collapse(true);
+      follow.movedByUs = true;
+      Promise.resolve(follow.view.renderer.scrollToAnchor?.(range))
+        .catch(() => {})
+        .finally(() => setTimeout(() => { follow.movedByUs = false; }, 400));
+      return;
+    }
+    want -= n.data.length;
   }
 }
 
