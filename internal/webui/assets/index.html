@@ -85,6 +85,7 @@
         <!-- Somebody who reaches this has usually closed the tab setup opened,
              and a log is the last place a non-technical person should be sent,
              so the places are in the order they are easiest to find. -->
+        <p class="setup-detail">On a SoundStorm box, it is printed on the sticker underneath.</p>
         <p class="setup-detail">The setup window showed this code when it finished, under
           <strong>Your setup code</strong>. Capitals and dashes do not matter.</p>
         <p class="setup-detail">Closed that window? The code is saved in the
@@ -333,6 +334,20 @@
           <p class="muted small-print">Tap this right after the sound goes, before skipping:
             it sends what the phone's player saw in the last few minutes to your server.</p>
         </div>
+      </div>
+
+      <!-- What phones and TVs call this server when they find it on the
+           network, before anybody signs in (owner only). -->
+      <div id="server-name-block" class="account-section card hidden" data-cat="devices" data-words="server name rename call house home">
+        <h2>Server name</h2>
+        <p class="muted">What phones and TVs show when they find this server on your
+          network, and in their list of servers. Anyone on your network can see it,
+          as with your Wi-Fi's name.</p>
+        <form id="server-name-form" class="address-row">
+          <input id="server-name-input" type="text" maxlength="60" autocomplete="off" aria-label="Server name">
+          <button class="ghost small" type="submit">Save</button>
+        </form>
+        <p id="server-name-note" class="muted hidden" role="status"></p>
       </div>
 
       <div id="devices" class="account-section card hidden" data-cat="devices" data-words="phone tv address link copy install app">

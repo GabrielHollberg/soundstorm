@@ -115,6 +115,10 @@ final class WebViewController: UIViewController {
             pendingLink = nil
             address = server.appending(queryItems: [URLQueryItem(name: "link", value: code)])
         }
+        if let code = ServerAddress.pendingSetup {
+            ServerAddress.pendingSetup = nil
+            address = server.appending(queryItems: [URLQueryItem(name: "setup", value: code)])
+        }
         webView.load(URLRequest(url: address))
     }
 
@@ -641,12 +645,22 @@ extension WebViewController: WKNavigationDelegate {
         return .allow
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // What the server calls itself now, for the list of servers (the
+        // owner may have renamed it since).
+        let server = self.server
+        Task { try? await ServerAddress.check(server) }
+        #if DEBUG
+        audioTest(webView)
+        #endif
+    }
+
     #if DEBUG
     /// For the simulator, which has no lock screen to press: `-audioTest
     /// <path>` plays that address through the page's audio element, pauses
     /// it, then plays it again as the lock screen's play does, printing what
     /// the page sees at each step.
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    private func audioTest(_ webView: WKWebView) {
         guard let path = UserDefaults.standard.string(forKey: "audioTest"), !audioTested else { return }
         audioTested = true
         let look = { (step: String) in

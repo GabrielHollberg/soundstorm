@@ -16,8 +16,16 @@ nonisolated enum ServerDiscovery {
         /// The address to keep: the secure home name if it answered, else
         /// the plain address on the network.
         let url: URL
+        /// What the server calls itself ("Gabriel's SoundStorm"); empty
+        /// before it is set up, or from an older server.
+        var name = ""
+        /// Whether it has an owner yet. A new box has not: it is set up from
+        /// here (the phone app's "Set up your new SoundStorm").
+        var setUp = true
         /// What to call it on screen.
         var label: String {
+            if !name.isEmpty { return name }
+            if !setUp { return "New SoundStorm" }
             let host = url.host() ?? url.absoluteString
             return host.hasSuffix(".home.soundstorm.dev") ? String(host.dropLast(".home.soundstorm.dev".count)) : host
         }
@@ -36,30 +44,36 @@ nonisolated enum ServerDiscovery {
         config.httpMaximumConnectionsPerHost = 1
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
-        let answering = await withTaskGroup(of: URL?.self) { group in
+        let answering = await withTaskGroup(of: (URL, Health)?.self) { group in
             for host in hosts {
                 group.addTask {
                     guard let url = URL(string: "http://\(host):\(port)"),
-                          await isSoundStorm(url, session) else { return nil }
-                    return url
+                          let health = await health(url, session) else { return nil }
+                    return (url, health)
                 }
             }
-            var out: [URL] = []
-            for await url in group { if let url { out.append(url) } }
+            var out: [(URL, Health)] = []
+            for await answer in group { if let answer { out.append(answer) } }
             return out
         }
         var found: [Found] = []
-        for plain in answering.sorted(by: { $0.absoluteString < $1.absoluteString }) {
-            found.append(Found(url: await secureName(of: plain, session) ?? plain))
+        for (plain, health) in answering.sorted(by: { $0.0.absoluteString < $1.0.absoluteString }) {
+            found.append(Found(url: await secureName(of: plain, session) ?? plain,
+                               name: health.name ?? "", setUp: health.setUp ?? true))
         }
-        return Array(Set(found)).sorted { $0.label < $1.label }
+        // One server answering at two addresses (a second network card) is
+        // shown once.
+        var seen = Set<URL>()
+        return found.filter { seen.insert($0.url).inserted }.sorted { $0.label < $1.label }
     }
 
-    private static func isSoundStorm(_ url: URL, _ session: URLSession) async -> Bool {
+    struct Health: Decodable, Sendable { let status: String; let sources: Int; let name: String?; let setUp: Bool? }
+
+    private static func health(_ url: URL, _ session: URLSession) async -> Health? {
         guard let (data, response) = try? await session.data(from: url.appending(path: "healthz")),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
-        struct Health: Decodable { let status: String; let sources: Int }
-        return (try? JSONDecoder().decode(Health.self, from: data))?.status == "ok"
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let h = try? JSONDecoder().decode(Health.self, from: data), h.status == "ok" else { return nil }
+        return h
     }
 
     /// The install's secure home name, if it has one and it answers from here.
@@ -69,7 +83,7 @@ nonisolated enum ServerDiscovery {
               let name = (try? JSONDecoder().decode(Session.self, from: data))?.secureName,
               name.hasSuffix(".soundstorm.dev"),
               let secure = URL(string: "https://\(name):\(port)"),
-              await isSoundStorm(secure, session) else { return nil }
+              await health(secure, session) != nil else { return nil }
         return secure
     }
 

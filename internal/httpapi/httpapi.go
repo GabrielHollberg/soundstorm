@@ -497,6 +497,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/settings/discovery", s.handleSetOnlineDiscovery)
 	owner.HandleFunc("PUT /api/settings/readalong", s.handleSetAutoReadAlong)
 	owner.HandleFunc("PUT /api/settings/new-devices", s.handleSetApproveDevices)
+	owner.HandleFunc("PUT /api/settings/server-name", s.handleSetServerName)
 	owner.HandleFunc("POST /api/books/pairs/not-same", s.handleNotSameBook)
 	owner.HandleFunc("POST /api/books/pairs/by-hand", s.handlePairByHand)
 	owner.HandleFunc("POST /api/delete/preview", s.handleDeletePreview)
@@ -514,6 +515,7 @@ func (s *Server) Routes() http.Handler {
 	// answers 404: the read-along switch did, unnoticed, until a test asked.
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/new-devices", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/settings/server-name", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/by-hand", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/photos/limit-default", s.auth.RequireOwner(owner))
@@ -620,6 +622,11 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"sources": s.reg.Len(),
+		// What a device searching the network shows: the server's name, and
+		// whether it still needs setting up (ServerDiscovery in the apps).
+		// Before anybody signs in, as a Wi-Fi network's name is.
+		"name":  s.store.ServerName(),
+		"setUp": s.auth.HasAccount(),
 	})
 }
 
@@ -627,6 +634,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	answer := map[string]any{
 		"hasAccount": s.auth.HasAccount(),
 		"signedIn":   false,
+		"serverName": s.store.ServerName(),
 	}
 	if !s.auth.HasAccount() {
 		answer["setupCodeRequired"] = true

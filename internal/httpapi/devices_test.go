@@ -159,3 +159,49 @@ func TestEveryoneMustChooseANewPassword(t *testing.T) {
 		t.Fatalf("with a new password the member is back in: %d %s", resp.StatusCode, body)
 	}
 }
+
+// The server's name, as a device searching the network sees it before
+// anybody signs in: none while it is not set up, the owner's by default,
+// and what the owner calls it - which nobody else may change.
+func TestTheServerHasAName(t *testing.T) {
+	h := newHarness(t)
+	health := func(c *harness) (name string, setUp bool) {
+		_, body := c.do(t, http.MethodGet, "/healthz", "")
+		var out struct {
+			Name  string
+			SetUp bool
+		}
+		json.Unmarshal(body, &out)
+		return out.Name, out.SetUp
+	}
+	if name, setUp := health(h); name != "" || setUp {
+		t.Fatalf("a new server: %q set up %v", name, setUp)
+	}
+	h.signUp(t)
+	stranger := h.another(t)
+	if name, setUp := health(stranger); name != "gabe's SoundStorm" || !setUp {
+		t.Fatalf("after sign-up, to anybody: %q set up %v", name, setUp)
+	}
+	if resp, body := h.do(t, http.MethodPut, "/api/settings/server-name", `{"name":"  Hollberg   House "}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("renaming: %d %s", resp.StatusCode, body)
+	}
+	if name, _ := health(stranger); name != "Hollberg House" {
+		t.Fatalf("renamed: %q", name)
+	}
+	if _, body := stranger.do(t, http.MethodGet, "/api/session", ""); !strings.Contains(string(body), `"serverName": "Hollberg House"`) {
+		t.Fatalf("the session should name it: %s", body)
+	}
+	h.do(t, http.MethodPost, "/api/users", `{"username":"sam","password":"violet tractor glacier"}`)
+	sam := h.another(t)
+	sam.do(t, http.MethodPost, "/api/login", `{"username":"sam","password":"violet tractor glacier"}`)
+	if resp, _ := sam.do(t, http.MethodPut, "/api/settings/server-name", `{"name":"Sam's now"}`); resp.StatusCode == http.StatusOK {
+		t.Fatal("a member renamed the server")
+	}
+	if resp, _ := h.do(t, http.MethodPut, "/api/settings/server-name", `{"name":"`+strings.Repeat("x", 61)+`"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("too long a name: %d", resp.StatusCode)
+	}
+	h.do(t, http.MethodPut, "/api/settings/server-name", `{"name":""}`)
+	if name, _ := health(stranger); name != "gabe's SoundStorm" {
+		t.Fatalf("emptied, back to the default: %q", name)
+	}
+}

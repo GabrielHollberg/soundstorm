@@ -30,6 +30,50 @@ final class ConnectFlowTests: XCTestCase {
         app.launch()
     }
 
+    /// Somebody who has just plugged in a new box: the app finds it on the
+    /// network, Set it up, the code off the sticker typed, then a name and
+    /// password - and the server is called after them. Needs a second,
+    /// brand-new server on SoundStorm's own port, reachable on the network:
+    ///
+    ///   SOUNDSTORM_LISTEN=:8099 SOUNDSTORM_STATE_DIR=/tmp/ss-new \
+    ///   SOUNDSTORM_LIBRARY_DIR=/tmp/ss-new-library SOUNDSTORM_STARTER_LIBRARY=false \
+    ///   SOUNDSTORM_SETUP_CODE=new-box-code go run ./cmd/soundstorm
+    func testSetUpANewBoxFromThePhone() async throws {
+        struct Health: Decodable { let name: String?; let setUp: Bool? }
+        let box = URL(string: "http://localhost:8099/healthz")!
+        guard let (data, _) = try? await URLSession.shared.data(from: box),
+              let health = try? JSONDecoder().decode(Health.self, from: data), health.setUp == false
+        else { throw XCTSkip("No new SoundStorm on port 8099; see the comment on this test.") }
+
+        // Found, by itself: alone it is "Set it up"; beside others (the
+        // developer's own server), "New SoundStorm".
+        let setUp = app.buttons["Set it up"]
+        let new = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "New SoundStorm")).firstMatch
+        XCTAssertTrue(setUp.waitForExistence(timeout: 20) || new.exists, "the new box was not found on the network")
+        (setUp.exists ? setUp : new).tap()
+
+        app.alerts.buttons["Type the code"].tap()
+        let code = app.alerts.textFields.firstMatch
+        XCTAssertTrue(code.waitForExistence(timeout: 5))
+        code.typeText("new-box-code")
+        app.alerts.buttons["Continue"].tap()
+
+        // The page's sign-up, the code already in: only a name and password.
+        let web = app.webViews.firstMatch
+        let username = web.textFields.firstMatch
+        XCTAssertTrue(username.waitForExistence(timeout: 15), "the sign-up never appeared")
+        XCTAssertFalse(web.staticTexts["Setup code"].exists, "the code should not be asked again")
+        focus(username)
+        username.typeText("tester")
+        let password = web.secureTextFields.firstMatch
+        focus(password)
+        password.typeText("violet tractor glacier\n")
+        XCTAssertTrue(circle(web).waitForExistence(timeout: 20), "never got into the new server")
+
+        let (after, _) = try await URLSession.shared.data(from: box)
+        XCTAssertEqual(try JSONDecoder().decode(Health.self, from: after).name, "tester's SoundStorm")
+    }
+
     func testWrongAddressSaysWhy() {
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -49,7 +93,7 @@ final class ConnectFlowTests: XCTestCase {
         // earlier run was, otherwise its sign-in form. The first run against a
         // new server creates the owner; later ones sign in as it.
         let web = app.webViews.firstMatch
-        let settings = web.buttons["Settings"]
+        let settings = circle(web)
         let username = web.textFields.firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 15) || username.exists, "the server's page never appeared")
         if !settings.exists {
@@ -58,7 +102,7 @@ final class ConnectFlowTests: XCTestCase {
 
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
         notNowToBackup(web)
-        settings.tap()
+        openSettings(web)
         // Settings opens on its first category; Change server sits with
         // Sign out under Account.
         let account = web.buttons["Account"]
@@ -76,7 +120,7 @@ final class ConnectFlowTests: XCTestCase {
         let saved = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "localhost")).firstMatch
         XCTAssertTrue(saved.waitForExistence(timeout: 5), "the server used should be in the list")
         saved.tap()
-        XCTAssertTrue(app.webViews.firstMatch.buttons["Settings"].waitForExistence(timeout: 15),
+        XCTAssertTrue(circle(app.webViews.firstMatch).waitForExistence(timeout: 15),
                       "choosing a saved server should open it, still signed in")
     }
 
@@ -90,7 +134,7 @@ final class ConnectFlowTests: XCTestCase {
         focus(field)
         field.typeText(server + "\n")
         let web = app.webViews.firstMatch
-        let settings = web.buttons["Settings"]
+        let settings = circle(web)
         XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists, "the server's page never appeared")
         if !settings.exists { signIn(web) }
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
@@ -98,9 +142,9 @@ final class ConnectFlowTests: XCTestCase {
         let turnOn = web.buttons["Turn on"]
         if turnOn.waitForExistence(timeout: 8) {
             turnOn.tap()
-            settings.tap()
+            openSettings(web)
         } else {
-            settings.tap()
+            openSettings(web)
             let toggle = web.descendants(matching: .any)["Back up this phone's photos and videos"].firstMatch
             for _ in 0..<8 where !toggle.isHittable { web.swipeUp() }
             XCTAssertTrue(toggle.isHittable, "no backup switch in Settings")
@@ -130,10 +174,10 @@ final class ConnectFlowTests: XCTestCase {
         focus(field)
         field.typeText(server + "\n")
         let web = app.webViews.firstMatch
-        let settings = web.buttons["Settings"]
+        let settings = circle(web)
         XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists, "the server's page never appeared")
         if settings.exists {
-            settings.tap()
+            openSettings(web)
             let account = web.buttons["Account"]
             XCTAssertTrue(account.waitForExistence(timeout: 5))
             account.tap()
@@ -176,7 +220,7 @@ final class ConnectFlowTests: XCTestCase {
         focus(field)
         field.typeText(server + "\n")
         let web = app.webViews.firstMatch
-        let settings = web.buttons["Settings"]
+        let settings = circle(web)
         XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists)
         if !settings.exists { signIn(web) }
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
@@ -203,12 +247,12 @@ final class ConnectFlowTests: XCTestCase {
         focus(field)
         field.typeText(server + "\n")
         let web = app.webViews.firstMatch
-        let settings = web.buttons["Settings"]
+        let settings = circle(web)
         XCTAssertTrue(settings.waitForExistence(timeout: 15) || web.textFields.firstMatch.exists)
         if !settings.exists { signIn(web) }
         XCTAssertTrue(settings.waitForExistence(timeout: 15), "never got past signing in")
         notNowToBackup(web)
-        settings.tap()
+        openSettings(web)
         let addMedia = web.buttons["Add media"]
         for _ in 0..<8 where !addMedia.isHittable { web.swipeUp() }
         XCTAssertTrue(addMedia.isHittable, "no Add media in Settings")
@@ -223,6 +267,19 @@ final class ConnectFlowTests: XCTestCase {
     /// The page asks about photo backup after signing in, over everything,
     /// on a phone where this person has not answered; a test about something
     /// else says not now.
+    /// The signed-in person's circle at the top right, where Settings is now.
+    /// It opens a menu, so iOS reports it as a pop-up, not a button.
+    private func circle(_ web: XCUIElement) -> XCUIElement {
+        web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "switch person")).firstMatch
+    }
+
+    private func openSettings(_ web: XCUIElement) {
+        circle(web).tap()
+        let item = web.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Settings")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "Settings is missing from the circle's menu")
+        item.tap()
+    }
+
     private func notNowToBackup(_ web: XCUIElement) {
         let later = web.buttons["Not now"]
         if later.waitForExistence(timeout: 4) { later.tap() }

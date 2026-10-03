@@ -46,6 +46,8 @@ final class API {
         let signedIn: Bool
         let user: User?
         let approveNewDevices: Bool?
+        /// What the server calls itself, for the list of servers.
+        let serverName: String?
     }
 
     /// Whether new devices need approval (the owner's setting), known from
@@ -73,6 +75,7 @@ final class API {
         user = s.signedIn ? s.user : nil
         if s.signedIn { sessionEnded = false }
         approveNewDevices = s.signedIn ? (s.approveNewDevices ?? false) : nil
+        if let name = s.serverName { ServerAddress.serverCalls(server, name) }
         return s
     }
 
