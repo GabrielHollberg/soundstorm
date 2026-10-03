@@ -2683,7 +2683,7 @@ func (s *Server) takeUploadSlot(userID string) (func(), bool) {
 // rest queued and were refused - 898 refusals to 33 photos in fifteen minutes
 // (2026-10-03). The stall rule (uploadMinProgress) still cuts off any upload
 // that trickles, so the allowance holds nothing open for long.
-const maxBackupsPerUser = 24
+const maxBackupsPerUser = 64
 
 func (s *Server) takeSlot(key string, limit int) (func(), bool) {
 	s.uploadsMu.Lock()
@@ -2704,27 +2704,17 @@ func (s *Server) takeSlot(key string, limit int) (func(), bool) {
 	}, true
 }
 
-// waitUploadSlot is takeUploadSlot for a sender that hands over many files at
-// once - a phone's backup, whose background session sends several together -
-// waiting its turn up to a few minutes rather than being refused: refused, the
-// iPhone passed the photos over (164 of a re-backup's sends were, on
-// 2026-10-03). The limit still holds; the waiting costs nothing but the
-// connection.
-func (s *Server) waitUploadSlot(ctx context.Context, userID string) (func(), bool) {
-	deadline := time.Now().Add(3 * time.Minute)
-	for {
-		if release, ok := s.takeSlot("backup/"+userID, maxBackupsPerUser); ok {
-			return release, true
-		}
-		if time.Now().After(deadline) {
-			return nil, false
-		}
-		select {
-		case <-ctx.Done():
-			return nil, false
-		case <-time.After(250 * time.Millisecond):
-		}
-	}
+// backupSlot is takeUploadSlot for a phone's backup, with an allowance of its
+// own and no waiting: a backup is received at once or refused at once. The
+// iPhone sends dozens of its background session's files together over one
+// HTTP/2 connection, and a request held waiting for a slot does not read its
+// body - so the bytes it was sent sat in the connection's shared receive
+// window and starved the uploads actually under way, which then failed with
+// "i/o timeout" (2026-10-03: first refused at four, then held up to three
+// minutes - 98 timeouts to 40 photos). The stall rule still cuts off an
+// upload that trickles.
+func (s *Server) backupSlot(userID string) (func(), bool) {
+	return s.takeSlot("backup/"+userID, maxBackupsPerUser)
 }
 
 // sameOrigin refuses a state-changing request that another site's page sent.

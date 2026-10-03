@@ -5660,8 +5660,12 @@ now that Settings has more cards above it; the first-run path passes.)*
 the background session's files at once over one connection, the server took
 four per person, and the rest waited three minutes and got 429 - 898 refusals
 to 33 photos in fifteen minutes, with a check of all 1,570 photos about every
-16 seconds (885 checks). Backups now have an allowance of their own, 24 at
-once (`maxBackupsPerUser`). **For the Mac:** a run should not start while the
+16 seconds (885 checks). Backups now have an allowance of their own, 64 at
+once (`maxBackupsPerUser`, `backupSlot`), **and never wait for a slot**: held
+waiting, a request does not read its body, and over the one HTTP/2
+connection its bytes filled the shared receive window and starved the uploads
+under way - "i/o timeout", 98 to 40 photos. Received at once or refused at
+once. **For the Mac:** a run should not start while the
 last one's uploads are still with iOS (it re-checked everything every few
 seconds), and a 429 should wait for the next run rather than count as passed
 over.

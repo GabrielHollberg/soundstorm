@@ -503,7 +503,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	release, ok := s.waitUploadSlot(r.Context(), u.ID)
+	release, ok := s.backupSlot(u.ID)
 	if !ok {
 		writeError(w, http.StatusTooManyRequests, "too many uploads at once; wait for one to finish")
 		return
