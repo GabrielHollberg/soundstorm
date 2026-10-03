@@ -4205,3 +4205,17 @@ body.dock-open .rc-chip { bottom: calc(var(--dock-space) + var(--tabbar) + 10px)
 /* Room at the foot of every page, so the last cards scroll clear of it. */
 #app { padding-bottom: 76px; }
 html.tv #app { padding-bottom: 0; }
+/* Play on as an action button: the accent, filled, a white icon, a soft
+   glow of its own colour (the grey ring looked like a hole in the page). */
+.ctl-btn, .ctl-btn.on {
+  background: linear-gradient(145deg, #7db4ff, #4a8ef0); color: #fff; border: none;
+  box-shadow: 0 6px 18px rgba(74, 142, 240, 0.45), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.ctl-btn:active { transform: scale(0.94); }
+/* A phone's header: SoundStorm on the left and your circle on the right,
+   then the search box the whole width under them. */
+@media (max-width: 620px) {
+  .wordmark.small { margin: 0; flex: 1 1 auto; flex-basis: auto; justify-content: flex-start; }
+  .me-btn { order: 1; }
+  #search-form { order: 3; flex: 1 1 100%; }
+}
