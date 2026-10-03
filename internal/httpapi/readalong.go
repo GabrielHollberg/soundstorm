@@ -46,6 +46,13 @@ func (s *Server) pairStatuses(ctx context.Context, st *storyteller.Source, pairs
 		if folder == "" {
 			continue
 		}
+		if madeTitle(p.Ebook.Title) && s.madeTimelineOK(ctx, itemRef{p.Ebook.SourceID, p.Ebook.ID}, folder) {
+			out[i] = storyteller.Status{State: "ready", Progress: 1}
+			continue
+		}
+		if st == nil {
+			continue
+		}
 		b, ok, err := st.ByFolder(ctx, folder)
 		if err != nil {
 			return out
@@ -66,6 +73,12 @@ func (s *Server) handleStartReadAlong(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReadAlongBody)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "expected an ebook and an audiobook")
 		return
+	}
+	if layout, _, err := s.audiobookFiles(r.Context(), body.Audiobook); err == nil {
+		if _, made := s.madeTimeline(r.Context(), body.Ebook, layout.Folder); made {
+			writeJSON(w, http.StatusOK, storyteller.Status{State: "ready", Progress: 1})
+			return
+		}
 	}
 	st, ok := s.readAlong(r.Context())
 	if !ok {
@@ -228,6 +241,20 @@ func (s *Server) handleReadAlong(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	ebook := itemRef{q.Get("ebookSource"), q.Get("ebookId")}
 	audiobook := itemRef{q.Get("audiobookSource"), q.Get("audiobookId")}
+	// A book written down from this very recording carries its own timeline,
+	// and needs no Storyteller at all.
+	if layout, _, err := s.audiobookFiles(r.Context(), audiobook); err == nil {
+		if timeline, ok := s.madeTimeline(r.Context(), ebook, layout.Folder); ok {
+			src, _ := s.reg.ByID(r.Context(), ebook.SourceID)
+			item, _ := itemByID(r.Context(), src, ebook.ID)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status":   storyteller.Status{State: "ready", Progress: 1},
+				"item":     item,
+				"timeline": timeline,
+			})
+			return
+		}
+	}
 	st, ok := s.readAlong(r.Context())
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "read-along is not set up on this server")

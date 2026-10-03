@@ -83,6 +83,7 @@ services:
       # ordinary install (see internal/httpapi/training.go).
       SOUNDSTORM_TRAINING: ${SOUNDSTORM_TRAINING:-false}
       SOUNDSTORM_VOICES_URL: ${SOUNDSTORM_VOICES_URL:-http://kokoro:8880}
+      SOUNDSTORM_WHISPER_URL: ${SOUNDSTORM_WHISPER_URL:-http://whisper:9000}
 
       # TLS. Off by default: the only certificate SoundStorm can make by itself
       # is one no browser trusts, and a full-page warning on every device is a
@@ -375,6 +376,20 @@ services:
     container_name: soundstorm-kokoro
     restart: unless-stopped
 
+  # The other way, for Make an ebook: the recording written down word by word
+  # (whisper-asr-webservice, MIT, run unmodified, with faster-whisper's
+  # base.en - the model Storyteller uses). The model is fetched once, on its
+  # first start, into its own volume; no recording ever leaves the house.
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice@sha256:0616c3d5fc6924e9d59aa8a7a3a944fbe8f3a5d701e5fc1fa2ce5b933dfecb73
+    container_name: soundstorm-whisper
+    restart: unless-stopped
+    environment:
+      ASR_ENGINE: faster_whisper
+      ASR_MODEL: base.en
+    volumes:
+      - whisper-models:/root/.cache
+
   tailscale:
     profiles: ["tailscale"]
     image: tailscale/tailscale:latest
@@ -417,3 +432,4 @@ volumes:
   storyteller-models:
   audiomuse-db:
   audiomuse-temp:
+  whisper-models:

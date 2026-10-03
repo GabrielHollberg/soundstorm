@@ -32,9 +32,10 @@ func (s *Server) handleBookPairs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	pairs := s.listPairs(ctx)
 	out := map[string]any{"pairs": pairs, "readalong": false}
-	if st, ok := s.readAlong(r.Context()); ok {
+	st, ok := s.readAlong(r.Context())
+	statuses := s.pairStatuses(ctx, st, pairs)
+	if ok || len(statuses) > 0 {
 		out["readalong"] = true
-		statuses := s.pairStatuses(ctx, st, pairs)
 		withStatus := make([]map[string]any, len(pairs))
 		for i, p := range pairs {
 			entry := map[string]any{"ebook": p.Ebook, "audiobook": p.Audiobook}

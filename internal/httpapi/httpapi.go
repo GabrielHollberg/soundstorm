@@ -245,6 +245,9 @@ type Config struct {
 	// either empty turns the feature off (voices.go).
 	VoicesURL string
 	VoicesDir string
+	// WhisperURL is the backend that writes audiobooks down, for Make an
+	// ebook; empty turns that half off.
+	WhisperURL string
 	// TrainingDir is where the looks' training recordings are kept, on the
 	// developer's own install only (SOUNDSTORM_TRAINING; see training.go).
 	// Empty, as everywhere else, means there is no training at all.
@@ -321,6 +324,9 @@ func New(cfg Config) *Server {
 	if cfg.VoicesURL != "" && cfg.VoicesDir != "" {
 		s.voicesDirPath = cfg.VoicesDir
 		s.voices = voices.NewManager(cfg.VoicesDir, &voices.Kokoro{BaseURL: strings.TrimRight(cfg.VoicesURL, "/")}, s.placeMadeBook, s.log)
+		if cfg.WhisperURL != "" {
+			s.voices.SetEars(&voices.Whisper{BaseURL: strings.TrimRight(cfg.WhisperURL, "/")}, s.placeMadeEbook)
+		}
 	}
 	return s
 }
@@ -417,6 +423,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("GET /api/voices", s.handleVoices)
 	guarded.HandleFunc("GET /api/voices/sample", s.handleVoiceSample)
 	guarded.HandleFunc("POST /api/voices/make", s.handleMakeAudiobook)
+	guarded.HandleFunc("POST /api/voices/make-ebook", s.handleMakeEbook)
 	guarded.HandleFunc("GET /api/voices/jobs", s.handleVoiceJobs)
 	guarded.HandleFunc("DELETE /api/voices/jobs/{id}", s.handleCancelVoiceJob)
 	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)

@@ -1278,7 +1278,7 @@ async function loadPeople() {
     }
     li.append(spacer);
     if (!person.owner) li.append(personPhotos(person));
-    if (!person.owner && state.voices && state.voices.available) li.append(personMakeBooks(person));
+    if (!person.owner && state.voices && (state.voices.available || state.voices.ebooks)) li.append(personMakeBooks(person));
 
     // The owner is not removable and neither are you: the server refuses both,
     // and offering a button that always fails is worse than offering none.
@@ -1301,14 +1301,14 @@ function personMakeBooks(person) {
   const row = document.createElement('label');
   row.className = 'person-photos setting-row';
   const text = document.createElement('span');
-  text.textContent = 'Can make audiobooks';
+  text.textContent = 'Can make audiobooks and ebooks';
   const box = document.createElement('input');
   box.type = 'checkbox';
   box.checked = Boolean(person.canMakeBooks);
   box.addEventListener('change', async () => {
     const { ok, body } = await api(`/api/users/${encodeURIComponent(person.id)}/make-books`,
       { method: 'PUT', body: JSON.stringify({ allowed: box.checked }) });
-    note($('people-note'), ok ? (box.checked ? `${person.name} can make audiobooks.` : `${person.name} can no longer make audiobooks.`)
+    note($('people-note'), ok ? (box.checked ? `${person.name} can make audiobooks and ebooks.` : `${person.name} can no longer make books.`)
       : ((body && body.error) || 'Could not save it.'), !ok);
     if (!ok) box.checked = !box.checked;
   });
@@ -6010,6 +6010,14 @@ function renderMainMenu(item, opts = {}) {
     entries.push(menuItem('headphones', 'Make an audiobook', (event) => {
       event.stopPropagation();
       renderMakeAudiobook(item);
+    }, { chevron: true }));
+  }
+  // Make an ebook: an audiobook written down on the server (voices.go).
+  if (item.kind === 'audiobook' && !state.offline && state.me && state.me.canMakeBooks
+      && state.voices && state.voices.ebooks) {
+    entries.push(menuItem('book', 'Make an ebook', (event) => {
+      event.stopPropagation();
+      renderMakeEbook(item);
     }, { chevron: true }));
   }
   if (state.me && state.me.owner && !state.offline && item.sourceId !== 'storyteller') {
@@ -12682,12 +12690,73 @@ function renderMakeAudiobook(item, existing) {
   if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
 }
 
+// renderMakeEbook is the menu page that starts writing an audiobook down:
+// what it will be, and - when an ebook of it is already on the shelf - the
+// choice of that one instead (the server answers 409 with it).
+function renderMakeEbook(item, existing) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = existing ? 'You already have it' : 'Make an ebook';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    renderMainMenu(item, state.menuOpts);
+  });
+  const p = document.createElement('p');
+  p.className = 'menu-confirm';
+  const start = async (anyway) => {
+    const { ok, status, body } = await api('/api/voices/make-ebook', {
+      method: 'POST',
+      body: JSON.stringify({ source: item.sourceId, id: item.id, anyway }),
+    });
+    if (status === 409 && body && body.existing) {
+      renderMakeEbook(item, body.existing);
+      return;
+    }
+    if (!ok) {
+      note.textContent = (body && body.error) || 'Could not start it.';
+      show(note, true);
+      return;
+    }
+    closeItemMenu();
+    showToast(`Writing "${item.title}" down as an ebook. It will be on the Ebooks shelf, ready to read along, when it is done - Settings shows how far it is.`);
+    refreshVoiceJobs();
+  };
+  if (existing) {
+    p.textContent = 'You already have the ebook of this. Make one written down from the recording anyway?';
+    const anyway = menuItem('book', 'Make it anyway', (event) => {
+      event.stopPropagation();
+      start(true);
+    });
+    const mine = menuItem('book', 'Read the one I have', (event) => {
+      event.stopPropagation();
+      closeItemMenu();
+      play(existing);
+    });
+    menu.replaceChildren(back, p, anyway, mine, note);
+  } else {
+    p.textContent = 'The recording is written down on this server - nothing is sent anywhere - and made into an ebook that reads along with it. It has the words, not the original book\'s look, and the odd word may be heard wrong. A long book takes a few hours.';
+    const go = menuItem('book', 'Make the ebook', (event) => {
+      event.stopPropagation();
+      start(false);
+    });
+    menu.replaceChildren(back, p, go, note);
+  }
+  if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
+}
+
 // refreshVoices asks whether audiobooks can be made here, once signed in.
 async function refreshVoices() {
   const { ok, body } = await api('/api/voices');
   state.voices = ok && body ? body : null;
-  show($('voices-block'), Boolean(state.voices && state.voices.available && state.voices.allowed));
-  if (state.voices && state.voices.available && state.voices.allowed) refreshVoiceJobs();
+  const can = Boolean(state.voices && (state.voices.available || state.voices.ebooks) && state.voices.allowed);
+  show($('voices-block'), can);
+  if (can) refreshVoiceJobs();
 }
 
 // refreshVoiceJobs draws the queue in Settings, and looks again while a book
@@ -12705,10 +12774,11 @@ async function refreshVoiceJobs() {
     line.className = 'muted';
     const pct = Math.round((j.fraction || 0) * 100);
     const left = j.secondsLeft > 0 ? `, about ${formatLeft(j.secondsLeft)} left` : '';
+    const ebook = j.kind === 'ebook';
     line.textContent = {
-      waiting: `Waiting its turn - ${j.voice}`,
-      working: `Reading aloud: ${pct}%${left} - ${j.voice}`,
-      done: 'Done - on the Audiobooks shelf',
+      waiting: ebook ? 'Waiting its turn - an ebook from the audiobook' : `Waiting its turn - ${j.voice}`,
+      working: ebook ? `Writing down: ${pct}%${left}` : `Reading aloud: ${pct}%${left} - ${j.voice}`,
+      done: ebook ? 'Done - on the Ebooks shelf' : 'Done - on the Audiobooks shelf',
       failed: `Could not finish: ${j.problem || 'something went wrong'}`,
       cancelled: 'Stopped',
     }[j.state] || j.state;

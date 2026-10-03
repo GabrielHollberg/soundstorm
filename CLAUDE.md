@@ -5931,8 +5931,37 @@ Making audiobooks, shows each with its share done and the time left (from
 150 words a minute of speech against the pace measured). Checked on a
 throwaway stack: a two-chapter EPUB became two tagged MP3s in that folder.
 **Not yet built:** marking "AI voice" under the card (the narrator tag
-carries it), the voice's word timings for Read Along (the made book is not
-synced yet), Make an ebook, the version picker.
+carries it), the voice's word timings for Read Along (the made audiobook is
+not synced yet), the version picker.
+
+**Make an ebook is built (2026-10-03)** (`voices/whisper.go`, `cut.go`,
+`ebook.go`, `handleMakeEbook`; the `whisper` service in compose,
+whisper-asr-webservice pinned by digest, faster-whisper base.en - its model is
+fetched once on first start into `whisper-models`, so a box with no internet
+on its first day cannot do this yet). An audiobook's hold menu offers it to
+the same people (People's switch is now "Can make audiobooks and ebooks");
+an ebook already paired with it gets the 409 and Make it anyway or Read the
+one I have. The recording is sent to Whisper in pieces of about ten minutes,
+never re-encoded: an MP4 (m4b, m4a) as fragments of its own samples through
+`mp4hls`, an MP3 cut at frame boundaries, anything else whole up to 200MB; a
+word cut at a piece's edge is the cost. Each piece's words are kept in the
+work folder, so a restart carries on. The EPUB is a chapter a file from the
+audiobook's chapter list (else its files), paragraphs at a 1.2s pause or 160
+words, each sentence a span - and **it carries its own timeline**
+(`META-INF/soundstorm-timeline.json`, every sentence's moment and the
+audiobook's folder), read through `epub.Open` and its guards. Titled "<Title>
+(from the audiobook)" (`bookKey` drops the brackets, so it pairs with its
+recording by itself), filed `ebooks/<Author>/<Title> (from the audiobook)/`.
+Read Along takes such a pair as synced with no Storyteller at all
+(`madeTimeline`: only titles ending so are opened; `/api/readalong` answers
+the book itself and its timeline; the auto-sync leaves it alone). Checked on
+a throwaway stack with a generated two-chapter m4b (index at the end, as
+Audible's): written down in seconds, chapters split at the mark, one word
+misheard ("gulls" as "girls"), paired and ready, and in Chrome the page
+turned to Chapter Two as the voice reached it with the sentence lit. Whisper
+measured 20s of speech in half a second; a real 10-hour book is not yet
+measured. **Not built:** the version picker (two ebooks of one recording show
+as two Read Along cards for now).
 
 ## Read-along: the page follows the audiobook
 

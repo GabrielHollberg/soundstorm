@@ -56,6 +56,9 @@ volumes:
   audiomuse-temp:
     <<: *cache
     driver_opts: { type: none, o: bind, device: /srv/soundstorm/cache/audiomuse-temp }
+  whisper-models:
+    <<: *cache
+    driver_opts: { type: none, o: bind, device: /srv/soundstorm/cache/whisper-models }
 
 # USB drives plugged into the box, opened read-only by usb.sh: SoundStorm
 # offers to bring their media in (httpapi/drives.go). rslave, so a drive

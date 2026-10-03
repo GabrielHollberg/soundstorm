@@ -399,6 +399,12 @@ func (b *Book) Playlist() []byte {
 	return []byte(sb.String())
 }
 
+// SegmentStart is where fragment i starts, in seconds (i may be Segments(),
+// the end).
+func (b *Book) SegmentStart(i int) float64 {
+	return float64(b.segTime[i]) / float64(b.timescale)
+}
+
 func (b *Book) segDuration(i int) float64 {
 	return float64(b.segTime[i+1]-b.segTime[i]) / float64(b.timescale)
 }

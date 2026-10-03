@@ -62,7 +62,7 @@ func (s *Server) canMakeBooks(r *http.Request) (string, bool) {
 // GET /api/voices: whether audiobooks can be made here, and the voices.
 func (s *Server) handleVoices(w http.ResponseWriter, r *http.Request) {
 	_, allowed := s.canMakeBooks(r)
-	out := map[string]any{"available": false, "allowed": allowed, "voices": []any{}}
+	out := map[string]any{"available": false, "allowed": allowed, "voices": []any{}, "ebooks": s.earsUp(r.Context())}
 	if !s.voicesUp(r.Context()) {
 		writeJSON(w, http.StatusOK, out)
 		return
@@ -191,6 +191,17 @@ func (s *Server) jobJSON(j voices.Job) map[string]any {
 		"id": j.ID, "title": j.Title, "author": j.Author, "voice": voices.VoiceName(j.Voice),
 		"state": j.State, "chapters": j.Chapters, "chaptersDone": j.ChapDone,
 		"problem": j.Problem, "dest": j.Dest, "source": j.Source, "item": j.Item,
+		"kind": "audiobook",
+	}
+	if j.Kind == "ebook" {
+		out["kind"], out["voice"] = "ebook", ""
+		if j.Seconds > 0 {
+			out["fraction"] = j.SecondsDone / j.Seconds
+			if j.State == "working" && j.Pace > 0 {
+				out["secondsLeft"] = int((j.Seconds - j.SecondsDone) / j.Pace)
+			}
+		}
+		return out
 	}
 	if j.Words > 0 {
 		out["fraction"] = float64(j.WordsDone) / float64(j.Words)
@@ -360,4 +371,185 @@ func (s *Server) RunVoices(ctx context.Context) {
 		}
 	}()
 	s.voices.Run(ctx)
+}
+
+// Making an ebook from an audiobook: Make an ebook in an audiobook's menu
+// writes the recording down on the box (Whisper, a backend of its own) and
+// puts an EPUB on the Ebooks shelf, titled "<Title> (from the audiobook)",
+// which carries every sentence's moment in the recording - so it reads along
+// with it from the start, with no sync step.
+
+var earsHealth struct {
+	sync.Mutex
+	at time.Time
+	ok bool
+}
+
+func (s *Server) earsUp(ctx context.Context) bool {
+	if s.voices == nil || s.voices.Ears() == nil {
+		return false
+	}
+	earsHealth.Lock()
+	defer earsHealth.Unlock()
+	if time.Since(earsHealth.at) < 30*time.Second {
+		return earsHealth.ok
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	earsHealth.ok = s.voices.Ears().Health(ctx) == nil
+	earsHealth.at = time.Now()
+	return earsHealth.ok
+}
+
+// POST /api/voices/make-ebook {source, id, anyway}: queue an audiobook.
+func (s *Server) handleMakeEbook(w http.ResponseWriter, r *http.Request) {
+	userID, allowed := s.canMakeBooks(r)
+	if !allowed {
+		writeError(w, http.StatusForbidden, "only the owner, or someone the owner allows, can make ebooks")
+		return
+	}
+	if !s.earsUp(r.Context()) {
+		writeError(w, http.StatusServiceUnavailable, "writing books down is not running on this server")
+		return
+	}
+	var body struct {
+		Source string `json:"source"`
+		ID     string `json:"id"`
+		Anyway bool   `json:"anyway"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "expected {source, id}")
+		return
+	}
+	ref := itemRef{body.Source, body.ID}
+	layout, rels, err := s.audiobookFiles(r.Context(), ref)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	src, _ := s.reg.ByID(r.Context(), body.Source)
+	item, _ := itemByID(r.Context(), src, body.ID)
+	// Already an ebook of it? Said, and asked, unless told to go ahead.
+	if !body.Anyway {
+		for _, p := range s.listPairs(r.Context()) {
+			if p.Audiobook.SourceID == ref.SourceID && p.Audiobook.ID == ref.ID {
+				writeJSON(w, http.StatusConflict, map[string]any{"existing": p.Ebook})
+				return
+			}
+		}
+	}
+	shelf := s.library.PathFor(media.KindAudiobook)
+	audio := make([]voices.AudioFile, 0, len(rels))
+	var chapters []voices.BookChapter
+	for i, rel := range rels {
+		p, err := inside(shelf, rel)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		f := layout.Files[i]
+		audio = append(audio, voices.AudioFile{Path: p, Start: f.StartSeconds, Len: f.DurationSeconds})
+	}
+	if cl, ok := src.(source.ChapterLister); ok {
+		if list, err := cl.Chapters(r.Context(), body.ID); err == nil {
+			for _, c := range list {
+				chapters = append(chapters, voices.BookChapter{Title: c.Title, Start: c.StartSeconds})
+			}
+		}
+	}
+	if len(chapters) == 0 && len(layout.Files) > 1 {
+		// No chapter list: a book of a file per chapter is named by its files.
+		for _, f := range layout.Files {
+			name := strings.TrimSuffix(f.Name, filepath.Ext(f.Name))
+			chapters = append(chapters, voices.BookChapter{Title: name, Start: f.StartSeconds})
+		}
+	}
+	cover := ""
+	if dir, err := inside(shelf, layout.Folder+"/x"); err == nil {
+		dir = filepath.Dir(dir)
+		for _, n := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png"} {
+			if st, err := os.Stat(filepath.Join(dir, n)); err == nil && st.Mode().IsRegular() {
+				cover = filepath.Join(dir, n)
+				break
+			}
+		}
+	}
+	author := ""
+	if len(item.Creators) > 0 {
+		author = item.Creators[0]
+	} else if a, _, ok := strings.Cut(layout.Folder, "/"); ok {
+		// No author tag: the shelf is Author/Title, so the folder says.
+		author = a
+	}
+	title := item.Title
+	if title == "" {
+		title = filepath.Base(layout.Folder)
+	}
+	job, err := s.voices.AddEbook(userID, body.Source, body.ID, title, author, layout.Folder, cover, audio, chapters)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.jobJSON(job))
+}
+
+// placeMadeEbook puts a made EPUB on the ebook shelf, as
+// <Author>/<Title> (from the audiobook)/<Title> (from the audiobook).epub.
+func (s *Server) placeMadeEbook(j *voices.Job, staged string) (string, error) {
+	shelf := s.library.PathFor(media.KindEbook)
+	author := folderName(j.Author, "Unknown Author")
+	base := folderName(j.Title, "Untitled") + " (from the audiobook)"
+	rel := filepath.ToSlash(filepath.Join(author, base))
+	for n := 2; ; n++ {
+		p, err := inside(shelf, rel)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			break
+		}
+		if n > 50 {
+			return "", fmt.Errorf("too many editions of this book already")
+		}
+		rel = filepath.ToSlash(filepath.Join(author, fmt.Sprintf("%s %d", base, n)))
+	}
+	dest, _ := inside(shelf, rel)
+	tmp := filepath.Join(filepath.Dir(dest), "."+filepath.Base(dest)+".making")
+	if err := os.MkdirAll(tmp, 0o777); err != nil {
+		return "", err
+	}
+	if err := copyFile(filepath.Join(staged, "book.epub"), filepath.Join(tmp, base+".epub")); err != nil {
+		_ = os.RemoveAll(tmp)
+		return "", err
+	}
+	_ = os.Chmod(tmp, 0o777)
+	if err := os.Rename(tmp, dest); err != nil {
+		_ = os.RemoveAll(tmp)
+		return "", err
+	}
+	s.scheduleRescan(media.KindEbook)
+	return rel, nil
+}
+
+// madeTimeline is a made ebook's own timeline, when the ebook is one and was
+// made from this audiobook folder.
+func (s *Server) madeTimeline(ctx context.Context, ebook itemRef, folder string) ([]voices.Moment, bool) {
+	path, err := s.ebookFile(ctx, ebook)
+	if err != nil {
+		return nil, false
+	}
+	t, ok := voices.ReadMadeTimeline(path)
+	if !ok || (folder != "" && t.AudiobookFolder != folder) {
+		return nil, false
+	}
+	return t.Timeline, true
+}
+
+// madeTitle is whether a title is a made ebook's: a cheap look before
+// opening the book to read its timeline.
+func madeTitle(title string) bool { return strings.HasSuffix(title, "(from the audiobook)") }
+
+func (s *Server) madeTimelineOK(ctx context.Context, ebook itemRef, folder string) bool {
+	_, ok := s.madeTimeline(ctx, ebook, folder)
+	return ok
 }

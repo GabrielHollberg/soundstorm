@@ -82,6 +82,9 @@ func (s *Server) autoReadAlongOnce(parent context.Context) {
 		if skip {
 			continue
 		}
+		if madeTitle(p.Ebook.Title) && s.madeTimelineOK(ctx, itemRef{p.Ebook.SourceID, p.Ebook.ID}, folder) {
+			continue // written down from this recording, already following it
+		}
 		existing, found, err := st.ByFolder(ctx, folder)
 		if err != nil {
 			return // Storyteller is not answering; try again next time
