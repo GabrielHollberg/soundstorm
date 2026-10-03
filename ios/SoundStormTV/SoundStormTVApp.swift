@@ -294,6 +294,9 @@ final class AppModel {
         look = Looks.shown(await api?.coverStyle())
     }
 
+    /// A look shown here and not saved: one a phone playing on this TV chose.
+    func showLook(_ key: String) { look = key }
+
     func setLook(_ key: String) {
         look = key
         Task { await api?.setCoverStyle(key) }

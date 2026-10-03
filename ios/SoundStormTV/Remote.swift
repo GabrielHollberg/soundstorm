@@ -99,6 +99,12 @@ struct RemoteControlled: ViewModifier {
         case "play":
             await play(c)
         case "control":
+            // The phone playing on this TV chose a look: it is this TV's look
+            // for now, as on the page (the phone keeps it on the account).
+            if c["action"] as? String == "look", let style = c["style"] as? String {
+                if Looks.all.contains(style) { model.showLook(style) }
+                return
+            }
             control(c["action"] as? String ?? "", value: (c["value"] as? NSNumber)?.doubleValue ?? 0)
         case "volume":
             let v = Float((c["value"] as? NSNumber)?.doubleValue ?? 1)
