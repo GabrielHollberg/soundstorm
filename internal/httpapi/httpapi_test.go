@@ -83,6 +83,10 @@ func (h *harness) libraryRoot(t *testing.T) string {
 // (drives.go).
 var testDrivesDir string
 
+// testCaretakerSocket, when a test sets it, is a stand-in box caretaker's
+// socket (reset.go).
+var testCaretakerSocket string
+
 func newHarness(t *testing.T, sources ...source.Source) *harness {
 	t.Helper()
 
@@ -116,6 +120,7 @@ func newHarness(t *testing.T, sources ...source.Source) *harness {
 		SetupCode:        testSetupCode,
 		Collections:      testCollections(t),
 		DrivesDir:        testDrivesDir,
+		CaretakerSocket:  testCaretakerSocket,
 	})
 
 	srv := httptest.NewServer(api.Routes())

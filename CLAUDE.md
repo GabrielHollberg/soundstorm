@@ -340,6 +340,45 @@ the secure name then goes to its https on port 80, which SoundStorm answers.
 A drive's top folder named "Music" deciding its MP3s was suggested and
 declined, with the audiobook rule above: names ask, they do not decide.
 
+### Starting over, erasing, and the way back in (2026-10-03)
+
+Three situations, the owner's design, none of them erasing by accident:
+
+- **A forgotten owner password, or a lost sticker:** the box's power button
+  pressed five times quickly opens, for fifteen minutes, setting the owner's
+  password without the old one, from the sign-in screen on any device on the
+  home network ("The power button on the box was pressed. Choose a new
+  password for Gabriel") - once, never through the away-from-home name, with
+  today's password rules, and signing the owner out everywhere. Nothing is
+  erased. On a box the sign-in screen says how ("press the power button on
+  the box five times quickly"). Pressed once, the button shuts the box down
+  properly; held, the hardware still switches it off.
+- **Start over** (Settings, Account; the owner's password and START OVER
+  typed): every account, sign-in, list and setting, and what the backends
+  learnt, go - the data volumes and caches emptied, their folders kept, the
+  snapshots from before updates deleted; the media stays, and the box sets
+  itself up again (the setup code in `.env`, the sticker's, still works) and
+  reads it all back in.
+- **Erase everything** (ERASE typed): that and the library's every file, the
+  shelves kept empty - for a box sold or given away. What goes is said first
+  ("1 account and 1.4 TB of media - 3,200 songs, 140 films...").
+
+The caretaker does it (`internal/caretaker/reset.go`: `Reset`, the button
+watch reading the power button's input device - logind told to leave the key
+alone, `logind.conf.d/soundstorm-button.conf` - and `POST /reset`,
+`GET /button`, `POST /button/used` on its socket, now `chown`ed to group
+10001). SoundStorm reaches it at last: `compose.box.yml` binds
+`/run/soundstorm-caretaker` and sets `SOUNDSTORM_CARETAKER` and `group_add`;
+`httpapi/reset.go` decides who may ask. Checked: the caretaker's tests (a
+reset of each kind against folders, the runs of presses, finding the button
+in `/proc/bus/input/devices`), SoundStorm's against a stand-in caretaker
+(the button's window, once; the word and the password), and in Chrome with a
+stand-in caretaker: the hint, five presses, the new password, signing in with
+it, and the erase card down to "Erasing the box". **Not checked: on the box**
+- the wipe for real, the power button on the Beelink (does it report
+`KEY_POWER` through "Power Button"? does logind let go?), the socket's group
+inside the container: **for the PC**, in the VM and then on the test unit.
+
 ## The decision that shapes everything
 
 That request sounds like "build a media server". It is not, and the difference

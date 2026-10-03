@@ -589,6 +589,19 @@ function showGate(hasAccount, setupCodeRequired) {
     ? 'Sign in to your library.'
     : 'Create the account for this server: you will be its owner. Choose a password of at least 12 characters - a few unrelated words make a good one.';
   $('gate-submit').textContent = hasAccount ? 'Sign in' : 'Create account';
+  // A box: the power button is the way back in for a forgotten password.
+  show($('gate-button'), false);
+  show($('gate-button-hint'), false);
+  if (hasAccount) {
+    api('/api/reset/button').then(({ ok, body }) => {
+      if (!ok || !body || $('gate-form').dataset.mode !== 'login') return;
+      show($('gate-button-hint'), Boolean(body.box) && !body.open);
+      if (body.open) {
+        $('gate-button-text').textContent = `The power button on the box was pressed. Choose a new password for ${body.owner}:`;
+        show($('gate-button'), true);
+      }
+    });
+  }
   // Which server this is, by the name its devices show (the owner's choice).
   if (hasAccount) {
     api('/api/session').then(({ ok, body }) => {
@@ -795,6 +808,25 @@ $('gate-form').addEventListener('submit', async (event) => {
   showApp(body && body.user);
 });
 
+// The owner's new password, after the box's button was pressed five times.
+$('gate-button-save').addEventListener('click', async () => {
+  const { ok, body } = await api('/api/reset/owner-password', {
+    method: 'POST', body: JSON.stringify({ password: $('gate-button-password').value }),
+  });
+  const err = $('gate-error');
+  if (!ok) {
+    err.textContent = (body && body.error) || 'Could not save it.';
+    show(err, true);
+    return;
+  }
+  $('gate-button-password').value = '';
+  show($('gate-button'), false);
+  show(err, false);
+  $('gate-username').value = body.owner || '';
+  $('gate-blurb').textContent = 'Saved. Sign in with the new password.';
+  $('gate-password').focus();
+});
+
 // The right password on a device the account has never signed in on, with
 // approval turned on: this device waits, asking every few seconds, until a
 // device already signed in (or the owner) approves it - or the setup code
@@ -998,7 +1030,67 @@ function renderAccount() {
     show($('readalong-block'), false);
   }
   show($('server-name-block'), Boolean(me.owner));
+  api('/api/session').then(({ ok, body }) => show($('box-reset-block'), Boolean(ok && body && body.boxReset)));
 }
+
+// Starting the box over, or erasing it (reset.go): what goes is said first,
+// then the password and the word typed. The box stops; the page waits for it
+// to come back, then reloads into setting it up again.
+let boxResetMode = '';
+async function openBoxReset(mode) {
+  boxResetMode = mode;
+  const word = mode === 'erase' ? 'ERASE' : 'START OVER';
+  $('box-reset-confirm-label').textContent = `Type ${word} to confirm`;
+  $('box-reset-confirm').value = '';
+  $('box-reset-password').value = '';
+  $('box-reset-go').textContent = mode === 'erase' ? 'Erase everything' : 'Start over';
+  show($('box-reset-note'), false);
+  $('box-reset-what').textContent = 'Working out what this deletes\u2026';
+  show($('box-reset-form'), true);
+  $('box-reset-password').focus();
+  const { ok, body } = await api('/api/reset/summary');
+  if (!ok || !body) return;
+  const people = `${body.people} account${body.people === 1 ? '' : 's'}`;
+  if (mode === 'erase') {
+    const f = body.files || {};
+    const parts = [['music', 'song', 'songs'], ['video', 'film', 'films'], ['tv', 'episode', 'episodes'], ['audiobook', 'audiobook file', 'audiobook files'],
+      ['ebook', 'book', 'books'], ['document', 'document', 'documents'], ['picture', 'photo or video', 'photos and videos']]
+      .filter(([k]) => f[k]).map(([k, one, many]) => `${f[k].toLocaleString()} ${f[k] === 1 ? one : many}`);
+    $('box-reset-what').textContent = `This deletes ${people} and ${formatBytes(body.bytes || 0)} of media${parts.length ? ` - ${parts.join(', ')}` : ''}. It cannot be undone.`;
+  } else {
+    $('box-reset-what').textContent = `This deletes ${people}, with their playlists, favorites and settings. Your media stays. It cannot be undone.`;
+  }
+}
+$('box-start-over').addEventListener('click', () => openBoxReset('start-over'));
+$('box-erase').addEventListener('click', () => openBoxReset('erase'));
+$('box-reset-cancel').addEventListener('click', () => show($('box-reset-form'), false));
+$('box-reset-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const { ok, body } = await api('/api/reset', {
+    method: 'POST',
+    body: JSON.stringify({ mode: boxResetMode, password: $('box-reset-password').value, confirm: $('box-reset-confirm').value }),
+  });
+  if (!ok) {
+    $('box-reset-note').textContent = (body && body.error) || 'Could not start.';
+    show($('box-reset-note'), true);
+    return;
+  }
+  for (const id of ['app', 'tabs', 'account']) show($(id), false);
+  show($('boot'), true);
+  if (!$('boot-text')) $('boot').append(Object.assign(document.createElement('p'), { id: 'boot-text', className: 'muted' }));
+  $('boot-text').textContent = boxResetMode === 'erase'
+    ? 'Erasing the box. It will be ready to set up again in a few minutes.'
+    : 'Starting over. The box will be ready to set up again in a few minutes.';
+  // Gone while it is reset, then back: reload into setting it up.
+  await pause(15000);
+  for (;;) {
+    try {
+      const r = await fetch('/healthz', { cache: 'no-store' });
+      if (r.ok) { location.reload(); return; }
+    } catch { /* still starting */ }
+    await pause(5000);
+  }
+});
 
 // The server's name, which devices show before anybody signs in. Empty puts
 // back "<owner>'s SoundStorm".

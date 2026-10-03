@@ -62,8 +62,8 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/scrobble"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
-	"github.com/GabrielHollberg/soundstorm/internal/voices"
 	"github.com/GabrielHollberg/soundstorm/internal/stream"
+	"github.com/GabrielHollberg/soundstorm/internal/voices"
 	"github.com/GabrielHollberg/soundstorm/internal/webui"
 	"path/filepath"
 )
@@ -159,6 +159,9 @@ type Server struct {
 	// it, read-only (drives.go); empty everywhere but a box.
 	drivesDir    string
 	driveImports driveImports
+	// caretakerSocket is the box caretaker's socket (reset.go); empty off a
+	// box.
+	caretakerSocket string
 
 	// uploads counts each account's in-flight uploads; see takeUploadSlot.
 	uploadsMu sync.Mutex
@@ -254,6 +257,10 @@ type Config struct {
 	// (SOUNDSTORM_DRIVES_DIR; drives.go). Empty: no drives to bring media in
 	// from - every install but a box.
 	DrivesDir string
+
+	// CaretakerSocket is the box caretaker's socket (SOUNDSTORM_CARETAKER):
+	// starting over, erasing, and the power button (reset.go). Empty off a box.
+	CaretakerSocket string
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -313,6 +320,7 @@ func New(cfg Config) *Server {
 		beats:            newBeatStore(cfg.BeatsDir),
 		trainingDir:      cfg.TrainingDir,
 		drivesDir:        cfg.DrivesDir,
+		caretakerSocket:  cfg.CaretakerSocket,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -367,6 +375,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/profiles", s.handleProfiles)
 	mux.HandleFunc("POST /api/profiles/switch", s.handleSwitchProfile)
 	mux.HandleFunc("GET /api/profiles/{id}/picture", s.handleProfilePicture)
+	// The box's power button pressed five times: the owner's password set
+	// again, from the sign-in screen (reset.go).
+	mux.HandleFunc("GET /api/reset/button", s.handleResetButton)
+	mux.HandleFunc("POST /api/reset/owner-password", s.handleResetOwnerPassword)
 	// A TV taken over from a phone signs in as that person with a one-time
 	// code (players.go): open, as it is still the last person until then.
 	mux.HandleFunc("POST /api/players/switch", s.handlePlayerSwitch)
@@ -531,6 +543,8 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("PUT /api/settings/new-devices", s.handleSetApproveDevices)
 	owner.HandleFunc("PUT /api/settings/server-name", s.handleSetServerName)
 	// USB drives plugged into the box (drives.go).
+	owner.HandleFunc("GET /api/reset/summary", s.handleResetSummary)
+	owner.HandleFunc("POST /api/reset", s.handleReset)
 	owner.HandleFunc("GET /api/drives", s.handleDrives)
 	owner.HandleFunc("GET /api/drives/import", s.handleDriveImportStatus)
 	owner.HandleFunc("POST /api/drives/import/stop", s.handleDriveImportStop)
@@ -556,6 +570,8 @@ func (s *Server) Routes() http.Handler {
 	guarded.Handle("/api/settings/readalong", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/new-devices", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/settings/server-name", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/reset", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/reset/summary", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/drives", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/drives/", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
@@ -702,6 +718,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		}
 		// Every account's devices may be asked to approve a new one.
 		answer["approveNewDevices"] = s.store.ApproveNewDevices()
+		// A box can be started over or erased (reset.go): the owner's cards.
+		if user.IsOwner() && s.caretakerSocket != "" {
+			answer["boxReset"] = true
+		}
 		// The looks' training mode, on the developer's install alone.
 		if s.trainingDir != "" {
 			answer["training"] = true
