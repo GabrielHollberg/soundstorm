@@ -5665,7 +5665,17 @@ once (`maxBackupsPerUser`, `backupSlot`), **and never wait for a slot**: held
 waiting, a request does not read its body, and over the one HTTP/2
 connection its bytes filled the shared receive window and starved the uploads
 under way - "i/o timeout", 98 to 40 photos. Received at once or refused at
-once. **For the Mac:** a run should not start while the
+once. Afterwards 164 of the 222 came back from the iPhone with their dates; the
+other 58 are the Android's and need 0.37 on it (the bin keeps them until
+about 2 November).
+**For the Mac - the one silent gap left:** the iPhone checks with size 0
+(`PhotoBackup.swift`, the check's `"size": 0`), so the server matches on name
+and month alone: a *different* picture of the same name in the same month
+(the camera's numbering starting over, another device's file) is taken for
+the one already there and never sent, and a deleted one's path blocks it too
+(`wasDeleted`). Send the real size for an asset whose resource is on the phone
+(`PHAssetResource`'s file size), keeping 0 only for one held in iCloud alone;
+the server already matches on size when given one. **For the Mac:** a run should not start while the
 last one's uploads are still with iOS (it re-checked everything every few
 seconds), and a 429 should wait for the next run rather than count as passed
 over. *(Done on the Mac, 2026-10-03: `PhotoBackup.start` starts no run
