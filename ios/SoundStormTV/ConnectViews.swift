@@ -91,8 +91,7 @@ struct ConnectView: View {
         checking = true
         Task {
             do {
-                try await ServerAddress.check(server)
-                model.use(server)
+                model.use(try await ServerAddress.find(server))
             } catch {
                 message = error.localizedDescription
             }

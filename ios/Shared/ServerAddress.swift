@@ -112,6 +112,26 @@ enum ServerAddress {
     /// Asks the server's /healthz, which every SoundStorm answers with
     /// {"status":"ok","sources":n}, so a typo that lands on some other web
     /// server is caught here rather than as a strange page later.
+    /// The server at a typed address, checked: as typed, and for a
+    /// soundstorm.dev name typed without its port, on SoundStorm's own port
+    /// too - the away-from-home name is "<id>.net.soundstorm.dev:8099", and
+    /// typed without ":8099" on a TV it found nothing (reported), where a
+    /// phone opens the whole address from a link.
+    static func find(_ server: URL) async throws -> URL {
+        do {
+            try await check(server)
+            return server
+        } catch {
+            guard server.port == nil, server.scheme == "https",
+                  server.host()?.hasSuffix(".soundstorm.dev") == true,
+                  var parts = URLComponents(url: server, resolvingAgainstBaseURL: false)
+            else { throw error }
+            parts.port = 8099
+            guard let withPort = parts.url, (try? await check(withPort)) != nil else { throw error }
+            return withPort
+        }
+    }
+
     static func check(_ server: URL) async throws {
         var request = URLRequest(url: server.appending(path: "healthz"))
         request.timeoutInterval = 10

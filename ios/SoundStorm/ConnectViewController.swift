@@ -193,8 +193,8 @@ final class ConnectViewController: UIViewController, UITextFieldDelegate {
         setBusy(true)
         checking = Task { [weak self] in
             do {
-                try await ServerAddress.check(server)
-                self?.onConnected?(server)
+                let found = try await ServerAddress.find(server)
+                self?.onConnected?(found)
             } catch {
                 self?.message.text = error.localizedDescription
             }
