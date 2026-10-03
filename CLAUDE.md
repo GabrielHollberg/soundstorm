@@ -160,6 +160,20 @@ files now). And "Bringing media in from a USB drive": the box's half
    one holding that letter, aimed 1s ahead of the voice (the owner's choice after 0.8s and 1.2s; aimed at the
    voice it was still a little late). The TV's `Reader.swift` turns to a sentence's
    start only; it wants the same, on the lit range's own text.
+   *(Done 2026-10-03: `followWithin` in `Reader.swift`, the same rule on the
+   sentence's letters as laid out in pages. Built, not seen: no test book
+   has one sentence across a page.)*
+6. ~~**The Google TV app's look**~~ - *done 2026-10-03, the owner's asking
+   ("as close a clone as possible", the animations left as they are):*
+   `Theme.swift`, `Shell.swift`, `Detail.swift`, `WebMenu.swift`. The side
+   bar, header and pills, cards with the white outline and 1.05, Home's
+   quick buttons and New rows with See all, tabs and pills without a shelf
+   left out, the gate screens as the page's card, Settings, album, artist,
+   playlist and show pages, search across every shelf, and the page's own
+   menu on a held OK in Now Playing and the reader. Left as Apple's: the
+   text boxes and search keyboard (tvOS draws them), and the "Allow this
+   sign-in?" and take-over questions, which must show over a film or Now
+   Playing. Not tried with a real remote.
 
 ## Selling it on a box (an idea being tried, 2026-10-02)
 
@@ -2722,7 +2736,12 @@ and the Apple apps' players on a real book. **For the Mac:** the iPhone's
 native player and the Apple TV are handed the playlist as the book's url (a
 multi-file book's tracks too); AVPlayer plays HLS, but check the cookie goes
 with every fragment (`AVURLAssetHTTPCookiesKey`) and that a book's clock and
-seeking behave as with a file.
+seeking behave as with a file. *(Checked on the Mac, 2026-10-03: AVPlayer, the
+engine both apps use, played `mp4hls`'s pieces of a generated 5-minute m4b
+(index at the end) through a server refusing anything without the cookie -
+ready in under a second, 300s long, a jump to 250s playing on, the cookie on
+every request. Nothing needed changing in either app. Not tried: a real
+Audible book through the real server.)*
 
 ## Read Along keeps the screen on
 
