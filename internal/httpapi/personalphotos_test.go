@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -154,5 +155,50 @@ func TestABackedUpPictureKeepsThePhonesDate(t *testing.T) {
 	side, err := os.ReadFile(full + ".xmp")
 	if err != nil || !strings.Contains(string(side), "2019-03-14T15:09:26") {
 		t.Errorf("no date beside it: %v\n%s", err, side)
+	}
+}
+
+// The phones keep no list of what they sent, so a photo deleted from a
+// person's folder must be one the server says it has, or the next backup run
+// sends it back; put back from the bin, it is wanted again.
+func TestADeletedBackupIsNotSentBack(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	taken := time.Date(2019, 3, 14, 15, 9, 26, 0, time.UTC).UnixMilli()
+	png := "\x89PNG\r\n\x1a\n a backed-up picture"
+	req, _ := http.NewRequest(http.MethodPut, h.srv.URL+"/api/photos/backup?name=Old.png&taken="+strconv.FormatInt(taken, 10), strings.NewReader(png))
+	resp, err := h.client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("backup: %v %v", err, resp)
+	}
+	resp.Body.Close()
+	check := func(size int) bool {
+		t.Helper()
+		_, body := h.do(t, http.MethodPost, "/api/photos/backup/check",
+			`{"items":[{"name":"Old.png","taken":`+strconv.FormatInt(taken, 10)+`,"size":`+strconv.Itoa(size)+`}]}`)
+		var out struct{ Have []bool }
+		_ = json.Unmarshal(body, &out)
+		return len(out.Have) == 1 && out.Have[0]
+	}
+	items := []library.BinItem{{Title: "Old.png", Kind: media.KindPicture, Paths: []string{"pictures/Personal/gabe/2019/03/Old.png"}}}
+	h.api.rememberDeleted(items)
+	entry, err := h.api.library.MoveToBin(items, "gabe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !check(len(png)) || !check(0) {
+		t.Fatal("a deleted photo is offered again: the phone would send it back")
+	}
+	if check(len(png) + 1) {
+		t.Error("a different photo of that name and month was taken for the deleted one")
+	}
+	restored, _, _, err := h.api.library.Restore(entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.api.forgetDeleted(restored.Items)
+	err = os.Remove(filepath.Join(h.libraryRoot(t), "pictures", "Personal", "gabe", "2019", "03", "Old.png"))
+	if got := check(len(png)); err != nil || got {
+		t.Errorf("put back and removed again by hand, it should be wanted: %v %v", err, got)
 	}
 }

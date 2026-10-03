@@ -445,6 +445,8 @@ func (s *Server) handleBackupCheck(w http.ResponseWriter, r *http.Request) {
 			} else {
 				have[i] = s.library.PersonalHas(u.Name, rel, 0)
 			}
+			// Deleted here: the phone is told it is here, so it is not sent back.
+			have[i] = have[i] || s.wasDeleted(u.Name, rel, it.Size)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"have": have, "usage": s.photoUsageJSON(u)})
@@ -474,7 +476,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	// Sent before (under its name, or beside another under one of its own):
 	// nothing to do.
-	if s.personalSentBefore(u.Name, rel, it.Size) {
+	if s.personalSentBefore(u.Name, rel, it.Size) || s.wasDeleted(u.Name, rel, it.Size) {
 		writeJSON(w, http.StatusOK, map[string]any{"already": true})
 		return
 	}

@@ -124,6 +124,7 @@ type Server struct {
 	bookHLS        bookHLS
 	voices         *voices.Manager
 	voicesDirPath  string
+	deleted        deletedPhotos
 	lookingUpMu    sync.Mutex
 	lookingUp      map[string]bool
 	// imports limits how often somebody may import playlists (a file, or
@@ -253,6 +254,10 @@ type Config struct {
 	// WhisperURL is the backend that writes audiobooks down, for Make an
 	// ebook; empty turns that half off.
 	WhisperURL string
+	// StateDir is SoundStorm's own state folder, for records of its own
+	// beside state.json (the photos deleted from backups); empty keeps them
+	// in memory only.
+	StateDir string
 	// TrainingDir is where the looks' training recordings are kept, on the
 	// developer's own install only (SOUNDSTORM_TRAINING; see training.go).
 	// Empty, as everywhere else, means there is no training at all.
@@ -324,6 +329,7 @@ func New(cfg Config) *Server {
 		scrobble:         cfg.Scrobble,
 		beats:            newBeatStore(cfg.BeatsDir),
 		trainingDir:      cfg.TrainingDir,
+		deleted:          deletedPhotos{file: stateFile(cfg.StateDir, "photos-deleted.json")},
 		drivesDir:        cfg.DrivesDir,
 		caretakerSocket:  cfg.CaretakerSocket,
 		rescanTimers:     map[media.Kind]*time.Timer{},
@@ -2793,4 +2799,12 @@ func spaceJSON(lib *library.Library) map[string]any {
 		"total": space.Total,
 		"level": string(space.Level),
 	}
+}
+
+// stateFile is a file in the state folder, or "" with none.
+func stateFile(dir, name string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, name)
 }

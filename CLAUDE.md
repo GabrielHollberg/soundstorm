@@ -5632,6 +5632,24 @@ as for any shelf) and how much space their photos may take.
   Dropped and imported photos are named the same way, an identical one
   having been refused by its content first.
 
+**The phones keep no list of what they sent** (2026-10-03, the owner's
+asking, after 222 pictures had to be sent again and each phone's own list
+said they were done): each backup run asks the server about every photo
+(`/api/photos/backup/check`, a hundred at a time - about 16 requests for
+1,570) and sends what it lacks, so the server is the one record. **What is
+deleted is remembered** (`deletedphotos.go`, `photos-deleted.json` in the
+state folder): deleting from a person's folder notes each file's path within
+the pictures shelf and size, the check and the backup answer "have it" for
+them, and putting them back from the bin forgets them. Matched on size where
+the phone gives one (Android), on the path alone where it cannot (the iPhone,
+size 0). A backup waits up to three minutes for an upload slot rather than a
+429 (`waitUploadSlot`: the iPhone hands several to iOS at once, and 164 of a
+re-backup's sends were refused). Android 0.37 dropped its list; **for the
+Mac:** the iPhone's `PhotoBackup` should drop its sent list the same way (ask
+the server about every asset each run; the per-account list file can go), and
+until then it still needs a reinstall to send what the server lost.
+`TestADeletedBackupIsNotSentBack`.
+
 **A backed-up picture with no date inside it keeps the phone's date**
 (2026-10-03, `backupDated`): screenshots and pictures saved from messages
 showed in Immich as the day they were backed up - the backup filed them in the

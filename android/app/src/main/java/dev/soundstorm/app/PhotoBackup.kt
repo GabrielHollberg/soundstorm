@@ -44,9 +44,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * job may run only minutes. Newest first, so today's photos are safe before
  * last year's.
  *
- * What was sent is remembered on the phone (by its MediaStore id), and before
- * sending anything the server is asked which it already has - by name, when
- * taken and size - so reinstalling the app or a new phone sends nothing twice.
+ * The phone keeps no list of what it sent (0.37, the owner's asking): each run
+ * asks the server which it already has - by name, when taken and size - and
+ * sends the rest, so the server is the one record. A photo deleted there is
+ * one it says it has, so it is not sent back; one that went missing there is
+ * sent again by itself.
  * It signs in with the web view's own cookie: nothing to set up.
  */
 object PhotoBackup {
@@ -403,17 +405,11 @@ class BackupWorker(context: Context, params: WorkerParameters) : Worker(context,
         var server = candidates.first()
         val started = System.currentTimeMillis()
         val roll = PhotoBackup.cameraRoll(c)
-        val sent = PhotoBackup.sent(c)
-        val waiting = roll.filter { it.key !in sent }
-        PhotoBackup.record(c, done = roll.size - waiting.size, total = roll.size, running = true, problem = "")
-        var done = roll.size - waiting.size
-        if (waiting.isNotEmpty()) {
-            // Android may refuse this from the background (12 and later);
-            // then it carries on as an ordinary job, ten minutes at a time.
-            foreground = runCatching {
-                setForegroundAsync(PhotoBackup.foregroundInfo(c, done, roll.size)).get(); true
-            }.getOrDefault(false)
-        }
+        // Every photo is asked about: the server is the record (see above).
+        val waiting = roll
+        PhotoBackup.record(c, total = roll.size, running = true, problem = "")
+        var done = 0
+        var foregroundAsked = false
         try {
             for (batch in waiting.chunked(100)) {
                 if (isStopped) return Result.retry()
@@ -444,6 +440,15 @@ class BackupWorker(context: Context, params: WorkerParameters) : Worker(context,
                     }
                     val (item, size) = pair
                     val sentSoFar = done
+                    if (!foregroundAsked) {
+                        // Only once something is to be sent. Android may
+                        // refuse this from the background (12 and later); then
+                        // it carries on as an ordinary job, ten minutes at a time.
+                        foregroundAsked = true
+                        foreground = runCatching {
+                            setForegroundAsync(PhotoBackup.foregroundInfo(c, done, roll.size)).get(); true
+                        }.getOrDefault(false)
+                    }
                     try {
                         PhotoBackup.send(c, server, item, PhotoBackup.original(c, item.uri), size) { sent ->
                             showProgress(sentSoFar, roll.size, sent, size)

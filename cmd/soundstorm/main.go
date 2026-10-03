@@ -374,6 +374,7 @@ func run(log *slog.Logger) error {
 		VoicesURL:       env("SOUNDSTORM_VOICES_URL", "http://kokoro:8880"),
 		VoicesDir:       filepath.Join(stateDir, "voices"),
 		WhisperURL:      env("SOUNDSTORM_WHISPER_URL", "http://whisper:9000"),
+		StateDir:        stateDir,
 		TrainingDir:     trainingDir,
 		DrivesDir:       os.Getenv("SOUNDSTORM_DRIVES_DIR"),
 		CaretakerSocket: os.Getenv("SOUNDSTORM_CARETAKER"),

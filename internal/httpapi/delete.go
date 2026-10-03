@@ -117,6 +117,9 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := auth.FromContext(r.Context())
+	// Backed-up photos deleted stay deleted: a phone's backup is told the
+	// server has them (deletedphotos.go).
+	s.rememberDeleted(items)
 	entry, err := s.library.MoveToBin(items, user.Name)
 	if err != nil {
 		s.log.Warn("delete failed", "err", err)
@@ -151,6 +154,7 @@ func (s *Server) handleDeleteUndo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not undo: "+desensitizeFSError(err))
 		return
 	}
+	s.forgetDeleted(entry.Items)
 	s.rescanKinds(entry.Items)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"restored": restored,
