@@ -94,6 +94,11 @@ func NewManager(dir string, voice *Kokoro, place Placer, log *slog.Logger) *Mana
 		if j.State == "working" {
 			j.State = "waiting" // carried on after a restart
 		}
+		// Stopped by the server shutting down, before that was told apart
+		// from a real failure: carried on too.
+		if j.State == "failed" && j.Problem == "context canceled" {
+			j.State, j.Problem, j.Finished = "waiting", "", time.Time{}
+		}
 	}
 	return m
 }
@@ -212,6 +217,25 @@ func (m *Manager) Cancel(id string) bool {
 	return false
 }
 
+// Retry puts a failed book back in the queue; what it made before is kept
+// and used.
+func (m *Manager) Retry(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, j := range m.jobs {
+		if j.ID == id && j.State == "failed" {
+			j.State, j.Problem, j.Finished = "waiting", "", time.Time{}
+			m.save()
+			select {
+			case m.wake <- struct{}{}:
+			default:
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) prune() {
 	keep := m.jobs[:0]
 	for _, j := range m.jobs {
@@ -251,6 +275,13 @@ func (m *Manager) Run(ctx context.Context) {
 		cancel()
 		m.mu.Lock()
 		m.cancel, m.runID = nil, ""
+		if ctx.Err() != nil {
+			// The server is stopping, not the book failing: it stays
+			// "working", which the next start takes up where it got to.
+			m.save()
+			m.mu.Unlock()
+			return
+		}
 		if j.State == "working" {
 			j.Finished = time.Now()
 			if err != nil {

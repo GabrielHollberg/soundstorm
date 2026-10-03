@@ -247,6 +247,23 @@ func (s *Server) handleCancelVoiceJob(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "no such job")
 }
 
+// POST /api/voices/jobs/{id}/retry: try a failed one again.
+func (s *Server) handleRetryVoiceJob(w http.ResponseWriter, r *http.Request) {
+	u, ok := auth.FromContext(r.Context())
+	if !ok || s.voices == nil {
+		writeError(w, http.StatusNotFound, "no such job")
+		return
+	}
+	id := r.PathValue("id")
+	for _, j := range s.voices.Jobs() {
+		if j.ID == id && (u.IsOwner() || j.UserID == u.ID) && s.voices.Retry(id) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "no such job")
+}
+
 // PUT /api/users/{id}/make-books {"allowed": true}: the owner gives or takes it.
 func (s *Server) handleSetCanMakeBooks(w http.ResponseWriter, r *http.Request) {
 	var body struct {

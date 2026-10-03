@@ -12971,6 +12971,17 @@ async function refreshVoiceJobs() {
       });
       li.append(stop);
     }
+    if (j.state === 'failed') {
+      const again = document.createElement('button');
+      again.type = 'button';
+      again.className = 'ghost small';
+      again.textContent = 'Try again';
+      again.addEventListener('click', async () => {
+        await api(`/api/voices/jobs/${encodeURIComponent(j.id)}/retry`, { method: 'POST' });
+        refreshVoiceJobs();
+      });
+      li.append(again);
+    }
     return li;
   }));
   if (jobs.some((j) => j.state === 'waiting' || j.state === 'working')) {

@@ -444,6 +444,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("POST /api/voices/make-ebook", s.handleMakeEbook)
 	guarded.HandleFunc("GET /api/voices/jobs", s.handleVoiceJobs)
 	guarded.HandleFunc("DELETE /api/voices/jobs/{id}", s.handleCancelVoiceJob)
+	guarded.HandleFunc("POST /api/voices/jobs/{id}/retry", s.handleRetryVoiceJob)
 	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)
 
 	// The reader's endpoints take source/id/path as query parameters rather
