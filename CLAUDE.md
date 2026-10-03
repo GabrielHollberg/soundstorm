@@ -5857,6 +5857,46 @@ films and TV, books, photos - each See all opening that tab's pill. Music's
 Mixes lead with **Your favorites**: every hearted song, shuffled, and all
 of them rather than a mix's hundred.
 
+## Making an audiobook from an ebook, and an ebook from an audiobook (planned, 2026-10-03)
+
+Asked for after ElevenLabs came up: both directions, on the box, nothing
+sent out. Decided with the owner:
+
+- **Make an audiobook** in an ebook's hold menu, **Make an ebook** in an
+  audiobook's. **Only the owner may start one, unless the owner gives a person
+  permission in People** (a book ties the box up for hours).
+- **Already have the other version?** It says so ("You already have the
+  audiobook of this, narrated by ...") and offers **Make it anyway** or **Use
+  the one I have**; the matching is Read Along's (title and author).
+- **One at a time, in the background**: a queue in Settings with how far each
+  is and the time left, and a message when it is on the shelf.
+- **A made audiobook is always marked**: "AI voice" under its title, its
+  narrator the voice's name, on the Audiobooks shelf like any other. **A made
+  ebook** is marked "From the audiobook", chapters from the audiobook's
+  marks, no original formatting.
+- **Both come synced for Read Along** - SoundStorm knows which words each
+  moment of audio is (the voice's own timings one way, Whisper's word times
+  the other) - with no Storyteller step.
+- **Several versions of one book**: Read Along shows one card per book; the
+  first time a book has more than one version it asks which (audiobook:
+  narrator / AI voice; ebook: original / from the audiobook), the best guess
+  picked (a real narrator, the original ebook, a pair already synced), and
+  remembers it **per person** until changed from the card's menu (**Change
+  versions**).
+
+How: two backends, run unmodified in their own containers and provisioned like
+the rest. **Kokoro** for the voice (82M, Apache 2.0, about 50 voices, no
+cloning; `remsky/kokoro-fastapi-cpu`, a 1.5GB image) - measured on this PC with
+4 cores: chapter 1 of The Richest Man in Babylon, 2,105 words and 11m23s of
+speech, in 2m35s, 4.4 times real time, so on the ME Mini's slower cores about
+twice real time, a 10-hour book overnight. **Whisper** for the other way (MIT;
+Storyteller already runs it, base.en, about 40 minutes for a 10-hour book
+here). Considered and left: Chatterbox Turbo (MIT, clones a voice from 5-10
+seconds, beat ElevenLabs in blind tests) and Qwen3-TTS (Apache 2.0, January
+2026) both want a graphics card the box does not have; XTTS-v2 and F5-TTS are
+non-commercial. Order: Make an audiobook, then Make an ebook, then the
+version picker. Personal use of books somebody owns; nothing is shared.
+
 ## Read-along: the page follows the audiobook
 
 Asked for as pages turning by themselves with the audiobook. Matching a
