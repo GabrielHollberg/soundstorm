@@ -73,6 +73,21 @@ enum ServerAddress {
         saved = url
     }
 
+    /// The same server at a better address (its secure name, found later):
+    /// the list keeps its place and name, and the one in use follows.
+    static func moved(_ old: URL, to new: URL) {
+        var list = all
+        if let i = list.firstIndex(where: { $0.url == old }) {
+            var entry = list[i]
+            entry.url = new
+            // Already listed under the new address too: once.
+            list = list.filter { $0.url != new }
+            if let j = list.firstIndex(where: { $0.url == old }) { list[j] = entry }
+            all = list
+        }
+        if saved == old { saved = new }
+    }
+
     /// Taken off the list. If it was the one in use, there is none now.
     static func forget(_ url: URL) {
         all = all.filter { $0.url != url }

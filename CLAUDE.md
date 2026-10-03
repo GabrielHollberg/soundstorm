@@ -6874,6 +6874,19 @@ Checked in Chrome: the steps, Add people opening People, Done kept after a
 reload. Not checked: the nothing-found words on a phone (this Mac's network
 always finds the owner's server).
 
+**The Apple TV moves to the secure name by itself (2026-10-03).** Kept by a
+bare address - found before a new box had its secure name, or typed - the TV
+stayed on plain http at a number the router may change after a power cut,
+where a phone's page moves itself (`moveToSecureName`). Now, each time the
+TV checks its session (`AppModel.refreshSession`), a `secureName` offered
+that answers from the TV replaces the saved address (`ServerAddress.moved`:
+same place and name in the list), the session's cookies are copied to it,
+and the app opens there. Checked in the simulator against the owner's real
+server, read only: opened at `http://192.168.0.19:8099`, it saved
+`https://6lm2ahm6pn.home.soundstorm.dev:8099`. Not checked: staying signed
+in across the move (not signed in to the real server; the server takes the
+plain cookie's name over TLS, which is what the copy relies on).
+
 **Saved servers (2026-10-01), the first half of profiles.** The owner's
 design, after Prime Video's account-then-people: a device may know several
 servers (their own, their parents'), and later several people on each. The

@@ -48,6 +48,8 @@ final class API {
         let approveNewDevices: Bool?
         /// What the server calls itself, for the list of servers.
         let serverName: String?
+        /// The server's secure home name, offered while this is not on it.
+        let secureName: String?
     }
 
     /// Whether new devices need approval (the owner's setting), known from
