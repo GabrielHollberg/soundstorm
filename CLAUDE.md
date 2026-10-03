@@ -6091,6 +6091,24 @@ schedule despite `STORYTELLER_SYNC_CHANGELOG=false`, which only stops the one
 at start. Its secret key defaults like Immich's database password; both are
 reachable only on the compose network.
 
+**Read along as one line** (2026-10-03, the owner's design): a double tap
+on the book while it reads along switches to the book as one endless line of
+big text moving right to left with the voice - fading in at the right edge
+and out at the left, the sentence being read white, what was read dimmed -
+and a double tap goes back to the pages (`toggleLine`, `drawLine` in
+reader.js; kept on the device as `soundstorm-readalong-view`). Each frame the
+voice's place is the same share of the sentence's letters as of its time, held
+at 42% across the screen; the sentence text is read from the book's own
+chapters (`section.createDocument`, never shown, only `textContent` used),
+about twenty sentences around the one being read. The pages carry on
+following behind it. A double tap is two touches within 300ms, each under
+250ms and 12px, listened for in each chapter's document (the view's `load`)
+and on the line; a mouse's double click counts. Checked in Chrome at phone
+size on a made book: a finger's double tap into the line, the lit sentence
+moving with the voice into chapter two and to the book's last sentence, a
+double tap back to the pages. **For the Mac:** the Apple TV's reader could
+offer the same as a look (its timeline and sentence text are already there).
+
 The reader's **Highlight** button, shown only while reading along, turns
 the lit sentence off and on; off, the page still turns with the voice. The
 choice is kept on the account like the pill order. So is **audiobook speed**

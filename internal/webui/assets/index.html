@@ -955,6 +955,12 @@
     <div class="reader-body">
       <button id="reader-prev" class="page-turn" type="button" aria-label="Previous page">&lsaquo;</button>
       <div id="reader-host"></div>
+      <!-- Read along as one line: the book moving right to left with the
+           voice, the sentence being read lit (reader.js, a double tap). -->
+      <div id="reader-line" class="reader-line hidden" aria-live="off">
+        <div class="reader-line-track"></div>
+        <p class="reader-line-hint">Double tap for pages</p>
+      </div>
       <!-- PDFs go to the browser's own viewer. foliate-js cannot lay them out
            without pdf.js, and every browser already ships something better
            than we would vendor. -->

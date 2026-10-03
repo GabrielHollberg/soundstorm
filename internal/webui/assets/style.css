@@ -4207,3 +4207,28 @@ header .me-btn { border-radius: 12px; }
    header stay put (the owner's report - pulling down at the top pushed the
    tabs off the screen and back). Lists inside keep their own scrolling. */
 html, body { overscroll-behavior-y: none; }
+
+/* Read along as one line (reader.js): big text moving right to left, faded
+   at both edges, the sentence being read lit and what was read dimmed. */
+.reader-line {
+  position: absolute; inset: 0; z-index: 2; overflow: hidden;
+  background: #14181f; touch-action: manipulation;
+}
+.reader-line.hidden { display: none; }
+.reader-line-track {
+  position: absolute; top: 46%; left: 0; white-space: nowrap; will-change: transform;
+  font-size: clamp(26px, 6vw, 44px); line-height: 1.3; color: #8d96a5;
+}
+.reader-line::before {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(to right, #14181f 0, rgba(20, 24, 31, 0) 24%, rgba(20, 24, 31, 0) 76%, #14181f 100%);
+}
+.reader-line-track span { margin-right: 0.35em; transition: color 0.3s; }
+.reader-line-track span.now { color: #fff; }
+.reader-line-track span.said { color: #5c6573; }
+.reader-line-hint {
+  position: absolute; left: 0; right: 0; bottom: 18px; z-index: 2; margin: 0; text-align: center;
+  font-size: 13px; color: #8d96a5; transition: opacity 0.6s;
+}
+.reader-line-hint.gone { opacity: 0; }
+.reader-body { position: relative; }

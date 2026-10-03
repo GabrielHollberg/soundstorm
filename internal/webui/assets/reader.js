@@ -316,7 +316,10 @@ export async function open(item, options = {}) {
     // Each chapter is its own document inside the view, and a touch on the
     // text never reaches this page, so swipe-to-close listens in each one.
     view.addEventListener('load', (event) => {
-      if (event.detail && event.detail.doc) swipeToClose(event.detail.doc);
+      if (event.detail && event.detail.doc) {
+        swipeToClose(event.detail.doc);
+        onDoubleTap(event.detail.doc, toggleLine);
+      }
     });
 
     // A link out of the book opens in a new tab that cannot reach back into
@@ -425,6 +428,7 @@ function startFollowing(view, timeline, audiobook) {
   };
   view.addEventListener('relocate', follow.onRelocate);
   follow.timer = setInterval(() => tick(follow), FOLLOW_EVERY_MS);
+  if (localStorage.getItem(LINE_KEY) === 'line') startLine(follow);
   // The first page shown is wherever the voice is, not the saved place.
   follow.handsOffUntil = 0;
   keepAwake(true);
@@ -493,6 +497,7 @@ function stopFollowing() {
   renderHighlightButton(null);
   if (!follow) return;
   clearInterval(follow.timer);
+  stopLine();
   follow.view.removeEventListener('relocate', follow.onRelocate);
   unlight(follow);
   session.follow = null;
@@ -738,3 +743,178 @@ function swipeToClose(target) {
 
 // The bar and the margins around the book are this page's own.
 swipeToClose($('reader-overlay'));
+
+/* ------------------------------------------------------- read along as a line */
+
+// The second way to read along (the owner's design): the book as one endless
+// line of big text moving right to left with the voice - fading in at the
+// right edge, out at the left - with the sentence being read lit. A double
+// tap on the book switches between it and the pages; the choice is kept on
+// the device. The pages carry on following behind it, so switching back
+// lands on the right page. Each frame the voice's place is worked out as in
+// followWithinSentence - the same share of the sentence's letters as of its
+// time - and the line is moved to keep that place a little left of the
+// middle. Sentence text is read from the book's own chapters (loaded on
+// their own, never shown), around the one being read.
+const LINE_KEY = 'soundstorm-readalong-view';
+const LINE_BEFORE = 4;
+const LINE_AFTER = 14;
+const LINE_AT = 0.42; // where on the screen the voice is
+const line = { follow: null, raf: 0, texts: new Map(), docs: new Map(), first: -1, last: -1, spans: [], loading: false, lit: null };
+
+function toggleLine() {
+  const follow = session.follow;
+  if (!follow) return;
+  if (line.follow) {
+    stopLine();
+    localStorage.setItem(LINE_KEY, 'pages');
+    follow.index = -1; // turn to the sentence being read at once
+    follow.handsOffUntil = 0;
+  } else {
+    localStorage.setItem(LINE_KEY, 'line');
+    startLine(follow);
+  }
+}
+
+function startLine(follow) {
+  stopLine();
+  line.follow = follow;
+  line.texts = new Map();
+  line.docs = new Map();
+  line.first = line.last = -1;
+  line.spans = [];
+  line.lit = null;
+  const box = $('reader-line');
+  box.querySelector('.reader-line-track').replaceChildren();
+  box.classList.remove('hidden');
+  const hint = box.querySelector('.reader-line-hint');
+  hint.classList.remove('gone');
+  clearTimeout(line.hintTimer);
+  line.hintTimer = setTimeout(() => hint.classList.add('gone'), 3000);
+  const frame = () => {
+    if (line.follow !== follow) return;
+    drawLine(follow);
+    line.raf = requestAnimationFrame(frame);
+  };
+  line.raf = requestAnimationFrame(frame);
+}
+
+function stopLine() {
+  cancelAnimationFrame(line.raf);
+  line.follow = null;
+  $('reader-line').classList.add('hidden');
+}
+
+// The text of sentence i, from its chapter.
+async function lineText(follow, i) {
+  if (line.texts.has(i)) return line.texts.get(i);
+  const m = follow.timeline[i];
+  let text = '';
+  try {
+    const resolved = follow.view.resolveNavigation(m.h);
+    const section = resolved && follow.view.book.sections[resolved.index];
+    if (section && section.createDocument) {
+      if (!line.docs.has(resolved.index)) line.docs.set(resolved.index, section.createDocument());
+      const doc = await line.docs.get(resolved.index);
+      const el = resolved.anchor && resolved.anchor(doc);
+      text = ((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
+    }
+  } catch {
+    // A sentence that cannot be found shows as nothing; the next may.
+  }
+  line.texts.set(i, text);
+  return text;
+}
+
+// Lays out the sentences around i, once their text is in.
+async function fillLine(follow, i) {
+  if (line.loading) return;
+  line.loading = true;
+  try {
+    const first = Math.max(0, i - LINE_BEFORE);
+    const last = Math.min(follow.timeline.length - 1, i + LINE_AFTER);
+    const texts = [];
+    for (let k = first; k <= last; k++) texts.push(await lineText(follow, k));
+    if (line.follow !== follow) return;
+    const track = $('reader-line').querySelector('.reader-line-track');
+    line.spans = texts.map((text) => {
+      const span = document.createElement('span');
+      span.textContent = text;
+      return span;
+    });
+    track.replaceChildren(...line.spans);
+    line.first = first;
+    line.last = last;
+    line.lit = null;
+  } finally {
+    line.loading = false;
+  }
+}
+
+function drawLine(follow) {
+  const t = window.soundstormListening?.(follow.audiobook.sourceId, follow.audiobook.id);
+  if (typeof t !== 'number' || !Number.isFinite(t)) return;
+  const tl = follow.timeline;
+  let i = sentenceAt(tl, t);
+  let share = 0;
+  if (i < 0) i = 0;
+  else {
+    const m = tl[i];
+    const end = m.e > m.t ? m.e : (tl[i + 1] ? tl[i + 1].t : m.t + 3);
+    share = Math.min(1, Math.max(0, (t - m.t) / Math.max(0.1, end - m.t)));
+  }
+  // Keep a few sentences either side laid out, refilling ahead of the edge.
+  // (Never at the book's ends, where there is nothing more to lay out.)
+  const ahead = i > line.last - 6 && line.last < tl.length - 1;
+  const behind = i < line.first + 1 && line.first > 0;
+  if (line.first < 0 || ahead || behind || i < line.first || i > line.last) {
+    fillLine(follow, i);
+    if (line.first < 0 || i < line.first || i > line.last) return;
+  }
+  const span = line.spans[i - line.first];
+  if (!span) return;
+  const box = $('reader-line');
+  const track = box.querySelector('.reader-line-track');
+  const x = span.offsetLeft + share * span.offsetWidth;
+  track.style.transform = `translate3d(${Math.round(box.clientWidth * LINE_AT - x)}px, -50%, 0)`;
+  if (line.lit !== span) {
+    line.spans.forEach((s, k) => {
+      s.classList.toggle('said', k < i - line.first);
+      s.classList.toggle('now', s === span);
+    });
+    line.lit = span;
+  }
+}
+
+// A double tap: two taps in 300ms, close together, without moving. Each
+// chapter is its own document inside the view, so it is listened for in
+// each, as swipe-to-close is; a mouse's double click counts too.
+function onDoubleTap(target, action) {
+  let last = null;
+  let start = null;
+  target.addEventListener('touchstart', (event) => {
+    const t = event.touches[0];
+    start = event.touches.length === 1 ? { x: t.screenX, y: t.screenY, at: Date.now() } : null;
+  }, { passive: true });
+  target.addEventListener('touchend', (event) => {
+    const t = event.changedTouches[0];
+    if (!start || !t || Date.now() - start.at > 250 || Math.hypot(t.screenX - start.x, t.screenY - start.y) > 12) {
+      start = null;
+      return;
+    }
+    const tap = { x: t.screenX, y: t.screenY, at: Date.now() };
+    start = null;
+    if (last && tap.at - last.at < 300 && Math.hypot(tap.x - last.x, tap.y - last.y) < 40) {
+      last = null;
+      event.preventDefault();
+      action();
+      return;
+    }
+    last = tap;
+  });
+  target.addEventListener('dblclick', (event) => {
+    if (event.sourceCapabilities && event.sourceCapabilities.firesTouchEvents) return;
+    action();
+  });
+}
+onDoubleTap($('reader-line'), toggleLine);
