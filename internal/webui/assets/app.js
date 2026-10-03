@@ -1912,6 +1912,14 @@ window.__soundstormPicked = (list) => {
   const files = (list || []).map((f) => new AppFile(f));
   if (files.length) intake({ items: [], files });
 };
+// Files shared to SoundStorm from another app's Share sheet (the Android
+// app's Shared.kt): the same review as Add media, once somebody is signed
+// in. It says whether it took them, so the app asks again until it can.
+window.__soundstormShared = (list) => {
+  if (!state.me || !window.soundstormApp || !window.soundstormApp.readFile) return false;
+  window.__soundstormPicked(list);
+  return true;
+};
 
 // A file the iPhone app holds: name, size and date as a File's, and pieces
 // of it read through the app - what the page reads is a few megabytes at

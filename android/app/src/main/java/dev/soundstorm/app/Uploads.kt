@@ -79,6 +79,14 @@ object Uploads {
         }
     }
 
+    /** A file shared to SoundStorm (Shared), as a picked one is remembered. */
+    fun rememberFile(name: String, size: Long, uri: Uri) {
+        synchronized(picked) {
+            picked += Picked(uri, name, size)
+            while (picked.size > 2000) picked.removeAt(0)
+        }
+    }
+
     // ------------------------------------------------------------- the queue
 
     private fun queueFile(c: Context) = File(c.filesDir, QUEUE)
@@ -352,6 +360,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 } catch (e: SecurityException) {
                     "failed" to "the file can no longer be read"
                 }
+                // A shared file's own copy is not needed once it is there.
+                if (outcome.first == "done" || outcome.first == "skipped") Shared.forget(c, job.optString("uri"))
                 Uploads.update(c) { cur ->
                     val a = cur.optJSONArray("jobs") ?: return@update
                     for (k in 0 until a.length()) {

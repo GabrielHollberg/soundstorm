@@ -36,6 +36,7 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.Toast
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -140,6 +141,9 @@ class MainActivity : Activity() {
         if (link != null) pendingLink = link.second
         val start = link?.first ?: saved
         if (start != null) showWeb(start) else showConnect(null)
+        // Opened from the Share sheet: the files go to the page once it is up.
+        // Not again when the activity is only made again (a rotation).
+        if (savedInstanceState == null) takeShare(intent)
         // Photo backup's jobs, if it is on: kept up to date with its options.
         if (!isTv) PhotoBackup.schedule(applicationContext)
     }
@@ -571,12 +575,55 @@ class MainActivity : Activity() {
         return code.takeIf { it.length == 6 && (fromLink != null || raw.trim().length <= 9) }
     }
 
+    /** Files shared to SoundStorm, waiting for the page to take them. */
+    private var pendingShare: org.json.JSONArray? = null
+
+    /**
+     * Files from the Share sheet: copied into the app (slow for a film, so not
+     * on the main thread) and handed to the page, which shows its review as
+     * for Add media. Answers whether the intent was a share.
+     */
+    private fun takeShare(intent: Intent?): Boolean {
+        if (isTv) return false
+        val uris = Shared.urisOf(intent)
+        if (uris.isEmpty()) return false
+        Toast.makeText(this, if (uris.size == 1) "Getting the file ready..." else "Getting ${uris.size} files ready...", Toast.LENGTH_SHORT).show()
+        val c = applicationContext
+        Thread {
+            val list = Shared.receive(c, uris, intent?.type)
+            runOnUiThread {
+                pendingShare = list
+                offerShare(0)
+            }
+        }.start()
+        return true
+    }
+
+    /**
+     * The page takes shared files once somebody is signed in; until then (it
+     * is loading, or asking for a password) it is asked again, for a few
+     * minutes.
+     */
+    private fun offerShare(tries: Int) {
+        val list = pendingShare ?: return
+        val view = webView
+        if (view == null) {
+            if (tries < 120) content.postDelayed({ offerShare(tries + 1) }, 1500)
+            return
+        }
+        view.evaluateJavascript("(typeof window.__soundstormShared === 'function' && window.__soundstormShared($list)) === true") { took ->
+            if (took == "true") pendingShare = null
+            else if (tries < 120) content.postDelayed({ offerShare(tries + 1) }, 1500)
+        }
+    }
+
     /** A TV's sign-in code waiting for the page to load (soundstorm://link). */
     private var pendingLink: String? = null
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (takeShare(intent)) return
         val link = tvLink(intent) ?: return
         val view = webView
         if (view != null && server?.let(ServerAddress::origin) == ServerAddress.origin(link.first)) {
@@ -674,6 +721,21 @@ class MainActivity : Activity() {
             "scanCode" -> scanTvCode()
             "uploads" -> uploads(message.optString("cmd"), message.optJSONObject("data") ?: JSONObject())
             "remoteVolume" -> remoteVolume = message.optBoolean("on")
+            // A piece of a file shared to SoundStorm, for the page (Shared).
+            "readFile" -> {
+                val req = message.optLong("req")
+                val id = message.optString("id")
+                val from = message.optLong("from")
+                val to = message.optLong("to")
+                Thread {
+                    val b64 = Shared.read(applicationContext, id, from, to)
+                    runOnUiThread {
+                        webView?.evaluateJavascript(
+                            "window.__soundstormFileData && window.__soundstormFileData($req, " +
+                                (b64?.let { "\"" + it + "\"" } ?: "null") + ")", null)
+                    }
+                }.start()
+            }
             // A playback report: what the native player saw (PlayerLog).
             "playerLog" -> webView?.evaluateJavascript(
                 "window.__soundstormPlayerLog && window.__soundstormPlayerLog(" +

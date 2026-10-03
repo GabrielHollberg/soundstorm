@@ -48,6 +48,9 @@ object PageScript {
   // Files added from this phone, sent by the app in the background: answered
   // through window.__soundstormUploads (Uploads).
   window.soundstormApp.uploads = /SoundStormTV/.test(navigator.userAgent) ? undefined : (cmd, data) => post({ type: 'uploads', cmd, data: data || {} });
+  // A piece of a file shared to SoundStorm from another app (Shared.kt),
+  // answered through window.__soundstormFileData, as the iPhone app's are.
+  window.soundstormApp.readFile = (req, id, from, to) => post({ type: 'readFile', req, id, from, to });
   window.webkit = window.webkit || {};
   window.webkit.messageHandlers = window.webkit.messageHandlers || {};
   window.webkit.messageHandlers.soundstorm = { postMessage: post };

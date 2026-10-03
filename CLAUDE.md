@@ -534,6 +534,23 @@ file going up go (the request aborted; the server keeps nothing of it) and
 sends no more; what arrived stays, and the summary counts the rest as not
 sent. Checked at phone size with three files on a slowed upload.
 
+**Share > SoundStorm adds to the library** (Android 0.33, `Shared.kt`, the
+owner's asking): the app is in the system's Share sheet for audio, video,
+pictures, EPUB, PDF and zips. What is shared is copied into the app's own
+storage (a share only lends a file while the app is open, and it goes up in
+the background after), then handed to the page as AppFiles - the same
+`window.__soundstormPicked` the iPhone app's picker uses, through
+`window.__soundstormShared`, which waits until somebody is signed in - so it
+gets the same review as Add media, the page reading the little it needs
+through `soundstormApp.readFile`, and Add hands it to the background sender.
+A copy is deleted once sent, or after a week. Names come from the provider's
+display name, asked for by column - asked for everything, the media store
+answered nothing and the file was named "24" - with an extension from its
+type when a name has none. Checked on the emulator from the Files app's
+Share: SoundStorm in the sheet, the review ("-> Ebooks"), added in the
+background. **For the Mac:** the iPhone wants a Share extension doing the
+same (Universal Links aside, see the list at the top).
+
 **In the Android app the app sends them, in the background** (0.30,
 `Uploads.kt`, the owner's asking: files stopped when the app was left). The
 file picker is now the documents picker (`ACTION_OPEN_DOCUMENT`), whose
