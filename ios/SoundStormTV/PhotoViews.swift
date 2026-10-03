@@ -24,7 +24,7 @@ struct PhotosView: View {
                 if !photos.isEmpty {
                     Text("All photos").font(.title3).padding(.leading, 20)
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 40) {
+                LazyVGrid(columns: Theme.grid, spacing: 40) {
                     ForEach(photos, id: \.key) { item in
                         Thumb(item: item) { open(item, in: photos) }
                             .onAppear { if item.key == photos.last?.key { Task { await more() } } }
@@ -77,14 +77,14 @@ private struct Thumb: View {
     var body: some View {
         Button(action: action) {
             Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 400))
-                .frame(width: 270, height: 270)
+                .frame(width: Theme.card, height: Theme.card)
                 .overlay(alignment: .bottomTrailing) {
                     if item.isClip {
                         Image(systemName: "play.circle.fill").font(.title).padding(12).shadow(radius: 6)
                     }
                 }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(CardButton())
     }
 }
 

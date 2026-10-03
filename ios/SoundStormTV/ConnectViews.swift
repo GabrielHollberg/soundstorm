@@ -517,7 +517,7 @@ struct ProfilesView: View {
                 HStack(spacing: 60) {
                     ForEach(people) { person in
                         Button { pick(person) } label: { tile(person) }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(FlatButton())
                     }
                 }
                 if let message {
@@ -549,6 +549,7 @@ struct ProfilesView: View {
     private func tile(_ person: API.Profile) -> some View {
         VStack(spacing: 14) {
             Avatar(name: person.name, picture: person.picture, size: 180)
+                .ring(radius: 98, width: 8, inset: -8)
             Text(person.name)
             Text(person.needs == "pin" ? "PIN" : person.needs == "password" ? "Password" : " ")
                 .font(.caption)

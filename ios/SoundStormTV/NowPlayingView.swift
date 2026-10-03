@@ -45,7 +45,7 @@ struct NowPlayingView: View {
                     .ignoresSafeArea()
             } else {
                 // The cover, blurred and darkened, fills the screen behind.
-                Cover(url: art)
+                Cover(url: art, plain: true)
                     .scaleEffect(1.3)
                     .blur(radius: 80)
                     .overlay(Color.black.opacity(0.55))
@@ -73,7 +73,7 @@ struct NowPlayingView: View {
                             .frame(width: 560, height: 560)
                             .shadow(color: .black.opacity(0.6), radius: 40, y: 20)
                     } else {
-                        Cover(url: art)
+                        Cover(url: art, plain: true)
                             .frame(width: 560, height: 560)
                             .shadow(color: .black.opacity(0.6), radius: 40, y: 20)
                     }

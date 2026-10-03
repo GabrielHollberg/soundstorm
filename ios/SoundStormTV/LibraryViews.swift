@@ -8,7 +8,8 @@ struct LibraryView: View {
     @Environment(API.self) private var api
     @Environment(Player.self) private var player
     @State private var tab = Self.firstTab
-    @State private var meIcon: UIImage?
+    @Namespace private var pageFocus
+    @State private var frameReady = false
 
     private static var firstTab: String {
         #if DEBUG
@@ -20,51 +21,49 @@ struct LibraryView: View {
         return "home"
     }
 
+    /// The page the side bar has chosen.
+    @ViewBuilder private var page: some View {
+        switch tab {
+        case "music": MusicTab()
+        case "watch": WatchTab()
+        case "books": BooksTab()
+        case "photos": PhotosTab()
+        case "search": NavigationStack { SearchView().libraryDestinations() }
+        case "settings": SettingsView()
+        default: HomeTab()
+        }
+    }
+
     var body: some View {
         @Bindable var model = model
-        TabView(selection: $tab) {
-            // Who is watching, at the head of the side bar: their circle,
-            // opening "Who's listening?" to switch (the page's circle at the
-            // top right). A side bar entry shows only an image, so the circle
-            // is drawn into one.
-            if let user = api.user {
-                Tab(value: "me") {
-                    Color.clear.onAppear {
-                        tab = "home"
-                        Task { await model.showProfiles() }
-                    }
-                } label: {
-                    Label {
-                        Text(user.name)
-                    } icon: {
-                        if let meIcon { Image(uiImage: meIcon).renderingMode(.original) }
-                    }
-                }
+        HStack(spacing: 0) {
+            // Not reachable for the first moment, so the remote starts on the
+            // page, never on the side bar or the search box (the page's rule).
+            SideBar(tab: $tab)
+                .disabled(!frameReady)
+            VStack(spacing: 0) {
+                Header(tab: $tab)
+                    .disabled(!frameReady)
+                page
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .focusSection()
             }
-            if let song = player.current {
-                Tab(value: "playing") {
-                    // Choosing it opens Now Playing; the side bar keeps the
-                    // page that was showing behind it.
-                    Color.clear.onAppear {
-                        model.showingNowPlaying = true
-                        tab = "home"
-                    }
-                } label: {
-                    Label(song.title, systemImage: player.isPlaying ? "waveform" : "pause.fill")
-                }
-            }
-            Tab("Home", systemImage: "house", value: "home") { HomeTab() }
-            Tab("Music", systemImage: "music.note", value: "music") { MusicTab() }
-            Tab("Watch", systemImage: "film", value: "watch") { WatchTab() }
-            Tab("Books", systemImage: "headphones", value: "books") { BooksTab() }
-            Tab("Photos", systemImage: "photo.on.rectangle", value: "photos") { PhotosTab() }
-            Tab("Search", systemImage: "magnifyingglass", value: "search") { SearchView() }
-            Tab("Settings", systemImage: "gearshape", value: "settings") { SettingsView() }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .task(id: api.user?.picture) { meIcon = await AvatarImage.make(api: api, size: 44) }
+        .background(Theme.bg)
+        // The page's own margins, not tvOS's: the Google TV look.
+        .ignoresSafeArea()
+        .focusScope(pageFocus)
+        .environment(\.pageFocus, pageFocus)
+        .task {
+            try? await Task.sleep(for: .milliseconds(800))
+            frameReady = true
+        }
         .task { await model.loadFavorites() }
         .task { model.pills = await api.pills() }
+        .task { model.shelfFiles = try? await api.shelfFiles() }
+        .onChange(of: model.requestedTab) { _, t in
+            if let t { tab = t; model.requestedTab = nil }
+        }
         .task { await model.loadLook() }
         #if DEBUG
         .modifier(DebugAutostation())
@@ -94,51 +93,92 @@ struct HomeView: View {
     @State private var carryOn: [Item] = []
     @State private var favorites: [Item] = []
     @State private var recent: [Item] = []
-    @State private var mixes: [API.Mix] = []
-    @State private var albums: [Album] = []
+    @State private var home: API.Home?
+    @State private var loaded = false
     @State private var failed: String?
 
+    static let shelfTitles = ["video": "New films", "tv": "New TV", "audiobook": "New audiobooks",
+                              "ebook": "New books", "document": "New documents", "picture": "New photos"]
+    static let shelfOpens = ["video": ("watch", "video"), "tv": ("watch", "tv"), "audiobook": ("books", "audiobook"),
+                             "ebook": ("books", "ebook"), "document": ("books", "document"), "picture": ("photos", "picture")]
+    static let favoriteRows: [(title: String, kinds: [String], tab: String, category: String)] = [
+        ("Favorite songs", ["music"], "music", "favorites"),
+        ("Favorite films and TV", ["video", "tv"], "watch", "fav-watch"),
+        ("Favorite books", ["audiobook", "ebook", "document"], "books", "fav-books"),
+        ("Favorite photos", ["picture"], "photos", "fav-photos"),
+    ]
+
+    /// The page's Home on a TV: one-press music across the top, then what
+    /// you were part way through and just playing, what is new on every
+    /// shelf, then your favorites - each row with See all.
     var body: some View {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 50) {
-                    if let failed { Text(failed).foregroundStyle(.secondary) }
-                    if !carryOn.isEmpty {
-                        Row(title: "Continue") { ForEach(carryOn, id: \.key) { PosterCard(item: $0) } }
-                    }
-                    if !favorites.isEmpty {
-                        Row(title: "Favorites") {
-                            ForEach(Array(favorites.enumerated()), id: \.element.key) { i, song in
-                                SongCard(song: song, list: favorites, index: i)
-                            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 44) {
+                if model.has("music") {
+                    QuickPlay(hasFavorites: favorites.contains { $0.kind == "music" })
+                }
+                if let failed { Text(failed).foregroundStyle(Theme.muted).padding(.horizontal, Theme.page) }
+                if !carryOn.isEmpty {
+                    Row(title: "Continue") {
+                        ForEach(Array(carryOn.enumerated()), id: \.element.key) { i, item in
+                            ItemCard(item: item, list: carryOn, index: i, poster: false)
                         }
-                    }
-                    if !recent.isEmpty {
-                        Row(title: "Recently played") {
-                            ForEach(Array(recent.enumerated()), id: \.element.key) { i, song in
-                                SongCard(song: song, list: recent, index: i)
-                            }
-                        }
-                    }
-                    if !mixes.isEmpty {
-                        Row(title: "Mixes") { ForEach(mixes) { MixCard(mix: $0) } }
-                    }
-                    if !albums.isEmpty {
-                        Row(title: "Albums") { ForEach(albums) { AlbumCard(album: $0) } }
                     }
                 }
-                .padding(.vertical, 40)
+                if !recent.isEmpty {
+                    Row(title: "Recently played", seeAll: { model.open(tab: "music", category: "mixes") }) {
+                        ForEach(Array(recent.prefix(12).enumerated()), id: \.element.key) { i, song in
+                            SongCard(song: song, list: recent, index: i)
+                        }
+                    }
+                }
+                if let albums = home?.albums, !albums.isEmpty {
+                    Row(title: "New music", seeAll: { model.open(tab: "music", category: "albums") }) {
+                        ForEach(albums) { AlbumCard(album: $0) }
+                    }
+                }
+                ForEach(home?.shelves ?? [], id: \.kind) { shelf in
+                    if !shelf.items.isEmpty {
+                        let opens = Self.shelfOpens[shelf.kind]
+                        Row(title: Self.shelfTitles[shelf.kind] ?? "New",
+                            seeAll: opens.map { o in { model.open(tab: o.0, category: o.1) } }) {
+                            ForEach(Array(shelf.items.enumerated()), id: \.element.key) { i, item in
+                                ItemCard(item: item, list: shelf.items, index: i, poster: false)
+                            }
+                        }
+                    }
+                }
+                ForEach(Self.favoriteRows, id: \.title) { row in
+                    let list = Array(favorites.filter { row.kinds.contains($0.kind) }.prefix(12))
+                    if !list.isEmpty {
+                        Row(title: row.title, seeAll: { model.open(tab: row.tab, category: row.category) }) {
+                            ForEach(Array(list.enumerated()), id: \.element.key) { i, item in
+                                ItemCard(item: item, list: list, index: i, poster: false)
+                            }
+                        }
+                    }
+                }
+                if loaded && failed == nil && carryOn.isEmpty && recent.isEmpty && favorites.isEmpty
+                    && (home?.albums.isEmpty ?? true) && (home?.shelves.allSatisfy { $0.items.isEmpty } ?? true) {
+                    Text("Nothing new lately.")
+                        .font(.system(size: 30))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.horizontal, Theme.page)
+                }
             }
+            .padding(.top, 8)
+            .padding(.bottom, 60)
+        }
+        .scrollClipDisabled()
         .task {
             do {
-                async let home = api.home()
+                async let homeAnswer = api.home()
                 async let played = api.recentlyPlayed()
                 async let favs = api.favorites()
-                async let mix = api.mixes()
                 async let going = api.continueWatching()
-                albums = try await home.albums
+                home = try await homeAnswer
                 recent = (try? await played) ?? []
-                favorites = ((try? await favs) ?? []).filter { $0.kind == "music" }
-                mixes = (try? await mix) ?? []
+                favorites = (try? await favs) ?? []
                 carryOn = ((try? await going) ?? []).filter { $0.isVideo || $0.kind == "audiobook" }
                 #if DEBUG
                 // For the simulator, which has no remote to press play with:
@@ -150,7 +190,61 @@ struct HomeView: View {
             } catch {
                 failed = error.localizedDescription
             }
+            loaded = true
         }
+    }
+}
+
+/// Home's big buttons, the page's homeQuickPlay: music with one press -
+/// Shuffle all music (lit, and where the remote starts), Favorite songs when
+/// there are any, Music radio, New music.
+struct QuickPlay: View {
+    let hasFavorites: Bool
+    @Environment(API.self) private var api
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 20) {
+            button("Shuffle all music", icon: "shuffle", primary: true) {
+                await model.tune(API.Station(mode: "shuffle", seed: nil, title: "Shuffle all music",
+                                             subtitle: nil, covers: nil, sourceId: ""))
+            }
+            .pageStartsHere()
+            if hasFavorites {
+                button("Favorite songs", icon: "heart", primary: false) {
+                    if let songs = try? await api.mix("favorites"), !songs.isEmpty { model.play(songs) }
+                }
+            }
+            button("Music radio", icon: "radio", primary: false) {
+                await model.tune(API.Station(mode: "library", seed: nil, title: "Library radio",
+                                             subtitle: nil, covers: nil, sourceId: ""))
+            }
+            button("New music", icon: "sparkle", primary: false) {
+                if let songs = try? await api.mix("recently-added"), !songs.isEmpty { model.play(songs) }
+            }
+        }
+        .padding(.horizontal, Theme.page)
+        .padding(.top, 20)
+        .focusSection()
+    }
+
+    private func button(_ label: String, icon: String, primary: Bool, run: @escaping () async -> Void) -> some View {
+        Button { Task { await run() } } label: {
+            HStack(spacing: 24) {
+                Image("Icons/" + icon)
+                    .resizable()
+                    .frame(width: 44, height: 44)
+                Text(label)
+                    .font(.system(size: 32, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 36)
+            .frame(width: 404, height: 102, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 28).fill(primary ? Theme.accent : Theme.quick))
+            .ring(radius: 36, width: 8, inset: -8)
+        }
+        .buttonStyle(FlatButton())
     }
 }
 
@@ -165,7 +259,7 @@ struct ArtistView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 40) {
                 Text(artist.name).font(.title2).padding(.leading, 20)
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+                LazyVGrid(columns: Theme.grid, spacing: 70) {
                     ForEach(albums) { AlbumCard(album: $0) }
                 }
             }
@@ -301,15 +395,41 @@ struct SettingsView: View {
 
 struct Row<Content: View>: View {
     let title: String
+    var seeAll: (() -> Void)? = nil
     @ViewBuilder let content: Content
 
+    init(title: String, seeAll: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.seeAll = seeAll
+        self.content = content()
+    }
+
+    /// The page's Home row: its name in bold on the left, See all in the
+    /// accent on the right, and the covers in a strip under them.
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text(title).font(.title3).padding(.leading, 20)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                Spacer()
+                if let seeAll {
+                    Button(action: seeAll) {
+                        Text("See all")
+                            .font(.system(size: 30, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .ring(radius: 12, width: 4)
+                    }
+                    .buttonStyle(FlatButton())
+                }
+            }
+            .padding(.horizontal, Theme.page)
             ScrollView(.horizontal) {
-                LazyHStack(spacing: 50) { content }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 30) // room for the focused card to grow
+                LazyHStack(alignment: .top, spacing: 32) { content }
+                    .padding(.horizontal, Theme.page)
+                    .padding(.vertical, 28) // room for the outline and the focused card's growth
             }
             .scrollClipDisabled()
         }
@@ -318,15 +438,25 @@ struct Row<Content: View>: View {
 
 struct Cover: View {
     let url: URL?
+    /// Now Playing's covers keep the look they had (the owner: keep the
+    /// animations as they are); everywhere else a card is the page's.
+    var plain = false
 
     var body: some View {
+        let radius: CGFloat = plain ? 12 : Theme.cardRadius
         SafeImage(url: url) { image in
             image.resizable().scaledToFill()
         } placeholder: {
-            Rectangle().fill(.white.opacity(0.06))
-                .overlay(Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary))
+            Rectangle().fill(plain ? Color.white.opacity(0.06) : Theme.surface2)
+                .overlay(Image(systemName: "music.note").font(plain ? .largeTitle : .system(size: 64))
+                    .foregroundStyle(plain ? Color.secondary : Theme.muted))
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: radius))
+        .overlay {
+            if !plain {
+                RoundedRectangle(cornerRadius: radius).strokeBorder(Theme.border, lineWidth: 2)
+            }
+        }
     }
 }
 
@@ -337,18 +467,11 @@ struct AlbumCard: View {
     var body: some View {
         NavigationLink(value: album) {
             Cover(url: api.artURL(source: album.sourceId, artId: album.artId))
-                .frame(width: 300, height: 300)
+                .frame(width: Theme.card, height: Theme.card)
         }
-        .buttonStyle(.borderless)
-        .overlay(alignment: .bottom) {
-            VStack(spacing: 4) {
-                Text(album.title).lineLimit(1)
-                Text(album.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .frame(width: 300)
-            .offset(y: 70)
-        }
-        .padding(.bottom, 70)
+        .buttonStyle(CardButton())
+        .overlay(alignment: .bottom) { CardTitle(title: album.title, subtitle: album.artist) }
+        .padding(.bottom, CardTitle.room)
     }
 }
 
@@ -368,14 +491,14 @@ struct Collage: View {
                     GridRow { cell(urls[0]); cell(urls[1]) }
                     GridRow { cell(urls[2]); cell(urls[3]) }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             }
         }
     }
 
     private func cell(_ url: URL) -> some View {
-        SafeImage(url: url, maxPixels: 300) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.06) }
-            .frame(width: 150, height: 150).clipped()
+        SafeImage(url: url, maxPixels: 300) { $0.resizable().scaledToFill() } placeholder: { Theme.surface2 }
+            .frame(width: Theme.card / 2, height: Theme.card / 2).clipped()
     }
 }
 
@@ -388,11 +511,11 @@ struct MixCard: View {
         Button {
             Task { if let songs = try? await api.mix(mix.id), !songs.isEmpty { model.play(songs) } }
         } label: {
-            Collage(source: mix.sourceId, covers: mix.covers ?? []).frame(width: 300, height: 300)
+            Collage(source: mix.sourceId, covers: mix.covers ?? []).frame(width: Theme.card, height: Theme.card)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(CardButton())
         .overlay(alignment: .bottom) { CardTitle(title: mix.title, subtitle: mix.subtitle) }
-        .padding(.bottom, 70)
+        .padding(.bottom, CardTitle.room)
     }
 }
 
@@ -402,11 +525,11 @@ struct StationCard: View {
 
     var body: some View {
         Button { Task { await model.tune(station) } } label: {
-            Collage(source: station.sourceId, covers: station.covers ?? []).frame(width: 300, height: 300)
+            Collage(source: station.sourceId, covers: station.covers ?? []).frame(width: Theme.card, height: Theme.card)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(CardButton())
         .overlay(alignment: .bottom) { CardTitle(title: station.title, subtitle: station.subtitle) }
-        .padding(.bottom, 70)
+        .padding(.bottom, CardTitle.room)
     }
 }
 
@@ -417,28 +540,37 @@ struct ArtistCard: View {
     var body: some View {
         NavigationLink(value: artist) {
             Cover(url: api.artURL(source: artist.sourceId, artId: artist.artId))
-                .frame(width: 260, height: 260)
+                .frame(width: Theme.card, height: Theme.card)
                 .clipShape(Circle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(CardButton(radius: Theme.card / 2))
         .overlay(alignment: .bottom) { CardTitle(title: artist.name, subtitle: nil) }
-        .padding(.bottom, 70)
+        .padding(.bottom, CardTitle.room)
     }
 }
 
 struct CardTitle: View {
     let title: String
     let subtitle: String?
+    var width: CGFloat = Theme.card
+    /// The room a card keeps under its cover for these two lines.
+    static let room: CGFloat = 84
 
+    /// Under a cover, as the page has it: the name, then who in grey, both
+    /// from the cover's left edge.
     var body: some View {
-        VStack(spacing: 4) {
-            Text(title).lineLimit(1)
-            if let subtitle, !subtitle.isEmpty {
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            Text(subtitle ?? " ")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(Theme.muted)
+                .lineLimit(1)
         }
-        .frame(width: 300)
-        .offset(y: 70)
+        .frame(width: width, alignment: .leading)
+        .offset(y: CardTitle.room)
     }
 }
 
@@ -450,13 +582,11 @@ struct PlaylistCard: View {
         let cover = playlist.covers?.first
         NavigationLink(value: playlist) {
             Cover(url: cover.flatMap { api.artURL(source: $0.sourceId, artId: $0.artId) })
-                .frame(width: 300, height: 300)
+                .frame(width: Theme.card, height: Theme.card)
         }
-        .buttonStyle(.borderless)
-        .overlay(alignment: .bottom) {
-            Text(playlist.name).lineLimit(1).frame(width: 300).offset(y: 50)
-        }
-        .padding(.bottom, 50)
+        .buttonStyle(CardButton())
+        .overlay(alignment: .bottom) { CardTitle(title: playlist.name, subtitle: "\(playlist.count) songs") }
+        .padding(.bottom, CardTitle.room)
     }
 }
 
@@ -470,18 +600,11 @@ struct SongCard: View {
     var body: some View {
         Button { model.play(list, from: index) } label: {
             Cover(url: api.artURL(source: song.sourceId, artId: song.artId))
-                .frame(width: 300, height: 300)
+                .frame(width: Theme.card, height: Theme.card)
         }
-        .buttonStyle(.borderless)
-        .overlay(alignment: .bottom) {
-            VStack(spacing: 4) {
-                Text(song.title).lineLimit(1)
-                Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .frame(width: 300)
-            .offset(y: 70)
-        }
-        .padding(.bottom, 70)
+        .buttonStyle(CardButton())
+        .overlay(alignment: .bottom) { CardTitle(title: song.title, subtitle: song.artist) }
+        .padding(.bottom, CardTitle.room)
     }
 }
 
@@ -507,15 +630,15 @@ struct BooksView: View {
             if loaded && books.isEmpty {
                 Text("No audiobooks yet.").foregroundStyle(.secondary).padding(40)
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(books, id: \.key) { book in
                     Button { Task { await model.playBook(book) } } label: {
                         Cover(url: api.artURL(source: book.sourceId, artId: book.artId))
-                            .frame(width: 300, height: 300)
+                            .frame(width: Theme.card, height: Theme.card)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(CardButton())
                     .overlay(alignment: .bottom) { CardTitle(title: book.title, subtitle: book.artist) }
-                    .padding(.bottom, 70)
+                    .padding(.bottom, CardTitle.room)
                 }
             }
             .padding(.vertical, 40)

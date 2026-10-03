@@ -53,7 +53,7 @@ struct CategoryTab<Content: View>: View {
     }()
 
     var body: some View {
-        let shown = Categories.arranged(row, all, model.pills)
+        let shown = Categories.arranged(row, all, model.pills).filter { row == "home" || model.has(category: $0.value) }
         let current = chosen.flatMap { c in shown.contains { $0.value == c } ? c : nil } ?? shown.first?.value ?? ""
         NavigationStack {
             VStack(alignment: .leading, spacing: 0) {
@@ -65,6 +65,12 @@ struct CategoryTab<Content: View>: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .libraryDestinations()
+        }
+        .onAppear {
+            if let c = model.openCategory.removeValue(forKey: row) { chosen = c }
+        }
+        .onChange(of: model.openCategory[row]) { _, c in
+            if let c { chosen = c; model.openCategory[row] = nil }
         }
     }
 }
@@ -86,11 +92,8 @@ struct HomeTab: View {
     @Environment(API.self) private var api
 
     var body: some View {
-        CategoryTab(row: "home", all: Categories.home) { c in
-            switch c {
-            case "favorites": ItemsPage { try await api.favorites().filter(\.playsHere) }
-            default: HomeView()
-            }
+        NavigationStack {
+            HomeView().libraryDestinations()
         }
     }
 }
@@ -239,20 +242,20 @@ struct GroupsPage: View {
     var body: some View {
         ScrollView {
             if loaded && groups.isEmpty { Nothing() }
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 70) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(groups) { g in
                     NavigationLink(value: g) {
                         Cover(url: g.coverSource.flatMap { api.artURL(source: $0, artId: g.coverArt) })
-                            .frame(width: 270, height: 270)
+                            .frame(width: Theme.card, height: Theme.card)
                             .clipShape(round ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 12)))
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(CardButton())
                     .overlay(alignment: .bottom) {
                         CardTitle(title: g.name.isEmpty ? "Add a name on the web" : g.name,
                                   subtitle: g.subtitle ?? g.count.map { "\($0)" })
                             .frame(width: 270)
                     }
-                    .padding(.bottom, 70)
+                    .padding(.bottom, CardTitle.room)
                 }
             }
             .padding(.vertical, 40)
@@ -289,7 +292,7 @@ struct MixesPage: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(mixes) { MixCard(mix: $0) }
             }
             .padding(.vertical, 40)
@@ -326,7 +329,7 @@ struct PlaylistsPage: View {
     var body: some View {
         ScrollView {
             if loaded && playlists.isEmpty { Nothing() }
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(playlists) { PlaylistCard(playlist: $0) }
             }
             .padding(.vertical, 40)
@@ -341,7 +344,7 @@ struct AlbumsPage: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(300), spacing: 50), count: 5), spacing: 60) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(albums) { AlbumCard(album: $0) }
             }
             .padding(.vertical, 40)
@@ -356,7 +359,7 @@ struct ArtistsPage: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 70) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(artists) { ArtistCard(artist: $0) }
             }
             .padding(.vertical, 40)
@@ -377,7 +380,7 @@ struct ItemGrid: View {
     var body: some View {
         // Films and shows are posters; the rest square.
         let posters = !items.isEmpty && items.allSatisfy { $0.kind == "video" || $0.kind == "tv" }
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(posters ? 240 : 270), spacing: 40), count: 6), spacing: 70) {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(posters ? 240 : Theme.card), spacing: 40), count: posters ? 6 : 4), spacing: 70) {
             ForEach(Array(items.enumerated()), id: \.element.key) { i, item in
                 ItemCard(item: item, list: items, index: i, poster: posters)
                     .onAppear { onShow(item) }
@@ -396,7 +399,7 @@ struct ItemCard: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let size = poster ? CGSize(width: 240, height: 360) : CGSize(width: 270, height: 270)
+        let size = poster ? CGSize(width: 240, height: 360) : CGSize(width: Theme.card, height: Theme.card)
         let art = Cover(url: api.artURL(source: item.sourceId, artId: item.artId, size: 500))
             .frame(width: size.width, height: size.height)
         Group {
@@ -406,11 +409,11 @@ struct ItemCard: View {
                 Button(action: open) { art }
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(CardButton())
         .overlay(alignment: .bottom) {
-            CardTitle(title: item.title, subtitle: item.kind == "picture" ? nil : item.artist).frame(width: size.width)
+            CardTitle(title: item.title, subtitle: item.kind == "picture" ? nil : item.cardLine).frame(width: size.width)
         }
-        .padding(.bottom, 70)
+        .padding(.bottom, CardTitle.room)
     }
 
     private func open() {
@@ -478,17 +481,17 @@ struct PairsPage: View {
     var body: some View {
         ScrollView {
             if loaded && pairs.isEmpty { Nothing() }
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(270), spacing: 40), count: 6), spacing: 70) {
+            LazyVGrid(columns: Theme.grid, spacing: 70) {
                 ForEach(pairs) { pair in
                     Button { Task { await model.readAlong(pair) } } label: {
                         Cover(url: api.artURL(source: pair.ebook.sourceId, artId: pair.ebook.artId ?? pair.audiobook.artId, size: 500))
-                            .frame(width: 270, height: 270)
+                            .frame(width: Theme.card, height: Theme.card)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(CardButton())
                     .overlay(alignment: .bottom) {
                         CardTitle(title: pair.ebook.title, subtitle: syncLine(pair)).frame(width: 270)
                     }
-                    .padding(.bottom, 70)
+                    .padding(.bottom, CardTitle.room)
                 }
             }
             .padding(.vertical, 40)
