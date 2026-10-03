@@ -4198,3 +4198,5 @@ header { --head-btn: 42px; }
    initial in white (the person's colour was loud beside it). A picture still
    fills it. Elsewhere - Who's listening, the menu - the colours stay. */
 header .me-btn { background-color: var(--surface-2) !important; color: var(--text); font-weight: 700; }
+/* A rounded square, the corners Play on's, so the two read as a pair. */
+header .me-btn { border-radius: 12px; }
