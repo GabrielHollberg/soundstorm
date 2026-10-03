@@ -3598,13 +3598,10 @@ html.tv #np-speed-menu { padding: 10px; scroll-padding-block: 14px; }
 @media (hover: hover) { .np-chapter:hover { background: rgba(255, 255, 255, 0.08); } }
 
 /* Home's one-tap music: a row of slim pills, Shuffle all first and in the
-   accent, scrolling sideways when they do not fit (they were big tiles, and
-   read as clunky). */
+   accent (they were big tiles, and read as clunky). */
 .home-quick {
-  display: flex; gap: 8px; margin: 2px 0 18px; padding: 0 20px;
-  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 18px; padding: 0 20px;
 }
-.home-quick::-webkit-scrollbar { display: none; }
 .home-quick-btn {
   display: inline-flex; align-items: center; gap: 7px; flex: none;
   height: 38px; padding: 0 15px 0 12px; border: 0; border-radius: 999px;
@@ -3618,7 +3615,15 @@ html.tv #np-speed-menu { padding: 10px; scroll-padding-block: 14px; }
 .home-quick-btn:active { transform: scale(0.97); }
 .home-quick-btn:disabled { opacity: 0.6; }
 @media (hover: hover) { .home-quick-btn:not(.primary):hover { background: rgba(255, 255, 255, 0.13); } }
-@media (max-width: 620px) { .home-quick { padding: 0 14px; } }
+/* A phone: two columns of the same slim pills, all in sight - nothing to
+   swipe to (the owner's asking). An odd number puts Shuffle all across the
+   top. */
+@media (max-width: 620px) {
+  .home-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 14px; overflow: visible; }
+  .home-quick-btn { justify-content: center; min-width: 0; padding: 0 10px; }
+  .home-quick-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .home-quick-btn.primary:nth-last-child(odd) { grid-column: 1 / -1; }
+}
 
 /* Music's play button is a living orb (playOrb) instead of a white disc with
    a triangle: the canvas is larger than the button so its glow spills
