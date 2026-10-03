@@ -94,6 +94,11 @@ type User struct {
 	// it.
 	MustChangePassword bool `json:"mustChangePassword,omitempty"`
 
+	// CanMakeBooks lets a member make an audiobook from an ebook or an ebook
+	// from an audiobook (voices.go): the owner always may, and gives it to
+	// others, as one ties the box up for hours.
+	CanMakeBooks bool `json:"canMakeBooks,omitempty"`
+
 	Salt       []byte    `json:"salt"`
 	Hash       []byte    `json:"hash"`
 	Iterations int       `json:"iterations"`
@@ -910,6 +915,19 @@ func (s *Store) SetPhotoLimitGB(id string, gb *int) error {
 		return fmt.Errorf("no such account")
 	}
 	u.PhotoLimitGB = gb
+	s.d.Users[id] = u
+	return s.save()
+}
+
+// SetCanMakeBooks gives or takes a member's leave to make books.
+func (s *Store) SetCanMakeBooks(id string, allowed bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.d.Users[id]
+	if !ok {
+		return fmt.Errorf("no such account")
+	}
+	u.CanMakeBooks = allowed
 	s.d.Users[id] = u
 	return s.save()
 }

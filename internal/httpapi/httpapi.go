@@ -62,6 +62,7 @@ import (
 	"github.com/GabrielHollberg/soundstorm/internal/scrobble"
 	"github.com/GabrielHollberg/soundstorm/internal/source"
 	"github.com/GabrielHollberg/soundstorm/internal/state"
+	"github.com/GabrielHollberg/soundstorm/internal/voices"
 	"github.com/GabrielHollberg/soundstorm/internal/stream"
 	"github.com/GabrielHollberg/soundstorm/internal/webui"
 	"path/filepath"
@@ -121,6 +122,8 @@ type Server struct {
 	playerCommands allowance
 	hlsSessions    hlsSessions
 	bookHLS        bookHLS
+	voices         *voices.Manager
+	voicesDirPath  string
 	lookingUpMu    sync.Mutex
 	lookingUp      map[string]bool
 	// imports limits how often somebody may import playlists (a file, or
@@ -237,6 +240,11 @@ type Config struct {
 	// BeatsDir is where what was heard in each song is kept (see beats.go).
 	// Empty turns hearing songs on the server off.
 	BeatsDir string
+	// VoicesURL is the voice backend (Kokoro) for making audiobooks from
+	// ebooks, and VoicesDir where its queue and work in progress are kept;
+	// either empty turns the feature off (voices.go).
+	VoicesURL string
+	VoicesDir string
 	// TrainingDir is where the looks' training recordings are kept, on the
 	// developer's own install only (SOUNDSTORM_TRAINING; see training.go).
 	// Empty, as everywhere else, means there is no training at all.
@@ -281,7 +289,7 @@ func New(cfg Config) *Server {
 	if timeout <= 0 {
 		timeout = federate.DefaultPerSourceTimeout
 	}
-	return &Server{
+	s := &Server{
 		reg:              cfg.Registry,
 		store:            cfg.Store,
 		library:          cfg.Library,
@@ -310,6 +318,11 @@ func New(cfg Config) *Server {
 		autoKick:         make(chan struct{}, 1),
 		autoSkip:         map[string]bool{},
 	}
+	if cfg.VoicesURL != "" && cfg.VoicesDir != "" {
+		s.voicesDirPath = cfg.VoicesDir
+		s.voices = voices.NewManager(cfg.VoicesDir, &voices.Kokoro{BaseURL: strings.TrimRight(cfg.VoicesURL, "/")}, s.placeMadeBook, s.log)
+	}
+	return s
 }
 
 // Routes returns the mux with every endpoint registered.
@@ -400,6 +413,12 @@ func (s *Server) Routes() http.Handler {
 	guarded.HandleFunc("PUT /api/playback/{source}/{id...}", s.limited(&s.otherWrites, 60, time.Second, s.handleSetPosition))
 	guarded.HandleFunc("GET /api/hls/{source}/{path...}", s.handleHLS)
 	guarded.HandleFunc("GET /api/bookhls/{source}/{id}/{track}/{file}", s.handleBookHLS)
+	// Making an audiobook from an ebook (voices.go).
+	guarded.HandleFunc("GET /api/voices", s.handleVoices)
+	guarded.HandleFunc("GET /api/voices/sample", s.handleVoiceSample)
+	guarded.HandleFunc("POST /api/voices/make", s.handleMakeAudiobook)
+	guarded.HandleFunc("GET /api/voices/jobs", s.handleVoiceJobs)
+	guarded.HandleFunc("DELETE /api/voices/jobs/{id}", s.handleCancelVoiceJob)
 	guarded.HandleFunc("GET /api/subtitle/{source}/{track...}", s.handleSubtitle)
 
 	// The reader's endpoints take source/id/path as query parameters rather
@@ -502,6 +521,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("POST /api/users/new-passwords", s.handleRequireNewPasswords)
 	owner.HandleFunc("PUT /api/users/{id}/libraries", s.handleSetUserLibraries)
 	owner.HandleFunc("PUT /api/users/{id}/photo-limit", s.handleSetPhotoLimit)
+	owner.HandleFunc("PUT /api/users/{id}/make-books", s.handleSetCanMakeBooks)
 	owner.HandleFunc("GET /api/photos/limit-default", s.handlePhotoLimitDefault)
 	owner.HandleFunc("PUT /api/photos/limit-default", s.handlePhotoLimitDefault)
 	owner.HandleFunc("PUT /api/remote", s.handleSetRemote)
@@ -776,6 +796,8 @@ func publicUser(u state.User) map[string]any {
 		// than five ticked boxes that mean the same thing today and would stop
 		// meaning it if a sixth library were ever added.
 		"allLibraries": auth.Access(u).Unrestricted(),
+		// May make audiobooks from ebooks and back (voices.go).
+		"canMakeBooks": u.IsOwner() || u.CanMakeBooks,
 	}
 }
 

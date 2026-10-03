@@ -4127,3 +4127,13 @@ html.tv .tv-me-tab.hidden { display: none; }
 .profile-tile .profile-lock { font-size: 12px; color: var(--muted); min-height: 1em; }
 #profiles-secret { display: grid; gap: 10px; margin-bottom: 12px; }
 #profiles-secret.hidden { display: none; }
+
+/* Make an audiobook: a voice to choose beside a speaker to hear it. */
+.voice-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; }
+.voice-row .voice-hear { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; }
+.voice-row .voice-hear svg { width: 20px; height: 20px; }
+/* Settings' queue of books being read aloud. */
+.voices-jobs { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.voices-jobs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; }
+.voices-jobs li strong, .voices-jobs li span { grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.voices-jobs li button { grid-column: 2; grid-row: 1 / span 2; }

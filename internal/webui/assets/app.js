@@ -916,6 +916,7 @@ if (window.soundstormApp) {
 
 async function showApp(me) {
   state.me = me || null;
+  if (me && !me.mustRenew) setTimeout(refreshVoices, 2000);
   // This page is a device to play on, from this person's phone (players.go).
   setTimeout(playerLoop, 1500);
   // Shown again (a switch back to the same person): one setup poll, not two.
@@ -1276,6 +1277,7 @@ async function loadPeople() {
     }
     li.append(spacer);
     if (!person.owner) li.append(personPhotos(person));
+    if (!person.owner && state.voices && state.voices.available) li.append(personMakeBooks(person));
 
     // The owner is not removable and neither are you: the server refuses both,
     // and offering a button that always fails is worse than offering none.
@@ -1289,6 +1291,28 @@ async function loadPeople() {
     }
     list.append(li);
   }
+}
+
+// personMakeBooks is the owner's switch letting a member make audiobooks
+// from ebooks (voices.go): off unless given, as a book ties the server up
+// for hours.
+function personMakeBooks(person) {
+  const row = document.createElement('label');
+  row.className = 'person-photos setting-row';
+  const text = document.createElement('span');
+  text.textContent = 'Can make audiobooks';
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = Boolean(person.canMakeBooks);
+  box.addEventListener('change', async () => {
+    const { ok, body } = await api(`/api/users/${encodeURIComponent(person.id)}/make-books`,
+      { method: 'PUT', body: JSON.stringify({ allowed: box.checked }) });
+    note($('people-note'), ok ? (box.checked ? `${person.name} can make audiobooks.` : `${person.name} can no longer make audiobooks.`)
+      : ((body && body.error) || 'Could not save it.'), !ok);
+    if (!ok) box.checked = !box.checked;
+  });
+  row.append(text, box);
+  return row;
 }
 
 // The photo space choices, in GB; -1 is no limit.
@@ -5945,6 +5969,16 @@ function renderMainMenu(item, opts = {}) {
     entries.push(menuItem('link', `Pair with its ${other}`, (event) => {
       event.stopPropagation();
       renderPairPicker(item);
+    }, { chevron: true }));
+  }
+  // Make an audiobook: an EPUB read aloud on the server (voices.go), for the
+  // owner and anyone the owner allows.
+  if (item.kind === 'ebook' && ((item.extra && item.extra.format) || '').toLowerCase() !== 'pdf'
+      && item.sourceId !== 'storyteller' && !state.offline && state.me && state.me.canMakeBooks
+      && state.voices && state.voices.available) {
+    entries.push(menuItem('headphones', 'Make an audiobook', (event) => {
+      event.stopPropagation();
+      renderMakeAudiobook(item);
     }, { chevron: true }));
   }
   if (state.me && state.me.owner && !state.offline && item.sourceId !== 'storyteller') {
@@ -12443,6 +12477,152 @@ function renderPairPicker(item) {
   });
   search.addEventListener('click', (event) => event.stopPropagation());
   find();
+}
+
+/* ---------------------------------------------------- making audiobooks */
+
+// renderMakeAudiobook is the menu page choosing a voice: each with a few
+// seconds to hear, and choosing one starts the book. A book that already has
+// an audiobook says so first (the server answers 409 with it).
+function renderMakeAudiobook(item, existing) {
+  const menu = $('item-menu');
+  const note = menuNote();
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.append(icon('back'));
+  const label = document.createElement('span');
+  label.textContent = existing ? 'You already have it' : 'Choose a voice';
+  back.append(label);
+  back.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (state.voiceSample) { state.voiceSample.pause(); state.voiceSample = null; }
+    renderMainMenu(item, state.menuOpts);
+  });
+  if (existing) {
+    const p = document.createElement('p');
+    p.className = 'menu-confirm';
+    const narr = (existing.extra && (existing.extra.narrator || existing.extra.narrators)) || '';
+    p.textContent = `You already have the audiobook of this${narr ? `, read by ${narr}` : ''}. Make one read by an AI voice anyway?`;
+    const anyway = menuItem('headphones', 'Make it anyway', (event) => {
+      event.stopPropagation();
+      renderMakeAudiobook({ ...item, anyway: true });
+    }, { chevron: true });
+    const mine = menuItem('play', 'Play the one I have', (event) => {
+      event.stopPropagation();
+      closeItemMenu();
+      play(existing);
+    });
+    menu.replaceChildren(back, p, anyway, mine);
+    if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
+    return;
+  }
+  const list = document.createElement('div');
+  list.className = 'menu-results';
+  const intro = document.createElement('p');
+  intro.className = 'menu-confirm';
+  intro.textContent = 'It is read on this server, a chapter at a time, and takes a few hours. Tap the speaker to hear a voice.';
+  menu.replaceChildren(back, intro, list, note);
+  const voicesList = (state.voices && state.voices.voices) || [];
+  // The one Kokoro's makers rate best first.
+  const order = (v) => (v.id === 'af_heart' ? 0 : v.id === 'bm_george' ? 1 : 2);
+  for (const v of [...voicesList].sort((a, b) => order(a) - order(b))) {
+    const row = document.createElement('div');
+    row.className = 'voice-row';
+    const hear = document.createElement('button');
+    hear.type = 'button';
+    hear.className = 'ghost small voice-hear';
+    hear.setAttribute('aria-label', `Hear ${v.name}`);
+    hear.append(icon('volume'));
+    hear.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (state.voiceSample) state.voiceSample.pause();
+      state.voiceSample = new Audio(`/api/voices/sample?voice=${encodeURIComponent(v.id)}`);
+      state.voiceSample.play().catch(() => {});
+    });
+    const choose = menuItem('headphones', v.name, async (event) => {
+      event.stopPropagation();
+      if (state.voiceSample) { state.voiceSample.pause(); state.voiceSample = null; }
+      const { ok, status, body } = await api('/api/voices/make', {
+        method: 'POST',
+        body: JSON.stringify({ source: item.sourceId, id: item.id, voice: v.id, anyway: Boolean(item.anyway) }),
+      });
+      if (status === 409 && body && body.existing) {
+        renderMakeAudiobook(item, body.existing);
+        return;
+      }
+      if (!ok) {
+        note.textContent = (body && body.error) || 'Could not start it.';
+        show(note, true);
+        return;
+      }
+      closeItemMenu();
+      showToast(`Making "${item.title}" into an audiobook. It will be on the Audiobooks shelf when it is done - Settings shows how far it is.`);
+      refreshVoiceJobs();
+    }, { detail: v.accent });
+    row.append(choose, hear);
+    list.append(row);
+  }
+  if (!voicesList.length) {
+    note.textContent = 'The voice is not running on this server.';
+    show(note, true);
+  }
+  if (state.menuAnchor) placeMenu(menu, state.menuAnchor);
+}
+
+// refreshVoices asks whether audiobooks can be made here, once signed in.
+async function refreshVoices() {
+  const { ok, body } = await api('/api/voices');
+  state.voices = ok && body ? body : null;
+  show($('voices-block'), Boolean(state.voices && state.voices.available && state.voices.allowed));
+  if (state.voices && state.voices.available && state.voices.allowed) refreshVoiceJobs();
+}
+
+// refreshVoiceJobs draws the queue in Settings, and looks again while a book
+// is being made.
+async function refreshVoiceJobs() {
+  clearTimeout(state.voiceJobsTimer);
+  const { ok, body } = await api('/api/voices/jobs');
+  const jobs = (ok && body && body.jobs) || [];
+  const list = $('voices-jobs');
+  list.replaceChildren(...jobs.slice().reverse().map((j) => {
+    const li = document.createElement('li');
+    const title = document.createElement('strong');
+    title.textContent = j.title || 'A book';
+    const line = document.createElement('span');
+    line.className = 'muted';
+    const pct = Math.round((j.fraction || 0) * 100);
+    const left = j.secondsLeft > 0 ? `, about ${formatLeft(j.secondsLeft)} left` : '';
+    line.textContent = {
+      waiting: `Waiting its turn - ${j.voice}`,
+      working: `Reading aloud: ${pct}%${left} - ${j.voice}`,
+      done: 'Done - on the Audiobooks shelf',
+      failed: `Could not finish: ${j.problem || 'something went wrong'}`,
+      cancelled: 'Stopped',
+    }[j.state] || j.state;
+    li.append(title, line);
+    if (j.state === 'waiting' || j.state === 'working') {
+      const stop = document.createElement('button');
+      stop.type = 'button';
+      stop.className = 'ghost small';
+      stop.textContent = 'Stop';
+      stop.addEventListener('click', async () => {
+        await api(`/api/voices/jobs/${encodeURIComponent(j.id)}`, { method: 'DELETE' });
+        refreshVoiceJobs();
+      });
+      li.append(stop);
+    }
+    return li;
+  }));
+  if (jobs.some((j) => j.state === 'waiting' || j.state === 'working')) {
+    state.voiceJobsTimer = setTimeout(refreshVoiceJobs, 15000);
+  }
+}
+
+function formatLeft(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return h ? `${h} h ${m} min` : `${Math.max(1, m)} min`;
 }
 
 /* -------------------------------------------------------- settings pills */

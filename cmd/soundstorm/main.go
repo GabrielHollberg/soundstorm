@@ -368,7 +368,11 @@ func run(log *slog.Logger) error {
 		Collections:      collectionStore,
 		// What is heard in each song, for the visualizer: a cache beside the
 		// state, never in the music folders.
-		BeatsDir:    filepath.Join(stateDir, "beats"),
+		BeatsDir: filepath.Join(stateDir, "beats"),
+		// Making audiobooks from ebooks: the voice backend, and the queue and
+		// chapters in progress beside the state.
+		VoicesURL:   env("SOUNDSTORM_VOICES_URL", "http://kokoro:8880"),
+		VoicesDir:   filepath.Join(stateDir, "voices"),
 		TrainingDir: trainingDir,
 		DrivesDir:   os.Getenv("SOUNDSTORM_DRIVES_DIR"),
 	})
@@ -379,6 +383,7 @@ func run(log *slog.Logger) error {
 	go api.RunScrobbles(ctx)
 	go api.RunBeats(ctx)
 	go api.RunPhotoImports(ctx)
+	go api.RunVoices(ctx)
 
 	srv := &http.Server{
 		Addr:              listen,

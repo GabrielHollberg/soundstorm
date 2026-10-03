@@ -82,6 +82,7 @@ services:
       # Training the looks: for SoundStorm's developer only, never set on an
       # ordinary install (see internal/httpapi/training.go).
       SOUNDSTORM_TRAINING: ${SOUNDSTORM_TRAINING:-false}
+      SOUNDSTORM_VOICES_URL: ${SOUNDSTORM_VOICES_URL:-http://kokoro:8880}
 
       # TLS. Off by default: the only certificate SoundStorm can make by itself
       # is one no browser trusts, and a full-page warning on every device is a
@@ -365,6 +366,15 @@ services:
   # Tailscale app on every device that wants to connect. Both need a person.
   # SoundStorm is fully working without any of it - that is why this is a
   # profile and not a service.
+  # The voice that reads ebooks aloud, for Make an audiobook (internal/voices):
+  # Kokoro, 82M parameters, Apache 2.0, run unmodified. Its models ship in the
+  # image, so nothing is downloaded and nothing about a book leaves the house.
+  # Pinned by digest: the image is published as :latest only.
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu@sha256:ee3111d6a2c903ed62f3b4fa19543c6901205ed39fce3c177e895b34a8386b9c
+    container_name: soundstorm-kokoro
+    restart: unless-stopped
+
   tailscale:
     profiles: ["tailscale"]
     image: tailscale/tailscale:latest
