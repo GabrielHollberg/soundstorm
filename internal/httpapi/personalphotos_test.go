@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -119,5 +121,38 @@ func TestAFileDateDatesOnlyVideos(t *testing.T) {
 	pl, err = h.api.datedPhoto(u, clip, "00012.MTS", saved)
 	if err != nil || !strings.HasSuffix(pl.rel, "2015/08/00012.MTS") {
 		t.Fatalf("a clip with only a file date went to %v (%v)", pl, err)
+	}
+}
+
+// A picture backed up from a phone with no date inside it (a screenshot, one
+// saved from a message) gets the date the phone gave written beside it, and
+// on the file: Immich dated such pictures by the file, the day of the backup
+// (the owner's report: years-old pictures showing as yesterday).
+func TestABackedUpPictureKeepsThePhonesDate(t *testing.T) {
+	h := newHarness(t)
+	h.signUp(t)
+	taken := time.Date(2019, 3, 14, 15, 9, 26, 0, time.UTC)
+	png := "\x89PNG\r\n\x1a\n a picture with no date inside"
+	req, _ := http.NewRequest(http.MethodPut, h.srv.URL+"/api/photos/backup?name=Screenshot.png&taken="+strconv.FormatInt(taken.UnixMilli(), 10), strings.NewReader(png))
+	resp, err := h.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("backup: %d %s", resp.StatusCode, body)
+	}
+	full := filepath.Join(h.libraryRoot(t), "pictures", "Personal", "gabe", "2019", "03", "Screenshot.png")
+	st, err := os.Stat(full)
+	if err != nil {
+		t.Fatalf("not filed by its date: %v (%s)", err, body)
+	}
+	if !st.ModTime().Equal(taken) {
+		t.Errorf("file date %v, want %v", st.ModTime(), taken)
+	}
+	side, err := os.ReadFile(full + ".xmp")
+	if err != nil || !strings.Contains(string(side), "2019-03-14T15:09:26") {
+		t.Errorf("no date beside it: %v\n%s", err, side)
 	}
 }

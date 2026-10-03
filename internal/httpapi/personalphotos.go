@@ -525,8 +525,42 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.addPhotoBytes(u, it.Size)
+	s.backupDated(saved, it.Taken)
 	s.scheduleRescan(media.KindPicture)
 	writeJSON(w, http.StatusOK, map[string]any{"dest": saved})
+}
+
+// backupDated writes the date the phone gave beside a backed-up picture that
+// carries none of its own - a screenshot, a picture saved from a message or
+// the web - and gives the file that date too. Without it Immich dated such a
+// picture by the file, which is the day it was backed up: years-old pictures
+// showed as yesterday (the owner's report, 2026-10-03). The phone's date is
+// its photo library's own record, ranked as a download's (Google's or
+// Apple's record). A video carries its own date, which Immich reads.
+func (s *Server) backupDated(dest string, takenMs int64) {
+	if takenMs <= 0 {
+		return
+	}
+	switch strings.ToLower(filepath.Ext(dest)) {
+	case ".jpg", ".jpeg", ".png", ".heic", ".heif", ".gif", ".webp", ".tif", ".tiff", ".dng":
+	default:
+		return
+	}
+	full := filepath.Join(s.library.Root(), filepath.FromSlash(dest))
+	taken := time.UnixMilli(takenMs)
+	if f, err := os.Open(full); err == nil {
+		head := make([]byte, 512<<10)
+		n, _ := io.ReadFull(f, head)
+		f.Close()
+		if _, ok := photoimport.ExifTaken(head[:n]); ok {
+			return
+		}
+	}
+	_ = os.Chtimes(full, taken, taken)
+	if _, err := os.Stat(full + ".xmp"); err == nil {
+		return
+	}
+	_ = os.WriteFile(full+".xmp", photoimport.XMPSidecarFrom(photoimport.Meta{Taken: taken}, photoimport.SourceDownload), 0o666)
 }
 
 // backupAccount refuses a phone's backup made for somebody else. The app
