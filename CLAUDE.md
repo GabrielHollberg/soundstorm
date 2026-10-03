@@ -167,11 +167,12 @@ decided past the first test unit.
   snapshots; Add storage; Jellyfin's conversions on the Intel graphics chip;
   heavy background jobs taking turns at night in 16GB.
 - **Protection, the owner's call:** one internal drive rather than a mirror,
-  to keep the price down, and **a USB backup drive in the box**: plugged in
-  at setup with the rest, backed up to every night automatically, and the
-  app reminding plainly whenever it is missing or a backup has not run ("Plug
-  the backup drive back in"), since a USB drive is what an average person
-  lets lapse. Encrypted cloud backup (and box-to-box) stays an opt-in extra,
+  to keep the price down, and **a USB backup drive as an optional extra**
+  (a 2TB portable hard drive was $130-150 in October 2026; any drive the
+  customer plugs in will do): offered at setup, backed up to every night
+  automatically once plugged in, the app reminding plainly whenever it is
+  missing or a backup has not run, and saying "not protected" while there is
+  no backup at all. Encrypted cloud backup (and box-to-box) stays an opt-in extra,
   like everything else that sends anything out of the house; its key stays
   with the customer (a recovery code), never with the seller. Backups are
   the caretaker's job, likely with restic, never SoundStorm's; restoring is a
