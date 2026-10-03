@@ -5873,7 +5873,7 @@ films and TV, books, photos - each See all opening that tab's pill. Music's
 Mixes lead with **Your favorites**: every hearted song, shuffled, and all
 of them rather than a mix's hundred.
 
-## Making an audiobook from an ebook, and an ebook from an audiobook (planned, 2026-10-03)
+## Making an audiobook from an ebook, and an ebook from an audiobook (2026-10-03)
 
 Asked for after ElevenLabs came up: both directions, on the box, nothing
 sent out. Decided with the owner:
@@ -5912,6 +5912,27 @@ seconds, beat ElevenLabs in blind tests) and Qwen3-TTS (Apache 2.0, January
 2026) both want a graphics card the box does not have; XTTS-v2 and F5-TTS are
 non-commercial. Order: Make an audiobook, then Make an ebook, then the
 version picker. Personal use of books somebody owns; nothing is shared.
+
+**Make an audiobook is built (2026-10-03)** (`internal/voices`,
+`httpapi/voices.go`, the `kokoro` service in compose, pinned by digest). An
+EPUB's hold menu offers it to the owner and anyone given **Can make
+audiobooks** in People (`User.CanMakeBooks`); a voice list (English voices,
+each with a speaker button playing a sample, made once and kept under the
+state dir's `voices/samples`); a book with an audiobook already gets a 409
+naming it, and the page asks Make it anyway or Play the one I have. The
+queue is kept in `voices/jobs.json`, one book at a time; each chapter (a
+spine document of 40 words or more, titled by its first heading, else its
+page title) is one request to Kokoro and one MP3, tagged ID3v2.3 with the
+book, author, track and `TCOM` "AI voice: Heart" (Audiobookshelf's
+narrator); chapters already made survive a restart. Made in the state dir,
+then moved through a hidden `.making` folder to `audiobooks/<Author>/<Title>
+(AI voice)/` with the ebook's cover, and the shelf rescanned. Settings,
+Making audiobooks, shows each with its share done and the time left (from
+150 words a minute of speech against the pace measured). Checked on a
+throwaway stack: a two-chapter EPUB became two tagged MP3s in that folder.
+**Not yet built:** marking "AI voice" under the card (the narrator tag
+carries it), the voice's word timings for Read Along (the made book is not
+synced yet), Make an ebook, the version picker.
 
 ## Read-along: the page follows the audiobook
 
