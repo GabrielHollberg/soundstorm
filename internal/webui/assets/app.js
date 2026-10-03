@@ -150,6 +150,9 @@ async function openMeMenu() {
   const holder = $('me-menu-people');
   holder.replaceChildren();
   show(menu, true);
+  // Under the circle, wherever the header put it.
+  const at = $('me-btn').getBoundingClientRect();
+  if (at.width) menu.style.left = `${Math.max(12, Math.min(at.left, innerWidth - menu.offsetWidth - 12))}px`;
   $('me-btn').setAttribute('aria-expanded', 'true');
   const { ok, body } = await api('/api/profiles');
   const people = ((ok && body && body.people) || []).filter((p) => p.id !== me.id);

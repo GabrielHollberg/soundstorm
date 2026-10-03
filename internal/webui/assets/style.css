@@ -4014,8 +4014,8 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
   /* To the search box's right, as tall as it (it sat over the box). */
   .ctl-btn { order: 4; align-self: stretch; height: auto; min-width: 46px; justify-content: center; }
   .ctl-btn span { max-width: 72px; }
-  /* The circle at the far right, after the box and the device button. */
-  .me-btn { order: 5; align-self: center; }
+  /* The circle left of the search box, the device button right of it. */
+  .me-btn { order: 2; align-self: center; }
 }
 .ctl-backdrop { position: fixed; inset: 0; z-index: 2147482990; background: rgba(0, 0, 0, 0.5); }
 .ctl-sheet {
@@ -4086,7 +4086,7 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 .profile-avatar { overflow: hidden; flex: none; }
 .profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* The circle at the top right: who is signed in, opening switching and
+/* The circle at the top left of the search box: who is signed in, opening switching and
    Settings - which is why Settings is no longer a tab, except on a TV, where
    the side bar is where the remote goes. */
 .me-btn {
@@ -4099,7 +4099,7 @@ html.tv .profiles-card:has(#profiles-secret:not(.hidden)) #profiles-secret { mar
 html:not(.tv) #tabs [data-tab="settings"] { display: none; }
 .me-menu {
   position: fixed; z-index: 40;
-  top: calc(var(--header-h, 66px) + 4px); right: calc(12px + var(--safe-right, 0px));
+  top: calc(var(--header-h, 66px) + 4px); left: calc(12px + var(--safe-left, 0px));
   min-width: 220px; max-width: calc(100vw - 24px);
   padding: 8px; border-radius: 14px;
   background: var(--surface); border: 1px solid var(--border);

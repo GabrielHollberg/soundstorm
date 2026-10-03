@@ -142,6 +142,11 @@
   <div id="app" class="hidden">
     <header>
       <span class="wordmark small">SoundStorm</span>
+      <!-- Who is signed in, as a circle: their picture or initial, left of the
+           search box. It opens switching to the others kept on this device,
+           and Settings. -->
+      <button id="me-btn" class="me-btn profile-avatar hidden" type="button" aria-haspopup="menu"
+              aria-controls="me-menu" aria-label="You, and switching person"></button>
       <form id="search-form" role="search">
         <input id="search-input" type="search" placeholder="Search everything&hellip;"
                autocomplete="off" aria-label="Search your library">
@@ -150,10 +155,6 @@
            then controls (players.go). -->
       <button id="ctl-btn" class="ctl-btn hidden" type="button" aria-haspopup="dialog"
               aria-controls="ctl-sheet" aria-label="Choose the device to play on"></button>
-      <!-- Who is signed in, as a circle: their picture or initial. It opens
-           switching to the others kept on this device, and Settings. -->
-      <button id="me-btn" class="me-btn profile-avatar hidden" type="button" aria-haspopup="menu"
-              aria-controls="me-menu" aria-label="You, and switching person"></button>
     </header>
     <div id="me-menu" class="me-menu hidden" role="menu" aria-label="You">
       <div class="me-head"><span id="me-menu-avatar" class="profile-avatar"></span><b id="me-menu-name"></b></div>
