@@ -252,6 +252,17 @@ Checked: it builds, its pages drawn (`-snapshot`), the icon rendered by
 `ictool` and by macOS. **Not yet:** a whole install through it (this Mac had
 25 GB free), the password window, a Developer ID certificate (only the account
 holder can make one) and notarizing, so it cannot be handed out yet.
+*(Then, 2026-10-10: the Developer ID certificate made, the app signed and
+notarized, and the owner's first real run through it found: the password asked
+after Docker's download (now asked and checked on the questions page); Docker
+Desktop's window opening (its welcome settings written before its first start,
+and its window hidden while the app works); "would like to administer your
+computer" from the crontab (a LaunchAgent on a Mac now, `ADDRESS_AGENT`); a
+registry pause stopping the download (`pull` tried again after 30, 60, 120s);
+the details blank from Docker's thousands of lines; and **20GB was too little
+room**: the images are near 19GB, so `check_room` asks 30GB less what is
+already downloaded. **For the PC:** the Windows setup's `Test-DownloadRoom`
+asks 20GB too.)*
 
 **Who does what:** the PC writes these in `install.sh` and tests the Linux half
 in containers or the box's VM; the Mac then runs the whole install on a Mac -

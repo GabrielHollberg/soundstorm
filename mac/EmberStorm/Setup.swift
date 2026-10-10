@@ -39,8 +39,8 @@ final class Setup {
 
     var libraryShown: URL { library ?? dir.appending(path: "library") }
     var dockerNeeded: Bool { !Docker.installed }
-    /// About 20GB for Docker's programs, and Docker Desktop itself.
-    var roomNeeded: Int64 { (dockerNeeded ? 25 : 20) << 30 }
+    /// About 30GB for EmberStorm's programs (19GB of images, room to unpack), and Docker Desktop itself.
+    var roomNeeded: Int64 { (dockerNeeded ? 35 : 30) << 30 }
     var roomFree: Int64 { ThisMac.freeSpace(at: FileManager.default.homeDirectoryForCurrentUser) }
     var roomShort: Bool { roomFree < roomNeeded }
 

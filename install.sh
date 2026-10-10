@@ -161,8 +161,12 @@ keep_awake() {
 }
 
 # check_room stops before the long download when the disk Docker keeps its
-# images on is short of the 20GB it needs, saying so plainly - a full disk
-# failed part way through with an error from Docker nobody could read.
+# images on is short of what it needs, saying so plainly - a full disk
+# failed part way through with an error from Docker nobody could read. About
+# 30GB in all: the images are near 19GB (the speech-to-text one alone 5.6GB),
+# and Docker needs room to unpack them - 20GB, as it was, let the first Mac
+# run start with the Mac nearly full by the end (2026-10-10). Images already
+# here (a run tried again after a download stopped) count towards it.
 check_room() {
 	case "$(uname -s)" in
 	Darwin) where="$HOME" ;;
@@ -170,8 +174,18 @@ check_room() {
 	esac
 	free_kb=$(df -Pk "$where" 2>/dev/null | awk 'NR==2{print $4}')
 	case "$free_kb" in ''|*[!0-9]*) return 0 ;; esac
-	[ "$free_kb" -ge 20971520 ] && return 0
-	die "EmberStorm's programs need about 20 GB free where Docker keeps them
+	need_gb=30
+	if [ -f "$DIR/docker-compose.yml" ]; then
+		total=$(grep -cE '^[[:space:]]+image:' "$DIR/docker-compose.yml" 2>/dev/null || echo 0)
+		have=0
+		for repo in $(grep -E '^[[:space:]]+image:' "$DIR/docker-compose.yml" | sed 's/.*image:[[:space:]]*//; s/@.*//; s/:[^/]*$//'); do
+			docker image ls -q "$repo" 2>/dev/null | grep -q . && have=$((have + 1))
+		done
+		[ "$total" -gt 0 ] && need_gb=$((30 - 30 * have / total))
+		[ "$need_gb" -lt 5 ] && need_gb=5
+	fi
+	[ "$free_kb" -ge $((need_gb * 1048576)) ] && return 0
+	die "EmberStorm's programs need about $need_gb GB free where Docker keeps them
 ($where), and there is $((free_kb / 1048576)) GB.
 
 Free some space there, then run this again. Your library can still go on

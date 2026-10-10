@@ -35,7 +35,14 @@ final class Installer {
     private(set) var stage: Stage = .docker
     private(set) var status = "Getting the setup..."
     private(set) var fraction = 0.0
-    private(set) var log = ""
+    /// What it printed, for Copy the details: the last 5,000 lines.
+    var log: String { lines.joined(separator: "\n") }
+    /// What Show details shows: the last 300 lines, without Docker's line
+    /// for every piece of every download ("402614bd39aa Downloading 5.2MB"),
+    /// thousands of which made one text too tall to draw - it showed blank.
+    private(set) var shown = ""
+    private var lines: [String] = []
+    private var shownLines: [String] = []
     private(set) var running = false
 
     private var process: Process?
@@ -63,7 +70,9 @@ final class Installer {
     func run(dir: URL, arguments: [String], keepAwake: Bool, password: String? = nil) async throws -> Result {
         running = true
         defer { running = false; creep?.cancel() }
-        log = ""
+        lines = []
+        shownLines = []
+        shown = ""
         pulling = []
         pulled = []
         installingDocker = !Docker.installed
@@ -120,7 +129,7 @@ final class Installer {
         try p.run()
         startCreep()
         for await (line, isError) in lines {
-            log += line + "\n"
+            keep(line)
             // Docker prints its progress on the error stream: both are read.
             if isError { errorText += line + "\n" }
             read(line)
@@ -140,6 +149,17 @@ final class Installer {
         fraction = 1
         status = "Done."
         return Self.readResult(result)
+    }
+
+    private func keep(_ line: String) {
+        lines.append(line)
+        if lines.count > 5000 { lines.removeFirst(lines.count - 5000) }
+        let words = line.split(separator: " ")
+        // A download's piece: a short hex id, then what is happening to it.
+        if let first = words.first, first.count == 12, first.allSatisfy(\.isHexDigit) { return }
+        shownLines.append(line)
+        if shownLines.count > 300 { shownLines.removeFirst(shownLines.count - 300) }
+        shown = shownLines.joined(separator: "\n")
     }
 
     struct Failed: Error { let message: String }

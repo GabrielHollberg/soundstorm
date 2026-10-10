@@ -222,7 +222,7 @@ private struct Working: View {
             .font(.callout)
             if details {
                 ScrollView {
-                    Text(installer.log)
+                    Text(installer.shown)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Look.soft)
                         .textSelection(.enabled)
