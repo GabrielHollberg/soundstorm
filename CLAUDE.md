@@ -1175,9 +1175,17 @@ About, and beside Start over, which needs it again (`boxSetupCode` in the
 session, owner on a box only), and `units.csv` is the support record by
 serial. Labels chosen: 2 x 2 inch matte white waterproof film for the
 device, 2.5 x 2.5 inch rounded-square matte cards for the box, printed on a
-mono laser through Tray 1. `sticker.sh` still draws the old 90 x 50 mm
-sticker: the 2 x 2 label, the card and the instructions page wait on the
-Avery product numbers.
+mono laser through Tray 1. `box/sticker.sh` prints them: `labels units.csv`
+(Avery 64510, 12 a sheet, 3 x 4 from 0.625", rows 2.5833" apart), `cards`
+(Avery 35703, 9 a sheet, 3 x 3 from 0.25"/0.875", 2.75" and 3.375" apart -
+both measured from Avery's own template PDFs) and `--test` for a plain-paper
+alignment sheet; each an HTML page sized to Letter with no margins, printed
+from Chrome at 100%. The card's QR code opens `web/start.html`
+(emberstorm.app/start: plug in, get the app or open soundstorm.local, the
+code under the box). Checked: Chrome's PDF of each is Letter, 14 boxes made
+two label sheets, and all 12 labels and 9 cards decoded (zbarimg at 300 dpi)
+to their own addresses. Not checked: a real sheet through the printer -
+35703 is 247 g/m2 card, heavier than the LaserJet's tray is rated for.
 
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): **the box's own system cannot be updated** - a release carries only

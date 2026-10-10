@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set up your EmberStorm</title>
+  <meta name="description" content="Three steps to set up your EmberStorm box: plug it in, get the app, enter the code from the bottom of the box.">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .start { max-width: 640px; margin: 0 auto; padding: 32px 20px 64px; }
+    .start h1 { font-size: 2.1rem; margin: 0 0 8px; }
+    .start .lede { font-size: 1.15rem; color: rgba(255, 255, 255, 0.82); margin: 0 0 28px; }
+    .steps { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+    .steps > li { position: relative; padding: 18px 18px 18px 64px; margin: 0 0 14px;
+      background: rgba(255, 255, 255, 0.06); border-radius: 16px; line-height: 1.55;
+      color: rgba(255, 255, 255, 0.82); }
+    .steps > li::before { counter-increment: step; content: counter(step); position: absolute;
+      left: 18px; top: 18px; width: 32px; height: 32px; border-radius: 50%; background: #fff;
+      color: #000; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .steps h2 { font-size: 1.2rem; margin: 2px 0 6px; color: #fff; }
+    .steps ul { padding-left: 1.1em; margin: 8px 0 0; }
+    .steps li li { margin: 4px 0; }
+    .help h2 { font-size: 1.2rem; margin: 36px 0 8px; }
+    .help p, .help li { line-height: 1.6; color: rgba(255, 255, 255, 0.82); }
+    code { background: rgba(255, 255, 255, 0.1); padding: 1px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="./"><span class="mark" aria-hidden="true"></span>EmberStorm</a>
+    <nav>
+      <a href="./#features">Features</a>
+      <a href="docs/">Docs</a>
+    </nav>
+  </header>
+
+  <main class="start">
+    <h1>Set up your EmberStorm</h1>
+    <p class="lede">Three steps, about ten minutes. You'll need the setup code on the label on the bottom of the box.</p>
+
+    <ol class="steps">
+      <li>
+        <h2>Plug it in</h2>
+        Connect the power, and a network cable from the box to your router. The first start takes a few minutes.
+      </li>
+      <li>
+        <h2>Open EmberStorm</h2>
+        On a phone, get the EmberStorm app - it finds your new box on its own:
+        <ul>
+          <li><strong>Android:</strong> <a href="https://github.com/GabrielHollberg/emberstorm/releases">from the releases page</a> (the android ones).</li>
+          <li><strong>iPhone:</strong> coming soon to the App Store. Until then, use a computer, or Safari on the phone (below).</li>
+        </ul>
+        Or on any computer or tablet at home, open <a href="http://soundstorm.local"><code>soundstorm.local</code></a> in the web browser.
+      </li>
+      <li>
+        <h2>Enter your setup code</h2>
+        Turn the box over: the label on the bottom has your setup code and a QR code. Scan it with the app or your phone's camera, or type the code. Then choose your name and password - the box is yours.
+      </li>
+    </ol>
+
+    <section class="help">
+      <h2>If it doesn't find the box</h2>
+      <ul>
+        <li>Make sure your phone or computer is on your home Wi-Fi, not a guest network or mobile data.</li>
+        <li>Give it a few more minutes the first time: the box is getting everything ready.</li>
+        <li>If <code>soundstorm.local</code> doesn't open, plug a monitor into the box: its screen shows the address to type and the setup code.</li>
+        <li>Lost the label? The setup code is also shown on that screen. Or write to <a href="mailto:hello@emberstorm.app">hello@emberstorm.app</a> with the serial number from the box.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p><span class="mark" aria-hidden="true"></span> EmberStorm&trade; · Free software under the GNU AGPL 3.0 ·
+      <a href="https://github.com/GabrielHollberg/emberstorm">Source</a> · <a href="docs/">Docs</a> ·
+      <a href="privacy.html">Privacy</a></p>
+  </footer>
+</body>
+</html>
