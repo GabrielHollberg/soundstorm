@@ -13,6 +13,7 @@ enum Look {
 
 struct SetupView: View {
     let setup: Setup
+    @State private var height: CGFloat = 480
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -33,10 +34,14 @@ struct SetupView: View {
             }
             .padding(.horizontal, 36)
             .padding(.bottom, 32)
-            .frame(maxHeight: .infinity, alignment: .top)
         }
-        // One size for every page, the longest fitting; buttons at the foot.
-        .frame(height: 680, alignment: .top)
+        // As tall as the page, measured: the window fits each page (and the
+        // details opening) rather than one height for all, which left a
+        // page's foot empty.
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = max(320, $0) }
+        .frame(height: height, alignment: .top)
+        .animation(.easeOut(duration: 0.2), value: height)
         .background(Look.background)
         .foregroundStyle(.white)
         .tint(Look.accent)
@@ -187,7 +192,16 @@ private struct Working: View {
                     .font(.callout).foregroundStyle(Look.soft)
                     .lineLimit(2)
             }
-            DisclosureGroup("Show details", isExpanded: $details) {
+            // A button rather than a disclosure group: a Mac's opens only from
+            // its small triangle, and clicking the words did nothing.
+            Button {
+                details.toggle()
+            } label: {
+                Label(details ? "Hide details" : "Show details", systemImage: details ? "chevron.down" : "chevron.right")
+            }
+            .buttonStyle(Quiet())
+            .font(.callout)
+            if details {
                 ScrollView {
                     Text(installer.log)
                         .font(.system(size: 11, design: .monospaced))
@@ -196,9 +210,10 @@ private struct Working: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .defaultScrollAnchor(.bottom)
-                .frame(height: 160)
+                .frame(height: 180)
+                .padding(10)
+                .background(Look.card, in: RoundedRectangle(cornerRadius: 10))
             }
-            .font(.callout)
             Text("You can leave this window open and use the Mac for something else.")
                 .font(.callout).foregroundStyle(Look.soft)
         }
@@ -314,13 +329,11 @@ private struct Failed: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(retry == .launch ? "EmberStorm didn't start" : retry == .uninstall ? "EmberStorm wasn't removed" : "Setting up stopped")
                 .font(.title2.weight(.semibold))
-            ScrollView {
-                Text(message)
-                    .foregroundStyle(Look.soft)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 220)
+            Text(message)
+                .foregroundStyle(Look.soft)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if !setup.installer.log.isEmpty {
                 Button("Copy the details") {
                     NSPasteboard.general.clearContents()
