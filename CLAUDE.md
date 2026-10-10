@@ -293,7 +293,13 @@ registry pause stopping the download (`pull` tried again after 30, 60, 120s);
 the details blank from Docker's thousands of lines; and **20GB was too little
 room**: the images are near 19GB, so `check_room` asks 30GB less what is
 already downloaded. **For the PC:** the Windows setup's `Test-DownloadRoom`
-asks 20GB too.)*
+asks 20GB too. **And the window sat at 83% for an hour after EmberStorm was
+up**: it redrew for every line Docker printed (tens of thousands, each a
+change it watched), fell behind, and was still working through them long
+after the setup had ended. The lines are no longer watched, the details are
+put up four times a second, and progress changes only when it moves - a
+pretend setup of 100,000 lines (`-page run -script`, debug) now finishes in
+seconds.)*
 
 **Who does what:** the PC writes these in `install.sh` and tests the Linux half
 in containers or the box's VM; the Mac then runs the whole install on a Mac -

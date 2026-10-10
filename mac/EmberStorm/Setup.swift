@@ -46,10 +46,11 @@ final class Setup {
 
     func appeared() async {
         #if DEBUG
-        // -page questions|working: straight to a page, to look at it.
+        // -page questions|working|finished|run: straight to a page, to look at it.
         switch UserDefaults.standard.string(forKey: "page") {
         case "questions": askAwake = true; page = .questions; return
         case "working": page = .working; return
+        case "run": setUp(); return  // with -script: a pretend setup, to time the window
         case "finished":
             page = .finished(Installer.Result(url: "http://localhost:8099", setup: "/?setup=x", code: "A1B2-C3D4-E5F6-A7B8-C9D0",
                                               secure: "https://k3x9m2p7qa.home.emberstorm.app:8099", library: dir.appending(path: "library").path))

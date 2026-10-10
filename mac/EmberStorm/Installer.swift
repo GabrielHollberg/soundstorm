@@ -41,8 +41,13 @@ final class Installer {
     /// for every piece of every download ("402614bd39aa Downloading 5.2MB"),
     /// thousands of which made one text too tall to draw - it showed blank.
     private(set) var shown = ""
-    private var lines: [String] = []
-    private var shownLines: [String] = []
+    /// Not watched by the window: a download prints tens of thousands of
+    /// lines, and the window redrawn for each fell an hour behind the setup
+    /// (the first real run sat at 83% long after EmberStorm was up). What
+    /// Show details shows is put up at most four times a second.
+    @ObservationIgnored private var lines: [String] = []
+    @ObservationIgnored private var shownLines: [String] = []
+    @ObservationIgnored private var showSoon: Task<Void, Never>?
     private(set) var running = false
 
     private var process: Process?
@@ -131,10 +136,14 @@ final class Installer {
         for await (line, isError) in lines {
             keep(line)
             // Docker prints its progress on the error stream: both are read.
-            if isError { errorText += line + "\n" }
+            if isError {
+                errorText += line + "\n"
+                if errorText.count > 40_000 { errorText = String(errorText.suffix(20_000)) }
+            }
             read(line)
         }
         p.waitUntilExit()
+        showNow()
         process = nil
         try? FileManager.default.removeItem(at: script)
         guard p.terminationStatus == 0 else {
@@ -159,8 +168,22 @@ final class Installer {
         if let first = words.first, first.count == 12, first.allSatisfy(\.isHexDigit) { return }
         shownLines.append(line)
         if shownLines.count > 300 { shownLines.removeFirst(shownLines.count - 300) }
-        shown = shownLines.joined(separator: "\n")
+        guard showSoon == nil else { return }
+        showSoon = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            showNow()
+        }
     }
+
+    private func showNow() {
+        showSoon?.cancel()
+        showSoon = nil
+        let text = shownLines.joined(separator: "\n")
+        if text != shown { shown = text }
+    }
+
+    /// Set only when it changes: each change redraws the window.
+    private func say(_ s: String) { if s != status { status = s } }
 
     struct Failed: Error { let message: String }
     struct Stopped: Error {}
@@ -192,7 +215,7 @@ final class Installer {
                  let n where n.hasPrefix("Getting a secure"): enter(.start)
             default: break
             }
-            status = name.hasSuffix("...") ? name : name + "..."
+            say(name.hasSuffix("...") ? name : name + "...")
             return
         }
         // docker compose pull, without a terminal: "<name> Pulling" as each
@@ -206,9 +229,10 @@ final class Installer {
             default: break
             }
             if !pulling.isEmpty {
-                status = "Downloaded \(pulled.count) of \(max(pulling.count, pulled.count)) parts of EmberStorm"
+                say("Downloaded \(pulled.count) of \(max(pulling.count, pulled.count)) parts of EmberStorm")
                 let (start, size) = share(.download)
-                fraction = max(fraction, start + size * Double(pulled.count) / Double(max(pulling.count, 12)))
+                let f = start + size * Double(pulled.count) / Double(max(pulling.count, 12))
+                if f > fraction { fraction = f }
             }
             return
         }
@@ -216,14 +240,14 @@ final class Installer {
         // Not the script's word about Docker's window: this app puts it away.
         if line.contains("Docker window") || line.contains("Continue without signing in") { return }
         if raw.hasPrefix("    "), !line.hasPrefix("http"), !line.hasPrefix("*") {
-            status = line
+            say(line)
         }
     }
 
     private func enter(_ s: Stage) {
         guard s.rawValue >= stage.rawValue else { return }
-        stage = s
-        fraction = max(fraction, share(s).start)
+        if s != stage { stage = s }
+        if share(s).start > fraction { fraction = share(s).start }
     }
 
     /// Where nothing can be counted (Docker's installer, a start), the bar
