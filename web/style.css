@@ -141,3 +141,13 @@ footer p { margin: 6px 0; }
   .brand { font-size: 19px; gap: 8px; }
   .open-btn { white-space: normal; line-height: 1.15; text-align: center; padding: 7px 11px; font-size: 13px; max-width: 46%; }
 }
+
+/* The box's sign-up: an email and a button, side by side, stacked on a phone. */
+.signup { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; max-width: 520px; }
+.signup input[type=email] {
+  flex: 1 1 240px; min-width: 0; padding: 12px 14px; font: inherit; color: #fff;
+  background: #0b0f16; border: 1px solid #2a3343; border-radius: 10px;
+}
+.signup input[type=email]:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+.signup .button { flex: 0 0 auto; cursor: pointer; font: inherit; font-weight: 650; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

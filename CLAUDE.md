@@ -133,6 +133,37 @@ Web changes for the phone apps always go to main, never into an app's folder.
 - Never print credentials. Commits end with the Co-Authored-By line the
   session is given; never put a model name in a commit.
 
+## For the PC: a public demo server (written 2026-10-10, from the Mac)
+
+The owner wants TestFlight public (a public link for the iPhone and Apple TV
+apps). Apple reviews the first build for external testing, and its reviewer
+must sign in and use the app - they cannot set up a server. **The owner's
+choice: a separate demo server on this PC**, which also lets anybody try
+EmberStorm before installing. Built here, as only the PC runs servers:
+
+- **A second install, apart from the live one in every way**: its own folder,
+  compose project (`SOUNDSTORM_PROJECT`, as the move rehearsals use; the
+  compose file pins `container_name`, so an override renaming every container,
+  as `scripts/smoke-stack.sh` does), volumes, library, port (not 8099) and so
+  its own install id and `*.net.emberstorm.app` name, reachable from the
+  internet (remote access, its own router port). Never the owner's library or
+  backends; memory capped so it cannot starve the live server.
+- **Only media anyone may show**: the starter library, generated music,
+  public-domain or CC films (Blender's), CC0 photos, public-domain books - as
+  the website's screenshots were made.
+- **A demo mode in the server** (`SOUNDSTORM_DEMO=true`, say): the demo
+  account a member who can look at and play everything but changes nothing
+  that outlasts the day - no uploads, deleting, moving, password or PIN
+  changes, invitations, photo backup, making audiobooks, scrobbling tokens -
+  each refused with "This is a demo". And the whole install put back to its
+  starting state every night (its volumes from a snapshot), so whatever
+  anyone does is gone by morning.
+- **Its account and address in the private repo only** (they go to Apple in
+  the review notes, never here). Tell the Mac when it is up: the Mac makes the
+  external test group, fills in Apple's forms (the privacy page, `web/privacy.html`,
+  drafted - the owner approves it before the website is published), and
+  submits the iPhone and Apple TV builds for beta review.
+
 ## Catching the Mac and Linux up (written 2026-10-10, from the PC)
 
 A whole day on the Windows setup and the web app (see "Installing, updating,
@@ -262,7 +293,13 @@ registry pause stopping the download (`pull` tried again after 30, 60, 120s);
 the details blank from Docker's thousands of lines; and **20GB was too little
 room**: the images are near 19GB, so `check_room` asks 30GB less what is
 already downloaded. **For the PC:** the Windows setup's `Test-DownloadRoom`
-asks 20GB too.)*
+asks 20GB too. **And the window sat at 83% for an hour after EmberStorm was
+up**: it redrew for every line Docker printed (tens of thousands, each a
+change it watched), fell behind, and was still working through them long
+after the setup had ended. The lines are no longer watched, the details are
+put up four times a second, and progress changes only when it moves - a
+pretend setup of 100,000 lines (`-page run -script`, debug) now finishes in
+seconds.)*
 
 **Who does what:** the PC writes these in `install.sh` and tests the Linux half
 in containers or the box's VM; the Mac then runs the whole install on a Mac -
