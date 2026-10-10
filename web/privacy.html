@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy - EmberStorm</title>
+  <meta name="description" content="What EmberStorm and its apps collect, and what leaves your house: nothing of yours comes to us.">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .policy { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+    .policy h1 { font-size: 2.2rem; margin: 0 0 8px; }
+    .policy h2 { font-size: 1.3rem; margin: 40px 0 10px; }
+    .policy p, .policy li { line-height: 1.6; color: rgba(255, 255, 255, 0.82); }
+    .policy ul { padding-left: 1.2em; }
+    .policy li { margin: 6px 0; }
+    .policy .lede { font-size: 1.15rem; color: #fff; }
+    .policy .updated { color: rgba(255, 255, 255, 0.55); font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="./"><span class="mark" aria-hidden="true"></span>EmberStorm</a>
+    <nav>
+      <a href="./#features">Features</a>
+      <a href="./#install">Install</a>
+      <a href="docs/">Docs</a>
+      <a href="https://github.com/GabrielHollberg/emberstorm">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="policy">
+    <h1>Privacy</h1>
+    <p class="updated">Last changed 10 October 2026</p>
+
+    <p class="lede">EmberStorm runs on your own computer at home. Your photos,
+    films, music, books, searches, accounts and passwords stay there. Nothing
+    of yours is sent to us, and we have no way to see it.</p>
+
+    <h2>What we collect</h2>
+    <p>Nothing about you or what you do. EmberStorm and its apps have no
+    accounts with us, no analytics, no advertising and no tracking. They do not
+    report what you watch, play, read or search for, to us or to anyone. The
+    one service we run (below) is there to give your server a secure address,
+    and holds nothing about your media.</p>
+
+    <h2>Where your things are</h2>
+    <p>On the server you set up - your own computer, or an EmberStorm box in
+    your home. Whoever runs that server (usually you, or the person in your
+    household who set it up) is in charge of what is on it. They can add and
+    remove people, and the owner of a server can see what is on it, as the
+    owner of any computer can. Each person's own photos are kept apart: the
+    other members of the household do not see them.</p>
+
+    <h2>The apps</h2>
+    <p>The iPhone, Apple TV, Android and Android TV apps talk only to the
+    EmberStorm server you choose. They ask for these, and use them only for
+    what is said:</p>
+    <ul>
+      <li><strong>Photos</strong> (if you turn on photo backup or add media
+        from your phone): your photos and videos are sent to your own server,
+        and nowhere else.</li>
+      <li><strong>Camera</strong>: to scan a code, such as the one a TV shows
+        to sign in. The picture is read on the phone and not kept.</li>
+      <li><strong>Local network</strong>: to find your EmberStorm server at
+        home, so you do not have to type its address.</li>
+    </ul>
+    <p>Signing in keeps a cookie from your server on the device, as a website
+    does. Downloads you choose are kept on the device until you remove them or
+    sign out.</p>
+
+    <h2>What leaves your house</h2>
+    <p>EmberStorm itself contacts the internet only for these:</p>
+    <ul>
+      <li><strong>Its secure address.</strong> EmberStorm's name service gives
+        your server a <code>….emberstorm.app</code> address and helps it get a
+        free certificate from Let's Encrypt. The service knows your server's
+        address on your home network, your home's internet address (which any
+        website you visit sees), and the address away from home if you turn on
+        remote access. It keeps a list of which servers are on which internet
+        connection in memory for a few days, so "Open my EmberStorm" on this
+        website can find yours - you can turn that off in Settings. It never
+        carries your media, and it does not know who you are.</li>
+      <li><strong>Updates</strong>, only when they are run: the programs are
+        downloaded from GitHub and Docker's registries.</li>
+      <li><strong>Things you switch on</strong>, all off until you do: lyrics
+        found online (LRCLIB), artist bios and similar artists (MusicBrainz,
+        ListenBrainz, Wikipedia), checking a show against an episode guide
+        (TVmaze), scrobbling to ListenBrainz, importing playlists from Plex,
+        and remote access. Each is sent only what it needs - an artist and
+        song name, a show's name - and nothing that says who you are.</li>
+    </ul>
+    <p>The media servers EmberStorm runs for you also go online for their
+    usual jobs: the film and TV server looks up posters and details (from
+    TheMovieDb and similar), the photo server downloads its search models
+    once, and speech recognition for making ebooks downloads its model once.</p>
+
+    <h2>This website</h2>
+    <p>emberstorm.app is hosted by GitHub Pages, which keeps the usual server
+    logs (GitHub's privacy statement covers them). The site sets no cookies and
+    has no analytics. "Open my EmberStorm" asks our name service which servers
+    are on your internet connection. The name service runs on Railway, which
+    keeps ordinary short-lived logs of requests (an internet address and a
+    time); we keep nothing more.</p>
+
+    <h2>Children</h2>
+    <p>EmberStorm collects nothing from anyone, children included. The
+    owner of a server decides which shelves each person in the household can
+    see.</p>
+
+    <h2>Changes and questions</h2>
+    <p>If this changes, this page will say so, with the date at the top.
+    Questions: <a href="mailto:hello@emberstorm.app">hello@emberstorm.app</a>.
+    EmberStorm is open source, so anyone can check what it does:
+    <a href="https://github.com/GabrielHollberg/emberstorm">github.com/GabrielHollberg/emberstorm</a>.</p>
+  </main>
+
+  <footer>
+    <p><span class="mark" aria-hidden="true"></span> EmberStorm&trade; · Free software under the GNU AGPL 3.0 ·
+      <a href="https://github.com/GabrielHollberg/emberstorm">Source</a> · <a href="docs/">Docs</a> ·
+      <a href="privacy.html">Privacy</a></p>
+  </footer>
+</body>
+</html>
