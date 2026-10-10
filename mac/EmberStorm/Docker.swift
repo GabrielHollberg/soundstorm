@@ -107,13 +107,33 @@ enum Install {
         let base = "http://localhost:\(port(in: dir))"
         for i in 0..<90 {
             if await answers(base + "/healthz") {
-                NSWorkspace.shared.open(URL(string: base + "/?here=server")!)
+                // No account yet: the setup code goes in the address, as the
+                // Windows desktop icon does, so the page does not ask for it
+                // (on a Mac .env is a hidden file).
+                var query = "?here=server"
+                if await !hasOwner(base),
+                   let code = setting("SOUNDSTORM_SETUP_CODE", in: dir), !code.isEmpty,
+                   code.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) {
+                    query = "?setup=\(code)&here=server"
+                }
+                NSWorkspace.shared.open(URL(string: base + "/" + query)!)
                 return
             }
             if i == 10 { status("Starting EmberStorm... this takes a minute after Docker starts.") }
             try? await Task.sleep(for: .seconds(2))
         }
         throw Installer.Failed(message: "EmberStorm did not answer. Choose Try again; if it happens again, restart the Mac.")
+    }
+
+    /// Whether the server has its owner yet (`/healthz`'s `setUp`); an
+    /// answer it cannot read counts as yes, so no code is put in an address
+    /// for nothing.
+    nonisolated static func hasOwner(_ base: String) async -> Bool {
+        guard let url = URL(string: base + "/healthz"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let setUp = json["setUp"] as? Bool else { return true }
+        return setUp
     }
 
     nonisolated static func answers(_ address: String) async -> Bool {
