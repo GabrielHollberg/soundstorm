@@ -1089,15 +1089,54 @@ on, the journal capped, the three secrets made, the menu open after
 `apt-get install --reinstall grub-common`. Not checked: images failing to
 load, a USB network adapter, the stick after a cut install.
 
+**Then two from that list, the owner's "do 4 and 2":**
+- **The box keeps its owner's time zone** (caretaker `timezone.go`, `GET`/`PUT
+  /timezone`; the server's `/api/box/timezone`, owner only; Settings, Devices,
+  **Time zone**). A box came up in UTC, so its 2-5 update window, Debian's
+  security updates and their 05:30 restart fell in a US family's evening. The
+  first time the owner opens Settings on a box still in UTC, the page sets the
+  box to the browser's time zone; never by itself after that (an owner opening
+  the app on holiday does not move the box), but the card offers "Use this
+  device's" when they differ. The caretaker sets it with timedatectl - only a
+  name tz knows (Go's own zone data built in) - and reads it afresh for the
+  night's window; systemd's timers and the restart follow the system zone.
+- **Each box has an identity of its own, kept on its storage drive**
+  (`prepare.sh`: `/srv/soundstorm/identity/box.env`, root's alone): the setup
+  code, a serial (`EM-XXXX-XXXX`, letters and digits nobody misreads) and the
+  three backend secrets made per box. `.env` on the system disk is written from
+  it at every start, so a repair with the stick keeps the sticker's code and
+  the databases' passwords - **the per-box database passwords added earlier
+  the same day would otherwise have been lost by a repair**, breaking the
+  photo and moods databases. Seeded from the factory stick's
+  `/etc/soundstorm/identity.env`, else a box's existing `.env` (a box from
+  before keeps its code and the compose default its database was made with),
+  else made new. **A factory stick makes the identity** and shows it at the
+  end - serial, setup code and a QR code - for two minutes, and keeps it on
+  the stick in `units.csv`; `box/sticker.sh` makes each unit's 90 x 50 mm
+  sticker (SVG) from that list: the serial, the setup code, a QR to set up
+  (`http://soundstorm.local/?setup=CODE`), a QR to get the app, and "On a
+  computer, open soundstorm.local". units.csv belongs with the factory's
+  private records, never this repository. Settings, About shows the serial to
+  the owner (`boxUnit`, for support).
+Checked: the caretaker's test (`TestTheTimeZoneIsTheOwners`: bad names
+refused before anything runs, a real one set and read back); the identity's
+rules in a Debian container - a new box, a repair keeping the code and the
+database password, the factory's, a box from before, and a second run
+changing nothing; a sample sticker drawn, and both its QR codes decoded to the
+right addresses. Then in the VM, end to end: a factory stick installed, the
+box started with the stick's code and serial on its storage drive and in
+`.env`, the time zone set to America/Chicago through the caretaker (a path
+refused), and Debian's update timer then at 01:05 Chicago time. **Found
+there:** the factory wipe took the VM's CD drive for a storage drive (it is
+on SATA too) and stopped; it takes disks only now. Not seen: the page's
+time-zone card, a real sticker printer.
+
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): **the box's own system cannot be updated** - a release carries only
 images, so a fix to the caretaker, the compose files or a script needs the
 stick at the customer's (a signed bundle of the box's files, or A/B system
-partitions); **per-unit provisioning** - the setup code, a serial and the
-sticker made at the factory, the code kept where a reinstall finds it;
-**a factory test** (drive health, network, the button, every service up);
-**the time zone** - the box is UTC, so its 2-5 update window and the 05:30
-restart fall in a US evening; **memory** - no limits on fifteen services,
+partitions); **a factory test** (drive health, network, the button, every
+service up); **memory** - no limits on fifteen services,
 to be measured on the unit; **drive health** (SMART, eMMC wear) shown in the
 app; **updates in the app** (version, what failed, Auto); **staged rollout and
 reports back** (every box updates the same night, nothing reports); **a

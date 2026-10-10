@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +86,9 @@ func (s *Server) caretakerCall(ctx context.Context, method, path string, body, o
 }
 
 var errNoCaretaker = errors.New("this install has no caretaker")
+
+// boxSerial is a box's serial as prepare.sh makes it: EM-XXXX-XXXX.
+var boxSerial = regexp.MustCompile(`^EM-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$`)
 
 // buttonOpen reports whether the box's power button was pressed five times
 // within the last fifteen minutes.
@@ -238,6 +242,40 @@ func (s *Server) handleResetWaiting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"waiting": st.Reset, "until": st.ResetUntil})
+}
+
+// GET and PUT /api/box/timezone {zone}: the box's time zone (owner), which
+// the page sets to the owner's own, so the night the box keeps for its
+// updates and restart is theirs (the box's blind review).
+func (s *Server) handleBoxTimeZone(w http.ResponseWriter, r *http.Request) {
+	var answer struct {
+		Zone string `json:"zone"`
+	}
+	if r.Method == http.MethodPut {
+		var body struct {
+			Zone string `json:"zone"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil || len(body.Zone) > 64 {
+			writeError(w, http.StatusBadRequest, "expected a time zone")
+			return
+		}
+		code, err := s.caretakerCall(r.Context(), http.MethodPut, "/timezone", map[string]string{"zone": body.Zone}, &answer)
+		if err != nil || code != http.StatusOK {
+			if code == http.StatusBadRequest {
+				writeError(w, http.StatusBadRequest, "That is not a time zone the box knows.")
+				return
+			}
+			writeError(w, http.StatusBadGateway, "The box could not set its time zone just now.")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"zone": answer.Zone})
+		return
+	}
+	if code, err := s.caretakerCall(r.Context(), http.MethodGet, "/timezone", nil, &answer); err != nil || code != http.StatusOK {
+		writeError(w, http.StatusBadGateway, "The box could not be asked.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"zone": answer.Zone})
 }
 
 // DELETE /api/reset: an erase still waiting for the box's power button is

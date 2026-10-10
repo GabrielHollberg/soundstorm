@@ -149,6 +149,28 @@ func (u *Updater) Handler() http.Handler {
 		}
 		reply(w, map[string]any{"open": open})
 	})
+	// The box's time zone, which the app sets to the owner's (timezone.go).
+	mux.HandleFunc("GET /timezone", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, map[string]any{"zone": u.zoneName()})
+	})
+	mux.HandleFunc("PUT /timezone", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Zone string `json:"zone"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil {
+			http.Error(w, errBadZone.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := u.setZone(r.Context(), body.Zone); err != nil {
+			code := http.StatusBadGateway
+			if errors.Is(err, errBadZone) {
+				code = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), code)
+			return
+		}
+		reply(w, map[string]any{"zone": body.Zone})
+	})
 	mux.HandleFunc("GET /button", func(w http.ResponseWriter, r *http.Request) {
 		open, until := u.buttonOpen()
 		// Never the code: that is for the box's own screen (ButtonCodeFile),
@@ -244,8 +266,10 @@ func (u *Updater) schedule(ctx context.Context) {
 			continue
 		}
 		// At night: wait for the window, then install.
-		if h := time.Now().Hour(); h < 2 || h >= 5 {
-			wait = untilHour(time.Now(), 2) + time.Duration(time.Now().UnixNano()%int64(time.Hour))
+		// In the owner's time zone (timezone.go), read afresh each time.
+		now := time.Now().In(u.localZone())
+		if h := now.Hour(); h < 2 || h >= 5 {
+			wait = untilHour(now, 2) + time.Duration(now.UnixNano()%int64(time.Hour))
 			continue
 		}
 		// Only once EmberStorm has started: the caretaker no longer waits for

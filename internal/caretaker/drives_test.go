@@ -54,3 +54,41 @@ func TestADriveIsOpenedOnlyWhenAsked(t *testing.T) {
 		t.Fatalf("after opening: %+v", d)
 	}
 }
+
+// The box's time zone: a real one is set through timedatectl and read from
+// the system's link; anything else is refused before anything runs.
+func TestTheTimeZoneIsTheOwners(t *testing.T) {
+	b := newBox(t)
+	b.u.cfg.LocalTime = filepath.Join(b.dir, "localtime")
+	var ran []string
+	b.u.run = func(_ context.Context, name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		if name == "timedatectl" {
+			os.Remove(b.u.cfg.LocalTime)
+			return os.Symlink("/usr/share/zoneinfo/"+args[1], b.u.cfg.LocalTime)
+		}
+		return nil
+	}
+	h := b.u.Handler()
+	for _, bad := range []string{"../../etc/passwd", "Mars/Olympus", "--help", ""} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/timezone", strings.NewReader(`{"zone":"`+bad+`"}`)))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%q: %d", bad, rec.Code)
+		}
+	}
+	if len(ran) != 0 {
+		t.Fatalf("ran %v for bad zones", ran)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/timezone", strings.NewReader(`{"zone":"America/Denver"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := b.u.zoneName(); got != "America/Denver" {
+		t.Fatalf("zone read back as %q", got)
+	}
+	if b.u.localZone().String() != "America/Denver" {
+		t.Fatal("not used for the night")
+	}
+}

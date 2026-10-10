@@ -46,6 +46,8 @@ type Config struct {
 	USB           string
 	DrivesWaiting string
 	DrivesOpen    string
+	// LocalTime is the system's time zone link (timezone.go).
+	LocalTime string
 	// ManifestURL is where releases are published; ".sig" beside it.
 	ManifestURL string
 	// Key is the release key built into the box, and Backup the keys also
@@ -81,6 +83,7 @@ func (c Config) Defaults() Config {
 	set(&c.USB, "/usr/local/lib/soundstorm/usb.sh")
 	set(&c.DrivesWaiting, "/run/soundstorm/usb-waiting")
 	set(&c.DrivesOpen, "/run/soundstorm/usb")
+	set(&c.LocalTime, "/etc/localtime")
 	set(&c.ManifestURL, "https://github.com/GabrielHollberg/soundstorm/releases/download/box-channel/manifest.json")
 	set(&c.HealthURL, "http://localhost:8099/healthz")
 	if c.HealthWait == 0 {

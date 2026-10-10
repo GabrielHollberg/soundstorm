@@ -1,10 +1,16 @@
 #!/bin/sh
 # Writes the box's settings before SoundStorm starts, every time it starts.
 #
-# The setup code is made once (a unit made at the factory already has one, to
-# match its sticker); the box's address and its router's are written fresh
-# each start, because a box only ever has the address it has now - unlike an
-# install on a laptop, there is no address somebody chose to keep.
+# The box's identity - its setup code and serial (on its sticker) and the
+# backends' own secrets - is kept on the storage drive (box.env, root's
+# alone), made once: by the factory stick (identity.env on the system disk),
+# else here. The system disk's .env is written from it at every start, so a
+# repair from the USB stick, which writes the system disk afresh and keeps
+# the storage drive, keeps the sticker's code and the databases' passwords
+# (the box's blind review: it lost both). The box's address and its router's
+# are written fresh each start, because a box only ever has the address it
+# has now - unlike an install on a laptop, there is no address somebody
+# chose to keep.
 set -eu
 
 cd /opt/soundstorm
@@ -26,18 +32,55 @@ set_env() {
 	mv .env.new .env
 }
 
-[ -n "$(get_env SOUNDSTORM_SETUP_CODE)" ] ||
-	set_env SOUNDSTORM_SETUP_CODE "$(od -An -N10 -tx1 /dev/urandom | tr -d ' \n')"
+ID_DIR=/srv/soundstorm/identity
+ID="$ID_DIR/box.env"
+FACTORY=/etc/soundstorm/identity.env
+mkdir -p "$ID_DIR"
+chmod 700 "$ID_DIR"
+touch "$ID"
+chmod 600 "$ID"
+id_get() { sed -n "s/^$1=//p" "$ID" | tail -1; }
+id_set() {
+	case "$2" in *"
+"*) echo "prepare: refusing a value with a line break for $1" >&2; exit 1 ;; esac
+	rc=0
+	grep -v "^$1=" "$ID" > "$ID.new" || rc=$?
+	[ "$rc" -le 1 ] || { echo "prepare: could not read $ID" >&2; rm -f "$ID.new"; exit 1; }
+	printf '%s=%s\n' "$1" "$2" >> "$ID.new"
+	mv "$ID.new" "$ID"
+}
+factory_get() { [ -r "$FACTORY" ] && sed -n "s/^$1=//p" "$FACTORY" | tail -1; true; }
+# keep NAME MAKE: the identity's value, else the factory's, else what .env
+# had (a box from before), else MAKE's - kept on the drive, written to .env.
+keep() {
+	v=$(id_get "$1")
+	[ -n "$v" ] || v=$(factory_get "$1")
+	[ -n "$v" ] || v=$(get_env "$1")
+	[ -n "$v" ] || v=$($2)
+	[ "$(id_get "$1")" = "$v" ] || id_set "$1" "$v"
+	[ "$(get_env "$1")" = "$v" ] || set_env "$1" "$v"
+}
+new_code() { od -An -N10 -tx1 /dev/urandom | tr -d ' \n'; }
+# EM- and eight letters and digits nobody misreads (no I, L, O or U).
+new_unit() {
+	od -An -N8 -tu1 /dev/urandom | awk '{ for (i = 1; i <= NF; i++) s = s substr("0123456789ABCDEFGHJKMNPQRSTVWXYZ", $i % 32 + 1, 1) }
+		END { printf "EM-%s-%s", substr(s, 1, 4), substr(s, 5, 4) }'
+}
+keep SOUNDSTORM_SETUP_CODE new_code
+keep SOUNDSTORM_UNIT new_unit
 [ -n "$(get_env SOUNDSTORM_TLS)" ] || set_env SOUNDSTORM_TLS auto
 
 # The backends' own secrets, made for this box - not the compose file's
 # defaults every box would share (the box's blind review). Only for a
-# database not made yet: one already made keeps the password it was made with.
+# database not made yet: one already made keeps the password it was made
+# with (the compose default, for a box set up before this).
 secret() { od -An -N16 -tx1 /dev/urandom | tr -d ' \n'; }
 volume_empty() { [ -z "$(ls -A "/srv/soundstorm/volumes/$1" 2>/dev/null)" ]; }
 own_secret() {
-	[ -n "$(get_env "$1")" ] && return 0
-	if volume_empty "$2"; then set_env "$1" "$(secret)"; else set_env "$1" "$3"; fi
+	if [ -z "$(id_get "$1")" ] && [ -z "$(get_env "$1")" ] && ! volume_empty "$2"; then
+		set_env "$1" "$3"
+	fi
+	keep "$1" secret
 }
 own_secret SOUNDSTORM_IMMICH_DB_PASSWORD immich-db soundstorm-immich
 own_secret SOUNDSTORM_AUDIOMUSE_DB_PASSWORD audiomuse-db soundstorm-audiomuse

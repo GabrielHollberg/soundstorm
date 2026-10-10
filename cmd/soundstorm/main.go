@@ -428,6 +428,7 @@ func run(log *slog.Logger) error {
 		TrainingDir:     trainingDir,
 		DrivesDir:       os.Getenv("SOUNDSTORM_DRIVES_DIR"),
 		CaretakerSocket: os.Getenv("SOUNDSTORM_CARETAKER"),
+		BoxUnit:         os.Getenv("SOUNDSTORM_UNIT"),
 	})
 
 	// Books with both an ebook and an audiobook are synced for read-along by

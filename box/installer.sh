@@ -69,7 +69,7 @@ qemu-img resize -q "$stick" "$(((zst / 1073741824) + 4))G"
 # shellcheck disable=SC2086
 virt-customize -a "$stick" \
 	--hostname emberstorm-installer \
-	--install zstd,gdisk,efibootmgr,cloud-guest-utils \
+	--install zstd,gdisk,efibootmgr,cloud-guest-utils,qrencode \
 	--run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1' \
 	$copy_args \
 	--run-command 'chmod 755 /usr/local/lib/emberstorm-install/install.sh' \

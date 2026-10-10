@@ -651,6 +651,17 @@
         <p id="server-name-note" class="muted hidden" role="status"></p>
       </div>
 
+      <!-- The box's time zone (on a box, owner only): its nightly updates and
+           restarts keep to the owner's night (reset.go, caretaker timezone.go). -->
+      <div id="box-time-block" class="account-section card hidden" data-hint="So updates happen at night" data-cat="devices" data-words="time zone clock night updates restart">
+        <h2>Time zone</h2>
+        <p class="muted">The box updates itself between 2 and 5 in the morning, in this time zone.</p>
+        <p><strong id="box-time-zone"></strong></p>
+        <div class="account-actions">
+          <button id="box-time-use" type="button" class="ghost small hidden"></button>
+        </div>
+      </div>
+
       <!-- An easy address for this server, and finding it from emberstorm.app
            (owner only; needs automatic HTTPS, the name service). -->
       <div id="web-name-block" class="account-section card hidden" data-hint="An easy address, and opening it from emberstorm.app" data-cat="devices" data-words="web address name url soundstorm.dev find open bookmark link easy remember">
@@ -842,6 +853,7 @@
           <a href="https://github.com/GabrielHollberg/emberstorm" target="_blank" rel="noopener noreferrer">on GitHub</a>,
           and the media servers it runs alongside keep their own licenses.
           </p>
+        <p id="box-unit" class="muted hidden"></p>
       </div>
 
       <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout change server">

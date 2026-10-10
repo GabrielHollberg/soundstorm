@@ -132,6 +132,22 @@ for f in /mnt/box/etc/fstab /mnt/box/boot/grub/grub.cfg /mnt/box/boot/efi/EFI/de
 done
 grep -q "$new_root" /mnt/box/etc/fstab && grep -q "$new_fs" /mnt/box/boot/efi/EFI/debian/grub.cfg
 ok=$?
+
+# A factory stick gives the box its identity - its setup code and serial,
+# for its sticker - which the box keeps on its storage drive from its first
+# start (prepare.sh), so a repair later keeps them. Shown at the end, and
+# kept on the stick (units.csv) for the stickers to be printed from.
+unit="" code=""
+if [ "$ok" = 0 ] && [ -e "$P/factory" ]; then
+	code=$(od -An -N10 -tx1 /dev/urandom | tr -d ' \n')
+	unit=$(od -An -N8 -tu1 /dev/urandom | awk '{ for (i = 1; i <= NF; i++) s = s substr("0123456789ABCDEFGHJKMNPQRSTVWXYZ", $i % 32 + 1, 1) }
+		END { printf "EM-%s-%s", substr(s, 1, 4), substr(s, 5, 4) }')
+	mkdir -p /mnt/box/etc/soundstorm
+	(umask 077 && printf 'SOUNDSTORM_SETUP_CODE=%s\nSOUNDSTORM_UNIT=%s\n' "$code" "$unit" >/mnt/box/etc/soundstorm/identity.env) || ok=1
+	[ -f "$P/units.csv" ] || echo "unit,setup_code,made" >"$P/units.csv"
+	echo "$unit,$code,$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$P/units.csv"
+	sync
+fi
 umount /mnt/box/boot/efi /mnt/box
 [ "$ok" = 0 ] || fail "The installed system could not be told its new IDs."
 
@@ -146,8 +162,8 @@ efibootmgr -q -c -d "/dev/$target" -p 15 -L EmberStorm -l '\EFI\debian\shimx64.e
 
 if [ -e "$P/factory" ]; then
 	# Every internal storage drive, NVMe or SATA; never the built-in drive
-	# just written or the stick.
-	for d in $(lsblk -dno NAME,TRAN | awk '$2=="nvme" || $2=="sata" || $2=="ata" {print $1}'); do
+	# just written or the stick; disks only (a CD drive is on SATA too).
+	for d in $(lsblk -dno NAME,TYPE,TRAN | awk '$2=="disk" && ($3=="nvme" || $3=="sata" || $3=="ata") {print $1}'); do
 		[ "$d" = "$self" ] || [ "$d" = "$target" ] && continue
 		say "Wiping the storage drive ($d)..."
 		wipefs -a -f "/dev/$d" >/dev/null || fail "The storage drive could not be wiped."
@@ -156,8 +172,18 @@ fi
 
 clear_screen
 printf '\n   \033[1;32mEmberStorm is installed.\033[0m\n'
-say "Take the USB stick out. The box switches itself off in 30 seconds;"
-say "switch it on again and it starts EmberStorm."
-sync
-sleep 30
+if [ -n "$unit" ]; then
+	# What goes on the sticker (box/sticker.sh makes it from units.csv).
+	say "Serial:      $unit"
+	say "Setup code:  $(printf '%s' "$code" | sed 's/..../& /g')"
+	qrencode -t UTF8 -m 1 "http://soundstorm.local/?setup=$code" 2>/dev/null | sed 's/^/   /'
+	say "Kept on the stick in units.csv for the sticker. Switching off in 2 minutes."
+	sync
+	sleep 120
+else
+	say "Take the USB stick out. The box switches itself off in 30 seconds;"
+	say "switch it on again and it starts EmberStorm."
+	sync
+	sleep 30
+fi
 systemctl poweroff

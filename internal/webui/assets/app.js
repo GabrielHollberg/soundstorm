@@ -1174,8 +1174,42 @@ function renderAccount() {
     const box = Boolean(ok && body && body.boxReset);
     show($('box-reset-block'), box);
     if (box) showResetWaiting();
+    show($('box-time-block'), box);
+    if (box) showBoxTimeZone();
+    // The box's serial, as on its sticker: what support asks for.
+    const unit = ok && body && body.boxUnit;
+    show($('box-unit'), Boolean(unit));
+    if (unit) $('box-unit').textContent = `This box's serial number: ${unit}`;
   });
 }
+
+// The box's time zone. A box comes up in UTC, which put its night (updates
+// and their restart) in a US family's evening; the owner's own time zone is
+// set the first time they open Settings on it, and can be set again from
+// here (the box's blind review). Never changed by itself once set: an owner
+// opening the app on holiday does not move the box.
+function deviceTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+}
+async function showBoxTimeZone() {
+  const { ok, body } = await api('/api/box/timezone');
+  if (!ok || !body) return;
+  let zone = body.zone || 'UTC';
+  const mine = deviceTimeZone();
+  if ((zone === 'UTC' || zone === 'Etc/UTC') && mine && mine !== zone) {
+    const set = await api('/api/box/timezone', { method: 'PUT', body: JSON.stringify({ zone: mine }) });
+    if (set.ok) zone = mine;
+  }
+  $('box-time-zone').textContent = zone.replace(/_/g, ' ');
+  const use = $('box-time-use');
+  show(use, Boolean(mine && mine !== zone));
+  use.textContent = `Use this device's: ${mine.replace(/_/g, ' ')}`;
+}
+$('box-time-use').addEventListener('click', async () => {
+  const r = await api('/api/box/timezone', { method: 'PUT', body: JSON.stringify({ zone: deviceTimeZone() }) });
+  if (!r.ok) showToast((r.body && r.body.error) || 'Could not set the time zone.');
+  showBoxTimeZone();
+});
 
 // An erase or start over still waiting for the box's power button, said in
 // its card with a Cancel, whenever Settings is opened - the waiting screen

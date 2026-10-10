@@ -198,6 +198,7 @@ type Server struct {
 	// caretakerSocket is the box caretaker's socket (reset.go); empty off a
 	// box.
 	caretakerSocket string
+	boxUnit         string
 	caretakerOnce   sync.Once
 	caretakerClient *http.Client
 
@@ -321,6 +322,10 @@ type Config struct {
 	// CaretakerSocket is the box caretaker's socket (SOUNDSTORM_CARETAKER):
 	// starting over, erasing, and the power button (reset.go). Empty off a box.
 	CaretakerSocket string
+
+	// BoxUnit is a box's serial, as on its sticker (SOUNDSTORM_UNIT), shown
+	// to the owner for support. Empty off a box.
+	BoxUnit string
 }
 
 // RemoteState is the current state of remote access, for the account panel. It
@@ -388,6 +393,7 @@ func New(cfg Config) *Server {
 		photoSharesRec:   photoShares{file: stateFile(cfg.StateDir, sharesStateFile)},
 		drivesDir:        cfg.DrivesDir,
 		caretakerSocket:  cfg.CaretakerSocket,
+		boxUnit:          cfg.BoxUnit,
 		rescanTimers:     map[media.Kind]*time.Timer{},
 		lastRescan:       map[media.Kind]time.Time{},
 		autoKick:         make(chan struct{}, 1),
@@ -658,6 +664,8 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("POST /api/drives/open", s.handleDriveOpen)
 	owner.HandleFunc("DELETE /api/reset", s.handleCancelReset)
 	owner.HandleFunc("GET /api/reset/waiting", s.handleResetWaiting)
+	owner.HandleFunc("GET /api/box/timezone", s.handleBoxTimeZone)
+	owner.HandleFunc("PUT /api/box/timezone", s.handleBoxTimeZone)
 	owner.HandleFunc("GET /api/drives", s.handleDrives)
 	owner.HandleFunc("GET /api/drives/import", s.handleDriveImportStatus)
 	owner.HandleFunc("POST /api/drives/import/stop", s.handleDriveImportStop)
@@ -701,6 +709,7 @@ func (s *Server) Routes() http.Handler {
 	guarded.Handle("/api/reset", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/reset/summary", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/reset/waiting", s.auth.RequireOwner(owner))
+	guarded.Handle("/api/box/timezone", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/drives", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/drives/", s.auth.RequireOwner(owner))
 	guarded.Handle("/api/books/pairs/not-same", s.auth.RequireOwner(owner))
@@ -874,6 +883,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		// A box can be started over or erased (reset.go): the owner's cards.
 		if user.IsOwner() && s.caretakerSocket != "" {
 			answer["boxReset"] = true
+			if boxSerial.MatchString(s.boxUnit) {
+				answer["boxUnit"] = s.boxUnit
+			}
 		}
 		// The looks' training mode, on the developer's install alone.
 		if s.trainingDir != "" {

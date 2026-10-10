@@ -80,6 +80,8 @@ services:
     environment:
       SOUNDSTORM_DRIVES_DIR: /drives
       SOUNDSTORM_CARETAKER: /run/soundstorm-caretaker/caretaker.sock
+      # The box's serial, on its sticker (prepare.sh), for Settings to show.
+      SOUNDSTORM_UNIT: ${SOUNDSTORM_UNIT:-}
     volumes:
       - type: bind
         source: /run/soundstorm-caretaker
