@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // What a power cut part way through an update leaves: the new images file
@@ -117,5 +118,87 @@ func TestASnapshotHasANameOfItsOwn(t *testing.T) {
 	}
 	if again := b.u.snapshotPath(5); again == first || !strings.HasPrefix(again, first+"-") {
 		t.Fatalf("%q then %q", first, again)
+	}
+}
+
+// The caretaker stopping while an update waits for health is not the update
+// failing: nothing is rolled back, and the update stays written down for
+// the next start.
+func TestAnUpdateCutByShutdownIsLeftForTheNextStart(t *testing.T) {
+	b := newBox(t)
+	b.healthy.Store(false)
+	b.u.saveBaseline(9)
+	b.publish(release(5))
+	m, _ := b.u.Check(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	b.u.run = func(_ context.Context, name string, args ...string) error {
+		if name == "up" && len(args) == 0 {
+			cancel() // switched off as the new version starts
+		}
+		return nil
+	}
+	if err := b.u.Update(ctx, m); err == nil {
+		t.Fatal("reported as updated")
+	}
+	if _, ok := b.u.readPending(); !ok {
+		t.Fatal("the update was not left for the next start")
+	}
+	if b.u.rolledBack(5) {
+		t.Fatal("taken for a failed release")
+	}
+}
+
+// A release undone here is not offered again.
+func TestARolledBackReleaseIsNotOfferedAgain(t *testing.T) {
+	b := newBox(t)
+	b.u.markRolledBack(5)
+	b.publish(release(5))
+	if m, err := b.u.Check(context.Background()); err != nil || m != nil {
+		t.Fatalf("offered again: %v %v", m, err)
+	}
+	b.publish(release(6))
+	if m, _ := b.u.Check(context.Background()); m == nil || m.Serial != 6 {
+		t.Fatal("a newer release was not offered")
+	}
+}
+
+// Ten presses while an update holds the box are not lost: the reset runs
+// once it is free. And an erase leaves no copy of the accounts behind.
+func TestAResetWaitsForABusyBox(t *testing.T) {
+	b := newBox(t)
+	b.u.cfg.Volumes = filepath.Join(b.dir, "volumes")
+	b.u.cfg.Cache = filepath.Join(b.dir, "cache")
+	b.u.cfg.Library = filepath.Join(b.dir, "library")
+	for _, d := range []string{b.u.cfg.Volumes, b.u.cfg.Cache, b.u.cfg.Library, b.u.cfg.Volumes + "-failed-x"} {
+		os.MkdirAll(filepath.Join(d, "kept"), 0o755)
+	}
+	account := filepath.Join(b.u.cfg.Volumes, "kept", "state.json")
+	os.WriteFile(account, []byte("{}"), 0o644)
+	var deleted []string
+	b.u.run = func(_ context.Context, name string, args ...string) error {
+		if name == "btrfs" && len(args) == 3 && args[1] == "delete" {
+			deleted = append(deleted, args[2])
+		}
+		return nil
+	}
+	b.u.busy.Lock() // an update under way
+	b.u.ArmReset(ResetErase)
+	b.u.Pressed(context.Background(), ResetPresses)
+	time.Sleep(300 * time.Millisecond)
+	if _, err := os.Stat(account); err != nil {
+		t.Fatal("reset while busy")
+	}
+	b.u.busy.Unlock()
+	for i := 0; i < 150; i++ {
+		if _, err := os.Stat(account); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, err := os.Stat(account); !os.IsNotExist(err) {
+		t.Fatal("the reset never ran once the box was free")
+	}
+	if !strings.Contains(strings.Join(deleted, " "), "-failed-x") {
+		t.Fatalf("a copy of the accounts was left: deleted %v", deleted)
 	}
 }

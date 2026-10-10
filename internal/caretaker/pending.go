@@ -123,7 +123,10 @@ func (u *Updater) finishUpdate(ctx context.Context, p pending) {
 	}
 	u.set(func(s *Status) { s.State = "updating"; s.Message = "Finishing the update to EmberStorm " + m.Version })
 	installed, _ := os.ReadFile(imagesPath)
-	if string(installed) == string(ImagesFile(m)) {
+	// Kept only when the update got as far as starting: its images named,
+	// the volumes in place, and the snapshot still beside them (gone, a
+	// rollback was under way and the volumes are already the old ones).
+	if string(installed) == string(ImagesFile(m)) && exists(u.cfg.Volumes) && (p.Snapshot == "" || exists(p.Snapshot)) {
 		// Its images were written: started (or started again) and healthy,
 		// it is kept.
 		_ = u.runFor(ctx, upTimeout, u.cfg.Up)
@@ -141,6 +144,7 @@ func (u *Updater) finishUpdate(ctx context.Context, p pending) {
 		}
 	}
 	back := u.rollback(ctx, imagesPath, previous, p.Snapshot)
+	u.markRolledBack(m.Serial)
 	u.clearPending()
 	u.log.Warn("an update cut short was undone", "version", m.Version, "back", back)
 	u.set(func(s *Status) {

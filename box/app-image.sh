@@ -6,8 +6,9 @@
 # workflow built from one commit on main (APP_COMMIT: a commit or tag,
 # default the checkout's HEAD), found by the tag it gives every build
 # ("sha-<commit>"), pinned by digest, and - where it counts - checked against
-# the provenance GitHub signed for that build, so a pushed image cannot pass
-# for one built from the code.
+# the provenance GitHub signed for that build - by that workflow, from that
+# very commit, on main - so a pushed image cannot pass for one built from
+# the code, nor an older or another branch's build relabelled.
 #
 # Sets APP_IMAGE (name@sha256:...) and APP_COMMIT. app_image strict refuses
 # an image whose provenance cannot be checked; without it a missing check is
@@ -45,7 +46,8 @@ app_image() {
 	rm -f "$raw"
 	if command -v gh >/dev/null 2>&1 &&
 		gh attestation verify "oci://$APP_IMAGE" --repo "$APP_SOURCE" \
-			--signer-workflow "$APP_SOURCE/.github/workflows/publish.yml" >/dev/null 2>&1; then
+			--signer-workflow "$APP_SOURCE/.github/workflows/publish.yml" \
+			--source-digest "$APP_COMMIT" --source-ref refs/heads/main >/dev/null 2>&1; then
 		echo "  $APP_IMAGE: built by GitHub from $APP_COMMIT (provenance checked)"
 		return 0
 	fi

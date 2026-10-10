@@ -106,12 +106,29 @@ func TestThePowerButtonCountsRuns(t *testing.T) {
 	if open, _ := b.u.buttonOpen(); open || b.u.claimButton(code) {
 		t.Fatal("still open after it was used")
 	}
+	// Wrong codes pause guessing for a minute rather than closing the
+	// window - the right code is refused during the pause too - and many
+	// close it.
 	b.u.Pressed(ctx, 5)
+	b.u.button.mu.Lock()
+	code = b.u.button.code
+	b.u.button.mu.Unlock()
 	for range maxWrongCodes {
 		b.u.claimButton("guess")
 	}
+	if open, _ := b.u.buttonOpen(); !open {
+		t.Fatal("five wrong codes closed the window")
+	}
+	if b.u.claimButton(code) {
+		t.Fatal("a code was taken during the pause")
+	}
+	b.u.button.mu.Lock()
+	b.u.button.pausedUntil = time.Time{}
+	b.u.button.wrong = 10*maxWrongCodes - 1
+	b.u.button.mu.Unlock()
+	b.u.claimButton("guess")
 	if open, _ := b.u.buttonOpen(); open {
-		t.Fatal("guessing did not close the window")
+		t.Fatal("many wrong codes did not close the window")
 	}
 	b.u.Pressed(ctx, 1)
 	b.mu.Lock()

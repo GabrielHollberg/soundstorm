@@ -46,7 +46,8 @@ func (s *Server) caretakerCall(ctx context.Context, method, path string, body, o
 	s.caretakerOnce.Do(func() {
 		socket := s.caretakerSocket
 		s.caretakerClient = &http.Client{
-			Timeout: 30 * time.Second,
+			// Each call's own deadline (caretakerCall): opening a slow USB
+			// drive takes longer than the rest.
 			Transport: &http.Transport{
 				DisableKeepAlives: true,
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -62,6 +63,12 @@ func (s *Server) caretakerCall(ctx context.Context, method, path string, body, o
 		data, _ := json.Marshal(body)
 		reader = bytes.NewReader(data)
 	}
+	wait := 30 * time.Second
+	if path == "/drives/open" {
+		wait = 3 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, "http://caretaker"+path, reader)
 	if err != nil {
 		return 0, err
@@ -217,6 +224,21 @@ var ownNetworks = sync.OnceValue(func() []netip.Prefix {
 	}
 	return out
 })
+
+// GET /api/reset/waiting: an erase or start over waiting for the box's
+// power button, if one is (owner), so Settings can say so and cancel it
+// whenever the page was opened (the box's blind review).
+func (s *Server) handleResetWaiting(w http.ResponseWriter, r *http.Request) {
+	var st struct {
+		Reset      string    `json:"reset"`
+		ResetUntil time.Time `json:"resetUntil"`
+	}
+	if code, err := s.caretakerCall(r.Context(), http.MethodGet, "/button", nil, &st); err != nil || code != http.StatusOK {
+		writeJSON(w, http.StatusOK, map[string]any{"waiting": ""})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"waiting": st.Reset, "until": st.ResetUntil})
+}
 
 // DELETE /api/reset: an erase still waiting for the box's power button is
 // taken back (owner).

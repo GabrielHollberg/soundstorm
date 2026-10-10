@@ -31,7 +31,9 @@ func (u *Updater) watchButton(ctx context.Context) {
 			// reports it twice): presses closer than this are one.
 			mu.Lock()
 			defer mu.Unlock()
-			if time.Since(last) < 250*time.Millisecond {
+			// 80ms: one press reported by two devices arrives together, and
+			// a quarter second swallowed quick presses of ten.
+			if time.Since(last) < 80*time.Millisecond {
 				return
 			}
 			last = time.Now()

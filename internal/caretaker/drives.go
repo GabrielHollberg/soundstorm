@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -66,6 +67,10 @@ func (u *Updater) waitingDrives() []Drive {
 	return out
 }
 
+// driveOpening lets one drive be opened at a time: two asks at once mounted
+// a drive twice (the box's blind review).
+var driveOpening sync.Mutex
+
 // errNoDrive is a drive asked for that is not plugged in.
 var errNoDrive = errors.New("no such drive is plugged in")
 
@@ -78,6 +83,8 @@ func (u *Updater) openDrive(ctx context.Context, part string) (string, error) {
 	if _, err := os.Stat(filepath.Join(u.cfg.DrivesWaiting, part)); err != nil {
 		return "", errNoDrive
 	}
+	driveOpening.Lock()
+	defer driveOpening.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	if err := u.run(ctx, u.cfg.USB, "mount", part); err != nil {

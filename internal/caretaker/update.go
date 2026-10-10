@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -213,17 +214,27 @@ func (u *Updater) fetch(ctx context.Context, url string) ([]byte, error) {
 // Check asks for the newest release. It answers the manifest when it is newer
 // than the one running, and nil when there is nothing to do.
 func (u *Updater) Check(ctx context.Context) (*Manifest, error) {
-	u.set(func(s *Status) { s.State = "checking"; s.Message = "" })
+	// Only an idle box says it is checking: an update or reset under way,
+	// or how the last one ended, is not overwritten by a check that ran
+	// beside it (the box's blind review).
+	u.set(func(s *Status) {
+		if s.State == "idle" || s.State == "" {
+			s.State, s.Message = "checking", ""
+		}
+	})
 	m, err := u.check(ctx)
 	u.set(func(s *Status) {
 		now := time.Now()
 		s.LastCheck = &now
-		s.State = "idle"
-		if err != nil {
-			s.Message = "Could not check for updates: " + err.Error()
-			return
+		if s.State == "checking" {
+			s.State = "idle"
+			if err != nil {
+				s.Message = "Could not check for updates: " + err.Error()
+			}
 		}
-		s.Available = m
+		if err == nil {
+			s.Available = m
+		}
 	})
 	return m, err
 }
@@ -249,6 +260,11 @@ func (u *Updater) check(ctx context.Context) (*Manifest, error) {
 	}
 	cur := u.Status().Current
 	if cur != nil && m.Serial <= cur.Serial {
+		return nil, nil
+	}
+	// One that did not come up healthy here is not tried again every night:
+	// a newer release replaces it (the box's blind review).
+	if u.rolledBack(m.Serial) {
 		return nil, nil
 	}
 	// A release names every service the running one does: one left out
@@ -292,6 +308,11 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 		return ErrBusy
 	}
 	defer u.busy.Unlock()
+	// Not while an erase or start over waits for the button: the presses
+	// would find the box busy (the box's blind review).
+	if mode, _ := u.resetArmed(); mode != "" {
+		return ErrBusy
+	}
 	if err := m.Validate(); err != nil {
 		return err
 	}
@@ -358,8 +379,20 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 		return u.fail(err, "The update could not be installed. EmberStorm is back as it was.")
 	}
 	if err := u.runFor(ctx, upTimeout, u.cfg.Up); err != nil || !u.healthy(ctx, before) {
+		// The caretaker stopping (the box switched off, the service
+		// restarted) is not the new version failing: left as it is, and
+		// written down, the next start judges it (pending.go), where rolling
+		// back on a cancelled context half did it (the box's blind review).
+		if ctx.Err() != nil {
+			u.log.Warn("update cut short by the caretaker stopping; the next start finishes it", "version", m.Version)
+			return ctx.Err()
+		}
 		back := u.rollback(ctx, imagesPath, previous, snap)
-		u.clearPending()
+		u.markRolledBack(m.Serial)
+		// Kept when going back did not work: the next start tries again.
+		if back {
+			u.clearPending()
+		}
 		if err == nil {
 			err = errors.New("did not come up healthy")
 		}
@@ -454,8 +487,20 @@ var pollEvery = 5 * time.Second
 // worked: a rollback that could not put the volumes back was reported as
 // nothing lost (the thirteenth security pass).
 func (u *Updater) rollback(ctx context.Context, imagesPath string, previous []byte, snap string) bool {
+	ctx = context.WithoutCancel(ctx)
 	ok := true
 	_ = u.runFor(ctx, stopTimeout, u.cfg.Up, "stop")
+	// The images from before first, then the volumes: cut short between,
+	// the next start finds the old images named and puts the volumes back,
+	// where the other way round it could start the new version on the old
+	// volumes (the box's blind review).
+	if previous != nil {
+		if err := writeFile(imagesPath, previous); err != nil {
+			ok = false
+		}
+	} else {
+		_ = os.Remove(imagesPath)
+	}
 	if snap != "" && !exists(u.cfg.Volumes) && exists(snap) {
 		// A rollback cut short after setting the volumes aside: the copy
 		// goes straight back.
@@ -477,13 +522,6 @@ func (u *Updater) rollback(ctx context.Context, imagesPath string, previous []by
 		} else {
 			_ = u.run(ctx, "btrfs", "subvolume", "delete", failed)
 		}
-	}
-	if previous != nil {
-		if err := writeFile(imagesPath, previous); err != nil {
-			ok = false
-		}
-	} else {
-		_ = os.Remove(imagesPath)
 	}
 	if err := u.runFor(ctx, upTimeout, u.cfg.Up); err != nil {
 		u.log.Error("could not start the previous version again", "err", err)
@@ -523,9 +561,38 @@ func (u *Updater) saveBaseline(n int) {
 // deletes the rest.
 func (u *Updater) pruneSnapshots(ctx context.Context, keep string) {
 	matches, _ := filepath.Glob(u.cfg.Volumes + "-before-*")
-	for _, p := range matches {
+	// And the updated volumes a rollback set aside and could not delete
+	// then: a copy of every account, never to be used.
+	failed, _ := filepath.Glob(u.cfg.Volumes + "-failed-*")
+	for _, p := range append(matches, failed...) {
 		if p != keep {
 			_ = u.run(ctx, "btrfs", "subvolume", "delete", p)
 		}
 	}
+}
+
+// rolledBack is whether release serial was installed here and undone.
+func (u *Updater) rolledBack(serial int64) bool {
+	data, _ := os.ReadFile(filepath.Join(u.cfg.StateDir, "rolled-back"))
+	for _, line := range strings.Fields(string(data)) {
+		if line == strconv.FormatInt(serial, 10) {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *Updater) markRolledBack(serial int64) {
+	if u.rolledBack(serial) {
+		return
+	}
+	_ = os.MkdirAll(u.cfg.StateDir, 0o755)
+	path := filepath.Join(u.cfg.StateDir, "rolled-back")
+	data, _ := os.ReadFile(path)
+	lines := strings.Fields(string(data))
+	lines = append(lines, strconv.FormatInt(serial, 10))
+	if len(lines) > 50 {
+		lines = lines[len(lines)-50:]
+	}
+	_ = writeFile(path, []byte(strings.Join(lines, "\n")+"\n"))
 }

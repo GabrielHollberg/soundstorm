@@ -61,7 +61,10 @@ func (u *Updater) Handler() http.Handler {
 		reply(w, u.Status())
 	})
 	mux.HandleFunc("POST /check", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = u.Check(r.Context())
+		// Once a minute at most, whoever asks.
+		if last := u.Status().LastCheck; last == nil || time.Since(*last) > time.Minute {
+			_, _ = u.Check(r.Context())
+		}
 		reply(w, u.Status())
 	})
 	mux.HandleFunc("POST /update", func(w http.ResponseWriter, r *http.Request) {

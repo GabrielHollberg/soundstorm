@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/GabrielHollberg/soundstorm/internal/auth"
 	"github.com/GabrielHollberg/soundstorm/internal/library"
@@ -70,7 +71,7 @@ func (s *Server) handleDrives(w http.ResponseWriter, r *http.Request) {
 			}
 			// hasMedia: whether there is anything on it to bring in - an
 			// empty drive was most likely bought for backups.
-			d := map[string]any{"id": e.Name(), "label": e.Name(), "hasMedia": driveHasMedia(dir), "backups": false}
+			d := map[string]any{"id": e.Name(), "label": e.Name(), "hasMedia": s.driveMedia(dir), "backups": false}
 			if free, total, ok := library.DiskSize(dir); ok {
 				d["size"], d["used"] = total, total-free
 			}
@@ -134,6 +135,36 @@ func (s *Server) handleDriveOpen(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": answer.Open})
 }
+
+// driveMedia is driveHasMedia, kept five minutes a drive: the page asks
+// every ten seconds, and a walk of a slow drive each time was constant work
+// (the box's blind review).
+func (s *Server) driveMedia(dir string) bool {
+	driveMediaMu.Lock()
+	c, ok := driveMediaSeen[dir]
+	driveMediaMu.Unlock()
+	if ok && time.Since(c.at) < 5*time.Minute {
+		return c.has
+	}
+	has := driveHasMedia(dir)
+	driveMediaMu.Lock()
+	if len(driveMediaSeen) > 64 {
+		driveMediaSeen = map[string]driveMediaAnswer{}
+	}
+	driveMediaSeen[dir] = driveMediaAnswer{has, time.Now()}
+	driveMediaMu.Unlock()
+	return has
+}
+
+type driveMediaAnswer struct {
+	has bool
+	at  time.Time
+}
+
+var (
+	driveMediaMu   sync.Mutex
+	driveMediaSeen = map[string]driveMediaAnswer{}
+)
 
 // driveHasMedia looks for one file some shelf keeps, giving up after 20,000
 // entries (a drive of nothing but other files is not worth longer).
@@ -267,6 +298,12 @@ func (s *Server) handleDriveRead(w http.ResponseWriter, r *http.Request) {
 	to, err2 := strconv.ParseInt(q.Get("to"), 10, 64)
 	if err1 != nil || err2 != nil || from < 0 || to < from || to-from > maxDriveRead {
 		writeError(w, http.StatusBadRequest, "from and to, at most 8MB apart")
+		return
+	}
+	// A plain file only: a fifo on a crafted drive would hold the request
+	// open for ever (the box's blind review).
+	if st, err := os.Stat(full); err != nil || !st.Mode().IsRegular() {
+		writeError(w, http.StatusNotFound, "could not read that file")
 		return
 	}
 	f, err := os.Open(full)

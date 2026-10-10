@@ -61,6 +61,8 @@ func (u *Updater) Reset(ctx context.Context, mode ResetMode) error {
 	// kept of its own - its logs above all (the twelfth security pass).
 	if err := u.runFor(ctx, stopTimeout, u.cfg.Up, "down"); err != nil {
 		u.clearPending()
+		// Part of it may have stopped: started again, as it was.
+		_ = u.runFor(ctx, upTimeout, u.cfg.Up)
 		u.set(func(s *Status) {
 			s.State = "failed"
 			s.Message = "Could not stop EmberStorm to start over. Nothing was changed."
@@ -69,7 +71,10 @@ func (u *Updater) Reset(ctx context.Context, mode ResetMode) error {
 	}
 	// Snapshots taken before updates hold the accounts too: they go first,
 	// so nothing of the old box is left to restore by hand.
-	if snaps, _ := filepath.Glob(u.cfg.Volumes + "-before-*"); len(snaps) > 0 {
+	snaps, _ := filepath.Glob(u.cfg.Volumes + "-before-*")
+	// And updated volumes a rollback set aside: a copy of every account.
+	failedCopies, _ := filepath.Glob(u.cfg.Volumes + "-failed-*")
+	if snaps = append(snaps, failedCopies...); len(snaps) > 0 {
 		for _, p := range snaps {
 			if err := u.run(ctx, "btrfs", "subvolume", "delete", p); err != nil {
 				_ = os.RemoveAll(p)
@@ -177,8 +182,9 @@ type presses struct {
 	// new password needs it: being on the home network is not being at the
 	// box (a guest's laptop could have set it first), and the box's screen is
 	// somewhere only somebody there can read (the blind security review).
-	code  string
-	wrong int
+	code        string
+	wrong       int
+	pausedUntil time.Time
 	// resetUntil: an erase or start over asked for in the app (resetMode)
 	// waits until then for ResetPresses.
 	resetUntil time.Time
@@ -292,7 +298,7 @@ func (u *Updater) buttonCode() string {
 func (u *Updater) claimButton(code string) bool {
 	u.button.mu.Lock()
 	defer u.button.mu.Unlock()
-	if !time.Now().Before(u.button.until) || u.button.code == "" {
+	if !time.Now().Before(u.button.until) || u.button.code == "" || time.Now().Before(u.button.pausedUntil) {
 		return false
 	}
 	screen := subtle.ConstantTimeCompare([]byte(digitsOf(code)), []byte(u.button.code)) == 1
@@ -301,8 +307,15 @@ func (u *Updater) claimButton(code string) bool {
 		sticker = subtle.ConstantTimeCompare([]byte(plainCode(code)), []byte(want)) == 1
 	}
 	if !screen && !sticker {
+		// Every maxWrongCodes wrong codes, a minute's pause; the window
+		// closes only after many. Five closing it let anybody at home keep
+		// the owner out by sending five on every press (the box's blind
+		// review); 50 guesses at a code of six digits stay hopeless.
 		u.button.wrong++
-		if u.button.wrong >= maxWrongCodes {
+		if u.button.wrong%maxWrongCodes == 0 {
+			u.button.pausedUntil = time.Now().Add(time.Minute)
+		}
+		if u.button.wrong >= 10*maxWrongCodes {
 			u.button.until, u.button.code = time.Time{}, ""
 			u.showButtonCode("", time.Time{})
 		}
@@ -378,9 +391,23 @@ func (u *Updater) Pressed(ctx context.Context, n int) {
 			u.showReset(time.Time{}, "")
 			u.button.mu.Unlock()
 			u.log.Warn("the power button was pressed ten times: resetting the box, as asked in the app", "mode", mode)
+			// A job under way finishes first: the presses are not lost to
+			// it (the box's blind review), for up to two hours.
 			go func() {
-				if err := u.Reset(context.Background(), mode); err != nil {
-					u.log.Error("reset", "err", err)
+				for deadline := time.Now().Add(2 * time.Hour); ; {
+					err := u.Reset(context.Background(), mode)
+					if err == nil {
+						return
+					}
+					if !errors.Is(err, ErrBusy) || time.Now().After(deadline) {
+						u.log.Error("reset", "err", err)
+						u.set(func(s *Status) {
+							s.State = "failed"
+							s.Message = "The box could not be reset just now. Ask for it again in the app."
+						})
+						return
+					}
+					time.Sleep(10 * time.Second)
 				}
 			}()
 			return

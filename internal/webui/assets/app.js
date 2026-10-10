@@ -1170,8 +1170,31 @@ function renderAccount() {
   show($('shared-tvs-block'), Boolean(me.owner));
   if (me.owner) renderSharedTVs();
   if (!me.owner) show($('web-name-block'), false);
-  api('/api/session').then(({ ok, body }) => show($('box-reset-block'), Boolean(ok && body && body.boxReset)));
+  api('/api/session').then(({ ok, body }) => {
+    const box = Boolean(ok && body && body.boxReset);
+    show($('box-reset-block'), box);
+    if (box) showResetWaiting();
+  });
 }
+
+// An erase or start over still waiting for the box's power button, said in
+// its card with a Cancel, whenever Settings is opened - the waiting screen
+// after asking is gone once the page is reloaded (the box's blind review).
+async function showResetWaiting() {
+  const note = $('box-reset-waiting');
+  const { ok, body } = await api('/api/reset/waiting');
+  const mode = ok && body ? body.waiting : '';
+  show(note, Boolean(mode));
+  if (!mode) return;
+  $('box-reset-waiting-text').textContent = mode === 'erase'
+    ? 'Erasing this box is waiting for ten presses of its power button.'
+    : 'Starting over is waiting for ten presses of the box\'s power button.';
+}
+$('box-reset-waiting-cancel').addEventListener('click', async () => {
+  const r = await api('/api/reset', { method: 'DELETE' });
+  if (r.ok) { showToast('Cancelled. Nothing was changed.'); showResetWaiting(); }
+  else showToast((r.body && r.body.error) || 'Could not cancel.');
+});
 
 // Starting the box over, or erasing it (reset.go): what goes is said first,
 // then the password and the word typed. The box stops; the page waits for it
