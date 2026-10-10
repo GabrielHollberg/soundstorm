@@ -886,6 +886,12 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 			if boxSerial.MatchString(s.boxUnit) {
 				answer["boxUnit"] = s.boxUnit
 			}
+			// The setup code, as on the label under the box: the owner's
+			// copy for when the label is lost, and for setting the box up
+			// again after Start over.
+			if s.setupCode != "" {
+				answer["boxSetupCode"] = s.setupCode
+			}
 		}
 		// The looks' training mode, on the developer's install alone.
 		if s.trainingDir != "" {

@@ -1180,6 +1180,16 @@ function renderAccount() {
     const unit = ok && body && body.boxUnit;
     show($('box-unit'), Boolean(unit));
     if (unit) $('box-unit').textContent = `This box's serial number: ${unit}`;
+    // Its setup code, as on the label under the box: kept here for when the
+    // label is lost, and said beside Start over, which needs it again.
+    const code = ok && body && body.boxSetupCode;
+    const grouped = code ? String(code).toUpperCase().replace(/(.{4})(?=.)/g, '$1 ') : '';
+    show($('box-code'), Boolean(code));
+    show($('box-reset-code'), Boolean(code));
+    if (code) {
+      $('box-code').textContent = `Its setup code: ${grouped} (also on the label under the box)`;
+      $('box-reset-code').textContent = `Your setup code is ${grouped}. After Start over you need it to set the box up again - write it down if the label under the box is hard to read.`;
+    }
   });
 }
 

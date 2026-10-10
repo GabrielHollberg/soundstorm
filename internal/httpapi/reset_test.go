@@ -132,6 +132,14 @@ func TestStartingOverNeedsThePasswordAndTheWord(t *testing.T) {
 	if resp, _ := sam.do(t, http.MethodPost, "/api/reset", `{"mode":"erase","password":"violet tractor glacier","confirm":"ERASE"}`); resp.StatusCode == http.StatusAccepted {
 		t.Fatal("a member erased the box")
 	}
+	// The setup code, as on the label under the box, is the owner's to see
+	// (lost label, Start over), never a member's.
+	if _, body := h.do(t, http.MethodGet, "/api/session", ""); !strings.Contains(string(body), `"boxSetupCode": "`+NormalizeSetupCode(testSetupCode)+`"`) {
+		t.Fatalf("the owner should see the setup code: %s", body)
+	}
+	if _, body := sam.do(t, http.MethodGet, "/api/session", ""); strings.Contains(string(body), "boxSetupCode") {
+		t.Fatalf("a member saw the setup code: %s", body)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.resets) != 1 || c.resets[0] != "start-over" {

@@ -1167,6 +1167,17 @@ refused), and Debian's update timer then at 01:05 Chicago time. **Found
 there:** the factory wipe took the VM's CD drive for a storage drive (it is
 on SATA too) and stopped; it takes disks only now. Not seen: the page's
 time-zone card, a real sticker printer.
+**The setup code lives only on the label under the box** (the owner's
+design: one QR code on each surface - the outside of the box and a card
+inside open a page of instructions, the same for every box; the label under
+the device carries that box's own code). So the owner sees it in Settings,
+About, and beside Start over, which needs it again (`boxSetupCode` in the
+session, owner on a box only), and `units.csv` is the support record by
+serial. Labels chosen: 2 x 2 inch matte white waterproof film for the
+device, 2.5 x 2.5 inch rounded-square matte cards for the box, printed on a
+mono laser through Tray 1. `sticker.sh` still draws the old 90 x 50 mm
+sticker: the 2 x 2 label, the card and the instructions page wait on the
+Avery product numbers.
 
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): **the box's own system cannot be updated** - a release carries only

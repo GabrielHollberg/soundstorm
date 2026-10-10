@@ -803,13 +803,14 @@
       </div>
 
       <!-- A box: starting over or erasing it, for good (reset.go). -->
-      <div id="box-reset-block" class="account-section card hidden" data-hint="Reset or erase, for good" data-cat="account" data-words="reset factory erase start over sell wipe delete everything">
+      <div id="box-reset-block" class="account-section card hidden" data-hint="Reset or erase, for good" data-cat="account" data-words="reset factory erase start over sell wipe delete everything setup code">
         <h2>Start over or erase this box</h2>
         <p class="muted"><b>Start over</b> deletes every account, sign-in, playlist, favorite and
           setting, and keeps your music, films, books and photos - the box sets itself up again
           and reads them all back in, which can take hours. <b>Erase everything</b> deletes those
           too, as when the box is sold or given away. Neither can be undone, and each waits for
           you to press the power button on the box ten times, so only somebody at the box can do it.</p>
+        <p id="box-reset-code" class="hidden"></p>
         <div id="box-reset-waiting" class="account-actions hidden">
           <span id="box-reset-waiting-text"></span>
           <button id="box-reset-waiting-cancel" type="button">Cancel it</button>
@@ -847,13 +848,14 @@
 
       <!-- EmberStorm is free software (AGPL-3.0): anybody using it may have its
            source, which the license's network clause expects to be offered. -->
-      <div class="account-section card" data-hint="License and source code" data-cat="account" data-words="about source code license open source agpl github">
+      <div class="account-section card" data-hint="License and source code" data-cat="account" data-words="about source code license open source agpl github serial setup code">
         <h2>About EmberStorm</h2>
         <p class="muted">EmberStorm&trade; is free software under the GNU AGPL 3.0. Its source code is
           <a href="https://github.com/GabrielHollberg/emberstorm" target="_blank" rel="noopener noreferrer">on GitHub</a>,
           and the media servers it runs alongside keep their own licenses.
           </p>
         <p id="box-unit" class="muted hidden"></p>
+        <p id="box-code" class="muted hidden"></p>
       </div>
 
       <div class="account-section card account-signout" data-cat="account" data-words="sign out log out logout change server">
