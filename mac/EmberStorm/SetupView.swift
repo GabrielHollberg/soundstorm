@@ -90,7 +90,7 @@ private struct Welcome: View {
                 if setup.dockerNeeded {
                     Line(icon: "shippingbox", text: "It runs inside Docker Desktop, which is installed too - free for personal use, no Docker account needed.")
                 }
-                Line(icon: "key", text: "Your Mac will ask for its password once, to install Docker and keep this Mac awake.")
+                Line(icon: "key", text: "You type your Mac's password once, before it starts - nothing asks you anything after that.")
             }
             Spacer(minLength: 0)
             HStack {
@@ -107,7 +107,7 @@ private struct Questions: View {
     @Bindable var setup: Setup
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Two things first")
+            Text(setup.needsPassword ? "A few things first" : "Two things first")
                 .font(.title2.weight(.semibold))
             Text("Then it needs nothing more from you.")
                 .foregroundStyle(Look.soft)
@@ -144,6 +144,24 @@ private struct Questions: View {
                     .toggleStyle(.switch)
                 }
             }
+            if setup.needsPassword {
+                Card {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your Mac's password").font(.headline)
+                        Text("The one you sign in to this Mac with, needed to \(setup.dockerNeeded ? (setup.askAwake && setup.keepAwake ? "install Docker Desktop and keep this Mac awake" : "install Docker Desktop") : "keep this Mac awake"). It is used for this setup only, and never kept or sent anywhere.")
+                            .font(.callout).foregroundStyle(Look.soft)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SecureField("Password", text: $setup.password)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { if !setup.password.isEmpty { setup.start() } }
+                        if setup.passwordWrong {
+                            Text("That password didn't work. It must be this Mac account's password, and the account must be allowed to install apps (an administrator).")
+                                .font(.callout).foregroundStyle(Look.warn)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
             if setup.roomShort {
                 Text("This Mac has \(gb(setup.roomFree)) free, and EmberStorm's programs need about \(gb(setup.roomNeeded)). Free some space, then come back.")
                     .foregroundStyle(Look.warn)
@@ -153,10 +171,11 @@ private struct Questions: View {
             HStack {
                 Button("Back") { setup.page = .welcome }.buttonStyle(Quiet())
                 Spacer()
-                Button("Set up EmberStorm") { setup.setUp() }
+                if setup.checking { ProgressView().controlSize(.small) }
+                Button("Set up EmberStorm") { setup.start() }
                     .buttonStyle(Primary())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(setup.roomShort)
+                    .disabled(setup.roomShort || setup.checking || (setup.needsPassword && setup.password.isEmpty))
             }
         }
     }

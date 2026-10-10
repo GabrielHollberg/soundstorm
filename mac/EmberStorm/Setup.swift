@@ -25,6 +25,13 @@ final class Setup {
     /// The answers.
     var library: URL?
     var keepAwake = true
+    /// The Mac's password, asked on the questions page and checked there,
+    /// so nothing waits on it later.
+    var password = ""
+    private(set) var passwordWrong = false
+    private(set) var checking = false
+    /// Whether anything needs it: installing Docker, or the power settings.
+    var needsPassword: Bool { dockerNeeded || (askAwake && keepAwake) }
     private(set) var askAwake = false
     private(set) var laptop = false
     /// Updating rather than installing: nothing is asked.
@@ -64,7 +71,24 @@ final class Setup {
 
     // MARK: Setting up
 
+    /// Set up, from the questions page: the password checked first.
+    func start() {
+        guard needsPassword else { return setUp() }
+        checking = true
+        passwordWrong = false
+        Task {
+            let ok = await Installer.checkPassword(password)
+            checking = false
+            guard ok else {
+                passwordWrong = true
+                return
+            }
+            setUp()
+        }
+    }
+
     func setUp() {
+        if dockerNeeded { Installer.quietDockerFirstStart() }
         page = .working
         Task {
             var args: [String] = []
@@ -72,7 +96,8 @@ final class Setup {
                 args += ["--library", library.path]
             }
             do {
-                let result = try await installer.run(dir: dir, arguments: args, keepAwake: !updating && askAwake && keepAwake)
+                let result = try await installer.run(dir: dir, arguments: args, keepAwake: !updating && askAwake && keepAwake,
+                                                     password: !updating && needsPassword ? password : nil)
                 installed = true
                 UserDefaults.standard.set(dir.path, forKey: "installDir")
                 moveToApplications()

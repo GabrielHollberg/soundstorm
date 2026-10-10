@@ -60,7 +60,7 @@ final class Installer {
 
     /// Runs it: arguments as install.sh takes them. Throws with what the
     /// script said, in its own words, when it stops.
-    func run(dir: URL, arguments: [String], keepAwake: Bool) async throws -> Result {
+    func run(dir: URL, arguments: [String], keepAwake: Bool, password: String? = nil) async throws -> Result {
         running = true
         defer { running = false; creep?.cancel() }
         log = ""
@@ -73,7 +73,12 @@ final class Installer {
         let (script, commit) = try await Self.fetchScript()
         let result = FileManager.default.temporaryDirectory.appending(path: "emberstorm-result-\(UUID().uuidString)")
         resultFile = result
-        let askpass = try Self.askpass()
+        // The password asked before anything started (the questions page),
+        // handed to sudo from a file only this account can read, gone when
+        // the run ends. Asked part way through, it waited on whoever had left
+        // the Mac (the first real run, 2026-10-10: after Docker's download).
+        let askpass = try Self.askpass(password)
+        defer { Self.forgetPassword() }
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -244,10 +249,29 @@ final class Installer {
 
     /// A program sudo runs for the password, as there is no terminal: a
     /// window of macOS's own, saying why it is asked.
-    private static func askpass() throws -> URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "EmberStorm")
+    private static var privateFolder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "EmberStorm")
+    }
+
+    private static func forgetPassword() {
+        try? FileManager.default.removeItem(at: privateFolder.appending(path: "pw"))
+    }
+
+    private static func askpass(_ password: String?) throws -> URL {
+        let dir = privateFolder
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         let file = dir.appending(path: "askpass")
+        if let password {
+            let pw = dir.appending(path: "pw")
+            FileManager.default.createFile(atPath: pw.path, contents: Data((password + "\n").utf8), attributes: [.posixPermissions: 0o600])
+            let script = "#!/bin/sh\n# The password asked in EmberStorm's window, for sudo.\nexec /bin/cat '\(pw.path.replacingOccurrences(of: "'", with: "'\\''"))'\n"
+            try script.write(to: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
+            return file
+        }
+        // Nothing asked first (an update, an uninstall): asked if needed, in a
+        // window of macOS's own.
         let script = """
         #!/bin/sh
         # Asked by sudo for the Mac's password (EmberStorm's setup has no terminal).
@@ -322,5 +346,53 @@ nonisolated final class LineBuffer: @unchecked Sendable {
     func rest() -> String? {
         defer { pending = Data() }
         return pending.isEmpty ? nil : String(decoding: pending, as: UTF8.self)
+    }
+}
+
+extension Installer {
+    /// Whether this is the Mac's password for this account, and the account
+    /// may use it to install (an administrator's): sudo asked to check, and
+    /// told to forget straight after.
+    nonisolated static func checkPassword(_ password: String) async -> Bool {
+        await withCheckedContinuation { done in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+            p.arguments = ["-S", "-k", "-p", "", "-v"]
+            let input = Pipe()
+            p.standardInput = input
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            p.terminationHandler = { p in
+                let ok = p.terminationStatus == 0
+                let forget = Process()
+                forget.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+                forget.arguments = ["-k"]
+                try? forget.run()
+                forget.waitUntilExit()
+                done.resume(returning: ok)
+            }
+            do {
+                try p.run()
+                input.fileHandleForWriting.write(Data((password + "\n").utf8))
+                try? input.fileHandleForWriting.close()
+            } catch {
+                done.resume(returning: false)
+            }
+        }
+    }
+
+    /// Docker Desktop's sign-in and survey, answered before it first starts
+    /// (the Windows setup's DisplayedOnboarding): only when it has no
+    /// settings yet. macOS may ask whether EmberStorm may reach Docker's
+    /// folder - asked here, while somebody has just clicked; refused, Docker
+    /// may show those windows later and the setup carries on.
+    static func quietDockerFirstStart() {
+        let folder = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Group Containers/group.com.docker")
+        let file = folder.appending(path: "settings-store.json")
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let settings = #"{"DisplayedOnboarding": true, "OpenUIOnStartupDisabled": true}"#
+        try? Data(settings.utf8).write(to: file)
     }
 }
