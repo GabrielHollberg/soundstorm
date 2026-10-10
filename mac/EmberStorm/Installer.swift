@@ -186,6 +186,8 @@ final class Installer {
             return
         }
         // The script's own sentences (a note, a heartbeat) say what it is doing.
+        // Not the script's word about Docker's window: this app puts it away.
+        if line.contains("Docker window") || line.contains("Continue without signing in") { return }
         if raw.hasPrefix("    "), !line.hasPrefix("http"), !line.hasPrefix("*") {
             status = line
         }

@@ -90,7 +90,9 @@ final class Setup {
     func setUp() {
         if dockerNeeded { Installer.quietDockerFirstStart() }
         page = .working
+        let hiding = hideDockerWhileSettingUp()
         Task {
+            defer { hiding.cancel() }
             var args: [String] = []
             if let library, library.standardizedFileURL != dir.appending(path: "library").standardizedFileURL {
                 args += ["--library", library.path]
@@ -110,6 +112,22 @@ final class Setup {
                 page = .failed(error.localizedDescription, .setup)
             }
             updating = false
+        }
+    }
+
+    /// Docker Desktop's own window, put away while the setup runs: its first
+    /// start opened it over everything (the first real run, 2026-10-10), and
+    /// it then sat waiting for somebody - though nothing in it is needed, its
+    /// terms accepted when it was installed and its engine running anyway.
+    private func hideDockerWhileSettingUp() -> Task<Void, Never> {
+        Task {
+            while !Task.isCancelled {
+                for app in NSWorkspace.shared.runningApplications
+                where app.bundleIdentifier == "com.docker.docker" && !app.isHidden {
+                    app.hide()
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
         }
     }
 
@@ -141,6 +159,8 @@ final class Setup {
     func launch() async {
         page = .launching
         launchStatus = "Starting EmberStorm..."
+        let hiding = hideDockerWhileSettingUp()
+        defer { hiding.cancel() }
         do {
             try await Install.launch(dir) { [weak self] s in self?.launchStatus = s }
             page = .running
