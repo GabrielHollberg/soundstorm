@@ -966,7 +966,11 @@ erase waiting open the password and erase nothing). Not seen: on a box.
   **Still the owner's:** making the keys - on a hardware key or a machine that
   is never online, with a backup kept apart - then committing both public
   halves as `box/release.pub`.
-Checked: `TestTheBackupKeySignsToo`; the model list made in Alpine matched
+Checked: GitHub built and signed the first commit with it; the lookup in WSL
+found its `sha-<commit>` image and pinned the digest `:latest` then had,
+refused a made-up commit, and `gh attestation verify` passed that digest and
+refused an image GitHub never built for the project (a backend's);
+`TestTheBackupKeySignsToo`; the model list made in Alpine matched
 Debian's byte for byte, a changed whisper.cpp and a setuid file were refused.
 
 **Left for the owner** (from the same review): **USB drives are opened as they are plugged in**, so the kernel's
