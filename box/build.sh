@@ -34,6 +34,15 @@ if [ "${PRODUCTION:-}" = 1 ]; then
 	[ -z "${RELEASES:-}" ] || { echo "PRODUCTION: RELEASES points at a test channel." >&2; exit 1; }
 	[ -z "${RELEASE_KEY:-}" ] || { echo "PRODUCTION: only box/release.pub signs a sold box's updates." >&2; exit 1; }
 	[ -n "${SERIAL:-}" ] || { echo "PRODUCTION: SERIAL, the release these images are, is needed." >&2; exit 1; }
+	# The release keys a sold box believes are the ones committed in the
+	# project, never a file that happens to sit there (a development key
+	# made into that path would pass): box/release.pub tracked and unchanged.
+	pub_repo=$(cd "$(dirname "$0")/.." && pwd)
+	if ! git -c safe.directory='*' -C "$pub_repo" ls-files --error-unmatch box/release.pub >/dev/null 2>&1 ||
+		! git -c safe.directory='*' -C "$pub_repo" diff --quiet HEAD -- box/release.pub; then
+		echo "PRODUCTION: box/release.pub must be the release keys committed in the project." >&2
+		exit 1
+	fi
 fi
 case "${SERIAL:-0}" in *[!0-9]*) echo "SERIAL is a number." >&2; exit 1 ;; esac
 
@@ -57,7 +66,7 @@ say() { printf '\n== %s\n' "$*"; }
 
 say "Tools"
 need=""
-for pkg in libguestfs-tools qemu-utils qemu-system-x86 ovmf curl skopeo golang-go linux-image-amd64; do
+for pkg in libguestfs-tools qemu-utils qemu-system-x86 ovmf curl skopeo golang-go git linux-image-amd64; do
 	dpkg -s "$pkg" >/dev/null 2>&1 || need="$need $pkg"
 done
 if [ -n "$need" ]; then
@@ -103,6 +112,19 @@ cp "$key" "$stage/etc/soundstorm/release.pub"
 	[ -z "${SERIAL:-}" ] || echo "SOUNDSTORM_MIN_SERIAL=$SERIAL"
 } > "$stage/etc/soundstorm/caretaker.env"
 
+say "EmberStorm's own image"
+# The one GitHub built from a commit on main (box/app-image.sh), never
+# ":latest"; a production unit only with its provenance checked.
+# shellcheck source=box/app-image.sh
+. "$here/app-image.sh"
+if [ "${PRODUCTION:-}" = 1 ]; then
+	app_image strict
+elif ! app_image; then
+	# A development box may be built before its commit is pushed and built.
+	APP_IMAGE=$APP_REPO:latest
+	echo "  development build: using $APP_IMAGE"
+fi
+
 say "Container images"
 # Every image the stack runs goes into the disk, so a box starts with no
 # downloads - on a slow line the first start would otherwise be hours. Each is
@@ -125,6 +147,7 @@ awk '/^services:/{s=1;next} s&&/^[a-z]/{s=0}
 	while read -r svc ref; do
 		# ${VAR:-default} -> default
 		ref=$(printf '%s' "$ref" | sed 's/^\${[A-Z_]*:-\(.*\)}$/\1/')
+		[ "$svc" = soundstorm ] && ref=$APP_IMAGE
 		# Two services on one image share one archive and one name.
 		key=$(printf '%s' "$ref" | sha256sum | cut -c1-12)
 		name="soundstorm-box/$svc:built"
@@ -155,6 +178,33 @@ say "Models"
 # runs no Docker); storage.sh lays each into its empty cache folder on the
 # data drive at first boot, and they stay here for Start over.
 if ls "$out/models/"*.tar >/dev/null 2>&1; then
+	# Every file checked against box/models.sha256, the list last reviewed
+	# and committed: models taken from a machine's running backends are
+	# whatever those backends wrote, a program (whisper.cpp) among them.
+	check="$work/models-check"
+	rm -rf "$check"
+	for tar in "$out/models/"*.tar; do
+		n=$(basename "$tar" .tar)
+		mkdir -p "$check/$n"
+		tar -xf "$tar" -C "$check/$n"
+		sh "$here/models-list.sh" -c "$check/$n" "$n" >>"$check/list"
+	done
+	if [ -f "$here/models.sha256" ]; then
+		if ! tr -d '\r' <"$here/models.sha256" | cmp -s - "$check/list"; then
+			echo "The models differ from box/models.sha256, the list last reviewed:" >&2
+			tr -d '\r' <"$here/models.sha256" | diff - "$check/list" | head -n 20 >&2
+			echo "If the change is expected (box/models.sh was run again), review it with" >&2
+			echo "git diff box/models.sha256 and commit the new list; then build again." >&2
+			exit 1
+		fi
+		echo "  every model file matches box/models.sha256"
+	elif [ "${PRODUCTION:-}" = 1 ]; then
+		echo "PRODUCTION: no box/models.sha256 to check the models against." >&2
+		exit 1
+	else
+		echo "  development build: no box/models.sha256, models not checked"
+	fi
+	rm -rf "$check"
 	mkdir -p "$stage/var/lib/soundstorm-models"
 	cp "$out/models/"*.tar "$stage/var/lib/soundstorm-models/"
 	du -sh "$stage/var/lib/soundstorm-models"

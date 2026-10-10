@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -251,5 +252,26 @@ func TestOldExpiredAndPartialReleasesAreRefused(t *testing.T) {
 	b.publish(partial)
 	if m, err := b.u.Check(ctx); err == nil || m != nil {
 		t.Fatalf("a release leaving out a service was offered: %v %v", m, err)
+	}
+}
+
+// A release signed with the backup key is taken; one signed with neither key
+// is not; the box's key file holds the release key first, then the backup.
+func TestTheBackupKeySignsToo(t *testing.T) {
+	b := newBox(t)
+	backupPub, backupPriv := keys(t)
+	b.u.cfg.Backup = []ed25519.PublicKey{backupPub}
+	data, _ := json.Marshal(release(2))
+	if _, err := VerifyAny(data, Sign(data, backupPriv), b.u.cfg.Key, backupPub); err != nil {
+		t.Fatalf("the backup key's release was refused: %v", err)
+	}
+	_, stranger := keys(t)
+	if _, err := VerifyAny(data, Sign(data, stranger), b.u.cfg.Key, backupPub); err == nil {
+		t.Fatal("a stranger's release was taken")
+	}
+	text := "# release key, then the backup\n" + base64.StdEncoding.EncodeToString(b.u.cfg.Key) + "\n\n" + base64.StdEncoding.EncodeToString(backupPub) + "\n"
+	got, err := ParsePublicKeys([]byte(text))
+	if err != nil || len(got) != 2 || !got[1].Equal(backupPub) {
+		t.Fatalf("keys read: %v %v", got, err)
 	}
 }

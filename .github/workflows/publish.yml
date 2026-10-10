@@ -143,6 +143,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # GitHub's signed record of what this workflow built, from which commit:
+      # a box's build and its releases check it, so an image pushed any other
+      # way cannot pass for one built from the code (box/app-image.sh).
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -177,8 +182,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
 
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           # arm64 matters more than usual here: a lot of the machines people
@@ -190,6 +197,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ steps.owner.outputs.name }}/soundstorm
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   # The Windows setup file has to be a release asset rather than a link into
   # the repository: raw.githubusercontent serves text/plain with no

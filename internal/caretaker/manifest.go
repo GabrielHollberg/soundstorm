@@ -102,6 +102,42 @@ func Verify(data, sig []byte, key ed25519.PublicKey) (*Manifest, error) {
 	return &m, nil
 }
 
+// VerifyAny is Verify against each key in turn: the release key, then any
+// backup kept somewhere safe, so losing the one does not leave every box
+// unable to update (the box's blind security review).
+func VerifyAny(data, sig []byte, keys ...ed25519.PublicKey) (*Manifest, error) {
+	err := errors.New("manifest: no release key")
+	for _, k := range keys {
+		var m *Manifest
+		if m, err = Verify(data, sig, k); err == nil {
+			return m, nil
+		}
+	}
+	return nil, err
+}
+
+// ParsePublicKeys reads the box's release keys: one a line, as keygen writes
+// them, the release key first and any backup after; blank lines and lines
+// starting with # are notes.
+func ParsePublicKeys(text []byte) ([]ed25519.PublicKey, error) {
+	var keys []ed25519.PublicKey
+	for _, line := range strings.Split(string(text), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, err := ParsePublicKey([]byte(line))
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		return nil, errors.New("no release key")
+	}
+	return keys, nil
+}
+
 // ParsePublicKey reads a key as written by keygen: base64 on one line.
 func ParsePublicKey(text []byte) (ed25519.PublicKey, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(text)))

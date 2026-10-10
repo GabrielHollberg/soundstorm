@@ -9,6 +9,10 @@
 # GitHub release "box-channel" (the caretaker's default address). SERIAL must
 # be higher than the last release's: boxes ignore anything not newer.
 #
+# EmberStorm's own image is the one GitHub built from a commit on main, with
+# its provenance checked (box/app-image.sh): APP_COMMIT=<commit or tag>,
+# default this checkout's HEAD. Never ":latest".
+#
 # -i SERVICE=REF replaces one service's image (testing: a release that must
 # fail its health check).
 set -eu
@@ -33,6 +37,10 @@ done
 }
 mkdir -p "$dir"
 
+# shellcheck source=box/app-image.sh
+. "$here/app-image.sh"
+app_image strict
+
 pins=""
 for line in $(awk '/^services:/{s=1;next} s&&/^[a-z]/{s=0}
 	s&&/^  [a-z0-9-]+:$/{svc=$1; sub(":","",svc)}
@@ -41,6 +49,7 @@ for line in $(awk '/^services:/{s=1;next} s&&/^[a-z]/{s=0}
 	END{for(i=1;i<=n;i++){v=order[i]; if(!skip[v]) print v "=" img[v]}}' "$repo/docker-compose.yml"); do
 	svc=${line%%=*}
 	ref=$(printf '%s' "${line#*=}" | sed 's/^\${[A-Z_]*:-\(.*\)}$/\1/')
+	[ "$svc" = soundstorm ] && ref=$APP_IMAGE
 	for swap in $swaps; do
 		[ "${swap%%=*}" = "$svc" ] && ref=${swap#*=}
 	done

@@ -53,3 +53,16 @@ export_models storyteller-models storyteller-models . config.json models/ggml-ba
 # the program's own virtualenv, which Docker copies in from the image - the box
 # mounts this volume at the model's folder instead (compose.box.yml).
 export_models whisper-models whisper-models whisper .
+
+# The fingerprint of every file, as box/models.sha256: box/build.sh builds in
+# only models matching that list, so a change here is seen and reviewed
+# (git diff box/models.sha256) before it reaches a box.
+here_host=$(cd "$here" && { pwd -W 2>/dev/null || pwd; })
+docker run --rm -v "$host:/out:ro" -v "$here_host:/b:ro" alpine sh -c '
+	tr -d "\r" </b/models-list.sh >/tmp/list.sh
+	for t in /out/*.tar; do
+		n=$(basename "$t" .tar)
+		mkdir -p "/tmp/m/$n" && tar -xf "$t" -C "/tmp/m/$n" && sh /tmp/list.sh -c "/tmp/m/$n" "$n" || exit 1
+	done' >"$here/models.sha256.new"
+mv "$here/models.sha256.new" "$here/models.sha256"
+echo "Fingerprints written to box/models.sha256: review them (git diff box/models.sha256) and commit."

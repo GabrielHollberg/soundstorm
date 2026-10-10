@@ -41,8 +41,10 @@ type Config struct {
 	Library string
 	// ManifestURL is where releases are published; ".sig" beside it.
 	ManifestURL string
-	// Key is the release key built into the box.
-	Key ed25519.PublicKey
+	// Key is the release key built into the box, and Backup the keys also
+	// believed: a backup kept safe, for when the release key is lost.
+	Key    ed25519.PublicKey
+	Backup []ed25519.PublicKey
 	// HealthURL is EmberStorm's /healthz, as reached from the box.
 	HealthURL string
 	// HealthWait is how long a new version has to come up healthy.
@@ -226,7 +228,7 @@ func (u *Updater) check(ctx context.Context) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := Verify(data, sig, u.cfg.Key)
+	m, err := VerifyAny(data, sig, append([]ed25519.PublicKey{u.cfg.Key}, u.cfg.Backup...)...)
 	if err != nil {
 		return nil, err
 	}

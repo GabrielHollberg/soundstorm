@@ -74,11 +74,11 @@ func onBox(cmd string, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("no release key at %s: %w", keyFile, err)
 	}
-	key, err := caretaker.ParsePublicKey(text)
+	keys, err := caretaker.ParsePublicKeys(text)
 	if err != nil {
 		return err
 	}
-	cfg := caretaker.Config{Key: key, ManifestURL: os.Getenv("SOUNDSTORM_RELEASES")}
+	cfg := caretaker.Config{Key: keys[0], Backup: keys[1:], ManifestURL: os.Getenv("SOUNDSTORM_RELEASES")}
 	// The release the box was built with (box/build.sh): nothing older.
 	if n, err := strconv.ParseInt(os.Getenv("SOUNDSTORM_MIN_SERIAL"), 10, 64); err == nil {
 		cfg.MinSerial = n

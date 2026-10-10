@@ -941,6 +941,34 @@ cancels either, and Settings says both wait for ten presses. Checked: the
 caretaker's tests (`TestStartingOverWaitsForTheButton`; five presses with an
 erase waiting open the password and erase nothing). Not seen: on a box.
 
+**And three more from that list, the same day:**
+- **EmberStorm's own image is never ":latest" in a box or a release**
+  (`box/app-image.sh`, used by `build.sh` and `release.sh`): the one GitHub's
+  workflow built from a commit on main (`APP_COMMIT`, default HEAD), found by
+  the tag every build now gets (`sha-<commit>`, `type=sha` in publish.yml),
+  pinned by digest, and checked against the provenance GitHub signs for each
+  build (`actions/attest-build-provenance`, `gh attestation verify ...
+  --signer-workflow .../publish.yml`) - so an image pushed with a stolen token
+  cannot pass. A release, and a PRODUCTION build, refuse without that check
+  (it needs `gh`, signed in once, where they run); a development build says
+  it was not checked, and with no build for its commit yet uses ":latest".
+- **The models are checked file by file** against `box/models.sha256`, the
+  list last reviewed and committed (`box/models-list.sh`: every file's
+  SHA-256 and every link, made the same in Alpine and Debian). `models.sh`
+  writes the list again; the build refuses models that differ (a PRODUCTION
+  build refuses with no list) and any setuid, setgid or device file. The first
+  list is the 7 October models' 90 files, so it catches a change from now on,
+  not one before.
+- **A backup release key**: the box's `release.pub` may hold several keys,
+  the release key first (`ParsePublicKeys`, `VerifyAny`, `Config.Backup`), so
+  one kept in a safe can sign if the release key is lost; and a PRODUCTION
+  build takes only a `box/release.pub` committed in the project and unchanged.
+  **Still the owner's:** making the keys - on a hardware key or a machine that
+  is never online, with a backup kept apart - then committing both public
+  halves as `box/release.pub`.
+Checked: `TestTheBackupKeySignsToo`; the model list made in Alpine matched
+Debian's byte for byte, a changed whisper.cpp and a setuid file were refused.
+
 **Left for the owner** (from the same review): **USB drives are opened as they are plugged in**, so the kernel's
 ext4/FAT/exFAT code and ntfs-3g (as root) read any stick (opening one only
 after the owner says yes in the app would close it); **the app's own image is
