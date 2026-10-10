@@ -1006,11 +1006,9 @@ stick's Enter on a real box.
 at that moment; **the models are copied from this PC's live volumes unchecked**,
 Storyteller's whisper-cpp program among them (fetch them by pinned address and
 hash); **the release key** is a plain file on the build machine (sign offline
-or with a hardware key, before the first box), and a PRODUCTION build does not
-check that box/release.pub is the real key (pin its fingerprint once made);
-**somebody holding the box** can edit GRUB's kernel line or boot another
-system, and nothing is encrypted; the USB stick writes after 20 seconds with no
-key press and its hash is not signed; Debian's base image is checked against
+or with a hardware key, before the first box);
+**somebody holding the box** can boot another system from USB, and nothing
+is encrypted; the stick's checksum is not signed (it waits for the key); Debian's base image is checked against
 its checksums over HTTPS but not their signature; a compromised version can
 make later updates roll back by breaking backends (the health baseline); the
 button's window can be closed by anyone at home with five wrong codes;
