@@ -138,6 +138,28 @@ def windows_icon():
     return img
 
 
+def write_mac_icon(folder):
+    """The Mac app's icon (mac/), as an Icon Composer document (AppIcon.icon):
+    macOS 26 draws an icon's shape, glass and shadow itself, and any icon not
+    in this form - square or rounded, opaque or not - it put on a grey plate
+    of its own. Black behind, the white cloud as the one layer; Xcode makes
+    the older sizes from it for macOS 14 and 15."""
+    import json
+    assets = folder / "Assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    # The cloud alone, white on clear: the icon's white is the cloud's alpha.
+    drawn = icon(1024, 0.56).convert("L")
+    layer = Image.new("RGBA", drawn.size, (255, 255, 255, 0))
+    layer.putalpha(drawn)
+    layer.save(assets / "cloud.png", optimize=True)
+    doc = {
+        "fill": {"solid": "srgb:0.00000,0.00000,0.00000,1.00000"},
+        "groups": [{"layers": [{"image-name": "cloud.png", "name": "cloud"}]}],
+        "supported-platforms": {"squares": ["macOS"]},
+    }
+    (folder / "icon.json").write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
 def banner(width, height):
     """The TV home screen's banner: the cloud, then the name in heavy italic as
     the wordmark has it, on the app's dark background. Android TV shows a
@@ -320,6 +342,7 @@ def main():
     else:
         print("no Segoe UI Bold Italic here: left the Android TV banner as it is")
     write_tv_icons(ASSETS.parents[2] / "ios" / "SoundStormTV" / "Assets.xcassets")
+    write_mac_icon(ASSETS.parents[2] / "mac" / "EmberStorm" / "AppIcon.icon")
     # The Windows icon, for the setup's shortcuts and its Settings, Apps entry
     # (the shortcuts run PowerShell, whose icon they showed). A rounded dark
     # square like the phones' app icons, transparent outside the corners, at

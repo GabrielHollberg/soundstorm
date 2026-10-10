@@ -117,7 +117,8 @@ keep_awake() {
 		[ "$sleep_ac" = "0" ] && return 0
 		say ""
 		say "EmberStorm can only be reached while this Mac is awake."
-		if ask_yes "Keep it awake while plugged in, and start up again after a power cut? [Y/n]" yes; then
+		# The Mac setup app asks in its own window and says the answer here.
+		if ask_yes "Keep it awake while plugged in, and start up again after a power cut? [Y/n]" "${EMBERSTORM_KEEP_AWAKE:-yes}"; then
 			if as_root pmset -c sleep 0 && as_root pmset -a autorestart 1; then
 				note "This Mac stays awake while plugged in, and starts again after a power cut."
 			else
@@ -211,6 +212,10 @@ docker_reachable() { docker info >/dev/null 2>&1; }
 as_root() {
 	if [ "$(id -u)" = 0 ]; then
 		"$@"
+	elif [ -n "${SUDO_ASKPASS:-}" ] && ! [ -t 0 ] && command -v sudo >/dev/null 2>&1; then
+		# The Mac setup app (mac/): no terminal to type into, so the password
+		# is asked in a window of its own.
+		sudo -A "$@"
 	elif command -v sudo >/dev/null 2>&1; then
 		sudo "$@"
 	else
@@ -1856,5 +1861,18 @@ if [ -n "$SETUP_QS" ]; then
 		"" \
 		"Capitals and dashes do not matter. It is also saved in:" \
 		"    $DIR/.env"
+fi
+# For the Mac setup app (mac/), which shows these in its own window.
+if [ -n "${EMBERSTORM_RESULT:-}" ]; then
+	{
+		printf 'URL=%s\n' "$URL"
+		printf 'SETUP=%s\n' "$SETUP_QS"
+		printf 'CODE=%s\n' "$(format_code "$SETUP_CODE")"
+		printf 'SECURE=%s\n' "$secure"
+		printf 'LAN=%s\n' "${lan:+$SCHEME://$lan:$PORT}"
+		printf 'LIBRARY=%s\n' "$LIBRARY_DIR"
+		printf 'DIR=%s\n' "$DIR"
+		printf 'UPGRADE=%s\n' "$UPGRADE"
+	} >"$EMBERSTORM_RESULT" 2>/dev/null || true
 fi
 open_browser "$URL$SETUP_QS"

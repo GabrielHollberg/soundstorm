@@ -230,6 +230,29 @@ what Windows does that `install.sh` does not yet:
    folder as now.
 6. Not needed there: the window freezing, WSL and its welcome, Docker's desktop
    icon, the Settings, Apps entry.
+**The Mac setup app is begun (`mac/`, 2026-10-10, the owner's asking: "is the
+Mac installation up to par with Windows?" - it was not, Terminal being the
+biggest gap).** A SwiftUI app, `EmberStorm.app` (`dev.soundstorm.mac`): opened
+the first time, it asks where the media goes and whether to keep the Mac
+awake, then runs `install.sh` (main's, at its commit) with no terminal,
+showing steps, a bar and a percentage from what the script prints, and ends
+on the setup code, the phone address and Open EmberStorm (`?here=server`);
+opened after, it starts Docker and EmberStorm and opens it, with Update and
+Uninstall - the Windows window and desktop icon in one. It moves itself to
+Applications. **`install.sh` gained three hooks for it, all off unless the app
+sets them** (so the PC's Terminal behaviour is unchanged): `as_root` uses
+`sudo -A` when `SUDO_ASKPASS` is set and there is no terminal (the app's
+askpass is a macOS password window); `keep_awake`'s default is
+`EMBERSTORM_KEEP_AWAKE`; and `EMBERSTORM_RESULT` names a file the script
+writes its URL, setup code, secure and LAN addresses and library to at the
+end. **Keep them when changing `install.sh`**, and the `==> ` step names the
+app reads (`Installer.read`). The icon is an Icon Composer document
+(`write_mac_icon` in make-icons.py; macOS 26 plated older icons in grey).
+Checked: it builds, its pages drawn (`-snapshot`), the icon rendered by
+`ictool` and by macOS. **Not yet:** a whole install through it (this Mac had
+25 GB free), the password window, a Developer ID certificate (only the account
+holder can make one) and notarizing, so it cannot be handed out yet.
+
 **Who does what:** the PC writes these in `install.sh` and tests the Linux half
 in containers or the box's VM; the Mac then runs the whole install on a Mac -
 never done end to end yet - and fixes what only a Mac shows (pmset, the app,
