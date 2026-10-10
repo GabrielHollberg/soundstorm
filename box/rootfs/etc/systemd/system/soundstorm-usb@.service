@@ -7,5 +7,6 @@ After=dev-%i.device
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/lib/soundstorm/usb.sh mount %I
+# Noticed only: the caretaker opens it once the owner says so in the app.
+ExecStart=/usr/local/lib/soundstorm/usb.sh seen %I
 ExecStop=/usr/local/lib/soundstorm/usb.sh unmount %I

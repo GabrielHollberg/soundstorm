@@ -249,6 +249,7 @@ virt-customize -a "$disk" \
 	--run-command 'docker compose version' \
 	--run-command "systemctl enable docker soundstorm-grow soundstorm-storage soundstorm-images soundstorm soundstorm-caretaker soundstorm-screen soundstorm-address.timer$ssh_units avahi-daemon" \
 	--run-command 'systemctl mask ctrl-alt-del.target' \
+	--run-command '/usr/local/lib/soundstorm/lock-grub.sh && rm /usr/local/lib/soundstorm/lock-grub.sh' \
 	--root-password disabled \
 	--run-command 'ln -sf /dev/null /etc/systemd/system/serial-getty@.service' \
 	--run-command 'rm -f /etc/ssh/ssh_host_*' \

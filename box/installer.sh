@@ -16,6 +16,8 @@
 #                      box starts new; without it a box keeps its media and
 #                      accounts, for putting one right.
 #   INSTALL_TARGET=vda the drive to write when it is not an eMMC (the VM's).
+#   INSTALL_AUTO=1     install without waiting for Enter (testing in the VM;
+#                      a FACTORY stick never waits either).
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -50,6 +52,7 @@ zstd -q -T0 -10 --rm -o "$payload/box.raw.zst" "$work/box.raw"
 ls -lh "$payload/box.raw.zst"
 [ "${FACTORY:-}" = 1 ] && : > "$payload/factory"
 [ -z "${INSTALL_TARGET:-}" ] || echo "$INSTALL_TARGET" > "$payload/target"
+[ "${INSTALL_AUTO:-}" = 1 ] && : > "$payload/auto"
 
 cp -r "$here/installer/rootfs/." "$work/stage/"
 find "$work/stage" -type f ! -name '*.zst' -exec sed -i 's/\r$//' {} +

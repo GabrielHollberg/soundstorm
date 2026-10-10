@@ -1,4 +1,5 @@
-# A USB drive plugged into the box: opened read-only for SoundStorm to bring
-# its media in from (usb.sh, httpapi/drives.go). Each partition with a
-# filesystem gets a soundstorm-usb@ unit, which goes when the drive does.
+# A USB drive plugged into the box: noticed, and opened read-only only once
+# the owner asks in the app (usb.sh, caretaker drives.go, httpapi/drives.go).
+# Each partition with a filesystem gets a soundstorm-usb@ unit, which goes
+# when the drive does.
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="soundstorm-usb@%k.service"

@@ -973,9 +973,35 @@ refused an image GitHub never built for the project (a backend's);
 `TestTheBackupKeySignsToo`; the model list made in Alpine matched
 Debian's byte for byte, a changed whisper.cpp and a setuid file were refused.
 
-**Left for the owner** (from the same review): **USB drives are opened as they are plugged in**, so the kernel's
-ext4/FAT/exFAT code and ntfs-3g (as root) read any stick (opening one only
-after the owner says yes in the app would close it); **the app's own image is
+**And three after those** (the owner's "move on to the next items"):
+- **The start-up menu is locked** (`lock-grub.sh`, run once by the build and
+  removed): the normal entry starts with no password (`--unrestricted`), but
+  editing it, GRUB's command line, the advanced entries and the firmware entry
+  need the password of a user nobody knows - 32 random bytes made in the build
+  and never kept; recovery mode is gone. Putting a box right is the stick's
+  job. A BIOS password and USB boot off (which would stop the stick too) and
+  disk encryption stay the owner's to decide.
+- **USB drives wait for the owner** (`usb.sh seen`, the caretaker's
+  `drives.go`, `POST /api/drives/open`): plugged in, a drive is only noticed -
+  its label, filesystem and size from blkid, nothing mounted - and opened,
+  read-only as before, only once the owner taps **Bring in what is on it** in
+  the app, which asks the caretaker. So a crafted stick is not read by the
+  kernel's filesystem code unless the owner says so. The app's question and
+  Settings' USB card show a drive not opened yet by its label and size; whether
+  it holds media is known only once open, so Bring in comes first.
+- **A repair stick waits for Enter** before writing (a factory stick, or one
+  made with `INSTALL_AUTO=1` for the VM, counts down 20 seconds as before).
+  Signing the stick's checksum waits for the real release key.
+Checked in the VM on a fresh build: at the menu, `e` asked for a username and
+password and refused empty ones, and the box started by itself; the built
+grub.cfg had the lock and no recovery entries; a FAT stick plugged in was
+noticed and not mounted, listed by the caretaker, opened read-only
+(`ro,nosuid,nodev,noexec`) when asked, and cleared when pulled out; the
+caretaker's test (`TestADriveIsOpenedOnlyWhenAsked`). Not seen: the page's
+question for a drive not yet open (the test server has no caretaker), and the
+stick's Enter on a real box.
+
+**Left for the owner** (from the same review): **the app's own image is
 `:latest`** in the build and in `release.sh`, which pins whatever the tag holds
 at that moment; **the models are copied from this PC's live volumes unchecked**,
 Storyteller's whisper-cpp program among them (fetch them by pinned address and

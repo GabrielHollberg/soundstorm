@@ -122,6 +122,30 @@ func (u *Updater) Handler() http.Handler {
 		u.CancelReset()
 		reply(w, map[string]any{"waiting": false})
 	})
+	// USB drives plugged in, opened only when the owner says so in the app
+	// (drives.go). The app's container decides who may ask.
+	mux.HandleFunc("GET /drives", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, map[string]any{"drives": u.waitingDrives()})
+	})
+	mux.HandleFunc("POST /drives/open", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Part string `json:"part"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil {
+			http.Error(w, "expected a part", http.StatusBadRequest)
+			return
+		}
+		open, err := u.openDrive(r.Context(), body.Part)
+		if errors.Is(err, errNoDrive) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		reply(w, map[string]any{"open": open})
+	})
 	mux.HandleFunc("GET /button", func(w http.ResponseWriter, r *http.Request) {
 		open, until := u.buttonOpen()
 		// Never the code: that is for the box's own screen (ButtonCodeFile),

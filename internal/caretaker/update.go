@@ -39,6 +39,12 @@ type Config struct {
 	// Cache holds what can be made again; Library the media (reset.go).
 	Cache   string
 	Library string
+	// USB opens a drive (usb.sh mount PART); DrivesWaiting holds what it
+	// noticed of each drive plugged in, DrivesOpen where each opened one is
+	// (drives.go).
+	USB           string
+	DrivesWaiting string
+	DrivesOpen    string
 	// ManifestURL is where releases are published; ".sig" beside it.
 	ManifestURL string
 	// Key is the release key built into the box, and Backup the keys also
@@ -71,6 +77,9 @@ func (c Config) Defaults() Config {
 	set(&c.Volumes, "/srv/soundstorm/volumes")
 	set(&c.Cache, "/srv/soundstorm/cache")
 	set(&c.Library, "/srv/soundstorm/library")
+	set(&c.USB, "/usr/local/lib/soundstorm/usb.sh")
+	set(&c.DrivesWaiting, "/run/soundstorm/usb-waiting")
+	set(&c.DrivesOpen, "/run/soundstorm/usb")
 	set(&c.ManifestURL, "https://github.com/GabrielHollberg/soundstorm/releases/download/box-channel/manifest.json")
 	set(&c.HealthURL, "http://localhost:8099/healthz")
 	if c.HealthWait == 0 {

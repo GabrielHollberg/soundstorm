@@ -60,8 +60,20 @@ if [ -e "$P/factory" ]; then
 else
 	say "Media, accounts and settings on the storage drive are kept."
 fi
-say "To stop, switch the box off now. Starting in 20 seconds."
-sleep 20
+# A stick for putting a box right waits for somebody to say yes: plugged
+# into the wrong computer it would wipe that computer's built-in drive (the
+# box's blind security review). A factory stick, or one made for testing
+# (INSTALL_AUTO), carries on by itself after 20 seconds.
+if [ -e "$P/factory" ] || [ -e "$P/auto" ]; then
+	say "To stop, switch the box off now. Starting in 20 seconds."
+	sleep 20
+else
+	say "To install, press Enter. To stop, switch the box off."
+	while :; do
+		IFS= read -r answer || { sleep 5; continue; }
+		[ -z "$answer" ] && break
+	done
+fi
 
 clear_screen
 printf '\n   \033[1mInstalling EmberStorm\033[0m - about ten minutes. Leave the box on.\n\n'

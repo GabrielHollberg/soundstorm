@@ -42,7 +42,7 @@ doing, takes about ten minutes, and
 switches off; take the stick out and switch on. The storage drive is kept
 (putting a box right) unless the stick was made with `FACTORY=1`, which
 wipes it so the box starts new. To try it in the VM, make the stick with
-`INSTALL_TARGET=vda`, then `run-vm.sh installer`, then `run-vm.sh`.
+`INSTALL_TARGET=vda INSTALL_AUTO=1` (a repair stick otherwise waits for Enter), then `run-vm.sh installer`, then `run-vm.sh`.
 
 ## How a box starts
 

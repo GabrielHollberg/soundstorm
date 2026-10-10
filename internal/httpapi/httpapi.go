@@ -655,6 +655,7 @@ func (s *Server) Routes() http.Handler {
 	owner.HandleFunc("DELETE /api/invites/{id}", s.handleCancelInvite)
 	owner.HandleFunc("GET /api/reset/summary", s.handleResetSummary)
 	owner.HandleFunc("POST /api/reset", s.handleReset)
+	owner.HandleFunc("POST /api/drives/open", s.handleDriveOpen)
 	owner.HandleFunc("DELETE /api/reset", s.handleCancelReset)
 	owner.HandleFunc("GET /api/drives", s.handleDrives)
 	owner.HandleFunc("GET /api/drives/import", s.handleDriveImportStatus)

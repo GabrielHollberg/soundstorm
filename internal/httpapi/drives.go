@@ -77,9 +77,62 @@ func (s *Server) handleDrives(w http.ResponseWriter, r *http.Request) {
 			out = append(out, d)
 		}
 	}
+	// Drives plugged in and not opened yet: the box opens one only once the
+	// owner says to (POST /api/drives/open), so a stranger's stick is not read
+	// by the system until then (the box's blind security review).
+	if s.caretakerSocket != "" {
+		var answer struct {
+			Drives []struct {
+				Part  string `json:"part"`
+				Label string `json:"label"`
+				Size  int64  `json:"size"`
+				Open  string `json:"open"`
+			} `json:"drives"`
+		}
+		if code, err := s.caretakerCall(r.Context(), http.MethodGet, "/drives", nil, &answer); err == nil && code == http.StatusOK {
+			for _, d := range answer.Drives {
+				if d.Open != "" || !drivePartID.MatchString(d.Part) {
+					continue
+				}
+				label := d.Label
+				if !driveID.MatchString(label) {
+					label = "USB drive"
+				}
+				out = append(out, map[string]any{"id": "usb:" + d.Part, "part": d.Part, "label": label, "size": d.Size, "waiting": true})
+			}
+		}
+	}
 	// available: whether this install takes drives at all (a box), so others
 	// show no USB card.
 	writeJSON(w, http.StatusOK, map[string]any{"available": s.drivesDir != "", "drives": out, "importing": s.driveImports.busy()})
+}
+
+// drivePartID is a USB partition as the box names it.
+var drivePartID = regexp.MustCompile(`^sd[a-z]{1,3}[0-9]{0,3}$`)
+
+// POST /api/drives/open {part}: the box opens a drive plugged in, read-only,
+// as the owner asked; the answer is its id under /api/drives.
+func (s *Server) handleDriveOpen(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Part string `json:"part"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body); err != nil || !drivePartID.MatchString(body.Part) {
+		writeError(w, http.StatusBadRequest, "expected a drive")
+		return
+	}
+	var answer struct {
+		Open string `json:"open"`
+	}
+	code, err := s.caretakerCall(r.Context(), http.MethodPost, "/drives/open", map[string]string{"part": body.Part}, &answer)
+	if err != nil || code != http.StatusOK || !driveID.MatchString(answer.Open) {
+		if code == http.StatusNotFound {
+			writeError(w, http.StatusNotFound, "That drive is not plugged in any more.")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "The box could not open that drive. It may use a kind of formatting the box does not read.")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": answer.Open})
 }
 
 // driveHasMedia looks for one file some shelf keeps, giving up after 20,000

@@ -5690,7 +5690,20 @@ async function checkDrives() {
   drivesKnown = ids;
 }
 function driveName(d) {
+  if (d.waiting) return d.size ? `${d.label} (${formatBytes(d.size)})` : d.label;
   return d.size ? `${d.label} (${formatBytes(d.used || 0)} of ${formatBytes(d.size)})` : d.label;
+}
+// A drive the box has noticed but not opened (it opens one only once the
+// owner says so, drives.go): opened here, read-only, then brought in.
+async function openAndBringIn(d) {
+  if (!d.waiting) { bringInDrive(d.id); return; }
+  const { ok, body } = await api('/api/drives/open', { method: 'POST', body: JSON.stringify({ part: d.part }) });
+  if (!ok || !body || !body.id) {
+    showToast((body && body.error) || 'The box could not open that drive.');
+    return;
+  }
+  if (drivesKnown) drivesKnown.add(body.id);
+  bringInDrive(body.id);
 }
 // What a drive just plugged in is for: bringing in what is on it, backups
 // (the box helper's job, coming), or nothing. The likely one first: a drive
@@ -5699,7 +5712,10 @@ function driveName(d) {
 function askAboutDrive(d) {
   if (shown('drive-ask')) return;
   const text = $('drive-ask-text');
-  text.textContent = d.hasMedia
+  // A drive not opened yet cannot say what is on it: bringing it in comes
+  // first, as most drives plugged in are somebody's media.
+  const media = d.waiting || d.hasMedia;
+  text.textContent = media
     ? `${driveName(d)}. What should EmberStorm do with it?`
     : `${driveName(d)}. It has no music, films, books or photos on it. What should EmberStorm do with it?`;
   const holder = $('drive-ask-buttons');
@@ -5713,10 +5729,10 @@ function askAboutDrive(d) {
     b.addEventListener('click', () => { show($('drive-ask'), false); if (act) act(); });
     return b;
   };
-  const bring = button('Bring in what is on it', !d.hasMedia, () => bringInDrive(d.id));
-  const backups = button('Use it for backups (coming soon)', d.hasMedia, null, true);
+  const bring = button('Bring in what is on it', !media, () => openAndBringIn(d));
+  const backups = button('Use it for backups (coming soon)', media, null, true);
   const nothing = button('Nothing', true, null);
-  if (d.hasMedia) holder.append(bring, backups, nothing);
+  if (media) holder.append(bring, backups, nothing);
   else holder.append(backups, nothing);
   show($('drive-ask'), true);
   holder.querySelector('button:not([disabled])').focus();
@@ -5740,9 +5756,9 @@ function renderDrives(drives) {
     name.textContent = driveName(d);
     const go = document.createElement('button');
     go.type = 'button';
-    go.textContent = d.hasMedia ? 'Bring in what is on it' : 'Nothing to bring in';
-    go.disabled = !d.hasMedia;
-    go.addEventListener('click', () => bringInDrive(d.id));
+    go.textContent = d.waiting || d.hasMedia ? 'Bring in what is on it' : 'Nothing to bring in';
+    go.disabled = !(d.waiting || d.hasMedia);
+    go.addEventListener('click', () => openAndBringIn(d));
     row.append(name, go);
     list.append(row);
   }
