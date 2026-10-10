@@ -1,4 +1,7 @@
 [Unit]
+# After the data drive's own line in fstab has been tried (nofail: local-fs
+# does not wait for it), or storage.sh could mount it a second time over it.
+After=srv-soundstorm.mount
 Description=SoundStorm data drive
 # Before Docker: the volumes are folders on the drive, and a container
 # started without them would write to the system disk underneath.

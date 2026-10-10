@@ -26,8 +26,15 @@ if [ -n "$dev" ]; then
 fi
 
 [ -n "$lan" ] || exit 0
+gw=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* via \([0-9.]*\).*/\1/p' | head -n 1)
 had=$(sed -n 's/^SOUNDSTORM_TLS_HOSTS=//p' .env 2>/dev/null | tail -n 1)
-[ "$lan" = "$had" ] && exit 0
+hadgw=$(sed -n 's/^SOUNDSTORM_GATEWAY=//p' .env 2>/dev/null | tail -n 1)
+# A new router may hand out the same address: its own address counts too.
+[ "$lan" = "$had" ] && [ "${gw:-}" = "${hadgw:-}" ] && exit 0
+# Asked before waiting for the lock: during EmberStorm's own start the lock
+# is held, and a run waiting out its time was taken for a failure.
+[ -e /var/lib/soundstorm-caretaker/pending.json ] && exit 0
+systemctl is-active --quiet soundstorm.service || exit 0
 
 # The rest under up.sh's lock, so an update cannot begin between the look
 # and the start (looked at again once it is held: run again from the top).
@@ -41,7 +48,7 @@ fi
 [ -e /var/lib/soundstorm-caretaker/pending.json ] && exit 0
 systemctl is-active --quiet soundstorm.service || exit 0
 
-echo "the box's address changed from ${had:-none} to $lan"
+echo "the box's address or router changed: ${had:-none} via ${hadgw:-none} to $lan via ${gw:-none}"
 /usr/local/lib/soundstorm/prepare.sh
 # EmberStorm is started again with the new address (its settings changed,
 # so compose makes it afresh); the rest are left running.

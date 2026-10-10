@@ -15,7 +15,9 @@ trap '' INT QUIT TSTP
 stty -isig 2>/dev/null || true
 
 env=/opt/soundstorm/.env
-port=8099
+# The port the stack is on (prepare.sh and compose honour SOUNDSTORM_PORT).
+port=$(sed -n 's/^SOUNDSTORM_PORT=\([0-9][0-9]*\)$/\1/p' "$env" 2>/dev/null | tail -n 1)
+port=${port:-8099}
 # The power button's code, from the caretaker's own folder (root only):
 # "<code> <until>". Never asked of its socket, which the app's container
 # shares.

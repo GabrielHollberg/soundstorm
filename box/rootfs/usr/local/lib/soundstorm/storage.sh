@@ -58,12 +58,18 @@ blank() {
 # not USB, not removable. The data drive is found by its label, and a USB
 # stick anybody labelled the same must never take its place: the box would
 # run on whatever accounts and library were put on it (a security review).
+# Only a SATA or NVMe disk, not removable, and not behind USB or Thunderbolt
+# (an NVMe enclosure there reports itself as NVMe; an SD card is never one -
+# the box's blind review).
 internal() {
 	disk=$(lsblk -no PKNAME "$1" 2>/dev/null | head -1)
 	[ -n "$disk" ] || disk=${1#/dev/}
 	tran=$(lsblk -dno TRAN "/dev/$disk" 2>/dev/null | tr -d ' ')
 	rm=$(lsblk -dno RM "/dev/$disk" 2>/dev/null | tr -d ' ')
-	[ "$tran" != usb ] && [ "$rm" = 0 ]
+	case "$tran" in nvme | sata | ata) ;; *) return 1 ;; esac
+	[ "$rm" = 0 ] || return 1
+	case "$(readlink -f "/sys/block/$disk" 2>/dev/null)" in */usb* | */thunderbolt* | "") return 1 ;; esac
+	return 0
 }
 
 # The data drive is mounted only ever by its own device, and with nothing on
@@ -119,9 +125,9 @@ if ! mounted; then
 		rootd=$(root_disk)
 		# Whole internal disks: not the system disk, not USB, not removable,
 		# not loop/zram/optical.
-		for name in $(lsblk -dno NAME,TYPE,TRAN,RM | awk '$2=="disk" && $3!="usb" && $NF=="0" {print $1}'); do
+		for name in $(lsblk -dno NAME,TYPE | awk '$2=="disk" {print $1}'); do
 			[ "$name" = "$rootd" ] && continue
-			case "$name" in zram* | loop* | sr* | mmcblk*boot*) continue ;; esac
+			internal "/dev/$name" || continue
 			if blank "$name"; then
 				log "preparing /dev/$name as the data drive"
 				# -K: no discard of the whole disk first, which on a big

@@ -25,10 +25,28 @@ END
 EOF
 chmod 755 /etc/grub.d/01_emberstorm_lock
 
-sed -i 's/^CLASS="--class gnu-linux --class gnu --class os"$/CLASS="--class gnu-linux --class gnu --class os --unrestricted"/' /etc/grub.d/10_linux
-grep -q -- '--unrestricted"$' /etc/grub.d/10_linux || { echo "lock-grub: the normal entry could not be left open" >&2; exit 1; }
+# The normal entry left open without editing the package's 10_linux - an
+# update would replace the edit and the box would then ask a password at
+# every start that nobody knows (the box's blind review). The package's own
+# script is moved aside by dpkg (updates go there too) and run through a
+# filter adding --unrestricted to the normal entry, which carries the class
+# "os"; the advanced entries stay locked.
+mkdir -p /usr/share/emberstorm
+if ! dpkg-divert --list /etc/grub.d/10_linux | grep -q emberstorm; then
+	dpkg-divert --package emberstorm --add --rename \
+		--divert /usr/share/emberstorm/10_linux.grub /etc/grub.d/10_linux
+fi
+cat > /etc/grub.d/10_linux <<'EOF'
+#!/bin/sh
+# EmberStorm: grub's own 10_linux (diverted to /usr/share/emberstorm by dpkg,
+# kept up to date by its updates), with the normal entry starting freely.
+/bin/sh /usr/share/emberstorm/10_linux.grub "$@" |
+	sed 's/^\(menuentry .* --class os\)\( \$menuentry_id_option\)/\1 --unrestricted\2/'
+EOF
+chmod 755 /etc/grub.d/10_linux
 
 printf 'GRUB_DISABLE_RECOVERY=true\n' > /etc/default/grub.d/90_emberstorm.cfg
 update-grub
 grep -q '^set superusers=' /boot/grub/grub.cfg || { echo "lock-grub: grub.cfg has no lock" >&2; exit 1; }
+grep -q '^menuentry .*--unrestricted' /boot/grub/grub.cfg || { echo "lock-grub: the normal entry is not left open" >&2; exit 1; }
 echo "lock-grub: start-up menu locked"

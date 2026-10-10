@@ -1,0 +1,11 @@
+[Unit]
+Description=Check every block on the data drive (btrfs scrub)
+ConditionPathIsMountPoint=/srv/soundstorm
+
+[Service]
+Type=oneshot
+# Reads everything once and reports damage; the box's health screen will say
+# so. Gently: idle priority.
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/bin/btrfs scrub start -B -d /srv/soundstorm

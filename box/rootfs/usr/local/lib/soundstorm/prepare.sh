@@ -29,6 +29,19 @@ set_env() {
 [ -n "$(get_env SOUNDSTORM_SETUP_CODE)" ] ||
 	set_env SOUNDSTORM_SETUP_CODE "$(od -An -N10 -tx1 /dev/urandom | tr -d ' \n')"
 [ -n "$(get_env SOUNDSTORM_TLS)" ] || set_env SOUNDSTORM_TLS auto
+
+# The backends' own secrets, made for this box - not the compose file's
+# defaults every box would share (the box's blind review). Only for a
+# database not made yet: one already made keeps the password it was made with.
+secret() { od -An -N16 -tx1 /dev/urandom | tr -d ' \n'; }
+volume_empty() { [ -z "$(ls -A "/srv/soundstorm/volumes/$1" 2>/dev/null)" ]; }
+own_secret() {
+	[ -n "$(get_env "$1")" ] && return 0
+	if volume_empty "$2"; then set_env "$1" "$(secret)"; else set_env "$1" "$3"; fi
+}
+own_secret SOUNDSTORM_IMMICH_DB_PASSWORD immich-db soundstorm-immich
+own_secret SOUNDSTORM_AUDIOMUSE_DB_PASSWORD audiomuse-db soundstorm-audiomuse
+own_secret SOUNDSTORM_STORYTELLER_SECRET storyteller-data soundstorm-storyteller
 set_env SOUNDSTORM_LIBRARY_PATH /srv/soundstorm/library
 set_env SOUNDSTORM_LIBRARY_HINT "the box's drive"
 

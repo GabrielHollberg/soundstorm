@@ -101,6 +101,9 @@ got_sum=$(head -c "$size" "/dev/$target" | sha256sum | cut -d' ' -f1)
 	fail "What was written to the built-in drive does not match. The drive may be failing."
 
 say "Finishing..."
+# The partition table as written, read again before its parts are opened.
+blockdev --rereadpt "/dev/$target" 2>/dev/null || partprobe "/dev/$target" 2>/dev/null || true
+udevadm settle 2>/dev/null || true
 # The old disk IDs, then new ones: every box made from this stick - and the
 # stick itself - would otherwise share them, and a box started with the
 # stick still in could start the stick's system instead of its own.
@@ -134,11 +137,18 @@ umount /mnt/box/boot/efi /mnt/box
 
 # The box starts from its built-in drive first. The firmware also finds it
 # by itself (EFI/BOOT), so a failure here is not fatal.
+# One entry: those left by earlier installs go first, as some firmware has
+# little room for them.
+for n in $(efibootmgr 2>/dev/null | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} EmberStorm.*/\1/p'); do
+	efibootmgr -q -b "$n" -B 2>/dev/null || true
+done
 efibootmgr -q -c -d "/dev/$target" -p 15 -L EmberStorm -l '\EFI\debian\shimx64.efi' 2>/dev/null || true
 
 if [ -e "$P/factory" ]; then
-	for d in $(lsblk -dno NAME | grep -E '^nvme[0-9]+n[0-9]+$'); do
-		[ "$d" = "$self" ] && continue
+	# Every internal storage drive, NVMe or SATA; never the built-in drive
+	# just written or the stick.
+	for d in $(lsblk -dno NAME,TRAN | awk '$2=="nvme" || $2=="sata" || $2=="ata" {print $1}'); do
+		[ "$d" = "$self" ] || [ "$d" = "$target" ] && continue
 		say "Wiping the storage drive ($d)..."
 		wipefs -a -f "/dev/$d" >/dev/null || fail "The storage drive could not be wiped."
 	done

@@ -1035,6 +1035,76 @@ caretaker's test (`TestADriveIsOpenedOnlyWhenAsked`). Not seen: the page's
 question for a drive not yet open (the test server has no caretaker), and the
 stick's Enter on a real box.
 
+**A second blind review of the box (2026-10-10, the owner's asking:
+security, bugs and recommendations)**: five reviewers - security of the
+software side and of the box side, bugs of each, and one on readiness to make
+and sell units - none shown these notes; each finding checked against the
+code. Fixed:
+- **Updates and resets**: the caretaker stopping (a switch-off, a restart)
+  while an update waited for health is left for the next start, where it was
+  rolled back on a cancelled context half done; a rollback puts the old
+  images back before the volumes, and recovery keeps an update only with its
+  volumes and snapshot in place; a release that rolled back is not retried
+  every night (`rolled-back`); no update starts while a reset waits for the
+  button, and ten presses during one wait for it (they were lost); a failed
+  stop starts the stack again; erase and every successful update delete the
+  `-failed-*` copies of the accounts a rollback could leave; a check no
+  longer overwrites an update's or reset's status.
+- **The button**: wrong codes pause guessing a minute every five (50 close
+  the window) - five closing it let anybody at home keep the owner out; two
+  devices' reports of one press are told apart at 80ms, not 250 (quick presses
+  of ten were lost).
+- **USB and Settings**: one drive opened at a time, with three minutes; a
+  read of a drive's file only for a plain file (a fifo held it open);
+  whether a drive holds media kept five minutes; Settings' reset card shows
+  an erase or start over waiting for the button, with Cancel, whenever opened.
+- **The app image's provenance must name its very commit on main**
+  (`--source-digest`, `--source-ref`): before, any build of the workflow
+  passed, an older or a branch's relabelled. Checked: the right commit passed,
+  another refused.
+- **The box**: images that fail to load stop EmberStorm with a message on the
+  screen (it retried for ever to download names only the box has); the data
+  drive's fstab mount is waited for (two mounts could stack); internal means
+  a SATA or NVMe disk not behind USB or Thunderbolt (an SD card or an NVMe
+  enclosure passed); the screen reads the stack's port; the address check
+  asks before the lock and follows a new router; **the start-up menu's lock
+  survives a grub update** (10_linux diverted with dpkg and filtered, where an
+  update replacing the edited file would have asked every start for a password
+  nobody knows - checked by reinstalling grub-common in the VM); the backends'
+  database passwords and Storyteller's key are made per box on its first start
+  (every box shared the compose defaults; a database already made keeps its
+  own); a USB network adapter is never the box's network
+  (`05-emberstorm-no-usb-network.network`); the log on the eMMC is capped
+  (200MB, a month); compressed swap in memory (zram, a quarter); a monthly
+  scrub of the data drive.
+- **The stick**: it has disk IDs of its own (it shared them with the copy it
+  writes, so after an install cut short it could start that copy); the table
+  is read again before the IDs are; old EmberStorm boot entries go before a
+  new one; a factory stick wipes SATA storage drives too.
+Checked: the caretaker's and server's tests (a shutdown mid-update left for
+the next start, a rolled-back release not offered again, ten presses waiting
+for a busy box and leaving no account copies, the code pause); in the VM, a
+fresh image and stick installed and started - one mount `nosuid,nodev`, zram
+on, the journal capped, the three secrets made, the menu open after
+`apt-get install --reinstall grub-common`. Not checked: images failing to
+load, a USB network adapter, the stick after a cut install.
+
+**From the readiness review, not built** (the owner's to weigh, biggest
+first): **the box's own system cannot be updated** - a release carries only
+images, so a fix to the caretaker, the compose files or a script needs the
+stick at the customer's (a signed bundle of the box's files, or A/B system
+partitions); **per-unit provisioning** - the setup code, a serial and the
+sticker made at the factory, the code kept where a reinstall finds it;
+**a factory test** (drive health, network, the button, every service up);
+**the time zone** - the box is UTC, so its 2-5 update window and the 05:30
+restart fall in a US evening; **memory** - no limits on fifteen services,
+to be measured on the unit; **drive health** (SMART, eMMC wear) shown in the
+app; **updates in the app** (version, what failed, Auto); **staged rollout and
+reports back** (every box updates the same night, nothing reports); **a
+support bundle**; **backups** (a USB drive nightly, "not protected" said
+plainly); **a real wipe** for resale (blkdiscard or nvme format); **licence
+notices and a source offer** for the images, firmware and models shipped.
+
 **Left for the owner** (from the same review): **the release key** is a plain file on the build machine (sign offline
 or with a hardware key, before the first box);
 **somebody holding the box** can boot another system from USB, and nothing

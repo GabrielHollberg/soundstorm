@@ -80,6 +80,38 @@ virt-customize -a "$stick" \
 	--root-password disabled \
 	--truncate /etc/machine-id
 
+say "The stick's own disk IDs"
+# Made from the same Debian base as the box's system, the stick would share
+# its disk IDs with the copy it writes - and with an install cut short (the
+# power, a failed check) before that copy got IDs of its own, starting from
+# the stick again could start the half-written copy instead (the box's blind
+# review). So the stick gets IDs no box has.
+ids=$(guestfish --ro -a "$stick" run : part-get-gpt-guid /dev/sda 1 : part-get-gpt-guid /dev/sda 15 : vfs-uuid /dev/sda1)
+old_root=$(echo "$ids" | sed -n 1p)
+old_efi=$(echo "$ids" | sed -n 2p)
+old_fs=$(echo "$ids" | sed -n 3p)
+[ -n "$old_root" ] && [ -n "$old_efi" ] && [ -n "$old_fs" ] || { echo "Could not read the stick's disk IDs." >&2; exit 1; }
+new_root=$(cat /proc/sys/kernel/random/uuid)
+new_efi=$(cat /proc/sys/kernel/random/uuid)
+new_fs=$(cat /proc/sys/kernel/random/uuid)
+guestfish --rw -a "$stick" <<EOF
+run
+part-set-gpt-guid /dev/sda 1 $new_root
+part-set-gpt-guid /dev/sda 15 $new_efi
+e2fsck-f /dev/sda1
+set-uuid /dev/sda1 $new_fs
+mount /dev/sda1 /
+mount /dev/sda15 /boot/efi
+sh "sed -i -e 's/$old_root/$new_root/gI' -e 's/$old_efi/$new_efi/gI' -e 's/$old_fs/$new_fs/gI' /etc/fstab /boot/grub/grub.cfg /boot/efi/EFI/debian/grub.cfg"
+EOF
+counts=$(guestfish --ro -a "$stick" -i sh "grep -c $new_root /etc/fstab; grep -c $new_fs /boot/efi/EFI/debian/grub.cfg; grep -c $new_root /boot/grub/grub.cfg" || true)
+if [ -z "$counts" ] || printf '%s
+' "$counts" | grep -qx 0; then
+	echo "The stick's new disk IDs were not written everywhere." >&2
+	exit 1
+fi
+echo "  root $new_root, filesystem $new_fs"
+
 say "Writing the stick's image"
 qemu-img convert -O raw "$stick" "$out/emberstorm-installer.img"
 rm -rf "$work"

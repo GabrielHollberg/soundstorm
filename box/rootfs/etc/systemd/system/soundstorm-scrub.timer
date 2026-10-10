@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the data drive once a month
+
+[Timer]
+OnCalendar=monthly
+RandomizedDelaySec=3d
+Persistent=true
+
+[Install]
+WantedBy=timers.target

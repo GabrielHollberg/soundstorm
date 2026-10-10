@@ -1,0 +1,10 @@
+# A network adapter plugged into a USB port is not the box's network: left
+# alone, it got an address by DHCP and, if its route won, the box took the
+# network behind it for home - EmberStorm restarted on it (the box's blind
+# review). Before netplan's own files, which bring up any en*/eth* port.
+[Match]
+# Its path on the bus says USB (pci-...-usb-...).
+Path=*-usb-*
+
+[Link]
+Unmanaged=yes

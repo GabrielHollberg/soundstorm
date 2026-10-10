@@ -2,7 +2,9 @@
 Description=SoundStorm
 After=docker.service network-online.target soundstorm-storage.service soundstorm-images.service
 Wants=network-online.target
-Requires=docker.service soundstorm-storage.service
+# soundstorm-images too: started with images that did not load, compose
+# tried for ever to download names that exist only on this box.
+Requires=docker.service soundstorm-storage.service soundstorm-images.service
 
 [Service]
 Type=oneshot
