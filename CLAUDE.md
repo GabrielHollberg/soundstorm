@@ -300,6 +300,12 @@ after the setup had ended. The lines are no longer watched, the details are
 put up four times a second, and progress changes only when it moves - a
 pretend setup of 100,000 lines (`-page run -script`, debug) now finishes in
 seconds.)*
+**And opened with no account yet, the app now puts the setup code in the
+address** (`Install.hasOwner`, `/healthz`'s `setUp`), as the Windows icon does:
+the owner's first open after the window froze asked for a code. **For the
+PC:** the sign-up form's help says to open `.env` "with Notepad" - on a Mac
+it is a hidden file (Finder: Cmd-Shift-. in the EmberStorm folder, or
+TextEdit's open dialog the same way); worth a Mac line there.
 
 **Who does what:** the PC writes these in `install.sh` and tests the Linux half
 in containers or the box's VM; the Mac then runs the whole install on a Mac -
