@@ -702,8 +702,10 @@ refresh_gateway() {
 # needs no administrator; uninstalling takes it out again. (On Windows the
 # start-up shortcut does the same; the EmberStorm box does it on every start.)
 ADDRESS_TAG='# soundstorm-address'
+# On a Mac, a LaunchAgent of this name does it instead (no crontab).
+ADDRESS_AGENT='dev.soundstorm.address'
 install_address_watch() {
-	command -v crontab >/dev/null 2>&1 || return 0
+	[ "$(uname -s)" = Darwin ] || command -v crontab >/dev/null 2>&1 || return 0
 	watch="$DIR/soundstorm-address.sh"
 	docker_dir=$(dirname "$(command -v docker 2>/dev/null || echo /usr/local/bin/docker)")
 	{
@@ -802,6 +804,32 @@ WATCH
 	} > "$watch.new" || return 0
 	chmod 755 "$watch.new"
 	mv "$watch.new" "$watch"
+	if [ "$(uname -s)" = Darwin ]; then
+		# A Mac: a LaunchAgent, macOS's own way to run something on a timer.
+		# Changing the crontab there stopped the setup on "would like to
+		# administer your computer" (the first real run, 2026-10-10).
+		agent="$HOME/Library/LaunchAgents/$ADDRESS_AGENT.plist"
+		mkdir -p "$HOME/Library/LaunchAgents"
+		cat >"$agent" <<AGENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>$ADDRESS_AGENT</string>
+	<key>ProgramArguments</key><array><string>/bin/sh</string><string>$(printf '%s' "$watch" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')</string></array>
+	<key>StartInterval</key><integer>600</integer>
+	<key>RunAtLoad</key><true/>
+	<key>StandardOutPath</key><string>/dev/null</string>
+	<key>StandardErrorPath</key><string>/dev/null</string>
+</dict>
+</plist>
+AGENT
+		launchctl bootout "gui/$(id -u)/$ADDRESS_AGENT" 2>/dev/null || true
+		launchctl bootstrap "gui/$(id -u)" "$agent" 2>/dev/null || true
+		# One from before this, in the crontab, is left alone: reading the
+		# crontab is enough to ask the same question.
+		return 0
+	fi
 	{
 		crontab -l 2>/dev/null | grep -vF "$ADDRESS_TAG"
 		printf '@reboot sleep 90; sh "%s" >/dev/null 2>&1 %s\n' "$watch" "$ADDRESS_TAG"
@@ -811,6 +839,14 @@ WATCH
 
 remove_address_watch() {
 	rm -f "$DIR/soundstorm-address.sh"
+	if [ "$(uname -s)" = Darwin ]; then
+		launchctl bootout "gui/$(id -u)/$ADDRESS_AGENT" 2>/dev/null || true
+		rm -f "$HOME/Library/LaunchAgents/$ADDRESS_AGENT.plist"
+		# A crontab line from an older setup is left: touching the crontab
+		# asks to "administer your computer", and the line only runs a
+		# script that is gone now, quietly.
+		return 0
+	fi
 	command -v crontab >/dev/null 2>&1 || return 0
 	if crontab -l 2>/dev/null | grep -qF "$ADDRESS_TAG"; then
 		crontab -l 2>/dev/null | grep -vF "$ADDRESS_TAG" | crontab - 2>/dev/null || true
