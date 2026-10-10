@@ -15,6 +15,13 @@
 # test held against a real sheet. The layouts were measured from Avery's own
 # templates (U-0431-01 and U-1383-01).
 #
+# A printer that shrinks the page a little (each column further left than the
+# last) is undone by measuring a test sheet with a ruler: MEASURED_X, inches
+# from the paper's left edge to the right-hand column's left edge (5.875 on
+# the labels, 5.75 on the cards, when right), and MEASURED_Y, inches from the
+# paper's top to the bottom row's top (8.375 labels, 7.625 cards):
+#   MEASURED_X=5.80 MEASURED_Y=8.30 sh box/sticker.sh labels units.csv
+#
 #   sh box/sticker.sh labels units.csv [OUTDIR] [--test]
 #   sh box/sticker.sh label EM-XXXX-XXXX CODE [OUTDIR] [--test]
 #   sh box/sticker.sh cards [OUTDIR] [--test]
@@ -35,12 +42,17 @@ set -- $args
 
 qr() { qrencode -t SVG --svg-path -m 0 -l M -o - "$1" | base64 -w0; }
 
-page_open() {
-	cat <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg" width="8.5in" height="11in" viewBox="0 0 8.5 11" font-family="Helvetica, Arial, sans-serif">
-EOF
+# stretch EXPECTED MEASURED: how much to stretch so MEASURED lands at EXPECTED.
+stretch() {
+	[ -n "$2" ] || { echo 1; return; }
+	awk -v e="$1" -v m="$2" 'BEGIN { if (m < e * 0.9 || m > e * 1.1) exit 1; printf "%.5f", e / m }' ||
+		{ echo "A measurement of $2 is too far from $1 to be a printer's shrink: measure again." >&2; exit 2; }
 }
-page_close() { echo '</svg>'; }
+page_open() {
+	echo '<svg xmlns="http://www.w3.org/2000/svg" width="8.5in" height="11in" viewBox="0 0 8.5 11" font-family="Helvetica, Arial, sans-serif">'
+	echo "<g transform=\"scale($KX $KY)\">"
+}
+page_close() { echo '</g></svg>'; }
 
 html_open() {
 	cat <<'EOF'
@@ -119,6 +131,7 @@ labels_from() {
 
 case "${1:-}" in
 labels)
+	KX=$(stretch 5.875 "${MEASURED_X:-}"); KY=$(stretch 8.375 "${MEASURED_Y:-}")
 	[ -f "${2:-}" ] || { echo "usage: sticker.sh labels units.csv [OUTDIR] [--test]" >&2; exit 2; }
 	out=${3:-stickers}
 	mkdir -p "$out"
@@ -129,6 +142,7 @@ labels)
 	echo "  $out/labels.html: $count labels, $(( (count + 11) / 12 )) sheet(s) of Avery 64510"
 	;;
 label)
+	KX=$(stretch 5.875 "${MEASURED_X:-}"); KY=$(stretch 8.375 "${MEASURED_Y:-}")
 	[ $# -ge 3 ] || { echo "usage: sticker.sh label SERIAL CODE [OUTDIR] [--test]" >&2; exit 2; }
 	out=${4:-stickers}
 	mkdir -p "$out"
@@ -139,6 +153,7 @@ label)
 	echo "  $out/$2.html: one label, top left of a sheet of Avery 64510"
 	;;
 cards)
+	KX=$(stretch 5.75 "${MEASURED_X:-}"); KY=$(stretch 7.625 "${MEASURED_Y:-}")
 	out=${2:-stickers}
 	mkdir -p "$out"
 	CARD_QR=$(qr "https://emberstorm.app/start")
@@ -151,7 +166,7 @@ cards)
 	echo "  $out/cards.html: a sheet of 9 cards, Avery 35703"
 	;;
 *)
-	sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac
