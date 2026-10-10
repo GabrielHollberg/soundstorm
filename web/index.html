@@ -174,10 +174,17 @@
         <h2>Or get the EmberStorm box</h2>
         <p>A small, quiet box with EmberStorm already on it. Plug it into power and your router,
           scan the code on the sticker with your phone, and make your account. Nothing to install, nothing to configure.</p>
-        <p class="small">The box is in testing now. Leave your email to hear when it's ready.</p>
-        <!-- PLACEHOLDER: the sign-up form's provider is still to be chosen
-             (Buttondown, Kit, Mailchimp...). Until then, an email. -->
-        <a class="button primary" href="mailto:hello@emberstorm.app?subject=Tell%20me%20when%20the%20EmberStorm%20box%20is%20ready">Tell me when it's ready</a>
+        <p class="small">The box is in testing now. Leave your email and you'll get one message when
+          pre-orders open - nothing else.</p>
+        <!-- The list is kept by Buttondown (privacy page says so); a plain form,
+             no script: Buttondown's own page confirms and asks the person to
+             click the link it emails, so nobody is signed up by someone else. -->
+        <form class="signup" action="https://buttondown.com/api/emails/embed-subscribe/EmberStorm" method="post">
+          <label class="sr-only" for="signup-email">Your email</label>
+          <input id="signup-email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+          <input type="hidden" name="tag" value="box">
+          <button class="button primary" type="submit">Notify me</button>
+        </form>
       </div>
     </section>
   </main>
