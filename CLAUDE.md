@@ -1001,11 +1001,7 @@ caretaker's test (`TestADriveIsOpenedOnlyWhenAsked`). Not seen: the page's
 question for a drive not yet open (the test server has no caretaker), and the
 stick's Enter on a real box.
 
-**Left for the owner** (from the same review): **the app's own image is
-`:latest`** in the build and in `release.sh`, which pins whatever the tag holds
-at that moment; **the models are copied from this PC's live volumes unchecked**,
-Storyteller's whisper-cpp program among them (fetch them by pinned address and
-hash); **the release key** is a plain file on the build machine (sign offline
+**Left for the owner** (from the same review): **the release key** is a plain file on the build machine (sign offline
 or with a hardware key, before the first box);
 **somebody holding the box** can boot another system from USB, and nothing
 is encrypted; the stick's checksum is not signed (it waits for the key); Debian's base image is checked against
