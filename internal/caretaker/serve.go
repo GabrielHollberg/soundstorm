@@ -109,29 +109,18 @@ func (u *Updater) Handler() http.Handler {
 			return
 		}
 		u.busy.Unlock()
-		// Erasing waits for somebody at the box: five presses of its power
-		// button within EraseWait start it (Pressed). Asked for through this
-		// socket alone - which the app's container shares - nothing that
-		// cannot be undone happens (the owner's choice, 2026-10-10).
-		if body.Mode == ResetErase {
-			u.ArmErase()
-			w.WriteHeader(http.StatusAccepted)
-			reply(w, map[string]any{"mode": body.Mode, "waiting": "button", "until": time.Now().Add(EraseWait)})
-			return
-		}
-		// It outlives the request, and EmberStorm with it: the stack stops.
-		go func() {
-			time.Sleep(2 * time.Second) // the answer reaches the page first
-			if err := u.Reset(context.Background(), body.Mode); err != nil {
-				u.log.Error("reset", "err", err)
-			}
-		}()
+		// Erasing and starting over wait for somebody at the box: ten
+		// presses of its power button within EraseWait start it (Pressed).
+		// Asked for through this socket alone - which the app's container
+		// shares - nothing that cannot be undone happens (the owner's
+		// choice, 2026-10-10; start over too after the box's blind review).
+		u.ArmReset(body.Mode)
 		w.WriteHeader(http.StatusAccepted)
-		reply(w, map[string]any{"mode": body.Mode})
+		reply(w, map[string]any{"mode": body.Mode, "waiting": "button", "presses": ResetPresses, "until": time.Now().Add(EraseWait)})
 	})
 	mux.HandleFunc("POST /reset/cancel", func(w http.ResponseWriter, r *http.Request) {
-		u.CancelErase()
-		reply(w, map[string]any{"erase": false})
+		u.CancelReset()
+		reply(w, map[string]any{"waiting": false})
 	})
 	mux.HandleFunc("GET /button", func(w http.ResponseWriter, r *http.Request) {
 		open, until := u.buttonOpen()
@@ -143,8 +132,8 @@ func (u *Updater) Handler() http.Handler {
 		if open {
 			out["until"] = until
 		}
-		if erase, by := u.eraseArmed(); erase {
-			out["erase"] = by
+		if mode, by := u.resetArmed(); mode != "" {
+			out["reset"], out["resetUntil"] = mode, by
 		}
 		reply(w, out)
 	})

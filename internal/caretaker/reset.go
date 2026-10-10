@@ -161,8 +161,9 @@ func emptyKeepingFolders(dir string) error {
 // and for fifteen minutes the owner's password can be set again from any
 // device on the home network with the code on the box's screen or the setup
 // code on the sticker - the way back in for a forgotten password, which needs
-// nothing erased. Five presses are also what lets an erase asked for in the
-// app go ahead (ArmErase): nobody erases the box without being at it.
+// nothing erased. Ten presses are what lets an erase or a start over asked
+// for in the app go ahead (ArmReset): nobody empties the box without being
+// at it, and the five a forgotten password takes never do it.
 // EmberStorm asks (GET /button) and says when it was used.
 
 // ButtonWindow is how long five presses leave the owner's password open.
@@ -178,43 +179,53 @@ type presses struct {
 	// somewhere only somebody there can read (the blind security review).
 	code  string
 	wrong int
-	// eraseUntil: an erase asked for in the app waits until then for five
-	// presses, which start it in place of opening the password.
-	eraseUntil time.Time
+	// resetUntil: an erase or start over asked for in the app (resetMode)
+	// waits until then for ResetPresses.
+	resetUntil time.Time
+	resetMode  ResetMode
 }
 
-// EraseWait is how long an erase asked for in the app waits for the button.
+// EraseWait is how long an erase or start over asked for in the app waits
+// for the button.
 const EraseWait = 10 * time.Minute
 
-// ArmErase has the next five presses within EraseWait erase the box. It is
-// said on the box's own screen (EraseFile), so the five presses somebody
-// makes to reset a forgotten password are never taken for an erase unawares
-// (the box's blind security review), and CancelErase takes it back.
-func (u *Updater) ArmErase() {
+// ResetPresses confirm an erase or start over at the box: ten, so the five a
+// forgotten password takes can never empty it (the box's blind security
+// review: the two shared one gesture, and the box mostly has no screen to
+// say which was waiting).
+const ResetPresses = 10
+
+// ArmReset has ResetPresses within EraseWait start mode - an erase, or
+// starting over. It is said on the box's own screen (EraseFile), and
+// CancelReset takes it back. Asked for through the socket alone - which the
+// app's container shares - nothing that cannot be undone happens.
+func (u *Updater) ArmReset(mode ResetMode) {
 	u.button.mu.Lock()
-	u.button.eraseUntil = time.Now().Add(EraseWait)
-	u.showErase(u.button.eraseUntil)
+	u.button.resetUntil = time.Now().Add(EraseWait)
+	u.button.resetMode = mode
+	u.showReset(u.button.resetUntil, mode)
 	u.button.mu.Unlock()
-	u.log.Warn("erasing the box was asked for: waiting for five presses of the power button")
+	u.log.Warn("resetting the box was asked for: waiting for the power button", "mode", mode, "presses", ResetPresses)
 }
 
-// CancelErase takes back an erase still waiting for the button.
-func (u *Updater) CancelErase() {
+// CancelReset takes back an erase or start over still waiting for the button.
+func (u *Updater) CancelReset() {
 	u.button.mu.Lock()
-	armed := time.Now().Before(u.button.eraseUntil)
-	u.button.eraseUntil = time.Time{}
-	u.showErase(time.Time{})
+	armed := time.Now().Before(u.button.resetUntil)
+	u.button.resetUntil = time.Time{}
+	u.showReset(time.Time{}, "")
 	u.button.mu.Unlock()
 	if armed {
-		u.log.Warn("erasing the box was cancelled")
+		u.log.Warn("resetting the box was cancelled")
 	}
 }
 
-// EraseFile tells the box's screen (screen.sh, root) an erase is waiting:
-// "<until, unix seconds>". Gone once it is cancelled, done or past.
+// EraseFile tells the box's screen (screen.sh, root) an erase or start over
+// is waiting: "<until, unix seconds> <mode>". Gone once it is cancelled,
+// done or past.
 const EraseFile = "erase-waiting"
 
-func (u *Updater) showErase(until time.Time) {
+func (u *Updater) showReset(until time.Time, mode ResetMode) {
 	path := filepath.Join(u.cfg.StateDir, EraseFile)
 	if until.IsZero() {
 		_ = os.Remove(path)
@@ -223,14 +234,17 @@ func (u *Updater) showErase(until time.Time) {
 	if err := os.MkdirAll(u.cfg.StateDir, 0o700); err != nil {
 		return
 	}
-	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d\n", until.Unix())), 0o600)
+	_ = os.WriteFile(path, []byte(fmt.Sprintf("%d %s\n", until.Unix(), mode)), 0o600)
 }
 
-// eraseArmed is whether an erase waits for the button, and until when.
-func (u *Updater) eraseArmed() (bool, time.Time) {
+// resetArmed is what waits for the button, if anything, and until when.
+func (u *Updater) resetArmed() (ResetMode, time.Time) {
 	u.button.mu.Lock()
 	defer u.button.mu.Unlock()
-	return time.Now().Before(u.button.eraseUntil), u.button.eraseUntil
+	if !time.Now().Before(u.button.resetUntil) {
+		return "", time.Time{}
+	}
+	return u.button.resetMode, u.button.resetUntil
 }
 
 // maxWrongCodes closes the window: a code of six digits is not guessed
@@ -358,14 +372,15 @@ func (u *Updater) Pressed(ctx context.Context, n int) {
 	switch {
 	case n >= 5:
 		u.button.mu.Lock()
-		if time.Now().Before(u.button.eraseUntil) {
-			u.button.eraseUntil = time.Time{}
-			u.showErase(time.Time{})
+		if n >= ResetPresses && time.Now().Before(u.button.resetUntil) {
+			mode := u.button.resetMode
+			u.button.resetUntil = time.Time{}
+			u.showReset(time.Time{}, "")
 			u.button.mu.Unlock()
-			u.log.Warn("the power button was pressed five times: erasing the box, as asked in the app")
+			u.log.Warn("the power button was pressed ten times: resetting the box, as asked in the app", "mode", mode)
 			go func() {
-				if err := u.Reset(context.Background(), ResetErase); err != nil {
-					u.log.Error("erase", "err", err)
+				if err := u.Reset(context.Background(), mode); err != nil {
+					u.log.Error("reset", "err", err)
 				}
 			}()
 			return

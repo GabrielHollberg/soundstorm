@@ -170,10 +170,10 @@ func TestErasingWaitsForTheButton(t *testing.T) {
 	if _, err := os.Stat(song); err != nil {
 		t.Fatal("erased with nobody at the box")
 	}
-	if erase, _ := b.u.eraseArmed(); !erase {
+	if mode, _ := b.u.resetArmed(); mode != ResetErase {
 		t.Fatal("not waiting for the button")
 	}
-	b.u.Pressed(context.Background(), 5)
+	b.u.Pressed(context.Background(), ResetPresses)
 	for i := 0; i < 50; i++ {
 		if _, err := os.Stat(song); os.IsNotExist(err) {
 			break
@@ -255,7 +255,17 @@ func TestAWaitingEraseShowsAndCanBeCancelled(t *testing.T) {
 	os.MkdirAll(filepath.Dir(song), 0o755)
 	os.WriteFile(song, []byte("x"), 0o644)
 
-	b.u.ArmErase()
+	b.u.ArmReset(ResetErase)
+	// The five presses a forgotten password takes never erase.
+	b.u.Pressed(context.Background(), 5)
+	time.Sleep(200 * time.Millisecond)
+	if _, err := os.Stat(song); err != nil {
+		t.Fatal("five presses erased")
+	}
+	if mode, _ := b.u.resetArmed(); mode != ResetErase {
+		t.Fatal("five presses took the waiting erase away")
+	}
+	b.u.closeButton()
 	if _, err := os.Stat(filepath.Join(b.u.cfg.StateDir, EraseFile)); err != nil {
 		t.Fatal("the screen is not told an erase is waiting")
 	}
@@ -288,4 +298,36 @@ func TestAnExpiredReleaseIsNotInstalled(t *testing.T) {
 	if b.images() != "" {
 		t.Fatal("an expired release changed the images")
 	}
+}
+
+// Starting over waits for the button too: asked for over the socket alone,
+// nothing goes.
+func TestStartingOverWaitsForTheButton(t *testing.T) {
+	b := newBox(t)
+	b.u.cfg.Volumes = filepath.Join(b.dir, "volumes")
+	b.u.cfg.Cache = filepath.Join(b.dir, "cache")
+	b.u.cfg.Library = filepath.Join(b.dir, "library")
+	account := filepath.Join(b.u.cfg.Volumes, "state", "state.json")
+	os.MkdirAll(filepath.Dir(account), 0o755)
+	os.WriteFile(account, []byte("{}"), 0o644)
+	os.MkdirAll(b.u.cfg.Cache, 0o755)
+	os.MkdirAll(b.u.cfg.Library, 0o755)
+
+	rec := httptest.NewRecorder()
+	b.u.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/reset", strings.NewReader(`{"mode":"start-over"}`)))
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"waiting":"button"`) {
+		t.Fatalf("start over asked: %d %s", rec.Code, rec.Body.String())
+	}
+	time.Sleep(2500 * time.Millisecond)
+	if _, err := os.Stat(account); err != nil {
+		t.Fatal("started over with nobody at the box")
+	}
+	b.u.Pressed(context.Background(), ResetPresses)
+	for i := 0; i < 50; i++ {
+		if _, err := os.Stat(account); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("ten presses did not start over")
 }

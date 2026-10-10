@@ -932,11 +932,16 @@ and in the VM the drive mounted from its internal disk `nosuid,nodev` after a
 restart. Not checked: a stick carrying the drive's UUID, a real IPv6
 connection, the erase notice on a monitor.
 
-**Left for the owner** (from the same review): **Start over** needs no presses
-at the box, so a compromised app container can wipe every account and the
-update snapshots (only Erase waits for the button); **the same five presses**
-reset a password and confirm an erase - a different gesture for erasing would
-part them; **USB drives are opened as they are plugged in**, so the kernel's
+**Then, with the owner's go-ahead: ten presses confirm an erase or a start
+over** (`ResetPresses`), and five still open the password - the two no longer
+share a gesture. Start over waits for the button as Erase does (`ArmReset`,
+either mode; a hacked app container could otherwise wipe every account and the
+update snapshots), the screen says which is waiting, the page's waiting screen
+cancels either, and Settings says both wait for ten presses. Checked: the
+caretaker's tests (`TestStartingOverWaitsForTheButton`; five presses with an
+erase waiting open the password and erase nothing). Not seen: on a box.
+
+**Left for the owner** (from the same review): **USB drives are opened as they are plugged in**, so the kernel's
 ext4/FAT/exFAT code and ntfs-3g (as root) read any stick (opening one only
 after the owner says yes in the app would close it); **the app's own image is
 `:latest`** in the build and in `release.sh`, which pins whatever the tag holds

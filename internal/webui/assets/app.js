@@ -1222,10 +1222,12 @@ $('box-reset-form').addEventListener('submit', async (event) => {
   // five presses of its power button within ten minutes start it; until
   // then nothing is touched, and not pressing it is changing one's mind.
   if (body && body.waiting === 'button') {
-    $('boot-text').textContent = 'Now press the power button on the box five times quickly, within ten minutes. The box then erases itself.';
+    $('boot-text').textContent = boxResetMode === 'erase'
+      ? 'Now press the power button on the box ten times quickly, within ten minutes. The box then erases itself.'
+      : 'Now press the power button on the box ten times quickly, within ten minutes. The box then starts over.';
     // Taken back here, and the box's own screen says it is waiting.
     let cancelled = false;
-    const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'ghost', textContent: 'Cancel erasing' });
+    const cancel = Object.assign(document.createElement('button'), { type: 'button', className: 'ghost', textContent: boxResetMode === 'erase' ? 'Cancel erasing' : 'Cancel starting over' });
     cancel.addEventListener('click', async () => {
       cancel.disabled = true;
       const r = await api('/api/reset', { method: 'DELETE' });
@@ -1243,7 +1245,9 @@ $('box-reset-form').addEventListener('submit', async (event) => {
       if (!up && !gone) {
         gone = true;
         cancel.remove();
-        $('boot-text').textContent = 'Erasing the box. It will be ready to set up again in a few minutes.';
+        $('boot-text').textContent = boxResetMode === 'erase'
+          ? 'Erasing the box. It will be ready to set up again in a few minutes.'
+          : 'Starting over. The box will be ready to set up again in a few minutes.';
       } else if (up && gone) {
         location.reload();
         return;

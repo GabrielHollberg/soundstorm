@@ -20,7 +20,8 @@ port=8099
 # "<code> <until>". Never asked of its socket, which the app's container
 # shares.
 buttoncode=/var/lib/soundstorm-caretaker/button-code
-# An erase asked for in the app, waiting for five presses: "<until>".
+# An erase or start over asked for in the app, waiting for ten presses:
+# "<until> <mode>".
 erasewait=/var/lib/soundstorm-caretaker/erase-waiting
 
 # Big letters, where the font is there (console-setup-linux), and no kernel
@@ -123,13 +124,20 @@ draw() {
 		fi
 		ewait=
 		if [ -r "$erasewait" ]; then
-			read -r eu <"$erasewait" || true
+			read -r eu emode <"$erasewait" || true
 			[ "${eu:-0}" -gt "$(date +%s)" ] 2>/dev/null && ewait=1
 		fi
 		if [ -n "$ewait" ]; then
-			printf '\n   ERASING THIS BOX WAS ASKED FOR IN THE APP.\n'
-			printf '   Pressing the power button five times now erases\n'
-			printf '   everything on it. To keep it, do not press the button:\n'
+			if [ "${emode:-}" = erase ]; then
+				printf '\n   ERASING THIS BOX WAS ASKED FOR IN THE APP.\n'
+				printf '   Pressing the power button ten times now erases\n'
+				printf '   everything on it, media included.\n'
+			else
+				printf '\n   STARTING OVER WAS ASKED FOR IN THE APP.\n'
+				printf '   Pressing the power button ten times now deletes every\n'
+				printf '   account and setting. The media stays.\n'
+			fi
+			printf '   To keep it as it is, do not press the button:\n'
 			printf '   it is cancelled by itself within ten minutes.\n'
 		elif [ -n "$bcode" ]; then
 			printf '\n   The power button was pressed. To choose a new password,\n'
