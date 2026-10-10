@@ -121,14 +121,21 @@ final class Installer {
         startCreep()
         for await (line, isError) in lines {
             log += line + "\n"
-            if isError { errorText += line + "\n" } else { read(line) }
+            // Docker prints its progress on the error stream: both are read.
+            if isError { errorText += line + "\n" }
+            read(line)
         }
         p.waitUntilExit()
         process = nil
         try? FileManager.default.removeItem(at: script)
         guard p.terminationStatus == 0 else {
             if p.terminationReason == .uncaughtSignal { throw Stopped() }
-            throw Failed(message: Self.cleanError(errorText))
+            // The script's own message (die writes it beside the result);
+            // else what it printed, cleaned.
+            let said = (try? String(contentsOf: URL(fileURLWithPath: result.path + ".error"), encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            try? FileManager.default.removeItem(atPath: result.path + ".error")
+            throw Failed(message: said.map(Self.forTheWindow) ?? Self.cleanError(errorText))
         }
         fraction = 1
         status = "Done."
@@ -317,6 +324,13 @@ final class Installer {
 
     /// What the script said when it stopped, without its heading, and
     /// without telling somebody to type commands (the window has buttons).
+    /// Its message, said for a window with buttons rather than a terminal.
+    private static func forTheWindow(_ message: String) -> String {
+        message
+            .replacingOccurrences(of: "then run this again", with: "then choose Try again")
+            .replacingOccurrences(of: "run this again", with: "choose Try again")
+    }
+
     private static func cleanError(_ text: String) -> String {
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         while let first = lines.first, first.trimmingCharacters(in: .whitespaces).isEmpty { lines.removeFirst() }

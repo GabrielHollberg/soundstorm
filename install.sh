@@ -81,6 +81,8 @@ format_code() {
 # installer that says "error: 1" has failed twice.
 die() {
 	printf '\n%s%s%s\n\n%s\n\n' "$RED$BOLD" "${DIE_HEADING:-EmberStorm could not start.}" "$OFF" "$1" >&2
+	# For the Mac setup app: the message alone, without Docker's output.
+	[ -n "${EMBERSTORM_RESULT:-}" ] && printf '%s\n' "$1" >"$EMBERSTORM_RESULT.error" 2>/dev/null
 	exit 1
 }
 
@@ -1714,7 +1716,38 @@ else
 	note "That is everything - the rest needs nothing from you."
 	note "about 8GB the first time - the photo and film servers are most of it"
 fi
-if ! $COMPOSE $PROFILE pull; then
+# Tried again after 30, 60 and 120 seconds, as the Windows setup does: a
+# registry asking for a pause ("toomanyrequests", "error from registry ...
+# retry-after", seen on the first Mac run, 2026-10-10) stopped the setup with
+# the network blamed. Each try keeps what the last one downloaded.
+pulled=0
+for wait in 30 60 120 0; do
+	pull_log=$(mktemp)
+	# Shown as it goes, and kept to read why it stopped; its own exit
+	# status, which the pipe would hide, in a file of its own.
+	{ $COMPOSE $PROFILE pull 2>&1; echo $? >"$pull_log.status"; } | tee "$pull_log"
+	if [ "$(cat "$pull_log.status" 2>/dev/null)" = 0 ]; then
+		rm -f "$pull_log" "$pull_log.status"
+		pulled=1
+		break
+	fi
+	rm -f "$pull_log.status"
+	limited=0
+	grep -qiE 'toomanyrequests|retry-after|rate limit' "$pull_log" && limited=1
+	rm -f "$pull_log"
+	[ "$wait" = 0 ] && break
+	if [ "$limited" = 1 ]; then
+		note "The download server asked for a pause. Trying again in $wait seconds..."
+	else
+		note "The download stopped. Trying again in $wait seconds..."
+	fi
+	sleep "$wait"
+done
+if [ "$pulled" != 1 ]; then
+	if [ "$limited" = 1 ]; then
+		die "The download server is busy and asked for a pause. Wait a few minutes,
+then run this again - anything already downloaded is kept."
+	fi
 	die "Could not download the images. That is almost always the network.
 Check your connection and run this again - anything already downloaded is kept."
 fi
