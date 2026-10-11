@@ -123,8 +123,11 @@ final class Setup {
     private func hideDockerWhileSettingUp() -> Task<Void, Never> {
         Task {
             while !Task.isCancelled {
+                // Its window is a second app, the Electron dashboard
+                // (com.electron.dockerdesktop), not com.docker.docker itself:
+                // hiding only the first left the window up (the second run).
                 for app in NSWorkspace.shared.runningApplications
-                where app.bundleIdentifier == "com.docker.docker" && !app.isHidden {
+                where ["com.docker.docker", "com.electron.dockerdesktop"].contains(app.bundleIdentifier ?? "") && !app.isHidden {
                     app.hide()
                 }
                 try? await Task.sleep(for: .seconds(1))

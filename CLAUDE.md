@@ -306,6 +306,15 @@ the owner's first open after the window froze asked for a code. **For the
 PC:** the sign-up form's help says to open `.env` "with Notepad" - on a Mac
 it is a hidden file (Finder: Cmd-Shift-. in the EmberStorm folder, or
 TextEdit's open dialog the same way); worth a Mac line there.
+**The second run (Docker removed first):** Docker Desktop's window still
+opened - it is a second app, the Electron dashboard
+(`com.electron.dockerdesktop`), which the hiding never named; now both are
+hidden. And macOS asked whether Docker may find devices on the local network
+(Docker's own question, macOS 15 and later; Allow, or EmberStorm cannot open
+the router's port). Nothing can answer that for the person: the setup should
+say it may come, as it says a Docker window may. Not fixed: whether the
+welcome settings were written (the folder is macOS-guarded; a settings file
+left by the last Docker skips the write).
 
 **Who does what:** the PC writes these in `install.sh` and tests the Linux half
 in containers or the box's VM; the Mac then runs the whole install on a Mac -
