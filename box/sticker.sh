@@ -138,7 +138,7 @@ EOF
 	echo '</g>'
 }
 
-# card_back X Y N: the back - the logo alone, large and centred. The steps
+# card_back X Y N: the back - the cloud alone, large and centred. The steps
 # are on the page the front's code opens (the owner's choice: the card is
 # the brand, the page the instructions).
 card_back() {
@@ -146,11 +146,8 @@ card_back() {
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	echo "$PANEL"
-	cloud 0.75 0.5 1.0 "#fff" "b$i"
-	cat <<EOF
-<text x="1.25" y="1.82" font-size="0.32" font-weight="900" font-style="italic" fill="#fff" text-anchor="middle">EmberStorm</text>
-</g>
-EOF
+	cloud 0.55 0.66 1.4 "#fff" "b$i"
+	echo '</g>'
 }
 
 # Avery 64510: columns at 0.625, 3.25, 5.875; rows at 0.625, 3.2083,
