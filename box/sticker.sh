@@ -138,30 +138,34 @@ EOF
 	echo '</g>'
 }
 
-# card_back X Y N: the back - the logo and three steps, big, bold and pure
-# white: printed twice for a deeper black, small or grey type (grey is dots)
-# filled in where the two passes did not land exactly together.
+# card_back X Y N: the back - the logo large and centred, then the three
+# steps side by side, big, bold and pure white: printed twice for a deeper
+# black, small or grey type (grey is dots) filled in where the two passes
+# did not land exactly together.
 card_back() {
 	x=$1 y=$2 i=$3
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	echo "$PANEL"
-	cloud 0.44 0.25 0.33 "#fff" "b$i"
+	cloud 0.94 0.25 0.62 "#fff" "b$i"
 	cat <<EOF
-<text x="0.85" y="0.48" font-size="0.2" font-weight="900" font-style="italic" fill="#fff">EmberStorm</text>
-<g font-weight="bold" text-anchor="middle" font-size="0.17">
-<circle cx="0.38" cy="0.88" r="0.14" fill="#fff"/><text x="0.38" y="0.94">1</text>
-<circle cx="0.38" cy="1.34" r="0.14" fill="#fff"/><text x="0.38" y="1.40">2</text>
-<circle cx="0.38" cy="1.80" r="0.14" fill="#fff"/><text x="0.38" y="1.86">3</text>
+<text x="1.25" y="1.06" font-size="0.25" font-weight="900" font-style="italic" fill="#fff" text-anchor="middle">EmberStorm</text>
+<g font-weight="bold" text-anchor="middle">
+<circle cx="0.6" cy="1.42" r="0.14" fill="#fff"/><text x="0.6" y="1.48" font-size="0.17">1</text>
+<circle cx="1.25" cy="1.42" r="0.14" fill="#fff"/><text x="1.25" y="1.48" font-size="0.17">2</text>
+<circle cx="1.9" cy="1.42" r="0.14" fill="#fff"/><text x="1.9" y="1.48" font-size="0.17">3</text>
+<g fill="#fff" font-size="0.11">
+<text x="0.6" y="1.74">Plug in</text>
+<text x="1.25" y="1.74">Scan</text>
+<text x="1.9" y="1.74">Enter code</text>
 </g>
-<g fill="#fff" font-weight="bold" font-size="0.15">
-<text x="0.62" y="0.94">Plug it in</text>
-<text x="0.62" y="1.33">Scan the</text>
-<text x="0.62" y="1.50">other side</text>
-<text x="0.62" y="1.79">Enter the code</text>
-<text x="0.62" y="1.96">on the bottom</text>
+<g fill="#fff" font-size="0.085">
+<text x="0.6" y="1.87">to the router</text>
+<text x="1.25" y="1.87">the front</text>
+<text x="1.9" y="1.87">on the bottom</text>
 </g>
-<text x="1.25" y="2.25" fill="#fff" font-weight="bold" font-size="0.11" text-anchor="middle">emberstorm.app/start</text>
+<text x="1.25" y="2.2" fill="#fff" font-size="0.1">emberstorm.app/start</text>
+</g>
 </g>
 EOF
 }
