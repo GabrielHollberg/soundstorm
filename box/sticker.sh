@@ -138,34 +138,17 @@ EOF
 	echo '</g>'
 }
 
-# card_back X Y N: the back - the logo large and centred, then the three
-# steps side by side, big, bold and pure white: printed twice for a deeper
-# black, small or grey type (grey is dots) filled in where the two passes
-# did not land exactly together.
+# card_back X Y N: the back - the logo alone, large and centred. The steps
+# are on the page the front's code opens (the owner's choice: the card is
+# the brand, the page the instructions).
 card_back() {
 	x=$1 y=$2 i=$3
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	echo "$PANEL"
-	cloud 0.94 0.25 0.62 "#fff" "b$i"
+	cloud 0.75 0.5 1.0 "#fff" "b$i"
 	cat <<EOF
-<text x="1.25" y="1.06" font-size="0.25" font-weight="900" font-style="italic" fill="#fff" text-anchor="middle">EmberStorm</text>
-<g font-weight="bold" text-anchor="middle">
-<circle cx="0.6" cy="1.42" r="0.14" fill="#fff"/><text x="0.6" y="1.48" font-size="0.17">1</text>
-<circle cx="1.25" cy="1.42" r="0.14" fill="#fff"/><text x="1.25" y="1.48" font-size="0.17">2</text>
-<circle cx="1.9" cy="1.42" r="0.14" fill="#fff"/><text x="1.9" y="1.48" font-size="0.17">3</text>
-<g fill="#fff" font-size="0.11">
-<text x="0.6" y="1.74">Plug in</text>
-<text x="1.25" y="1.74">Scan</text>
-<text x="1.9" y="1.74">Enter code</text>
-</g>
-<g fill="#fff" font-size="0.085">
-<text x="0.6" y="1.87">to the router</text>
-<text x="1.25" y="1.87">the front</text>
-<text x="1.9" y="1.87">on the bottom</text>
-</g>
-<text x="1.25" y="2.2" fill="#fff" font-size="0.1">emberstorm.app/start</text>
-</g>
+<text x="1.25" y="1.82" font-size="0.32" font-weight="900" font-style="italic" fill="#fff" text-anchor="middle">EmberStorm</text>
 </g>
 EOF
 }
