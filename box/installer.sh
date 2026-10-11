@@ -112,6 +112,29 @@ if [ -z "$counts" ] || printf '%s
 fi
 echo "  root $new_root, filesystem $new_fs"
 
+say "A partition for the factory's records"
+# A factory stick keeps its list of the boxes it set up (units.csv) where
+# Windows can read it: a small FAT partition labelled EMBERSTORM, which
+# Windows opens as an ordinary drive when the stick is plugged in (it hides
+# the EFI partition, and cannot read the system's ext4).
+qemu-img resize -q "$stick" +64M
+guestfish --rw -a "$stick" run : part-expand-gpt /dev/sda
+geo=$(guestfish --ro -a "$stick" run : blockdev-getsz /dev/sda : part-list /dev/sda)
+total=$(echo "$geo" | head -n 1)
+last=$(echo "$geo" | awk '/part_end:/ { if ($2 + 0 > m) m = $2 + 0 } END { printf "%d", m }')
+start=$(((last / 512 / 2048 + 1) * 2048))
+end=$(((total - 34) / 2048 * 2048 - 1))
+[ "$end" -gt "$((start + 60000))" ] || { echo "No room on the stick for the records partition." >&2; exit 1; }
+guestfish --rw -a "$stick" run : part-add /dev/sda p "$start" "$end"
+num=$(guestfish --ro -a "$stick" run : part-list /dev/sda |
+	awk -v s=$((start * 512)) '/part_num:/ { n = $2 } /part_start:/ && $2 + 0 == s { print n }')
+[ -n "$num" ] || { echo "The records partition was not made." >&2; exit 1; }
+guestfish --rw -a "$stick" run : \
+	part-set-gpt-type /dev/sda "$num" EBD0A0A2-B9E5-4433-87C0-68B6B72699C7 : \
+	part-set-name /dev/sda "$num" EMBERSTORM : \
+	mkfs vfat "/dev/sda$num" label:EMBERSTORM
+echo "  partition $num, EMBERSTORM"
+
 say "Writing the stick's image"
 qemu-img convert -O raw "$stick" "$out/emberstorm-installer.img"
 rm -rf "$work"

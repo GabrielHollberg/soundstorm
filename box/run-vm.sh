@@ -60,7 +60,11 @@ installer)
 	rm -f "$vm/system.qcow2" "$vm/vars.fd"
 	qemu-img create -q -f qcow2 "$vm/system.qcow2" 64G
 	# The stick is not changed by a run (snapshot): it can be used again.
-	stick="-drive file=$out/emberstorm-installer.img,if=none,id=stick,format=raw,snapshot=on -device usb-storage,bus=xhci.0,drive=stick,bootindex=0"
+	# KEEP_STICK=1 keeps what the run writes to it, as a real stick would -
+	# a factory stick's list of the boxes it made (its EMBERSTORM partition).
+	snap=on
+	[ "${KEEP_STICK:-}" = 1 ] && snap=off
+	stick="-drive file=$out/emberstorm-installer.img,if=none,id=stick,format=raw,snapshot=$snap -device usb-storage,bus=xhci.0,drive=stick,bootindex=0"
 	;;
 esac
 

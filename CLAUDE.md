@@ -1206,6 +1206,22 @@ to their own addresses. Not checked: a real sheet through the printer -
 **The owner's LaserJet squeezes a page about 1.1% across and not down**
 (the card test's right column at 5 11/16" for 5 3/4", its bottom row true):
 print with `MEASURED_X=5.6875` for cards and `MEASURED_X=5.8111` for labels.
+**The ledger: every box made, in the private repo** (the owner's asking: what
+support looks up and labels are reprinted from). A factory stick keeps its
+list on a FAT partition of its own, `EMBERSTORM` (installer.sh adds it;
+Windows opens it as a drive, where it hides the EFI one and cannot read
+ext4), a row per box: serial, setup code, when, the stick, the maker's name
+and serial number, the network port's MAC, the built-in drive's size and the
+storage drives - an install that cannot write its row stops. `box/units-add.sh
+/mnt/e/units.csv` adds a stick's rows to `emberstorm-private/units/units.csv`
+(0600; a serial seen before is passed over, one with another code stops
+everything), and `sticker.sh reprint EM-XXXX-XXXX` prints a box's label again
+from it. Customers and orders stay out of it (personal information: the shop
+system, joined by the serial). Checked: units-add's new, repeated, old-stick
+and clashing lists; reprint and a missing serial; in the VM a factory install
+with `KEEP_STICK=1` (run-vm.sh keeps what a run writes to the stick) left its
+row on partition 2. Not checked: Windows opening the partition on a real
+stick.
 
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): **the box's own system cannot be updated** - a release carries only

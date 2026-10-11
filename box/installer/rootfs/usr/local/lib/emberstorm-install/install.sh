@@ -53,6 +53,42 @@ have=$(blockdev --getsize64 "/dev/$target")
 	fail "The built-in drive is too small: $((have / 1000000000)) GB, $((size / 1000000000 + 1)) GB needed."
 part() { case "$1" in *[0-9]) echo "/dev/${1}p$2" ;; *) echo "/dev/$1$2" ;; esac; }
 
+# A factory stick's record of each box it sets up, for its sticker and for
+# support later: the serial and setup code, and what identifies the hardware
+# (the maker's serial number, the network port's address, the drives). Kept
+# on the stick's EMBERSTORM partition, which Windows opens as a drive, to be
+# added to the ledger (box/units-add.sh).
+UNITS_HEADER="unit,setup_code,made,stick,product,product_serial,mac,builtin_gb,storage"
+field() { printf '%s' "$1" | tr -d ',\r\n' | tr -s ' ' | sed 's/^ //; s/ $//'; }
+dmi() { cat "/sys/class/dmi/id/$1" 2>/dev/null || true; }
+unit_record() {
+	mac=""
+	for i in /sys/class/net/*; do
+		[ -e "$i/device" ] || continue
+		case "${i##*/}" in en* | eth*) mac=$(cat "$i/address"); break ;; esac
+	done
+	storage=""
+	for d in $(lsblk -dno NAME,TYPE,TRAN | awk '$2=="disk" && ($3=="nvme" || $3=="sata" || $3=="ata") {print $1}'); do
+		[ "$d" = "$self" ] || [ "$d" = "$target" ] && continue
+		storage="$storage${storage:+; }$(lsblk -dno MODEL "/dev/$d" | tr -s ' ') $(($(blockdev --getsize64 "/dev/$d") / 1000000000))GB"
+	done
+	printf '%s,%s,%s,%s,%s,%s,%s,%s,%s\n' "$1" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		"$(field "$(findmnt -no UUID / | cut -c1-8)")" \
+		"$(field "$(dmi sys_vendor) $(dmi product_name)")" "$(field "$(dmi product_serial)")" \
+		"$(field "$mac")" "$((have / 1000000000))" "$(field "$storage")"
+}
+# keep_record LINE: added to units.csv on the stick's EMBERSTORM partition.
+keep_record() {
+	dev=$(lsblk -lnpo NAME,LABEL "/dev/$self" 2>/dev/null | awk '$2 == "EMBERSTORM" { print $1; exit }')
+	[ -n "$dev" ] || { say "The stick has no EMBERSTORM partition to keep the record on."; return 1; }
+	mkdir -p /run/emberstorm-records
+	mount -t vfat "$dev" /run/emberstorm-records || return 1
+	[ -f /run/emberstorm-records/units.csv ] || printf '%s\r\n' "$UNITS_HEADER" >/run/emberstorm-records/units.csv
+	printf '%s\r\n' "$1" >>/run/emberstorm-records/units.csv
+	sync
+	umount /run/emberstorm-records
+}
+
 say "This erases the box's built-in drive ($((have / 1000000000)) GB) and installs"
 say "EmberStorm on it."
 if [ -e "$P/factory" ]; then
@@ -137,19 +173,24 @@ ok=$?
 # for its sticker - which the box keeps on its storage drive from its first
 # start (prepare.sh), so a repair later keeps them. Shown at the end, and
 # kept on the stick (units.csv) for the stickers to be printed from.
-unit="" code=""
+unit="" code="" kept=yes
 if [ "$ok" = 0 ] && [ -e "$P/factory" ]; then
 	code=$(od -An -N10 -tx1 /dev/urandom | tr -d ' \n')
 	unit=$(od -An -N8 -tu1 /dev/urandom | awk '{ for (i = 1; i <= NF; i++) s = s substr("0123456789ABCDEFGHJKMNPQRSTVWXYZ", $i % 32 + 1, 1) }
 		END { printf "EM-%s-%s", substr(s, 1, 4), substr(s, 5, 4) }')
 	mkdir -p /mnt/box/etc/soundstorm
 	(umask 077 && printf 'SOUNDSTORM_SETUP_CODE=%s\nSOUNDSTORM_UNIT=%s\n' "$code" "$unit" >/mnt/box/etc/soundstorm/identity.env) || ok=1
-	[ -f "$P/units.csv" ] || echo "unit,setup_code,made" >"$P/units.csv"
-	echo "$unit,$code,$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$P/units.csv"
+	record=$(unit_record "$unit" "$code")
+	[ -f "$P/units.csv" ] || echo "$UNITS_HEADER" >"$P/units.csv"
+	echo "$record" >>"$P/units.csv"
+	keep_record "$record" || kept=no
 	sync
 fi
 umount /mnt/box/boot/efi /mnt/box
 [ "$ok" = 0 ] || fail "The installed system could not be told its new IDs."
+# Without the record nobody could print this box's label again or help its
+# buyer find the code: stop, and the box is simply set up again.
+[ "$kept" = yes ] || fail "This box's record could not be kept on the stick (its EMBERSTORM drive)."
 
 # The box starts from its built-in drive first. The firmware also finds it
 # by itself (EFI/BOOT), so a failure here is not fatal.
@@ -177,7 +218,7 @@ if [ -n "$unit" ]; then
 	say "Serial:      $unit"
 	say "Setup code:  $(printf '%s' "$code" | sed 's/..../& /g')"
 	qrencode -t UTF8 -m 1 "http://soundstorm.local/?setup=$code" 2>/dev/null | sed 's/^/   /'
-	say "Kept on the stick in units.csv for the sticker. Switching off in 2 minutes."
+	say "Kept on the stick's EMBERSTORM drive (units.csv). Switching off in 2 minutes."
 	sync
 	sleep 120
 else

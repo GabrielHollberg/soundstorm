@@ -26,6 +26,7 @@
 #
 #   sh box/sticker.sh labels units.csv [OUTDIR] [--test]
 #   sh box/sticker.sh label EM-XXXX-XXXX CODE [OUTDIR] [--test]
+#   sh box/sticker.sh reprint EM-XXXX-XXXX [LEDGER] [OUTDIR]   (from the ledger)
 #   sh box/sticker.sh cards [OUTDIR] [--test]
 #
 # units.csv (unit,setup_code,made) is a factory stick's record of the boxes
@@ -147,6 +148,22 @@ labels)
 	rm -f "$tmp"
 	echo "  $out/labels.html: $count labels, $(( (count + 11) / 12 )) sheet(s) of Avery 64510"
 	;;
+reprint)
+	# reprint SERIAL [LEDGER] [OUTDIR]: a box's label again, from the ledger.
+	[ -n "${2:-}" ] || { echo "usage: sticker.sh reprint EM-XXXX-XXXX [LEDGER] [OUTDIR]" >&2; exit 2; }
+	ledger=${3:-$(cd "$(dirname "$0")" && pwd)/../../emberstorm-private/units/units.csv}
+	[ -f "$ledger" ] || { echo "No ledger at $ledger" >&2; exit 2; }
+	code=$(tr -d '\r' <"$ledger" | awk -F, -v s="$2" '$1 == s { print $2; exit }')
+	[ -n "$code" ] || { echo "$2 is not in the ledger." >&2; exit 1; }
+	KX=$(stretch 5.875 "${MEASURED_X:-}"); KY=$(stretch 8.375 "${MEASURED_Y:-}")
+	out=${4:-stickers}
+	mkdir -p "$out"
+	tmp=$(mktemp)
+	printf '%s,%s\n' "$2" "$code" >"$tmp"
+	{ labels_from "$tmp" >"$out/$2.html"; } 3>/dev/null
+	rm -f "$tmp"
+	echo "  $out/$2.html: $2's label, at spot ${START:-1} of a sheet of Avery 64510"
+	;;
 label)
 	KX=$(stretch 5.875 "${MEASURED_X:-}"); KY=$(stretch 8.375 "${MEASURED_Y:-}")
 	[ $# -ge 3 ] || { echo "usage: sticker.sh label SERIAL CODE [OUTDIR] [--test]" >&2; exit 2; }
@@ -172,7 +189,7 @@ cards)
 	echo "  $out/cards.html: a sheet of 9 cards, Avery 35703"
 	;;
 *)
-	sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac
