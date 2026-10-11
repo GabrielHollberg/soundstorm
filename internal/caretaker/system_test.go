@@ -149,6 +149,44 @@ func TestTheBoxsOwnFilesAreUpdatedAndUndone(t *testing.T) {
 	}
 }
 
+// A release whose files leave EmberStorm healthy at home but the box cut off
+// from the internet - from every later update - is undone; one of images
+// alone is not held to the internet, so an outage cannot undo it.
+func TestAReleaseThatCutsTheBoxOffIsUndone(t *testing.T) {
+	b := newBox(t)
+	b.putRoot("etc/systemd/network/10-emberstorm.network", "good network")
+	m3 := b.withSystem(3, makeBundle(t,
+		bundleFile{name: "etc/systemd/network/10-emberstorm.network", data: "broken network"},
+	))
+	run := b.u.run
+	b.u.run = func(ctx context.Context, name string, args ...string) error {
+		if name == "up" && len(args) == 0 {
+			// Started on the new files, the box no longer reaches the channel
+			// - until the old ones are back.
+			b.offline.Store(b.rootFile("etc/systemd/network/10-emberstorm.network") == "broken network")
+		}
+		return run(ctx, name, args...)
+	}
+	if err := b.u.Update(context.Background(), m3); err == nil {
+		t.Fatal("a release that cut the box off was kept")
+	}
+	if got := b.rootFile("etc/systemd/network/10-emberstorm.network"); got != "good network" {
+		t.Fatalf("the network settings were not put back: %q", got)
+	}
+
+	// Images alone, with the internet down after they start: kept.
+	b.u.run = func(ctx context.Context, name string, args ...string) error {
+		if name == "up" && len(args) == 0 {
+			b.offline.Store(true)
+		}
+		return run(ctx, name, args...)
+	}
+	b.offline.Store(false)
+	if err := b.u.Update(context.Background(), release(4)); err != nil {
+		t.Fatalf("an update of images alone was undone by the internet being down: %v", err)
+	}
+}
+
 // A bundle with anything a release may not write - outside the box's own
 // places, climbing out, a link - or not matching its checksum changes
 // nothing at all: not a file, not the stack.

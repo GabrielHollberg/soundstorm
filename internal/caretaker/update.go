@@ -413,7 +413,7 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 		u.clearPending()
 		return u.fail(err, "The update could not be installed. EmberStorm is back as it was.")
 	}
-	if err := u.runFor(ctx, upTimeout, u.cfg.Up); err != nil || !u.healthy(ctx, before) {
+	if err := u.runFor(ctx, upTimeout, u.cfg.Up); err != nil || !u.healthy(ctx, before, m.System != nil) {
 		// The caretaker stopping (the box switched off, the service
 		// restarted) is not the new version failing: left as it is, and
 		// written down, the next start judges it (pending.go), where rolling
@@ -519,11 +519,17 @@ func (u *Updater) fail(err error, message string) error {
 }
 
 // healthy waits for EmberStorm to say ok with at least the sources it had.
-func (u *Updater) healthy(ctx context.Context, before Health) bool {
+// With online, the box must also still reach the release channel: an update
+// that changed the box's own files (network settings among them) could
+// leave EmberStorm answering at home while the box is cut off from the
+// internet - and from every later update. It reached the channel moments
+// ago to fetch this release, so failing to now is the update's doing, and
+// the wait (HealthWait) rides out a short outage of the internet itself.
+func (u *Updater) healthy(ctx context.Context, before Health, online bool) bool {
 	deadline := time.Now().Add(u.cfg.HealthWait)
 	for time.Now().Before(deadline) {
 		h, err := u.health(ctx)
-		if err == nil && h.Status == "ok" && h.Sources >= before.Sources {
+		if err == nil && h.Status == "ok" && h.Sources >= before.Sources && (!online || u.online(ctx)) {
 			return true
 		}
 		select {
@@ -536,6 +542,18 @@ func (u *Updater) healthy(ctx context.Context, before Health) bool {
 }
 
 var pollEvery = 5 * time.Second
+
+// online says whether the release channel answers: the manifest, fetched as
+// a check for updates fetches it, within 20 seconds.
+func (u *Updater) online(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	_, err := u.fetch(ctx, u.cfg.ManifestURL)
+	if err != nil {
+		u.log.Info("the release channel does not answer yet", "err", err)
+	}
+	return err == nil
+}
 
 // rollback puts the previous images and, when there is one, the volumes'
 // snapshot back, and starts the stack again. It says whether all of that

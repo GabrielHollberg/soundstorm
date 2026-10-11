@@ -1293,7 +1293,12 @@ the box's own places (`systemAllowed`: the caretaker, the compose files,
 emberstorm, never the boot loader or keys); keeps every file it replaces and
 a list of the new ones (`system-before-SERIAL`) before writing; then reloads
 systemd, udev and tmpfiles. Rolled back, the old files go back first and the
-download is deleted. A new caretaker keeps the old one as `.previous` and
+download is deleted. **And it must still reach the internet**: a release with
+files of the box's own is kept only once the release channel answers again
+as well as EmberStorm (`online`, within the same ten-minute wait, so a short
+outage is ridden out) - a network setting could otherwise leave the box
+healthy at home and cut off from every later update; images alone are not
+held to it. `TestAReleaseThatCutsTheBoxOffIsUndone`. A new caretaker keeps the old one as `.previous` and
 restarts itself once the update is recorded; one that fails five times in five
 minutes is replaced by the one before (`soundstorm-caretaker-restore.service`,
 OnFailure). Checked: the tests (`system_test.go`: files updated and undone, a

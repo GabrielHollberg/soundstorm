@@ -139,7 +139,7 @@ func (u *Updater) finishUpdate(ctx context.Context, p pending) {
 		if want == maxBaseline {
 			want = 1
 		}
-		if u.healthy(ctx, Health{Sources: want}) {
+		if u.healthy(ctx, Health{Sources: want}, p.SystemBackup != "") {
 			u.log.Warn("an update cut short came up healthy; keeping it", "version", m.Version)
 			u.record(ctx, m, p.Snapshot, previous)
 			u.clearPending()

@@ -79,8 +79,10 @@ type box struct {
 	dir      string
 	manifest atomic.Pointer[[]byte]
 	healthy  atomic.Bool
-	mu       sync.Mutex
-	ran      []string
+	// offline makes the release channel stop answering.
+	offline atomic.Bool
+	mu      sync.Mutex
+	ran     []string
 	// files are served beside the manifest: a release's system bundle.
 	files sync.Map
 }
@@ -93,7 +95,17 @@ func newBox(t *testing.T) *box {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/manifest.json":
-			_, _ = w.Write(*b.manifest.Load())
+			if b.offline.Load() {
+				http.Error(w, "unreachable", http.StatusServiceUnavailable)
+				return
+			}
+			// A channel always has a release in it; tests that hand Update
+			// their own still find one.
+			if m := b.manifest.Load(); m != nil {
+				_, _ = w.Write(*m)
+			} else {
+				_, _ = io.WriteString(w, "{}")
+			}
 		case "/manifest.json.sig":
 			_, _ = w.Write(Sign(*b.manifest.Load(), b.priv))
 		case "/healthz":
