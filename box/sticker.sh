@@ -132,35 +132,30 @@ EOF
 	echo '</g>'
 }
 
-# card_back X Y N: the back - the logo, three steps and a word on what it is.
+# card_back X Y N: the back - the logo and three steps, big, bold and pure
+# white: printed twice for a deeper black, small or grey type (grey is dots)
+# filled in where the two passes did not land exactly together.
 card_back() {
 	x=$1 y=$2 i=$3
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	echo "$PANEL"
-	cloud 0.47 0.27 0.3 "#fff" "b$i"
+	cloud 0.44 0.25 0.33 "#fff" "b$i"
 	cat <<EOF
-<text x="0.84" y="0.47" font-size="0.18" font-weight="900" font-style="italic" fill="#fff">EmberStorm</text>
-<g font-weight="bold" text-anchor="middle">
-<circle cx="0.42" cy="0.84" r="0.115" fill="#fff"/><text x="0.42" y="0.89" font-size="0.14">1</text>
-<circle cx="0.42" cy="1.25" r="0.115" fill="#fff"/><text x="0.42" y="1.30" font-size="0.14">2</text>
-<circle cx="0.42" cy="1.66" r="0.115" fill="#fff"/><text x="0.42" y="1.71" font-size="0.14">3</text>
+<text x="0.85" y="0.48" font-size="0.2" font-weight="900" font-style="italic" fill="#fff">EmberStorm</text>
+<g font-weight="bold" text-anchor="middle" font-size="0.17">
+<circle cx="0.38" cy="0.88" r="0.14" fill="#fff"/><text x="0.38" y="0.94">1</text>
+<circle cx="0.38" cy="1.34" r="0.14" fill="#fff"/><text x="0.38" y="1.40">2</text>
+<circle cx="0.38" cy="1.80" r="0.14" fill="#fff"/><text x="0.38" y="1.86">3</text>
 </g>
-<g fill="#fff">
-<text x="0.65" y="0.82" font-size="0.12" font-weight="bold">Plug it in</text>
-<text x="0.65" y="1.23" font-size="0.12" font-weight="bold">Scan the other side</text>
-<text x="0.65" y="1.64" font-size="0.12" font-weight="bold">Enter your setup code</text>
+<g fill="#fff" font-weight="bold" font-size="0.15">
+<text x="0.62" y="0.94">Plug it in</text>
+<text x="0.62" y="1.33">Scan the</text>
+<text x="0.62" y="1.50">other side</text>
+<text x="0.62" y="1.79">Enter the code</text>
+<text x="0.62" y="1.96">on the bottom</text>
 </g>
-<g fill="#bbb" font-size="0.08">
-<text x="0.65" y="0.95">Power, and a cable to your router</text>
-<text x="0.65" y="1.36">or visit emberstorm.app/start</text>
-<text x="0.65" y="1.77">It is on the label under your EmberStorm</text>
-</g>
-<line x1="0.45" y1="1.95" x2="2.05" y2="1.95" stroke="#555" stroke-width="0.008"/>
-<g fill="#bbb" font-size="0.075" text-anchor="middle">
-<text x="1.25" y="2.1">Your music, films, books and photos in one place.</text>
-<text x="1.25" y="2.22">No account. No subscription. It stays at home.</text>
-</g>
+<text x="1.25" y="2.25" fill="#fff" font-weight="bold" font-size="0.11" text-anchor="middle">emberstorm.app/start</text>
 </g>
 EOF
 }
