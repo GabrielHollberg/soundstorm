@@ -1309,16 +1309,22 @@ from the box's own archives carry no registry digest, so a box's first update
 fetches every image once.
 
 **The box's card and label** (`box/sticker.sh`, 2026-10-10, the owner's
-design): the card in every box is printed both sides on Avery 35703 - the
-front only the QR code to emberstorm.app/start, the cloud in its middle (level
-H), on white inside black; the back black with the white logo, three steps and
-"No account. No subscription. It stays at home." Black runs 0.15" past each
-card's cut, corners rounded with it: printed only to the outline it showed
-white edges, and a centimetre all round was more toner than needed. The label
-under the box is in the same look (black frame, QR and setup code on white,
-"Setup code for EM-..."). Print `cards-front.html`, then the same sheet turned
-over side to side for `cards-back.html` (the layout is even left and right).
-Checked: both QR codes decode from the drawn pages. Not seen: a printed back.
+design, settled after printing): the card in every box, Avery 35703, both
+sides. **Front:** white, nothing but the QR code to emberstorm.app/start
+(level H), 2.22" on the 2.5" card - as large as its rounded corners allow -
+with the cloud in its middle; no border. **Back:** black, the white cloud and
+bolt alone, sized and placed as on the app's icon (66% of the width). The
+steps live on the start page. Black runs 0.15" past the cut, corners rounded
+with it (a black only to the outline showed white edges; a centimetre all
+round wasted toner). Each side is printed twice for a deeper black - which is
+why the back has no small type: two passes never land together, and small or
+grey white-on-black type filled in. **The owner's LaserJet prints them right
+with:** `LEFT_MM=0.5 UP_MM=0.5 FRONT_LEFT_MM=1 MEASURED_X=5.6875 sh
+box/sticker.sh cards DIR` - Tray 1, the heaviest card paper type, 100%,
+margins none; the backs on the same sheet turned over side to side, top edge
+first both times. The label under the box is in the same look (black frame,
+QR and setup code on white, "Setup code for EM-..."). Checked: both QR codes
+decode from the drawn pages; the cards printed and approved by the owner.
 
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): ~~the box's own system cannot be updated~~ (done, above); **a factory test** (drive health, network, the button, every
