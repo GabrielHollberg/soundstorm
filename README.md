@@ -5,7 +5,8 @@
 <p align="center">
   <a href="https://github.com/GabrielHollberg/emberstorm/releases/latest/download/EmberStorm-Setup.cmd"><strong>⬇ Download for Windows</strong></a>
   &nbsp;·&nbsp;
-  <a href="#mac-and-linux">Mac and Linux</a>
+  <a href="#mac">Mac</a> ·
+  <a href="#linux">Linux</a>
   &nbsp;·&nbsp;
   <a href="docs/guide.md">User guide</a>
   &nbsp;·&nbsp;
@@ -170,7 +171,20 @@ powershell -ExecutionPolicy Bypass -File "$env:TEMP\soundstorm.ps1"
 
 </details>
 
-### Mac and Linux
+### Mac
+
+1. **[Download EmberStorm for Mac](https://github.com/GabrielHollberg/emberstorm/releases/latest/download/EmberStorm.dmg)**.
+2. Open it and drag **EmberStorm** into **Applications**.
+3. Open **EmberStorm** from Applications. It asks where your media goes and,
+   when needed, whether to keep the Mac awake and your password (once, to install
+   Docker Desktop), then sets everything up and opens EmberStorm. While Docker
+   starts for the first time, macOS asks whether Docker may find devices on
+   your network: click **Allow**.
+
+Afterwards the app opens EmberStorm, and the cloud it keeps in the menu bar has
+Update and Uninstall. The Terminal command below works on a Mac too.
+
+### Linux
 
 Run this in a terminal:
 
@@ -273,7 +287,7 @@ Details are in the [user guide](docs/guide.md#away-from-home).
 
 | | Windows | Mac and Linux |
 | --- | --- | --- |
-| **Update** | Start menu → **Update EmberStorm** | Run the install command again |
+| **Update** | Start menu → **Update EmberStorm** | The Mac app: the cloud in the menu bar → Update. Otherwise run the install command again |
 | **Start / stop** | The desktop icon starts it; it also starts with Windows | `docker compose up -d` / `docker compose down` in the install folder |
 | **Move to a new computer** | Start menu → **Move EmberStorm to another computer** | `install.sh` with `--export` ([guide](docs/guide.md#moving-to-another-computer)) |
 | **Uninstall** | Settings → Apps → EmberStorm → Uninstall | The Mac app: the cloud in the menu bar → Uninstall. Otherwise `install.sh` with `--uninstall` |

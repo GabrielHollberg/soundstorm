@@ -140,7 +140,8 @@
         and about 20 GB of disk for EmberStorm itself, plus your media.</p>
       <div class="tabs" role="tablist">
         <button class="tab on" role="tab" data-os="windows" aria-selected="true">Windows</button>
-        <button class="tab" role="tab" data-os="unix" aria-selected="false">Mac &amp; Linux</button>
+        <button class="tab" role="tab" data-os="mac" aria-selected="false">Mac</button>
+        <button class="tab" role="tab" data-os="unix" aria-selected="false">Linux</button>
       </div>
       <div class="os" data-os="windows">
         <ol>
@@ -150,6 +151,14 @@
           <li><strong>Double-click</strong> it. A setup window walks you through the rest, and opens EmberStorm when it's done.</li>
         </ol>
       </div>
+      <div class="os hidden" data-os="mac">
+        <ol>
+          <li><a class="button primary" href="https://github.com/GabrielHollberg/emberstorm/releases/latest/download/EmberStorm.dmg">Download EmberStorm for Mac</a></li>
+          <li>Open it and <strong>drag EmberStorm into Applications</strong>.</li>
+          <li><strong>Open EmberStorm</strong> from Applications. It asks two or three things first, sets up Docker if needed (your Mac asks for your password once), and opens EmberStorm when it's done.
+            <span class="note">While Docker starts for the first time, macOS asks whether Docker may find devices on your network: click Allow.</span></li>
+        </ol>
+      </div>
       <div class="os hidden" data-os="unix">
         <ol>
           <li>Run this in a terminal:
@@ -157,7 +166,7 @@
               <button class="copy" type="button" data-copy="unix-cmd">Copy</button></div>
           </li>
           <li>It sets up Docker if needed (your computer asks for your password once), then everything else, and prints the address to open.
-            <span class="note">On a Mac, a Docker window may open the first time: click Skip, no account needed.</span></li>
+            <span class="note">On a Mac, the same command works too, if you would rather use a terminal.</span></li>
         </ol>
       </div>
       <h3 class="apps-head">Then get the apps</h3>
@@ -350,7 +359,8 @@
       document.querySelectorAll('.os').forEach((p) => p.classList.toggle('hidden', p.dataset.os !== os));
     };
     tabs.forEach((t) => t.addEventListener('click', () => choose(t.dataset.os)));
-    if (!/Windows/.test(navigator.userAgent)) choose('unix');
+    if (/Macintosh|Mac OS X/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent)) choose('mac');
+    else if (!/Windows/.test(navigator.userAgent)) choose('unix');
     document.querySelectorAll('.copy').forEach((b) => b.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent); b.textContent = 'Copied'; } catch { b.textContent = 'Select and copy'; }
       setTimeout(() => { b.textContent = 'Copy'; }, 2000);

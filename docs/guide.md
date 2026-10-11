@@ -492,7 +492,9 @@ emptied library. Network drives can't be used on Windows.
 ## Updating
 
 - **Windows:** Start menu → **Update EmberStorm**.
-- **Mac and Linux:** run the install command again.
+- **Mac, set up with the EmberStorm app:** the cloud in the menu bar → **Update
+  EmberStorm…**.
+- **Mac and Linux, set up from Terminal:** run the install command again.
 - **By hand:** `docker compose pull && docker compose up -d` in the install
   folder.
 
