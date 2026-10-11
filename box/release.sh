@@ -5,6 +5,10 @@
 #
 #   sh box/release.sh -k KEYFILE -s SERIAL -v VERSION [-n NOTES] [-o DIR]
 #
+# -k yubikey leaves the manifest for the release key on its YubiKey: sign it
+# on the PC the YubiKey is plugged into with py box/yubikey.py sign (the PIN
+# and a touch), which writes manifest.json.sig as -k KEYFILE would.
+#
 # Then publish DIR/manifest.json and DIR/manifest.json.sig as assets of the
 # GitHub release "box-channel" (the caretaker's default address). SERIAL must
 # be higher than the last release's: boxes ignore anything not newer.
@@ -70,5 +74,11 @@ done
 cd "$repo"
 # shellcheck disable=SC2086
 GOTOOLCHAIN=auto go run ./cmd/soundstorm-caretaker manifest -serial "$serial" -version "$version" -notes "$notes" $pins > "$dir/manifest.json"
+if [ "$key" = yubikey ]; then
+	rm -f "$dir/manifest.json.sig"
+	echo "Made $dir/manifest.json. Sign it with the YubiKey, on Windows:"
+	echo "  py box\yubikey.py sign $(wslpath -w "$dir/manifest.json" 2>/dev/null || echo "$dir/manifest.json")"
+	exit 0
+fi
 GOTOOLCHAIN=auto go run ./cmd/soundstorm-caretaker sign "$key" "$dir/manifest.json"
 echo "Signed: $dir/manifest.json and manifest.json.sig"

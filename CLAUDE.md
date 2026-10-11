@@ -1233,6 +1233,22 @@ with `KEEP_STICK=1` (run-vm.sh keeps what a run writes to the stick) left its
 row on partition 2. Not checked: Windows opening the partition on a real
 stick.
 
+**The release key lives on two YubiKeys** (2026-10-10, YubiKey 5C NFC,
+firmware 5.7.4 - Ed25519 in PIV needs 5.7). `box/yubikey.py` (Windows, `py`,
+yubikey-manager from pip): `setup` wipes the YubiKey's PIV keys, takes a PIN
+and PUK the owner types, hides a random management key on it behind the PIN,
+and makes an Ed25519 key in slot 9c that asks for the PIN and a touch every
+signature and never leaves it; `sign MANIFEST` writes `MANIFEST.sig` as boxes
+check it (the YubiKey signs the bytes themselves, PureEdDSA - yubikit's
+`_pad_message` passes Ed25519 messages through), checked before writing and
+refused unless the key is in `box/release.pub`; `info` says which key it
+holds. One YubiKey's key is the release key, the other's the backup kept
+elsewhere: both public halves go in `box/release.pub`, the release key's
+first. `release.sh -k yubikey` leaves the manifest for it. Checked: a
+rehearsal on the first YubiKey (a throwaway PIN, no touch) made a key, signed
+a real manifest, and the caretaker's `VerifyAny` took it and refused it
+changed by one bit; then the YubiKey was wiped again for the owner's setup.
+
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): **the box's own system cannot be updated** - a release carries only
 images, so a fix to the caretaker, the compose files or a script needs the
@@ -1246,8 +1262,7 @@ support bundle**; **backups** (a USB drive nightly, "not protected" said
 plainly); **a real wipe** for resale (blkdiscard or nvme format); **licence
 notices and a source offer** for the images, firmware and models shipped.
 
-**Left for the owner** (from the same review): **the release key** is a plain file on the build machine (sign offline
-or with a hardware key, before the first box);
+**Left for the owner** (from the same review): **the release key** - now on YubiKeys, below;
 **somebody holding the box** can boot another system from USB, and nothing
 is encrypted; the stick's checksum is not signed (it waits for the key); Debian's base image is checked against
 its checksums over HTTPS but not their signature; a compromised version can

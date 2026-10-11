@@ -59,3 +59,7 @@ android/.idea/
 /scripts/smoke/node_modules/
 /scripts/smoke/package-lock.json
 /.smoke/
+
+# A YubiKey's public key as box/yubikey.py setup writes it; the ones boxes
+# trust are copied into box/release.pub.
+box/release-*.pub
