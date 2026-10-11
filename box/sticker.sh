@@ -138,7 +138,8 @@ EOF
 	echo '</g>'
 }
 
-# card_back X Y N: the back - the cloud alone, large and centred. The steps
+# card_back X Y N: the back - the cloud alone, 66% of the card wide and
+# centred, as on the app's icon (make-icons.py, icon(1024, 0.66)). The steps
 # are on the page the front's code opens (the owner's choice: the card is
 # the brand, the page the instructions).
 card_back() {
@@ -146,7 +147,7 @@ card_back() {
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	echo "$PANEL"
-	cloud 0.55 0.66 1.4 "#fff" "b$i"
+	cloud 0.425 0.553 1.65 "#fff" "b$i"
 	echo '</g>'
 }
 
