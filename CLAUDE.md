@@ -1327,9 +1327,15 @@ grey white-on-black type filled in. **The owner's LaserJet prints them right
 with:** `LEFT_MM=0.5 UP_MM=0.5 FRONT_LEFT_MM=1 MEASURED_X=5.6875 sh
 box/sticker.sh cards DIR` - Tray 1, the heaviest card paper type, 100%,
 margins none; the backs on the same sheet turned over side to side, top edge
-first both times. The label under the box is in the same look (black frame,
-QR and setup code on white, "Setup code for EM-..."). Checked: both QR codes
-decode from the drawn pages; the cards printed and approved by the owner.
+first both times. **The label under the box** (Avery 64510) is in the same
+look: a big QR code to `http://soundstorm.local/?setup=CODE` (level H) with
+the cloud in its middle, white kept round it (the box is black), and the setup
+code in bold under it, to type where nothing can scan. **The owner's LaserJet
+prints labels right with:** `LEFT_MM=1 MEASURED_X=5.8111 sh box/sticker.sh
+labels units.csv DIR` (or `label SERIAL CODE`, `reprint SERIAL`; `START=N` for
+a sheet partly used) - Tray 1, 100%, margins none. Checked: every QR code
+decodes from the drawn pages; the cards and labels printed and approved by
+the owner.
 
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): ~~the box's own system cannot be updated~~ (done, above); **a factory test** (drive health, network, the button, every
