@@ -44,12 +44,27 @@ final class Setup {
     var roomFree: Int64 { ThisMac.freeSpace(at: FileManager.default.homeDirectoryForCurrentUser) }
     var roomShort: Bool { roomFree < roomNeeded }
 
+    private var started = false
+
     func appeared() async {
+        // The window can be shown again (the menu bar's Update, a failure):
+        // what happens at opening happens once.
+        guard !started else { return }
+        started = true
         #if DEBUG
         // -page questions|working|finished|run: straight to a page, to look at it.
         switch UserDefaults.standard.string(forKey: "page") {
         case "questions": askAwake = true; page = .questions; return
         case "working": page = .working; return
+        case "closeAndShow":  // the window closed by its red button, then put back
+            page = .running
+            installed = true
+            Task {
+                try? await Task.sleep(for: .seconds(1)); Self.window?.performClose(nil)
+                try? await Task.sleep(for: .seconds(1)); print("after close, found:", Self.window != nil, "visible:", Self.window?.isVisible ?? false)
+                Self.showWindow(); print("shown:", Self.window?.isVisible ?? false)
+            }
+            return
         case "run": setUp(); return  // with -script: a pretend setup, to time the window
         case "finished":
             page = .finished(Installer.Result(url: "http://localhost:8099", setup: "/?setup=x", code: "A1B2-C3D4-E5F6-A7B8-C9D0",
@@ -167,11 +182,42 @@ final class Setup {
         do {
             try await Install.launch(dir) { [weak self] s in self?.launchStatus = s }
             page = .running
+            // The browser has it now; this window would only cover it. The
+            // menu bar's cloud has Open, Update and Uninstall (the owner's
+            // choice, 2026-10-10: the window came up over the browser).
+            Self.hideWindow()
         } catch let e as Installer.Failed {
             page = .failed(e.message, .launch)
+            Self.showWindow()
         } catch {
             page = .failed(error.localizedDescription, .launch)
+            Self.showWindow()
         }
+    }
+
+    /// Opening the app again, or Open EmberStorm in the menu bar: the
+    /// browser, unless the window is busy (setting up, removing), which is
+    /// then brought forward.
+    func openAgain() {
+        switch page {
+        case .running, .failed(_, .launch): Task { await launch() }
+        default: Self.showWindow()
+        }
+    }
+
+    // The one window, found among the app's (SwiftUI's Window scene keeps
+    // it when closed, so it can be put back).
+    private static var window: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }
+    }
+
+    static func showWindow() {
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    static func hideWindow() {
+        window?.orderOut(nil)
     }
 
     func uninstall() {

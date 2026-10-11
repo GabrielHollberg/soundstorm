@@ -122,8 +122,9 @@ because a trailing backslash escaped the closing quote.</p>
 
 <h2 id="uninstall">Uninstalling: never touch <code>library/</code></h2>
 <p>Windows registers EmberStorm under the current user's uninstall key, so it appears in Settings &rarr;
-Apps like anything else, with no administrator needed. On Mac and Linux it is
-<code>install.sh --uninstall</code>.</p>
+Apps like anything else, with no administrator needed. On a Mac set up with the EmberStorm app, the
+cloud it keeps in the menu bar has <strong>Uninstall EmberStorm&hellip;</strong> (and so does the app's
+own menu); otherwise, on Mac and Linux, it is <code>install.sh --uninstall</code>.</p>
 <p>The uninstaller takes a backup, runs <code>docker compose down -v</code> - which removes the named
 volumes: accounts and each media server's database - and removes the compose file, the
 <code>.env</code>, the saved script and the shortcuts. It then prints where the media was left. Docker

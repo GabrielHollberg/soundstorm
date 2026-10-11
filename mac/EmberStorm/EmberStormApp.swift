@@ -21,11 +21,25 @@ struct EmberStormApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
-                Button("Update EmberStorm...") { setup.update() }
+                Button("Update EmberStorm...") { Setup.showWindow(); setup.update() }
                     .disabled(!setup.installed || setup.installer.running)
-                Button("Uninstall EmberStorm...") { setup.uninstall() }
+                Button("Uninstall EmberStorm...") { Setup.showWindow(); setup.uninstall() }
                     .disabled(!setup.installed || setup.installer.running)
             }
+        }
+        // Once installed, a cloud in the menu bar: opening the app opens the
+        // browser and no window covers it, so this is where Update and
+        // Uninstall are found, as Docker's and Plex's are.
+        MenuBarExtra("EmberStorm", systemImage: "cloud.bolt.fill",
+                     isInserted: Binding(get: { setup.installed }, set: { _ in })) {
+            Button("Open EmberStorm") { setup.openAgain() }
+            Divider()
+            Button("Update EmberStorm...") { Setup.showWindow(); setup.update() }
+                .disabled(setup.installer.running)
+            Button("Uninstall EmberStorm...") { Setup.showWindow(); setup.uninstall() }
+                .disabled(setup.installer.running)
+            Divider()
+            Button("Quit (EmberStorm keeps running)") { NSApp.terminate(nil) }
         }
     }
 }
@@ -33,7 +47,19 @@ struct EmberStormApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var setup: Setup?
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// Installed, the app stays for its menu bar cloud when the window goes;
+    /// setting up, closing the window ends it as before.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !(MainActor.assumeIsolated { setup?.installed } ?? false)
+    }
+
+    /// The app opened again (the Dock, Applications): the browser, as the
+    /// first opening did.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard let setup = MainActor.assumeIsolated({ self.setup }), MainActor.assumeIsolated({ setup.installed }) else { return true }
+        MainActor.assumeIsolated { setup.openAgain() }
+        return false
+    }
 
     #if DEBUG
     /// -snapshot <png> [-snapshotAfter <s>]: the window drawn to a picture,

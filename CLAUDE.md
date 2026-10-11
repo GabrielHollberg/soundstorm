@@ -316,8 +316,15 @@ installed the window says to stay nearby and click Allow, then that nothing
 else asks. And at the end macOS asked "EmberStorm would like to access files
 in your Downloads folder": the app moved itself to Applications by deleting
 its copy there. It no longer moves itself; it is handed out as a disk image
-with a link to Applications (`mac/make-dmg.sh`), the Mac's usual way. Not
-fixed: whether the
+with a link to Applications (`mac/make-dmg.sh`), the Mac's usual way. **And
+opening it once installed put its window over the browser** (the owner: who
+would find Uninstall?): now, the owner's choice of three, the browser opens and
+the window goes once it has (`Setup.hideWindow`, kept, not closed, so it comes
+back), and a cloud in the menu bar (`MenuBarExtra`, only while installed) has
+Open EmberStorm, Update, Uninstall and Quit; opening the app again opens the
+browser (`applicationShouldHandleReopen`), a failure brings the window back,
+and closing the window no longer quits the app when installed. The docs say
+where Uninstall is. Not fixed: whether the
 welcome settings were written (the folder is macOS-guarded; a settings file
 left by the last Docker skips the write).
 

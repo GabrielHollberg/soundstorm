@@ -276,7 +276,7 @@ Details are in the [user guide](docs/guide.md#away-from-home).
 | **Update** | Start menu → **Update EmberStorm** | Run the install command again |
 | **Start / stop** | The desktop icon starts it; it also starts with Windows | `docker compose up -d` / `docker compose down` in the install folder |
 | **Move to a new computer** | Start menu → **Move EmberStorm to another computer** | `install.sh` with `--export` ([guide](docs/guide.md#moving-to-another-computer)) |
-| **Uninstall** | Settings → Apps → EmberStorm → Uninstall | `install.sh` with `--uninstall` |
+| **Uninstall** | Settings → Apps → EmberStorm → Uninstall | The Mac app: the cloud in the menu bar → Uninstall. Otherwise `install.sh` with `--uninstall` |
 
 Updating keeps your library, accounts and settings. **Uninstalling never deletes
 your media**: the `library` folder is left where it is.
