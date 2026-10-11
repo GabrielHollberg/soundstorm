@@ -23,6 +23,7 @@
 # the labels, 5.75 on the cards, when right), and MEASURED_Y, inches from the
 # paper's top to the bottom row's top (8.375 labels, 7.625 cards):
 #   MEASURED_X=5.80 MEASURED_Y=8.30 sh box/sticker.sh labels units.csv
+# LEFT_MM=1 UP_MM=1 moves the whole print a millimetre left and up.
 # START=5 begins at the fifth spot of a label sheet already partly used
 # (spots count left to right, top to bottom).
 #
@@ -54,9 +55,13 @@ stretch() {
 	awk -v e="$1" -v m="$2" 'BEGIN { if (m < e * 0.9 || m > e * 1.1) exit 1; printf "%.5f", e / m }' ||
 		{ echo "A measurement of $2 is too far from $1 to be a printer's shrink: measure again." >&2; exit 2; }
 }
+# LEFT_MM and UP_MM move everything printed that many millimetres left and up
+# (negative: right and down), for a printer that puts the page a little off.
 page_open() {
+	dx=$(awk -v m="${LEFT_MM:-0}" 'BEGIN { printf "%.4f", -m / 25.4 }')
+	dy=$(awk -v m="${UP_MM:-0}" 'BEGIN { printf "%.4f", -m / 25.4 }')
 	echo '<svg xmlns="http://www.w3.org/2000/svg" width="8.5in" height="11in" viewBox="0 0 8.5 11" font-family="Helvetica, Arial, sans-serif">'
-	echo "<g transform=\"scale($KX $KY)\">"
+	echo "<g transform=\"translate($dx $dy) scale($KX $KY)\">"
 }
 page_close() { echo '</g></svg>'; }
 
