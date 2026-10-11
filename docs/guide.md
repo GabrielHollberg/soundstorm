@@ -569,7 +569,10 @@ computer** (`site/operations/move.html`).
 ## Uninstalling
 
 - **Windows:** Settings → Apps → **EmberStorm** → Uninstall.
-- **Mac and Linux:**
+- **Mac, set up with the EmberStorm app:** click the cloud in the menu bar (top
+  right of the screen) → **Uninstall EmberStorm…**. The app's own menu
+  (EmberStorm → Uninstall EmberStorm…) does the same.
+- **Mac and Linux, set up from Terminal:**
   ```sh
   curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/emberstorm/main/install.sh | sh -s -- --uninstall
   ```

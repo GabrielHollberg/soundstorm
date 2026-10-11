@@ -294,13 +294,13 @@ private struct Finished: View {
                     }
                 }
             }
-            Text("Your media goes in \(result.library.isEmpty ? "the library folder" : result.library). To open EmberStorm later, open this app again - keep it in the Dock (right-click its icon, Options, Keep in Dock). It runs while you are signed in to this Mac; to have it come back by itself after a restart, turn on automatic login in System Settings, Users & Groups.")
+            Text("Your media goes in \(result.library.isEmpty ? "the library folder" : result.library). To open EmberStorm later, open this app again - keep it in the Dock (right-click its icon, Options, Keep in Dock). The cloud in the menu bar, at the top right of the screen, opens it too, and has Update and Uninstall. It runs while you are signed in to this Mac; to have it come back by itself after a restart, turn on automatic login in System Settings, Users & Groups.")
                 .font(.callout).foregroundStyle(Look.soft)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             HStack {
                 Spacer()
-                Button("Open EmberStorm") { setup.open(result) }
+                Button("Open EmberStorm") { setup.open(result); Setup.hideWindow() }
                     .buttonStyle(Primary())
                     .keyboardShortcut(.defaultAction)
             }
@@ -313,7 +313,7 @@ private struct Running: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("EmberStorm is open in your browser").font(.title2.weight(.semibold))
-            Text("It keeps running after you close this window. Open this app again whenever you want EmberStorm - or keep it in the Dock.")
+            Text("It keeps running after you close this window. Open this app again whenever you want EmberStorm. The cloud in the menu bar, at the top right of the screen, opens it too, and has Update and Uninstall.")
                 .foregroundStyle(Look.soft)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -321,7 +321,7 @@ private struct Running: View {
                 Button("Uninstall...") { setup.uninstall() }.buttonStyle(Quiet())
                 Button("Update EmberStorm") { setup.update() }.buttonStyle(Quiet())
                 Spacer()
-                Button("Close") { NSApp.terminate(nil) }
+                Button("Close") { Setup.hideWindow() }
                     .buttonStyle(Primary())
                     .keyboardShortcut(.defaultAction)
             }

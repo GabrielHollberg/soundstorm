@@ -38,4 +38,13 @@ xcodebuild archive -project mac/EmberStorm.xcodeproj -scheme EmberStorm \
   -archivePath /tmp/EmberStorm-mac.xcarchive -allowProvisioningUpdates
 xcodebuild -exportArchive -archivePath /tmp/EmberStorm-mac.xcarchive \
   -exportOptionsPlist mac/export-developer-id.plist -exportPath /tmp/EmberStorm-mac
+xcrun notarytool wait <id> ...   # the export uploads it; then
+xcodebuild -exportNotarizedApp -archivePath /tmp/EmberStorm-mac.xcarchive -exportPath /tmp/EmberStorm-mac-out
+NOTARY_KEY=... NOTARY_KEY_ID=... NOTARY_ISSUER=... \
+  sh mac/make-dmg.sh /tmp/EmberStorm-mac-out/EmberStorm.app ~/Downloads/EmberStorm.dmg
 ```
+
+It is handed out as a disk image with a link to Applications, dragged across
+as any Mac app is. It does not move itself: moving or deleting its own copy in
+Downloads made macOS ask "EmberStorm would like to access files in your
+Downloads folder" (the second run, 2026-10-10).

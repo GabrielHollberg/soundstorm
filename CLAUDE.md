@@ -269,8 +269,7 @@ awake, then runs `install.sh` (main's, at its commit) with no terminal,
 showing steps, a bar and a percentage from what the script prints, and ends
 on the setup code, the phone address and Open EmberStorm (`?here=server`);
 opened after, it starts Docker and EmberStorm and opens it, with Update and
-Uninstall - the Windows window and desktop icon in one. It moves itself to
-Applications. **`install.sh` gained three hooks for it, all off unless the app
+Uninstall - the Windows window and desktop icon in one. **`install.sh` gained three hooks for it, all off unless the app
 sets them** (so the PC's Terminal behaviour is unchanged): `as_root` uses
 `sudo -A` when `SUDO_ASKPASS` is set and there is no terminal (the app's
 askpass is a macOS password window); `keep_awake`'s default is
@@ -314,7 +313,18 @@ hidden. And macOS asked whether Docker may find devices on the local network
 the router's port). Nothing can answer that for the person, and it comes only when
 Docker first starts, so the welcome says it will, and while Docker is being
 installed the window says to stay nearby and click Allow, then that nothing
-else asks. Not fixed: whether the
+else asks. And at the end macOS asked "EmberStorm would like to access files
+in your Downloads folder": the app moved itself to Applications by deleting
+its copy there. It no longer moves itself; it is handed out as a disk image
+with a link to Applications (`mac/make-dmg.sh`), the Mac's usual way. **And
+opening it once installed put its window over the browser** (the owner: who
+would find Uninstall?): now, the owner's choice of three, the browser opens and
+the window goes once it has (`Setup.hideWindow`, kept, not closed, so it comes
+back), and a cloud in the menu bar (`MenuBarExtra`, only while installed) has
+Open EmberStorm, Update, Uninstall and Quit; opening the app again opens the
+browser (`applicationShouldHandleReopen`), a failure brings the window back,
+and closing the window no longer quits the app when installed. The docs say
+where Uninstall is. Not fixed: whether the
 welcome settings were written (the folder is macOS-guarded; a settings file
 left by the last Docker skips the write).
 
