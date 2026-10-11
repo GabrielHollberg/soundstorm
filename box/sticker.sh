@@ -56,10 +56,13 @@ stretch() {
 		{ echo "A measurement of $2 is too far from $1 to be a printer's shrink: measure again." >&2; exit 2; }
 }
 # LEFT_MM and UP_MM move everything printed that many millimetres left and up
-# (negative: right and down), for a printer that puts the page a little off.
+# (negative: right and down), for a printer that puts the page a little off;
+# FRONT_LEFT_MM and FRONT_UP_MM move the cards' fronts only, on top of that.
 page_open() {
-	dx=$(awk -v m="${LEFT_MM:-0}" 'BEGIN { printf "%.4f", -m / 25.4 }')
-	dy=$(awk -v m="${UP_MM:-0}" 'BEGIN { printf "%.4f", -m / 25.4 }')
+	fl=0 fu=0
+	[ "${side:-}" = front ] && fl=${FRONT_LEFT_MM:-0} fu=${FRONT_UP_MM:-0}
+	dx=$(awk -v m="${LEFT_MM:-0}" -v f="$fl" 'BEGIN { printf "%.4f", -(m + f) / 25.4 }')
+	dy=$(awk -v m="${UP_MM:-0}" -v f="$fu" 'BEGIN { printf "%.4f", -(m + f) / 25.4 }')
 	echo '<svg xmlns="http://www.w3.org/2000/svg" width="8.5in" height="11in" viewBox="0 0 8.5 11" font-family="Helvetica, Arial, sans-serif">'
 	echo "<g transform=\"translate($dx $dy) scale($KX $KY)\">"
 }
