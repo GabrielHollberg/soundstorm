@@ -133,6 +133,36 @@ Web changes for the phone apps always go to main, never into an app's folder.
 - Never print credentials. Commits end with the Co-Authored-By line the
   session is given; never put a model name in a commit.
 
+## For the PC: a release under the EmberStorm name (written 2026-10-10, from the Mac)
+
+The owner's asking. The Latest release is still **"SoundStorm v0.11.0"** (28
+September) and holds what people download: `EmberStorm-Setup.cmd` and, since
+2026-10-10, **`EmberStorm.dmg`** (the Mac setup app, uploaded from the Mac).
+The website, README and docs link to `releases/latest/download/<file>`, so
+only the file names matter - but the release's name and notes are what anybody
+opening the Releases page sees. Make a new one:
+
+- **A new tag and release, marked Latest**, named for EmberStorm (say
+  `v0.12.0`, "EmberStorm 0.12"), from main as it is.
+- **Both files on it, exactly these names**: `EmberStorm-Setup.cmd` from the
+  repository, and `EmberStorm.dmg` copied from the v0.11.0 release (download
+  it from there - only the Mac can build and sign it; it is signed and
+  notarized, so never rebuild or re-zip it on the PC). Check both download
+  links answer 200 once it is Latest; with either missing, the website's
+  button for that system leads nowhere.
+- **Notes in plain words** for people choosing to install: what EmberStorm is,
+  Windows (download, Unblock, double-click), Mac (download, drag to
+  Applications, open), Linux (the one command), and that phones get the apps
+  separately. Nothing private (see "Working with the owner").
+- **Android builds stay pre-releases**, never Latest, as now.
+- From then on: **a release changes when either setup file changes.** The Mac
+  builds and notarizes a new `EmberStorm.dmg` when the Mac app changes (rarely:
+  it runs main's newest `install.sh` each time, so setup fixes reach Macs without
+  one) and replaces the file on the Latest release; the PC replaces
+  `EmberStorm-Setup.cmd` when it changes.
+- Afterwards the old v0.11.0 can stay (old links into it still work) or have
+  its files removed - the owner's call.
+
 ## For the PC: a public demo server (written 2026-10-10, from the Mac)
 
 The owner wants TestFlight public (a public link for the iPhone and Apple TV
