@@ -103,7 +103,6 @@ final class Setup {
                                                      password: !updating && needsPassword ? password : nil)
                 installed = true
                 UserDefaults.standard.set(dir.path, forKey: "installDir")
-                moveToApplications()
                 page = .finished(result)
             } catch let e as Installer.Failed {
                 page = .failed(e.message, .setup)
@@ -205,24 +204,6 @@ final class Setup {
         case .setup: setUp()
         case .launch: Task { await launch() }
         case .uninstall: uninstall()
-        }
-    }
-
-    /// Run from Downloads: put in Applications, where it is found again and
-    /// can be kept in the Dock. Quietly left where it is when it cannot be.
-    private func moveToApplications() {
-        let here = Bundle.main.bundleURL
-        guard !here.path.hasPrefix("/Applications/"), !here.path.contains("/Applications/"),
-              !here.path.contains("/DerivedData/") else { return }
-        for folder in [URL(fileURLWithPath: "/Applications"),
-                       FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications")] {
-            let dest = folder.appending(path: here.lastPathComponent)
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: dest.path) { try? FileManager.default.removeItem(at: dest) }
-            if (try? FileManager.default.copyItem(at: here, to: dest)) != nil {
-                try? FileManager.default.trashItem(at: here, resultingItemURL: nil)
-                return
-            }
         }
     }
 }
