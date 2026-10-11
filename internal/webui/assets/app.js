@@ -1609,16 +1609,28 @@ function renderRemote(remote) {
       + `Either set the provider's box to bridge mode, or forward port ${port} (TCP) `
       + `on both. Or use Tailscale, which needs neither.`;
     show(howto, true);
+  } else if (Date.now() - (state.remoteSince || 0) < 30000) {
+    // Just switched on: the server is still asking the router.
+    status.textContent = 'Asking your router to open the door…';
   } else {
+    // The router did not open the port itself: on most home routers that is
+    // automatic port opening (UPnP) switched off. Both ways out, in the order
+    // most people find easier; the server asks the router again by itself
+    // (backing off to an hour), and switching this off and on asks at once.
     const port = remote.port || 8099;
-    status.textContent = 'Not reachable from the internet yet. If it stays this way, '
-      + `forward port ${port} (TCP) to this computer on your router, then check again.`;
+    status.textContent = `Your router didn't open the door by itself - its automatic `
+      + `port opening (called UPnP, "Universal Plug and Play", or NAT-PMP) is probably `
+      + `turned off. Either: turn UPnP on in your router's settings, then switch this off `
+      + `and back on here; or, in your router's settings, forward port ${port} (TCP) to `
+      + `this server, then switch this off and on. Or use Tailscale, which needs neither.`;
+    show(howto, true);
   }
   show(status, true);
 }
 
 $('remote-toggle').addEventListener('change', async (event) => {
   const enabled = event.target.checked;
+  if (enabled) state.remoteSince = Date.now();
   const { ok, body } = await api('/api/remote', {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
