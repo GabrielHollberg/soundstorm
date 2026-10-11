@@ -54,7 +54,7 @@ final class Installer {
     private var resultFile: URL?
     private var pulling: Set<String> = []
     private var pulled: Set<String> = []
-    private var installingDocker = false
+    private(set) var installingDocker = false
     private var creep: Task<Void, Never>?
 
     nonisolated static let repo = "GabrielHollberg/emberstorm"

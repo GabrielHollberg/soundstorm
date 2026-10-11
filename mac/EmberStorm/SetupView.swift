@@ -90,7 +90,11 @@ private struct Welcome: View {
                 if setup.dockerNeeded {
                     Line(icon: "shippingbox", text: "It runs inside Docker Desktop, which is installed too - free for personal use, no Docker account needed.")
                 }
-                Line(icon: "key", text: "You type your Mac's password once, before it starts - nothing asks you anything after that.")
+                if setup.dockerNeeded {
+                    Line(icon: "key", text: "You type your Mac's password once, before it starts. In the first few minutes, as Docker starts for the first time, macOS asks whether Docker may find devices on your network: click Allow. Nothing asks you anything after that.")
+                } else {
+                    Line(icon: "key", text: "You type your Mac's password once, before it starts - nothing asks you anything after that.")
+                }
             }
             Spacer(minLength: 0)
             HStack {
@@ -233,7 +237,12 @@ private struct Working: View {
                 .padding(10)
                 .background(Look.card, in: RoundedRectangle(cornerRadius: 10))
             }
-            Text("You can leave this window open and use the Mac for something else.")
+            // macOS asks, once, whether a newly installed Docker may find
+            // devices on the local network (macOS 15 and later). Nothing can
+            // answer it for the person, so they are told to stay for it.
+            Text(installer.installingDocker && installer.stage == .docker
+                 ? "Stay nearby for a few minutes: when Docker starts for the first time, macOS asks whether Docker may find devices on your network. Click Allow. After that you can leave - nothing else asks you anything."
+                 : "You can leave this window open and use the Mac for something else.")
                 .font(.callout).foregroundStyle(Look.soft)
         }
     }
