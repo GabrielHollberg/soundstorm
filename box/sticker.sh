@@ -21,6 +21,8 @@
 # the labels, 5.75 on the cards, when right), and MEASURED_Y, inches from the
 # paper's top to the bottom row's top (8.375 labels, 7.625 cards):
 #   MEASURED_X=5.80 MEASURED_Y=8.30 sh box/sticker.sh labels units.csv
+# START=5 begins at the fifth spot of a label sheet already partly used
+# (spots count left to right, top to bottom).
 #
 #   sh box/sticker.sh labels units.csv [OUTDIR] [--test]
 #   sh box/sticker.sh label EM-XXXX-XXXX CODE [OUTDIR] [--test]
@@ -113,12 +115,16 @@ CROWS="0.875 4.25 7.625"
 # labels_from FILE: SERIAL,CODE lines, twelve to a sheet.
 labels_from() {
 	html_open
-	n=0
+	# START: the spot on the first sheet to begin at (1-12, left to right,
+	# top to bottom), for a sheet already partly used.
+	start=${START:-1}
+	case "$start" in [1-9] | 1[0-2]) ;; *) echo "START is a spot from 1 to 12" >&2; exit 2 ;; esac
+	n=$((start - 1))
 	while IFS=, read -r serial code; do
 		case "$serial" in EM-????-????) ;; *) echo "skipping $serial: not a serial" >&2; continue ;; esac
 		case "$code" in *[!0-9a-fA-F]* | "") echo "skipping $serial: not a setup code" >&2; continue ;; esac
 		slot=$((n % 12))
-		[ "$slot" = 0 ] && page_open
+		{ [ "$slot" = 0 ] || [ "$n" = $((start - 1)) ]; } && page_open
 		col=$((slot % 3 + 1))
 		row=$((slot / 3 + 1))
 		label "$(echo $LCOLS | cut -d' ' -f$col)" "$(echo $LROWS | cut -d' ' -f$row)" "$serial" "$code"
@@ -126,7 +132,7 @@ labels_from() {
 		[ $((n % 12)) = 0 ] && page_close
 	done <"$1"
 	[ $((n % 12)) = 0 ] || page_close
-	echo "$n" >&3
+	echo "$((n - start + 1))" >&3
 }
 
 case "${1:-}" in
@@ -150,7 +156,7 @@ label)
 	printf '%s,%s\n' "$2" "$3" >"$tmp"
 	{ labels_from "$tmp" >"$out/$2.html"; } 3>/dev/null
 	rm -f "$tmp"
-	echo "  $out/$2.html: one label, top left of a sheet of Avery 64510"
+	echo "  $out/$2.html: one label, at spot ${START:-1} of a sheet of Avery 64510"
 	;;
 cards)
 	KX=$(stretch 5.75 "${MEASURED_X:-}"); KY=$(stretch 7.625 "${MEASURED_Y:-}")
@@ -166,7 +172,7 @@ cards)
 	echo "  $out/cards.html: a sheet of 9 cards, Avery 35703"
 	;;
 *)
-	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac
