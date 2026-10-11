@@ -11,8 +11,8 @@
 <main>
 <h1>Installing</h1>
 <p class="lede">The install is a Docker Compose file plus an installer script. On Windows it is a
-file to double-click, which installs Docker itself and shows a window rather than a console; on
-Mac and Linux it is one command. Either way it ends with a setup code and an address, and the first
+file to double-click, which installs Docker itself and shows a window rather than a console; on a
+Mac it is an app to drag into Applications and open (or the one command); on Linux it is one command. Either way it ends with a setup code and an address, and the first
 person to sign up with that code owns the server.</p>
 
 <h2 id="needs">What it needs</h2>
@@ -136,7 +136,18 @@ minutes.</p>
 one's containers and point them at an empty library. Both installers check the running container's
 working folder and refuse, naming the other folder.</p>
 
-<h2 id="unix">Mac and Linux</h2>
+<h2 id="mac">Mac: the EmberStorm app</h2>
+<p><a href="https://github.com/GabrielHollberg/emberstorm/releases/latest/download/EmberStorm.dmg">EmberStorm.dmg</a>
+on the latest release holds the app, signed with a Developer ID and notarized by Apple. Dragged into
+Applications and opened, it asks where the media goes, whether to keep the Mac awake (only if it would
+sleep) and, when Docker must be installed, the Mac's password - all before anything starts - then runs
+<code>install.sh</code> below with no terminal, showing steps and a percentage, and ends on Open
+EmberStorm. Opened again, it starts Docker and EmberStorm and opens the browser; a cloud in the menu bar
+has Open, Update and Uninstall. The one question it cannot ask up front is macOS's own, whether a
+newly installed Docker may find devices on the local network (click Allow), asked as Docker first
+starts. The app's code is <code>mac/</code>; it is built and signed on a Mac.</p>
+
+<h2 id="unix">Mac and Linux from a terminal</h2>
 <pre><code>curl -fsSL https://raw.githubusercontent.com/GabrielHollberg/emberstorm/main/install.sh | sh</code></pre>
 <p><code>install.sh</code> is written for <code>/bin/sh</code>, not bash, because a stock Debian's
 <code>/bin/sh</code> is dash - and the cheap home server it is aimed at is exactly where a bash-only
