@@ -1192,6 +1192,9 @@ code under the box). Checked: Chrome's PDF of each is Letter, 14 boxes made
 two label sheets, and all 12 labels and 9 cards decoded (zbarimg at 300 dpi)
 to their own addresses. Not checked: a real sheet through the printer -
 35703 is 247 g/m2 card, heavier than the LaserJet's tray is rated for.
+**The owner's LaserJet squeezes a page about 1.1% across and not down**
+(the card test's right column at 5 11/16" for 5 3/4", its bottom row true):
+print with `MEASURED_X=5.6875` for cards and `MEASURED_X=5.8111` for labels.
 
 **From the readiness review, not built** (the owner's to weigh, biggest
 first): **the box's own system cannot be updated** - a release carries only
