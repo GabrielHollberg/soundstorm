@@ -1,6 +1,6 @@
 # The box release keys: the YubiKeys that may sign updates (box/yubikey.py).
 # The release key first, then the backup kept somewhere else.
-# release key: YubiKey 38775094
-uv0pqc/uvWPTSdkPt0PO/YEP2gA86Fy0jUnYyNsm8Xg=
-# backup key: YubiKey 38775085
+# release key: YubiKey 38775085
 Us4q2TEBfE4aRqv8cMYlHAjqpjKNAbKB9GYlGtNqlAM=
+# backup key: YubiKey 38775094
+uv0pqc/uvWPTSdkPt0PO/YEP2gA86Fy0jUnYyNsm8Xg=
