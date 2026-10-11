@@ -31,6 +31,7 @@
 #   sh box/sticker.sh label EM-XXXX-XXXX CODE [OUTDIR] [--test]
 #   sh box/sticker.sh reprint EM-XXXX-XXXX [LEDGER] [OUTDIR]   (from the ledger)
 #   sh box/sticker.sh cards [OUTDIR] [--test]
+#   sh box/sticker.sh logo [COUNT] [OUTDIR]   (icon labels, from spot START)
 #
 # units.csv (unit,setup_code,made) is a factory stick's record of the boxes
 # it set up. The codes are each box's own: keep it with the factory's
@@ -152,6 +153,18 @@ card_back() {
 	echo '</g>'
 }
 
+# logo_label X Y N: a 2" label of the app's icon - black past the edge by
+# 0.1", the white cloud 66% of the width and centred - for the box's top,
+# the card's back in the label's size.
+logo_label() {
+	x=$1 y=$2 i=$3
+	echo "<g transform=\"translate($x $y)\">"
+	[ "$TEST" = 1 ] && echo '<rect width="2" height="2" fill="none" stroke="#999" stroke-width="0.01"/>'
+	echo '<rect x="-0.1" y="-0.1" width="2.2" height="2.2" rx="0.2" fill="#000"/>'
+	cloud 0.34 0.4425 1.32 "#fff" "g$i"
+	echo '</g>'
+}
+
 # Avery 64510: columns at 0.625, 3.25, 5.875; rows at 0.625, 3.2083,
 # 5.7917, 8.375 (inches from the sheet's top left).
 LCOLS="0.625 3.25 5.875"
@@ -221,6 +234,28 @@ label)
 	{ labels_from "$tmp" >"$out/$2.html"; } 3>/dev/null
 	rm -f "$tmp"
 	echo "  $out/$2.html: one label, at spot ${START:-1} of a sheet of Avery 64510"
+	;;
+logo)
+	# logo [COUNT] [OUTDIR]: COUNT icon labels from spot START (default 1).
+	KX=$(stretch 5.875 "${MEASURED_X:-}"); KY=$(stretch 8.375 "${MEASURED_Y:-}")
+	count=${2:-1}
+	out=${3:-stickers}
+	mkdir -p "$out"
+	start=${START:-1}
+	{
+		html_open
+		page_open
+		n=0
+		while [ $n -lt "$count" ]; do
+			slot=$((start - 1 + n))
+			[ $slot -lt 12 ] || break
+			col=$((slot % 3 + 1)); row=$((slot / 3 + 1))
+			logo_label "$(echo $LCOLS | cut -d' ' -f$col)" "$(echo $LROWS | cut -d' ' -f$row)" $n
+			n=$((n + 1))
+		done
+		page_close
+	} >"$out/logo-labels.html"
+	echo "  $out/logo-labels.html: $n icon label(s) from spot $start of a sheet of Avery 64510"
 	;;
 cards)
 	KX=$(stretch 5.75 "${MEASURED_X:-}"); KY=$(stretch 7.625 "${MEASURED_Y:-}")
