@@ -122,20 +122,19 @@ EOF
 PANEL='<rect x="-0.15" y="-0.15" width="2.8" height="2.8" rx="0.52" fill="#000"/>'
 
 # card X Y N: the front of one 2.5" card with its top left at X,Y inches -
-# the QR code to the instructions page as large as the card allows, the
-# cloud in its middle, framed by a thin black ring following the card's
-# rounded corners.
+# nothing but the QR code to the instructions page, as large as the card's
+# rounded corners allow (0.14" in: any less and the corner cuts into a finder
+# square), the cloud in its middle. White: the card's own edge is the code's
+# margin.
 card() {
 	x=$1 y=$2 i=$3
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	cat <<EOF
-$PANEL
-<rect x="0.12" y="0.12" width="2.26" height="2.26" rx="0.255" fill="#fff"/>
-<image x="0.26" y="0.26" width="1.98" height="1.98" href="data:image/svg+xml;base64,$CARD_QR"/>
-<rect x="0.99" y="1.0" width="0.52" height="0.5" rx="0.09" fill="#fff"/>
+<image x="0.14" y="0.14" width="2.22" height="2.22" href="data:image/svg+xml;base64,$CARD_QR"/>
+<rect x="0.959" y="0.97" width="0.582" height="0.56" rx="0.1" fill="#fff"/>
 EOF
-	cloud 1.0475 1.079 0.405 "#000" "q$i"
+	cloud 1.023 1.058 0.454 "#000" "q$i"
 	echo '</g>'
 }
 
