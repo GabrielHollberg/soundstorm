@@ -82,25 +82,23 @@ EOF
 }
 
 # label X Y SERIAL CODE: one 2" label with its top left at X,Y inches, in
-# the card's look: a black panel, the QR code and the setup code on white.
+# the card's look: nothing but a big QR code to set the box up, the cloud in
+# its middle (level H), and the setup code under it to type where nothing
+# can scan (a laptop at soundstorm.local). White kept round the code: the
+# box it goes on is black, and a code needs a margin to be found.
 label() {
 	x=$1 y=$2 serial=$3 code=$4
 	grouped=$(printf '%s' "$code" | tr a-f A-F | sed 's/..../& /g; s/ $//')
-	line1=$(printf '%s' "$grouped" | cut -d' ' -f1-3)
-	line2=$(printf '%s' "$grouped" | cut -d' ' -f4-)
-	setup=$(qr "http://soundstorm.local/?setup=$code")
+	setup=$(qr "http://soundstorm.local/?setup=$code" H)
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2" height="2" fill="none" stroke="#999" stroke-width="0.01"/>'
-	echo '<rect x="0.07" y="0.07" width="1.86" height="1.86" rx="0.16" fill="#000"/>'
-	cloud 0.5 0.15 0.17 "#fff" "l$serial"
 	cat <<EOT
-<text x="0.72" y="0.27" font-size="0.13" font-weight="900" font-style="italic" fill="#fff">EmberStorm</text>
-<rect x="0.18" y="0.36" width="1.64" height="1.48" rx="0.12" fill="#fff"/>
-<image x="0.6" y="0.42" width="0.8" height="0.8" href="data:image/svg+xml;base64,$setup"/>
-<text x="1" y="1.4" font-size="0.14" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$line1</text>
-<text x="1" y="1.55" font-size="0.14" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$line2</text>
-<text x="1" y="1.68" font-size="0.068" text-anchor="middle" fill="#333">Setup code for $serial</text>
-<text x="1" y="1.78" font-size="0.062" text-anchor="middle" fill="#333">On a computer, open soundstorm.local</text>
+<image x="0.24" y="0.11" width="1.52" height="1.52" href="data:image/svg+xml;base64,$setup"/>
+<rect x="0.8005" y="0.6785" width="0.399" height="0.383" rx="0.07" fill="#fff"/>
+EOT
+	cloud 0.845 0.739 0.31 "#000" "l$serial"
+	cat <<EOT
+<text x="1" y="1.84" font-size="0.11" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$grouped</text>
 </g>
 EOT
 }
