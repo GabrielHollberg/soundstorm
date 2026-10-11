@@ -1279,11 +1279,49 @@ rehearsal on the first YubiKey (a throwaway PIN, no touch) made a key, signed
 a real manifest, and the caretaker's `VerifyAny` took it and refused it
 changed by one bit; then the YubiKey was wiped again for the owner's setup.
 
+**The box's own files come with updates now** (2026-10-10, the owner's asking:
+the test box goes to a house far away, and every fix must reach it without the
+stick). A release carries `system-SERIAL.tar.gz` beside its manifest, named by
+its SHA-256 in the signed manifest (`Manifest.System`: also the Debian packages
+to have, `box/packages.txt`, and the units to enable or restart,
+`box/units.txt` - both lists shared with `build.sh`); `release.sh` makes it
+from `box/rootfs`, the compose files and the caretaker built there (`-S` for
+images only). The caretaker (`system.go`) downloads and checks it and installs
+the packages before anything stops; unpacks only regular files, and only to
+the box's own places (`systemAllowed`: the caretaker, the compose files,
+`/usr/local/lib/soundstorm`, units and settings named soundstorm or
+emberstorm, never the boot loader or keys); keeps every file it replaces and
+a list of the new ones (`system-before-SERIAL`) before writing; then reloads
+systemd, udev and tmpfiles. Rolled back, the old files go back first and the
+download is deleted. A new caretaker keeps the old one as `.previous` and
+restarts itself once the update is recorded; one that fails five times in five
+minutes is replaced by the one before (`soundstorm-caretaker-restore.service`,
+OnFailure). Checked: the tests (`system_test.go`: files updated and undone, a
+bad bundle - outside, climbing, a link, the loader, a key, a wrong checksum -
+changing nothing, a cut-short update finished at the next start), the real
+bundle from `release.sh` accepted by the code, and **in the VM with real
+systemd**: a good release changed the files and restarted the new caretaker; a
+caretaker that would not start was put back by itself in two minutes; a
+release that never came up healthy, cut short, was rolled back at the next
+start - old files back, the new one's gone. **Not yet:** a release signed with
+the YubiKey through the published `box-channel` to a real box. Images loaded
+from the box's own archives carry no registry digest, so a box's first update
+fetches every image once.
+
+**The box's card and label** (`box/sticker.sh`, 2026-10-10, the owner's
+design): the card in every box is printed both sides on Avery 35703 - the
+front only the QR code to emberstorm.app/start, the cloud in its middle (level
+H), on white inside black; the back black with the white logo, three steps and
+"No account. No subscription. It stays at home." Black runs 0.15" past each
+card's cut, corners rounded with it: printed only to the outline it showed
+white edges, and a centimetre all round was more toner than needed. The label
+under the box is in the same look (black frame, QR and setup code on white,
+"Setup code for EM-..."). Print `cards-front.html`, then the same sheet turned
+over side to side for `cards-back.html` (the layout is even left and right).
+Checked: both QR codes decode from the drawn pages. Not seen: a printed back.
+
 **From the readiness review, not built** (the owner's to weigh, biggest
-first): **the box's own system cannot be updated** - a release carries only
-images, so a fix to the caretaker, the compose files or a script needs the
-stick at the customer's (a signed bundle of the box's files, or A/B system
-partitions); **a factory test** (drive health, network, the button, every
+first): ~~the box's own system cannot be updated~~ (done, above); **a factory test** (drive health, network, the button, every
 service up); **memory** - no limits on fifteen services,
 to be measured on the unit; **drive health** (SMART, eMMC wear) shown in the
 app; **updates in the app** (version, what failed, Auto); **staged rollout and

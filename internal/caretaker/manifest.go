@@ -38,6 +38,62 @@ type Manifest struct {
 	Images map[string]string `json:"images"`
 	// Notes is "what's new", in plain words, for the app.
 	Notes string `json:"notes,omitempty"`
+	// System, when there is one, is the box's own files too - its scripts,
+	// services and settings and the caretaker itself - which a release used
+	// to leave as they were, so a fix to them needed the USB stick at the
+	// box (system.go).
+	System *System `json:"system,omitempty"`
+}
+
+// System is a release's bundle of the box's own files: a .tar.gz published
+// beside the manifest, known by its SHA-256 here, where the signature covers
+// it. Only files in the box's own places are ever taken from it
+// (systemAllowed). Packages are Debian's, installed first; Enable and Restart
+// are units switched on and started again once the files are in.
+type System struct {
+	File     string   `json:"file"`
+	SHA256   string   `json:"sha256"`
+	Size     int64    `json:"size"`
+	Packages []string `json:"packages,omitempty"`
+	Enable   []string `json:"enable,omitempty"`
+	Restart  []string `json:"restart,omitempty"`
+}
+
+// maxSystemSize is the most a system bundle may be: the caretaker is about
+// 10MB of it, the rest a few hundred kilobytes of scripts and settings.
+const maxSystemSize = 200 << 20
+
+var (
+	systemFile  = regexp.MustCompile(`^system-[0-9]{1,18}\.tar\.gz$`)
+	sha256Hex   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	packageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]{0,62}$`)
+	unitName    = regexp.MustCompile(`^[a-z0-9][a-z0-9@._-]{0,80}\.(service|timer|socket|path|target)$`)
+)
+
+func (s *System) validate() error {
+	if !systemFile.MatchString(s.File) {
+		return errors.New("manifest: bad system file name")
+	}
+	if !sha256Hex.MatchString(s.SHA256) {
+		return errors.New("manifest: bad system checksum")
+	}
+	if s.Size <= 0 || s.Size > maxSystemSize {
+		return errors.New("manifest: bad system size")
+	}
+	if len(s.Packages) > 60 || len(s.Enable) > 60 || len(s.Restart) > 60 {
+		return errors.New("manifest: too many packages or units")
+	}
+	for _, p := range s.Packages {
+		if !packageName.MatchString(p) {
+			return fmt.Errorf("manifest: bad package name %q", p)
+		}
+	}
+	for _, u := range append(append([]string{}, s.Enable...), s.Restart...) {
+		if !unitName.MatchString(u) {
+			return fmt.Errorf("manifest: bad unit name %q", u)
+		}
+	}
+	return nil
 }
 
 var (
@@ -72,6 +128,9 @@ func (m *Manifest) Validate() error {
 	}
 	if len(m.Notes) > 4000 {
 		return errors.New("manifest: notes too long")
+	}
+	if m.System != nil {
+		return m.System.validate()
 	}
 	return nil
 }

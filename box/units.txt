@@ -1,0 +1,12 @@
+# Units switched on on every box, for box/build.sh and box/release.sh (a
+# release switches on any it adds). One a line.
+docker.service
+soundstorm-grow.service
+soundstorm-storage.service
+soundstorm-images.service
+soundstorm.service
+soundstorm-caretaker.service
+soundstorm-screen.service
+soundstorm-address.timer
+soundstorm-scrub.timer
+avahi-daemon.service

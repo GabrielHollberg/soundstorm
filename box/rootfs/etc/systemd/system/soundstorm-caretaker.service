@@ -8,6 +8,12 @@ Description=SoundStorm caretaker (updates)
 # drive (being prepared the first time can take a while). Updates and resets
 # ask Docker when they run.
 Wants=docker.service
+# A caretaker an update brought that will not stay up - five failures in five
+# minutes - is replaced by the one before it (system.go keeps it as
+# .previous), so a broken one cannot leave the box unable to update again.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=soundstorm-caretaker-restore.service
 
 [Service]
 # caretaker.env may point at another release channel (a development box).

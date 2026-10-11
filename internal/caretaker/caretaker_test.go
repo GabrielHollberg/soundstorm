@@ -81,6 +81,8 @@ type box struct {
 	healthy  atomic.Bool
 	mu       sync.Mutex
 	ran      []string
+	// files are served beside the manifest: a release's system bundle.
+	files sync.Map
 }
 
 func newBox(t *testing.T) *box {
@@ -100,6 +102,12 @@ func newBox(t *testing.T) *box {
 			} else {
 				_, _ = io.WriteString(w, `{"status":"ok","sources":4}`)
 			}
+		default:
+			if data, ok := b.files.Load(r.URL.Path); ok {
+				_, _ = w.Write(data.([]byte))
+				return
+			}
+			http.NotFound(w, r)
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -112,6 +120,7 @@ func newBox(t *testing.T) *box {
 		HealthURL:   srv.URL + "/healthz",
 		HealthWait:  300 * time.Millisecond,
 		Key:         pub,
+		SystemRoot:  filepath.Join(b.dir, "root"),
 	}
 	b.u = New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	b.u.run = func(_ context.Context, name string, args ...string) error {

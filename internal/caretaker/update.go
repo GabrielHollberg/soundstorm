@@ -48,6 +48,9 @@ type Config struct {
 	DrivesOpen    string
 	// LocalTime is the system's time zone link (timezone.go).
 	LocalTime string
+	// SystemRoot is where a release's system files go (system.go): "/" on a
+	// box, empty for that; a folder in the tests.
+	SystemRoot string
 	// ManifestURL is where releases are published; ".sig" beside it.
 	ManifestURL string
 	// Key is the release key built into the box, and Backup the keys also
@@ -339,6 +342,27 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 			return u.fail(fmt.Errorf("downloading %s: %w", svc, err), "The update could not be downloaded. Nothing was changed.")
 		}
 	}
+	// The box's own files, when the release carries them: downloaded,
+	// checked and unpacked, and its packages installed, all before anything
+	// stops, so a failure here changes nothing (system.go).
+	var files []stagedFile
+	backup := ""
+	if m.System != nil {
+		bundle, err := u.fetchSystem(ctx, m.System)
+		if err != nil {
+			return u.fail(fmt.Errorf("downloading the system files: %w", err), "The update could not be downloaded. Nothing was changed.")
+		}
+		if files, err = u.stageSystem(bundle); err != nil {
+			return u.fail(err, "The update's files were not right, so it was not installed. Nothing was changed.")
+		}
+		if err := u.installPackages(ctx, m.System); err != nil {
+			return u.fail(fmt.Errorf("installing packages: %w", err), "The update could not be installed. Nothing was changed.")
+		}
+		backup = u.systemBackup(m.Serial)
+		if err := os.RemoveAll(backup); err != nil {
+			return u.fail(err, "The update could not be prepared. Nothing was changed.")
+		}
+	}
 
 	imagesPath := filepath.Join(u.cfg.ComposeDir, "compose.images.yml")
 	previous, err := os.ReadFile(imagesPath)
@@ -352,7 +376,7 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 			return u.fail(err, "The update could not be prepared. Nothing was changed.")
 		}
 	}
-	p := pending{Kind: "update", Manifest: m, HadPrevious: hadPrevious}
+	p := pending{Kind: "update", Manifest: m, HadPrevious: hadPrevious, SystemBackup: backup}
 	if err := u.writePending(p); err != nil {
 		return u.fail(err, "The update could not be prepared. Nothing was changed.")
 	}
@@ -376,8 +400,16 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 			u.log.Warn("could not note the snapshot", "err", err)
 		}
 	}
+	if files != nil {
+		if err := u.installSystem(files, backup); err != nil {
+			u.rollback(ctx, imagesPath, previous, snap, backup)
+			u.clearPending()
+			return u.fail(err, "The update could not be installed. EmberStorm is back as it was.")
+		}
+		u.applySystem(ctx, m.System)
+	}
 	if err := writeFile(imagesPath, ImagesFile(m)); err != nil {
-		u.rollback(ctx, imagesPath, previous, snap)
+		u.rollback(ctx, imagesPath, previous, snap, backup)
 		u.clearPending()
 		return u.fail(err, "The update could not be installed. EmberStorm is back as it was.")
 	}
@@ -390,7 +422,7 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 			u.log.Warn("update cut short by the caretaker stopping; the next start finishes it", "version", m.Version)
 			return ctx.Err()
 		}
-		back := u.rollback(ctx, imagesPath, previous, snap)
+		back := u.rollback(ctx, imagesPath, previous, snap, backup)
 		u.markRolledBack(m.Serial)
 		// Kept when going back did not work: the next start tries again.
 		if back {
@@ -416,12 +448,32 @@ func (u *Updater) Update(ctx context.Context, m *Manifest) error {
 	u.record(ctx, m, snap, previous)
 	u.clearPending()
 	u.log.Info("updated", "version", m.Version, "serial", m.Serial)
+	u.restartIfReplaced(ctx, backup)
 	return nil
+}
+
+// restartIfReplaced starts the caretaker again when an update replaced it,
+// so the new one runs; if it will not start, systemd puts the one before
+// back (soundstorm-caretaker-restore.service). The backup is gone after.
+func (u *Updater) restartIfReplaced(ctx context.Context, backup string) {
+	if backup == "" {
+		return
+	}
+	replaced := caretakerChanged(backup)
+	_ = os.RemoveAll(backup)
+	if replaced {
+		u.log.Info("the caretaker was updated; starting the new one")
+		if err := u.runFor(context.WithoutCancel(ctx), stopTimeout, "systemctl", "--no-block", "restart", "soundstorm-caretaker"); err != nil {
+			u.log.Warn("could not start the new caretaker; it starts at the next boot", "err", err)
+		}
+	}
 }
 
 // record makes m the box's version once it is up and healthy, and tidies
 // what the update before it left.
 func (u *Updater) record(ctx context.Context, m *Manifest, snap string, previous []byte) {
+	_ = os.RemoveAll(filepath.Join(u.cfg.StateDir, "system-new"))
+	_ = os.Remove(filepath.Join(u.cfg.StateDir, "system.tar.gz"))
 	if h, err := u.health(ctx); err == nil {
 		u.saveBaseline(h.Sources)
 	}
@@ -489,10 +541,25 @@ var pollEvery = 5 * time.Second
 // snapshot back, and starts the stack again. It says whether all of that
 // worked: a rollback that could not put the volumes back was reported as
 // nothing lost (the thirteenth security pass).
-func (u *Updater) rollback(ctx context.Context, imagesPath string, previous []byte, snap string) bool {
+func (u *Updater) rollback(ctx context.Context, imagesPath string, previous []byte, snap, backup string) bool {
 	ctx = context.WithoutCancel(ctx)
 	ok := true
 	_ = u.runFor(ctx, stopTimeout, u.cfg.Up, "stop")
+	// The new files are not wanted again (a release that rolled back is not
+	// retried): nothing of them left in the state folder.
+	_ = os.RemoveAll(filepath.Join(u.cfg.StateDir, "system-new"))
+	_ = os.Remove(filepath.Join(u.cfg.StateDir, "system.tar.gz"))
+	// The box's own files first: the stack that starts again below is
+	// started by the old scripts with the old compose files.
+	if backup != "" {
+		if !u.restoreSystem(backup) {
+			ok = false
+		}
+		u.applySystem(ctx, nil)
+		if ok {
+			_ = os.RemoveAll(backup)
+		}
+	}
 	// The images from before first, then the volumes: cut short between,
 	// the next start finds the old images named and puts the volumes back,
 	// where the other way round it could start the new version on the old

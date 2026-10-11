@@ -1,0 +1,12 @@
+[Unit]
+Description=SoundStorm caretaker: put back the one before a failed update
+# Started by soundstorm-caretaker.service failing for good (OnFailure): the
+# caretaker an update brought would not stay up, so the one it replaced,
+# kept as .previous, goes back and is started.
+ConditionPathExists=/usr/local/bin/soundstorm-caretaker.previous
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'cd /usr/local/bin && { cmp -s soundstorm-caretaker.previous soundstorm-caretaker || { cp soundstorm-caretaker.previous soundstorm-caretaker.restoring && chmod 755 soundstorm-caretaker.restoring && mv soundstorm-caretaker.restoring soundstorm-caretaker; }; }'
+ExecStart=/bin/systemctl reset-failed soundstorm-caretaker.service
+ExecStart=/bin/systemctl start soundstorm-caretaker.service

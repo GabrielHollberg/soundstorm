@@ -6,8 +6,10 @@
 #           (http://soundstorm.local/?setup=CODE, which the app's scanner and
 #           a phone's camera both take), the code, and the serial.
 #   cards   Avery 35703 - 2.5" x 2.5" rounded cards, 9 a sheet (3 x 3): the
-#           card in every box, the same for all: a QR code to
-#           emberstorm.app/start, the instructions page.
+#           card in every box, the same for all. Front: a QR code to
+#           emberstorm.app/start, the instructions page, the cloud in its
+#           middle. Back: the logo and three steps (cards-back.html, the
+#           same sheet fed again).
 #
 # Each sheet is an HTML page sized to Letter with no margins: open it in
 # Chrome or Edge, print at 100% (Default scale, margins None), through the
@@ -43,7 +45,8 @@ for a in "$@"; do [ "$a" = --test ] || args="$args $a"; done
 # shellcheck disable=SC2086
 set -- $args
 
-qr() { qrencode -t SVG --svg-path -m 0 -l M -o - "$1" | base64 -w0; }
+# qr TEXT [LEVEL]: the card uses H, so the cloud over its middle costs nothing.
+qr() { qrencode -t SVG --svg-path -m 0 -l "${2:-M}" -o - "$1" | base64 -w0; }
 
 # stretch EXPECTED MEASURED: how much to stretch so MEASURED lands at EXPECTED.
 stretch() {
@@ -70,7 +73,8 @@ html_open() {
 EOF
 }
 
-# label X Y SERIAL CODE: one 2" label with its top left at X,Y inches.
+# label X Y SERIAL CODE: one 2" label with its top left at X,Y inches, in
+# the card's look: a black panel, the QR code and the setup code on white.
 label() {
 	x=$1 y=$2 serial=$3 code=$4
 	grouped=$(printf '%s' "$code" | tr a-f A-F | sed 's/..../& /g; s/ $//')
@@ -79,28 +83,84 @@ label() {
 	setup=$(qr "http://soundstorm.local/?setup=$code")
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2" height="2" fill="none" stroke="#999" stroke-width="0.01"/>'
+	echo '<rect x="0.07" y="0.07" width="1.86" height="1.86" rx="0.16" fill="#000"/>'
+	cloud 0.5 0.15 0.17 "#fff" "l$serial"
+	cat <<EOT
+<text x="0.72" y="0.27" font-size="0.13" font-weight="900" font-style="italic" fill="#fff">EmberStorm</text>
+<rect x="0.18" y="0.36" width="1.64" height="1.48" rx="0.12" fill="#fff"/>
+<image x="0.6" y="0.42" width="0.8" height="0.8" href="data:image/svg+xml;base64,$setup"/>
+<text x="1" y="1.4" font-size="0.14" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$line1</text>
+<text x="1" y="1.55" font-size="0.14" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$line2</text>
+<text x="1" y="1.68" font-size="0.068" text-anchor="middle" fill="#333">Setup code for $serial</text>
+<text x="1" y="1.78" font-size="0.062" text-anchor="middle" fill="#333">On a computer, open soundstorm.local</text>
+</g>
+EOT
+}
+
+# cloud X Y W FILL: the EmberStorm cloud and bolt, W inches wide.
+cloud() {
+	k=$(awk -v w="$3" 'BEGIN { printf "%.6f", w / 148 }')
 	cat <<EOF
-<text x="0.14" y="0.27" font-size="0.15" font-weight="bold" font-style="italic">EmberStorm</text>
-<text x="1.86" y="0.27" font-size="0.085" text-anchor="end" fill="#333">$serial</text>
-<image x="0.475" y="0.36" width="1.05" height="1.05" href="data:image/svg+xml;base64,$setup"/>
-<text x="1" y="1.6" font-size="0.15" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$line1</text>
-<text x="1" y="1.76" font-size="0.15" font-weight="bold" text-anchor="middle" font-family="Menlo, Consolas, monospace">$line2</text>
-<text x="1" y="1.89" font-size="0.075" text-anchor="middle" fill="#333">Setup code - on a computer, open soundstorm.local</text>
+<g transform="translate($1 $2) scale($k) translate(-176.5 -177)" fill="$4">
+<clipPath id="flat$5"><rect x="0" y="0" width="1000" height="249"/></clipPath>
+<g clip-path="url(#flat$5)"><circle cx="234" cy="220.5" r="43.5"/><circle cx="283" cy="212.7" r="23.7"/><rect x="176.5" y="207" width="148" height="42" rx="21"/></g>
+<polygon points="243,240 271,240 260,261 278,261 238,302 251,273 231,273"/>
 </g>
 EOF
 }
 
-# card X Y: one 2.5" card with its top left at X,Y inches.
+# Both sides are black past the card's edge by 0.15" (about 4mm), its corners
+# rounded with the card's: a card printed black only to its outline showed
+# white edges wherever the die-cut and the print disagreed, and a centimetre
+# all round was more toner than it needed. A QR code needs dark on light, so the
+# front's sits on white.
+PANEL='<rect x="-0.15" y="-0.15" width="2.8" height="2.8" rx="0.52" fill="#000"/>'
+
+# card X Y N: the front of one 2.5" card with its top left at X,Y inches -
+# the QR code to the instructions page, the cloud in its middle.
 card() {
-	x=$1 y=$2
+	x=$1 y=$2 i=$3
 	echo "<g transform=\"translate($x $y)\">"
 	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
 	cat <<EOF
-<text x="1.25" y="0.4" font-size="0.17" font-weight="bold" text-anchor="middle">Welcome to <tspan font-style="italic">EmberStorm</tspan></text>
-<image x="0.625" y="0.54" width="1.25" height="1.25" href="data:image/svg+xml;base64,$CARD_QR"/>
-<text x="1.25" y="2.0" font-size="0.15" font-weight="bold" text-anchor="middle">Scan to get started</text>
-<text x="1.25" y="2.16" font-size="0.09" text-anchor="middle" fill="#333">or visit emberstorm.app/start</text>
-<text x="1.25" y="2.3" font-size="0.075" text-anchor="middle" fill="#333">Your setup code is on the bottom of the box.</text>
+$PANEL
+<rect x="0.3" y="0.3" width="1.9" height="1.9" rx="0.18" fill="#fff"/>
+<image x="0.42" y="0.42" width="1.66" height="1.66" href="data:image/svg+xml;base64,$CARD_QR"/>
+<rect x="1.03" y="1.04" width="0.44" height="0.42" rx="0.08" fill="#fff"/>
+EOF
+	cloud 1.08 1.1 0.34 "#000" "q$i"
+	echo '</g>'
+}
+
+# card_back X Y N: the back - the logo, three steps and a word on what it is.
+card_back() {
+	x=$1 y=$2 i=$3
+	echo "<g transform=\"translate($x $y)\">"
+	[ "$TEST" = 1 ] && echo '<rect width="2.5" height="2.5" rx="0.375" fill="none" stroke="#999" stroke-width="0.01"/>'
+	echo "$PANEL"
+	cloud 0.47 0.27 0.3 "#fff" "b$i"
+	cat <<EOF
+<text x="0.84" y="0.47" font-size="0.18" font-weight="900" font-style="italic" fill="#fff">EmberStorm</text>
+<g font-weight="bold" text-anchor="middle">
+<circle cx="0.42" cy="0.84" r="0.115" fill="#fff"/><text x="0.42" y="0.89" font-size="0.14">1</text>
+<circle cx="0.42" cy="1.25" r="0.115" fill="#fff"/><text x="0.42" y="1.30" font-size="0.14">2</text>
+<circle cx="0.42" cy="1.66" r="0.115" fill="#fff"/><text x="0.42" y="1.71" font-size="0.14">3</text>
+</g>
+<g fill="#fff">
+<text x="0.65" y="0.82" font-size="0.12" font-weight="bold">Plug it in</text>
+<text x="0.65" y="1.23" font-size="0.12" font-weight="bold">Scan the other side</text>
+<text x="0.65" y="1.64" font-size="0.12" font-weight="bold">Enter your setup code</text>
+</g>
+<g fill="#bbb" font-size="0.08">
+<text x="0.65" y="0.95">Power, and a cable to your router</text>
+<text x="0.65" y="1.36">or visit emberstorm.app/start</text>
+<text x="0.65" y="1.77">It is on the label under your EmberStorm</text>
+</g>
+<line x1="0.45" y1="1.95" x2="2.05" y2="1.95" stroke="#555" stroke-width="0.008"/>
+<g fill="#bbb" font-size="0.075" text-anchor="middle">
+<text x="1.25" y="2.1">Your music, films, books and photos in one place.</text>
+<text x="1.25" y="2.22">No account. No subscription. It stays at home.</text>
+</g>
 </g>
 EOF
 }
@@ -179,14 +239,23 @@ cards)
 	KX=$(stretch 5.75 "${MEASURED_X:-}"); KY=$(stretch 7.625 "${MEASURED_Y:-}")
 	out=${2:-stickers}
 	mkdir -p "$out"
-	CARD_QR=$(qr "https://emberstorm.app/start")
-	{
-		html_open
-		page_open
-		for y in $CROWS; do for x in $CCOLS; do card "$x" "$y"; done; done
-		page_close
-	} >"$out/cards.html"
-	echo "  $out/cards.html: a sheet of 9 cards, Avery 35703"
+	CARD_QR=$(qr "https://emberstorm.app/start" H)
+	# The fronts, then the backs: the same sheet fed again the other way up.
+	# The sheet is laid out evenly left and right, so each back lands behind
+	# its own front however it is turned over side to side.
+	for side in front back; do
+		{
+			html_open
+			page_open
+			n=0
+			for y in $CROWS; do for x in $CCOLS; do
+				n=$((n + 1))
+				if [ $side = front ]; then card "$x" "$y" $n; else card_back "$x" "$y" $n; fi
+			done; done
+			page_close
+		} >"$out/cards-$side.html"
+	done
+	echo "  $out/cards-front.html and cards-back.html: 9 cards, Avery 35703 - print the fronts, turn the sheet over side to side, print the backs"
 	;;
 *)
 	sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' >&2

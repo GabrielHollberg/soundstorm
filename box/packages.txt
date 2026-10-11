@@ -1,0 +1,18 @@
+# Debian packages on every box, for box/build.sh and box/release.sh (a
+# release installs any it does not have yet). One a line.
+intel-microcode
+firmware-intel-graphics
+firmware-misc-nonfree
+firmware-realtek
+docker.io
+docker-compose
+btrfs-progs
+ethtool
+cloud-guest-utils
+avahi-daemon
+curl
+qrencode
+kbd
+console-setup-linux
+ntfs-3g
+systemd-zram-generator

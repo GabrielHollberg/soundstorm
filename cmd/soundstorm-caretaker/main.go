@@ -20,13 +20,16 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -149,8 +152,21 @@ func manifest(args []string) error {
 	version := fs.String("version", "", "version shown to people")
 	notes := fs.String("notes", "", "what's new")
 	days := fs.Int("days", 90, "days boxes believe it; sign again before then")
+	system := fs.String("system", "", "the box's own files: a bundle published beside the manifest")
+	packages := fs.String("packages", "", "Debian packages the system files need, comma-separated")
+	enable := fs.String("enable", "", "units to switch on, comma-separated")
+	restart := fs.String("restart", "", "units to start again, comma-separated")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	list := func(s string) []string {
+		var out []string
+		for _, v := range strings.Split(s, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				out = append(out, v)
+			}
+		}
+		return out
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	m := caretaker.Manifest{Serial: *serial, Version: *version, Notes: *notes,
@@ -161,6 +177,15 @@ func manifest(args []string) error {
 			return fmt.Errorf("%q is not service=image@sha256:...", a)
 		}
 		m.Images[svc] = ref
+	}
+	if *system != "" {
+		data, err := os.ReadFile(*system)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		m.System = &caretaker.System{File: filepath.Base(*system), SHA256: hex.EncodeToString(sum[:]),
+			Size: int64(len(data)), Packages: list(*packages), Enable: list(*enable), Restart: list(*restart)}
 	}
 	if err := m.Validate(); err != nil {
 		return err

@@ -23,6 +23,9 @@ type pending struct {
 	Manifest    *Manifest `json:"manifest,omitempty"`
 	Snapshot    string    `json:"snapshot,omitempty"`
 	HadPrevious bool      `json:"hadPrevious,omitempty"`
+	// SystemBackup holds the box's own files the update replaced, and a list
+	// of those it added (system.go), when the release carried any.
+	SystemBackup string `json:"systemBackup,omitempty"`
 	// A reset: what it takes away.
 	Mode ResetMode `json:"mode,omitempty"`
 }
@@ -140,10 +143,11 @@ func (u *Updater) finishUpdate(ctx context.Context, p pending) {
 			u.log.Warn("an update cut short came up healthy; keeping it", "version", m.Version)
 			u.record(ctx, m, p.Snapshot, previous)
 			u.clearPending()
+			u.restartIfReplaced(ctx, p.SystemBackup)
 			return
 		}
 	}
-	back := u.rollback(ctx, imagesPath, previous, p.Snapshot)
+	back := u.rollback(ctx, imagesPath, previous, p.Snapshot, p.SystemBackup)
 	u.markRolledBack(m.Serial)
 	u.clearPending()
 	u.log.Warn("an update cut short was undone", "version", m.Version, "back", back)
