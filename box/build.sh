@@ -241,11 +241,11 @@ virt-customize -a "$disk" \
 	--hostname soundstorm \
 	--run-command "sed -i 's/^Components: main\$/Components: main non-free-firmware/' /etc/apt/sources.list.d/*.sources" \
 	--install intel-microcode,firmware-intel-graphics,firmware-misc-nonfree,firmware-realtek \
-	--install docker.io,docker-compose,btrfs-progs,cloud-guest-utils,avahi-daemon,curl,qrencode,kbd,console-setup-linux,ntfs-3g,systemd-zram-generator$ssh_pkg \
+	--install docker.io,docker-compose,btrfs-progs,ethtool,cloud-guest-utils,avahi-daemon,curl,qrencode,kbd,console-setup-linux,ntfs-3g,systemd-zram-generator$ssh_pkg \
 	--run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1' \
 	$copy_args \
 	--run-command 'chmod 755 /usr/local/lib/soundstorm/*.sh /usr/local/bin/soundstorm-caretaker' \
-	--run-command 'chmod 644 /etc/systemd/system/soundstorm*.service /etc/systemd/system/ssh-hostkeys.service /etc/udev/rules.d/90-soundstorm-usb.rules /etc/systemd/logind.conf.d/soundstorm-button.conf /etc/systemd/logind.conf.d/soundstorm-consoles.conf /etc/tmpfiles.d/soundstorm-drives.conf /etc/docker/daemon.json /etc/systemd/system/soundstorm-address.timer /etc/systemd/system/soundstorm-scrub.timer /etc/systemd/network/05-emberstorm-no-usb-network.network /etc/systemd/journald.conf.d/emberstorm.conf /etc/systemd/zram-generator.conf /etc/systemd/system/*.d/soundstorm-*.conf /etc/apt/apt.conf.d/52soundstorm-upgrades' \
+	--run-command 'chmod 644 /etc/systemd/system/soundstorm*.service /etc/systemd/system/ssh-hostkeys.service /etc/udev/rules.d/90-soundstorm-usb.rules /etc/udev/rules.d/80-emberstorm-eee.rules /etc/systemd/logind.conf.d/soundstorm-button.conf /etc/systemd/logind.conf.d/soundstorm-consoles.conf /etc/tmpfiles.d/soundstorm-drives.conf /etc/docker/daemon.json /etc/systemd/system/soundstorm-address.timer /etc/systemd/system/soundstorm-scrub.timer /etc/systemd/network/05-emberstorm-no-usb-network.network /etc/systemd/journald.conf.d/emberstorm.conf /etc/systemd/zram-generator.conf /etc/systemd/system/*.d/soundstorm-*.conf /etc/apt/apt.conf.d/52soundstorm-upgrades' \
 	--run-command 'docker compose version' \
 	--run-command "systemctl enable docker soundstorm-grow soundstorm-storage soundstorm-images soundstorm soundstorm-caretaker soundstorm-screen soundstorm-address.timer soundstorm-scrub.timer$ssh_units avahi-daemon" \
 	--run-command 'systemctl mask ctrl-alt-del.target' \

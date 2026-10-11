@@ -1,0 +1,5 @@
+# Intel's I225 and I226 network chips (the igc driver, on many mini PCs)
+# drop the link now and then with Energy-Efficient Ethernet on: a home server
+# that vanishes for a moment is worse than the half a watt it saves. Turned
+# off as each port appears, before it comes up.
+ACTION=="add", SUBSYSTEM=="net", DRIVERS=="igc", RUN+="/usr/sbin/ethtool --set-eee $name eee off"
